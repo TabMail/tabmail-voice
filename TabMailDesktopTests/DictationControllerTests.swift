@@ -169,7 +169,8 @@ struct DictationControllerTests {
         }
     }
 
-    /// Cancelled (Escape, or a new dictation) while the cleanup runs: its result is not pasted.
+    /// Cancelled while the cleanup runs (another key pressed while the hotkey is held): its result
+    /// is not pasted.
     @Test func aDictationCancelledDuringTheCleanupPastesNothing() async {
         transcription.enqueue(status: 200, json: ["text": transcript])
         completions.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))

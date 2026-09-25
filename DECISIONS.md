@@ -183,7 +183,10 @@ model choice live on the backend, so they can be edited and switched there witho
 transcript arrives, the app waits for that capture and sends the transcript with the app name,
 web host, terminal program, window title and the visible text (caret marked) to the backend's
 `POST /completions/chat` as the prompt `system_prompt_dictate_cleanup`, then pastes the reply.
-Request shape and server-sent-events parsing mirror iOS `BackendClient`.
+Request shape and server-sent-events parsing follow iOS `BackendClient`, with two deliberate
+differences: the app fails the cleanup on an `event: error` (iOS logs it and waits for `final`),
+and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both `error` and
+`final`, and answers 200, so neither changes an outcome today.
 
 **Consequences:**
 - What is on screen while dictating is sent to the TabMail backend with each dictation; like every

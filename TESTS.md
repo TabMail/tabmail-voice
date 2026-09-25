@@ -20,6 +20,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `DictationCleanupFallbackTests` | the cleaned text is pasted (trimmed); every cleanup failure (HTTP error, stream error, refusal in `final`, empty reply, no `final`, unreachable backend, signed out) pastes the transcript as heard; 401 → one refresh → retry with the new token; a second 401 or a rejected refresh pastes the transcript; another account signed in (before, or during the first request) gets no cleanup request |
 | `DictationControllerTests` | a finished recording through the controller with a silent capture: the cleaned text is pasted; a failed cleanup pastes the transcript; an empty or failed transcription sends no cleanup and pastes nothing; cancelled during the cleanup pastes nothing; an account switch during the transcription skips the cleanup. Key-down to paste with a tone capture and fixed grants: the cleanup waits for the screen read at key-down and sends it; cancelled while the screen is read sends no cleanup and pastes nothing, and the next dictation uses its own screen |
 | `ScreenContextCommandTests` | a helper command's output is returned; a command that doesn't finish, or whose output never ends (a background child holding it, as a stopped tmux server does), is given up at the deadline; a command still running at the deadline (with or without its output closed) is gone within a second |
+| `ScreenContextProbeTests` | no read without the Accessibility grant or a frontmost app; the app read is the one in front at key-down, not at read time; a capture overtaken by a newer one still yields its own screen, and the debug window keeps the newest |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |
 
 ## Not covered by unit tests (manual checklist)
@@ -40,6 +41,9 @@ No test touches the network, the user's clipboard, or the real Keychain item.
   appears at the pointer first and then jumps. A quick tap shows nothing. Swirl while the mic
   warms up, then the pill. A long message (e.g. signed out) wraps and the pill grows to fit it.
 - Switching the default input in System Settings › Sound is picked up on the next dictation.
+- Release build: dictate a name that is on screen with an unusual spelling (e.g. a colleague in a
+  mail thread); it is pasted spelled as on screen. This is the only check that the app wires the
+  screen read into every dictation (tests replace it).
 
 ## Next
 

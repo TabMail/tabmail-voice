@@ -60,7 +60,9 @@ enum DictationConfig {
 
     // MARK: Screen context
 
-    /// Per-call cap on Accessibility calls while reading the screen context (seconds).
+    /// Accessibility messaging timeout for the target app's own element while reading the screen
+    /// context (seconds). macOS applies it to that element only; the elements reached from it
+    /// (focused field, window, children) wait up to the system-wide timeout.
     static let contextLookupTimeout: Float = 0.25
     /// The walk of the focused window stops after this many elements…
     static let contextNodeBudget = 5_000

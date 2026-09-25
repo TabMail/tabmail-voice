@@ -4,6 +4,7 @@
 
 import CoreGraphics
 import Foundation
+import os
 import Testing
 @testable import TabMail
 
@@ -227,5 +228,73 @@ struct ScreenContextCommandTests {
         }
         kill(pid, SIGKILL)
         return false
+    }
+}
+
+/// Every dictation reads the screen through the probe; without it, every cleanup silently runs
+/// without context.
+@MainActor
+struct ScreenContextProbeTests {
+    private static let notes = ScreenContextProbe.Target(pid: 101, name: "Example Notes", bundleID: "com.example.notes")
+    private static let browser = ScreenContextProbe.Target(pid: 202, name: "Example Browser", bundleID: "com.example.browser")
+
+    /// Records which apps were read.
+    private final class Reads: @unchecked Sendable {
+        private let names = OSAllocatedUnfairLock<[String]>(initialState: [])
+        var all: [String] { names.withLock { $0 } }
+        func record(_ target: ScreenContextProbe.Target) -> ScreenContext {
+            names.withLock { $0.append(target.name) }
+            return ScreenContext(appName: target.name, bundleID: target.bundleID)
+        }
+    }
+
+    @Test func withoutTheAccessibilityGrantNothingIsRead() {
+        let reads = Reads()
+        let probe = ScreenContextProbe(isTrusted: { false }, frontmostApp: { Self.notes }, read: { reads.record($0) })
+        #expect(probe.capture() == nil)
+        #expect(reads.all.isEmpty)
+    }
+
+    @Test func withoutAFrontmostAppNothingIsRead() {
+        let reads = Reads()
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { nil }, read: { reads.record($0) })
+        #expect(probe.capture() == nil)
+        #expect(reads.all.isEmpty)
+    }
+
+    /// The app is the one in front when the dictation starts, not whichever is in front by the time
+    /// the read runs.
+    @Test func readsTheAppInFrontWhenCalled() async {
+        let reads = Reads()
+        var front = Self.notes
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { reads.record($0) })
+        let task = probe.capture()
+        front = Self.browser
+        let context = await task?.value
+        #expect(context?.appName == "Example Notes")
+        #expect(context?.bundleID == "com.example.notes")
+        #expect(reads.all == ["Example Notes"])
+    }
+
+    /// A dictation whose read finishes after a newer one started still gets its own screen; the
+    /// debug window shows the newest.
+    @Test func aSupersededCaptureStillYieldsItsOwnScreen() async {
+        let reads = Reads()
+        let (gate, opener) = AsyncStream.makeStream(of: Never.self)
+        var front = Self.notes
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { target in
+            if target.name == "Example Notes" { for await _ in gate {} }
+            return reads.record(target)
+        })
+        let first = probe.capture()
+        front = Self.browser
+        let second = probe.capture()
+
+        #expect(await second?.value.appName == "Example Browser")
+        #expect(probe.lastContext?.appName == "Example Browser")
+        opener.finish()
+        #expect(await first?.value.appName == "Example Notes")
+        #expect(probe.lastContext?.appName == "Example Browser")
+        #expect(reads.all == ["Example Browser", "Example Notes"])
     }
 }
