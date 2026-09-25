@@ -18,7 +18,7 @@ enum ScreenContextReader {
         // In a tmux terminal the active pane is read from tmux: the terminal's own text is every
         // pane side by side, and its caret index drifts (iTerm2 drops trailing spaces).
         let isTerminal = bundleID.map(DictationConfig.terminalBundleIDs.contains) ?? false
-        let paneRead = isTerminal && readTmuxPane(into: &context)
+        let paneRead = isTerminal && readTmuxPane(showingIn: focused, into: &context)
         if let focused, !paneRead { readCaret(of: focused, into: &context) }
         let focusPath = focused.map(ancestors) ?? []
         // The page the caret is in: the nearest web area above it (Notion nests its web page in a
@@ -195,12 +195,21 @@ enum ScreenContextReader {
     // MARK: Terminal
 
     /// The most recently active tmux client's pane: its foreground program ("claude") and its
-    /// visible text split at the cursor. False when tmux isn't running or has no client.
-    private static func readTmuxPane(into context: inout ScreenContext) -> Bool {
-        guard let tmux = DictationConfig.tmuxPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }),
+    /// visible text split at the cursor. False when tmux isn't running, has no client, or its pane
+    /// isn't what the focused terminal shows (tmux attached in another tab or window).
+    private static func readTmuxPane(showingIn terminal: AXUIElement?, into context: inout ScreenContext) -> Bool {
+        guard let terminal, let terminalText = string(terminal, kAXValueAttribute),
+              let tmux = DictationConfig.tmuxPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }),
               let clients = run(tmux, ["list-clients", "-F", ScreenContext.TmuxPane.clientFormat]),
               let pane = ScreenContext.activePane(fromTmuxClients: clients),
               let screen = run(tmux, ["capture-pane", "-p", "-t", pane.id]) else { return false }
+        guard ScreenContext.paneIsOnScreen(
+            pane: screen, screen: String(terminalText.suffix(DictationConfig.tmuxScreenTailChars)),
+            sampleLines: DictationConfig.tmuxPaneSampleLines, requiredShare: DictationConfig.tmuxPaneRequiredShare
+        ) else {
+            Log.debug("ScreenContext: tmux pane \(pane.id) is not the terminal in front")
+            return false
+        }
         if let processes = run("/bin/ps", ["-o", "pid=,tpgid=,comm=", "-t", (pane.tty as NSString).lastPathComponent]) {
             context.terminalProgram = ScreenContext.foregroundProgram(fromPS: processes)
         }

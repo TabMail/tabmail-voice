@@ -143,6 +143,19 @@ struct ScreenContext: Sendable, Equatable {
         return (before, after)
     }
 
+    /// Whether the tmux pane is what the terminal in front shows: most of the pane's non-blank
+    /// lines appear in the terminal's text (side by side with other panes, so as substrings).
+    /// A tmux attached in another tab or window fails this.
+    static func paneIsOnScreen(pane: String, screen: String, sampleLines: Int, requiredShare: Double) -> Bool {
+        let lines = pane.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .suffix(sampleLines)
+        guard !lines.isEmpty else { return false }
+        let found = lines.filter { screen.contains($0) }.count
+        return Double(found) >= Double(lines.count) * requiredShare
+    }
+
     /// From `ps -o pid=,tpgid=,comm= -t <tty>`: the terminal's foreground process-group leader.
     static func foregroundProgram(fromPS output: String) -> String? {
         for line in output.split(separator: "\n") {

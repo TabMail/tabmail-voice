@@ -167,6 +167,7 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 - Prototype only: wired in Debug builds; the latest capture is kept in memory and shown in a
   debug window. Logs carry sizes and timings, never text. Nothing is stored or sent.
 - A plain terminal tab without tmux gets its visible lines but no caret mark or program.
-- The tmux pane is the most recently active client's: right when one terminal is attached.
+- The tmux pane is the most recently active client's, and is used only when most of its last
+  lines appear in the front terminal's text; a tmux attached in another tab or window is ignored.
 - OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
 

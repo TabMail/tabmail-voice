@@ -146,6 +146,24 @@ struct ScreenContextTests {
         #expect(split.after == "")
     }
 
+    /// Side-by-side panes: every pane line is a substring of a wider screen line.
+    @Test func paneShownBesideAnotherPaneIsOnScreen() {
+        let pane = "$ make test\nall passed\n\n"
+        let screen = "left pane text      │$ make test\nmore left text      │all passed\n"
+        #expect(ScreenContext.paneIsOnScreen(pane: pane, screen: screen, sampleLines: 12, requiredShare: 0.75))
+    }
+
+    /// tmux attached in another tab: its pane text isn't on the terminal in front.
+    @Test func paneFromAnotherTabIsNotOnScreen() {
+        let pane = "$ make test\nall passed\n"
+        let screen = "user@host ~ % ls\nDocuments Downloads\n"
+        #expect(!ScreenContext.paneIsOnScreen(pane: pane, screen: screen, sampleLines: 12, requiredShare: 0.75))
+    }
+
+    @Test func blankPaneIsNotEvidence() {
+        #expect(!ScreenContext.paneIsOnScreen(pane: "\n  \n", screen: "anything", sampleLines: 12, requiredShare: 0.75))
+    }
+
     /// Children of the foreground program share its tty; only the process-group leader counts.
     @Test func foregroundProgramIsTheProcessGroupLeader() {
         let output = """

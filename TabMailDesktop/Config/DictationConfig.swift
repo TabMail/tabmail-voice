@@ -84,6 +84,12 @@ enum DictationConfig {
         "com.googlecode.iterm2", "com.apple.Terminal", "com.mitchellh.ghostty", "com.github.wez.wezterm",
         "net.kovidgoyal.kitty", "org.alacritty",
     ]
+    /// A tmux pane counts as the terminal in front when this share of its last non-blank lines
+    /// (up to `tmuxPaneSampleLines`) appears in the front terminal's text.
+    static let tmuxPaneSampleLines = 12
+    static let tmuxPaneRequiredShare = 0.75
+    /// How much of the front terminal's text (from the end) the pane lines are looked for in.
+    static let tmuxScreenTailChars = 60_000
     /// Where tmux is installed (Homebrew on Apple silicon, Homebrew on Intel, system).
     static let tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
 
