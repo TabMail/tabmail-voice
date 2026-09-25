@@ -18,8 +18,21 @@ enum DictationConfig {
 
     /// Frames per microphone tap callback (~85 ms at 48 kHz).
     static let audioTapBufferSize: AVAudioFrameCount = 4096
-    /// RMS → level mapping for the overlay meter: RMS values at or below the floor show as silence.
+    /// Fixed RMS → 0…1 scale used for diagnostics (the recording's peak level): at or below the
+    /// floor is silence.
     static let levelDecibelFloor: Float = -50
+    /// Overlay waveform (`LevelMeter`), which adapts to the microphone and room. Quieter than this
+    /// is treated as this (digital silence while the device starts would otherwise drag the floor
+    /// to −∞).
+    static let meterSilenceDecibels: Float = -80
+    /// How fast the tracked room-noise floor rises, per ~85 ms buffer (≈ 12 dB/s); it drops at once.
+    static let meterFloorRisePerBuffer: Float = 1
+    /// How fast the tracked speaking peak decays, per buffer (≈ 6 dB/s); it rises at once.
+    static let meterCeilingFallPerBuffer: Float = 0.5
+    /// The waveform spans at least this many dB, so room noise alone never fills it.
+    static let meterMinimumRange: Float = 12
+    /// Loudness within this many dB of the floor shows as flat (noise flicker).
+    static let meterNoiseMargin: Float = 3
     /// Smoothing factor for the overlay level (0 = frozen, 1 = no smoothing).
     static let levelSmoothing: Float = 0.3
     /// Upload format: 16 kHz mono 16-bit PCM WAV — what Whisper-class models consume natively,
@@ -116,8 +129,11 @@ enum DictationConfig {
     static let waveformRippleSpeed: Double = 9
     static let waveformRipplePhase: Double = 0.7
     static let waveformRippleDepth: Double = 0.35
-    /// Bar height (0…1) of the "working" sweep while transcribing.
-    static let waveformThinkingLevel: Double = 0.45
+    /// While transcribing, the pill is a circle with a gradient arc circling its rim.
+    static let thinkingRimWidth: CGFloat = 2.5
+    static let thinkingArcFraction: CGFloat = 0.7
+    static let thinkingRevolutionsPerSecond: Double = 1.2
+    static let thinkingTrackOpacity: Double = 0.2
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

@@ -106,7 +106,9 @@ so the overlay appeared only after about a second or more.
 overlay appears at the text cursor once the hold reaches `minimumHoldDuration`; a shorter tap is
 discarded unseen. The microphone-off half (engine, input node, tap, `prepare()`) is done ahead of
 time and again after every dictation, and rebuilt when the system default input changes. The
-overlay shows a gathering swirl until the first audio arrives, then a waveform pill; the pill is
+overlay shows a gathering swirl until the first audio arrives, then a waveform pill that follows
+the voice (`LevelMeter`, adaptive to the mic and room), then a circle with a spinning rim while
+transcribing; the pill is
 the surface for status now and agent responses later (as on iOS).
 
 **Consequences:**

@@ -160,9 +160,14 @@ private struct OverlayView: View {
         let mode: Mode
         let level: Float
 
+        private var isThinking: Bool { mode == .transcribing }
+
         var body: some View {
             HStack(spacing: DictationConfig.pillContentSpacing) {
                 switch mode {
+                case .transcribing:
+                    // Shrinks back to a circle while the words are worked out.
+                    Color.clear.frame(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)
                 case .message(let text):
                     Image(systemName: "exclamationmark.circle.fill")
                         .foregroundStyle(.orange)
@@ -172,15 +177,22 @@ private struct OverlayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: DictationConfig.pillMaxTextWidth, alignment: .leading)
                 default:
-                    Waveform(level: level, isThinking: mode == .transcribing)
+                    Waveform(level: level)
                 }
             }
-            .padding(.horizontal, DictationConfig.pillHorizontalPadding)
-            .padding(.vertical, DictationConfig.pillVerticalPadding)
+            .padding(.horizontal, isThinking ? 0 : DictationConfig.pillHorizontalPadding)
+            .padding(.vertical, isThinking ? 0 : DictationConfig.pillVerticalPadding)
             .frame(minHeight: DictationConfig.pillHeight)
-            // A capsule while one line tall; grows into a rounded rectangle for longer messages.
+            // A capsule while one line tall; grows into a rounded rectangle for longer messages,
+            // and is a circle (as wide as tall) while thinking.
             .background(.regularMaterial, in: Self.shape)
-            .overlay(Self.shape.strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth))
+            .overlay {
+                if isThinking {
+                    SpinningRim()
+                } else {
+                    Self.shape.strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth)
+                }
+            }
             .shadow(color: Brand.purple.opacity(DictationConfig.pillGlowOpacity), radius: DictationConfig.pillGlowRadius)
             .fixedSize()
         }
@@ -230,11 +242,31 @@ private struct GatheringSwirl: View {
     }
 }
 
-/// Voice waveform: bars follow the microphone level with a travelling ripple; while
-/// transcribing, a gentle sweep shows the app is working.
+/// Loading indicator on the thinking circle's rim: a gradient arc circling over a faint ring.
+private struct SpinningRim: View {
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let turns = timeline.date.timeIntervalSinceReferenceDate * DictationConfig.thinkingRevolutionsPerSecond
+            ZStack {
+                Circle()
+                    .stroke(Brand.purple.opacity(DictationConfig.thinkingTrackOpacity), lineWidth: DictationConfig.thinkingRimWidth)
+                Circle()
+                    .trim(from: 0, to: DictationConfig.thinkingArcFraction)
+                    .stroke(
+                        AngularGradient(colors: [Brand.blue.opacity(0), Brand.blue, Brand.purple], center: .center,
+                                        startAngle: .zero, endAngle: .degrees(360 * DictationConfig.thinkingArcFraction)),
+                        style: StrokeStyle(lineWidth: DictationConfig.thinkingRimWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(360 * turns.truncatingRemainder(dividingBy: 1)))
+            }
+            .padding(DictationConfig.thinkingRimWidth / 2)
+        }
+    }
+}
+
+/// Voice waveform: bars follow the microphone level (`LevelMeter`) with a travelling ripple.
 private struct Waveform: View {
     let level: Float
-    let isThinking: Bool
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -256,9 +288,7 @@ private struct Waveform: View {
         let distance = abs(Double(index) - centre) / max(centre, 1)
         let weight = 1 - distance * (1 - DictationConfig.overlayMeterEdgeBarWeight)
         let ripple = (sin(time * DictationConfig.waveformRippleSpeed - Double(index) * DictationConfig.waveformRipplePhase) + 1) / 2
-        let amount = isThinking
-            ? DictationConfig.waveformThinkingLevel * ripple
-            : Double(level) * weight * (1 - DictationConfig.waveformRippleDepth + DictationConfig.waveformRippleDepth * ripple)
+        let amount = Double(level) * weight * (1 - DictationConfig.waveformRippleDepth + DictationConfig.waveformRippleDepth * ripple)
         let minHeight = DictationConfig.overlayMeterMinBarHeight
         return minHeight + CGFloat(amount) * (DictationConfig.overlayMeterMaxBarHeight - minHeight)
     }

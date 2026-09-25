@@ -9,6 +9,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `PushToTalkGestureTests` | press/release, other modifiers ignored, chord cancels and swallows release, Fn key |
 | `TextInserterTests` | text pasted with transient/concealed markers; multi-item/multi-type clipboard restored; empty stays empty; a clipboard changed mid-insert is not clobbered |
 | `AudioRecorderTests` | 48 kHz float → 16 kHz mono Int16; stereo downmix; first-audio time; max-duration cap; empty |
+| `LevelMeterTests` | quiet-mic speech (−35 dB over −45 dB room noise) fills over half the waveform; room noise stays flat; loud mics still scale; start-up digital silence doesn't inflate noise |
 | `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom, always on screen; placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
 | `WAVEncoderTests` | every header field; AVAudioFile reads the output (independent oracle) |
 | `TranscriptionClientTests` | request URL/headers/body; backend error → user error mapping; missing text; one forced-refresh retry on 401 only; signed-out never calls backend |

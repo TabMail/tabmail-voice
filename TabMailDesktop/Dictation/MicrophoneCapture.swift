@@ -140,18 +140,22 @@ final class MicrophoneCapture: @unchecked Sendable {
         return device
     }
 
-    /// Normalised 0…1 loudness of a buffer, for the overlay meter.
-    static func level(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+    /// RMS loudness of a buffer in dBFS (`meterSilenceDecibels` for digital silence).
+    static func decibels(of buffer: AVAudioPCMBuffer) -> Float {
+        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return DictationConfig.meterSilenceDecibels }
         let count = Int(buffer.frameLength)
         var sumOfSquares: Float = 0
         for index in 0..<count {
             sumOfSquares += samples[index] * samples[index]
         }
         let rms = (sumOfSquares / Float(count)).squareRoot()
-        guard rms > 0 else { return 0 }
-        let decibels = 20 * log10(rms)
+        guard rms > 0 else { return DictationConfig.meterSilenceDecibels }
+        return max(20 * log10(rms), DictationConfig.meterSilenceDecibels)
+    }
+
+    /// Loudness on a fixed 0…1 scale (`levelDecibelFloor` … 0 dBFS), for diagnostics.
+    static func level(of buffer: AVAudioPCMBuffer) -> Float {
         let floor = DictationConfig.levelDecibelFloor
-        return max(0, min(1, (decibels - floor) / -floor))
+        return max(0, min(1, (decibels(of: buffer) - floor) / -floor))
     }
 }

@@ -38,7 +38,9 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 ## Using it
 
 - **Hold** the dictation key, speak, **release**. A swirl gathers at your text cursor and turns
-  into a waveform pill once the microphone is listening; the text is typed in when you let go.
+  into a pill whose waveform follows your voice once the microphone is listening. When you let
+  go, the pill shrinks to a spinning circle while your words are transcribed, then the text is
+  typed in.
   A quick tap does nothing.
 - Pressing any other key while holding cancels (so ⌥-shortcuts keep working).
 - Choose Fn/Globe instead of Right Option in Settings. If you do, set System Settings › Keyboard ›

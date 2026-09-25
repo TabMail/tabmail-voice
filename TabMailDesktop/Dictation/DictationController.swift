@@ -24,6 +24,7 @@ final class DictationController {
         didSet { onPhaseChange?(phase) }
     }
     private(set) var level: Float = 0
+    @ObservationIgnored private var meter = LevelMeter()
     /// True once the microphone delivers audio; until then the overlay shows its warm-up swirl.
     private(set) var isHearing = false
 
@@ -100,6 +101,7 @@ final class DictationController {
         generation += 1
         let current = generation
         level = 0
+        meter = LevelMeter()
         isHearing = false
         startedAt = clock.now
         phase = .arming
@@ -111,8 +113,8 @@ final class DictationController {
         capture.start(
             onBuffer: { [weak self] buffer in
                 recorder.append(buffer)
-                let level = MicrophoneCapture.level(of: buffer)
-                Task { @MainActor [weak self] in self?.updateLevel(level, generation: current) }
+                let decibels = MicrophoneCapture.decibels(of: buffer)
+                Task { @MainActor [weak self] in self?.updateLevel(decibels: decibels, generation: current) }
             },
             completion: { [weak self] error in
                 guard let error else { return }
@@ -261,11 +263,12 @@ final class DictationController {
     }
     #endif
 
-    private func updateLevel(_ newLevel: Float, generation: Int) {
+    private func updateLevel(decibels: Float, generation: Int) {
         guard generation == self.generation else { return }
         switch phase {
         case .arming, .listening:
             if !isHearing { isHearing = true }
+            let newLevel = meter.level(forDecibels: decibels)
             level += (newLevel - level) * DictationConfig.levelSmoothing
         case .idle, .transcribing, .failed:
             return
