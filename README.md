@@ -52,6 +52,15 @@ scoring word error rate, latency and cost. The default models are the ones whose
 OpenRouter endpoint is Zero Data Retention; the report checks that live and flags any model you
 add with `--models` that isn't. Recordings and results stay local (gitignored).
 
+`compare.py` reads `OPENROUTER_API_KEY` from the environment or from a `KEY=value` line in
+`Scripts/stt-compare/.env` (gitignored; point elsewhere with `--env-file`). If your key lives in a
+root-owned secrets file, copy just that line into a file you own rather than running the script
+with sudo:
+```sh
+sudo grep '^OPENROUTER_API_KEY=' /path/to/secrets.env > Scripts/stt-compare/.env
+chmod 600 Scripts/stt-compare/.env
+```
+
 ## License
 
 MPL 2.0. See `LICENSE`.

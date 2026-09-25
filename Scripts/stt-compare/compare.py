@@ -4,10 +4,12 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Transcribe every recording with several OpenRouter speech-to-text models and score them.
 
-Needs OPENROUTER_API_KEY in the environment (run it in your own terminal; the key is never
-printed or written). Sends the same request shape the TabMail backend sends.
+Needs OPENROUTER_API_KEY, either in the environment or as a KEY=value line in an env file
+(--env-file, default Scripts/stt-compare/.env, gitignored). The key is never printed or written.
+Sends the same request shape the TabMail backend sends.
 
     python3 Scripts/stt-compare/compare.py
+    python3 Scripts/stt-compare/compare.py --env-file path/to/secrets.env
     python3 Scripts/stt-compare/compare.py --language en
     python3 Scripts/stt-compare/compare.py --models openai/whisper-large-v3-turbo deepgram/nova-3
 
@@ -84,6 +86,21 @@ def wer(reference: str, hypothesis: str) -> float:
     return previous[-1] / max(len(ref), 1)
 
 
+def key_from_env_file(path: pathlib.Path):
+    """OPENROUTER_API_KEY from a dotenv-style file (KEY=value lines; # comments; optional quotes)."""
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text()
+    except PermissionError:
+        sys.exit(f"Can't read {path}. Copy just the key line into a file you own instead (see README).")
+    for line in text.splitlines():
+        name, sep, value = line.strip().removeprefix("export ").partition("=")
+        if sep and name.strip() == "OPENROUTER_API_KEY":
+            return value.strip().strip("'\"") or None
+    return None
+
+
 def zdr_status(models):
     """For each model: "all N" / "k of N" / "none" of its endpoints on the ZDR list (public API).
 
@@ -133,12 +150,14 @@ def transcribe(key: str, model: str, wav: pathlib.Path, language):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
+    parser.add_argument("--env-file", type=pathlib.Path, default=HERE / ".env",
+                        help="file with an OPENROUTER_API_KEY=... line (default: .env next to this script)")
     parser.add_argument("--language", help="ISO-639-1 code, e.g. en (default: auto-detect)")
     args = parser.parse_args()
 
-    key = os.environ.get("OPENROUTER_API_KEY")
+    key = os.environ.get("OPENROUTER_API_KEY") or key_from_env_file(args.env_file.expanduser())
     if not key:
-        sys.exit("Set OPENROUTER_API_KEY first.")
+        sys.exit(f"No OPENROUTER_API_KEY in the environment or in {args.env_file}.")
     refs = references()
     wavs = sorted((HERE / "recordings").glob("*.wav"))
     wavs = [w for w in wavs if w.stem in refs]
