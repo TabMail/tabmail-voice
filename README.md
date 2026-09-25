@@ -37,8 +37,9 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 
 ## Using it
 
-- **Hold** the dictation key, speak, **release**. A pill at the bottom of the screen shows that it's
-  listening, then transcribing.
+- **Hold** the dictation key, speak, **release**. A swirl gathers at your text cursor and turns
+  into a waveform pill once the microphone is listening; the text is typed in when you let go.
+  A quick tap does nothing.
 - Pressing any other key while holding cancels (so ⌥-shortcuts keep working).
 - Choose Fn/Globe instead of Right Option in Settings. If you do, set System Settings › Keyboard ›
   "Press 🌐 key to" to "Do Nothing".
