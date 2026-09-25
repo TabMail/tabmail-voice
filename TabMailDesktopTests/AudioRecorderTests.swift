@@ -56,36 +56,6 @@ struct AudioRecorderTests {
         #expect(abs(recording.duration - 0.5) < 0.01)
     }
 
-    /// Pressing the key and saying nothing must not upload: Whisper invents text for silence.
-    @Test func silenceIsNotSpeech() throws {
-        let recorder = AudioRecorder()
-        feed(recorder, sine(seconds: 1, amplitude: 0.0001))
-        let recording = try recorder.finish()
-        #expect(recording.speechSeconds == 0)
-        #expect(!recording.containsSpeech)
-    }
-
-    /// A key click or bump is loud but brief; it must not count as speech.
-    @Test func aBriefLoudBlipIsNotSpeech() throws {
-        let recorder = AudioRecorder()
-        feed(recorder, sine(seconds: 0.5, amplitude: 0.0001))
-        feed(recorder, sine(seconds: 0.05, amplitude: 0.5))
-        feed(recorder, sine(seconds: 0.5, amplitude: 0.0001))
-        let recording = try recorder.finish()
-        #expect(recording.peakLevel >= DictationConfig.speechLevelThreshold)
-        #expect(!recording.containsSpeech)
-    }
-
-    @Test func sustainedSpeechIsMeasured() throws {
-        let recorder = AudioRecorder()
-        feed(recorder, sine(seconds: 0.5, amplitude: 0.0001))
-        feed(recorder, sine(seconds: 0.5, amplitude: 0.5))
-        let recording = try recorder.finish()
-        // Measured per captured buffer (4096 frames ≈ 85 ms at 48 kHz).
-        #expect(abs(recording.speechSeconds - 0.5) < 0.09)
-        #expect(recording.containsSpeech)
-    }
-
     @Test func recordsWhenTheFirstAudioArrived() throws {
         #expect(try AudioRecorder().finish().firstBufferAt == nil)
 

@@ -25,12 +25,6 @@ enum DictationConfig {
     /// Upload format: 16 kHz mono 16-bit PCM WAV — what Whisper-class models consume natively,
     /// at ~32 KB per second of speech.
     static let recordingSampleRate: Double = 16_000
-    /// A captured buffer at or above this level (same 0…1 scale as the meter, ≈ −32 dB RMS)
-    /// counts as speech. A single key click or room noise stays below it or is too brief to count.
-    static let speechLevelThreshold: Float = 0.35
-    /// A recording with less speech than this is too quiet: nothing is uploaded and the overlay
-    /// says so. Whisper-class models invent text ("Thank you.") when given silence.
-    static let minimumSpeechSeconds: TimeInterval = 0.25
     /// Recording continues this long after the key is released, so the last word isn't clipped:
     /// people tend to let go while still finishing it.
     static let releaseTailDuration: Duration = .milliseconds(300)
@@ -78,15 +72,21 @@ enum DictationConfig {
 
     /// Transparent canvas the overlay draws in; the pill sizes itself inside it.
     static let overlayCanvasSize = CGSize(width: 440, height: 96)
-    /// Gap between the caret's line and the overlay canvas.
+    /// Gap between the caret's line and the top of the pill.
     static let overlayCaretGap: CGFloat = 4
+    /// Without a caret, the focused element's frame anchors the overlay if it's at most this tall
+    /// (a text field); taller elements (a whole editor or web view) fall back to the mouse pointer.
+    static let focusedElementMaxAnchorHeight: CGFloat = 120
     /// Per-call cap on Accessibility calls into the frontmost app when locating the caret (seconds).
     static let caretLookupTimeout: Float = 0.1
     static let overlayFontSize: CGFloat = 13
     static let pillHeight: CGFloat = 34
     static let pillHorizontalPadding: CGFloat = 14
+    /// Keeps text off the pill's rounded top and bottom when a message wraps.
+    static let pillVerticalPadding: CGFloat = 8
     static let pillContentSpacing: CGFloat = 8
-    static let pillMaxTextWidth: CGFloat = 320
+    static let pillMaxTextWidth: CGFloat = 360
+    static let pillMaxTextLines = 3
     static let pillBorderWidth: CGFloat = 1
     static let pillGlowOpacity: Double = 0.35
     static let pillGlowRadius: CGFloat = 8

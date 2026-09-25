@@ -16,8 +16,6 @@ final class AudioRecorder: Sendable {
         let sampleRate: Double
         /// Loudest buffer's level on the overlay meter's 0…1 scale.
         let peakLevel: Float
-        /// Seconds of captured audio at or above `DictationConfig.speechLevelThreshold`.
-        let speechSeconds: TimeInterval
         /// When the microphone delivered its first buffer (nil if it never did).
         let firstBufferAt: ContinuousClock.Instant?
         /// True when recording hit `maxFrames` and later audio was dropped.
@@ -26,18 +24,12 @@ final class AudioRecorder: Sendable {
         var duration: TimeInterval {
             Double(pcm.count / MemoryLayout<Int16>.size) / sampleRate
         }
-
-        /// False when the user pressed the key but said nothing audible.
-        var containsSpeech: Bool {
-            speechSeconds >= DictationConfig.minimumSpeechSeconds
-        }
     }
 
     private struct State {
         var converter: AVAudioConverter?
         var pcm = Data()
         var peakLevel: Float = 0
-        var speechSeconds: TimeInterval = 0
         var firstBufferAt: ContinuousClock.Instant?
         var truncated = false
         var firstError: (any Error)?
@@ -68,9 +60,6 @@ final class AudioRecorder: Sendable {
             if state.firstBufferAt == nil { state.firstBufferAt = now }
             guard state.firstError == nil, !state.truncated else { return }
             state.peakLevel = max(state.peakLevel, level)
-            if level >= DictationConfig.speechLevelThreshold, buffer.format.sampleRate > 0 {
-                state.speechSeconds += Double(buffer.frameLength) / buffer.format.sampleRate
-            }
             do {
                 let converted = try convert(buffer, state: &state)
                 appendSamples(of: converted, to: &state)
@@ -89,7 +78,6 @@ final class AudioRecorder: Sendable {
                 pcm: state.pcm,
                 sampleRate: outputFormat.sampleRate,
                 peakLevel: state.peakLevel,
-                speechSeconds: state.speechSeconds,
                 firstBufferAt: state.firstBufferAt,
                 truncated: state.truncated
             )

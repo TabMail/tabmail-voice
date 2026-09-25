@@ -85,9 +85,13 @@ multilingual accuracy than Apple's on-device model.
 **Consequences:**
 - Audio leaves the Mac. The TabMail backend stores and logs neither audio nor text.
 - No live transcript while speaking (batch upload on release); latency ≈ upload + model time.
-- A recording with under `minimumSpeechSeconds` of audio above `speechLevelThreshold` isn't
-  uploaded (the overlay says it was too quiet): Whisper invents text for silence. Recording
-  continues `releaseTailDuration` after the key is released so the last word isn't clipped.
+- Every held recording is uploaded; an empty transcript shows "Didn't catch that." There is no
+  loudness gate: on a Studio Display mic, speech measured only 3–10 dB above the room noise
+  (−30 to −40 dB RMS against about −45 dB), so the earlier fixed −32 dB gate rejected nearly
+  all real speech, and a gate relative to the noise floor couldn't separate a quiet sentence
+  from silence either. The model, chosen by comparison with `Scripts/stt-compare/`, handles
+  that input. Recording continues `releaseTailDuration` after the key is released so the last
+  word isn't clipped.
 - Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).
 - A failed transcription loses that recording (no retry queue yet).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
@@ -109,5 +113,8 @@ the surface for status now and agent responses later (as on iOS).
 - The ≈ 0.5 s device start can't be hidden without keeping the mic running; speech in that
   window is lost. The swirl → pill change tells the user when audio is live. A hot-mic window is
   an owner decision (privacy indicator stays on).
-- Apps that don't expose a caret via Accessibility get the overlay at the mouse pointer.
+- The overlay anchors to the caret, else to the focused element when it's field-sized
+  (`focusedElementMaxAnchorHeight`), else to the mouse pointer. The lookup asks the frontmost app
+  directly and must finish before the overlay shows, so it never appears at the pointer and then
+  jumps; placeholder rects (zero origin, off every screen) are ignored.
 

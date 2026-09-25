@@ -193,17 +193,20 @@ final class DictationController {
             return
         }
         let micDelay = recording.firstBufferAt.map { "\($0 - (startedAt ?? $0))" } ?? "no audio"
-        Log.debug("DictationController: recorded \(recording.duration)s, speech \(recording.speechSeconds)s, peak \(recording.peakLevel), first audio after \(micDelay)")
+        Log.debug("DictationController: recorded \(recording.duration)s, peak \(recording.peakLevel), first audio after \(micDelay)")
 
         let wav = WAVEncoder.encode(pcm16Mono: recording.pcm, sampleRate: recording.sampleRate)
         #if DEBUG
         Self.keepForPlayback(wav)
         #endif
 
-        guard recording.containsSpeech else {
-            Log.debug("DictationController: too quiet; not uploading")
+        // No loudness gate: on quiet built-in microphones speech sits only a few dB above the
+        // room noise, so any level threshold rejects real speech. The model decides; an empty
+        // transcript is reported below.
+        guard !recording.pcm.isEmpty else {
+            Log.debug("DictationController: no audio captured; not uploading")
             teardown()
-            fail("Too quiet — nothing to type. Hold the key and speak.")
+            fail(Self.nothingHeardMessage)
             return
         }
         await transcribe(wav, generation: current)
@@ -216,9 +219,12 @@ final class DictationController {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard generation == current, !Task.isCancelled else { return }
             Log.debug("DictationController: transcript ready (\(text.count) chars)")
-            if !text.isEmpty {
-                await inserter.insert(text)
+            guard !text.isEmpty else {
+                teardown()
+                fail(Self.nothingHeardMessage)
+                return
             }
+            await inserter.insert(text)
             guard generation == current else { return }
             teardown()
             phase = .idle
@@ -285,6 +291,9 @@ final class DictationController {
         startedAt = nil
         level = 0
     }
+
+    /// Shown when the recording had no words in it. Kept to one line of the pill.
+    static let nothingHeardMessage = "Didn't catch that. Try again."
 
     private func fail(_ message: String) {
         phase = .failed(message)

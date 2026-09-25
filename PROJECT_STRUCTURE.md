@@ -30,7 +30,7 @@ tabmail-desktop/
 │   │   └── HotkeyMonitor.swift       NSEvent global + local monitors feeding the gesture
 │   ├── Insertion/
 │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
-│   │   └── CaretLocator.swift        Focused field's caret rect via Accessibility (anchors the overlay)
+│   │   └── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)
 │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling
 │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content)
 │   └── UI/
@@ -50,8 +50,8 @@ tabmail-desktop/
    into `AudioRecorder`; `CaretLocator` finds the caret. After `minimumHoldDuration` the phase
    becomes `listening` and the overlay appears at the caret (swirl until audio arrives, then the
    waveform pill). Releasing earlier discards everything unseen.
-2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. Recordings without
-   enough speech show "too quiet" and aren't uploaded. Otherwise the WAV is uploaded via
+2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. No audio, or an empty
+   transcript, shows "Didn't catch that". Otherwise the WAV is uploaded via
    `TranscriptionClient` (one forced-refresh retry on 401), and `TextInserter` pastes the text
    into the frontmost app and restores the clipboard.
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing

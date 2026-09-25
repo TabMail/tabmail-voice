@@ -14,6 +14,10 @@ final class OverlayPanelController {
     private let panel: NSPanel
     private var anchor: CGRect?
     private var lookupGeneration = 0
+    private var lookupPending = false
+    /// The hold was revealed before the caret lookup finished: show once it does, so the
+    /// overlay never flashes at the mouse pointer and then jumps.
+    private var showWhenLocated = false
 
     init(controller: DictationController) {
         panel = NSPanel(
@@ -39,27 +43,46 @@ final class OverlayPanelController {
             panel.orderOut(nil)
             anchor = nil
             lookupGeneration += 1
+            lookupPending = false
+            showWhenLocated = false
         case .arming:
             // Find the caret while the hold is still invisible, so the overlay can appear
             // there the moment it's revealed.
             locateCaret()
         case .listening, .transcribing, .failed:
             guard !panel.isVisible else { return }
-            position()
-            panel.orderFrontRegardless()
+            if lookupPending {
+                showWhenLocated = true
+                return
+            }
+            show()
         }
+    }
+
+    private func show() {
+        showWhenLocated = false
+        position()
+        panel.orderFrontRegardless()
     }
 
     private func locateCaret() {
         lookupGeneration += 1
         let current = lookupGeneration
         anchor = nil
+        lookupPending = true
+        showWhenLocated = false
+        let app = NSWorkspace.shared.frontmostApplication?.processIdentifier
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let caret = CaretLocator.caretRect()
+            let caret = app.flatMap { CaretLocator.anchorRect(inApp: $0) }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.lookupGeneration == current else { return }
                 self.anchor = caret
-                if self.panel.isVisible { self.position() }
+                self.lookupPending = false
+                if self.showWhenLocated {
+                    self.show()
+                } else if self.panel.isVisible {
+                    self.position()
+                }
             }
         }
     }
@@ -71,20 +94,28 @@ final class OverlayPanelController {
         let point = CGPoint(x: anchor.midX, y: anchor.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) })
             ?? NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main else { return }
-        let origin = Self.overlayOrigin(anchor: anchor, canvas: DictationConfig.overlayCanvasSize, visibleFrame: screen.visibleFrame)
+        let origin = Self.overlayOrigin(
+            anchor: anchor,
+            canvas: DictationConfig.overlayCanvasSize,
+            pillHeight: DictationConfig.pillHeight,
+            visibleFrame: screen.visibleFrame
+        )
         panel.setFrame(NSRect(origin: origin, size: DictationConfig.overlayCanvasSize), display: true)
     }
 
-    /// Centres the canvas horizontally on the caret, just below the caret's line (above it when
-    /// there's no room below), kept inside the screen's visible area.
-    static func overlayOrigin(anchor: CGRect, canvas: CGSize, visibleFrame: CGRect) -> CGPoint {
+    /// Canvas origin that puts the pill's top edge just below the caret's line (the pill just
+    /// above the line when there's no room below), centred horizontally on the caret and kept
+    /// inside the screen's visible area. The canvas is larger than the pill (room for the swirl);
+    /// the one-line pill sits vertically centred in it and taller pills grow downward.
+    static func overlayOrigin(anchor: CGRect, canvas: CGSize, pillHeight: CGFloat, visibleFrame: CGRect) -> CGPoint {
         let gap = DictationConfig.overlayCaretGap
-        var y = anchor.minY - gap - canvas.height
-        if y < visibleFrame.minY { y = anchor.maxY + gap }
-        y = min(max(y, visibleFrame.minY), visibleFrame.maxY - canvas.height)
+        let pillTopInset = (canvas.height - pillHeight) / 2
+        var pillTop = anchor.minY - gap
+        if pillTop - pillHeight < visibleFrame.minY { pillTop = anchor.maxY + gap + pillHeight }
+        pillTop = min(max(pillTop, visibleFrame.minY + pillHeight), visibleFrame.maxY)
         var x = anchor.midX - canvas.width / 2
         x = min(max(x, visibleFrame.minX), visibleFrame.maxX - canvas.width)
-        return CGPoint(x: x, y: y)
+        return CGPoint(x: x, y: pillTop + pillTopInset - canvas.height)
     }
 }
 
@@ -115,6 +146,10 @@ private struct OverlayView: View {
             case .listening, .transcribing, .message:
                 Pill(mode: mode, level: controller.level)
                     .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
+                    // Top edge where a one-line pill's would be when centred, so taller pills grow
+                    // downward, away from the caret line.
+                    .padding(.top, (DictationConfig.overlayCanvasSize.height - DictationConfig.pillHeight) / 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -133,7 +168,7 @@ private struct OverlayView: View {
                         .foregroundStyle(.orange)
                     Text(text)
                         .font(.system(size: DictationConfig.overlayFontSize, weight: .medium))
-                        .lineLimit(2)
+                        .lineLimit(DictationConfig.pillMaxTextLines)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: DictationConfig.pillMaxTextWidth, alignment: .leading)
                 default:
@@ -141,12 +176,16 @@ private struct OverlayView: View {
                 }
             }
             .padding(.horizontal, DictationConfig.pillHorizontalPadding)
+            .padding(.vertical, DictationConfig.pillVerticalPadding)
             .frame(minHeight: DictationConfig.pillHeight)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth))
+            // A capsule while one line tall; grows into a rounded rectangle for longer messages.
+            .background(.regularMaterial, in: Self.shape)
+            .overlay(Self.shape.strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth))
             .shadow(color: Brand.purple.opacity(DictationConfig.pillGlowOpacity), radius: DictationConfig.pillGlowRadius)
             .fixedSize()
         }
+
+        private static let shape = RoundedRectangle(cornerRadius: DictationConfig.pillHeight / 2, style: .continuous)
     }
 }
 
