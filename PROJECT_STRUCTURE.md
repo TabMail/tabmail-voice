@@ -5,7 +5,7 @@ focus. Speech is transcribed by the TabMail backend (`POST /dictation/transcribe
 Swift 6 / SwiftUI + AppKit, macOS 15+, XcodeGen.
 
 ```
-tabmail-desktop/
+tabmail-macos/
 ├── project.yml                 XcodeGen spec (app + unit tests). Generate via Scripts/xcodegen.sh
 ├── Secrets.xcconfig.example    → copy to gitignored Secrets.xcconfig (DEVELOPMENT_TEAM); loaded via configFiles
 ├── Scripts/xcodegen.sh         Generates TabMailDesktop.xcodeproj with the signing team injected

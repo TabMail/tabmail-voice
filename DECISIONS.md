@@ -1,6 +1,6 @@
 # TabMail Desktop — Decisions
 
-Compact index of architectural decisions for `tabmail-desktop`. Cross-cutting decisions live in the
+Compact index of architectural decisions for `tabmail-macos` (the TabMail Desktop app). Cross-cutting decisions live in the
 root `DECISIONS.md` (notably ADR-004 zero content retention, which dictation audio and transcripts
 fall under).
 
