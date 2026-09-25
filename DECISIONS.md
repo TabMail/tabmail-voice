@@ -108,7 +108,8 @@ discarded unseen. The microphone-off half (engine, input node, tap, `prepare()`)
 time and again after every dictation, and rebuilt when the system default input changes. The
 overlay shows a gathering swirl until the first audio arrives, then a waveform pill that follows
 the voice (`LevelMeter`, adaptive to the mic and room), then a circle with a spinning rim while
-transcribing; the pill is
+transcribing. On exit it plays in reverse (the pill shrinks into the swirl, which disperses).
+The overlay uses only the icon's blue → purple. The pill is
 the surface for status now and agent responses later (as on iOS).
 
 **Consequences:**
@@ -122,6 +123,9 @@ the surface for status now and agent responses later (as on iOS).
   tried before the index range (Chromium/Electron keep markers current), and a line-sized
   "caret" box (Chromium at the start of a field, terminals at a wrapped line) anchors at its
   leading edge.
-- Terminals report the terminal's own cursor. Full-screen TUIs (e.g. under tmux) hide it and
-  draw their own caret, so the overlay follows the hidden cursor, typically a bottom-row edge.
+- For a collapsed caret the character AT the caret is asked first and its leading edge used:
+  iTerm2 answers the empty range inconsistently (the cursor cell, nothing, or a box spanning the
+  cursor cell and the next row's start), which made the overlay jump between the right place,
+  the pane's left edge and mid-pane. Terminals report the terminal's real cursor, which
+  full-screen TUIs such as Claude Code keep on their input line.
 

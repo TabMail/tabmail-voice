@@ -134,6 +134,9 @@ enum DictationConfig {
     static let thinkingArcFraction: CGFloat = 0.7
     static let thinkingRevolutionsPerSecond: Double = 1.2
     static let thinkingTrackOpacity: Double = 0.2
+    /// The overlay stays up this long after the dictation ends, for the exit animation (the pill
+    /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
+    static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

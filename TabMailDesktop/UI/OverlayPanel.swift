@@ -18,6 +18,8 @@ final class OverlayPanelController {
     /// The hold was revealed before the caret lookup finished: show once it does, so the
     /// overlay never flashes at the mouse pointer and then jumps.
     private var showWhenLocated = false
+    /// Hides the panel once the exit animation (pill → swirl → dispersed) has played.
+    private var hideTask: Task<Void, Never>?
 
     init(controller: DictationController) {
         panel = NSPanel(
@@ -40,12 +42,20 @@ final class OverlayPanelController {
     func update(for phase: DictationController.Phase) {
         switch phase {
         case .idle:
-            panel.orderOut(nil)
+            hideTask?.cancel()
+            hideTask = Task { [weak self] in
+                try? await Task.sleep(for: DictationConfig.overlayDismissDuration)
+                guard !Task.isCancelled else { return }
+                self?.panel.orderOut(nil)
+            }
             anchor = nil
             lookupGeneration += 1
             lookupPending = false
             showWhenLocated = false
         case .arming:
+            // A new hold during the previous exit animation: start clean, at the new caret.
+            hideTask?.cancel()
+            panel.orderOut(nil)
             // Find the caret while the hold is still invisible, so the overlay can appear
             // there the moment it's revealed.
             locateCaret()
@@ -121,6 +131,9 @@ final class OverlayPanelController {
 
 private struct OverlayView: View {
     let controller: DictationController
+    /// After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring
+    /// how the overlay appeared.
+    @State private var dispersing = false
 
     private enum Mode: Equatable {
         case hidden, swirl, listening, transcribing, message(String)
@@ -139,7 +152,10 @@ private struct OverlayView: View {
         ZStack {
             switch mode {
             case .hidden:
-                EmptyView()
+                if dispersing {
+                    GatheringSwirl(dispersing: true)
+                        .transition(.opacity)
+                }
             case .swirl:
                 GatheringSwirl()
                     .transition(.opacity)
@@ -154,6 +170,9 @@ private struct OverlayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: mode)
+        .onChange(of: mode) { old, new in
+            dispersing = new == .hidden && old != .hidden
+        }
     }
 
     private struct Pill: View {
@@ -170,7 +189,7 @@ private struct OverlayView: View {
                     Color.clear.frame(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)
                 case .message(let text):
                     Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Brand.gradient)
                     Text(text)
                         .font(.system(size: DictationConfig.overlayFontSize, weight: .medium))
                         .lineLimit(DictationConfig.pillMaxTextLines)
@@ -201,15 +220,28 @@ private struct OverlayView: View {
     }
 }
 
-/// Brand colours from the TabMail icon (blue → purple).
+/// The overlay uses only the TabMail icon's colours: blue → purple.
 private enum Brand {
-    static let blue = Color(red: 0, green: 0x91 / 255, blue: 1)
-    static let purple = Color(red: 0x7B / 255, green: 0, blue: 1)
+    private static let blueRGB: (Double, Double, Double) = (0, 0x91 / 255, 1)
+    private static let purpleRGB: (Double, Double, Double) = (0x7B / 255, 0, 1)
+    static let blue = colour(at: 0)
+    static let purple = colour(at: 1)
     static let gradient = LinearGradient(colors: [blue, purple], startPoint: .leading, endPoint: .trailing)
+
+    /// A point on the blue → purple gradient (0 = blue, 1 = purple).
+    static func colour(at fraction: Double) -> Color {
+        Color(
+            red: blueRGB.0 + (purpleRGB.0 - blueRGB.0) * fraction,
+            green: blueRGB.1 + (purpleRGB.1 - blueRGB.1) * fraction,
+            blue: blueRGB.2 + (purpleRGB.2 - blueRGB.2) * fraction
+        )
+    }
 }
 
 /// Particles spiral inward to the anchor while the microphone warms up, then keep a tight orbit.
+/// Dispersing plays it in reverse: out from the orbit, fading away.
 private struct GatheringSwirl: View {
+    var dispersing = false
     @State private var start = Date()
 
     var body: some View {
@@ -217,7 +249,9 @@ private struct GatheringSwirl: View {
             Canvas { context, size in
                 let elapsed = timeline.date.timeIntervalSince(start)
                 let progress = min(1, elapsed / DictationConfig.swirlGatherSeconds)
-                let eased = 1 - pow(1 - progress, 3)
+                let gathered = 1 - pow(1 - progress, 3)
+                let eased = dispersing ? 1 - pow(progress, 3) : gathered
+                let fade = dispersing ? 1 - progress : 1
                 let radius = DictationConfig.swirlStartRadius
                     + (DictationConfig.swirlOrbitRadius - DictationConfig.swirlStartRadius) * eased
                 let centre = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -229,8 +263,8 @@ private struct GatheringSwirl: View {
                     let r = radius * (1 + fraction * DictationConfig.swirlSpiralSpread)
                     let point = CGPoint(x: centre.x + cos(angle) * r, y: centre.y + sin(angle) * r)
                     let dot = DictationConfig.swirlParticleSize * (0.5 + 0.5 * (1 - fraction))
-                    let colour = fraction < 0.5 ? Brand.blue : Brand.purple
-                    context.opacity = 0.35 + 0.65 * (1 - fraction)
+                    let colour = Brand.colour(at: fraction)
+                    context.opacity = (0.35 + 0.65 * (1 - fraction)) * fade
                     context.fill(
                         Path(ellipseIn: CGRect(x: point.x - dot / 2, y: point.y - dot / 2, width: dot, height: dot)),
                         with: .color(colour)
@@ -253,7 +287,7 @@ private struct SpinningRim: View {
                 Circle()
                     .trim(from: 0, to: DictationConfig.thinkingArcFraction)
                     .stroke(
-                        AngularGradient(colors: [Brand.blue.opacity(0), Brand.blue, Brand.purple], center: .center,
+                        AngularGradient(colors: [Brand.blue, Brand.purple], center: .center,
                                         startAngle: .zero, endAngle: .degrees(360 * DictationConfig.thinkingArcFraction)),
                         style: StrokeStyle(lineWidth: DictationConfig.thinkingRimWidth, lineCap: .round)
                     )

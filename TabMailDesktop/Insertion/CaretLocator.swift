@@ -74,15 +74,19 @@ enum CaretLocator {
         guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range) else { return nil }
 
         Log.debug("CaretLocator: selected range \(range.location)+\(range.length)")
-        if let caret = bounds(of: range, in: element) { return caret }
-        // A collapsed caret often reports an empty rect: use the trailing edge of the character
-        // before it, or the leading edge of the one after it at the start of the text.
-        if range.location > 0,
-           let previous = bounds(of: CFRange(location: range.location - 1, length: 1), in: element) {
-            return CGRect(x: previous.maxX, y: previous.minY, width: 1, height: previous.height)
+        // A collapsed caret sits at the leading edge of the character at its index (a newline
+        // character at the end of a line included). Asked first because the empty range itself
+        // is answered inconsistently: iTerm2 returns the cursor cell, nothing, or a box spanning
+        // the cursor cell and the start of the next row, depending on how the line was drawn.
+        if range.length == 0, let atCaret = bounds(of: CFRange(location: range.location, length: 1), in: element) {
+            return CGRect(x: atCaret.minX, y: atCaret.minY, width: 0, height: atCaret.height)
         }
-        guard let next = bounds(of: CFRange(location: range.location, length: 1), in: element) else { return nil }
-        return CGRect(x: next.minX, y: next.minY, width: 1, height: next.height)
+        if let caret = bounds(of: range, in: element) { return caret }
+        // At the end of the text there is no character at the caret: use the trailing edge of the
+        // one before it.
+        guard range.location > 0,
+              let previous = bounds(of: CFRange(location: range.location - 1, length: 1), in: element) else { return nil }
+        return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
     }
 
     /// The caret via the text-marker API (WebKit, Chromium/Electron): bounds of the selected
