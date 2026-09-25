@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let controller: DictationController
     private var hotkeyMonitor: HotkeyMonitor?
     private var overlay: OverlayPanelController?
+    private let accessibilityActivator = AccessibilityActivator()
 
     override init() {
         let settings = settings
@@ -58,7 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onHotkeyChange = { monitor.setHotkey($0) }
         // Global key monitors deliver nothing until Accessibility is granted, and do not
         // start retroactively: re-install once the grant lands.
-        permissions.onAccessibilityGranted = { monitor.install() }
+        permissions.onAccessibilityGranted = { [accessibilityActivator] in
+            monitor.install()
+            accessibilityActivator.start()
+        }
+        accessibilityActivator.start()
 
         Task {
             if permissions.microphone == .notDetermined {

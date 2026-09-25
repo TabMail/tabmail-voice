@@ -31,7 +31,8 @@ tabmail-desktop/
 │   │   └── HotkeyMonitor.swift       NSEvent global + local monitors feeding the gesture
 │   ├── Insertion/
 │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
-│   │   └── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)
+│   │   ├── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)
+│   │   └── AccessibilityActivator.swift  Asks Gecko/Electron apps to build their tree as they come to the front
 │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling
 │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content)
 │   └── UI/

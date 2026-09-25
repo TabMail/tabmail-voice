@@ -11,6 +11,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `AudioRecorderTests` | 48 kHz float → 16 kHz mono Int16; stereo downmix; first-audio time; max-duration cap; empty |
 | `LevelEnvelopeTests` | EMA envelopes: quiet-mic speech 2.5 dB over the room moves the waveform (> 0.4); adapts to the incoming range (louder syllables read higher, no pinning); settles within the first second despite a start-up blip; a steady hum settles low |
 | `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom, always on screen; placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
+| `AccessibilityActivatorTests` | Gecko apps recognised by `Contents/MacOS/XUL`, Electron apps by `Electron Framework.framework`; every other app (and a missing bundle) is left alone |
 | `WAVEncoderTests` | every header field; AVAudioFile reads the output (independent oracle) |
 | `TranscriptionClientTests` | request URL/headers/body; backend error → user error mapping; missing text; one forced-refresh retry on 401 only; signed-out never calls backend |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |

@@ -136,4 +136,11 @@ the surface for status now and agent responses later (as on iOS).
   spaces indexes into the next line; its insertion line number stays right. A caret index off
   the insertion line is brought back to it, and one past the line's end is placed that many
   (monospace) cells right of the line-break cell.
+- Gecko (Thunderbird, Firefox) and Electron apps build their accessibility tree only once an
+  assistive app asks, and building takes about a second; until then Thunderbird reports the bare
+  window as the focused element and the overlay falls back to the pointer. `AccessibilityActivator`
+  asks each such app as it comes to the front (Gecko: `AXEnhancedUserInterface`, which it answers
+  "unsupported" yet acts on; Electron: `AXManualAccessibility`), once per process, so the tree is
+  ready before the user dictates. Other apps are not touched: `AXEnhancedUserInterface` has
+  window-management side effects in some of them.
 

@@ -95,6 +95,9 @@ enum DictationConfig {
     static let focusedElementMaxAnchorHeight: CGFloat = 120
     /// Per-call cap on Accessibility calls into the frontmost app when locating the caret (seconds).
     static let caretLookupTimeout: Float = 0.1
+    /// Cap on asking an app to build its accessibility tree (seconds). Off the main thread, and Gecko
+    /// may be slow to answer while it starts its accessibility service.
+    static let accessibilityActivationTimeout: Float = 1
     static let overlayFontSize: CGFloat = 13
     static let pillHeight: CGFloat = 26
     static let pillHorizontalPadding: CGFloat = 14
