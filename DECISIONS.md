@@ -144,3 +144,29 @@ the surface for status now and agent responses later (as on iOS).
   ready before the user dictates. Other apps are not touched: `AXEnhancedUserInterface` has
   window-management side effects in some of them.
 
+## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
+
+**Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the
+Accessibility tree of the focused window gives structured, visible text in Chrome, Safari,
+Firefox, Slack, Notion, Cursor, Codex, Calendar, Messages and Thunderbird in 0.2–1.5 s; Vision
+OCR of a 5K screen takes 0.8 s (fast) to 5 s (accurate), yields flat lines with no structure,
+and needs the Screen Recording permission.
+
+**Decision:** Read the Accessibility tree we already hold the permission for. At key-down the
+frontmost app's focused window is walked in child order (reading order) within a node and time
+budget, skipping interface chrome (buttons, menus, toolbars, images) and anything outside the
+window. Headings, links and table rows become one block each. The focused field becomes a caret
+block at its place in that order, its text marked at the caret; its ancestors are never
+collapsed or pruned so the walk reaches it. The page host comes from the nearest web area above
+the caret. Web editors report the caret as a text-marker range, so markers are read first, then
+the field's value and selected range. Terminals under tmux are read from tmux (`capture-pane` of
+the most recently active client's pane, cursor from tmux, foreground process of its tty); the
+terminal's own text is every pane side by side and iTerm2's caret index drifts.
+
+**Consequences:**
+- Prototype only: wired in Debug builds; the latest capture is kept in memory and shown in a
+  debug window. Logs carry sizes and timings, never text. Nothing is stored or sent.
+- A plain terminal tab without tmux gets its visible lines but no caret mark or program.
+- The tmux pane is the most recently active client's: right when one terminal is attached.
+- OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
+

@@ -127,7 +127,7 @@ enum CaretLocator {
         min(max(index, line.location), line.location + line.length - 1)
     }
 
-    private static func parameterized(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
+    static func parameterized(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
         var value: CFTypeRef?
         guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &value) == .success else { return nil }
         return value
@@ -146,7 +146,7 @@ enum CaretLocator {
         return rect
     }
 
-    private static func frame(of element: AXUIElement) -> CGRect? {
+    static func frame(of element: AXUIElement) -> CGRect? {
         guard let position = attribute(element, kAXPositionAttribute), CFGetTypeID(position) == AXValueGetTypeID(),
               let size = attribute(element, kAXSizeAttribute), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
         var origin = CGPoint.zero
@@ -162,13 +162,13 @@ enum CaretLocator {
         CGRect(x: rect.minX, y: primaryScreenHeight - rect.maxY, width: rect.width, height: rect.height)
     }
 
-    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+    static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
         return value
     }
 
-    private static func bounds(of range: CFRange, in element: AXUIElement) -> CGRect? {
+    static func bounds(of range: CFRange, in element: AXUIElement) -> CGRect? {
         var range = range
         guard let rangeValue = AXValueCreate(.cfRange, &range) else { return nil }
         var value: CFTypeRef?

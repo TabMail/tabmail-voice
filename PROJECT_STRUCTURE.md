@@ -20,6 +20,10 @@ tabmail-desktop/
 │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
 │   ├── Backend/TranscriptionClient.swift  POST /dictation/transcribe; backend error → user message
 │   ├── Config/DictationConfig.swift  Every tunable number and endpoint (timings, audio, backend, auth, overlay)
+│   ├── Context/                  Phase 2 prototype (wired in Debug builds only)
+│   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks in reading order
+│   │   ├── ScreenContextReader.swift Accessibility walk of the focused window; tmux pane for terminals
+│   │   └── ScreenContextProbe.swift  Captures at key-down in the background; keeps the latest in memory
 │   ├── Dictation/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
 │   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue
@@ -38,6 +42,7 @@ tabmail-desktop/
 │   └── UI/
 │       ├── MenuContent.swift         Menu-bar menu
 │       ├── SettingsView.swift        Settings window
+│       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
 │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing
 │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
 └── TabMailDesktopTests/        Swift Testing suites (see TESTS.md)

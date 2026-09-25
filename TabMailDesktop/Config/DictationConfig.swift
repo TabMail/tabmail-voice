@@ -58,7 +58,35 @@ enum DictationConfig {
     /// Pause between posting the paste keystroke's key-down and key-up events.
     static let pasteKeystrokeGap: Duration = .milliseconds(10)
 
-    // MARK: Backend
+    // MARK: Screen context (phase 2 prototype, debug builds)
+
+    /// Per-call cap on Accessibility calls while reading the screen context (seconds).
+    static let contextLookupTimeout: Float = 0.25
+    /// The walk of the focused window stops after this many elements…
+    static let contextNodeBudget = 5_000
+    /// …or after this long (seconds). It runs in the background while the user speaks.
+    static let contextTimeBudget: Double = 1.5
+    /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
+    static let contextMaxFocusDepth = 200
+    /// Characters kept on each side of the caret.
+    static let contextCaretWindowChars = 2_000
+    /// Longest visible text kept from one text field or terminal.
+    static let contextMaxFieldChars = 20_000
+    /// Longest text gathered for one heading, link or table row.
+    static let contextMaxBlockChars = 1_000
+    /// Roles whose text is interface chrome, not content: skipped with their subtree.
+    static let contextSkippedRoles: Set<String> = [
+        "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXMenuBar",
+        "AXMenu", "AXMenuItem", "AXToolbar", "AXImage", "AXScrollBar", "AXSlider", "AXIncrementor",
+    ]
+    /// Terminal apps: their foreground program is looked up through tmux.
+    static let terminalBundleIDs: Set<String> = [
+        "com.googlecode.iterm2", "com.apple.Terminal", "com.mitchellh.ghostty", "com.github.wez.wezterm",
+        "net.kovidgoyal.kitty", "org.alacritty",
+    ]
+    /// Where tmux is installed (Homebrew on Apple silicon, Homebrew on Intel, system).
+    static let tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
+
 
     static let productionBackendURL = URL(string: "https://api.tabmail.ai")!
     static let developmentBackendURL = URL(string: "https://dev.tabmail.ai")!

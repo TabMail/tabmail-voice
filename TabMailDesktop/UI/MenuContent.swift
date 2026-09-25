@@ -10,6 +10,9 @@ struct MenuContent: View {
     let settings: AppSettings
     let account: AccountModel
     @Environment(\.openSettings) private var openSettings
+    #if DEBUG
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     var body: some View {
         Text(statusLine)
@@ -40,6 +43,10 @@ struct MenuContent: View {
             NSWorkspace.shared.open(DictationConfig.debugLastRecordingURL)
         }
         .disabled(!FileManager.default.fileExists(atPath: DictationConfig.debugLastRecordingURL.path))
+        Button("Show Last Screen Context") {
+            NSApp.activate()
+            openWindow(id: ScreenContextDebugView.windowID)
+        }
         #endif
 
         Divider()

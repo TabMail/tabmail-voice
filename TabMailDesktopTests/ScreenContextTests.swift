@@ -1,0 +1,159 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+import CoreGraphics
+import Foundation
+import Testing
+@testable import TabMail
+
+struct ScreenContextTests {
+    // MARK: Caret window
+
+    @Test func caretWindowSplitsAroundTheSelection() {
+        let window = ScreenContext.caretWindow(in: "Hello there world", selection: NSRange(location: 6, length: 5), maxChars: 100)
+        #expect(window.before == "Hello ")
+        #expect(window.selected == "there")
+        #expect(window.after == " world")
+    }
+
+    @Test func caretWindowKeepsOnlyTheNearestCharacters() {
+        let window = ScreenContext.caretWindow(in: "abcdefghij", selection: NSRange(location: 5, length: 0), maxChars: 2)
+        #expect(window.before == "de")
+        #expect(window.selected == "")
+        #expect(window.after == "fg")
+    }
+
+    /// Accessibility reports ranges past the end at times (a stale caret); clamp, don't crash.
+    @Test func caretWindowClampsARangePastTheEnd() {
+        let window = ScreenContext.caretWindow(in: "abc", selection: NSRange(location: 10, length: 4), maxChars: 5)
+        #expect(window.before == "abc")
+        #expect(window.selected == "")
+        #expect(window.after == "")
+    }
+
+    /// Ranges count UTF-16 units; a cut through an emoji's surrogate pair keeps the whole emoji.
+    @Test func caretWindowNeverSplitsACharacter() {
+        let text = "a😀b" // "😀" is two UTF-16 units: a=0, 😀=1…2, b=3
+        let window = ScreenContext.caretWindow(in: text, selection: NSRange(location: 3, length: 0), maxChars: 1)
+        #expect(window.before == "😀")
+        #expect(window.after == "b")
+    }
+
+    // MARK: Visible text
+
+    @Test func appendSkipsBlanksAndRepeats() {
+        var context = ScreenContext(appName: "Example")
+        context.append(.link, "Inbox")
+        context.append(.text, "Inbox")
+        context.append(.text, "  ")
+        context.append(.text, " Drafts\n")
+        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: "Drafts")])
+    }
+
+    @Test func renderedTextMarksStructure() {
+        var context = ScreenContext(appName: "Example")
+        context.append(.heading, "Results")
+        context.append(.row, "Paper | 2024 | 12")
+        context.append(.link, "Next page")
+        context.append(.field, "line one\nline two")
+        context.append(.text, "Plain")
+        #expect(context.renderedText() == "## Results\n| Paper | 2024 | 12\n[Next page]\n> line one\n> line two\nPlain")
+    }
+
+    /// The focused field sits between the text above and below it, with the caret marked.
+    @Test func caretBlockKeepsItsPlaceInTheReadingOrder() {
+        var context = ScreenContext(appName: "Example")
+        context.textBeforeCaret = "Draft "
+        context.textAfterCaret = "reply"
+        context.append(.text, "Earlier comment")
+        context.appendCaret()
+        context.append(.text, "Footer")
+        #expect(context.renderedText() == "Earlier comment\n» Draft ‸reply\nFooter")
+    }
+
+    @Test func emptyFocusedFieldStillMarksTheCaret() {
+        var context = ScreenContext(appName: "Example")
+        context.appendCaret()
+        #expect(context.renderedText() == "» ‸")
+    }
+
+    @Test func selectionIsBracketedByCaretMarkers() {
+        var context = ScreenContext(appName: "Example")
+        context.textBeforeCaret = "a "
+        context.selectedText = "b"
+        context.textAfterCaret = " c"
+        context.appendCaret()
+        #expect(context.renderedText() == "» a ‸b‸ c")
+    }
+
+    @Test func summaryCarriesSizesNotText() {
+        var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
+        context.windowTitle = "Private subject"
+        context.textBeforeCaret = "secret words"
+        context.append(.text, "confidential paragraph")
+        #expect(!context.summary.contains("secret"))
+        #expect(!context.summary.contains("confidential"))
+        #expect(!context.summary.contains("Private"))
+        #expect(context.summary.contains("caret 12/0/0 chars"))
+    }
+
+    // MARK: Terminal visible lines
+
+    @Test func firstVisibleLineFindsTheWindowTop() {
+        // 1000 lines of 16 pt; the window's top edge sits at line 900.
+        let top = ScreenContext.firstVisibleLine(lineCount: 1000, windowTop: 900 * 16) { CGFloat($0 * 16) }
+        #expect(top == 900)
+    }
+
+    @Test func firstVisibleLineIsNilWhenEveryLineIsAbove() {
+        #expect(ScreenContext.firstVisibleLine(lineCount: 10, windowTop: 1000) { CGFloat($0) } == nil)
+    }
+
+    @Test func firstVisibleLineGivesUpWhenALineHasNoBounds() {
+        #expect(ScreenContext.firstVisibleLine(lineCount: 10, windowTop: 5) { _ in nil } == nil)
+    }
+
+    // MARK: Terminal program
+
+    @Test func activePaneIsTheMostRecentlyActiveClients() {
+        let output = "1700000100 %1 /dev/ttys003 0 0\n1700000900 %7 /dev/ttys034 2 40\n1700000500 %3 /dev/ttys010 5 5\n"
+        #expect(ScreenContext.activePane(fromTmuxClients: output) == .init(id: "%7", tty: "/dev/ttys034", cursorX: 2, cursorY: 40))
+    }
+
+    @Test func noTmuxClientsMeansNoPane() {
+        #expect(ScreenContext.activePane(fromTmuxClients: "") == nil)
+        #expect(ScreenContext.activePane(fromTmuxClients: "garbage line\n") == nil)
+    }
+
+    @Test func paneSplitsAtTheCursorCell() {
+        let screen = "first line\n> hello world\nstatus bar\n\n\n"
+        let split = ScreenContext.splitAtCursor(screen, line: 1, column: 7)
+        #expect(split.before == "first line\n> hello")
+        #expect(split.after == " world\nstatus bar")
+    }
+
+    /// A cursor after typed spaces sits past the line's trimmed end: pad, don't crash or wrap.
+    @Test func paneCursorPastTheLineEndIsPadded() {
+        let split = ScreenContext.splitAtCursor("> hi\nnext", line: 0, column: 6)
+        #expect(split.before == "> hi  ")
+        #expect(split.after == "\nnext")
+    }
+
+    @Test func paneCursorBelowTheTextKeepsEverythingBefore() {
+        let split = ScreenContext.splitAtCursor("only line", line: 5, column: 0)
+        #expect(split.before == "only line")
+        #expect(split.after == "")
+    }
+
+    /// Children of the foreground program share its tty; only the process-group leader counts.
+    @Test func foregroundProgramIsTheProcessGroupLeader() {
+        let output = """
+          2798  4933 caffeinate
+          4933  4933 /usr/local/bin/claude
+          5001  4933 sourcekit-lsp
+         34742  4933 -zsh
+        """
+        #expect(ScreenContext.foregroundProgram(fromPS: output) == "claude")
+    }
+}

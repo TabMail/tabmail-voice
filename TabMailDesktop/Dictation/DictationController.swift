@@ -31,6 +31,8 @@ final class DictationController {
     private(set) var isHearing = false
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
+    /// Called when a dictation starts (key-down), with the target app still frontmost.
+    @ObservationIgnored var onStart: (() -> Void)?
 
     @ObservationIgnored private let permissions: PermissionsModel
     @ObservationIgnored private let account: AccountModel
@@ -108,6 +110,7 @@ final class DictationController {
         isHearing = false
         startedAt = clock.now
         phase = .arming
+        onStart?()
 
         // Boot the microphone now, off the main thread; the overlay appears only once the hold
         // is long enough, by which time most of the start-up is done.

@@ -20,6 +20,12 @@ struct TabMailDesktopApp: App {
         Settings {
             SettingsView(settings: appDelegate.settings, permissions: appDelegate.permissions, account: appDelegate.account)
         }
+
+        #if DEBUG
+        Window("Last Screen Context", id: ScreenContextDebugView.windowID) {
+            ScreenContextDebugView(probe: appDelegate.contextProbe)
+        }
+        #endif
     }
 }
 
@@ -29,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let permissions = PermissionsModel()
     let settings = AppSettings()
     let account = AccountModel()
+    let contextProbe = ScreenContextProbe()
     let controller: DictationController
     private var hotkeyMonitor: HotkeyMonitor?
     private var overlay: OverlayPanelController?
@@ -50,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlay = OverlayPanelController(controller: controller)
         self.overlay = overlay
         controller.onPhaseChange = { overlay.update(for: $0) }
+        #if DEBUG
+        controller.onStart = { [contextProbe] in contextProbe.capture() }
+        #endif
 
         let monitor = HotkeyMonitor(hotkey: settings.hotkey) { [weak self] action in
             self?.controller.handle(action)
