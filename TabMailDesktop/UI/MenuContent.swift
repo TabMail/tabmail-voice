@@ -9,14 +9,13 @@ struct MenuContent: View {
     let permissions: PermissionsModel
     let settings: AppSettings
     let account: AccountModel
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Text(statusLine)
 
         if !account.isSignedIn {
-            SettingsLink {
-                Text("Sign In to TabMail…")
-            }
+            Button("Sign In to TabMail…", action: showSettings)
         }
         if permissions.microphone != .authorized {
             Button("Allow Microphone Access…") {
@@ -45,16 +44,29 @@ struct MenuContent: View {
 
         Divider()
 
-        SettingsLink {
-            Text("Settings…")
-        }
-        .keyboardShortcut(",")
+        Button("Settings…", action: showSettings)
+            .keyboardShortcut(",")
 
         Button("Quit TabMail") {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
     }
+
+    /// A menu-bar-only app isn't active when its menu is used, so a plain `SettingsLink` opens the
+    /// window behind the frontmost app. Activate first, then bring the window forward once it exists.
+    private func showSettings() {
+        NSApp.activate()
+        openSettings()
+        DispatchQueue.main.async {
+            NSApp.windows
+                .first { $0.identifier?.rawValue == Self.settingsWindowIdentifier }?
+                .makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// The identifier SwiftUI gives the `Settings` scene's window.
+    private static let settingsWindowIdentifier = "com_apple_SwiftUI_Settings_window"
 
     private var isReady: Bool { account.isSignedIn && permissions.allGranted }
 

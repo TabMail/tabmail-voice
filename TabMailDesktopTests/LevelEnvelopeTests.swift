@@ -35,6 +35,20 @@ struct LevelEnvelopeTests {
         #expect(medium > 0.2 && medium < loud - 0.2)
     }
 
+    /// Warm-up: a start-up blip (−70 dB) must not anchor the floor, so within the first second of
+    /// room noise (−45) and speech (−38) the two already read clearly apart. With a fixed 0.02
+    /// weight the floor stayed near −70 and room noise read ≈ 0.7.
+    @Test func settlesWithinTheFirstSecond() {
+        var envelope = LevelEnvelope()
+        _ = feed(&envelope, -70, times: 3)
+        for _ in 0..<6 {
+            _ = envelope.level(forDecibels: -45)
+            _ = envelope.level(forDecibels: -38)
+        }
+        #expect(envelope.level(forDecibels: -45) < 0.4)
+        #expect(envelope.level(forDecibels: -38) > 0.6)
+    }
+
     /// A steady hum settles low rather than holding the bars up.
     @Test func steadySoundSettlesLow() {
         var envelope = LevelEnvelope()
