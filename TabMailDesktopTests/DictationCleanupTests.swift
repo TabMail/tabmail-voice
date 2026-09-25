@@ -41,6 +41,65 @@ struct DictationCleanupTests {
     }
 }
 
+/// The timeout returns the operation's error or its own deadline error, even if the operation
+/// cannot respond to cancellation. A watchdog keeps a lost continuation from hanging the tests.
+struct AsyncTimeoutTests {
+    private enum Failure: Error, Equatable {
+        case example
+    }
+
+    /// Cleanup's fallback hides error types; callers of the timeout must still get the original error.
+    @Test func passesThroughTheOperationsError() async throws {
+        let result = try #require(await Self.result(seconds: 30) { throw Failure.example })
+
+        #expect(throws: Failure.example) { _ = try result.get() }
+    }
+
+    /// Awaiting an independent task ignores cancellation until that task finishes. The deadline
+    /// must release the caller first; only then does the test let the operation finish.
+    @Test func timesOutWithoutWaitingForAnOperationThatIgnoresCancellation() async throws {
+        let (gate, opener) = AsyncStream.makeStream(of: Never.self)
+        let blocked = Task.detached {
+            for await _ in gate {}
+            return "late reply"
+        }
+        defer { opener.finish() }
+        let result = try #require(await Self.result(seconds: 0.2) { await blocked.value })
+
+        guard case .failure(let error) = result else {
+            Issue.record("expected a timeout before releasing the operation")
+            return
+        }
+        let timeout = try #require(error as? TimeoutError)
+        #expect(timeout.duration == 0.2)
+        #expect(timeout.description == "Operation timed out after 0.2s")
+    }
+
+    /// The task under test never occupies the watchdog's thread, and is cancelled on every exit.
+    private static func result(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> String) async -> Result<String, any Error>? {
+        let output = OSAllocatedUnfairLock<Result<String, any Error>?>(initialState: nil)
+        let returned = DispatchSemaphore(value: 0)
+        let task = Task.detached {
+            do {
+                let value = try await withTimeout(seconds: seconds, operation: operation)
+                output.withLock { $0 = .success(value) }
+            } catch {
+                output.withLock { $0 = .failure(error) }
+            }
+            returned.signal()
+        }
+        defer { task.cancel() }
+        let inTime = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(returning: returned.wait(timeout: .now() + 10) == .success)
+            }
+        }
+        #expect(inTime)
+        guard inTime else { return nil }
+        return output.withLock { $0 }
+    }
+}
+
 /// What gets pasted: the cleaned-up text, or the transcript as heard whenever the cleanup fails.
 @MainActor
 struct DictationCleanupFallbackTests {
@@ -70,6 +129,13 @@ struct DictationCleanupFallbackTests {
         guard backend.requests.count == 1 else { return }
         let messages = Fixtures.jsonBody(of: backend.requests[0])["messages"] as? [[String: Any]]
         #expect(messages?.first?["dictation"] as? String == transcript)
+    }
+
+    /// Only an empty reply is a malfunction; even one character can be the whole dictation.
+    @Test func aSingleCharacterReplyIsStillUsed() async {
+        backend.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"é"}"#))
+
+        #expect(await cleanUp() == "é")
     }
 
     /// A cleanup still running at its timeout is abandoned: the transcript is pasted as heard,

@@ -100,4 +100,32 @@ struct TranscriptionClientTests {
         }
         #expect(backend.requests.isEmpty)
     }
+
+    /// A refused request can finish after sign-out or an account switch. The retry must report
+    /// an ended session, not another backend failure, and must never send the recording again.
+    @Test(arguments: [false, true])
+    func aSessionChangeDuringTheRequestRejectsTheRetryAsUnauthorized(switchAccount: Bool) async {
+        let backend = StubTransport()
+        backend.enqueue(status: 401, json: ["error": "invalid_token"])
+        backend.enqueue(status: 200, json: ["text": "Retried."])
+        let auth = StubTransport()
+        if switchAccount {
+            auth.enqueue(status: 200, json: Fixtures.sessionJSON(access: "access-b", refresh: "refresh-b", userId: "user-2"))
+            auth.enqueue(status: 200, json: Fixtures.sessionJSON(access: "access-b2", refresh: "refresh-b2", userId: "user-2"))
+        }
+        let account = AccountModel(client: AuthClient(transport: auth.transport), store: InMemorySessionStore(Fixtures.session()))
+        let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
+        backend.gate = {
+            await account.signOut()
+            if switchAccount { try? await account.verify(email: Fixtures.email, code: "123456") }
+        }
+
+        await #expect(throws: BackendError.unauthorized) {
+            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) {
+                try await client.transcribe(wav: wav, accessToken: $0)
+            }
+        }
+        #expect(backend.requests.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer access-1"])
+        #expect(account.session?.userId == (switchAccount ? "user-2" : nil))
+    }
 }

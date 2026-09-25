@@ -157,17 +157,20 @@ struct DictationControllerTests {
         #expect(controller.phase == .failed(DictationController.nothingHeardMessage))
     }
 
-    @Test func aFailedTranscriptionIsNeitherCleanedUpNorPasted() async {
-        transcription.enqueue(status: 402, json: ["error": "no_active_subscription"])
+    /// The shared backend errors still explain the failure in the overlay, without a cleanup or paste.
+    @Test(arguments: [
+        (402, #"{"error":"no_active_subscription"}"#, "Dictation needs an active TabMail subscription."),
+        (502, #"{"error":"transcription_failed"}"#, "Dictation failed. Please try again."),
+        (200, #"{"unexpected":true}"#, "TabMail returned an unexpected response."),
+    ])
+    func aFailedTranscriptionIsNeitherCleanedUpNorPasted(status: Int, body: String, message: String) async {
+        transcription.enqueue(status: status, text: body)
 
         let (pasted, controller) = await dictate()
 
         #expect(pasted.isEmpty)
         #expect(completions.requests.isEmpty)
-        guard case .failed = controller.phase else {
-            Issue.record("expected a failure, got \(controller.phase)")
-            return
-        }
+        #expect(controller.phase == .failed(message))
     }
 
     /// Cancelled while the cleanup runs (another key pressed while the hotkey is held): the
@@ -227,7 +230,7 @@ struct DictationControllerTests {
             readStarted.append((controller?.phase, transcription.requests.count))
             return read.task
         }
-        controller.contextWait = 5
+        controller.contextWait = 30
 
         await holdAndRelease(controller)
         #expect(await eventually { transcription.requests.count == 1 })
@@ -235,7 +238,8 @@ struct DictationControllerTests {
         #expect(readStarted.count == 1)
         #expect(readStarted.first?.phase == .arming)
         #expect(readStarted.first?.transcriptions == 0)
-        try? await Task.sleep(for: .milliseconds(200))
+        // Longer than the default wait: using the default instead of the override loses this screen.
+        try? await Task.sleep(for: .seconds(1))
         #expect(completions.requests.isEmpty)
         #expect(pastes.texts.isEmpty)
         read.release()
@@ -298,5 +302,23 @@ struct DictationControllerTests {
         #expect(cleanupVars(0)?["dictation"] as? String == transcript)
         #expect(cleanupVars(0)?["app_name"] as? String == "")
         #expect(cleanupVars(0)?["screen_text"] as? String == "")
+    }
+}
+
+/// Fixed permission snapshots must preserve denied and undecided grants as well as granted ones.
+@MainActor
+struct PermissionsModelTests {
+    @Test(arguments: [
+        (AVAuthorizationStatus.notDetermined, false),
+        (.restricted, true),
+        (.denied, false),
+        (.authorized, false),
+        (.authorized, true),
+    ])
+    func keepsTheSuppliedPermissionStates(microphone: AVAuthorizationStatus, accessibilityTrusted: Bool) {
+        let permissions = PermissionsModel(microphone: microphone, accessibilityTrusted: accessibilityTrusted)
+
+        #expect(permissions.microphone == microphone)
+        #expect(permissions.accessibilityTrusted == accessibilityTrusted)
     }
 }

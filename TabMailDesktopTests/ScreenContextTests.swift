@@ -184,6 +184,30 @@ struct ScreenContextCommandTests {
         #expect(ScreenContextReader.run("/bin/echo", ["pane text"]) == "pane text\n")
     }
 
+    /// More than a pipeful of mixed UTF-8 must come back whole, in order, with no lost reads.
+    @Test func returnsEveryByteOfOutputLargerThanThePipeBuffer() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let expected = String(repeating: "Aé😀", count: 28_571) + "END"
+        try Data(expected.utf8).write(to: file)
+
+        let text = try #require(Self.runWithWatchdog(#"exec /bin/cat "$1""#, arguments: [file.path], timeout: 30))
+
+        #expect(text.utf8.count == 200_000)
+        #expect(text == expected)
+    }
+
+    /// EOF can precede exit. A successful command is still awaited, but output and exit share
+    /// one deadline; closing output does not buy a slow command another full timeout.
+    @Test(arguments: [
+        (4, 1, 30.0, Optional("pane text\n")),
+        (8, 8, 10.0, nil),
+    ])
+    func waitsForExitOnlyWithinTheOriginalDeadline(beforeEOF: Int, afterEOF: Int, timeout: Double, expected: String?) {
+        let script = "echo 'pane text'; sleep \(beforeEOF); exec >&-; exec sleep \(afterEOF)"
+        #expect(Self.runWithWatchdog(script, timeout: timeout) == expected)
+    }
+
     @Test func stopsACommandThatDoesNotFinish() throws {
         let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
         defer { try? FileManager.default.removeItem(at: pidFile) }
@@ -244,6 +268,29 @@ struct ScreenContextCommandTests {
         }
     }
 
+    /// Runs independently of the test thread, with enough slack for a loaded runner. A broken
+    /// read or exit wait fails the test and has its shell stopped instead of hanging the suite.
+    private static func runWithWatchdog(_ script: String, arguments: [String] = [], timeout: Double) -> String? {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let output = OSAllocatedUnfairLock<String?>(initialState: nil)
+        let returned = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let text = ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; "# + script, pidFile.path] + arguments, timeout: timeout)
+            output.withLock { $0 = text }
+            returned.signal()
+        }
+
+        let inTime = returned.wait(timeout: .now() + timeout + 15) == .success
+        if !inTime {
+            let pid = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            if let pid { kill(pid, SIGKILL) }
+            _ = returned.wait(timeout: .now() + 5)
+        }
+        #expect(inTime)
+        return output.withLock { $0 }
+    }
+
     /// The process id a test command wrote to `file`.
     private static func pid(in file: URL) throws -> pid_t {
         try #require(pid_t(String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -297,7 +344,10 @@ struct ScreenContextProbeTests {
     @Test func readsTheAppInFrontWhenCalled() async {
         let reads = Reads()
         var front = Self.notes
-        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { reads.record($0) })
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { target in
+            #expect(target.pid == 101)
+            return reads.record(target)
+        })
         let task = probe.capture()
         front = Self.browser
         let context = await task?.value
