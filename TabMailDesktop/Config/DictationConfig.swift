@@ -10,8 +10,9 @@ import Foundation
 enum DictationConfig {
     // MARK: Push-to-talk
 
-    /// A hold shorter than this is treated as an accidental tap and discarded.
-    static let minimumHoldDuration: Duration = .milliseconds(300)
+    /// The microphone starts booting at key-down, but the overlay appears only once the key has
+    /// been held this long. A shorter hold is an accidental tap: discarded, never shown.
+    static let minimumHoldDuration: Duration = .milliseconds(250)
 
     // MARK: Audio
 
@@ -75,21 +76,46 @@ enum DictationConfig {
 
     // MARK: Overlay
 
-    static let overlaySize = CGSize(width: 420, height: 52)
-    /// Distance from the bottom of the visible screen area.
-    static let overlayBottomInset: CGFloat = 72
-    static let overlayHorizontalPadding: CGFloat = 16
-    static let overlayContentSpacing: CGFloat = 12
+    /// Transparent canvas the overlay draws in; the pill sizes itself inside it.
+    static let overlayCanvasSize = CGSize(width: 440, height: 96)
+    /// Gap between the caret's line and the overlay canvas.
+    static let overlayCaretGap: CGFloat = 4
+    /// Per-call cap on Accessibility calls into the frontmost app when locating the caret (seconds).
+    static let caretLookupTimeout: Float = 0.1
     static let overlayFontSize: CGFloat = 13
-    /// Number of bars in the overlay's level meter.
-    static let overlayMeterBarCount = 5
+    static let pillHeight: CGFloat = 34
+    static let pillHorizontalPadding: CGFloat = 14
+    static let pillContentSpacing: CGFloat = 8
+    static let pillMaxTextWidth: CGFloat = 320
+    static let pillBorderWidth: CGFloat = 1
+    static let pillGlowOpacity: Double = 0.35
+    static let pillGlowRadius: CGFloat = 8
+    /// The pill grows out of the swirl from this fraction of its size.
+    static let pillAppearScale: CGFloat = 0.2
+    static let pillSpringResponse: Double = 0.35
+    static let pillSpringDamping: Double = 0.75
+    /// Warm-up swirl: particles spiral from `swirlStartRadius` to `swirlOrbitRadius`.
+    static let swirlParticleCount = 14
+    static let swirlStartRadius: Double = 36
+    static let swirlOrbitRadius: Double = 7
+    static let swirlSpiralSpread: Double = 0.6
+    static let swirlGatherSeconds: Double = 0.45
+    static let swirlRevolutionsPerSecond: Double = 1.4
+    static let swirlParticleSize: Double = 5
+    /// Number of bars in the pill's waveform.
+    static let overlayMeterBarCount = 9
     static let overlayMeterBarWidth: CGFloat = 3
     static let overlayMeterBarSpacing: CGFloat = 3
     static let overlayMeterMinBarHeight: CGFloat = 4
     static let overlayMeterMaxBarHeight: CGFloat = 20
     /// Outer bars reach this fraction of the centre bar's height.
-    static let overlayMeterEdgeBarWeight: Double = 0.5
-    static let overlayMeterAnimation: TimeInterval = 0.08
+    static let overlayMeterEdgeBarWeight: Double = 0.45
+    /// Travelling ripple across the bars (radians per second, radians per bar, share of height).
+    static let waveformRippleSpeed: Double = 9
+    static let waveformRipplePhase: Double = 0.7
+    static let waveformRippleDepth: Double = 0.35
+    /// Bar height (0…1) of the "working" sweep while transcribing.
+    static let waveformThinkingLevel: Double = 0.45
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

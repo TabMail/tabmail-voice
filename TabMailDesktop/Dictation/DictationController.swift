@@ -11,6 +11,10 @@ import Observation
 final class DictationController {
     enum Phase: Equatable {
         case idle
+        /// Key is down and the microphone is booting, but the hold isn't yet long enough to be
+        /// deliberate: nothing is shown, so an accidental tap stays invisible and the
+        /// microphone's start-up time is hidden behind the hold.
+        case arming
         case listening
         case transcribing
         case failed(String)
@@ -20,6 +24,8 @@ final class DictationController {
         didSet { onPhaseChange?(phase) }
     }
     private(set) var level: Float = 0
+    /// True once the microphone delivers audio; until then the overlay shows its warm-up swirl.
+    private(set) var isHearing = false
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
 
@@ -27,13 +33,14 @@ final class DictationController {
     @ObservationIgnored private let account: AccountModel
     @ObservationIgnored private let makeTranscriptionClient: @MainActor () -> TranscriptionClient
     @ObservationIgnored private let inserter: TextInserter
+    @ObservationIgnored private let capture: MicrophoneCapture
     @ObservationIgnored private let clock = ContinuousClock()
 
     // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var startedAt: ContinuousClock.Instant?
-    @ObservationIgnored private var capture: MicrophoneCapture?
     @ObservationIgnored private var recorder: AudioRecorder?
+    @ObservationIgnored private var revealTask: Task<Void, Never>?
     @ObservationIgnored private var maxDurationTask: Task<Void, Never>?
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
     @ObservationIgnored private var failureResetTask: Task<Void, Never>?
@@ -42,11 +49,13 @@ final class DictationController {
         permissions: PermissionsModel,
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
+        capture: MicrophoneCapture = MicrophoneCapture(),
         makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient
     ) {
         self.permissions = permissions
         self.account = account
         self.inserter = inserter
+        self.capture = capture
         self.makeTranscriptionClient = makeTranscriptionClient
     }
 
@@ -58,6 +67,12 @@ final class DictationController {
         }
     }
 
+    /// Does the slow, microphone-off part of starting the microphone ahead of the first dictation.
+    func prewarm() {
+        guard permissions.microphone == .authorized else { return }
+        capture.prepare()
+    }
+
     /// Menu-driven toggle, for users who prefer clicking to holding a key.
     func toggle() {
         if phase == .listening { finish() } else { start() }
@@ -66,7 +81,7 @@ final class DictationController {
     func start() {
         switch phase {
         case .idle, .failed: break
-        case .listening, .transcribing: return
+        case .arming, .listening, .transcribing: return
         }
         guard account.isSignedIn else {
             fail("Sign in to TabMail in Settings to dictate.")
@@ -85,24 +100,29 @@ final class DictationController {
         generation += 1
         let current = generation
         level = 0
+        isHearing = false
         startedAt = clock.now
-        phase = .listening
+        phase = .arming
 
+        // Boot the microphone now, off the main thread; the overlay appears only once the hold
+        // is long enough, by which time most of the start-up is done.
         let recorder = AudioRecorder()
-        let capture = MicrophoneCapture()
         self.recorder = recorder
-        self.capture = capture
-        do {
-            _ = try capture.start { [weak self] buffer in
+        capture.start(
+            onBuffer: { [weak self] buffer in
                 recorder.append(buffer)
                 let level = MicrophoneCapture.level(of: buffer)
                 Task { @MainActor [weak self] in self?.updateLevel(level, generation: current) }
+            },
+            completion: { [weak self] error in
+                guard let error else { return }
+                Task { @MainActor [weak self] in self?.microphoneFailed(error, generation: current) }
             }
-        } catch {
-            Log.error("DictationController: microphone start failed: \(type(of: error))")
-            teardown()
-            fail("Couldn't start the microphone.")
-            return
+        )
+        revealTask = Task { [weak self] in
+            try? await Task.sleep(for: DictationConfig.minimumHoldDuration)
+            guard !Task.isCancelled, let self, self.generation == current, self.phase == .arming else { return }
+            self.phase = .listening
         }
 
         // Past the upload cap, stop and send what was said rather than silently dropping audio.
@@ -112,18 +132,23 @@ final class DictationController {
             Log.debug("DictationController: max duration reached; finishing")
             self.finish()
         }
-        Log.debug("DictationController: listening (generation \(current))")
+        Log.debug("DictationController: arming (generation \(current))")
     }
 
     func finish() {
-        guard phase == .listening, let startedAt, recorder != nil else { return }
-        maxDurationTask?.cancel()
-
-        if clock.now - startedAt < DictationConfig.minimumHoldDuration {
+        switch phase {
+        case .arming:
+            // Released before the hold became deliberate: an accidental tap. Nothing was shown.
             Log.debug("DictationController: hold too short; discarding")
             discard()
             return
+        case .listening:
+            break
+        case .idle, .transcribing, .failed:
+            return
         }
+        guard recorder != nil else { return }
+        maxDurationTask?.cancel()
 
         // Keep the microphone open briefly after release so the last word isn't clipped.
         let current = generation
@@ -137,14 +162,25 @@ final class DictationController {
     }
 
     func cancel() {
-        guard phase == .listening || phase == .transcribing else { return }
-        Log.debug("DictationController: cancelled")
-        discard()
+        switch phase {
+        case .arming, .listening, .transcribing:
+            Log.debug("DictationController: cancelled")
+            discard()
+        case .idle, .failed:
+            return
+        }
+    }
+
+    private func microphoneFailed(_ error: any Error, generation current: Int) {
+        guard generation == current else { return }
+        Log.error("DictationController: microphone start failed: \(type(of: error))")
+        generation += 1
+        teardown()
+        fail("Couldn't start the microphone.")
     }
 
     private func completeRecording(generation current: Int) async {
-        capture?.stop()
-        capture = nil
+        capture.stop()
         guard let recorder else { return }
 
         let recording: AudioRecorder.Recording
@@ -220,8 +256,14 @@ final class DictationController {
     #endif
 
     private func updateLevel(_ newLevel: Float, generation: Int) {
-        guard generation == self.generation, phase == .listening else { return }
-        level += (newLevel - level) * DictationConfig.levelSmoothing
+        guard generation == self.generation else { return }
+        switch phase {
+        case .arming, .listening:
+            if !isHearing { isHearing = true }
+            level += (newLevel - level) * DictationConfig.levelSmoothing
+        case .idle, .transcribing, .failed:
+            return
+        }
     }
 
     private func discard() {
@@ -232,9 +274,11 @@ final class DictationController {
     }
 
     private func teardown() {
-        capture?.stop()
-        capture = nil
+        capture.stop()
         recorder = nil
+        revealTask?.cancel()
+        revealTask = nil
+        isHearing = false
         maxDurationTask?.cancel()
         maxDurationTask = nil
         transcriptionTask = nil

@@ -91,3 +91,23 @@ multilingual accuracy than Apple's on-device model.
 - Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).
 - A failed transcription loses that recording (no retry queue yet).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
+
+## ADR-DESK-006: Boot the microphone at key-down, reveal the overlay at the caret after the hold
+
+**Context:** Owner, 2026-09-24: the app must feel instant. Measured on a Studio Display mic:
+opening the input node ≈ 0.5 s and starting the device ≈ 0.5 s, and both ran on the main thread,
+so the overlay appeared only after about a second or more.
+
+**Decision:** Key-down starts the microphone on a serial queue (`.arming`, nothing shown). The
+overlay appears at the text cursor once the hold reaches `minimumHoldDuration`; a shorter tap is
+discarded unseen. The microphone-off half (engine, input node, tap, `prepare()`) is done ahead of
+time and again after every dictation, and rebuilt when the system default input changes. The
+overlay shows a gathering swirl until the first audio arrives, then a waveform pill; the pill is
+the surface for status now and agent responses later (as on iOS).
+
+**Consequences:**
+- The ≈ 0.5 s device start can't be hidden without keeping the mic running; speech in that
+  window is lost. The swirl → pill change tells the user when audio is live. A hot-mic window is
+  an owner decision (privacy indicator stays on).
+- Apps that don't expose a caret via Accessibility get the overlay at the mouse pointer.
+

@@ -13,20 +13,12 @@ struct TabMailDesktopApp: App {
         MenuBarExtra {
             MenuContent(controller: appDelegate.controller, permissions: appDelegate.permissions, settings: appDelegate.settings, account: appDelegate.account)
         } label: {
-            Image(systemName: menuBarSymbol)
+            Image("MenuBarIcon")
+                .accessibilityLabel("TabMail")
         }
 
         Settings {
             SettingsView(settings: appDelegate.settings, permissions: appDelegate.permissions, account: appDelegate.account)
-        }
-    }
-
-    private var menuBarSymbol: String {
-        switch appDelegate.controller.phase {
-        case .listening: "waveform"
-        case .transcribing: "ellipsis"
-        case .failed: "exclamationmark.triangle"
-        case .idle: appDelegate.permissions.allGranted && appDelegate.account.isSignedIn ? "mic" : "mic.slash"
         }
     }
 }
@@ -72,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if permissions.microphone == .notDetermined {
                 await permissions.requestMicrophone()
             }
+            controller.prewarm()
             if !permissions.accessibilityTrusted {
                 permissions.requestAccessibility()
             }

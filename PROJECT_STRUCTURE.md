@@ -21,20 +21,23 @@ tabmail-desktop/
 │   ├── Backend/TranscriptionClient.swift  POST /dictation/transcribe; backend error → user message
 │   ├── Config/DictationConfig.swift  Every tunable number and endpoint (timings, audio, backend, auth, overlay)
 │   ├── Dictation/
-│   │   ├── DictationController.swift State machine idle → listening → transcribing → idle/failed; 401 retry
-│   │   ├── MicrophoneCapture.swift   AVAudioEngine tap, created and torn down per dictation
+│   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
+│   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue
 │   │   ├── AudioRecorder.swift       Converts to 16 kHz mono Int16, accumulates, tracks peak, caps duration
 │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
 │   ├── Hotkey/
 │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel
 │   │   └── HotkeyMonitor.swift       NSEvent global + local monitors feeding the gesture
-│   ├── Insertion/TextInserter.swift  Paste-and-restore insertion; PasteboardSnapshot
+│   ├── Insertion/
+│   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
+│   │   └── CaretLocator.swift        Focused field's caret rect via Accessibility (anchors the overlay)
 │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling
 │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content)
 │   └── UI/
 │       ├── MenuContent.swift         Menu-bar menu
 │       ├── SettingsView.swift        Settings window
-│       └── OverlayPanel.swift        Non-activating floating pill: level meter + status
+│       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → waveform pill
+│   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
 └── TabMailDesktopTests/        Swift Testing suites (see TESTS.md)
 ```
 
@@ -42,11 +45,15 @@ tabmail-desktop/
 
 `HotkeyMonitor` → `PushToTalkGesture` action → `DictationController`:
 
-1. **start** (signed in + both permissions): `MicrophoneCapture` streams buffers into
-   `AudioRecorder`.
-2. **finish**: mic stops. Too-short holds and silent recordings are dropped. Otherwise the WAV is
-   uploaded via `TranscriptionClient` (with one forced-refresh retry on 401), and `TextInserter`
-   pastes the text into the frontmost app and restores the clipboard.
+1. **start** (key-down; signed in + both permissions): phase `arming`, nothing shown.
+   `MicrophoneCapture` starts the pre-prepared engine off the main thread and streams buffers
+   into `AudioRecorder`; `CaretLocator` finds the caret. After `minimumHoldDuration` the phase
+   becomes `listening` and the overlay appears at the caret (swirl until audio arrives, then the
+   waveform pill). Releasing earlier discards everything unseen.
+2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. Recordings without
+   enough speech show "too quiet" and aren't uploaded. Otherwise the WAV is uploaded via
+   `TranscriptionClient` (one forced-refresh retry on 401), and `TextInserter` pastes the text
+   into the frontmost app and restores the clipboard.
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
 
