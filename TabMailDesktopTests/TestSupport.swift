@@ -77,6 +77,12 @@ enum Fixtures {
         ]
     }
 
+    /// What `POST /completions/chat` streams: a comment primer, keepalives while the model works,
+    /// then a `final` event with the given payload.
+    static func completionsStream(final: String) -> String {
+        ": \(String(repeating: " ", count: 20))\n\nevent: keepalive\ndata: {}\n\nevent: keepalive\ndata: {}\n\nevent: final\ndata: \(final)\n\n"
+    }
+
     static func jsonBody(of request: URLRequest) -> [String: Any] {
         guard let body = request.httpBody,
               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]

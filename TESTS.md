@@ -17,6 +17,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `TranscriptionClientTests` | request URL/headers/body; backend error → user error mapping; missing text; one forced-refresh retry on 401 only; signed-out never calls backend |
 | `CompletionsClientTests` | request URL/headers; variables flattened beside role and content; reply from `final` after primer and keepalives; `error` event, `final` carrying an error, no `final` and HTTP errors all fail; SSE events end at blank lines, the next event or the end, comments skipped, data lines joined, CRLF |
 | `DictationCleanupTests` | the cleanup prompt gets the dictation, app, host, terminal program, window title and the rendered screen text with the caret; without context every field is sent empty |
+| `DictationCleanupFallbackTests` | the cleaned text is pasted (trimmed); every cleanup failure (HTTP error, stream error, refusal in `final`, empty reply, no `final`, unreachable backend, signed out) pastes the transcript as heard |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |
 
 ## Not covered by unit tests (manual checklist)

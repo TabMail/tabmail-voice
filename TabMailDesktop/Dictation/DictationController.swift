@@ -239,7 +239,9 @@ final class DictationController {
                 fail(Self.nothingHeardMessage)
                 return
             }
-            let text = try await cleanUp(transcript)
+            // The screen context read at key-down.
+            let context = await contextTask?.value
+            let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account)
             guard generation == current, !Task.isCancelled else { return }
             await inserter.insert(text)
             guard generation == current else { return }
@@ -247,24 +249,10 @@ final class DictationController {
             phase = .idle
         } catch {
             guard generation == current, !Task.isCancelled else { return }
-            Log.error("DictationController: transcription or cleanup failed: \(type(of: error))")
+            Log.error("DictationController: transcription failed: \(type(of: error))")
             teardown()
             fail(error.localizedDescription)
         }
-    }
-
-    /// Fixes recognition errors in the transcript using the screen context read at key-down.
-    private func cleanUp(_ transcript: String) async throws -> String {
-        let context = await contextTask?.value
-        let message = DictationCleanup.message(dictation: transcript, context: context)
-        let client = makeCompletionsClient()
-        let started = clock.now
-        let text = try await Self.withFreshToken(account: account) { try await client.complete(message, accessToken: $0) }
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        Log.debug("DictationController: cleaned up in \(clock.now - started) (\(transcript.count) → \(text.count) chars, screen text \(message.vars["screen_text"]?.count ?? 0) chars)")
-        // The prompt never removes dictated words, so an empty reply is a malfunction.
-        guard !text.isEmpty else { throw BackendError.invalidResponse }
-        return text
     }
 
     /// Runs a backend call with a valid token; one retry with a forced refresh if the backend says

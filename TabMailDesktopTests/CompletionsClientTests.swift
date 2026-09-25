@@ -10,14 +10,9 @@ struct CompletionsClientTests {
     private let baseURL = URL(string: "https://api.example.com")!
     private let message = CompletionsMessage(role: "system", content: "system_prompt_example", vars: ["dictation": "hello world", "app_name": "Example"])
 
-    /// What the backend streams: a comment primer, keepalives while the model works, then `final`.
-    private static func stream(final: String) -> String {
-        ": \(String(repeating: " ", count: 20))\n\nevent: keepalive\ndata: {}\n\nevent: keepalive\ndata: {}\n\nevent: final\ndata: \(final)\n\n"
-    }
-
     @Test func sendsTheNamedPromptWithItsVariables() async throws {
         let stub = StubTransport()
-        stub.enqueue(status: 200, text: Self.stream(final: #"{"assistant":"Hello, world.","thinking":"","token_usage":{"input_tokens":10,"output_tokens":3,"total_tokens":13}}"#))
+        stub.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Hello, world.","thinking":"","token_usage":{"input_tokens":10,"output_tokens":3,"total_tokens":13}}"#))
         let client = CompletionsClient(baseURL: baseURL, clientVersion: "0.1.0", transport: stub.transport)
 
         let reply = try await client.complete(message, accessToken: "token-abc")
@@ -52,7 +47,7 @@ struct CompletionsClientTests {
     /// The backend reports a refused request (e.g. a prompt this client can't use) in `final`.
     @Test func aFinalCarryingAnErrorFails() async {
         let stub = StubTransport()
-        stub.enqueue(status: 200, text: Self.stream(final: #"{"error":"Requested prompt is not available for this client platform."}"#))
+        stub.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"error":"Requested prompt is not available for this client platform."}"#))
         let client = CompletionsClient(baseURL: baseURL, transport: stub.transport)
         await #expect(throws: BackendError.failed(status: 200)) {
             _ = try await client.complete(message, accessToken: "t")

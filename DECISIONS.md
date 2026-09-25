@@ -189,8 +189,10 @@ Request shape and server-sent-events parsing mirror iOS `BackendClient`.
 - What is on screen while dictating is sent to the TabMail backend with each dictation; like every
   TabMail AI request it is not retained (root ADR-004), and the app logs sizes only.
 - Every dictation gains one model round trip; its duration is logged (debug) for tuning.
-- A failed or empty cleanup fails the dictation with an error; the raw transcript is not pasted
-  instead (no fallback without an owner decision).
+- ~~A failed or empty cleanup fails the dictation with an error; the raw transcript is not pasted
+  instead (no fallback without an owner decision).~~ Owner, 2026-09-25: when the cleanup fails
+  for any reason (error, refusal, empty reply, offline, signed out), the transcript is pasted as
+  heard. A failed cleanup never costs the user the dictation; the failure is logged (type only).
 - The app sends its own version (`0.x`) as `X-Client-Version`; a backend prompt it uses must be
   versioned to resolve at that version.
 

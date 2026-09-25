@@ -29,7 +29,7 @@ tabmail-macos/
 │   │   └── ScreenContextProbe.swift  Captures at key-down in the background; the cleanup awaits it; latest kept for the debug window
 │   ├── Dictation/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
-│   │   ├── DictationCleanup.swift    The cleanup prompt's variables: transcript + screen context
+│   │   ├── DictationCleanup.swift    The cleanup call: transcript + screen context; the transcript as heard if it fails
 │   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue
 │   │   ├── AudioRecorder.swift       Converts to 16 kHz mono Int16, accumulates, tracks peak, caps duration
 │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
@@ -66,7 +66,8 @@ tabmail-macos/
    `TranscriptionClient` (one forced-refresh retry on 401). The transcript and the screen context
    read at key-down (`ScreenContextProbe`) go to the backend cleanup prompt via
    `CompletionsClient` (same retry), and `TextInserter` pastes the cleaned text into the
-   frontmost app and restores the clipboard.
+   frontmost app and restores the clipboard. If the cleanup fails for any reason, the transcript
+   is pasted as heard (`DictationCleanup.cleanUp`).
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
 
