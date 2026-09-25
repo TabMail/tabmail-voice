@@ -214,6 +214,36 @@ struct ScreenContextCommandTests {
         #expect(clock.now - started < .seconds(2))
     }
 
+    /// Output still flowing at the deadline: the read stops there instead of reading on forever.
+    /// Whether a read is mid-stream at the deadline depends on scheduling, so this runs many short
+    /// reads. Each runs on its own thread, and a read that hasn't returned in time has its command
+    /// killed, so a failure can't hang the suite.
+    @Test func stopsACommandWhoseOutputIsStillFlowingAtTheDeadline() {
+        for _ in 0..<40 {
+            let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+            defer { try? FileManager.default.removeItem(at: pidFile) }
+            let output = OSAllocatedUnfairLock<String?>(initialState: "not returned")
+            let returned = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                let text = ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; while :; do echo x; done"#, pidFile.path], timeout: 0.05)
+                output.withLock { $0 = text }
+                returned.signal()
+            }
+
+            let inTime = returned.wait(timeout: .now() + 1) == .success
+            // No pid file: the shell was stopped before its first command, so nothing was flowing.
+            let pid = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            if !inTime, let pid {
+                kill(pid, SIGKILL)
+                _ = returned.wait(timeout: .now() + 5)
+            }
+            #expect(inTime)
+            #expect(output.withLock { $0 } == nil)
+            if let pid { #expect(Self.exits(pid)) }
+            guard inTime else { return }
+        }
+    }
+
     /// The process id a test command wrote to `file`.
     private static func pid(in file: URL) throws -> pid_t {
         try #require(pid_t(String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))

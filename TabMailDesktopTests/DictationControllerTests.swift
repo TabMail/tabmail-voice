@@ -4,6 +4,7 @@
 
 import AppKit
 import AVFoundation
+import os
 import Testing
 @testable import TabMail
 
@@ -169,19 +170,26 @@ struct DictationControllerTests {
         }
     }
 
-    /// Cancelled while the cleanup runs (another key pressed while the hotkey is held): its result
-    /// is not pasted.
+    /// Cancelled while the cleanup runs (another key pressed while the hotkey is held): the
+    /// request is cancelled right away, not at the cleanup's timeout, and its result is not pasted.
     @Test func aDictationCancelledDuringTheCleanupPastesNothing() async {
         transcription.enqueue(status: 200, json: ["text": transcript])
         completions.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))
         // Its own task: cancelling the test's task would cancel the test.
         let dictation = Task { await dictate() }
-        completions.gate = { dictation.cancel() }
+        let cancelledAfter = OSAllocatedUnfairLock<Duration?>(initialState: nil)
+        completions.gate = {
+            let asked = ContinuousClock.now
+            dictation.cancel()
+            do { try await Task.sleep(for: .seconds(5)) } catch { cancelledAfter.withLock { $0 = ContinuousClock.now - asked } }
+        }
 
         let (pasted, _) = await dictation.value
 
         #expect(completions.requests.count == 1)
         #expect(pasted.isEmpty)
+        // Well inside `DictationConfig.cleanupTimeout`, whose timer would cancel it anyway.
+        #expect((cancelledAfter.withLock { $0 } ?? .seconds(60)) < .seconds(1))
     }
 
     /// The user signed out and into another account while the transcription ran: the transcript is

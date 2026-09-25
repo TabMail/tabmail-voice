@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import Foundation
+import os
 import Testing
 @testable import TabMail
 
@@ -72,16 +73,22 @@ struct DictationCleanupFallbackTests {
     }
 
     /// A cleanup still running at its timeout is abandoned: the transcript is pasted as heard,
-    /// without waiting for the reply.
+    /// without waiting for the reply, and the request is cancelled.
     @Test func aCleanupPastItsTimeoutPastesTheTranscriptAsHeard() async {
         backend.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))
-        backend.gate = { try? await Task.sleep(for: .seconds(5)) }
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        backend.gate = {
+            do { try await Task.sleep(for: .seconds(5)) } catch { cancelled.withLock { $0 = true } }
+        }
         let clock = ContinuousClock()
         let started = clock.now
 
         #expect(await cleanUp(timeout: 0.2) == transcript)
         #expect(clock.now - started < .seconds(2))
         #expect(backend.requests.count == 1)
+        let deadline = clock.now + .seconds(1)
+        while !cancelled.withLock({ $0 }), clock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(cancelled.withLock { $0 })
     }
 
     /// A reply within the timeout is used.
