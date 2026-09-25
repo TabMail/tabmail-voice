@@ -1,6 +1,0 @@
-// Copy to LocalSigning.xcconfig (gitignored) and fill in.
-//
-// A stable signing identity matters on macOS: the Accessibility and Microphone
-// grants (TCC) are bound to the code signature, so an ad-hoc signed build loses
-// both grants on every rebuild. Sign with your Apple Development team.
-DEVELOPMENT_TEAM = YOUR_TEAM_ID

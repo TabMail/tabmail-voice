@@ -7,7 +7,7 @@ Swift 6 / SwiftUI + AppKit, macOS 15+, XcodeGen.
 ```
 tabmail-desktop/
 ├── project.yml                 XcodeGen spec (app + unit tests). Generate via Scripts/xcodegen.sh
-├── LocalSigning.xcconfig.example  → copy to gitignored LocalSigning.xcconfig (DEVELOPMENT_TEAM)
+├── Secrets.xcconfig.example    → copy to gitignored Secrets.xcconfig (DEVELOPMENT_TEAM); loaded via configFiles
 ├── Scripts/xcodegen.sh         Generates TabMailDesktop.xcodeproj with the signing team injected
 ├── TabMailDesktop/
 │   ├── App/

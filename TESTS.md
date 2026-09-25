@@ -1,7 +1,7 @@
 # TabMail Desktop — Tests
 
 Run: `xcodebuild -project TabMailDesktop.xcodeproj -scheme TabMailDesktop -derivedDataPath DerivedData test`
-(Swift Testing, hosted in the app; add `CODE_SIGN_IDENTITY=-` without `LocalSigning.xcconfig`).
+(Swift Testing, hosted in the app; needs `Secrets.xcconfig` from the template; add `CODE_SIGN_IDENTITY=-` if its team is unset).
 No test touches the network, the user's clipboard, or the real Keychain item.
 
 | Suite | Covers |

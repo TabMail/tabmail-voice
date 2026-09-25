@@ -54,7 +54,7 @@ which the App Sandbox forbids.
 Developer ID-signed, notarized app outside the Mac App Store.
 
 **Consequences:** No Mac App Store listing. TCC grants are bound to the code signature, so
-development builds must be signed with a stable team (`LocalSigning.xcconfig`), or Accessibility
+development builds must be signed with a stable team (`DEVELOPMENT_TEAM` in the gitignored `Secrets.xcconfig`, as in tabmail-ios), or Accessibility
 is lost on every rebuild.
 
 ## ADR-DESK-004: Phase 1 needs no account and no backend

@@ -20,10 +20,8 @@ xcuserdata/
 *.log
 *.env
 
-# Local signing and secrets — never committed. LocalSigning.xcconfig holds
-# DEVELOPMENT_TEAM (create it from LocalSigning.xcconfig.example). The rest
-# mirror tabmail-ios so a copied secrets file can't slip in.
-LocalSigning.xcconfig
+# Local signing and secrets — never committed. Secrets.xcconfig holds
+# DEVELOPMENT_TEAM (create it from Secrets.xcconfig.example), as in tabmail-ios.
 Secrets.xcconfig
 Secrets.xcconfig.bak
 credentials.json

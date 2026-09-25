@@ -4,7 +4,8 @@ The root `CLAUDE.md` rules apply in full. Desktop-specific additions:
 
 - **Build and test:** `./Scripts/xcodegen.sh` after any `project.yml` or file add/remove, then
   `xcodebuild -project TabMailDesktop.xcodeproj -scheme TabMailDesktop -derivedDataPath DerivedData test`.
-  Add `CODE_SIGN_IDENTITY=-` when no `LocalSigning.xcconfig` is present. Warnings are errors
+  `Secrets.xcconfig` (gitignored, from `Secrets.xcconfig.example`) must exist; add
+  `CODE_SIGN_IDENTITY=-` when its `DEVELOPMENT_TEAM` is unset. Warnings are errors
   (`SWIFT_TREAT_WARNINGS_AS_ERRORS`); the App Intents "Metadata extraction skipped" line is the
   only tolerated diagnostic.
 - **Never log transcript text, audio or tokens.** Dictation is user content. Log lengths, states

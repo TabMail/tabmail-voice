@@ -11,12 +11,18 @@ options:
   generateEmptyDirectories: true
   groupSortPosition: top
 
+configFiles:
+  Debug: Secrets.xcconfig
+  Release: Secrets.xcconfig
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    # Sourced from the gitignored LocalSigning.xcconfig by Scripts/xcodegen.sh.
+    # DEVELOPMENT_TEAM is sourced from the gitignored Secrets.xcconfig by
+    # Scripts/xcodegen.sh (see Secrets.xcconfig.example), so the Team ID stays
+    # out of the public repo. Always generate via that script.
     DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
     CODE_SIGN_STYLE: Automatic
     ENABLE_HARDENED_RUNTIME: YES

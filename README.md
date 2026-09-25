@@ -7,11 +7,21 @@ Requires macOS 15 or later and a TabMail account.
 
 ## Build
 
-```sh
-cp LocalSigning.xcconfig.example LocalSigning.xcconfig   # set DEVELOPMENT_TEAM
-./Scripts/xcodegen.sh
-open TabMailDesktop.xcodeproj                            # or build with xcodebuild
-```
+1. Create your secrets file from the template and set your Apple Developer Team ID:
+   ```sh
+   cp Secrets.xcconfig.example Secrets.xcconfig
+   ```
+   `Secrets.xcconfig` is gitignored. The comments in the template explain each value.
+2. Generate the Xcode project (requires [XcodeGen](https://github.com/yonaskolb/XcodeGen)):
+   ```sh
+   ./Scripts/xcodegen.sh
+   ```
+   Always use this script rather than a bare `xcodegen generate`: it reads your
+   `DEVELOPMENT_TEAM` from `Secrets.xcconfig` and passes it to XcodeGen.
+3. Open `TabMailDesktop.xcodeproj` and run the `TabMailDesktop` scheme, or run the tests:
+   ```sh
+   xcodebuild -project TabMailDesktop.xcodeproj -scheme TabMailDesktop -derivedDataPath DerivedData test
+   ```
 
 Sign with a real team. macOS ties the Microphone and Accessibility permissions to the app's
 signature, so an ad-hoc signed build loses them on every rebuild.
