@@ -45,3 +45,7 @@ AGENTS.md
 
 # Local build/test scratch.
 scratchpad/
+
+# Speech-to-text comparison: your voice recordings and their transcripts stay local.
+Scripts/stt-compare/recordings/
+Scripts/stt-compare/results/

@@ -43,6 +43,12 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 - Choose Fn/Globe instead of Right Option in Settings. If you do, set System Settings › Keyboard ›
   "Press 🌐 key to" to "Do Nothing".
 
+## Comparing speech-to-text models
+
+`Scripts/stt-compare/` records you reading `passages.txt` (`record.py`, needs ffmpeg) and runs
+every recording through several OpenRouter models (`compare.py`, needs `OPENROUTER_API_KEY`),
+scoring word error rate, latency and cost. Recordings and results stay local (gitignored).
+
 ## License
 
 MPL 2.0. See `LICENSE`.

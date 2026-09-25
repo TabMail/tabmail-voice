@@ -1,0 +1,13 @@
+# Reading script for comparing speech-to-text models: one passage per line, "id | text".
+# Read each passage naturally, at your normal dictation pace. The text after "|" is the
+# reference the transcripts are scored against. Add your own lines (e.g. another language).
+01-short | Sounds good, thanks!
+02-calendar | Can you move my three o'clock with Jordan to Thursday afternoon?
+03-reply | Hi Priya, thanks for sending the third quarter numbers. I'll review them tonight and get back to you by Friday. Best, Sam.
+04-numbers | The invoice total is four thousand two hundred eighty dollars and fifty cents, due on March fourteenth, reference number seven three nine two.
+05-jargon | Please check the IMAP sync logs. The OAuth token might have expired after the Kubernetes deploy, so the webhook never fired.
+06-correction | Let's meet on Tuesday, no wait, Wednesday at ten a.m. in the second floor conference room.
+07-address | Send the draft to support at example dot com and copy the whole design team.
+08-long | I wanted to follow up on yesterday's meeting. We agreed to ship the new onboarding flow next sprint, but only if the analytics dashboard is ready first. Could you ask Morgan whether the data pipeline will be done by Wednesday? If not, let's push the launch by a week and tell the customers in the weekly newsletter.
+09-fast | Yeah that works for me, let's do it, just send me the link when you have it.
+10-quiet | Remind me to call the dentist tomorrow morning before nine.
