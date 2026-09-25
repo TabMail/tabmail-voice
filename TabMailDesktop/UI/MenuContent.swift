@@ -36,6 +36,13 @@ struct MenuContent: View {
         }
         .disabled(!isReady)
 
+        #if DEBUG
+        Button("Play Last Recording") {
+            NSWorkspace.shared.open(DictationConfig.debugLastRecordingURL)
+        }
+        .disabled(!FileManager.default.fileExists(atPath: DictationConfig.debugLastRecordingURL.path))
+        #endif
+
         Divider()
 
         SettingsLink {

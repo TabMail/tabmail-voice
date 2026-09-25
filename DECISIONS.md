@@ -85,7 +85,9 @@ multilingual accuracy than Apple's on-device model.
 **Consequences:**
 - Audio leaves the Mac. The TabMail backend stores and logs neither audio nor text.
 - No live transcript while speaking (batch upload on release); latency ≈ upload + model time.
-- Silence (peak below `silenceLevelThreshold`) isn't uploaded: Whisper hallucinates on silence.
+- A recording with under `minimumSpeechSeconds` of audio above `speechLevelThreshold` isn't
+  uploaded (the overlay says it was too quiet): Whisper invents text for silence. Recording
+  continues `releaseTailDuration` after the key is released so the last word isn't clipped.
 - Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).
 - A failed transcription loses that recording (no retry queue yet).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).

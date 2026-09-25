@@ -116,9 +116,7 @@ final class DictationController {
     }
 
     func finish() {
-        guard phase == .listening, let startedAt, let recorder else { return }
-        capture?.stop()
-        capture = nil
+        guard phase == .listening, let startedAt, recorder != nil else { return }
         maxDurationTask?.cancel()
 
         if clock.now - startedAt < DictationConfig.minimumHoldDuration {
@@ -126,6 +124,28 @@ final class DictationController {
             discard()
             return
         }
+
+        // Keep the microphone open briefly after release so the last word isn't clipped.
+        let current = generation
+        phase = .transcribing
+        level = 0
+        transcriptionTask = Task { [weak self] in
+            try? await Task.sleep(for: DictationConfig.releaseTailDuration)
+            guard !Task.isCancelled, let self, self.generation == current else { return }
+            await self.completeRecording(generation: current)
+        }
+    }
+
+    func cancel() {
+        guard phase == .listening || phase == .transcribing else { return }
+        Log.debug("DictationController: cancelled")
+        discard()
+    }
+
+    private func completeRecording(generation current: Int) async {
+        capture?.stop()
+        capture = nil
+        guard let recorder else { return }
 
         let recording: AudioRecorder.Recording
         do {
@@ -136,29 +156,25 @@ final class DictationController {
             fail("Couldn't record audio.")
             return
         }
-        guard recording.peakLevel >= DictationConfig.silenceLevelThreshold else {
-            Log.debug("DictationController: silence (peak \(recording.peakLevel)); not uploading")
-            discard()
+        let micDelay = recording.firstBufferAt.map { "\($0 - (startedAt ?? $0))" } ?? "no audio"
+        Log.debug("DictationController: recorded \(recording.duration)s, speech \(recording.speechSeconds)s, peak \(recording.peakLevel), first audio after \(micDelay)")
+
+        let wav = WAVEncoder.encode(pcm16Mono: recording.pcm, sampleRate: recording.sampleRate)
+        #if DEBUG
+        Self.keepForPlayback(wav)
+        #endif
+
+        guard recording.containsSpeech else {
+            Log.debug("DictationController: too quiet; not uploading")
+            teardown()
+            fail("Too quiet — nothing to type. Hold the key and speak.")
             return
         }
-
-        let current = generation
-        phase = .transcribing
-        level = 0
-        transcriptionTask = Task { [weak self] in
-            await self?.transcribe(recording, generation: current)
-        }
+        await transcribe(wav, generation: current)
     }
 
-    func cancel() {
-        guard phase == .listening || phase == .transcribing else { return }
-        Log.debug("DictationController: cancelled")
-        discard()
-    }
-
-    private func transcribe(_ recording: AudioRecorder.Recording, generation current: Int) async {
-        let wav = WAVEncoder.encode(pcm16Mono: recording.pcm, sampleRate: recording.sampleRate)
-        Log.debug("DictationController: uploading \(wav.count) bytes (\(recording.duration)s)")
+    private func transcribe(_ wav: Data, generation current: Int) async {
+        Log.debug("DictationController: uploading \(wav.count) bytes")
         do {
             let text = try await Self.transcribeWithFreshToken(wav, client: makeTranscriptionClient(), account: account)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -190,6 +206,18 @@ final class DictationController {
             return try await client.transcribe(wav: wav, accessToken: fresh)
         }
     }
+
+    #if DEBUG
+    /// Debug builds only: overwrites one temp file with the latest recording so a developer can
+    /// listen to exactly what was (or would have been) uploaded. Compiled out of Release.
+    private static func keepForPlayback(_ wav: Data) {
+        do {
+            try wav.write(to: DictationConfig.debugLastRecordingURL, options: .atomic)
+        } catch {
+            Log.debug("DictationController: couldn't keep last recording: \(type(of: error))")
+        }
+    }
+    #endif
 
     private func updateLevel(_ newLevel: Float, generation: Int) {
         guard generation == self.generation, phase == .listening else { return }

@@ -24,9 +24,20 @@ enum DictationConfig {
     /// Upload format: 16 kHz mono 16-bit PCM WAV — what Whisper-class models consume natively,
     /// at ~32 KB per second of speech.
     static let recordingSampleRate: Double = 16_000
-    /// A recording whose loudest buffer stays below this level (same 0…1 scale as the meter) is
-    /// treated as silence and not uploaded: Whisper-class models hallucinate text on silence.
-    static let silenceLevelThreshold: Float = 0.15
+    /// A captured buffer at or above this level (same 0…1 scale as the meter, ≈ −32 dB RMS)
+    /// counts as speech. A single key click or room noise stays below it or is too brief to count.
+    static let speechLevelThreshold: Float = 0.35
+    /// A recording with less speech than this is too quiet: nothing is uploaded and the overlay
+    /// says so. Whisper-class models invent text ("Thank you.") when given silence.
+    static let minimumSpeechSeconds: TimeInterval = 0.25
+    /// Recording continues this long after the key is released, so the last word isn't clipped:
+    /// people tend to let go while still finishing it.
+    static let releaseTailDuration: Duration = .milliseconds(300)
+    #if DEBUG
+    /// Debug builds only: the latest recording, overwritten each time ("Play Last Recording").
+    static let debugLastRecordingURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("TabMail-last-dictation.wav")
+    #endif
     /// Recording stops and is sent automatically at this length. Must stay under the backend's
     /// upload limit (10 MiB): 5 minutes of 16 kHz 16-bit mono is ~9.6 MB.
     static let maxRecordingDuration: Duration = .seconds(300)
