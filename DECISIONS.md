@@ -107,8 +107,9 @@ overlay appears at the text cursor once the hold reaches `minimumHoldDuration`; 
 discarded unseen. The microphone-off half (engine, input node, tap, `prepare()`) is done ahead of
 time and again after every dictation, and rebuilt when the system default input changes. The
 overlay shows a gathering swirl until the first audio arrives, then a waveform pill that follows
-any incoming sound on a fixed, sensitive scale (it shows that the mic hears something; telling
-speech from background is the model's job), then a circle with a spinning rim while
+incoming sound from a fixed quiet end (−50 dB) to the loudest recent sound (at least −30 dB),
+so speech stands out from room noise on quiet and loud mics alike (telling speech from
+background is still the model's job), then a circle with a spinning rim while
 transcribing. On exit it plays in reverse (the pill shrinks into the swirl, which disperses).
 The overlay uses only the icon's blue → purple. The pill is
 the surface for status now and agent responses later (as on iOS).

@@ -5,16 +5,29 @@
 import Testing
 @testable import TabMail
 
-/// The waveform shows that sound is coming in, on a fixed sensitive scale. Levels measured on a
-/// quiet display microphone: room noise ≈ −45 dB, short utterances ≈ −42 dB, speech −35 to −40 dB.
+/// Levels measured on a quiet display microphone: room noise ≈ −45 dB, speech −35 to −40 dB.
 struct WaveformLevelTests {
-    @Test func anySoundOnAQuietMicMovesTheWaveform() {
-        #expect(MicrophoneCapture.level(forDecibels: -45) > 0.3)
-        #expect(MicrophoneCapture.level(forDecibels: -35) > MicrophoneCapture.level(forDecibels: -45))
+    private let loudEnd = DictationConfig.levelMinimumLoudDecibels
+
+    /// The waveform must follow speech, not sit near full on background: speech well above the
+    /// room noise, room noise low but visible.
+    @Test func quietMicSpeechStandsOutFromRoomNoise() {
+        let noise = MicrophoneCapture.level(forDecibels: -45, loudest: -45)
+        let speech = MicrophoneCapture.level(forDecibels: -36, loudest: -36)
+        #expect(noise > 0 && noise < 0.35)
+        #expect(speech > 0.6)
+        #expect(speech - noise > 0.35)
     }
 
-    @Test func silenceIsFlatAndLoudIsFull() {
-        #expect(MicrophoneCapture.level(forDecibels: DictationConfig.silenceDecibels) == 0)
-        #expect(MicrophoneCapture.level(forDecibels: -10) == 1)
+    /// A louder microphone's speech must not pin the bars at full: the loud end follows it.
+    @Test func loudMicSpeechStillVaries() {
+        let peak = MicrophoneCapture.level(forDecibels: -15, loudest: -15)
+        let softer = MicrophoneCapture.level(forDecibels: -25, loudest: -15)
+        #expect(peak == 1)
+        #expect(softer > 0.3 && softer < 0.85)
+    }
+
+    @Test func silenceIsFlat() {
+        #expect(MicrophoneCapture.level(forDecibels: DictationConfig.silenceDecibels, loudest: loudEnd) == 0)
     }
 }

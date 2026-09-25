@@ -192,7 +192,7 @@ private struct OverlayView: View {
                         .foregroundStyle(Brand.gradient)
                     Text(text)
                         .font(.system(size: DictationConfig.overlayFontSize, weight: .medium))
-                        // The pill is white in light and dark mode alike.
+                        // The pill is light in light and dark mode alike.
                         .foregroundStyle(Color.black)
                         .lineLimit(DictationConfig.pillMaxTextLines)
                         .fixedSize(horizontal: false, vertical: true)
@@ -206,7 +206,7 @@ private struct OverlayView: View {
             .frame(minHeight: DictationConfig.pillHeight)
             // A capsule while one line tall; grows into a rounded rectangle for longer messages,
             // and is a circle (as wide as tall) while thinking.
-            .background(Color.white, in: Self.shape)
+            .background(Color(white: DictationConfig.pillFillWhite), in: Self.shape)
             .overlay {
                 if isThinking {
                     SpinningRim()
@@ -278,20 +278,28 @@ private struct GatheringSwirl: View {
     }
 }
 
-/// Loading indicator on the thinking circle's rim: a blue → purple arc circling.
+/// Loading indicator on the thinking circle's rim: a blue → violet arc with a fading tail,
+/// circling over a faint blue ring.
 private struct SpinningRim: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             let turns = timeline.date.timeIntervalSinceReferenceDate * DictationConfig.thinkingRevolutionsPerSecond
-            Circle()
-                .trim(from: 0, to: DictationConfig.thinkingArcFraction)
-                .stroke(
-                    AngularGradient(colors: [Brand.blue, Brand.purple], center: .center,
-                                    startAngle: .zero, endAngle: .degrees(360 * DictationConfig.thinkingArcFraction)),
-                    style: StrokeStyle(lineWidth: DictationConfig.thinkingRimWidth, lineCap: .round)
-                )
-                .rotationEffect(.degrees(360 * turns.truncatingRemainder(dividingBy: 1)))
-                .padding(DictationConfig.thinkingRimWidth / 2)
+            ZStack {
+                Circle()
+                    .stroke(Brand.blue.opacity(DictationConfig.thinkingTrackOpacity), lineWidth: DictationConfig.thinkingRimWidth)
+                Circle()
+                    .trim(from: 0, to: DictationConfig.thinkingArcFraction)
+                    .stroke(
+                        AngularGradient(
+                            colors: [Brand.blue.opacity(0), Brand.blue, Brand.colour(at: DictationConfig.thinkingArcEndColour)],
+                            center: .center,
+                            startAngle: .zero, endAngle: .degrees(360 * DictationConfig.thinkingArcFraction)
+                        ),
+                        style: StrokeStyle(lineWidth: DictationConfig.thinkingRimWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(360 * turns.truncatingRemainder(dividingBy: 1)))
+            }
+            .padding(DictationConfig.thinkingRimWidth / 2)
         }
     }
 }
