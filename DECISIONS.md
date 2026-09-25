@@ -193,3 +193,16 @@ Request shape and server-sent-events parsing mirror iOS `BackendClient`.
   instead (no fallback without an owner decision).
 - The app sends its own version (`0.x`) as `X-Client-Version`; a backend prompt it uses must be
   versioned to resolve at that version.
+
+## ADR-DESK-009: The app identifies itself to the backend as `macos`
+
+**Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the
+admin panel should show it.
+
+**Decision:** `X-Client-Type` is `macos` (was `desktop`). The admin panel counts `macos` usage as
+its own device, beside Thunderbird and iOS.
+
+**Consequences:**
+- The backend reads the Thunderbird prompts for any client type other than `ios`, so prompt and
+  tool resolution are unchanged.
+- Usage recorded under `desktop` during development (2026-09-24 and 25) keeps that label.

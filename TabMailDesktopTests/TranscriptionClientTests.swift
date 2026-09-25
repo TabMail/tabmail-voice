@@ -23,7 +23,7 @@ struct TranscriptionClientTests {
         #expect(request.url?.absoluteString == "https://api.example.com/dictation/transcribe")
         #expect(request.httpMethod == "POST")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token-abc")
-        #expect(request.value(forHTTPHeaderField: "X-Client-Type") == "desktop")
+        #expect(request.value(forHTTPHeaderField: "X-Client-Type") == "macos")
         #expect(request.value(forHTTPHeaderField: "X-Client-Version") == "0.1.0")
         let body = Fixtures.jsonBody(of: request)
         #expect(body["format"] as? String == "wav")

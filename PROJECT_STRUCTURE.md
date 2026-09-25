@@ -74,5 +74,5 @@ A `generation` counter makes callbacks from a superseded dictation no-ops.
 
 ## Relationships
 
-Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: desktop`) with a Supabase
+Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) with a Supabase
 JWT from `auth.tabmail.ai`. Settings has a "Use development server" toggle (dev.tabmail.ai).

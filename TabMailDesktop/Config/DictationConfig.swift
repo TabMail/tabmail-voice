@@ -100,8 +100,9 @@ enum DictationConfig {
     static let completionsPath = "completions/chat"
     /// The backend prompt that fixes recognition errors in a transcript using the screen context.
     static let cleanupPrompt = "system_prompt_dictate_cleanup"
-    /// Sent as `X-Client-Type` to identify this client to the backend.
-    static let clientType = "desktop"
+    /// Sent as `X-Client-Type` to identify this client to the backend. Usage is recorded under it,
+    /// and the admin panel shows it as the macOS device.
+    static let clientType = "macos"
     static let transcriptionRequestTimeout: TimeInterval = 45
     /// Longest pause in the cleanup's response stream (the backend sends keepalives while the
     /// model works).
