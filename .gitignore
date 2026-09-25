@@ -1,15 +1,49 @@
 # XcodeGen-generated project — sourced from project.yml. Regenerate with
 # ./Scripts/xcodegen.sh; none of it is tracked.
 TabMailDesktop.xcodeproj/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
 DerivedData/
 build/
+.build/
+.swiftpm/
 *.xcuserstate
 xcuserdata/
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.dmg
 .DS_Store
+*.swp
+*~
+.idea/
 *.log
 *.env
-# Holds DEVELOPMENT_TEAM; every dev creates it from LocalSigning.xcconfig.example.
+
+# Local signing and secrets — never committed. LocalSigning.xcconfig holds
+# DEVELOPMENT_TEAM (create it from LocalSigning.xcconfig.example). The rest
+# mirror tabmail-ios so a copied secrets file can't slip in.
 LocalSigning.xcconfig
+Secrets.xcconfig
+Secrets.xcconfig.bak
+credentials.json
+GoogleService-Info.plist
+*.p8
+*.p12
+
+# Release toolchain (notarization credentials, account identifiers) stays local.
+/fastlane/
+/Gemfile
+/Gemfile.lock
+
 # Plans and handoffs stay local (never route plans into Companion/).
 PLAN_*.md
 PLAN_*/
+
+# Agent/automation tooling is private infrastructure — never in the public repo.
+AGENTS.md
+.agents/
+.codex/
+
+# Local build/test scratch.
+scratchpad/
