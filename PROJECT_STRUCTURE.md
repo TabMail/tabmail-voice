@@ -30,7 +30,7 @@ tabmail-macos/
 │   ├── Dictation/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
 │   │   ├── DictationCleanup.swift    The cleanup call: transcript + screen context; the transcript as heard if it fails
-│   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue
+│   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue; `AudioCapturing` (tests inject a silent one)
 │   │   ├── AudioRecorder.swift       Converts to 16 kHz mono Int16, accumulates, tracks peak, caps duration
 │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
 │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM

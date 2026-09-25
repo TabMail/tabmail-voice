@@ -16,8 +16,10 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `WAVEncoderTests` | every header field; AVAudioFile reads the output (independent oracle) |
 | `TranscriptionClientTests` | request URL/headers/body; backend error → user error mapping; missing text; one forced-refresh retry on 401 only; signed-out never calls backend |
 | `CompletionsClientTests` | request URL/headers; variables flattened beside role and content; reply from `final` after primer and keepalives; `error` event, `final` carrying an error, no `final` and HTTP errors all fail; SSE events end at blank lines, the next event or the end, comments skipped, data lines joined, CRLF |
-| `DictationCleanupTests` | the cleanup prompt gets the dictation, app, host, terminal program, window title and the rendered screen text with the caret; without context every field is sent empty |
-| `DictationCleanupFallbackTests` | the cleaned text is pasted (trimmed); every cleanup failure (HTTP error, stream error, refusal in `final`, empty reply, no `final`, unreachable backend, signed out) pastes the transcript as heard |
+| `DictationCleanupTests` | the cleanup prompt (the backend's name, spelled out) gets the dictation, app, host, terminal program, window title and the rendered screen text with the caret; without context every field is sent empty |
+| `DictationCleanupFallbackTests` | the cleaned text is pasted (trimmed); every cleanup failure (HTTP error, stream error, refusal in `final`, empty reply, no `final`, unreachable backend, signed out) pastes the transcript as heard; 401 → one refresh → retry with the new token; a second 401 or a rejected refresh pastes the transcript; another account signed in (before, or during the first request) gets no cleanup request |
+| `DictationControllerTests` | a finished recording through the controller with a silent capture: the cleaned text is pasted; a failed cleanup pastes the transcript; an empty or failed transcription sends no cleanup and pastes nothing; cancelled during the cleanup pastes nothing; an account switch during the transcription skips the cleanup |
+| `ScreenContextCommandTests` | a helper command's output is returned; a command that doesn't finish, or whose output never ends (a background child holding it, as a stopped tmux server does), is given up at the deadline |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |
 
 ## Not covered by unit tests (manual checklist)
@@ -41,5 +43,5 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 
 ## Next
 
-- `DictationController` state machine with injected capture fakes (start while transcribing,
-  cancel during upload, failure reset timing).
+- `DictationController` state machine before the upload (start while transcribing, cancel during
+  the recording, failure reset timing); `DictationControllerTests` covers from the upload on.

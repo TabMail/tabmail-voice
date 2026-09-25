@@ -41,7 +41,7 @@ final class DictationController {
     @ObservationIgnored private let makeTranscriptionClient: @MainActor () -> TranscriptionClient
     @ObservationIgnored private let makeCompletionsClient: @MainActor () -> CompletionsClient
     @ObservationIgnored private let inserter: TextInserter
-    @ObservationIgnored private let capture: MicrophoneCapture
+    @ObservationIgnored private let capture: any AudioCapturing
     @ObservationIgnored private let clock = ContinuousClock()
 
     // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
@@ -58,7 +58,7 @@ final class DictationController {
         permissions: PermissionsModel,
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
-        capture: MicrophoneCapture = MicrophoneCapture(),
+        capture: any AudioCapturing = MicrophoneCapture(),
         makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient,
         makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
     ) {
@@ -226,11 +226,15 @@ final class DictationController {
         await transcribe(wav, generation: current)
     }
 
-    private func transcribe(_ wav: Data, generation current: Int) async {
+    /// Transcribes, cleans up and inserts one recording. Internal for tests.
+    func transcribe(_ wav: Data, generation current: Int) async {
         Log.debug("DictationController: uploading \(wav.count) bytes")
+        // Both requests go under the account signed in now, even if the user switches accounts
+        // while they run.
+        let userId = account.session?.userId
         do {
             let client = makeTranscriptionClient()
-            let transcript = try await Self.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
+            let transcript = try await Self.withFreshToken(account: account, userId: userId) { try await client.transcribe(wav: wav, accessToken: $0) }
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard generation == current, !Task.isCancelled else { return }
             Log.debug("DictationController: transcript ready (\(transcript.count) chars)")
@@ -241,7 +245,7 @@ final class DictationController {
             }
             // The screen context read at key-down.
             let context = await contextTask?.value
-            let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account)
+            let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
             guard generation == current, !Task.isCancelled else { return }
             await inserter.insert(text)
             guard generation == current else { return }
@@ -255,14 +259,17 @@ final class DictationController {
         }
     }
 
-    /// Runs a backend call with a valid token; one retry with a forced refresh if the backend says
-    /// the token is no longer valid.
-    static func withFreshToken<T>(account: AccountModel, _ call: (String) async throws -> T) async throws -> T {
-        guard let token = try await account.validToken() else { throw BackendError.unauthorized }
+    /// Runs a backend call with a valid token of the account `userId`; one retry with a forced
+    /// refresh if the backend says the token is no longer valid. Throws `unauthorized` when that
+    /// account is no longer the one signed in, so a dictation never continues under another account.
+    static func withFreshToken<T>(account: AccountModel, userId: String?, _ call: (String) async throws -> T) async throws -> T {
+        guard let token = try await account.validToken(), account.session?.userId == userId else {
+            throw BackendError.unauthorized
+        }
         do {
             return try await call(token)
         } catch BackendError.unauthorized {
-            guard let fresh = try await account.validToken(forceRefresh: true) else {
+            guard let fresh = try await account.validToken(forceRefresh: true), account.session?.userId == userId else {
                 throw BackendError.unauthorized
             }
             return try await call(fresh)

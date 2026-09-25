@@ -195,6 +195,13 @@ Request shape and server-sent-events parsing mirror iOS `BackendClient`.
   heard. A failed cleanup never costs the user the dictation; the failure is logged (type only).
 - The app sends its own version (`0.x`) as `X-Client-Version`; a backend prompt it uses must be
   versioned to resolve at that version.
+- A dictation's transcription and cleanup go under the account signed in when its upload starts.
+  If the user signs out and into another account meanwhile, the cleanup is skipped and the
+  transcript pasted as heard (`DictationController.withFreshToken` refuses a token for another
+  account).
+- The cleanup waits for the capture, so the capture must finish: each helper command (tmux, ps)
+  gets `contextCommandTimeout` and is stopped after it. A stopped tmux server keeps its client's
+  output open, so waiting for the end of the output alone could block the dictation indefinitely.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 

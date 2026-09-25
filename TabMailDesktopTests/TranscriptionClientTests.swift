@@ -70,7 +70,7 @@ struct TranscriptionClientTests {
         )
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
 
-        let text = try await DictationController.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
+        let text = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, accessToken: $0) }
 
         #expect(text == "Retried.")
         #expect(backend.requests.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer access-1", "Bearer access-2"])
@@ -85,7 +85,7 @@ struct TranscriptionClientTests {
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
 
         await #expect(throws: BackendError.subscriptionRequired) {
-            _ = try await DictationController.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
+            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, accessToken: $0) }
         }
         #expect(backend.requests.count == 1)
         #expect(auth.requests.isEmpty)
@@ -96,7 +96,7 @@ struct TranscriptionClientTests {
         let account = AccountModel(client: AuthClient(transport: StubTransport().transport), store: InMemorySessionStore())
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
         await #expect(throws: BackendError.unauthorized) {
-            _ = try await DictationController.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
+            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, accessToken: $0) }
         }
         #expect(backend.requests.isEmpty)
     }

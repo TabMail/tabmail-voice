@@ -19,7 +19,8 @@ struct DictationCleanupTests {
         let message = DictationCleanup.message(dictation: "quarterly road map", context: context)
 
         #expect(message.role == "system")
-        #expect(message.content == DictationConfig.cleanupPrompt)
+        // The backend's prompt name, spelled out: comparing with the config would pass a typo.
+        #expect(message.content == "system_prompt_dictate_cleanup")
         #expect(message.vars == [
             "dictation": "quarterly road map",
             "app_name": "Example Notes",
@@ -44,14 +45,20 @@ struct DictationCleanupTests {
 struct DictationCleanupFallbackTests {
     private let transcript = "ask jordan about the road map"
     private let backend = StubTransport()
+    private let auth = StubTransport()
 
-    private func cleanUp(signedIn: Bool = true) async -> String {
-        let account = AccountModel(
-            client: AuthClient(transport: StubTransport().transport),
-            store: signedIn ? InMemorySessionStore(Fixtures.session()) : InMemorySessionStore()
-        )
+    private func account(_ session: TabMailSession? = Fixtures.session()) -> AccountModel {
+        AccountModel(client: AuthClient(transport: auth.transport), store: InMemorySessionStore(session))
+    }
+
+    /// A cleanup of a dictation transcribed under `Fixtures.userId`.
+    private func cleanUp(_ account: AccountModel? = nil) async -> String {
         let client = CompletionsClient(baseURL: URL(string: "https://api.example.com")!, transport: backend.transport)
-        return await DictationCleanup.cleanUp(transcript, context: nil, client: client, account: account)
+        return await DictationCleanup.cleanUp(transcript, context: nil, client: client, account: account ?? self.account(), userId: Fixtures.userId)
+    }
+
+    private var authorizations: [String?] {
+        backend.requests.map { $0.value(forHTTPHeaderField: "Authorization") }
     }
 
     @Test func pastesTheCleanedUpText() async {
@@ -87,7 +94,61 @@ struct DictationCleanupFallbackTests {
     }
 
     @Test func signedOutPastesTheTranscriptWithoutCallingTheBackend() async {
-        #expect(await cleanUp(signedIn: false) == transcript)
+        #expect(await cleanUp(account(nil)) == transcript)
         #expect(backend.requests.isEmpty)
+    }
+
+    @Test func anExpiredTokenIsRefreshedOnceAndTheCleanupRetried() async {
+        backend.enqueue(status: 401, json: ["error": "invalid_token"])
+        backend.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))
+        auth.enqueue(status: 200, json: Fixtures.sessionJSON(access: "access-2", refresh: "refresh-2"))
+
+        #expect(await cleanUp() == "Ask Jordan about the roadmap.")
+        #expect(authorizations == ["Bearer access-1", "Bearer access-2"])
+        #expect(auth.requests.count == 1)
+    }
+
+    @Test func aTokenRejectedAgainAfterTheRefreshPastesTheTranscriptAsHeard() async {
+        backend.enqueue(status: 401, json: ["error": "invalid_token"])
+        backend.enqueue(status: 401, json: ["error": "invalid_token"])
+        auth.enqueue(status: 200, json: Fixtures.sessionJSON(access: "access-2", refresh: "refresh-2"))
+
+        #expect(await cleanUp() == transcript)
+        #expect(authorizations == ["Bearer access-1", "Bearer access-2"])
+        #expect(auth.requests.count == 1)
+    }
+
+    @Test func aRejectedRefreshPastesTheTranscriptAsHeard() async {
+        backend.enqueue(status: 401, json: ["error": "invalid_token"])
+        auth.enqueue(status: 400, json: ["error": "invalid_grant"])
+
+        #expect(await cleanUp() == transcript)
+        #expect(backend.requests.count == 1)
+    }
+
+    // MARK: Another account
+
+    /// The user signed out and into another account after the dictation was transcribed.
+    @Test func aDictationIsNotCleanedUpUnderAnotherAccount() async {
+        #expect(await cleanUp(account(Fixtures.session(access: "access-b", userId: "user-2"))) == transcript)
+        #expect(backend.requests.isEmpty)
+    }
+
+    /// The switch happens while the first request is in flight: the retry must not go out under the
+    /// other account's token.
+    @Test func aSwitchDuringTheRequestStopsTheRetry() async {
+        let account = account()
+        backend.enqueue(status: 401, json: ["error": "invalid_token"])
+        backend.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))
+        auth.enqueue(status: 200, json: Fixtures.sessionJSON(access: "access-b", refresh: "refresh-b", userId: "user-2"))
+        auth.enqueue(status: 200, json: Fixtures.sessionJSON(access: "access-b2", refresh: "refresh-b2", userId: "user-2"))
+        backend.gate = {
+            await account.signOut()
+            try? await account.verify(email: Fixtures.email, code: "123456")
+        }
+
+        #expect(await cleanUp(account) == transcript)
+        #expect(authorizations == ["Bearer access-1"])
+        #expect(account.session?.userId == "user-2")
     }
 }

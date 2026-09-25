@@ -66,6 +66,9 @@ enum DictationConfig {
     static let contextNodeBudget = 5_000
     /// …or after this long (seconds). It runs in the background while the user speaks.
     static let contextTimeBudget: Double = 1.5
+    /// Longest a helper command (tmux, ps) may run while reading the context (seconds); they
+    /// normally answer in milliseconds.
+    static let contextCommandTimeout: Double = 0.5
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
     static let contextMaxFocusDepth = 200
     /// Characters kept on each side of the caret.

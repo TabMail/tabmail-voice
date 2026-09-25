@@ -175,3 +175,27 @@ struct ScreenContextTests {
         #expect(ScreenContext.foregroundProgram(fromPS: output) == "claude")
     }
 }
+
+/// The helper commands (tmux, ps) run while the context is read, and the dictation's cleanup waits
+/// for that context: a command that never finishes must not hold it up.
+struct ScreenContextCommandTests {
+    @Test func returnsTheOutputOfACommandThatFinishes() {
+        #expect(ScreenContextReader.run("/bin/echo", ["pane text"]) == "pane text\n")
+    }
+
+    @Test func givesUpOnACommandThatDoesNotFinish() {
+        let clock = ContinuousClock()
+        let started = clock.now
+        #expect(ScreenContextReader.run("/bin/sleep", ["5"], timeout: 0.2) == nil)
+        #expect(clock.now - started < .seconds(2))
+    }
+
+    /// A stopped tmux server holds the client's output open, so it never ends even after the client
+    /// exits. Here a background child holds it the same way after the shell exits.
+    @Test func givesUpOnOutputThatNeverEnds() {
+        let clock = ContinuousClock()
+        let started = clock.now
+        #expect(ScreenContextReader.run("/bin/sh", ["-c", "sleep 5 & echo partial"], timeout: 0.2) == nil)
+        #expect(clock.now - started < .seconds(2))
+    }
+}
