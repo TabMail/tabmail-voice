@@ -26,7 +26,7 @@ tabmail-macos/
 │   ├── Context/                  Screen context read at key-down, for the transcript cleanup
 │   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks in reading order
 │   │   ├── ScreenContextReader.swift Accessibility walk of the focused window; tmux pane for terminals
-│   │   └── ScreenContextProbe.swift  Captures at key-down in the background; the cleanup awaits it; latest kept for the debug window
+│   │   └── ScreenContextProbe.swift  Captures at key-down in the background; the cleanup waits up to `contextWait` for it; latest kept for the debug window
 │   ├── Dictation/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
 │   │   ├── DictationCleanup.swift    The cleanup call: transcript + screen context; the transcript as heard if it fails

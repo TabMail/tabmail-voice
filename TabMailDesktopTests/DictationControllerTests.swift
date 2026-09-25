@@ -213,11 +213,20 @@ struct DictationControllerTests {
         completions.enqueue(status: 200, text: cleanedStream)
         let (controller, pastes) = makeController(capture: ToneCapture())
         let read = pendingRead(screen("A"))
-        controller.captureContext = { read.task }
+        let transcription = transcription
+        var readStarted: [(phase: DictationController.Phase?, transcriptions: Int)] = []
+        controller.captureContext = { [weak controller] in
+            readStarted.append((controller?.phase, transcription.requests.count))
+            return read.task
+        }
         controller.contextWait = 5
 
         await holdAndRelease(controller)
         #expect(await eventually { transcription.requests.count == 1 })
+        // Read once, at key-down: before the overlay is revealed and before anything is transcribed.
+        #expect(readStarted.count == 1)
+        #expect(readStarted.first?.phase == .arming)
+        #expect(readStarted.first?.transcriptions == 0)
         try? await Task.sleep(for: .milliseconds(200))
         #expect(completions.requests.isEmpty)
         #expect(pastes.texts.isEmpty)

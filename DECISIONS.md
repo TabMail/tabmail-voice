@@ -211,6 +211,11 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
   `contextCommandTimeout` and is stopped after it, so an abandoned capture does not leave a
   process behind: a stopped tmux server keeps its client's output open, so waiting for the end of
   the output alone could hang.
+- The screen text is untrusted input to the model: text on screen, such as terminal output someone
+  else wrote, can steer the reply that gets pasted (prompt injection into the paste), including a
+  reply with a line break that a terminal without bracketed paste would run as a command. Owner,
+  2026-09-25: not a risk for dictation; no guard. The reply is only trimmed of surrounding blank
+  space before it is pasted.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
