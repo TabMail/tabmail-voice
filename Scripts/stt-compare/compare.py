@@ -30,17 +30,30 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 ENDPOINT = "https://openrouter.ai/api/v1/audio/transcriptions"
+# Speech-to-text models whose every OpenRouter endpoint is on the Zero Data Retention list
+# (checked 2026-09-24 via /api/v1/endpoints/zdr; re-checked live on every run, see the ZDR
+# column). Left out: models with no ZDR endpoint (OpenAI first-party gpt-*/whisper-1, Google
+# AI Studio gemini-3.5-transcribe, Meta, Alibaba qwen3-asr-flash, xAI grok-stt) and the two
+# Azure mai-transcribe models (ZDR, but their listed price has no clear unit; add them with
+# --models if you want them).
 DEFAULT_MODELS = [
     "openai/whisper-large-v3-turbo",
     "openai/whisper-large-v3",
+    "nvidia/parakeet-tdt-0.6b-v3",
+    "nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b",
     "qwen/qwen3-asr-1.7b",
+    "qwen/qwen3-asr-0.6b",
     "mistralai/voxtral-mini-transcribe",
+    "mistralai/voxtral-mini-3b-2507",
+    "mistralai/voxtral-small-24b-2507-stt",
     "assemblyai/universal-3-5-pro",
     "deepgram/nova-3",
-    "openai/gpt-transcribe",
-    "openai/gpt-4o-mini-transcribe",
-    "google/gemini-3.5-transcribe",
+    "fish-audio/transcribe-1",
+    "fish-audio/transcribe-1-pro",
+    "google/chirp-3",
 ]
+ZDR_LIST = "https://openrouter.ai/api/v1/endpoints/zdr"
+MODEL_ENDPOINTS = "https://openrouter.ai/api/v1/models/{model}/endpoints"
 TIMEOUT_SECONDS = 60
 PARALLEL_REQUESTS = 6
 
@@ -69,6 +82,27 @@ def wer(reference: str, hypothesis: str) -> float:
             current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (r != h))
         previous = current
     return previous[-1] / max(len(ref), 1)
+
+
+def zdr_status(models):
+    """For each model: "all N" / "k of N" / "none" of its endpoints on the ZDR list (public API).
+
+    OpenRouter doesn't apply per-request provider routing to transcription, so a model with any
+    non-ZDR endpoint can land there unless ZDR is enforced in the account's privacy settings.
+    """
+    with urllib.request.urlopen(ZDR_LIST, timeout=TIMEOUT_SECONDS) as response:
+        zdr = {entry["name"] for entry in json.load(response)["data"]}
+    status = {}
+    for model in models:
+        try:
+            with urllib.request.urlopen(MODEL_ENDPOINTS.format(model=model), timeout=TIMEOUT_SECONDS) as response:
+                endpoints = json.load(response)["data"]["endpoints"]
+        except Exception as error:
+            status[model] = f"unknown ({type(error).__name__})"
+            continue
+        covered = sum(1 for e in endpoints if e["name"] in zdr)
+        status[model] = "none" if covered == 0 else f"all {covered}" if covered == len(endpoints) else f"{covered} of {len(endpoints)}"
+    return status
 
 
 def transcribe(key: str, model: str, wav: pathlib.Path, language):
@@ -111,6 +145,10 @@ def main() -> None:
     if not wavs:
         sys.exit("No recordings matching passages.txt in recordings/ (run record.py first).")
 
+    zdr = zdr_status(args.models)
+    for model, state in zdr.items():
+        if not state.startswith("all"):
+            print(f"  ⚠️  {model}: ZDR endpoints {state}")
     jobs = [(model, wav) for model in args.models for wav in wavs]
     print(f"{len(args.models)} models × {len(wavs)} recordings = {len(jobs)} requests…")
     results = {}
@@ -129,6 +167,7 @@ def main() -> None:
         ok = [r for r in rows if not r["error"]]
         summary.append({
             "model": model,
+            "zdr": zdr[model],
             "wer": sum(r["wer"] for r in ok) / len(ok) if ok else None,
             "seconds": sum(r["seconds"] for r in ok) / len(ok) if ok else None,
             "cost": sum(r["cost"] for r in ok),
@@ -140,11 +179,11 @@ def main() -> None:
     out = HERE / "results"
     out.mkdir(exist_ok=True)
     lines = [f"# STT comparison {stamp}", "", f"Language: {args.language or 'auto-detect'}", "",
-             "| Model | WER | Avg latency (s) | Cost ($) | Errors |", "|---|---|---|---|---|"]
+             "| Model | ZDR endpoints | WER | Avg latency (s) | Cost ($) | Errors |", "|---|---|---|---|---|---|"]
     for s in summary:
         wer_text = f"{s['wer']:.1%}" if s["wer"] is not None else "—"
         secs = f"{s['seconds']:.2f}" if s["seconds"] is not None else "—"
-        lines.append(f"| {s['model']} | {wer_text} | {secs} | {s['cost']:.5f} | {s['errors']} |")
+        lines.append(f"| {s['model']} | {s['zdr']} | {wer_text} | {secs} | {s['cost']:.5f} | {s['errors']} |")
     for wav in wavs:
         lines += ["", f"## {wav.stem}", "", f"**Reference:** {refs[wav.stem]}", ""]
         for s in summary:

@@ -48,7 +48,9 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 
 `Scripts/stt-compare/` records you reading `passages.txt` (`record.py`, needs ffmpeg) and runs
 every recording through several OpenRouter models (`compare.py`, needs `OPENROUTER_API_KEY`),
-scoring word error rate, latency and cost. Recordings and results stay local (gitignored).
+scoring word error rate, latency and cost. The default models are the ones whose every
+OpenRouter endpoint is Zero Data Retention; the report checks that live and flags any model you
+add with `--models` that isn't. Recordings and results stay local (gitignored).
 
 ## License
 
