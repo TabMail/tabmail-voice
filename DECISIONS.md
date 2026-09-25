@@ -93,7 +93,9 @@ multilingual accuracy than Apple's on-device model.
   that input. Recording continues `releaseTailDuration` after the key is released so the last
   word isn't clipped.
 - Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).
-- A failed transcription loses that recording (no retry queue yet).
+- A failed transcription loses that recording (no retry queue yet). Chunking long dictations
+  (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
+  issue #1 (P3).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
 
 ## ADR-DESK-006: Boot the microphone at key-down, reveal the overlay at the caret after the hold
