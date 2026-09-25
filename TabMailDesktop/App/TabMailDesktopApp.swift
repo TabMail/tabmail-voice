@@ -43,9 +43,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         let settings = settings
-        controller = DictationController(permissions: permissions, account: account) {
-            TranscriptionClient(baseURL: settings.backendURL)
-        }
+        controller = DictationController(
+            permissions: permissions,
+            account: account,
+            makeTranscriptionClient: { TranscriptionClient(baseURL: settings.backendURL) },
+            makeCompletionsClient: { CompletionsClient(baseURL: settings.backendURL) }
+        )
         super.init()
     }
 
@@ -57,9 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlay = OverlayPanelController(controller: controller)
         self.overlay = overlay
         controller.onPhaseChange = { overlay.update(for: $0) }
-        #if DEBUG
-        controller.onStart = { [contextProbe] in contextProbe.capture() }
-        #endif
+        controller.captureContext = { [contextProbe] in contextProbe.capture() }
 
         let monitor = HotkeyMonitor(hotkey: settings.hotkey) { [weak self] action in
             self?.controller.handle(action)

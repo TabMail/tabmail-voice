@@ -18,14 +18,18 @@ tabmail-macos/
 │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
 │   │   ├── SessionStore.swift        Keychain session storage (SessionStoring protocol)
 │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
-│   ├── Backend/TranscriptionClient.swift  POST /dictation/transcribe; backend error → user message
+│   ├── Backend/
+│   │   ├── BackendError.swift        Backend HTTP error → user message
+│   │   ├── TranscriptionClient.swift POST /dictation/transcribe
+│   │   └── CompletionsClient.swift   POST /completions/chat with one named backend prompt; reply from the SSE `final` event (as iOS)
 │   ├── Config/DictationConfig.swift  Every tunable number and endpoint (timings, audio, backend, auth, overlay)
-│   ├── Context/                  Phase 2 prototype (wired in Debug builds only)
+│   ├── Context/                  Screen context read at key-down, for the transcript cleanup
 │   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks in reading order
 │   │   ├── ScreenContextReader.swift Accessibility walk of the focused window; tmux pane for terminals
-│   │   └── ScreenContextProbe.swift  Captures at key-down in the background; keeps the latest in memory
+│   │   └── ScreenContextProbe.swift  Captures at key-down in the background; the cleanup awaits it; latest kept for the debug window
 │   ├── Dictation/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
+│   │   ├── DictationCleanup.swift    The cleanup prompt's variables: transcript + screen context
 │   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue
 │   │   ├── AudioRecorder.swift       Converts to 16 kHz mono Int16, accumulates, tracks peak, caps duration
 │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
@@ -59,8 +63,10 @@ tabmail-macos/
    waveform pill). Releasing earlier discards everything unseen.
 2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. No audio, or an empty
    transcript, shows "Didn't catch that". Otherwise the WAV is uploaded via
-   `TranscriptionClient` (one forced-refresh retry on 401), and `TextInserter` pastes the text
-   into the frontmost app and restores the clipboard.
+   `TranscriptionClient` (one forced-refresh retry on 401). The transcript and the screen context
+   read at key-down (`ScreenContextProbe`) go to the backend cleanup prompt via
+   `CompletionsClient` (same retry), and `TextInserter` pastes the cleaned text into the
+   frontmost app and restores the clipboard.
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
 

@@ -166,8 +166,30 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 **Consequences:**
 - Prototype only: wired in Debug builds; the latest capture is kept in memory and shown in a
   debug window. Logs carry sizes and timings, never text. Nothing is stored or sent.
+  ⛔ Superseded by ADR-DESK-008 (2026-09-25): captured in every build and sent with the transcript
+  for the cleanup. Still never logged or stored.
 - A plain terminal tab without tmux gets its visible lines but no caret mark or program.
 - The tmux pane is the most recently active client's, and is used only when most of its last
   lines appear in the front terminal's text; a tmux attached in another tab or window is ignored.
 - OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
 
+## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
+
+**Context:** Owner, 2026-09-25: after transcription, a language-model pass should fix dictation
+errors using what is on screen, with the smallest possible changes. The instructions and the
+model choice live on the backend, so they can be edited and switched there without an app release.
+
+**Decision:** The screen context (ADR-DESK-007) is captured at key-down in every build. When the
+transcript arrives, the app waits for that capture and sends the transcript with the app name,
+web host, terminal program, window title and the visible text (caret marked) to the backend's
+`POST /completions/chat` as the prompt `system_prompt_dictate_cleanup`, then pastes the reply.
+Request shape and server-sent-events parsing mirror iOS `BackendClient`.
+
+**Consequences:**
+- What is on screen while dictating is sent to the TabMail backend with each dictation; like every
+  TabMail AI request it is not retained (root ADR-004), and the app logs sizes only.
+- Every dictation gains one model round trip; its duration is logged (debug) for tuning.
+- A failed or empty cleanup fails the dictation with an error; the raw transcript is not pasted
+  instead (no fallback without an owner decision).
+- The app sends its own version (`0.x`) as `X-Client-Version`; a backend prompt it uses must be
+  versioned to resolve at that version.

@@ -58,7 +58,7 @@ enum DictationConfig {
     /// Pause between posting the paste keystroke's key-down and key-up events.
     static let pasteKeystrokeGap: Duration = .milliseconds(10)
 
-    // MARK: Screen context (phase 2 prototype, debug builds)
+    // MARK: Screen context
 
     /// Per-call cap on Accessibility calls while reading the screen context (seconds).
     static let contextLookupTimeout: Float = 0.25
@@ -97,9 +97,15 @@ enum DictationConfig {
     static let productionBackendURL = URL(string: "https://api.tabmail.ai")!
     static let developmentBackendURL = URL(string: "https://dev.tabmail.ai")!
     static let transcribePath = "dictation/transcribe"
+    static let completionsPath = "completions/chat"
+    /// The backend prompt that fixes recognition errors in a transcript using the screen context.
+    static let cleanupPrompt = "system_prompt_dictate_cleanup"
     /// Sent as `X-Client-Type` to identify this client to the backend.
     static let clientType = "desktop"
     static let transcriptionRequestTimeout: TimeInterval = 45
+    /// Longest pause in the cleanup's response stream (the backend sends keepalives while the
+    /// model works).
+    static let completionsRequestTimeout: TimeInterval = 30
 
     // MARK: Account (Supabase auth at auth.tabmail.ai)
 

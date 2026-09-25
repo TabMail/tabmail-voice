@@ -22,6 +22,10 @@ final class StubTransport: @unchecked Sendable {
         state.withLock { $0.replies.append(Reply(status: status, body: body)) }
     }
 
+    func enqueue(status: Int, text: String) {
+        state.withLock { $0.replies.append(Reply(status: status, body: Data(text.utf8))) }
+    }
+
     var requests: [URLRequest] { state.withLock { $0.requests } }
 
     var transport: HTTPTransport {

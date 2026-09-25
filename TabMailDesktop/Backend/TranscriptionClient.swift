@@ -4,30 +4,6 @@
 
 import Foundation
 
-enum TranscriptionError: LocalizedError, Equatable {
-    case unauthorized
-    case subscriptionRequired
-    case accountSetupRequired
-    case accessDenied
-    case rateLimited
-    case recordingTooLong
-    case failed(status: Int)
-    case invalidResponse
-
-    var errorDescription: String? {
-        switch self {
-        case .unauthorized: "Your TabMail session has ended. Sign in again in Settings."
-        case .subscriptionRequired: "Dictation needs an active TabMail subscription."
-        case .accountSetupRequired: "Finish setting up your TabMail account at tabmail.ai."
-        case .accessDenied: "This account can't use this TabMail server."
-        case .rateLimited: "Too many dictations right now. Try again in a moment."
-        case .recordingTooLong: "That recording was too long to transcribe."
-        case .failed: "Transcription failed. Please try again."
-        case .invalidResponse: "Transcription returned an unexpected response."
-        }
-    }
-}
-
 /// Calls the TabMail backend's `POST /dictation/transcribe` (OpenRouter STT behind it).
 struct TranscriptionClient: Sendable {
     let baseURL: URL
@@ -55,26 +31,14 @@ struct TranscriptionClient: Sendable {
         request.httpBody = try JSONEncoder().encode(Body(audio: wav.base64EncodedString(), format: "wav"))
 
         let (data, response) = try await transport(request)
-        guard let http = response as? HTTPURLResponse else { throw TranscriptionError.invalidResponse }
+        guard let http = response as? HTTPURLResponse else { throw BackendError.invalidResponse }
         guard http.statusCode == 200 else {
-            throw Self.error(status: http.statusCode, code: (try? JSONDecoder().decode(ErrorBody.self, from: data))?.error)
+            throw BackendError(status: http.statusCode, code: (try? JSONDecoder().decode(BackendError.Body.self, from: data))?.error)
         }
         guard let result = try? JSONDecoder().decode(ResultBody.self, from: data) else {
-            throw TranscriptionError.invalidResponse
+            throw BackendError.invalidResponse
         }
         return result.text
-    }
-
-    static func error(status: Int, code: String?) -> TranscriptionError {
-        switch (status, code) {
-        case (401, _): .unauthorized
-        case (402, _): .subscriptionRequired
-        case (403, "consent_required"): .accountSetupRequired
-        case (403, _): .accessDenied
-        case (429, _): .rateLimited
-        case (400, "audio_too_large"): .recordingTooLong
-        default: .failed(status: status)
-        }
     }
 
     private struct Body: Encodable {
@@ -84,9 +48,5 @@ struct TranscriptionClient: Sendable {
 
     private struct ResultBody: Decodable {
         let text: String
-    }
-
-    private struct ErrorBody: Decodable {
-        let error: String?
     }
 }

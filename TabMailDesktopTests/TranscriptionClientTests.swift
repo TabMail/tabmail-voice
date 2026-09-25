@@ -31,7 +31,7 @@ struct TranscriptionClientTests {
     }
 
     @Test(arguments: [
-        (401, "invalid_token", TranscriptionError.unauthorized),
+        (401, "invalid_token", BackendError.unauthorized),
         (402, "no_active_subscription", .subscriptionRequired),
         (403, "consent_required", .accountSetupRequired),
         (403, "Access denied", .accessDenied),
@@ -39,7 +39,7 @@ struct TranscriptionClientTests {
         (400, "audio_too_large", .recordingTooLong),
         (502, "transcription_failed", .failed(status: 502)),
     ])
-    func mapsBackendErrors(status: Int, code: String, expected: TranscriptionError) async {
+    func mapsBackendErrors(status: Int, code: String, expected: BackendError) async {
         let stub = StubTransport()
         stub.enqueue(status: status, json: ["error": code])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
@@ -52,7 +52,7 @@ struct TranscriptionClientTests {
         let stub = StubTransport()
         stub.enqueue(status: 200, json: ["unexpected": true])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
-        await #expect(throws: TranscriptionError.invalidResponse) {
+        await #expect(throws: BackendError.invalidResponse) {
             _ = try await client.transcribe(wav: wav, accessToken: "t")
         }
     }
@@ -70,7 +70,7 @@ struct TranscriptionClientTests {
         )
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
 
-        let text = try await DictationController.transcribeWithFreshToken(wav, client: client, account: account)
+        let text = try await DictationController.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
 
         #expect(text == "Retried.")
         #expect(backend.requests.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer access-1", "Bearer access-2"])
@@ -84,8 +84,8 @@ struct TranscriptionClientTests {
         let account = AccountModel(client: AuthClient(transport: auth.transport), store: InMemorySessionStore(Fixtures.session()))
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
 
-        await #expect(throws: TranscriptionError.subscriptionRequired) {
-            _ = try await DictationController.transcribeWithFreshToken(wav, client: client, account: account)
+        await #expect(throws: BackendError.subscriptionRequired) {
+            _ = try await DictationController.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
         }
         #expect(backend.requests.count == 1)
         #expect(auth.requests.isEmpty)
@@ -95,8 +95,8 @@ struct TranscriptionClientTests {
         let backend = StubTransport()
         let account = AccountModel(client: AuthClient(transport: StubTransport().transport), store: InMemorySessionStore())
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
-        await #expect(throws: TranscriptionError.unauthorized) {
-            _ = try await DictationController.transcribeWithFreshToken(wav, client: client, account: account)
+        await #expect(throws: BackendError.unauthorized) {
+            _ = try await DictationController.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
         }
         #expect(backend.requests.isEmpty)
     }

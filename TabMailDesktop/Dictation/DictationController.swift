@@ -5,7 +5,8 @@
 import AVFoundation
 import Observation
 
-/// Drives one push-to-talk dictation at a time: record → transcribe on the backend → paste.
+/// Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
+/// transcript with the screen context → paste.
 @MainActor
 @Observable
 final class DictationController {
@@ -31,12 +32,14 @@ final class DictationController {
     private(set) var isHearing = false
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
-    /// Called when a dictation starts (key-down), with the target app still frontmost.
-    @ObservationIgnored var onStart: (() -> Void)?
+    /// Starts reading the screen context when a dictation starts (key-down), with the target app
+    /// still frontmost. Nil result: no context (the cleanup runs without it).
+    @ObservationIgnored var captureContext: (() -> Task<ScreenContext, Never>?)?
 
     @ObservationIgnored private let permissions: PermissionsModel
     @ObservationIgnored private let account: AccountModel
     @ObservationIgnored private let makeTranscriptionClient: @MainActor () -> TranscriptionClient
+    @ObservationIgnored private let makeCompletionsClient: @MainActor () -> CompletionsClient
     @ObservationIgnored private let inserter: TextInserter
     @ObservationIgnored private let capture: MicrophoneCapture
     @ObservationIgnored private let clock = ContinuousClock()
@@ -45,6 +48,7 @@ final class DictationController {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var startedAt: ContinuousClock.Instant?
     @ObservationIgnored private var recorder: AudioRecorder?
+    @ObservationIgnored private var contextTask: Task<ScreenContext, Never>?
     @ObservationIgnored private var revealTask: Task<Void, Never>?
     @ObservationIgnored private var maxDurationTask: Task<Void, Never>?
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
@@ -55,13 +59,15 @@ final class DictationController {
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
         capture: MicrophoneCapture = MicrophoneCapture(),
-        makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient
+        makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient,
+        makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
     ) {
         self.permissions = permissions
         self.account = account
         self.inserter = inserter
         self.capture = capture
         self.makeTranscriptionClient = makeTranscriptionClient
+        self.makeCompletionsClient = makeCompletionsClient
     }
 
     func handle(_ action: PushToTalkGesture.Action) {
@@ -110,7 +116,7 @@ final class DictationController {
         isHearing = false
         startedAt = clock.now
         phase = .arming
-        onStart?()
+        contextTask = captureContext?()
 
         // Boot the microphone now, off the main thread; the overlay appears only once the hold
         // is long enough, by which time most of the start-up is done.
@@ -223,37 +229,55 @@ final class DictationController {
     private func transcribe(_ wav: Data, generation current: Int) async {
         Log.debug("DictationController: uploading \(wav.count) bytes")
         do {
-            let text = try await Self.transcribeWithFreshToken(wav, client: makeTranscriptionClient(), account: account)
+            let client = makeTranscriptionClient()
+            let transcript = try await Self.withFreshToken(account: account) { try await client.transcribe(wav: wav, accessToken: $0) }
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard generation == current, !Task.isCancelled else { return }
-            Log.debug("DictationController: transcript ready (\(text.count) chars)")
-            guard !text.isEmpty else {
+            Log.debug("DictationController: transcript ready (\(transcript.count) chars)")
+            guard !transcript.isEmpty else {
                 teardown()
                 fail(Self.nothingHeardMessage)
                 return
             }
+            let text = try await cleanUp(transcript)
+            guard generation == current, !Task.isCancelled else { return }
             await inserter.insert(text)
             guard generation == current else { return }
             teardown()
             phase = .idle
         } catch {
             guard generation == current, !Task.isCancelled else { return }
-            Log.error("DictationController: transcription failed: \(type(of: error))")
+            Log.error("DictationController: transcription or cleanup failed: \(type(of: error))")
             teardown()
             fail(error.localizedDescription)
         }
     }
 
-    /// One retry with a forced token refresh if the backend says the token is no longer valid.
-    static func transcribeWithFreshToken(_ wav: Data, client: TranscriptionClient, account: AccountModel) async throws -> String {
-        guard let token = try await account.validToken() else { throw TranscriptionError.unauthorized }
+    /// Fixes recognition errors in the transcript using the screen context read at key-down.
+    private func cleanUp(_ transcript: String) async throws -> String {
+        let context = await contextTask?.value
+        let message = DictationCleanup.message(dictation: transcript, context: context)
+        let client = makeCompletionsClient()
+        let started = clock.now
+        let text = try await Self.withFreshToken(account: account) { try await client.complete(message, accessToken: $0) }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        Log.debug("DictationController: cleaned up in \(clock.now - started) (\(transcript.count) → \(text.count) chars, screen text \(message.vars["screen_text"]?.count ?? 0) chars)")
+        // The prompt never removes dictated words, so an empty reply is a malfunction.
+        guard !text.isEmpty else { throw BackendError.invalidResponse }
+        return text
+    }
+
+    /// Runs a backend call with a valid token; one retry with a forced refresh if the backend says
+    /// the token is no longer valid.
+    static func withFreshToken<T>(account: AccountModel, _ call: (String) async throws -> T) async throws -> T {
+        guard let token = try await account.validToken() else { throw BackendError.unauthorized }
         do {
-            return try await client.transcribe(wav: wav, accessToken: token)
-        } catch TranscriptionError.unauthorized {
+            return try await call(token)
+        } catch BackendError.unauthorized {
             guard let fresh = try await account.validToken(forceRefresh: true) else {
-                throw TranscriptionError.unauthorized
+                throw BackendError.unauthorized
             }
-            return try await client.transcribe(wav: wav, accessToken: fresh)
+            return try await call(fresh)
         }
     }
 
@@ -296,6 +320,7 @@ final class DictationController {
     private func teardown() {
         capture.stop()
         recorder = nil
+        contextTask = nil
         revealTask?.cancel()
         revealTask = nil
         isHearing = false
