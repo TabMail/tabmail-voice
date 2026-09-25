@@ -24,8 +24,7 @@ final class DictationController {
         didSet { onPhaseChange?(phase) }
     }
     private(set) var level: Float = 0
-    /// Loudness of the last few buffers: the waveform's loud end follows the loudest of them.
-    @ObservationIgnored private var recentDecibels: [Float] = []
+    @ObservationIgnored private var envelope = LevelEnvelope()
     /// Debug tuning aid: the highest waveform level reached this dictation.
     @ObservationIgnored private var peakMeterLevel: Float = 0
     /// True once the microphone delivers audio; until then the overlay shows its warm-up swirl.
@@ -105,7 +104,7 @@ final class DictationController {
         let current = generation
         level = 0
         peakMeterLevel = 0
-        recentDecibels = []
+        envelope = LevelEnvelope()
         isHearing = false
         startedAt = clock.now
         phase = .arming
@@ -275,9 +274,7 @@ final class DictationController {
             // first real signal.
             if !isHearing, decibels > DictationConfig.silenceDecibels { isHearing = true }
             guard isHearing else { return }
-            recentDecibels.append(decibels)
-            if recentDecibels.count > DictationConfig.levelLoudWindowBuffers { recentDecibels.removeFirst() }
-            let newLevel = MicrophoneCapture.level(forDecibels: decibels, loudest: recentDecibels.max() ?? decibels)
+            let newLevel = envelope.level(forDecibels: decibels)
             let rate = newLevel > level ? DictationConfig.levelAttack : DictationConfig.levelRelease
             level += (newLevel - level) * rate
             peakMeterLevel = max(peakMeterLevel, level)

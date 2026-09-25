@@ -153,17 +153,10 @@ final class MicrophoneCapture: @unchecked Sendable {
         return max(20 * log10(rms), DictationConfig.silenceDecibels)
     }
 
-    /// Level (0…1) of a buffer's loudness on the fixed scale (loud end at its minimum), for the
-    /// recording's peak-level diagnostics.
+    /// Level (0…1) of a buffer's loudness on a fixed scale, for the recording's peak-level
+    /// diagnostics (the waveform adapts instead: `LevelEnvelope`).
     static func level(of buffer: AVAudioPCMBuffer) -> Float {
-        level(forDecibels: decibels(of: buffer), loudest: DictationConfig.levelMinimumLoudDecibels)
-    }
-
-    /// Waveform level (0…1): from the fixed quiet end up to the loudest recent sound (never below
-    /// `levelMinimumLoudDecibels`).
-    static func level(forDecibels decibels: Float, loudest: Float) -> Float {
         let quiet = DictationConfig.levelQuietDecibels
-        let loud = max(loudest, DictationConfig.levelMinimumLoudDecibels)
-        return max(0, min(1, (decibels - quiet) / (loud - quiet)))
+        return max(0, min(1, (decibels(of: buffer) - quiet) / (DictationConfig.levelLoudDecibels - quiet)))
     }
 }

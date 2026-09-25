@@ -18,15 +18,17 @@ enum DictationConfig {
 
     /// Frames per microphone tap callback (~85 ms at 48 kHz).
     static let audioTapBufferSize: AVAudioFrameCount = 4096
-    /// Loudness → 0…1 level for the waveform (and the recording's peak level). At or below the
-    /// quiet end the bars are flat; the loud end is the loudest recent sound, but never below
-    /// `levelMinimumLoudDecibels`, so a quiet mic's speech spans the bars while its room noise
-    /// (≈ −45 dB measured) moves them a little, and a loud mic doesn't pin them at full. Telling
-    /// speech from background is the transcription model's job, not the waveform's.
+    /// Fixed loudness → 0…1 scale for the recording's peak-level diagnostics.
     static let levelQuietDecibels: Float = -50
-    static let levelMinimumLoudDecibels: Float = -30
-    /// Window for "loudest recent sound" (≈ 2 s of ~85 ms buffers).
-    static let levelLoudWindowBuffers = 24
+    static let levelLoudDecibels: Float = -30
+    /// Waveform (`LevelEnvelope`): per-buffer EMA weights. The floor and peak envelopes move this
+    /// fraction toward a reading on their fast side (floor down, peak up)…
+    static let envelopeFastAlpha: Float = 0.5
+    /// …and this fraction on their slow side (≈ 4 s time constant at ~12 buffers/s).
+    static let envelopeSlowAlpha: Float = 0.02
+    /// The envelopes are at least this many dB apart, so a steady hum doesn't swing the bars
+    /// full height. Small: a quiet mic's speech can sit only 2–5 dB above its room noise.
+    static let envelopeMinimumRange: Float = 4
     /// Quieter than this is digital silence (the device starting): not yet hearing anything.
     static let silenceDecibels: Float = -80
     /// The overlay level moves this fraction of the way to a louder reading per buffer
