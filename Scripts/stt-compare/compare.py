@@ -5,11 +5,13 @@
 """Transcribe every recording with several OpenRouter speech-to-text models and score them.
 
 Needs OPENROUTER_API_KEY, either in the environment or as a KEY=value line in an env file
-(--env-file, default Scripts/stt-compare/.env, gitignored). The key is never printed or written.
+(--env-file, default Scripts/stt-compare/.env, gitignored; add --sudo when that file is
+root-owned). The key is never printed or written.
 Sends the same request shape the TabMail backend sends.
 
     python3 Scripts/stt-compare/compare.py
     python3 Scripts/stt-compare/compare.py --env-file path/to/secrets.env
+    python3 Scripts/stt-compare/compare.py --sudo --env-file path/to/root-owned-secrets.env
     python3 Scripts/stt-compare/compare.py --language en
     python3 Scripts/stt-compare/compare.py --models openai/whisper-large-v3-turbo deepgram/nova-3
 
@@ -25,6 +27,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -86,14 +89,24 @@ def wer(reference: str, hypothesis: str) -> float:
     return previous[-1] / max(len(ref), 1)
 
 
-def key_from_env_file(path: pathlib.Path):
-    """OPENROUTER_API_KEY from a dotenv-style file (KEY=value lines; # comments; optional quotes)."""
-    if not path.is_file():
+def key_from_env_file(path: pathlib.Path, use_sudo: bool):
+    """OPENROUTER_API_KEY from a dotenv-style file (KEY=value lines; optional export/quotes).
+
+    With use_sudo the file stays root-owned: sudo greps out only the key line, which is held in
+    memory and never written anywhere.
+    """
+    pattern = "^(export )?OPENROUTER_API_KEY="
+    if use_sudo:
+        result = subprocess.run(["sudo", "/usr/bin/grep", "-E", "-m1", pattern, str(path)],
+                                stdout=subprocess.PIPE, text=True)
+        text = result.stdout
+    elif not path.is_file():
         return None
-    try:
-        text = path.read_text()
-    except PermissionError:
-        sys.exit(f"Can't read {path}. Copy just the key line into a file you own instead (see README).")
+    else:
+        try:
+            text = path.read_text()
+        except PermissionError:
+            sys.exit(f"Can't read {path}; add --sudo to read it as root.")
     for line in text.splitlines():
         name, sep, value = line.strip().removeprefix("export ").partition("=")
         if sep and name.strip() == "OPENROUTER_API_KEY":
@@ -152,10 +165,12 @@ def main() -> None:
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
     parser.add_argument("--env-file", type=pathlib.Path, default=HERE / ".env",
                         help="file with an OPENROUTER_API_KEY=... line (default: .env next to this script)")
+    parser.add_argument("--sudo", action="store_true",
+                        help="read --env-file through sudo (for a root-owned secrets file)")
     parser.add_argument("--language", help="ISO-639-1 code, e.g. en (default: auto-detect)")
     args = parser.parse_args()
 
-    key = os.environ.get("OPENROUTER_API_KEY") or key_from_env_file(args.env_file.expanduser())
+    key = os.environ.get("OPENROUTER_API_KEY") or key_from_env_file(args.env_file.expanduser(), args.sudo)
     if not key:
         sys.exit(f"No OPENROUTER_API_KEY in the environment or in {args.env_file}.")
     refs = references()

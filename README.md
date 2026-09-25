@@ -54,11 +54,10 @@ add with `--models` that isn't. Recordings and results stay local (gitignored).
 
 `compare.py` reads `OPENROUTER_API_KEY` from the environment or from a `KEY=value` line in
 `Scripts/stt-compare/.env` (gitignored; point elsewhere with `--env-file`). If your key lives in a
-root-owned secrets file, copy just that line into a file you own rather than running the script
-with sudo:
+root-owned secrets file, leave it there and add `--sudo`: the script asks for your password, has
+sudo extract only the key line, and keeps the key in memory without writing it anywhere:
 ```sh
-sudo grep '^OPENROUTER_API_KEY=' /path/to/secrets.env > Scripts/stt-compare/.env
-chmod 600 Scripts/stt-compare/.env
+python3 Scripts/stt-compare/compare.py --sudo --env-file /path/to/secrets.env
 ```
 
 ## License
