@@ -6,8 +6,8 @@ import AppKit
 import Observation
 
 /// Reads the screen context of the frontmost app when a dictation starts, in the background while
-/// the user speaks; the dictation's cleanup waits for it. Debug builds keep the latest capture in
-/// memory for the debug window; logs sizes and timings, never the text.
+/// the user speaks; the dictation's cleanup uses it if it is done in time. Debug builds keep the
+/// latest capture in memory for the debug window; logs sizes and timings, never the text.
 @MainActor
 @Observable
 final class ScreenContextProbe {

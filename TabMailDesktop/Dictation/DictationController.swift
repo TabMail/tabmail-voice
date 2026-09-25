@@ -35,6 +35,8 @@ final class DictationController {
     /// Starts reading the screen context when a dictation starts (key-down), with the target app
     /// still frontmost. Nil result: no context (the cleanup runs without it).
     @ObservationIgnored var captureContext: (() -> Task<ScreenContext, Never>?)?
+    /// How long the cleanup waits for that read once the transcript is ready. Internal for tests.
+    @ObservationIgnored var contextWait = DictationConfig.contextWait
 
     @ObservationIgnored private let permissions: PermissionsModel
     @ObservationIgnored private let account: AccountModel
@@ -243,8 +245,10 @@ final class DictationController {
                 fail(Self.nothingHeardMessage)
                 return
             }
-            // The screen context read at key-down.
-            let context = await contextTask?.value
+            // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008).
+            let read = contextTask
+            let context = try? await withTimeout(seconds: contextWait) { await read?.value }
+            if read != nil, context == nil { Log.debug("DictationController: screen read not done in time; cleaning up without it") }
             guard generation == current, !Task.isCancelled else { return }
             let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
             guard generation == current, !Task.isCancelled else { return }

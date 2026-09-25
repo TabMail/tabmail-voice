@@ -180,7 +180,7 @@ errors using what is on screen, with the smallest possible changes. The instruct
 model choice live on the backend, so they can be edited and switched there without an app release.
 
 **Decision:** The screen context (ADR-DESK-007) is captured at key-down in every build. When the
-transcript arrives, the app waits for that capture and sends the transcript with the app name,
+transcript arrives, the app waits up to `contextWait` (0.5 s) for that capture and sends the transcript with the app name,
 web host, terminal program, window title and the visible text (caret marked) to the backend's
 `POST /completions/chat` as the prompt `system_prompt_dictate_cleanup`, then pastes the reply.
 Request shape and server-sent-events parsing follow iOS `BackendClient`, with two deliberate
@@ -191,7 +191,9 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
 **Consequences:**
 - What is on screen while dictating is sent to the TabMail backend with each dictation; like every
   TabMail AI request it is not retained (root ADR-004), and the app logs sizes only.
-- Every dictation gains one model round trip; its duration is logged (debug) for tuning.
+- Every dictation gains one model round trip; its duration is logged (debug) for tuning. Owner,
+  2026-09-25: the cleanup is capped at `cleanupTimeout` (3 s; the owner asked for 2–3 s); past it
+  the request is cancelled and the transcript is pasted as heard, like any other failed cleanup.
 - ~~A failed or empty cleanup fails the dictation with an error; the raw transcript is not pasted
   instead (no fallback without an owner decision).~~ Owner, 2026-09-25: when the cleanup fails
   for any reason (error, refusal, empty reply, offline, signed out), the transcript is pasted as
@@ -202,9 +204,13 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
   If the user signs out and into another account meanwhile, the cleanup is skipped and the
   transcript pasted as heard (`DictationController.withFreshToken` refuses a token for another
   account).
-- The cleanup waits for the capture, so the capture must finish: each helper command (tmux, ps)
-  gets `contextCommandTimeout` and is stopped after it. A stopped tmux server keeps its client's
-  output open, so waiting for the end of the output alone could block the dictation indefinitely.
+- ~~The cleanup waits for the capture, so the capture must finish.~~ Owner, 2026-09-25: the
+  capture runs in parallel and is best effort. If it is not done within `contextWait` of the
+  transcript arriving, the cleanup runs without it and the capture is forgotten (an Accessibility
+  read of an unresponsive app can take seconds). Each helper command (tmux, ps) still gets
+  `contextCommandTimeout` and is stopped after it, so an abandoned capture does not leave a
+  process behind: a stopped tmux server keeps its client's output open, so waiting for the end of
+  the output alone could hang.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 

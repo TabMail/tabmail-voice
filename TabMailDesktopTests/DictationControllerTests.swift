@@ -206,13 +206,15 @@ struct DictationControllerTests {
 
     // MARK: Key-down to paste
 
-    /// The screen is read at key-down; the cleanup waits for that read and sends it with the transcript.
+    /// The screen is read at key-down; a read done within `contextWait` of the transcript is sent
+    /// with it to the cleanup.
     @Test func cleansUpWithTheScreenReadAtKeyDown() async {
         transcription.enqueue(status: 200, json: ["text": transcript])
         completions.enqueue(status: 200, text: cleanedStream)
         let (controller, pastes) = makeController(capture: ToneCapture())
         let read = pendingRead(screen("A"))
         controller.captureContext = { read.task }
+        controller.contextWait = 5
 
         await holdAndRelease(controller)
         #expect(await eventually { transcription.requests.count == 1 })
@@ -237,6 +239,7 @@ struct DictationControllerTests {
         let (controller, pastes) = makeController(capture: ToneCapture())
         let first = pendingRead(screen("A"))
         controller.captureContext = { first.task }
+        controller.contextWait = 5
 
         await holdAndRelease(controller)
         #expect(await eventually { transcription.requests.count == 1 })
@@ -257,5 +260,26 @@ struct DictationControllerTests {
         #expect(completions.requests.count == 1)
         #expect(cleanupVars(0)?["dictation"] as? String == transcript)
         #expect(cleanupVars(0)?["app_name"] as? String == "Example Notes B")
+    }
+
+    /// The screen read is best effort: not done within `contextWait` of the transcript, the
+    /// dictation is cleaned up without it rather than waiting.
+    @Test func aScreenReadNotDoneInTimeIsLeftOut() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        let read = pendingRead(screen("A"))
+        defer { read.release() }
+        controller.captureContext = { read.task }
+        controller.contextWait = 0.2
+
+        await holdAndRelease(controller)
+
+        #expect(await eventually { controller.phase == .idle && !pastes.texts.isEmpty })
+        #expect(pastes.texts == [cleaned])
+        #expect(completions.requests.count == 1)
+        #expect(cleanupVars(0)?["dictation"] as? String == transcript)
+        #expect(cleanupVars(0)?["app_name"] as? String == "")
+        #expect(cleanupVars(0)?["screen_text"] as? String == "")
     }
 }

@@ -68,6 +68,9 @@ enum DictationConfig {
     static let contextNodeBudget = 5_000
     /// …or after this long (seconds). It runs in the background while the user speaks.
     static let contextTimeBudget: Double = 1.5
+    /// How long the cleanup waits for the screen read once the transcript is ready (seconds). The
+    /// read is best effort: not done by then, the cleanup runs without it (ADR-DESK-008).
+    static let contextWait: TimeInterval = 0.5
     /// Longest a helper command (tmux, ps) may run while reading the context (seconds); they
     /// normally answer in milliseconds.
     static let contextCommandTimeout: Double = 0.5
@@ -112,6 +115,9 @@ enum DictationConfig {
     /// Longest pause in the cleanup's response stream (the backend sends keepalives while the
     /// model works).
     static let completionsRequestTimeout: TimeInterval = 30
+    /// Longest the cleanup may take (seconds); past it the transcript is pasted as heard
+    /// (ADR-DESK-008).
+    static let cleanupTimeout: TimeInterval = 3
 
     // MARK: Account (Supabase auth at auth.tabmail.ai)
 

@@ -52,9 +52,9 @@ struct DictationCleanupFallbackTests {
     }
 
     /// A cleanup of a dictation transcribed under `Fixtures.userId`.
-    private func cleanUp(_ account: AccountModel? = nil) async -> String {
+    private func cleanUp(_ account: AccountModel? = nil, timeout: TimeInterval = DictationConfig.cleanupTimeout) async -> String {
         let client = CompletionsClient(baseURL: URL(string: "https://api.example.com")!, transport: backend.transport)
-        return await DictationCleanup.cleanUp(transcript, context: nil, client: client, account: account ?? self.account(), userId: Fixtures.userId)
+        return await DictationCleanup.cleanUp(transcript, context: nil, client: client, account: account ?? self.account(), userId: Fixtures.userId, timeout: timeout)
     }
 
     private var authorizations: [String?] {
@@ -69,6 +69,27 @@ struct DictationCleanupFallbackTests {
         guard backend.requests.count == 1 else { return }
         let messages = Fixtures.jsonBody(of: backend.requests[0])["messages"] as? [[String: Any]]
         #expect(messages?.first?["dictation"] as? String == transcript)
+    }
+
+    /// A cleanup still running at its timeout is abandoned: the transcript is pasted as heard,
+    /// without waiting for the reply.
+    @Test func aCleanupPastItsTimeoutPastesTheTranscriptAsHeard() async {
+        backend.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))
+        backend.gate = { try? await Task.sleep(for: .seconds(5)) }
+        let clock = ContinuousClock()
+        let started = clock.now
+
+        #expect(await cleanUp(timeout: 0.2) == transcript)
+        #expect(clock.now - started < .seconds(2))
+        #expect(backend.requests.count == 1)
+    }
+
+    /// A reply within the timeout is used.
+    @Test func aCleanupWithinItsTimeoutPastesTheCleanedUpText() async {
+        backend.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#))
+        backend.gate = { try? await Task.sleep(for: .milliseconds(100)) }
+
+        #expect(await cleanUp(timeout: 2) == "Ask Jordan about the roadmap.")
     }
 
     @Test(arguments: [

@@ -11,16 +11,21 @@ import Foundation
 enum DictationCleanup {
     /// The transcript with its recognition errors fixed, requested under the account `userId` that
     /// transcribed it. When the cleanup fails for any reason, including that account no longer being
-    /// signed in, the transcript as heard: a failed cleanup never costs the user their dictation
-    /// (ADR-DESK-008).
+    /// signed in or no reply within `timeout` seconds, the transcript as heard: a failed cleanup
+    /// never costs the user their dictation (ADR-DESK-008).
     @MainActor
-    static func cleanUp(_ transcript: String, context: ScreenContext?, client: CompletionsClient, account: AccountModel, userId: String?) async -> String {
+    static func cleanUp(
+        _ transcript: String, context: ScreenContext?, client: CompletionsClient, account: AccountModel, userId: String?,
+        timeout: TimeInterval = DictationConfig.cleanupTimeout
+    ) async -> String {
         let message = message(dictation: transcript, context: context)
         let clock = ContinuousClock()
         let started = clock.now
         do {
-            let text = try await DictationController.withFreshToken(account: account, userId: userId) { try await client.complete(message, accessToken: $0) }
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = try await withTimeout(seconds: timeout) { @MainActor in
+                try await DictationController.withFreshToken(account: account, userId: userId) { try await client.complete(message, accessToken: $0) }
+            }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
             Log.debug("DictationCleanup: cleaned up in \(clock.now - started) (\(transcript.count) → \(text.count) chars, screen text \(message.vars["screen_text"]?.count ?? 0) chars)")
             // The prompt never removes dictated words, so an empty reply is a malfunction.
             guard !text.isEmpty else {

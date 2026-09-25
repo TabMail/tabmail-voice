@@ -177,8 +177,8 @@ struct ScreenContextTests {
     }
 }
 
-/// The helper commands (tmux, ps) run while the context is read, and the dictation's cleanup waits
-/// for that context: a command that never finishes must not hold it up.
+/// The helper commands (tmux, ps) run while the context is read: a command that never finishes
+/// must not leave the read, or a process, hanging.
 struct ScreenContextCommandTests {
     @Test func returnsTheOutputOfACommandThatFinishes() {
         #expect(ScreenContextReader.run("/bin/echo", ["pane text"]) == "pane text\n")
