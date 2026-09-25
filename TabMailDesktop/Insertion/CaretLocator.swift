@@ -25,23 +25,39 @@ enum CaretLocator {
         }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, DictationConfig.caretLookupTimeout)
+        Log.debug("CaretLocator: app \(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "?"), focused role \(attribute(element, kAXRoleAttribute) as? String ?? "?")")
         let screens = NSScreen.screens.map(\.frame)
         guard let primaryHeight = screens.first?.height else { return nil }
 
-        if let caret = caretRect(in: element) {
-            let rect = cocoaRect(fromAccessibility: caret, primaryScreenHeight: primaryHeight)
+        // Text markers first: Chromium/Electron and WebKit keep them current as the caret moves,
+        // while their index-based range answers can go stale or empty after typing.
+        for (source, caret) in [("text marker", markerCaretRect(in: element)), ("text range", caretRect(in: element))] {
+            guard let caret else {
+                Log.debug("CaretLocator: \(source): none")
+                continue
+            }
+            let rect = caretEdge(of: cocoaRect(fromAccessibility: caret, primaryScreenHeight: primaryHeight))
+            Log.debug("CaretLocator: \(source): \(caret) (screen \(rect))")
             if isPlausible(rect, screens: screens) { return rect }
-            Log.debug("CaretLocator: ignoring an off-screen caret rect")
+            Log.debug("CaretLocator: \(source): ignoring an implausible rect")
         }
         if let frame = frame(of: element) {
             let rect = cocoaRect(fromAccessibility: frame, primaryScreenHeight: primaryHeight)
             if rect.height <= DictationConfig.focusedElementMaxAnchorHeight, isPlausible(rect, screens: screens) {
-                Log.debug("CaretLocator: no caret; anchoring to the focused field")
+                Log.debug("CaretLocator: no caret; anchoring to the focused field \(frame)")
                 return rect
             }
         }
         Log.debug("CaretLocator: no caret or field-sized focused element")
         return nil
+    }
+
+    /// Some apps answer a caret query with a whole line's box instead of a caret: Chromium at the
+    /// very start of a field (e.g. over its placeholder), terminals at a wrapped line. The caret is
+    /// at that box's leading edge; centring on the box would put the overlay mid-line.
+    static func caretEdge(of rect: CGRect) -> CGRect {
+        guard rect.width > DictationConfig.caretMaxWidth else { return rect }
+        return CGRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height)
     }
 
     /// Some apps answer with a placeholder rect (all zero, or off every screen) instead of an
@@ -57,12 +73,29 @@ enum CaretLocator {
         var range = CFRange()
         guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range) else { return nil }
 
+        Log.debug("CaretLocator: selected range \(range.location)+\(range.length)")
         if let caret = bounds(of: range, in: element) { return caret }
         // A collapsed caret often reports an empty rect: use the trailing edge of the character
-        // before it instead.
-        guard range.location > 0,
-              let previous = bounds(of: CFRange(location: range.location - 1, length: 1), in: element) else { return nil }
-        return CGRect(x: previous.maxX, y: previous.minY, width: 1, height: previous.height)
+        // before it, or the leading edge of the one after it at the start of the text.
+        if range.location > 0,
+           let previous = bounds(of: CFRange(location: range.location - 1, length: 1), in: element) {
+            return CGRect(x: previous.maxX, y: previous.minY, width: 1, height: previous.height)
+        }
+        guard let next = bounds(of: CFRange(location: range.location, length: 1), in: element) else { return nil }
+        return CGRect(x: next.minX, y: next.minY, width: 1, height: next.height)
+    }
+
+    /// The caret via the text-marker API (WebKit, Chromium/Electron): bounds of the selected
+    /// text-marker range, which is the caret itself when the selection is collapsed.
+    private static func markerCaretRect(in element: AXUIElement) -> CGRect? {
+        guard let markerRange = attribute(element, "AXSelectedTextMarkerRange") else { return nil }
+        var value: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, "AXBoundsForTextMarkerRange" as CFString, markerRange, &value
+        ) == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
+        return rect
     }
 
     private static func frame(of element: AXUIElement) -> CGRect? {

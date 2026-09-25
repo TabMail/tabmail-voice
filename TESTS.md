@@ -9,7 +9,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `PushToTalkGestureTests` | press/release, other modifiers ignored, chord cancels and swallows release, Fn key |
 | `TextInserterTests` | text pasted with transient/concealed markers; multi-item/multi-type clipboard restored; empty stays empty; a clipboard changed mid-insert is not clobbered |
 | `AudioRecorderTests` | 48 kHz float → 16 kHz mono Int16; stereo downmix; first-audio time; max-duration cap; empty |
-| `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom, always on screen; placeholder/off-screen caret rects rejected |
+| `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom, always on screen; placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
 | `WAVEncoderTests` | every header field; AVAudioFile reads the output (independent oracle) |
 | `TranscriptionClientTests` | request URL/headers/body; backend error → user error mapping; missing text; one forced-refresh retry on 401 only; signed-out never calls backend |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |

@@ -116,5 +116,10 @@ the surface for status now and agent responses later (as on iOS).
 - The overlay anchors to the caret, else to the focused element when it's field-sized
   (`focusedElementMaxAnchorHeight`), else to the mouse pointer. The lookup asks the frontmost app
   directly and must finish before the overlay shows, so it never appears at the pointer and then
-  jumps; placeholder rects (zero origin, off every screen) are ignored.
+  jumps; placeholder rects (zero origin, off every screen) are ignored. The text-marker API is
+  tried before the index range (Chromium/Electron keep markers current), and a line-sized
+  "caret" box (Chromium at the start of a field, terminals at a wrapped line) anchors at its
+  leading edge.
+- Terminals report the terminal's own cursor. Full-screen TUIs (e.g. under tmux) hide it and
+  draw their own caret, so the overlay follows the hidden cursor, typically a bottom-row edge.
 

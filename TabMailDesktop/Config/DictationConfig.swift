@@ -74,6 +74,8 @@ enum DictationConfig {
     static let overlayCanvasSize = CGSize(width: 440, height: 96)
     /// Gap between the caret's line and the top of the pill.
     static let overlayCaretGap: CGFloat = 4
+    /// A "caret" rect wider than this is a line or text box; the caret is its leading edge.
+    static let caretMaxWidth: CGFloat = 4
     /// Without a caret, the focused element's frame anchors the overlay if it's at most this tall
     /// (a text field); taller elements (a whole editor or web view) fall back to the mouse pointer.
     static let focusedElementMaxAnchorHeight: CGFloat = 120

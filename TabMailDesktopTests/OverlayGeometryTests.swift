@@ -49,6 +49,18 @@ struct OverlayGeometryTests {
         }
     }
 
+    /// Chromium at the start of a field and terminals at a wrapped line return the line's box;
+    /// the overlay must anchor at its leading edge, not its middle. Real carets pass through.
+    @Test func aLineBoxAnchorsAtItsLeadingEdge() {
+        let lineBox = CGRect(x: 300, y: 268, width: 713, height: 20)
+        let anchored = CaretLocator.caretEdge(of: lineBox)
+        #expect(anchored.midX == lineBox.minX)
+        #expect(anchored.minY == lineBox.minY && anchored.height == lineBox.height)
+
+        let caret = CGRect(x: 304, y: 270, width: 0, height: 16)
+        #expect(CaretLocator.caretEdge(of: caret) == caret)
+    }
+
     /// Placeholder rects some apps return instead of an error must not anchor the overlay.
     @Test func rejectsPlaceholderAndOffScreenRects() {
         let screens = [screen, CGRect(x: 1000, y: 0, width: 800, height: 600)]
