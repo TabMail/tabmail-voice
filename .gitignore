@@ -1,0 +1,15 @@
+# XcodeGen-generated project — sourced from project.yml. Regenerate with
+# ./Scripts/xcodegen.sh; none of it is tracked.
+TabMailDesktop.xcodeproj/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+*.log
+*.env
+# Holds DEVELOPMENT_TEAM; every dev creates it from LocalSigning.xcconfig.example.
+LocalSigning.xcconfig
+# Plans and handoffs stay local (never route plans into Companion/).
+PLAN_*.md
+PLAN_*/
