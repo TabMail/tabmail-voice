@@ -245,6 +245,7 @@ final class DictationController {
             }
             // The screen context read at key-down.
             let context = await contextTask?.value
+            guard generation == current, !Task.isCancelled else { return }
             let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
             guard generation == current, !Task.isCancelled else { return }
             await inserter.insert(text)

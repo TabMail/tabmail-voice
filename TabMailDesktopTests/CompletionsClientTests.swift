@@ -78,6 +78,16 @@ struct CompletionsClientTests {
         }
     }
 
+    /// The backend's `JSON.stringify` leaves these unescaped; they are part of the reply, not line ends.
+    @Test(arguments: ["\u{85}", "\u{2028}", "\u{2029}"])
+    func keepsUnicodeLineSeparatorsInTheReply(separator: String) async throws {
+        let stub = StubTransport()
+        stub.enqueue(status: 200, text: Fixtures.completionsStream(final: #"{"assistant":"Alpha"# + separator + #"beta"}"#))
+        let client = CompletionsClient(baseURL: baseURL, transport: stub.transport)
+
+        #expect(try await client.complete(message, accessToken: "t") == "Alpha\(separator)beta")
+    }
+
     // MARK: Server-sent events
 
     @Test func eventsEndAtBlankLinesAndSkipComments() {
@@ -91,8 +101,10 @@ struct CompletionsClientTests {
         #expect(events.map(\.name) == ["keepalive", "final"])
     }
 
-    @Test func eventsJoinDataLinesAndAcceptCRLF() {
-        let events = CompletionsClient.events(inSSE: "event: final\r\ndata: first\r\ndata: second\r\n\r\n")
-        #expect(events == [SSEEvent(name: "final", data: "first\nsecond")])
+    @Test(arguments: ["\n", "\r\n", "\r"])
+    func eventsJoinDataLinesAtEveryLineEnd(lineEnd: String) {
+        let body = ["event: final", "data: first", "data: second\u{2028}third", "", ""].joined(separator: lineEnd)
+        let events = CompletionsClient.events(inSSE: body)
+        #expect(events == [SSEEvent(name: "final", data: "first\nsecond\u{2028}third")])
     }
 }

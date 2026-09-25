@@ -183,11 +183,25 @@ struct ScreenContextCommandTests {
         #expect(ScreenContextReader.run("/bin/echo", ["pane text"]) == "pane text\n")
     }
 
-    @Test func givesUpOnACommandThatDoesNotFinish() {
+    @Test func stopsACommandThatDoesNotFinish() throws {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
         let clock = ContinuousClock()
         let started = clock.now
-        #expect(ScreenContextReader.run("/bin/sleep", ["5"], timeout: 0.2) == nil)
+        #expect(ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; exec sleep 5"#, pidFile.path], timeout: 0.2) == nil)
         #expect(clock.now - started < .seconds(2))
+        #expect(Self.exits(try Self.pid(in: pidFile)))
+    }
+
+    /// Output ends (EOF) but the command keeps running: it is stopped at the deadline all the same.
+    @Test func stopsACommandThatClosesItsOutputAndKeepsRunning() throws {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let clock = ContinuousClock()
+        let started = clock.now
+        #expect(ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; exec >&-; exec sleep 5"#, pidFile.path], timeout: 0.2) == nil)
+        #expect(clock.now - started < .seconds(2))
+        #expect(Self.exits(try Self.pid(in: pidFile)))
     }
 
     /// A stopped tmux server holds the client's output open, so it never ends even after the client
@@ -197,5 +211,21 @@ struct ScreenContextCommandTests {
         let started = clock.now
         #expect(ScreenContextReader.run("/bin/sh", ["-c", "sleep 5 & echo partial"], timeout: 0.2) == nil)
         #expect(clock.now - started < .seconds(2))
+    }
+
+    /// The process id a test command wrote to `file`.
+    private static func pid(in file: URL) throws -> pid_t {
+        try #require(pid_t(String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+    }
+
+    /// Whether `pid` is gone within a second. Kills it if not, so a failing run leaves nothing behind.
+    private static func exits(_ pid: pid_t) -> Bool {
+        let deadline = ContinuousClock.now + .seconds(1)
+        while ContinuousClock.now < deadline {
+            if kill(pid, 0) == -1, errno == ESRCH { return true }
+            usleep(10_000)
+        }
+        kill(pid, SIGKILL)
+        return false
     }
 }

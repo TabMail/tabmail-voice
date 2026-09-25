@@ -97,7 +97,8 @@ struct CompletionsClient: Sendable {
 
     /// Splits a server-sent-events body into events, as iOS `BackendClient.parseSSELines` does: an
     /// event ends at a blank line, at the next `event:` line or at the end of the body, and `:`
-    /// lines (the backend's buffer primer) are comments.
+    /// lines (the backend's buffer primer) are comments. Lines end at CR, LF or CRLF only: U+0085,
+    /// U+2028 and U+2029 are text, and the backend's JSON carries them unescaped.
     static func events(inSSE body: String) -> [SSEEvent] {
         var events: [SSEEvent] = []
         var name: String?
@@ -107,7 +108,7 @@ struct CompletionsClient: Sendable {
             name = nil
             dataLines.removeAll()
         }
-        for line in body.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+        for line in body.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }) {
             if line.hasPrefix(":") { continue }
             if line.hasPrefix("event: ") {
                 flush()
