@@ -72,6 +72,17 @@ enum CaretLocator {
               CFGetTypeID(rangeValue) == AXValueGetTypeID() else { return nil }
         var range = CFRange()
         guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range) else { return nil }
+        if range.length == 0, let line = insertionLineRange(in: element, disagreeingWith: range.location) {
+            Log.debug("CaretLocator: caret index \(range.location) is off the insertion line \(line.location)+\(line.length)")
+            let lineEnd = line.location + line.length - 1
+            // Past the end: a terminal cursor after trailing spaces, which the line's text drops.
+            // The index still counts them, so step that many cells right of the line-break cell.
+            if range.location > lineEnd,
+               let breakCell = bounds(of: CFRange(location: lineEnd, length: 1), in: element) {
+                return cellsRight(of: breakCell, by: range.location - lineEnd)
+            }
+            range.location = clamp(range.location, into: line)
+        }
 
         Log.debug("CaretLocator: selected range \(range.location)+\(range.length)")
         // A collapsed caret sits at the leading edge of the character at its index (a newline
@@ -87,6 +98,39 @@ enum CaretLocator {
         guard range.location > 0,
               let previous = bounds(of: CFRange(location: range.location - 1, length: 1), in: element) else { return nil }
         return CGRect(x: previous.maxX, y: previous.minY, width: 0, height: previous.height)
+    }
+
+    /// The insertion line's character range, when the app reports a caret line that the caret's
+    /// index doesn't fall on. iTerm2 counts the cursor's column from the line start including
+    /// trailing spaces but drops those spaces from the line's text, so a cursor after typed spaces
+    /// indexes a few characters into the next line; its insertion line number comes straight from
+    /// the cursor. Apps that agree (or don't report a line) are left alone.
+    private static func insertionLineRange(in element: AXUIElement, disagreeingWith index: Int) -> CFRange? {
+        guard let line = attribute(element, kAXInsertionPointLineNumberAttribute) as? Int,
+              let indexLine = parameterized(element, kAXLineForIndexParameterizedAttribute, index as CFNumber) as? Int,
+              indexLine != line,
+              let value = parameterized(element, kAXRangeForLineParameterizedAttribute, line as CFNumber),
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(value as! AXValue, .cfRange, &range), range.length > 0 else { return nil }
+        return range
+    }
+
+    /// The caret `cells` monospace cells right of `cell`'s leading edge (terminal grids).
+    static func cellsRight(of cell: CGRect, by cells: Int) -> CGRect {
+        CGRect(x: cell.minX + CGFloat(cells) * cell.width, y: cell.minY, width: 0, height: cell.height)
+    }
+
+    /// The nearest index inside `line` (its last character is the line break, at the end of the
+    /// line's text).
+    static func clamp(_ index: Int, into line: CFRange) -> Int {
+        min(max(index, line.location), line.location + line.length - 1)
+    }
+
+    private static func parameterized(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &value) == .success else { return nil }
+        return value
     }
 
     /// The caret via the text-marker API (WebKit, Chromium/Electron): bounds of the selected

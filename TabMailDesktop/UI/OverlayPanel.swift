@@ -192,6 +192,8 @@ private struct OverlayView: View {
                         .foregroundStyle(Brand.gradient)
                     Text(text)
                         .font(.system(size: DictationConfig.overlayFontSize, weight: .medium))
+                        // The pill is white in light and dark mode alike.
+                        .foregroundStyle(Color.black)
                         .lineLimit(DictationConfig.pillMaxTextLines)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: DictationConfig.pillMaxTextWidth, alignment: .leading)
@@ -204,7 +206,7 @@ private struct OverlayView: View {
             .frame(minHeight: DictationConfig.pillHeight)
             // A capsule while one line tall; grows into a rounded rectangle for longer messages,
             // and is a circle (as wide as tall) while thinking.
-            .background(.regularMaterial, in: Self.shape)
+            .background(Color.white, in: Self.shape)
             .overlay {
                 if isThinking {
                     SpinningRim()
@@ -276,29 +278,25 @@ private struct GatheringSwirl: View {
     }
 }
 
-/// Loading indicator on the thinking circle's rim: a gradient arc circling over a faint ring.
+/// Loading indicator on the thinking circle's rim: a blue → purple arc circling.
 private struct SpinningRim: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             let turns = timeline.date.timeIntervalSinceReferenceDate * DictationConfig.thinkingRevolutionsPerSecond
-            ZStack {
-                Circle()
-                    .stroke(Brand.purple.opacity(DictationConfig.thinkingTrackOpacity), lineWidth: DictationConfig.thinkingRimWidth)
-                Circle()
-                    .trim(from: 0, to: DictationConfig.thinkingArcFraction)
-                    .stroke(
-                        AngularGradient(colors: [Brand.blue, Brand.purple], center: .center,
-                                        startAngle: .zero, endAngle: .degrees(360 * DictationConfig.thinkingArcFraction)),
-                        style: StrokeStyle(lineWidth: DictationConfig.thinkingRimWidth, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(360 * turns.truncatingRemainder(dividingBy: 1)))
-            }
-            .padding(DictationConfig.thinkingRimWidth / 2)
+            Circle()
+                .trim(from: 0, to: DictationConfig.thinkingArcFraction)
+                .stroke(
+                    AngularGradient(colors: [Brand.blue, Brand.purple], center: .center,
+                                    startAngle: .zero, endAngle: .degrees(360 * DictationConfig.thinkingArcFraction)),
+                    style: StrokeStyle(lineWidth: DictationConfig.thinkingRimWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(360 * turns.truncatingRemainder(dividingBy: 1)))
+                .padding(DictationConfig.thinkingRimWidth / 2)
         }
     }
 }
 
-/// Voice waveform: bars follow the microphone level (`LevelMeter`) with a travelling ripple.
+/// Voice waveform: bars follow the incoming sound level with a travelling ripple.
 private struct Waveform: View {
     let level: Float
 
@@ -321,8 +319,13 @@ private struct Waveform: View {
         let centre = Double(count - 1) / 2
         let distance = abs(Double(index) - centre) / max(centre, 1)
         let weight = 1 - distance * (1 - DictationConfig.overlayMeterEdgeBarWeight)
-        let ripple = (sin(time * DictationConfig.waveformRippleSpeed - Double(index) * DictationConfig.waveformRipplePhase) + 1) / 2
-        let amount = Double(level) * weight * (1 - DictationConfig.waveformRippleDepth + DictationConfig.waveformRippleDepth * ripple)
+        // Each bar ripples at its own speed, so the motion reads as a voice rather than a meter.
+        let speed = DictationConfig.waveformRippleSpeed * (1 + DictationConfig.waveformSpeedVariance * sin(Double(index) * 1.7))
+        let ripple = (sin(time * speed - Double(index) * DictationConfig.waveformRipplePhase) + 1) / 2
+        // Boost quieter levels so ordinary speech moves the bars visibly, on top of an idle ripple.
+        let voice = pow(Double(level), DictationConfig.waveformLevelExponent) * DictationConfig.waveformGain
+            * weight * (1 - DictationConfig.waveformRippleDepth + DictationConfig.waveformRippleDepth * ripple)
+        let amount = min(1, DictationConfig.waveformIdleLevel * ripple + voice)
         let minHeight = DictationConfig.overlayMeterMinBarHeight
         return minHeight + CGFloat(amount) * (DictationConfig.overlayMeterMaxBarHeight - minHeight)
     }

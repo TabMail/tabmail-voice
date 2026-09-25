@@ -61,6 +61,19 @@ struct OverlayGeometryTests {
         #expect(CaretLocator.caretEdge(of: caret) == caret)
     }
 
+    /// iTerm2's caret index counts trailing spaces its line text drops (measured: index 98997 on
+    /// line 98878+117, whose line-break cell is at x 4117, 8 pt cells): the caret is 3 cells
+    /// right of the line break, not on the next line and not clamped onto the break.
+    @Test func aTerminalCaretPastTrailingSpacesStepsRightByCells() {
+        let breakCell = CGRect(x: 4117, y: 1307, width: 8, height: 16)
+        let line = CFRange(location: 98_878, length: 117)
+        let lineEnd = line.location + line.length - 1
+        #expect(CaretLocator.cellsRight(of: breakCell, by: 98_997 - lineEnd) == CGRect(x: 4141, y: 1307, width: 0, height: 16))
+        // An index before the line (other drift) comes back to the line's start.
+        #expect(CaretLocator.clamp(98_800, into: line) == 98_878)
+        #expect(CaretLocator.clamp(98_900, into: line) == 98_900)
+    }
+
     /// Placeholder rects some apps return instead of an error must not anchor the overlay.
     @Test func rejectsPlaceholderAndOffScreenRects() {
         let screens = [screen, CGRect(x: 1000, y: 0, width: 800, height: 600)]

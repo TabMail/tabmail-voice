@@ -140,22 +140,26 @@ final class MicrophoneCapture: @unchecked Sendable {
         return device
     }
 
-    /// RMS loudness of a buffer in dBFS (`meterSilenceDecibels` for digital silence).
+    /// RMS loudness of a buffer in dBFS (`silenceDecibels` for digital silence).
     static func decibels(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return DictationConfig.meterSilenceDecibels }
+        guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return DictationConfig.silenceDecibels }
         let count = Int(buffer.frameLength)
         var sumOfSquares: Float = 0
         for index in 0..<count {
             sumOfSquares += samples[index] * samples[index]
         }
         let rms = (sumOfSquares / Float(count)).squareRoot()
-        guard rms > 0 else { return DictationConfig.meterSilenceDecibels }
-        return max(20 * log10(rms), DictationConfig.meterSilenceDecibels)
+        guard rms > 0 else { return DictationConfig.silenceDecibels }
+        return max(20 * log10(rms), DictationConfig.silenceDecibels)
     }
 
-    /// Loudness on a fixed 0…1 scale (`levelDecibelFloor` … 0 dBFS), for diagnostics.
+    /// Waveform level (0…1) of a buffer's loudness.
     static func level(of buffer: AVAudioPCMBuffer) -> Float {
-        let floor = DictationConfig.levelDecibelFloor
-        return max(0, min(1, (decibels(of: buffer) - floor) / -floor))
+        level(forDecibels: decibels(of: buffer))
+    }
+
+    static func level(forDecibels decibels: Float) -> Float {
+        let quiet = DictationConfig.levelQuietDecibels
+        return max(0, min(1, (decibels - quiet) / (DictationConfig.levelLoudDecibels - quiet)))
     }
 }

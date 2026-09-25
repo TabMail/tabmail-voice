@@ -24,7 +24,8 @@ final class DictationController {
         didSet { onPhaseChange?(phase) }
     }
     private(set) var level: Float = 0
-    @ObservationIgnored private var meter = LevelMeter()
+    /// Debug tuning aid: the highest waveform level reached this dictation.
+    @ObservationIgnored private var peakMeterLevel: Float = 0
     /// True once the microphone delivers audio; until then the overlay shows its warm-up swirl.
     private(set) var isHearing = false
 
@@ -101,7 +102,7 @@ final class DictationController {
         generation += 1
         let current = generation
         level = 0
-        meter = LevelMeter()
+        peakMeterLevel = 0
         isHearing = false
         startedAt = clock.now
         phase = .arming
@@ -195,7 +196,7 @@ final class DictationController {
             return
         }
         let micDelay = recording.firstBufferAt.map { "\($0 - (startedAt ?? $0))" } ?? "no audio"
-        Log.debug("DictationController: recorded \(recording.duration)s, peak \(recording.peakLevel), first audio after \(micDelay)")
+        Log.debug("DictationController: recorded \(recording.duration)s, peak \(recording.peakLevel), waveform peak \(peakMeterLevel), first audio after \(micDelay)")
 
         let wav = WAVEncoder.encode(pcm16Mono: recording.pcm, sampleRate: recording.sampleRate)
         #if DEBUG
@@ -267,9 +268,14 @@ final class DictationController {
         guard generation == self.generation else { return }
         switch phase {
         case .arming, .listening:
-            if !isHearing { isHearing = true }
-            let newLevel = meter.level(forDecibels: decibels)
-            level += (newLevel - level) * DictationConfig.levelSmoothing
+            // The device delivers digital silence while it starts; the waveform appears with the
+            // first real signal.
+            if !isHearing, decibels > DictationConfig.silenceDecibels { isHearing = true }
+            guard isHearing else { return }
+            let newLevel = MicrophoneCapture.level(forDecibels: decibels)
+            let rate = newLevel > level ? DictationConfig.levelAttack : DictationConfig.levelRelease
+            level += (newLevel - level) * rate
+            peakMeterLevel = max(peakMeterLevel, level)
         case .idle, .transcribing, .failed:
             return
         }

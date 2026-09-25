@@ -14,7 +14,7 @@ final class AudioRecorder: Sendable {
         /// Little-endian 16-bit mono PCM samples.
         let pcm: Data
         let sampleRate: Double
-        /// Loudest buffer's level on the overlay meter's 0…1 scale.
+        /// Loudest buffer's level on the waveform's 0…1 scale.
         let peakLevel: Float
         /// When the microphone delivered its first buffer (nil if it never did).
         let firstBufferAt: ContinuousClock.Instant?

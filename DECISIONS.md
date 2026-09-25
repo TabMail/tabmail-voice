@@ -107,7 +107,8 @@ overlay appears at the text cursor once the hold reaches `minimumHoldDuration`; 
 discarded unseen. The microphone-off half (engine, input node, tap, `prepare()`) is done ahead of
 time and again after every dictation, and rebuilt when the system default input changes. The
 overlay shows a gathering swirl until the first audio arrives, then a waveform pill that follows
-the voice (`LevelMeter`, adaptive to the mic and room), then a circle with a spinning rim while
+any incoming sound on a fixed, sensitive scale (it shows that the mic hears something; telling
+speech from background is the model's job), then a circle with a spinning rim while
 transcribing. On exit it plays in reverse (the pill shrinks into the swirl, which disperses).
 The overlay uses only the icon's blue → purple. The pill is
 the surface for status now and agent responses later (as on iOS).
@@ -127,5 +128,9 @@ the surface for status now and agent responses later (as on iOS).
   iTerm2 answers the empty range inconsistently (the cursor cell, nothing, or a box spanning the
   cursor cell and the next row's start), which made the overlay jump between the right place,
   the pane's left edge and mid-pane. Terminals report the terminal's real cursor, which
-  full-screen TUIs such as Claude Code keep on their input line.
+  full-screen TUIs such as Claude Code keep on their input line. iTerm2 also drops each line's
+  trailing spaces from its text but counts them in the caret index, so a caret after typed
+  spaces indexes into the next line; its insertion line number stays right. A caret index off
+  the insertion line is brought back to it, and one past the line's end is placed that many
+  (monospace) cells right of the line-break cell.
 

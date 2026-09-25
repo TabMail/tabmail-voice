@@ -24,7 +24,6 @@ tabmail-desktop/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
 │   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue
 │   │   ├── AudioRecorder.swift       Converts to 16 kHz mono Int16, accumulates, tracks peak, caps duration
-│   │   ├── LevelMeter.swift          Adaptive loudness → 0…1 waveform level (tracks room floor and speaking peak)
 │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
 │   ├── Hotkey/
 │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel

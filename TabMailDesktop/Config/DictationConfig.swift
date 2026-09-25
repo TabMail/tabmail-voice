@@ -18,23 +18,19 @@ enum DictationConfig {
 
     /// Frames per microphone tap callback (~85 ms at 48 kHz).
     static let audioTapBufferSize: AVAudioFrameCount = 4096
-    /// Fixed RMS → 0…1 scale used for diagnostics (the recording's peak level): at or below the
-    /// floor is silence.
-    static let levelDecibelFloor: Float = -50
-    /// Overlay waveform (`LevelMeter`), which adapts to the microphone and room. Quieter than this
-    /// is treated as this (digital silence while the device starts would otherwise drag the floor
-    /// to −∞).
-    static let meterSilenceDecibels: Float = -80
-    /// How fast the tracked room-noise floor rises, per ~85 ms buffer (≈ 12 dB/s); it drops at once.
-    static let meterFloorRisePerBuffer: Float = 1
-    /// How fast the tracked speaking peak decays, per buffer (≈ 6 dB/s); it rises at once.
-    static let meterCeilingFallPerBuffer: Float = 0.5
-    /// The waveform spans at least this many dB, so room noise alone never fills it.
-    static let meterMinimumRange: Float = 12
-    /// Loudness within this many dB of the floor shows as flat (noise flicker).
-    static let meterNoiseMargin: Float = 3
-    /// Smoothing factor for the overlay level (0 = frozen, 1 = no smoothing).
-    static let levelSmoothing: Float = 0.3
+    /// Loudness → 0…1 level for the waveform (and the recording's peak level): at or below the
+    /// quiet end the bars are flat, at the loud end they're full. Sensitive on purpose: the
+    /// waveform only shows that sound is coming in (a quiet display mic's room noise, ≈ −45 dB,
+    /// already moves it); telling speech from background is the transcription model's job.
+    static let levelQuietDecibels: Float = -60
+    static let levelLoudDecibels: Float = -20
+    /// Quieter than this is digital silence (the device starting): not yet hearing anything.
+    static let silenceDecibels: Float = -80
+    /// The overlay level moves this fraction of the way to a louder reading per buffer
+    /// (0 = frozen, 1 = no smoothing)…
+    static let levelAttack: Float = 0.7
+    /// …and this much when it falls, so the waveform jumps with the voice and settles gently.
+    static let levelRelease: Float = 0.25
     /// Upload format: 16 kHz mono 16-bit PCM WAV — what Whisper-class models consume natively,
     /// at ~32 KB per second of speech.
     static let recordingSampleRate: Double = 16_000
@@ -95,10 +91,10 @@ enum DictationConfig {
     /// Per-call cap on Accessibility calls into the frontmost app when locating the caret (seconds).
     static let caretLookupTimeout: Float = 0.1
     static let overlayFontSize: CGFloat = 13
-    static let pillHeight: CGFloat = 34
+    static let pillHeight: CGFloat = 26
     static let pillHorizontalPadding: CGFloat = 14
     /// Keeps text off the pill's rounded top and bottom when a message wraps.
-    static let pillVerticalPadding: CGFloat = 8
+    static let pillVerticalPadding: CGFloat = 5
     static let pillContentSpacing: CGFloat = 8
     static let pillMaxTextWidth: CGFloat = 360
     static let pillMaxTextLines = 3
@@ -107,22 +103,29 @@ enum DictationConfig {
     static let pillGlowRadius: CGFloat = 8
     /// The pill grows out of the swirl from this fraction of its size.
     static let pillAppearScale: CGFloat = 0.2
-    static let pillSpringResponse: Double = 0.35
+    static let pillSpringResponse: Double = 0.25
     static let pillSpringDamping: Double = 0.75
     /// Warm-up swirl: particles spiral from `swirlStartRadius` to `swirlOrbitRadius`.
     static let swirlParticleCount = 14
     static let swirlStartRadius: Double = 36
     static let swirlOrbitRadius: Double = 7
     static let swirlSpiralSpread: Double = 0.6
-    static let swirlGatherSeconds: Double = 0.45
+    static let swirlGatherSeconds: Double = 0.3
     static let swirlRevolutionsPerSecond: Double = 1.4
     static let swirlParticleSize: Double = 5
     /// Number of bars in the pill's waveform.
     static let overlayMeterBarCount = 9
     static let overlayMeterBarWidth: CGFloat = 3
     static let overlayMeterBarSpacing: CGFloat = 3
-    static let overlayMeterMinBarHeight: CGFloat = 4
-    static let overlayMeterMaxBarHeight: CGFloat = 20
+    static let overlayMeterMinBarHeight: CGFloat = 3
+    static let overlayMeterMaxBarHeight: CGFloat = 18
+    /// Bar height follows level^exponent (< 1 lifts quieter speech), times the gain.
+    static let waveformLevelExponent: Double = 0.5
+    static let waveformGain: Double = 1.3
+    /// The bars always ripple this much (0…1) while listening, so the pill looks alive between words.
+    static let waveformIdleLevel: Double = 0.12
+    /// Each bar's ripple speed differs by up to this fraction, so the motion looks organic.
+    static let waveformSpeedVariance: Double = 0.35
     /// Outer bars reach this fraction of the centre bar's height.
     static let overlayMeterEdgeBarWeight: Double = 0.45
     /// Travelling ripple across the bars (radians per second, radians per bar, share of height).
@@ -133,7 +136,6 @@ enum DictationConfig {
     static let thinkingRimWidth: CGFloat = 2.5
     static let thinkingArcFraction: CGFloat = 0.7
     static let thinkingRevolutionsPerSecond: Double = 1.2
-    static let thinkingTrackOpacity: Double = 0.2
     /// The overlay stays up this long after the dictation ends, for the exit animation (the pill
     /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
     static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
