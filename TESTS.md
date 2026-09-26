@@ -1,6 +1,6 @@
-# TabMail Desktop — Tests
+# TabMail Voice — Tests
 
-Run: `xcodebuild -project TabMailDesktop.xcodeproj -scheme TabMailDesktop -derivedDataPath DerivedData test`
+Run: `xcodebuild -project TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath DerivedData test`
 (Swift Testing, hosted in the app; needs `Secrets.xcconfig` from the template; add `CODE_SIGN_IDENTITY=-` if its team is unset).
 No test touches the network, the user's clipboard, or the real Keychain item.
 
@@ -40,7 +40,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 - Mic indicator in the menu bar clears `releaseTailDuration` after the key is released.
 - Signed out / no subscription / network off: the overlay shows a clear message.
 - Granting Accessibility in System Settings makes the hotkey work without relaunching.
-- Welcome wizard (fresh install, or `defaults delete ai.tabmail.desktop`): opens at launch; Next
+- Welcome wizard (fresh install, or `defaults delete ai.tabmail.voice`): opens at launch; Next
   is disabled until the agreement is ticked; the Terms and Privacy links open in the browser;
   Allow Microphone Access shows the system prompt and the step then reads Allowed; Allow
   Accessibility Access opens System Settings and the step reads Allowed once granted there;

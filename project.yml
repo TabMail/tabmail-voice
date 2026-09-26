@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-name: TabMailDesktop
+name: TabMailVoice
 options:
   bundleIdPrefix: ai.tabmail
   deploymentTarget:
@@ -29,26 +29,26 @@ settings:
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
 
 targets:
-  TabMailDesktop:
+  TabMailVoice:
     type: application
     platform: macOS
     sources:
-      - path: TabMailDesktop
+      - path: TabMailVoice
         excludes:
           - "Resources/Info.plist"
-          - "Resources/TabMailDesktop.entitlements"
+          - "Resources/TabMailVoice.entitlements"
     info:
-      path: TabMailDesktop/Resources/Info.plist
+      path: TabMailVoice/Resources/Info.plist
       properties:
-        CFBundleDisplayName: TabMail
+        CFBundleDisplayName: TabMail Voice
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         # Menu-bar only: no Dock icon, no main menu.
         LSUIElement: true
-        NSMicrophoneUsageDescription: TabMail listens only while you hold the dictation key.
+        NSMicrophoneUsageDescription: TabMail Voice listens only while you hold the dictation key.
     entitlements:
-      path: TabMailDesktop/Resources/TabMailDesktop.entitlements
+      path: TabMailVoice/Resources/TabMailVoice.entitlements
       properties:
         # Not sandboxed: the paste keystroke into other apps and the global
         # hotkey both need Accessibility, which the App Sandbox forbids.
@@ -56,32 +56,34 @@ targets:
         com.apple.security.device.audio-input: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.tabmail.desktop
-        PRODUCT_NAME: TabMail
+        PRODUCT_BUNDLE_IDENTIFIER: ai.tabmail.voice
+        # Not "TabMail": the Thunderbird installer puts its launcher at /Applications/TabMail.app.
+        PRODUCT_NAME: TabMail Voice
+        PRODUCT_MODULE_NAME: TabMailVoice
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_APP_SANDBOX: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
-  TabMailDesktopTests:
+  TabMailVoiceTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: TabMailDesktopTests
+      - path: TabMailVoiceTests
     dependencies:
-      - target: TabMailDesktop
+      - target: TabMailVoice
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.tabmail.desktop.tests
+        PRODUCT_BUNDLE_IDENTIFIER: ai.tabmail.voice.tests
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: $(TEST_HOST)
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/TabMail.app/Contents/MacOS/TabMail
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TabMail Voice.app/Contents/MacOS/TabMail Voice"
 
 schemes:
-  TabMailDesktop:
+  TabMailVoice:
     build:
       targets:
-        TabMailDesktop: all
-        TabMailDesktopTests: [test]
+        TabMailVoice: all
+        TabMailVoiceTests: [test]
     test:
       targets:
-        - TabMailDesktopTests
+        - TabMailVoiceTests

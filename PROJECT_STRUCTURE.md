@@ -1,4 +1,4 @@
-# TabMail Desktop — Project Structure
+# TabMail Voice — Project Structure
 
 macOS menu-bar dictation app: hold a key, speak, and the text is typed into whatever field has
 focus. Speech is transcribed by the TabMail backend (`POST /dictation/transcribe` → OpenRouter).
@@ -8,11 +8,11 @@ Swift 6 / SwiftUI + AppKit, macOS 15+, XcodeGen.
 tabmail-macos/
 ├── project.yml                 XcodeGen spec (app + unit tests). Generate via Scripts/xcodegen.sh
 ├── Secrets.xcconfig.example    → copy to gitignored Secrets.xcconfig (DEVELOPMENT_TEAM); loaded via configFiles
-├── Scripts/xcodegen.sh         Generates TabMailDesktop.xcodeproj with the signing team injected
+├── Scripts/xcodegen.sh         Generates TabMailVoice.xcodeproj with the signing team injected
 ├── Scripts/copy-worktree-secrets.sh  Installs the primary's gitignored signing config into a worktree, unprinted
-├── TabMailDesktop/
+├── TabMailVoice/
 │   ├── App/
-│   │   ├── TabMailDesktopApp.swift   @main: MenuBarExtra + Settings scenes; AppDelegate wires everything, opens the welcome wizard until finished
+│   │   ├── TabMailVoiceApp.swift     @main: MenuBarExtra + Settings scenes; AppDelegate wires everything, opens the welcome wizard until finished
 │   │   └── AppSettings.swift         Hotkey, screen reading, consent, wizard finished (UserDefaults); open-at-login (SMAppService)
 │   ├── Account/
 │   │   ├── AccountModel.swift        Signed-in session; single-flight token refresh (refresh tokens are single-use)
@@ -53,7 +53,7 @@ tabmail-macos/
 │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
 │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing
 │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
-└── TabMailDesktopTests/        Swift Testing suites (see TESTS.md)
+└── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
 
 ## Flow
