@@ -209,24 +209,14 @@ struct ScreenContextCommandTests {
     }
 
     @Test func stopsACommandThatDoesNotFinish() throws {
-        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
-        defer { try? FileManager.default.removeItem(at: pidFile) }
-        let clock = ContinuousClock()
-        let started = clock.now
-        #expect(ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; exec sleep 5"#, pidFile.path], timeout: 0.2) == nil)
-        #expect(clock.now - started < .seconds(2))
-        #expect(Self.exits(try Self.pid(in: pidFile)))
+        let pid = try #require(Self.pidOfACommandStoppedAtTheDeadline("exec sleep 30"))
+        #expect(Self.exits(pid))
     }
 
     /// Output ends (EOF) but the command keeps running: it is stopped at the deadline all the same.
     @Test func stopsACommandThatClosesItsOutputAndKeepsRunning() throws {
-        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
-        defer { try? FileManager.default.removeItem(at: pidFile) }
-        let clock = ContinuousClock()
-        let started = clock.now
-        #expect(ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; exec >&-; exec sleep 5"#, pidFile.path], timeout: 0.2) == nil)
-        #expect(clock.now - started < .seconds(2))
-        #expect(Self.exits(try Self.pid(in: pidFile)))
+        let pid = try #require(Self.pidOfACommandStoppedAtTheDeadline("exec >&-; exec sleep 30"))
+        #expect(Self.exits(pid))
     }
 
     /// A stopped tmux server holds the client's output open, so it never ends even after the client
@@ -256,7 +246,7 @@ struct ScreenContextCommandTests {
 
             let inTime = returned.wait(timeout: .now() + 1) == .success
             // No pid file: the shell was stopped before its first command, so nothing was flowing.
-            let pid = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            let pid = Self.pid(in: pidFile)
             if !inTime, let pid {
                 kill(pid, SIGKILL)
                 _ = returned.wait(timeout: .now() + 5)
@@ -283,17 +273,36 @@ struct ScreenContextCommandTests {
 
         let inTime = returned.wait(timeout: .now() + timeout + 15) == .success
         if !inTime {
-            let pid = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
-            if let pid { kill(pid, SIGKILL) }
+            if let pid = pid(in: pidFile) { kill(pid, SIGKILL) }
             _ = returned.wait(timeout: .now() + 5)
         }
         #expect(inTime)
         return output.withLock { $0 }
     }
 
-    /// The process id a test command wrote to `file`.
-    private static func pid(in file: URL) throws -> pid_t {
-        try #require(pid_t(String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+    /// Runs `script` under a deadline, which must stop it, until one run got as far as writing its
+    /// shell's pid, and returns that pid. On a loaded runner starting the shell can take longer than a
+    /// short deadline, which then stops it before its first command; such a run still must end in time,
+    /// but shows nothing about stopping a running command, so it is tried again with twice the deadline
+    /// (0.2 s up to 3.2 s).
+    private static func pidOfACommandStoppedAtTheDeadline(_ script: String) -> pid_t? {
+        var timeout = 0.2
+        for _ in 0..<5 {
+            let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+            defer { try? FileManager.default.removeItem(at: pidFile) }
+            let clock = ContinuousClock()
+            let started = clock.now
+            #expect(ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; "# + script, pidFile.path], timeout: timeout) == nil)
+            #expect(clock.now - started < .seconds(timeout + 2))
+            if let pid = pid(in: pidFile) { return pid }
+            timeout *= 2
+        }
+        return nil
+    }
+
+    /// The process id a test command wrote to `file`, if it got that far.
+    private static func pid(in file: URL) -> pid_t? {
+        (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     /// Whether `pid` is gone within a second. Kills it if not, so a failing run leaves nothing behind.
