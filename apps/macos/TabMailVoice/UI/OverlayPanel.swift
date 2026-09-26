@@ -116,22 +116,29 @@ final class OverlayPanelController {
 
     /// Canvas origin that puts the pill's top edge just below the caret's line (the pill just
     /// above the line when there's no room below), centred horizontally on the caret and kept
-    /// inside the screen's visible area. The canvas is larger than the pill (room for the swirl);
-    /// the one-line pill sits vertically centred in it and taller pills grow downward.
+    /// inside the screen's visible area with the Space hint under it. The canvas is larger than the
+    /// pill (room for the swirl); the one-line pill sits vertically centred in it and taller pills
+    /// grow downward.
     static func overlayOrigin(anchor: CGRect, canvas: CGSize, pillHeight: CGFloat, visibleFrame: CGRect) -> CGPoint {
         let gap = DictationConfig.overlayCaretGap
         let pillTopInset = (canvas.height - pillHeight) / 2
         var pillTop = anchor.minY - gap
         if opensUpward(anchor: anchor, pillHeight: pillHeight, visibleFrame: visibleFrame) { pillTop = anchor.maxY + gap + pillHeight }
-        pillTop = min(max(pillTop, visibleFrame.minY + pillHeight), visibleFrame.maxY)
+        pillTop = min(max(pillTop, visibleFrame.minY + heightUnderPillTop(pillHeight)), visibleFrame.maxY)
         var x = anchor.midX - canvas.width / 2
         x = min(max(x, visibleFrame.minX), visibleFrame.maxX - canvas.width)
         return CGPoint(x: x, y: pillTop + pillTopInset - canvas.height)
     }
 
-    /// Whether the pill goes above the caret's line, there being no room for it below.
+    /// Whether the pill goes above the caret's line, there being no room below for the listening pill
+    /// and the Space hint under it.
     static func opensUpward(anchor: CGRect, pillHeight: CGFloat, visibleFrame: CGRect) -> Bool {
-        anchor.minY - DictationConfig.overlayCaretGap - pillHeight < visibleFrame.minY
+        anchor.minY - DictationConfig.overlayCaretGap - heightUnderPillTop(pillHeight) < visibleFrame.minY
+    }
+
+    /// The listening pill and the Space hint under it, from the pill's top edge down.
+    private static func heightUnderPillTop(_ pillHeight: CGFloat) -> CGFloat {
+        max(pillHeight, DictationConfig.listeningPillHeight) + DictationConfig.modeHintFootprint
     }
 
     /// Centres of agent mode's tool bubbles, of `sizes`, above a pill at `pill` (top-left origin, as
@@ -156,7 +163,8 @@ final class OverlayPanelController {
     }
 }
 
-private struct OverlayView: View {
+/// Internal for tests (`Pill`).
+struct OverlayView: View {
     let controller: DictationController
     /// After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring
     /// how the overlay appeared.
@@ -164,7 +172,7 @@ private struct OverlayView: View {
     /// The Space hint has had its `modeHintDisplayDuration` this hold.
     @State private var hintShown = false
 
-    private enum Mode: Equatable {
+    enum Mode: Equatable {
         case hidden, swirl, listening, transcribing, running(AgentTool), message(String)
     }
 
@@ -245,7 +253,7 @@ private struct OverlayView: View {
         }
     }
 
-    private struct Pill: View {
+    struct Pill: View {
         let mode: Mode
         let level: Float
 
@@ -340,49 +348,69 @@ private struct PillLayout: Layout {
     }
 }
 
-/// A tooltip under the listening pill, kept small and quiet (owner, 2026-09-26): a "space" keycap and
-/// what it switches to, with an arrow up at the pill.
-private struct ModeHint: View {
+/// A tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost a black
+/// background"): a dark rounded box with an arrow up at the pill, a "space" keycap and what it
+/// switches to. Internal for tests.
+struct ModeHint: View {
     let mode: DictationMode
 
+    /// What Space switches to.
+    var action: String { mode == .agent ? "exit agent" : "agent mode" }
+
+    private static let shape = TooltipShape(
+        arrowWidth: DictationConfig.modeHintArrowWidth,
+        arrowHeight: DictationConfig.modeHintArrowHeight,
+        cornerRadius: DictationConfig.modeHintCornerRadius
+    )
+
     var body: some View {
-        VStack(spacing: 0) {
-            Arrow()
-                .fill(Self.fill)
-                .frame(width: DictationConfig.modeHintArrowWidth, height: DictationConfig.modeHintArrowHeight)
-            label
-                .background(Self.fill, in: Capsule())
-        }
-        .fixedSize()
-    }
-
-    /// Light in light and dark mode alike, as the pill.
-    private static let fill = Color(white: DictationConfig.pillFillWhite).opacity(DictationConfig.modeHintBackgroundOpacity)
-
-    private var label: some View {
         HStack(spacing: DictationConfig.modeHintSpacing) {
             Text("space")
                 .font(.system(size: DictationConfig.modeHintKeyFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.modeHintKeyTextOpacity))
                 .padding(.horizontal, DictationConfig.modeHintKeyPadding)
                 .frame(height: DictationConfig.modeHintKeyHeight)
-                .overlay {
+                .background {
                     RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
-                        .strokeBorder(Color.black.opacity(DictationConfig.modeHintKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+                        .fill(Color.white.opacity(DictationConfig.modeHintKeyFillOpacity))
+                    RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
+                        .strokeBorder(Color.white.opacity(DictationConfig.modeHintKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
                 }
-            Text(mode == .agent ? "exit agent" : "agent mode")
-                .font(.system(size: DictationConfig.modeHintFontSize))
+            Text(action)
+                .font(.system(size: DictationConfig.modeHintFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.modeHintTextOpacity))
         }
-        .foregroundStyle(Color.black.opacity(DictationConfig.modeHintTextOpacity))
         .padding(.horizontal, DictationConfig.modeHintHorizontalPadding)
         .frame(height: DictationConfig.modeHintHeight)
+        .padding(.top, DictationConfig.modeHintArrowHeight)
+        // Dark in light and dark mode alike, as macOS HUDs are.
+        .background(Color(white: DictationConfig.modeHintFillWhite).opacity(DictationConfig.modeHintFillOpacity), in: Self.shape)
+        .overlay {
+            Self.shape.stroke(Color.white.opacity(DictationConfig.modeHintBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+        }
+        .shadow(color: .black.opacity(DictationConfig.modeHintShadowOpacity), radius: DictationConfig.modeHintShadowRadius, y: DictationConfig.modeHintShadowOffsetY)
+        .fixedSize()
     }
 
-    private struct Arrow: Shape {
+    /// A rounded box under an arrow centred on its top edge, one outline so the fill and the border
+    /// run around the arrow without a seam.
+    private struct TooltipShape: Shape {
+        let arrowWidth: CGFloat
+        let arrowHeight: CGFloat
+        let cornerRadius: CGFloat
+
         func path(in rect: CGRect) -> Path {
-            Path { path in
-                path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            let top = rect.minY + arrowHeight
+            let radius = min(cornerRadius, (rect.maxY - top) / 2)
+            return Path { path in
+                path.move(to: CGPoint(x: rect.minX + radius, y: top))
+                path.addLine(to: CGPoint(x: rect.midX - arrowWidth / 2, y: top))
+                path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.midX + arrowWidth / 2, y: top))
+                path.addArc(tangent1End: CGPoint(x: rect.maxX, y: top), tangent2End: CGPoint(x: rect.maxX, y: rect.maxY), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: rect.maxY), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: top), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: rect.minX, y: top), tangent2End: CGPoint(x: rect.maxX, y: top), radius: radius)
                 path.closeSubpath()
             }
         }

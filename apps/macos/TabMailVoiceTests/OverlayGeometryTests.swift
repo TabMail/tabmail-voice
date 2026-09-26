@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import CoreGraphics
+import AppKit
+import SwiftUI
 import Testing
 @testable import TabMailVoice
 
@@ -42,6 +43,43 @@ struct OverlayGeometryTests {
         #expect(pillFrame(origin).minY == caret.maxY + DictationConfig.overlayCaretGap)
         #expect(OverlayPanelController.opensUpward(anchor: caret, pillHeight: pillHeight, visibleFrame: screen))
         #expect(!OverlayPanelController.opensUpward(anchor: CGRect(x: 500, y: 400, width: 1, height: 20), pillHeight: pillHeight, visibleFrame: screen))
+    }
+
+    /// The Space hint shows under the listening pill for a moment every hold. With the caret near the
+    /// bottom of the screen, on a short or a tall line, the hint is always on screen and the pill
+    /// never covers the line; the overlay opens above the caret's line only when the hint would not
+    /// fit under a pill opened below it.
+    /// The pill and the hint are measured as drawn, placed as `PillLayout` places them. For a screen
+    /// whose visible area starts at 0, one raised by the Dock, and a display below the main one.
+    @Test func theHintUnderTheListeningPillIsAlwaysOnScreen() {
+        let canvas = DictationConfig.overlayCanvasSize
+        let pillHeight = DictationConfig.pillHeight
+        let pill = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0)).fittingSize
+        let hint = NSHostingView(rootView: ModeHint(mode: .dictation)).fittingSize
+        // The hint's bottom edge, down from the pill's top edge.
+        let hintBottom = OverlayPanelController.hintCentre(under: CGRect(origin: .zero, size: pill), size: hint).y + hint.height / 2
+        var openedBelow = 0
+        var openedAbove = 0
+        let screens = [screen, CGRect(x: 0, y: 70, width: 1000, height: 730), CGRect(x: 0, y: -800, width: 1000, height: 800)]
+        for (screen, lineHeight) in screens.flatMap({ screen in [CGFloat(14), 16, 20].map { (screen, $0) } }) {
+            for bottom in stride(from: screen.minY, through: screen.minY + 150, by: 1) {
+                let caret = CGRect(x: 500, y: bottom, width: 1, height: lineHeight)
+                let origin = OverlayPanelController.overlayOrigin(anchor: caret, canvas: canvas, pillHeight: pillHeight, visibleFrame: screen)
+                // The pill's top edge, where a one-line pill centred in the canvas has it.
+                let pillTop = origin.y + canvas.height - (canvas.height - pillHeight) / 2
+                #expect(pillTop - hintBottom >= screen.minY, "hint off screen for a \(lineHeight) pt line at \(bottom) on \(screen)")
+                let drawnPill = CGRect(x: origin.x + (canvas.width - pill.width) / 2, y: pillTop - pill.height, width: pill.width, height: pill.height)
+                #expect(!drawnPill.intersects(caret), "pill covers a \(lineHeight) pt line at \(bottom) on \(screen)")
+                if pillTop <= caret.minY {
+                    openedBelow += 1
+                } else {
+                    openedAbove += 1
+                    #expect(caret.minY - DictationConfig.overlayCaretGap - hintBottom < screen.minY, "opened above a \(lineHeight) pt line at \(bottom) on \(screen) with room below")
+                }
+            }
+        }
+        #expect(openedBelow > 0)
+        #expect(openedAbove > 0)
     }
 
     @Test func pillStaysOnScreenAtTheEdges() {

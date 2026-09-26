@@ -2,9 +2,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AVFoundation
 import Foundation
 import os
 @testable import TabMailVoice
+
+/// A microphone that hears a tenth of a second of tone as soon as it starts.
+final class ToneCapture: AudioCapturing {
+    func prepare() {}
+    func start(onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void, completion: @escaping @Sendable ((any Error)?) -> Void) {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_600)!
+        buffer.frameLength = 1_600
+        for frame in 0..<Int(buffer.frameLength) {
+            buffer.floatChannelData![0][frame] = 0.5 * sin(2 * .pi * 440 * Float(frame) / 16_000)
+        }
+        onBuffer(buffer)
+        completion(nil)
+    }
+    func stop() {}
+}
 
 /// Scripted HTTP transport: records every request, answers from a queue.
 final class StubTransport: @unchecked Sendable {
