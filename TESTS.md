@@ -33,6 +33,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `PermissionsModelTests` | the microphone states (undecided, restricted, denied and authorized) and both Accessibility states come from the injected readers, not the OS; each grant is announced once when it lands (the Microphone one with the model already reporting it), again after a revoke and re-grant |
 | `WelcomeWizardTests` | steps run consent → microphone, accessibility → screen reading under the Consent / Permissions / Features rail, and Back retraces them one step at a time; nothing past consent until it is given, and withdrawing it blocks again; permission and feature steps never block Next; rail bubbles only go back; Finish (last step only) records the wizard as done, persisted, and closes it once |
 | `AppSettingsTests` | fresh install: screen reading on, no consent, wizard not finished; each choice (including screen reading off) survives a relaunch; what a dictation takes at key-down is what Settings says: consent, screen reading, the development or production server, the chosen email app, which it gets only while a Thunderbird profile has TabMail's add-on (each red-verified) |
+| `DebugModeTests` | only `tabmail.ai` accounts, in any case, may use debug mode (lookalike domains, subdomains, other domains, none refused); debug mode and the development server are on only with the switch on AND an allowed account (red-verified against the switch alone); the switch persists and starts off; the menu shows Start Dictation only in debug mode, and Stop while recording whatever the mode (red-verified) |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |
 
 ## Not covered by unit tests (manual checklist)
@@ -54,8 +55,12 @@ No test touches the network, the user's clipboard, or the real Keychain item.
   Accessibility Access opens System Settings and the step reads Allowed once granted there;
   Finish closes it and it does not open at the next launch; closing it early does. Menu ›
   Welcome Guide… reopens it at the first step.
-- Start dictation from the menu, then untick the agreement in Welcome Guide…: the menu's Stop
-  Dictation is still enabled and stops the recording; Start Dictation is then disabled.
+- Debug mode (ADR-DESK-018): signed in with a `tabmail.ai` account, Settings › General shows
+  "Debug mode"; with another account, or signed out, it doesn't. With it off, or with another
+  account signed in after it was switched on, the menu has no Start Dictation and no debug items.
+- In debug mode, start dictation from the menu, then untick the agreement in Welcome Guide…: the
+  menu's Stop Dictation is still enabled and stops the recording; Start Dictation is then disabled.
+  Switching debug mode off while recording from the menu leaves Stop Dictation in the menu.
 - Screen reading off (wizard or Settings): Debug menu › Show Last Screen Context stays unchanged
   after a dictation.
 - Overlay appears just below the text cursor (TextEdit, Mail, Safari); below the focused field

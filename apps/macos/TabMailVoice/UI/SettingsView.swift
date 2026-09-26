@@ -53,7 +53,12 @@ struct SettingsView: View {
                     get: { settings.launchAtLogin },
                     set: { settings.setLaunchAtLogin($0) }
                 ))
-                Toggle("Use development server", isOn: $settings.useDevelopmentServer)
+                if DebugAccess.allows(account.email) {
+                    Toggle("Debug mode", isOn: $settings.debugMode)
+                    Text("Uses the development server and shows debug items in the menu.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

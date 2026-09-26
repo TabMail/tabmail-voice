@@ -44,11 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         let settings = settings
+        let account = account
         contextProbe = ScreenContextProbe()
         welcome = WelcomeWindowController(settings: settings, permissions: permissions)
         controller = DictationController(
             permissions: permissions,
-            settings: { settings.dictation },
+            settings: { settings.dictation(for: account.email) },
             account: account,
             thunderbird: ThunderbirdRelay(system: .live()),
             makeTranscriptionClient: { TranscriptionClient(baseURL: $0) },
