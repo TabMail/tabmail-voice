@@ -5,6 +5,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import Vision
 @testable import TabMailVoice
 
 /// The Space hint as drawn: a dark tooltip, in light and dark mode alike, with an arrow up at the
@@ -13,9 +14,59 @@ import Testing
 struct ModeHintTests {
     private let scale: CGFloat = 2
 
-    @Test func saysWhatSpaceSwitchesTo() {
-        #expect(ModeHint(mode: .dictation).action == "agent mode")
-        #expect(ModeHint(mode: .agent).action == "exit agent")
+    /// Read off the drawn hint, on device: the keycap, then what Space switches to.
+    @Test(arguments: zip([DictationMode.dictation, .agent], ["agent mode", "exit agent"]))
+    func saysWhatSpaceSwitchesTo(mode: DictationMode, action: String) throws {
+        let renderer = ImageRenderer(content: ModeHint(mode: mode))
+        renderer.scale = 2 * scale
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: try #require(renderer.cgImage)).perform([request])
+        #expect((request.results ?? []).compactMap { $0.topCandidates(1).first?.string } == ["space", action])
+    }
+
+    /// The whole overlay as a listening hold draws it: the dark hint under the light pill.
+    @Test func showsUnderTheListeningPill() async throws {
+        let transport = StubTransport()
+        let thunderbird = FakeThunderbird()
+        thunderbird.installed = false
+        let baseURL = URL(string: "https://api.example.com")!
+        let controller = DictationController(
+            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
+            hasConsented: { true },
+            account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
+            thunderbird: thunderbird.relay(),
+            capture: ToneCapture(),
+            makeTranscriptionClient: { TranscriptionClient(baseURL: baseURL, transport: transport.transport) },
+            makeCompletionsClient: { CompletionsClient(baseURL: baseURL, transport: transport.transport) }
+        )
+        controller.start()
+        defer { controller.cancel() }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !(controller.phase == .listening && controller.isHearing), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(controller.phase == .listening && controller.isHearing)
+
+        let size = DictationConfig.overlayCanvasSize
+        let renderer = ImageRenderer(content: OverlayView(controller: controller).frame(width: size.width, height: size.height))
+        renderer.scale = scale
+        let overlay = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+        var darkRows: [Int] = []
+        var lightRows: [Int] = []
+        for y in 0..<overlay.pixelsHigh {
+            for x in 0..<overlay.pixelsWide {
+                let (white, alpha) = pixel(overlay, CGFloat(x) / scale, CGFloat(y) / scale)
+                guard alpha > 0.8 else { continue }
+                if white < 0.3 { darkRows.append(y) } else if white > 0.8 { lightRows.append(y) }
+            }
+        }
+        try #require(!darkRows.isEmpty && !lightRows.isEmpty)
+        let middle = { (rows: [Int]) in Double(rows.reduce(0, +)) / Double(rows.count) }
+        #expect(middle(darkRows) > middle(lightRows), "the hint is not under the pill")
+        #expect(transport.requests.isEmpty)
     }
 
     /// As tall as its arrow and box, the room `OverlayPanelController.opensUpward` leaves for it.

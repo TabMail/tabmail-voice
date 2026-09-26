@@ -26,22 +26,6 @@ private final class CountingCapture: AudioCapturing, @unchecked Sendable {
     func stop() {}
 }
 
-/// A microphone that hears a tenth of a second of tone as soon as it starts.
-private final class ToneCapture: AudioCapturing {
-    func prepare() {}
-    func start(onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void, completion: @escaping @Sendable ((any Error)?) -> Void) {
-        let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_600)!
-        buffer.frameLength = 1_600
-        for frame in 0..<Int(buffer.frameLength) {
-            buffer.floatChannelData![0][frame] = 0.5 * sin(2 * .pi * 440 * Float(frame) / 16_000)
-        }
-        onBuffer(buffer)
-        completion(nil)
-    }
-    func stop() {}
-}
-
 /// What the stub keystroke pasted, in order.
 @MainActor
 private final class Pastes {

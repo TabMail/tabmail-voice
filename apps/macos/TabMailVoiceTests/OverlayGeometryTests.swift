@@ -46,8 +46,9 @@ struct OverlayGeometryTests {
     }
 
     /// The Space hint shows under the listening pill for a moment every hold. With the caret near the
-    /// bottom of the screen, on a short or a tall line, the hint is always on screen; the overlay
-    /// opens above the caret's line only when the hint would not fit under a pill opened below it.
+    /// bottom of the screen, on a short or a tall line, the hint is always on screen and the pill
+    /// never covers the line; the overlay opens above the caret's line only when the hint would not
+    /// fit under a pill opened below it.
     /// The pill and the hint are measured as drawn, placed as `PillLayout` places them. For a screen
     /// whose visible area starts at 0, one raised by the Dock, and a display below the main one.
     @Test func theHintUnderTheListeningPillIsAlwaysOnScreen() {
@@ -67,6 +68,8 @@ struct OverlayGeometryTests {
                 // The pill's top edge, where a one-line pill centred in the canvas has it.
                 let pillTop = origin.y + canvas.height - (canvas.height - pillHeight) / 2
                 #expect(pillTop - hintBottom >= screen.minY, "hint off screen for a \(lineHeight) pt line at \(bottom) on \(screen)")
+                let drawnPill = CGRect(x: origin.x + (canvas.width - pill.width) / 2, y: pillTop - pill.height, width: pill.width, height: pill.height)
+                #expect(!drawnPill.intersects(caret), "pill covers a \(lineHeight) pt line at \(bottom) on \(screen)")
                 if pillTop <= caret.minY {
                     openedBelow += 1
                 } else {
