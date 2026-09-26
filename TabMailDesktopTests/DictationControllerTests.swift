@@ -228,8 +228,12 @@ struct DictationControllerTests {
         #expect(completions.requests.count == 1)
         #expect(pasted == [transcript])
         #expect(controller.phase == .idle)
-        // Slack for a loaded runner, far below a cap that would hold the paste for a stalled stream.
-        #expect(ContinuousClock.now - started < .seconds(DictationConfig.cleanupTimeout + 5))
+        // The owner's cap on how long a cleanup may hold the paste is 3 seconds. It is written out
+        // here rather than read from `DictationConfig`, so raising the setting past it fails.
+        let ownersCap: TimeInterval = 3
+        #expect(DictationConfig.cleanupTimeout <= ownersCap)
+        // Slack for a loaded runner, far below the wait a stalled stream would otherwise cause.
+        #expect(ContinuousClock.now - started < .seconds(ownersCap + 5))
     }
 
     /// A cleanup slower than the screen-read wait but within the app's own cleanup timeout is
