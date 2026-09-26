@@ -165,7 +165,10 @@ private struct OverlayView: View {
 
     private func bubble(_ tool: AgentTool) -> some View {
         let running: AgentTool? = if case .running(let tool) = mode { tool } else { nil }
-        return ToolBubble(tool: tool, isRunning: running == tool, isDimmed: running != nil && running != tool)
+        return ToolBubble(
+            tool: tool, appURL: tool == .thunderbird ? controller.emailAppURL : nil,
+            isRunning: running == tool, isDimmed: running != nil && running != tool
+        )
             .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
     }
 
@@ -264,12 +267,13 @@ private struct OverlayView: View {
 /// app. While its tool runs, a gradient arc circles its border; the other tools fade.
 private struct ToolBubble: View {
     let tool: AgentTool
+    /// The app the tool hands the request to, if any.
+    let appURL: URL?
     let isRunning: Bool
     let isDimmed: Bool
 
     private var appIcon: NSImage? {
-        guard let id = tool.appBundleIdentifier, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return nil }
-        return NSWorkspace.shared.icon(forFile: url.path)
+        appURL.map { NSWorkspace.shared.icon(forFile: $0.path) }
     }
 
     var body: some View {

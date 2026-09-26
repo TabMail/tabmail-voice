@@ -22,20 +22,12 @@ enum AgentTool: String, CaseIterable, Sendable {
         }
     }
 
-    /// SF Symbol shown in the tool's bubble, when it is not an app's (`appBundleIdentifier`).
+    /// SF Symbol shown in the tool's bubble, unless it shows the app's icon (Thunderbird's).
     var symbolName: String {
         switch self {
         case .edit: "pencil"
         case .compose: "square.and.pencil"
         case .thunderbird: "envelope"
-        }
-    }
-
-    /// The app a tool hands the request to; its bubble shows that app's icon.
-    var appBundleIdentifier: String? {
-        switch self {
-        case .edit, .compose: nil
-        case .thunderbird: DictationConfig.thunderbirdBundleIdentifier
         }
     }
 

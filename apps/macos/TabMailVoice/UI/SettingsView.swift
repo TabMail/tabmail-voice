@@ -35,6 +35,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Agent mode") {
+                EmailClientPicker(settings: settings)
+            }
+
             Section("Permissions") {
                 permissionRow("Microphone", granted: permissions.microphone == .authorized) {
                     Task { await permissions.requestMicrophone() }
@@ -66,6 +70,37 @@ struct SettingsView: View {
             } else {
                 Button("Allow…", action: request)
             }
+        }
+    }
+}
+
+/// Which email app mail and calendar requests go to: the default email app, or a Thunderbird
+/// installed on this Mac.
+private struct EmailClientPicker: View {
+    @Bindable var settings: AppSettings
+
+    private let systemDefault = EmailClient.systemDefault()
+    private let installed = EmailClient.installed()
+
+    private var defaultIsSupported: Bool {
+        EmailClient.resolve(chosen: nil, systemDefault: systemDefault?.bundleIdentifier) != nil
+    }
+
+    var body: some View {
+        Picker("Email app", selection: $settings.emailClient) {
+            Text("Default (\(systemDefault?.name ?? "none"))").tag(String?.none)
+            ForEach(installed, id: \.bundleIdentifier) { app in
+                Text(app.name).tag(Optional(app.bundleIdentifier))
+            }
+        }
+        if settings.emailClient == nil, !defaultIsSupported {
+            Text("Mail and calendar requests need Thunderbird with TabMail. Choose it here, or make it your default email app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            Text("Mail and calendar requests go to TabMail's chat in this app.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }

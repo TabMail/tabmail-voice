@@ -30,8 +30,10 @@ final class DictationController {
     }
     /// What the current (or last) recording is for.
     private(set) var mode: DictationMode = .dictation
-    /// The tools agent mode offers this time: Thunderbird only when it is installed.
+    /// The tools agent mode offers this time: Thunderbird only when an email app is set up for it.
     private(set) var tools: [AgentTool] = []
+    /// That email app's bundle, whose icon the Thunderbird bubble shows.
+    private(set) var emailAppURL: URL?
     private(set) var level: Float = 0
     @ObservationIgnored private var envelope = LevelEnvelope()
     /// Debug tuning aid: the highest waveform level reached this dictation.
@@ -73,7 +75,7 @@ final class DictationController {
         hasConsented: @escaping @MainActor () -> Bool,
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
-        thunderbird: ThunderbirdRelay = ThunderbirdRelay(),
+        thunderbird: ThunderbirdRelay,
         capture: any AudioCapturing = MicrophoneCapture(),
         makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient,
         makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
@@ -133,7 +135,8 @@ final class DictationController {
         generation += 1
         let current = generation
         self.mode = mode
-        tools = mode == .agent ? AgentTool.allCases.filter { $0 != .thunderbird || thunderbird.isInstalled } : []
+        emailAppURL = mode == .agent ? thunderbird.applicationURL : nil
+        tools = mode == .agent ? AgentTool.allCases.filter { $0 != .thunderbird || emailAppURL != nil } : []
         level = 0
         peakMeterLevel = 0
         envelope = LevelEnvelope()

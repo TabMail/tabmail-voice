@@ -50,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             permissions: permissions,
             hasConsented: { settings.hasConsented },
             account: account,
+            thunderbird: ThunderbirdRelay(system: .live(bundleIdentifier: {
+                EmailClient.resolve(chosen: settings.emailClient, systemDefault: EmailClient.systemDefault()?.bundleIdentifier)
+            })),
             makeTranscriptionClient: { TranscriptionClient(baseURL: settings.backendURL) },
             makeCompletionsClient: { CompletionsClient(baseURL: settings.backendURL) }
         )

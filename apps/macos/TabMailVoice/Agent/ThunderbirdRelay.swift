@@ -60,11 +60,12 @@ final class ThunderbirdRelay {
     var chatInputSettle = DictationConfig.thunderbirdChatInputSettle
     var pollInterval = DictationConfig.thunderbirdPollInterval
 
-    init(system: System = .live()) {
+    init(system: System) {
         self.system = system
     }
 
-    var isInstalled: Bool { system.applicationURL() != nil }
+    /// The email app's bundle, when one is set up and installed.
+    var applicationURL: URL? { system.applicationURL() }
 
     /// Types `message` into TabMail's chat and sends it. Throws `Failure`, or `CancellationError` when
     /// cancelled; either way nothing is pasted outside the chat window.
@@ -110,12 +111,15 @@ final class ThunderbirdRelay {
 
 extension ThunderbirdRelay.System {
     /// The real Thunderbird, driven through Launch Services, Accessibility and posted keystrokes.
+    /// `bundleIdentifier` names the email app at each call (`EmailClient`), so a change in Settings
+    /// applies at once; nil means there is none.
     @MainActor
     static func live(
-        bundleIdentifier: String = DictationConfig.thunderbirdBundleIdentifier, inserter: TextInserter = TextInserter()
+        bundleIdentifier: @escaping @MainActor () -> String?, inserter: TextInserter = TextInserter()
     ) -> Self {
         func running() -> NSRunningApplication? {
-            NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first { !$0.isTerminated }
+            guard let id = bundleIdentifier() else { return nil }
+            return NSRunningApplication.runningApplications(withBundleIdentifier: id).first { !$0.isTerminated }
         }
         func element() -> AXUIElement? {
             guard let app = running() else { return nil }
@@ -124,7 +128,7 @@ extension ThunderbirdRelay.System {
             return element
         }
         return Self(
-            applicationURL: { NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) },
+            applicationURL: { bundleIdentifier().flatMap(NSWorkspace.shared.urlForApplication(withBundleIdentifier:)) },
             isRunning: { running() != nil },
             launch: { url in
                 let configuration = NSWorkspace.OpenConfiguration()
@@ -143,7 +147,10 @@ extension ThunderbirdRelay.System {
                 let result = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
                 Log.debug("ThunderbirdRelay: asked Thunderbird to the front (\(result.rawValue))")
             },
-            isFrontmost: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleIdentifier },
+            isFrontmost: {
+                guard let id = bundleIdentifier() else { return false }
+                return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == id
+            },
             focusedWindowTitle: {
                 guard let app = element(), let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute) else { return nil }
                 return CaretLocator.attribute(window as! AXUIElement, kAXTitleAttribute) as? String

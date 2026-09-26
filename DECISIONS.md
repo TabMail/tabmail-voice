@@ -387,7 +387,7 @@ the agent restating the request as a chat message, and sending being enough (no 
 
 **Decision:**
 - A third tool, `thunderbird` (backend `system_prompt_desktop_thunderbird`, ADR-023), offered, and
-  shown as a bubble with Thunderbird's own icon, only when Thunderbird is installed. The agent's
+  shown as a bubble with the email app's own icon, only when there is an email app for it. The agent's
   prompt always names it; the app fails a request given to a tool it did not offer ("Mail and
   calendar requests need Thunderbird with TabMail").
 - `ThunderbirdRelay` sends the chat message: launch Thunderbird if it isn't running (then wait for a
@@ -395,6 +395,12 @@ the agent restating the request as a chat message, and sending being enough (no 
   (`AXFrontmost`: the app is never active, so cooperative activation would ignore
   `NSRunningApplication.activate`), post the add-on's ⌥⌘L unless the focused window is already
   the chat, wait for a window titled "TabMail Chat", paste, press Return.
+- The email app (owner, 2026-09-26: "configurable in settings (which email client) default to user
+  default email client") is the one chosen in Settings › Agent mode, else the default email app
+  (the `mailto:` handler) if it is a Thunderbird TabMail runs in: Thunderbird (release and ESR share
+  `org.mozilla.thunderbird`) or Thunderbird Beta (`org.mozilla.thunderbirdbeta`, the add-on's dev
+  instance). Any other default email app leaves the tool out until a Thunderbird is chosen.
+  `EmailClient` resolves it at every call, so a change applies to the next request.
 - Nothing is typed outside the chat: the shortcut is posted only while Thunderbird is in front, the
   paste only while the chat window has focus (checked again after the input settles), and Return
   only if it still has focus after the paste. Any failure shows a message.

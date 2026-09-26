@@ -140,7 +140,11 @@ enum DictationConfig {
 
     // MARK: Thunderbird connector (spike: drives TabMail's chat window from outside)
 
-    static let thunderbirdBundleIdentifier = "org.mozilla.thunderbird"
+    /// The email apps the Thunderbird tool can drive (TabMail's add-on runs in them), in the order
+    /// Settings lists them: Thunderbird (release and ESR) and Thunderbird Beta.
+    static let thunderbirdBundleIdentifiers = ["org.mozilla.thunderbird", "org.mozilla.thunderbirdbeta"]
+    /// Asked for the app that opens it, to find the user's default email app.
+    static let mailtoURL = URL(string: "mailto:")!
     /// The TabMail chat window's title (`chat/chat.html`); matched as a substring, since Thunderbird
     /// may add its own name to a window title.
     static let thunderbirdChatWindowTitle = "TabMail Chat"

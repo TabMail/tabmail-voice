@@ -550,6 +550,7 @@ struct DictationControllerTests {
         let (controller, pastes, phases) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
 
         #expect(controller.tools == [.edit, .compose, .thunderbird])
+        #expect(controller.emailAppURL == URL(fileURLWithPath: "/Applications/Thunderbird.app"))
         #expect(thunderbird.pasted == ["Find the invoice Sam sent last week."])
         #expect(thunderbird.events.last == "return")
         #expect(pastes.texts.isEmpty)
@@ -570,6 +571,7 @@ struct DictationControllerTests {
         let (controller, pastes, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
 
         #expect(controller.tools == [.edit, .compose])
+        #expect(controller.emailAppURL == nil)
         #expect(controller.phase == .failed(DesktopAgent.Failure.unavailable(.thunderbird).errorDescription!))
         #expect(completions.requests.count == 1)
         #expect(thunderbird.events.isEmpty)

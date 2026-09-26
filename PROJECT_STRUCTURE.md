@@ -23,6 +23,7 @@ tabmail-macos/
         │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
         │   ├── Agent/
         │   │   ├── DesktopAgent.swift        Agent mode: `AgentTool` (edit, compose, thunderbird); one call chooses the tool, one has it write the text
+        │   │   ├── EmailClient.swift         The email app the Thunderbird tool drives: chosen in Settings, else the default email app if it is a Thunderbird
         │   │   └── ThunderbirdRelay.swift    Types a chat message into TabMail's chat in Thunderbird: front, ⌥⌘L, paste, Return, only while the chat has focus (spike)
         │   ├── Backend/
         │   │   ├── BackendError.swift        Backend HTTP error → user message

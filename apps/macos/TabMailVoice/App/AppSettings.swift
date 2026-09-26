@@ -16,6 +16,7 @@ final class AppSettings {
         static let readsScreen = "readsScreen"
         static let hasConsented = "hasConsentedToDictationData"
         static let hasFinishedWelcome = "hasFinishedWelcome"
+        static let emailClient = "emailClient"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -49,6 +50,12 @@ final class AppSettings {
         didSet { defaults.set(hasFinishedWelcome, forKey: Key.hasFinishedWelcome) }
     }
 
+    /// The bundle identifier of the email app that mail and calendar requests go to; nil for the
+    /// user's default email app (`EmailClient`).
+    var emailClient: String? {
+        didSet { defaults.set(emailClient, forKey: Key.emailClient) }
+    }
+
     var backendURL: URL {
         useDevelopmentServer ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL
     }
@@ -63,6 +70,7 @@ final class AppSettings {
         readsScreen = defaults.object(forKey: Key.readsScreen) as? Bool ?? true
         hasConsented = defaults.bool(forKey: Key.hasConsented)
         hasFinishedWelcome = defaults.bool(forKey: Key.hasFinishedWelcome)
+        emailClient = defaults.string(forKey: Key.emailClient)
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
