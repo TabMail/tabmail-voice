@@ -530,9 +530,15 @@ struct DictationControllerTests {
         transcription.enqueue(status: 200, json: ["text": "write that we ship on Friday"])
         completions.enqueue(status: 200, text: reply("We ship on Friday."))
 
-        let (controller, pastes, phases) = await carryOut(screen(selected: ""))
+        var result: (controller: DictationController, pastes: Pastes, phases: [DictationController.Phase])?
+        let entries = await ContentLogEntries.logged { result = await carryOut(screen(selected: "")) }
+        guard let (controller, pastes, phases) = result else { return }
 
         #expect(pastes.texts == ["We ship on Friday."])
+        // The debug log file gets the request, the text Compose wrote and the paste (ADR-DESK-015).
+        let steps = entries.all(excluding: ["Transcription ", "Completions "])
+        #expect(steps.map(\.label) == ["Transcript (agent)", "DesktopAgent: compose wrote", "TextInserter: pasting"])
+        #expect(steps.map(\.text) == ["write that we ship on Friday", "We ship on Friday.", "We ship on Friday."])
         #expect(controller.tools == [.compose])
         #expect(phases.contains(.running(.compose)))
         #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_compose")

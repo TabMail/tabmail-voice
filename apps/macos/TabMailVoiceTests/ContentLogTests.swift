@@ -158,6 +158,7 @@ struct ContentLogTests {
         var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
         context.windowTitle = "Inbox"
         context.host = "mail.example.com"
+        context.terminalProgram = "vim"
         context.focusedRole = "AXTextArea"
         context.textBeforeCaret = "Dear Alex,"
         context.selectedText = "draft"
@@ -168,7 +169,7 @@ struct ContentLogTests {
 
         let text = context.logDescription
 
-        #expect(text.hasPrefix("app Example (com.example.app), window title Inbox, host mail.example.com, terminal program -, focused AXTextArea, stopped: time budget\n"))
+        #expect(text.hasPrefix("app Example (com.example.app), window title Inbox, host mail.example.com, terminal program vim, focused AXTextArea, stopped: time budget\n"))
         #expect(text.contains("--- text before the caret ---\nDear Alex,\n"))
         #expect(text.contains("--- selected text ---\ndraft\n"))
         #expect(text.contains("--- text after the caret ---\nThanks\n"))
