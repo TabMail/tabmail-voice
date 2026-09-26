@@ -186,6 +186,9 @@ model choice live on the backend, so they can be edited and switched there witho
 transcript arrives, the app waits up to `contextWait` (0.5 s) for that capture and sends the transcript with the app name,
 web host, terminal program, window title and the visible text (caret marked) to the backend's
 `POST /completions/chat` as the prompt `system_prompt_dictate_cleanup`, then pastes the reply.
+*(Amended 2026-09-26, owner: the cleanup also removes filler words and accidentally repeated
+words and corrects grammar, still changing nothing else. It is a backend prompt change, edited in
+place in `v0.1.0` because the app's version line is `0.1.0`; no app change.)*
 Request shape and server-sent-events parsing follow iOS `BackendClient`, with two deliberate
 differences: the app fails the cleanup on an `event: error` (iOS logs it and waits for `final`),
 and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both `error` and
