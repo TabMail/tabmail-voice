@@ -215,6 +215,23 @@ struct DictationControllerTests {
         #expect(pasted == [transcript])
     }
 
+    /// A cleanup that never answers holds the paste only until the app's own cleanup timeout;
+    /// then the transcript is pasted as heard.
+    @Test func aCleanupThatNeverAnswersPastesTheTranscriptAtItsTimeout() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        completions.gate = { try? await Task.sleep(for: .seconds(60)) }
+        let started = ContinuousClock.now
+
+        let (pasted, controller) = await dictate()
+
+        #expect(completions.requests.count == 1)
+        #expect(pasted == [transcript])
+        #expect(controller.phase == .idle)
+        // Slack for a loaded runner, far below a cap that would hold the paste for a stalled stream.
+        #expect(ContinuousClock.now - started < .seconds(DictationConfig.cleanupTimeout + 5))
+    }
+
     // MARK: Key-down to paste
 
     /// The screen is read at key-down; a read done within `contextWait` of the transcript is sent
@@ -283,8 +300,8 @@ struct DictationControllerTests {
         #expect(cleanupVars(0)?["app_name"] as? String == "Example Notes B")
     }
 
-    /// The screen read is best effort: not done within `contextWait` of the transcript, the
-    /// dictation is cleaned up without it rather than waiting.
+    /// The screen read is best effort: not done within the app's own `contextWait` of the
+    /// transcript, the dictation is cleaned up without it rather than waiting.
     @Test func aScreenReadNotDoneInTimeIsLeftOut() async {
         transcription.enqueue(status: 200, json: ["text": transcript])
         completions.enqueue(status: 200, text: cleanedStream)
@@ -292,11 +309,15 @@ struct DictationControllerTests {
         let read = pendingRead(screen("A"))
         defer { read.release() }
         controller.captureContext = { read.task }
-        controller.contextWait = 0.2
+        let transcription = transcription
 
         await holdAndRelease(controller)
+        #expect(await eventually { transcription.requests.count == 1 })
+        let transcribed = ContinuousClock.now
 
         #expect(await eventually { controller.phase == .idle && !pastes.texts.isEmpty })
+        // Slack for a loaded runner, far below a wait that would hold the paste for a slow app.
+        #expect(ContinuousClock.now - transcribed < .seconds(DictationConfig.contextWait + 3))
         #expect(pastes.texts == [cleaned])
         #expect(completions.requests.count == 1)
         #expect(cleanupVars(0)?["dictation"] as? String == transcript)
