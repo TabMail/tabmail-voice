@@ -20,12 +20,12 @@ final class ThunderbirdRelay {
         var isRunning: @MainActor () -> Bool
         var launch: @MainActor (URL) async throws -> Void
         /// True once Thunderbird shows a window.
-        var hasWindow: @MainActor () -> Bool
+        var hasWindow: @MainActor () async -> Bool
         /// Asks Thunderbird to come to the front.
-        var activate: @MainActor () -> Void
+        var activate: @MainActor () async -> Void
         var isFrontmost: @MainActor () -> Bool
         /// The title of Thunderbird's focused window.
-        var focusedWindowTitle: @MainActor () -> String?
+        var focusedWindowTitle: @MainActor () async -> String?
         /// Posts the add-on's open-chat shortcut.
         var openChat: @MainActor () async -> Void
         /// Pastes into the focused field.
@@ -78,31 +78,40 @@ final class ThunderbirdRelay {
             // The add-on registers its shortcut only once its background page has loaded.
             try await Task.sleep(for: .seconds(addonSettle))
         }
-        system.activate()
+        await system.activate()
         guard try await wait(activateTimeout, until: system.isFrontmost) else { throw Failure.notFrontmost }
-        if !isChatFocused() {
+        if await !isChatFocused() {
             Log.debug("ThunderbirdRelay: opening the chat")
             await system.openChat()
             guard try await wait(chatTimeout, until: isChatFocused) else { throw Failure.chatNotFocused }
         }
         try await Task.sleep(for: .seconds(chatInputSettle))
         // The user may have moved on while this waited: paste and send only into the chat.
-        guard isChatFocused() else { throw Failure.chatNotFocused }
+        guard await isChatFocused() else { throw Failure.chatNotFocused }
         await system.paste(message)
-        guard isChatFocused() else { throw Failure.chatNotFocused }
+        guard await isChatFocused() else { throw Failure.chatNotFocused }
         await system.pressReturn()
         Log.debug("ThunderbirdRelay: sent \(message.count) chars")
         Log.content("ThunderbirdRelay: sent", message)
     }
 
-    private func isChatFocused() -> Bool {
-        system.isFrontmost() && system.focusedWindowTitle()?.contains(DictationConfig.thunderbirdChatWindowTitle) == true
+    private func isChatFocused() async -> Bool {
+        guard system.isFrontmost(), let title = await system.focusedWindowTitle() else { return false }
+        return Self.isChatTitle(title)
+    }
+
+    /// The chat window's title, alone or followed by Thunderbird's name after a dash. Nothing else
+    /// that merely mentions the chat, such as a draft replying to a message about it
+    /// ("Write: Re: TabMail Chat feedback") or a message whose subject starts with its name.
+    static func isChatTitle(_ title: String) -> Bool {
+        let chat = DictationConfig.thunderbirdChatWindowTitle
+        return title == chat || DictationConfig.thunderbirdWindowTitleSeparators.contains { title.hasPrefix(chat + $0) }
     }
 
     /// Whether `condition` holds within `timeout`, checking every `pollInterval`.
-    private func wait(_ timeout: TimeInterval, until condition: @MainActor () -> Bool) async throws -> Bool {
+    private func wait(_ timeout: TimeInterval, until condition: @MainActor () async -> Bool) async throws -> Bool {
         let deadline = ContinuousClock.now + .seconds(timeout)
-        while !condition() {
+        while await !condition() {
             guard ContinuousClock.now < deadline else { return false }
             try await Task.sleep(for: .seconds(pollInterval))
         }
@@ -122,11 +131,11 @@ extension ThunderbirdRelay.System {
             guard let id = bundleIdentifier() else { return nil }
             return NSRunningApplication.runningApplications(withBundleIdentifier: id).first { !$0.isTerminated }
         }
-        func element() -> AXUIElement? {
-            guard let app = running() else { return nil }
-            let element = AXUIElementCreateApplication(app.processIdentifier)
-            AXUIElementSetMessagingTimeout(element, DictationConfig.thunderbirdAccessibilityTimeout)
-            return element
+        /// Runs `probe` on Thunderbird's Accessibility element off the main thread, where the hotkey's
+        /// event tap runs: a slow Thunderbird holds up only the relay. `absent` without Thunderbird.
+        func accessibility<T: Sendable>(absent: T, _ probe: @escaping @Sendable (AXUIElement) -> T) async -> T {
+            guard let pid = running()?.processIdentifier else { return absent }
+            return await Task.detached { probe(timed(AXUIElementCreateApplication(pid))) }.value
         }
         return Self(
             applicationURL: { bundleIdentifier().flatMap(NSWorkspace.shared.urlForApplication(withBundleIdentifier:)) },
@@ -137,28 +146,40 @@ extension ThunderbirdRelay.System {
                 _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
             },
             hasWindow: {
-                guard let app = element(), let windows = CaretLocator.attribute(app, kAXWindowsAttribute) as? [AXUIElement] else { return false }
-                return !windows.isEmpty
+                await accessibility(absent: false) { app in
+                    (CaretLocator.attribute(app, kAXWindowsAttribute) as? [AXUIElement]).map { !$0.isEmpty } ?? false
+                }
             },
             activate: {
                 // This app is never active (menu bar, non-activating overlay), and macOS's cooperative
                 // activation ignores an activation request from an inactive app; Accessibility can
                 // still bring an app to the front.
-                guard let app = element() else { return }
-                let result = AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-                Log.debug("ThunderbirdRelay: asked Thunderbird to the front (\(result.rawValue))")
+                let result: Int32? = await accessibility(absent: nil) { app in
+                    AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue).rawValue
+                }
+                guard let result else { return }
+                Log.debug("ThunderbirdRelay: asked Thunderbird to the front (\(result))")
             },
             isFrontmost: {
                 guard let id = bundleIdentifier() else { return false }
                 return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == id
             },
             focusedWindowTitle: {
-                guard let app = element(), let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute) else { return nil }
-                return CaretLocator.attribute(window as! AXUIElement, kAXTitleAttribute) as? String
+                await accessibility(absent: nil) { app in
+                    guard let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute) else { return nil }
+                    return CaretLocator.attribute(timed(window as! AXUIElement), kAXTitleAttribute) as? String
+                }
             },
             openChat: { await TextInserter.postKeystroke(CGKeyCode(kVK_ANSI_L), flags: [.maskAlternate, .maskCommand]) },
             paste: { await inserter.insert($0) },
             pressReturn: { await TextInserter.postKeystroke(CGKeyCode(kVK_Return), flags: []) }
         )
     }
+}
+
+/// `element`, whose Accessibility calls into Thunderbird give up after
+/// `thunderbirdAccessibilityTimeout`. Each element has its own timeout: set it on every element asked.
+private func timed(_ element: AXUIElement) -> AXUIElement {
+    AXUIElementSetMessagingTimeout(element, DictationConfig.thunderbirdAccessibilityTimeout)
+    return element
 }

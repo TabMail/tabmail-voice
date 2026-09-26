@@ -32,6 +32,18 @@ private final class Pastes {
     var texts: [String] = []
 }
 
+/// What a stub request saw of the controller, recorded while it ran.
+@MainActor
+private final class Seen {
+    var states: [(phase: DictationController.Phase, mode: DictationMode)] = []
+}
+
+/// The app in front, as the controller sees it: a process id the test changes.
+@MainActor
+private final class FrontApp {
+    var pid: pid_t? = 101
+}
+
 /// A finished recording through the controller: transcription, cleanup with the screen context,
 /// and what gets pasted. Uses a private pasteboard and a stub keystroke, and never the network.
 @MainActor
@@ -42,6 +54,7 @@ struct DictationControllerTests {
     private let completions = StubTransport()
     private let auth = StubTransport()
     private let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))
+    private let front = FrontApp()
 
     private var cleanedStream: String { Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#) }
 
@@ -69,6 +82,7 @@ struct DictationControllerTests {
             inserter: inserter,
             thunderbird: thunderbird.relay(),
             capture: capture,
+            frontmostApp: { [front] in front.pid },
             makeTranscriptionClient: { TranscriptionClient(baseURL: baseURL, transport: transcriptionTransport) },
             makeCompletionsClient: { CompletionsClient(baseURL: baseURL, transport: completionsTransport) }
         )
@@ -450,11 +464,13 @@ struct DictationControllerTests {
 
     /// One agent-mode request, spoken over `context`: the controller, what was pasted, and every phase
     /// it went through.
-    private func carryOut(_ context: ScreenContext?, thunderbird: FakeThunderbird? = nil) async -> (controller: DictationController, pastes: Pastes, phases: [DictationController.Phase]) {
+    /// `prepare` runs on the controller before the hold.
+    private func carryOut(_ context: ScreenContext?, thunderbird: FakeThunderbird? = nil, prepare: (DictationController) -> Void = { _ in }) async -> (controller: DictationController, pastes: Pastes, phases: [DictationController.Phase]) {
         let (controller, pastes) = makeController(capture: ToneCapture(), thunderbird: thunderbird)
         var phases: [DictationController.Phase] = []
         controller.onPhaseChange = { phases.append($0) }
         controller.captureContext = { context.map { context in Task { context } } }
+        prepare(controller)
         await holdAndRelease(controller, mode: .agent)
         #expect(await eventually {
             switch controller.phase {
@@ -668,6 +684,155 @@ struct DictationControllerTests {
         controller.handle(.cancel)
         controller.handle(.toggleMode)
         #expect(controller.mode == .dictation)
+    }
+
+    /// The user moved to another app while the text was written: it is not pasted there.
+    @Test(arguments: [("Ship it Friday or else.", AgentTool.edit), ("", .compose)])
+    func agentTextIsNotPastedIntoAnotherApp(selected: String, tool: AgentTool) async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("Could we ship on Friday?"))
+        let front = front
+        completions.gate = { await MainActor.run { front.pid = 202 } }
+
+        let (controller, pastes, phases) = await carryOut(screen(selected: selected))
+
+        #expect(phases.contains(.running(tool)))
+        #expect(completions.requests.count == 1)
+        #expect(pastes.texts.isEmpty)
+        #expect(controller.phase == .failed(DesktopAgent.Failure.appChanged.errorDescription!))
+    }
+
+    /// The app that counts is the one in front at key-down: a switch made while the request is still
+    /// being transcribed is caught too.
+    @Test func agentTextIsNotPastedAfterASwitchDuringTheTranscription() async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("We ship on Friday."))
+        let front = front
+        transcription.gate = { await MainActor.run { front.pid = 202 } }
+
+        let (controller, pastes, phases) = await carryOut(screen(selected: ""))
+
+        #expect(phases.contains(.running(.compose)))
+        #expect(pastes.texts.isEmpty)
+        #expect(controller.phase == .failed(DesktopAgent.Failure.appChanged.errorDescription!))
+    }
+
+    /// Thunderbird comes to the front to take the chat message: that is no reason to drop it.
+    @Test func aMailRequestIsSentWhateverAppIsInFront() async {
+        transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Find the invoice Sam sent."))
+        let front = front
+        completions.gate = { await MainActor.run { front.pid = 202 } }
+        let thunderbird = FakeThunderbird()
+
+        let (controller, pastes, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
+
+        #expect(thunderbird.pasted == ["Find the invoice Sam sent."])
+        #expect(pastes.texts.isEmpty)
+        #expect(controller.phase == .idle)
+    }
+
+    /// While a request runs, the hotkey neither starts another dictation nor switches its mode:
+    /// the request carries on and its text is pasted.
+    @Test func aRunningRequestIgnoresTheHotkey() async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("We ship on Friday."))
+        let seen = Seen()
+
+        let (controller, pastes, _) = await carryOut(screen(selected: "")) { controller in
+            completions.gate = {
+                await MainActor.run {
+                    controller.handle(.start)
+                    controller.handle(.toggleMode)
+                    seen.states.append((controller.phase, controller.mode))
+                }
+            }
+        }
+
+        #expect(seen.states.count == 1)
+        guard seen.states.count == 1 else { return }
+        #expect(seen.states[0].phase == .running(.compose))
+        #expect(seen.states[0].mode == .agent)
+        #expect(pastes.texts == ["We ship on Friday."])
+        #expect(controller.phase == .idle)
+    }
+
+    /// Cancelled while the tool writes: nothing is pasted, then or when the text arrives.
+    @Test func aRequestCancelledWhileRunningPastesNothing() async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("We ship on Friday."))
+        let seen = Seen()
+
+        let (controller, pastes, _) = await carryOut(screen(selected: "")) { controller in
+            completions.gate = {
+                await MainActor.run {
+                    seen.states.append((controller.phase, controller.mode))
+                    controller.handle(.cancel)
+                }
+            }
+        }
+        // The reply still arrives after the cancel.
+        try? await Task.sleep(for: .milliseconds(300))
+
+        #expect(seen.states.map(\.phase) == [.running(.compose)])
+        #expect(completions.requests.count == 1)
+        #expect(pastes.texts.isEmpty)
+        #expect(controller.phase == .idle)
+    }
+
+    /// Space switches nothing once the hold is over: not while transcribing, nor after a failure.
+    @Test func spaceSwitchesNothingAfterTheHold() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        transcription.enqueue(status: 200, json: ["text": "  "])
+        let (controller, pastes) = makeController(capture: ToneCapture(), thunderbird: FakeThunderbird())
+        controller.captureContext = { Task { screen(selected: "") } }
+        let seen = Seen()
+        transcription.gate = {
+            await MainActor.run {
+                controller.handle(.toggleMode)
+                seen.states.append((controller.phase, controller.mode))
+            }
+        }
+
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .idle && !pastes.texts.isEmpty })
+        #expect(seen.states.count == 1)
+        #expect(seen.states.first?.phase == .transcribing)
+        #expect(seen.states.first?.mode == .dictation)
+        #expect(pastes.texts == [cleaned])
+        #expect(cleanupVars(0)?["content"] as? String == DictationConfig.cleanupPrompt)
+
+        transcription.gate = nil
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .failed(DictationController.nothingHeardMessage) })
+        controller.handle(.toggleMode)
+        #expect(controller.mode == .dictation)
+        #expect(controller.tools.isEmpty)
+        #expect(controller.emailAppURL == nil)
+    }
+
+    /// A cancelled hold's screen read that finishes during the next hold does not change the tools
+    /// that hold offers: its selection is of a screen the user has left.
+    @Test func aSupersededScreenReadLeavesTheToolsAlone() async {
+        let (controller, _) = makeController(capture: ToneCapture())
+        let first = pendingRead(screen(selected: "Ship it Friday or else."))
+        controller.captureContext = { first.task }
+        controller.handle(.start)
+        controller.handle(.toggleMode)
+        #expect(controller.tools.isEmpty)
+        controller.handle(.cancel)
+
+        controller.captureContext = { Task { screen(selected: "") } }
+        controller.handle(.start)
+        controller.handle(.toggleMode)
+        #expect(await eventually { controller.tools == [.compose] })
+        first.release()
+        try? await Task.sleep(for: .milliseconds(200))
+
+        #expect(controller.tools == [.compose])
+        controller.handle(.cancel)
     }
 
     /// A dictation after agent mode is a dictation again: cleaned up and pasted.

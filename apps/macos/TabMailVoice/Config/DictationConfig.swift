@@ -151,9 +151,10 @@ enum DictationConfig {
     static let thunderbirdBundleIdentifiers = ["org.mozilla.thunderbird", "org.mozilla.thunderbirdbeta"]
     /// Asked for the app that opens it, to find the user's default email app.
     static let mailtoURL = URL(string: "mailto:")!
-    /// The TabMail chat window's title (`chat/chat.html`); matched as a substring, since Thunderbird
-    /// may add its own name to a window title.
+    /// The TabMail chat window's title (`chat/chat.html`). Thunderbird may add its own name after one
+    /// of `thunderbirdWindowTitleSeparators`.
     static let thunderbirdChatWindowTitle = "TabMail Chat"
+    static let thunderbirdWindowTitleSeparators = [" — ", " - "]
     /// Longest a Thunderbird that was not running may take to show its first window (seconds).
     static let thunderbirdLaunchTimeout: TimeInterval = 20
     /// After that first window, the add-on still has to load and register its shortcut (seconds).

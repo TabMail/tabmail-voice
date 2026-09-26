@@ -325,7 +325,7 @@ desktop platform, not the Thunderbird email prompts.
 - Agent mode adds a model round trip before the tool runs (light tier, reasoning off).
 - No client-side tools: the Mac app at 0.1.0 would read Thunderbird's tool registry, and a
   desktop tool listed there would reach Thunderbird's agent too. The later Thunderbird connector
-  follows the same tool-choice contract (a third tool name), planned in `PLAN_DESKTOP_AGENT.md`.
+  follows the same tool-choice contract (a third tool name; ADR-DESK-014).
 - Apps whose accessibility tree hides the selection (thin trees, some Electron apps) can't be
   edited; the request fails with "Select the text to edit". Copying the selection with ⌘C
   instead would be a fallback: an owner decision.
@@ -373,6 +373,10 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone
   system message (`</request>`) or answering empty. Fixed in the backend (ADR-023 amendment: the
   request is the final user turn, and the agent's first word after `Tool:` counts).
+- With no deadline, the user may move to another app before the text arrives. Edit and Compose paste
+  only while the app that was in front at key-down still is; otherwise the request fails with "You
+  switched apps, so nothing was pasted" (`DesktopAgent.Failure.appChanged`, 2026-09-26 review). The
+  Thunderbird tool is exempt: it brings Thunderbird to the front itself, and has its own focus checks.
 
 ## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
 
@@ -467,6 +471,17 @@ the agent restating the request as a chat message, and sending being enough (no 
   just never opens); cold-launch timing is a guess.
 - The native-messaging bridge (plan option B, installed by this app only) replaces the shortcut,
   focus and timing guesses if the spike shows they matter.
+
+**Amendment 2026-09-26 (review):**
+- The chat is recognised by its whole title: "TabMail Chat", alone or followed by " — " or " - " and
+  Thunderbird's name (`thunderbirdWindowTitleSeparators`). A substring match also took a draft
+  replying to a message about the chat ("Write: Re: TabMail Chat feedback"), which would have got the
+  message pasted in and sent with Return.
+- The relay's Accessibility calls into Thunderbird (window, focus, title, bring to front) run off the
+  main thread, where the hotkey's event tap runs, and every element asked gets the
+  `thunderbirdAccessibilityTimeout`, the focused window included (a timeout set on the application
+  element does not carry over to the elements read from it). A hung Thunderbird then holds up only
+  the relay, not the keyboard.
 
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 

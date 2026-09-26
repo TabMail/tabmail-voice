@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AppKit
 import AVFoundation
 import Observation
 
@@ -59,11 +60,15 @@ final class DictationController {
     @ObservationIgnored private let inserter: TextInserter
     @ObservationIgnored private let thunderbird: ThunderbirdRelay
     @ObservationIgnored private let capture: any AudioCapturing
+    /// The process of the app in front.
+    @ObservationIgnored private let frontmostApp: @MainActor () -> pid_t?
     @ObservationIgnored private let clock = ContinuousClock()
 
     // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var startedAt: ContinuousClock.Instant?
+    /// The app in front at key-down, where agent mode's text belongs.
+    @ObservationIgnored private var targetApp: pid_t?
     @ObservationIgnored private var recorder: AudioRecorder?
     @ObservationIgnored private var contextTask: Task<ScreenContext, Never>?
     /// That read's result, once done (nil without a read); `tools` waits for it.
@@ -81,6 +86,7 @@ final class DictationController {
         inserter: TextInserter = TextInserter(),
         thunderbird: ThunderbirdRelay,
         capture: any AudioCapturing = MicrophoneCapture(),
+        frontmostApp: @escaping @MainActor () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier },
         makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient,
         makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
     ) {
@@ -90,6 +96,7 @@ final class DictationController {
         self.inserter = inserter
         self.thunderbird = thunderbird
         self.capture = capture
+        self.frontmostApp = frontmostApp
         self.makeTranscriptionClient = makeTranscriptionClient
         self.makeCompletionsClient = makeCompletionsClient
     }
@@ -150,6 +157,7 @@ final class DictationController {
         envelope = LevelEnvelope()
         isHearing = false
         startedAt = clock.now
+        targetApp = frontmostApp()
         phase = .arming
         contextTask = captureContext?()
         if let read = contextTask {
@@ -334,6 +342,9 @@ final class DictationController {
                 guard generation == current, !Task.isCancelled else { return }
                 switch tool {
                 case .edit, .compose:
+                    // The request may have taken long enough for the user to move on: the text
+                    // belongs in the app they spoke over, and is pasted nowhere else.
+                    guard frontmostApp() == targetApp else { throw DesktopAgent.Failure.appChanged }
                     // An edit pastes over the selection; a compose runs only with nothing selected.
                     await inserter.insert(text)
                 case .thunderbird:

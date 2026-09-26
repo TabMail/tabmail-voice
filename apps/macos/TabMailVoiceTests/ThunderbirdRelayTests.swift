@@ -97,13 +97,31 @@ struct ThunderbirdRelayTests {
     }
 
     /// Thunderbird may add its own name to the window title.
-    @Test func findsTheChatWindowByPartOfItsTitle() async throws {
+    @Test(arguments: ["TabMail Chat — Mozilla Thunderbird", "TabMail Chat - Thunderbird"])
+    func findsTheChatWindowWithThunderbirdsNameInItsTitle(title: String) async throws {
         let thunderbird = FakeThunderbird()
-        thunderbird.focusedTitle = "TabMail Chat — Mozilla Thunderbird"
+        thunderbird.focusedTitle = title
 
         try await thunderbird.relay().send(message)
 
         #expect(thunderbird.events == ["activate", "paste", "return"])
+    }
+
+    /// A window that only mentions the chat is not it: a draft replying to a message about it would
+    /// otherwise get the message pasted in, and sent with Return.
+    @Test(arguments: [
+        "Write: Re: TabMail Chat feedback - Thunderbird",
+        "TabMail Chat feedback - Mozilla Thunderbird",
+        "Re: TabMail Chat",
+    ])
+    func aWindowThatOnlyMentionsTheChatGetsNothing(title: String) async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = title
+        thunderbird.shortcutOpensChat = false
+
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        #expect(thunderbird.events == ["activate", "openChat"])
+        #expect(thunderbird.pasted.isEmpty)
     }
 
     @Test func launchesThunderbirdWhenItIsNotRunning() async throws {

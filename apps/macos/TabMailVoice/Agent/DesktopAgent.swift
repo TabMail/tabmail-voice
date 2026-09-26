@@ -52,11 +52,14 @@ enum DesktopAgent {
         case noTool
         /// The tool wrote nothing.
         case noText
+        /// Another app came to the front while the text was written: it is not pasted there.
+        case appChanged
 
         var errorDescription: String? {
             switch self {
             case .noTool: "Couldn't work out what to do. Try again."
             case .noText: "Couldn't write that. Try again."
+            case .appChanged: "You switched apps, so nothing was pasted."
             }
         }
     }
