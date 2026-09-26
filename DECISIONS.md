@@ -173,6 +173,8 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 - The tmux pane is the most recently active client's, and is used only when most of its last
   lines appear in the front terminal's text; a tmux attached in another tab or window is ignored.
 - OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
+- *(Amended by ADR-DESK-016, 2026-09-26: the visible text is laid out in lines from the elements'
+  frames, web controls and toolbars are read, and text in point-thin boxes is left out.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
@@ -495,3 +497,40 @@ Never logged: audio (the transcription request shows its size in its place) and 
   controller's paths in `DictationControllerTests`), which pins that the token and the audio stay
   out; the task-local `LogFile.destination` lets a test read an entry back from a file of its own.
 - Builds from source are debug builds, so they keep this log too (README).
+
+## ADR-DESK-016: Lay the screen read out as the screen shows it
+
+**Context:** Owner, 2026-09-26: a Compose reply in a Slack DM swapped who said what; it thanked the
+other person for help the user was giving. The read (ADR-DESK-007) had the whole conversation but
+no authors: Slack's authors are buttons, and the walk skipped every button. Each piece of text was
+also its own line, so an author, the time and the message were three unrelated lines. The owner's
+direction: rather than patch one app, reconstruct how the screen looks and pass that on.
+
+**Decision:** The walk keeps each piece of text's frame, and the visible text is laid out from the
+frames: text and links side by side on one line are joined (`Alex [Today at 9:20:09 AM]`), anything
+else starts a line, and a jump back up the window (the next pane) leaves a blank line. In web
+content, controls and toolbars are read: a control adds its title when it has no description
+(Chromium and WebKit title a control with the text drawn in it; a screen-reader label comes as the
+description, and one Electron app reported it as the title too), else its children's text. Native apps title their
+icon buttons ("Back", "Copy"), so outside web content controls and toolbars stay skipped. Text in a
+box at most a point thin is left out: web apps keep screen-reader-only labels, list items scrolled
+out of view (clipped to 1 point at the list's edge) and hover-only actions in such boxes. The box
+is still walked into, since Slack keeps its whole message list inside a 1×2 screen-reader-only list.
+
+**Consequences:**
+- Measured 2026-09-26 with the reader compiled into a command-line tool against the running apps:
+  Slack reads every message with its author and time and the thread as its own block; a chat panel in Chrome,
+  an Electron chat app and Safari drop icon labels and scrolled-out history; Messages and Reminders
+  read as before.
+- Conversation scrolled out of view is no longer read (a chat side panel in Chrome: 5.9k → 1.3k chars).
+  It was hidden, and read only because the web app kept it in the tree; the read is what is on
+  screen.
+- Messages grouped under one author header (Slack's follow-ups) carry no author of their own, as on
+  screen; the model reads them as the author's above.
+- Screen-reader-only text inside a normal-sized box under a 1-point one still comes through (Slack's
+  "Canvas List Folder"); pruning 1-point boxes would drop Slack's message list.
+- The walk reads elements through `ScreenTree` (`LiveScreenTree` in the app), so tests run it on a
+  fake tree shaped like Slack's (`ScreenContextTests`), and once on a real window of the test host
+  (`LiveScreenTreeTests`, which needs the Accessibility permission), beside the layout on frames measured in
+  Slack and the hidden-box rule on frames measured in Slack and Chrome. Test text is placeholders,
+  never what was on the measured screen.

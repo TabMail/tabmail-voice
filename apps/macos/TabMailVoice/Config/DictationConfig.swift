@@ -90,6 +90,19 @@ enum DictationConfig {
         "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXMenuBar",
         "AXMenu", "AXMenuItem", "AXToolbar", "AXImage", "AXScrollBar", "AXSlider", "AXIncrementor",
     ]
+    /// Controls read in web content, where the text drawn in them is content (a chat message's
+    /// author is a button); native apps title their icon buttons, so there they stay skipped.
+    static let contextWebControlRoles: Set<String> = [
+        "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton",
+    ]
+    /// Skipped roles read after all in web content: its controls, and toolbars, which there hold
+    /// content (a chat's header with the conversation's name).
+    static let contextWebReadRoles: Set<String> = contextWebControlRoles.union(["AXToolbar"])
+    /// Elements at most this thin (points) show nothing: web apps keep screen-reader-only text,
+    /// list items scrolled out of view and hover-only actions in 1-point boxes.
+    static let contextHiddenMaxThickness: CGFloat = 1
+    /// Two pieces of text are on one line when they overlap by this share of the shorter's height.
+    static let contextSameLineOverlap: CGFloat = 0.5
     /// Terminal apps: their foreground program is looked up through tmux.
     static let terminalBundleIDs: Set<String> = [
         "com.googlecode.iterm2", "com.apple.Terminal", "com.mitchellh.ghostty", "com.github.wez.wezterm",

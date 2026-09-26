@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import ApplicationServices
 import CoreGraphics
 import Foundation
 import os
@@ -86,6 +87,264 @@ struct ScreenContextTests {
         context.textAfterCaret = " c"
         context.appendCaret()
         #expect(context.renderedText() == "» a ‸b‸ c")
+    }
+
+    // MARK: Layout
+
+    /// A Slack message as its Accessibility frames report it (measured 2026-09-26): the author
+    /// button and the time link share a line, the text below wraps onto a second line where an
+    /// emoji splits it, and the thread pane to the right starts back at the window's top.
+    @Test func renderedTextLaysTextOutInLinesAsOnScreen() {
+        var context = ScreenContext(appName: "Slack")
+        context.append(.text, "Alex", frame: CGRect(x: 868, y: 874, width: 52, height: 25))
+        context.append(.link, "Today at 9:20:09 AM", frame: CGRect(x: 928, y: 880, width: 51, height: 16))
+        context.append(.text, "The draft is ready for review", frame: CGRect(x: 868, y: 900, width: 590, height: 45))
+        context.append(.text, "Let me know what you think", frame: CGRect(x: 940, y: 925, width: 278, height: 20))
+        context.append(.text, "10 replies", frame: CGRect(x: 933, y: 955, width: 63, height: 21))
+        context.append(.heading, "Thread", frame: CGRect(x: 1510, y: 160, width: 80, height: 24))
+        context.append(.text, "Sam Lee", frame: CGRect(x: 1560, y: 200, width: 124, height: 25))
+        #expect(context.renderedText() == """
+            Alex [Today at 9:20:09 AM]
+            The draft is ready for review Let me know what you think
+            10 replies
+
+            ## Thread
+            Sam Lee
+            """)
+    }
+
+    /// Only text and links flow: a heading, row, field or the caret block starts its own line even
+    /// beside other text, and so does text to the left of the previous piece.
+    @Test func onlyTextAndLinksShareALine() {
+        let line = CGRect(x: 0, y: 100, width: 50, height: 20)
+        func separator(_ first: ScreenContext.Block.Kind, _ second: ScreenContext.Block.Kind, secondX: CGFloat = 60) -> String {
+            ScreenContext.separator(between: .init(kind: first, text: "a", frame: line),
+                                    and: .init(kind: second, text: "b", frame: line.offsetBy(dx: secondX, dy: 0)))
+        }
+        #expect(separator(.text, .link) == " ")
+        #expect(separator(.link, .text) == " ")
+        for kind in [ScreenContext.Block.Kind.heading, .row, .field, .caret] {
+            #expect(separator(.text, kind) == "\n")
+            #expect(separator(kind, .text) == "\n")
+        }
+        #expect(separator(.text, .text, secondX: -60) == "\n")
+    }
+
+    /// Two pieces share a line when they overlap by half the shorter's height, not by a sliver.
+    @Test func aSliverOfOverlapIsNotOneLine() {
+        let first = ScreenContext.Block(kind: .text, text: "a", frame: CGRect(x: 0, y: 100, width: 50, height: 20))
+        func second(y: CGFloat) -> ScreenContext.Block { .init(kind: .text, text: "b", frame: CGRect(x: 60, y: y, width: 50, height: 20)) }
+        #expect(ScreenContext.separator(between: first, and: second(y: 110)) == " ")
+        #expect(ScreenContext.separator(between: first, and: second(y: 111)) == "\n")
+        #expect(ScreenContext.separator(between: first, and: second(y: 120)) == "\n")
+    }
+
+    /// Text wholly above the previous piece is the next pane or column: a blank line between.
+    @Test func aJumpBackUpLeavesABlankLine() {
+        let first = ScreenContext.Block(kind: .text, text: "a", frame: CGRect(x: 0, y: 500, width: 50, height: 20))
+        func second(y: CGFloat) -> ScreenContext.Block { .init(kind: .text, text: "b", frame: CGRect(x: 600, y: y, width: 50, height: 20)) }
+        #expect(ScreenContext.separator(between: first, and: second(y: 100)) == "\n\n")
+        #expect(ScreenContext.separator(between: first, and: second(y: 480)) == "\n\n")
+        #expect(ScreenContext.separator(between: first, and: second(y: 485)) == "\n")
+    }
+
+    @Test func withoutFramesEveryPieceHasItsOwnLine() {
+        let framed = ScreenContext.Block(kind: .text, text: "a", frame: CGRect(x: 0, y: 0, width: 50, height: 20))
+        let unframed = ScreenContext.Block(kind: .text, text: "b")
+        #expect(ScreenContext.separator(between: framed, and: unframed) == "\n")
+        #expect(ScreenContext.separator(between: unframed, and: framed) == "\n")
+    }
+
+    @Test func caretBlockKeepsItsFrame() {
+        var context = ScreenContext(appName: "Example")
+        let frame = CGRect(x: 10, y: 20, width: 300, height: 40)
+        context.appendCaret(frame: frame)
+        #expect(context.blocks.first?.frame == frame)
+    }
+
+    // MARK: What is read
+
+    /// Web apps keep hidden text in boxes at most a point thin (frames measured in Slack and
+    /// Chrome 2026-09-26); a 0×0 frame says nothing and counts as shown.
+    @Test func textInAPointThinBoxIsHidden() {
+        #expect(!ScreenContext.isShown(CGRect(x: 945, y: 234, width: 147, height: 1)))  // scrolled out of Slack's list
+        #expect(!ScreenContext.isShown(CGRect(x: 2099, y: 278, width: 0, height: 1)))   // scrolled out in Chrome
+        #expect(!ScreenContext.isShown(CGRect(x: 1477, y: 774, width: 1, height: 36)))  // hover-only action
+        #expect(!ScreenContext.isShown(CGRect(x: 797, y: 146, width: 1, height: 1)))    // screen-reader-only
+        #expect(ScreenContext.isShown(CGRect(x: 868, y: 874, width: 52, height: 25)))
+        #expect(ScreenContext.isShown(CGRect(x: 0, y: 0, width: 2, height: 2)))
+        #expect(ScreenContext.isShown(.zero))
+    }
+
+    /// In web content controls and toolbars are read; in native apps they stay skipped, and
+    /// images, menus and scroll bars everywhere.
+    @Test func controlsAndToolbarsAreReadOnlyInWebContent() {
+        for role in ["AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXToolbar"] {
+            #expect(!ScreenContextReader.isSkipped(role, inWeb: true))
+            #expect(ScreenContextReader.isSkipped(role, inWeb: false))
+        }
+        for role in ["AXImage", "AXMenu", "AXMenuItem", "AXMenuBar", "AXScrollBar", "AXSlider", "AXIncrementor"] {
+            #expect(ScreenContextReader.isSkipped(role, inWeb: true))
+        }
+        #expect(!ScreenContextReader.isSkipped("AXStaticText", inWeb: false))
+    }
+
+    /// A web control's title is text drawn in it only when it has no description: Slack's message
+    /// author has a title alone; an icon button a description (Slack) or both (an Electron chat
+    /// app's "Copy").
+    @Test func aControlsTitleIsItsTextOnlyWithoutADescription() {
+        #expect(ScreenContextReader.drawnTitle(title: "Alex", description: nil) == "Alex")
+        #expect(ScreenContextReader.drawnTitle(title: "10 replies", description: " ") == "10 replies")
+        #expect(ScreenContextReader.drawnTitle(title: nil, description: "Add reaction…") == nil)
+        #expect(ScreenContextReader.drawnTitle(title: "Copy", description: "Copy") == nil)
+        #expect(ScreenContextReader.drawnTitle(title: "  ", description: nil) == nil)
+    }
+
+    @Test func framesWithoutASizeHaveTheirOwnLines() {
+        let empty = ScreenContext.Block(kind: .text, text: "a", frame: .zero)
+        let flat = ScreenContext.Block(kind: .text, text: "b", frame: CGRect(x: 60, y: 0, width: 50, height: 0))
+        #expect(ScreenContext.separator(between: empty, and: empty) == "\n")
+        #expect(ScreenContext.separator(between: empty, and: flat) == "\n")
+    }
+
+    // MARK: Walk
+
+    /// A Slack DM as its Accessibility tree has it (shape measured 2026-09-26, names and text
+    /// replaced): the messages sit in a 1×2 screen-reader-only list inside the web area; an author
+    /// is a button titled with its name; a message scrolled out of view is 1 point tall; icon
+    /// buttons carry a description (and, in one Electron app, the same text as the title); an
+    /// author button also holds its name as child text; the focused composer is below.
+    private func slackWindow(webArea role: String = "AXWebArea") -> (window: FakeElement, focused: FakeElement, focusPath: [FakeElement]) {
+        let composer = FakeElement("AXTextArea", frame: CGRect(x: 820, y: 1143, width: 652, height: 43))
+        let composerGroup = FakeElement("AXGroup", frame: CGRect(x: 820, y: 1101, width: 654, height: 130), children: [composer])
+        let scrolledOut = FakeElement("AXGroup", frame: CGRect(x: 798, y: 234, width: 698, height: 1), children: [
+            FakeElement("AXButton", [kAXTitleAttribute: "Alex"], frame: CGRect(x: 868, y: 234, width: 52, height: 1)),
+            FakeElement("AXLink", [kAXDescriptionAttribute: "Yesterday at 4:15 PM"], frame: CGRect(x: 928, y: 234, width: 50, height: 1)),
+            FakeElement("AXStaticText", [kAXValueAttribute: "An old message"], frame: CGRect(x: 868, y: 234, width: 313, height: 1)),
+        ])
+        let message = FakeElement("AXGroup", frame: CGRect(x: 798, y: 870, width: 698, height: 119), children: [
+            FakeElement("AXButton", [kAXTitleAttribute: "Alex Lee"], frame: CGRect(x: 868, y: 874, width: 52, height: 25), children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Alex"], frame: CGRect(x: 868, y: 874, width: 30, height: 25)),
+                FakeElement("AXStaticText", [kAXValueAttribute: "Lee"], frame: CGRect(x: 900, y: 874, width: 20, height: 25)),
+            ]),
+            FakeElement("AXLink", [kAXDescriptionAttribute: "Today at 9:20 AM"], frame: CGRect(x: 928, y: 880, width: 51, height: 16)),
+            FakeElement("AXStaticText", [kAXValueAttribute: "The draft is ready for review"], frame: CGRect(x: 868, y: 900, width: 590, height: 45)),
+            FakeElement("AXButton", [kAXTitleAttribute: "Copy", kAXDescriptionAttribute: "Copy"], frame: CGRect(x: 1400, y: 880, width: 26, height: 27)),
+            FakeElement("AXButton", [kAXDescriptionAttribute: "Add reaction"], frame: CGRect(x: 1430, y: 880, width: 26, height: 27)),
+        ])
+        let list = FakeElement("AXList", frame: CGRect(x: 798, y: 1108, width: 1, height: 2), children: [scrolledOut, message])
+        let web = FakeElement(role, frame: CGRect(x: 0, y: 0, width: 1600, height: 1200),
+                              children: [list, composerGroup])
+        let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 1600, height: 1200), children: [web])
+        return (window, composer, [composerGroup, web, window])
+    }
+
+    private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = []) -> ScreenContext {
+        var context = ScreenContext(appName: "Example")
+        ScreenContextReader.walk(window, in: FakeScreenTree(), frame: window.frame, focused: focused,
+                                 focusPath: focusPath, started: Date(), into: &context)
+        return context
+    }
+
+    /// Who wrote a message reaches the prompt: the author and time on one line, the message below,
+    /// with neither scrolled-out text nor icon labels, and the caret block after.
+    @Test func walkReadsAWebChatAsItsScreenShowsIt() {
+        let slack = slackWindow()
+        let context = walk(slack.window, focused: slack.focused, focusPath: slack.focusPath)
+        #expect(context.renderedText() == "Alex Lee [Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
+        #expect(context.blocks.last?.frame == slack.focused.frame)
+    }
+
+    /// Outside web content a control's title may be an icon's label, so controls stay skipped.
+    @Test func walkSkipsControlsOutsideWebContent() {
+        let native = slackWindow(webArea: "AXGroup")
+        let context = walk(native.window, focused: native.focused, focusPath: native.focusPath)
+        #expect(context.renderedText() == "[Today at 9:20 AM]\nThe draft is ready for review\n» ‸")
+    }
+
+    /// A heading, link, row or field in a point-thin box shows nothing, like text; the one shown
+    /// piece beside them proves the walk reached them.
+    @Test func walkLeavesOutEveryKindOfHiddenBlock() {
+        let thin = CGRect(x: 10, y: 50, width: 300, height: 1)
+        let area = FakeElement("AXWebArea", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [
+            FakeElement("AXHeading", [kAXTitleAttribute: "Hidden heading"], frame: thin),
+            FakeElement("AXLink", [kAXDescriptionAttribute: "Hidden link"], frame: thin),
+            FakeElement("AXRow", [kAXDescriptionAttribute: "Hidden row"], frame: thin),
+            FakeElement("AXTextField", [kAXValueAttribute: "Hidden field"], frame: thin),
+            FakeElement("AXStaticText", [kAXValueAttribute: "Shown"], frame: CGRect(x: 10, y: 100, width: 60, height: 20)),
+        ])
+        let context = walk(FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area]))
+        #expect(context.renderedText() == "Shown")
+    }
+
+    /// An app that reports no frames is read in full, as before frames were read: no frame counts
+    /// as shown, in the walk and in a row's text.
+    @Test func walkReadsElementsWithoutFrames() {
+        let row = FakeElement("AXRow", children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Cell one"]),
+            FakeElement("AXStaticText", [kAXValueAttribute: "Cell two"]),
+        ])
+        let window = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Plain"]), row])
+        #expect(walk(window).renderedText() == "Plain\n| Cell one | Cell two")
+    }
+
+    /// In web content a toolbar's text is read (a chat's header with the conversation's name), and
+    /// a control with a screen-reader label still shows its drawn child text; in native apps both
+    /// stay skipped.
+    @Test func webToolbarsAndLabelledControlsKeepTheirShownText() {
+        let shown = CGRect(x: 20, y: 40, width: 100, height: 20)
+        let thin = CGRect(x: 20, y: 40, width: 100, height: 1)
+        func read(_ element: FakeElement, inside role: String) -> String {
+            walk(FakeElement("AXWindow", children: [FakeElement(role, children: [element])])).renderedText()
+        }
+        let toolbar = FakeElement("AXToolbar", children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Project chat"], frame: shown),
+            FakeElement("AXStaticText", [kAXValueAttribute: "Hidden label"], frame: thin),
+        ])
+        #expect(read(toolbar, inside: "AXWebArea") == "Project chat")
+        #expect(read(toolbar, inside: "AXGroup") == "")
+        for role in ["AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton"] {
+            let control = FakeElement(role, [kAXTitleAttribute: "Open profile", kAXDescriptionAttribute: "Open profile"], frame: shown,
+                                      children: [FakeElement("AXStaticText", [kAXValueAttribute: "Alex"], frame: shown)])
+            #expect(read(control, inside: "AXWebArea") == "Alex", "\(role)")
+            #expect(read(control, inside: "AXGroup") == "", "\(role)")
+        }
+    }
+
+    /// In a row a titled control is read once, not again from its child text, and a thin field is
+    /// left out beside a shown one.
+    @Test func rowTextReadsATitledControlOnceAndOnlyShownFields() {
+        let shown = CGRect(x: 20, y: 40, width: 100, height: 20)
+        func read(_ row: FakeElement) -> String {
+            walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", children: [row])])).renderedText()
+        }
+        let control = FakeElement("AXButton", [kAXTitleAttribute: "Alex Lee"], frame: shown, children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Alex"], frame: shown),
+            FakeElement("AXStaticText", [kAXValueAttribute: "Lee"], frame: shown),
+        ])
+        #expect(read(FakeElement("AXRow", children: [control, FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: shown)]))
+                == "| Alex Lee | Draft")
+        #expect(read(FakeElement("AXRow", children: [
+            FakeElement("AXTextField", [kAXValueAttribute: "Hidden draft"], frame: CGRect(x: 20, y: 40, width: 100, height: 1)),
+            FakeElement("AXTextField", [kAXValueAttribute: "Visible draft"], frame: shown),
+        ])) == "| Visible draft")
+    }
+
+    /// A row's text is gathered the way the walk reads: a web control's drawn title, never a
+    /// hidden piece or an icon's label; outside web content no control.
+    @Test func rowTextReadsWebControlsAndLeavesHiddenTextOut() {
+        func read(inside role: String) -> String {
+            let row = FakeElement("AXRow", frame: CGRect(x: 0, y: 100, width: 400, height: 30), children: [
+                FakeElement("AXButton", [kAXTitleAttribute: "Sam Lee"], frame: CGRect(x: 0, y: 100, width: 80, height: 30)),
+                FakeElement("AXStaticText", [kAXValueAttribute: "hidden"], frame: CGRect(x: 90, y: 100, width: 1, height: 1)),
+                FakeElement("AXButton", [kAXDescriptionAttribute: "More actions"], frame: CGRect(x: 300, y: 100, width: 30, height: 30)),
+                FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: CGRect(x: 100, y: 100, width: 60, height: 30)),
+            ])
+            let area = FakeElement(role, frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [row])
+            return walk(FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [area])).renderedText()
+        }
+        #expect(read(inside: "AXWebArea") == "| Sam Lee | Draft")
+        #expect(read(inside: "AXGroup") == "| Draft")
     }
 
     @Test func summaryCarriesSizesNotText() {
@@ -402,4 +661,28 @@ struct ScreenContextProbeTests {
         #expect(probe.lastContext?.appName == "Example Browser")
         #expect(reads.all == ["Example Browser", "Example Notes"])
     }
+}
+
+/// An element of a fake Accessibility tree for `ScreenContextReader.walk`.
+final class FakeElement {
+    let role: String
+    let attributes: [String: String]
+    let frame: CGRect?
+    let children: [FakeElement]
+
+    init(_ role: String, _ attributes: [String: String] = [:], frame: CGRect? = nil, children: [FakeElement] = []) {
+        self.role = role
+        self.attributes = attributes
+        self.frame = frame
+        self.children = children
+    }
+}
+
+struct FakeScreenTree: ScreenTree {
+    func children(of element: FakeElement) -> [FakeElement] { element.children }
+    func frame(of element: FakeElement) -> CGRect? { element.frame }
+    func string(_ element: FakeElement, _ name: String) -> String? { name == kAXRoleAttribute ? element.role : element.attributes[name] }
+    func host(of webArea: FakeElement) -> String? { webArea.attributes["host"] }
+    func fieldText(of element: FakeElement, windowFrame: CGRect?) -> String? { element.attributes[kAXValueAttribute] }
+    func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
 }

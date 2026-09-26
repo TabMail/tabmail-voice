@@ -5,7 +5,7 @@
 import Foundation
 
 /// What was on screen when a dictation started: the app, where in it, the text around the caret
-/// and the visible text in reading order. User content: never stored, and logged only to the debug
+/// and the visible text in reading order, laid out in lines as on screen. User content: never stored, and logged only to the debug
 /// log file (`logDescription`, ADR-DESK-015); `summary` is what the other logs carry.
 struct ScreenContext: Sendable, Equatable {
     struct Block: Sendable, Equatable {
@@ -15,6 +15,11 @@ struct ScreenContext: Sendable, Equatable {
         }
         var kind: Kind
         var text: String
+        /// Where it is on screen (Accessibility coordinates, y down), when the app reports it.
+        var frame: CGRect? = nil
+
+        /// Text that flows within a line; headings, rows, fields and the caret block start their own.
+        var isInline: Bool { kind == .text || kind == .link }
     }
 
     var appName: String
@@ -39,32 +44,59 @@ struct ScreenContext: Sendable, Equatable {
 
     /// Places the focused field at its spot in the reading order: the text around the caret with
     /// the caret marked (a selection is bracketed by markers).
-    mutating func appendCaret() {
+    mutating func appendCaret(frame: CGRect? = nil) {
         let caret = selectedText.isEmpty ? Self.caretMarker : Self.caretMarker + selectedText + Self.caretMarker
-        blocks.append(Block(kind: .caret, text: textBeforeCaret + caret + textAfterCaret))
+        blocks.append(Block(kind: .caret, text: textBeforeCaret + caret + textAfterCaret, frame: frame))
     }
 
     /// Adds visible text, skipping blanks and the repeats accessibility trees are full of (a link
     /// titled "Inbox" whose child text is also "Inbox").
-    mutating func append(_ kind: Block.Kind, _ text: String) {
+    mutating func append(_ kind: Block.Kind, _ text: String, frame: CGRect? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != blocks.last?.text else { return }
-        blocks.append(Block(kind: kind, text: trimmed))
+        blocks.append(Block(kind: kind, text: trimmed, frame: frame))
     }
 
-    /// The visible text as plain lines: headings marked, links bracketed, row cells joined.
+    /// The visible text laid out as on screen: text and links side by side on one line are joined
+    /// (a chat message's author and time), everything else starts a line, and a jump back up the
+    /// window (the next pane or column) leaves a blank line. Headings are marked, links bracketed,
+    /// row cells joined.
     func renderedText() -> String {
-        blocks.map { block in
+        var text = ""
+        for (index, block) in blocks.enumerated() {
+            if index > 0 { text += Self.separator(between: blocks[index - 1], and: block) }
             switch block.kind {
-            case .heading: "## \(block.text)"
-            case .link: "[\(block.text)]"
-            case .row: "| \(block.text)"
-            case .field: block.text.split(separator: "\n", omittingEmptySubsequences: false).map { "> \($0)" }.joined(separator: "\n")
-            case .caret: block.text.split(separator: "\n", omittingEmptySubsequences: false).map { "» \($0)" }.joined(separator: "\n")
-            case .text: block.text
+            case .heading: text += "## \(block.text)"
+            case .link: text += "[\(block.text)]"
+            case .row: text += "| \(block.text)"
+            case .field: text += block.text.split(separator: "\n", omittingEmptySubsequences: false).map { "> \($0)" }.joined(separator: "\n")
+            case .caret: text += block.text.split(separator: "\n", omittingEmptySubsequences: false).map { "» \($0)" }.joined(separator: "\n")
+            case .text: text += block.text
             }
         }
-        .joined(separator: "\n")
+        return text
+    }
+
+    /// A space when both flow inline and the second sits on the first's line, to its right (the
+    /// first may wrap onto several lines: then its last one); a blank line when the second is
+    /// wholly above the first; otherwise a line break. Without frames with a size, a line break.
+    static func separator(between first: Block, and second: Block) -> String {
+        guard let a = first.frame, let b = second.frame, !a.isEmpty, !b.isEmpty else { return "\n" }
+        let overlap = min(a.maxY, b.maxY) - max(a.minY, b.minY)
+        if first.isInline, second.isInline, b.minX >= a.minX,
+           overlap >= min(a.height, b.height) * DictationConfig.contextSameLineOverlap {
+            return " "
+        }
+        return b.maxY <= a.minY ? "\n\n" : "\n"
+    }
+
+    /// Whether an element can show its text. Web apps keep hidden text in the tree in boxes at most
+    /// a point thin: screen-reader-only labels, list items scrolled out of view (Chromium clips
+    /// them to 0×1 at the list's edge), hover-only actions. A 0×0 frame says nothing (an app
+    /// that reports no size), so it counts as shown.
+    static func isShown(_ frame: CGRect) -> Bool {
+        guard frame.width > 0 || frame.height > 0 else { return true }
+        return min(frame.width, frame.height) > DictationConfig.contextHiddenMaxThickness
     }
 
     /// Sizes and timings only, safe to log.
