@@ -39,7 +39,9 @@ struct ModeHintTests {
             #expect(white < 0.3, "not dark at \(x), \(y)")
             #expect(alpha > 0.8, "not opaque at \(x), \(y)")
         }
-        // The action, right of the keycap: light text on the dark box.
+        // The keycap's "space", and the action right of it: light text on the dark box.
+        let key = stride(from: 10, to: width * 0.4, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
+        #expect((key.max() ?? 0) > 0.6, "no light text in the keycap")
         let action = stride(from: width * 0.6, to: width - 8, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
         #expect((action.max() ?? 0) > 0.6, "no light text in the action")
         // Beside the arrow, above the box: nothing drawn.
