@@ -80,6 +80,24 @@ final class Switch {
     init(_ isOn: Bool) { self.isOn = isOn }
 }
 
+/// The `Log.content` entries logged while `body` runs (ADR-DESK-015).
+final class ContentLogEntries: Sendable {
+    private let state = OSAllocatedUnfairLock<[(label: String, text: String)]>(initialState: [])
+    var all: [(label: String, text: String)] { state.withLock { $0 } }
+    var joined: String { all.map { "\($0.label)\n\($0.text)" }.joined(separator: "\n") }
+    /// The entries whose label starts with none of `excluded` (the backend clients' own entries, say).
+    func all(excluding excluded: [String]) -> [(label: String, text: String)] {
+        all.filter { entry in !excluded.contains { entry.label.hasPrefix($0) } }
+    }
+    func add(_ label: String, _ text: String) { state.withLock { $0.append((label, text)) } }
+
+    static func logged(isolation: isolated (any Actor)? = #isolation, _ body: () async throws -> Void) async rethrows -> ContentLogEntries {
+        let entries = ContentLogEntries()
+        try await Log.$contentObserver.withValue({ entries.add($0, $1) }) { try await body() }
+        return entries
+    }
+}
+
 enum Fixtures {
     static let userId = "user-1"
     static let email = "person@example.com"

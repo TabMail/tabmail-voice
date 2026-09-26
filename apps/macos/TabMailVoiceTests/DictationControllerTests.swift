@@ -351,6 +351,19 @@ struct DictationControllerTests {
         #expect((cleanupVars(0)?["screen_text"] as? String)?.contains("Agenda A") == true)
     }
 
+    /// The debug log file gets what was heard, what the cleanup made of it and what was pasted
+    /// (ADR-DESK-015), after the backend clients' own entries.
+    @Test func aDictationLogsItsTranscriptCleanedTextAndPaste() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+
+        let entries = await ContentLogEntries.logged { _ = await dictate() }
+
+        let steps = entries.all(excluding: ["Transcription ", "Completions "])
+        #expect(steps.map(\.label) == ["Transcript (dictation)", "DictationCleanup: cleaned text", "TextInserter: pasting"])
+        #expect(steps.map(\.text) == [transcript, cleaned, cleaned])
+    }
+
     /// Cancelled while its screen is still being read: nothing is sent to the cleanup or pasted, and
     /// the next dictation is cleaned up with its own screen.
     @Test func aDictationCancelledWhileItsScreenIsReadIsNotCleanedUp() async {
@@ -486,6 +499,31 @@ struct DictationControllerTests {
         #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_edit")
         #expect(cleanupVars(0)?["user_request"] as? String == request)
         #expect(cleanupVars(0)?["selected_text"] as? String == "Ship it Friday or else.\n")
+    }
+
+    /// Agent mode logs the request, the text its tool wrote (fitted to the selection) and the paste.
+    @Test func agentModeLogsTheRequestTheWrittenTextAndThePaste() async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("Could we ship on Friday?"))
+
+        let entries = await ContentLogEntries.logged { _ = await carryOut(screen(selected: "Ship it Friday or else.\n")) }
+
+        let steps = entries.all(excluding: ["Transcription ", "Completions "])
+        #expect(steps.map(\.label) == ["Transcript (agent)", "DesktopAgent: edit wrote", "TextInserter: pasting"])
+        #expect(steps.map(\.text) == [request, "Could we ship on Friday?\n", "Could we ship on Friday?\n"])
+    }
+
+    /// A mail request logs the chat message sent to Thunderbird, and no paste.
+    @Test func aMailRequestLogsTheChatMessageSent() async {
+        transcription.enqueue(status: 200, json: ["text": "find sam's invoice from last week"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Find the invoice Sam sent last week."))
+
+        let entries = await ContentLogEntries.logged { _ = await carryOut(screen(selected: ""), thunderbird: FakeThunderbird()) }
+
+        let steps = entries.all(excluding: ["Transcription ", "Completions "])
+        #expect(steps.map(\.label) == ["Transcript (agent)", "DesktopAgent: thunderbird wrote", "ThunderbirdRelay: sent"])
+        #expect(steps.map(\.text) == ["find sam's invoice from last week", "Find the invoice Sam sent last week.", "Find the invoice Sam sent last week."])
     }
 
     @Test func agentModeComposesAtTheCaretWithNothingSelected() async {
