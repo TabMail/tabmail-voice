@@ -109,7 +109,7 @@ struct ContentLogTests {
         context.textBeforeCaret = "Dear Alex,"
         context.appendCaret()
         let captured = context
-        let probe = ScreenContextProbe(isEnabled: { true }, isTrusted: { true }, frontmostApp: {
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: {
             ScreenContextProbe.Target(pid: 1, name: "Example Notes", bundleID: "com.example.notes")
         }, read: { _ in captured })
 

@@ -262,8 +262,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   be stopped.
 - **Permission and feature steps** never block Next.
 - **Screen reading** (`AppSettings.readsScreen`) is on by default, since the consent step
-  discloses it. `ScreenContextProbe` checks it at every key-down, so a change applies from the
-  next dictation. It can also be switched in Settings.
+  discloses it. It is read at every key-down with the other settings (ADR-DESK-017), so a change
+  applies from the next dictation. It can also be switched in Settings.
 - **When the wizard opens.** It opens at every launch until the user presses Finish; closing the
   window doesn't count. It can be reopened from the menu (Welcome Guide…).
 - **Replaces the launch-time permission prompts.** The app no longer asks for permissions at
@@ -325,7 +325,7 @@ desktop platform, not the Thunderbird email prompts.
 - Agent mode adds a model round trip before the tool runs (light tier, reasoning off).
 - No client-side tools: the Mac app at 0.1.0 would read Thunderbird's tool registry, and a
   desktop tool listed there would reach Thunderbird's agent too. The later Thunderbird connector
-  follows the same tool-choice contract (a third tool name), planned in `PLAN_DESKTOP_AGENT.md`.
+  follows the same tool-choice contract (a third tool name; ADR-DESK-014).
 - Apps whose accessibility tree hides the selection (thin trees, some Electron apps) can't be
   edited; the request fails with "Select the text to edit". Copying the selection with ⌘C
   instead would be a fallback: an owner decision.
@@ -373,6 +373,10 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone
   system message (`</request>`) or answering empty. Fixed in the backend (ADR-023 amendment: the
   request is the final user turn, and the agent's first word after `Tool:` counts).
+- With no deadline, the user may move to another app before the text arrives. Edit and Compose paste
+  only while the app that was in front at key-down still is; otherwise the request fails with "You
+  switched apps, so nothing was pasted" (`DesktopAgent.Failure.appChanged`, 2026-09-26 review). The
+  Thunderbird tool is exempt: it brings Thunderbird to the front itself, and has its own focus checks.
 
 ## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
 
@@ -468,6 +472,30 @@ the agent restating the request as a chat message, and sending being enough (no 
 - The native-messaging bridge (plan option B, installed by this app only) replaces the shortcut,
   focus and timing guesses if the spike shows they matter.
 
+**Amendment 2026-09-26 (review):**
+- The chat is recognised by its exact title, "TabMail Chat". On macOS Thunderbird titles an add-on's
+  popup window with the page title alone (`extension-popup-title` in `popup.ftl`, every locale), so no
+  other title is the chat. A substring match also took a draft replying to a message about the chat
+  ("Write: Re: TabMail Chat feedback"), or the main window showing a message whose subject starts with
+  it, which would have got the message pasted in and Return pressed. A message whose subject is
+  exactly "TabMail Chat" still passes for the chat: matching by title can't tell them apart.
+- The relay's Accessibility calls into Thunderbird (window, focus, title, bring to front) run off the
+  main thread, where the hotkey's event tap runs, and every element asked gets the
+  `thunderbirdAccessibilityTimeout`, the focused window included (a timeout set on the application
+  element does not carry over to the elements read from it). A hung Thunderbird then holds up only
+  the relay, not the keyboard. Since those reads now suspend, the check that Thunderbird is in front
+  comes after the title read (the user may switch away during it, and Accessibility still reports
+  the chat as Thunderbird's focused window), and a cancel is honoured before the paste and before
+  Return. When that first read finds no chat, Thunderbird is checked to be in front again, and a
+  cancel honoured, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
+  would go to the app they switched to (Finder, Safari and Chrome bind it to Downloads).
+- The relay is given the email app (a bundle identifier) with each send and asks every question
+  (running, in front, focused window's title) of that app; it never reads Settings. The dictation
+  takes the app from its key-down settings snapshot (ADR-DESK-017). Resolving the app from Settings
+  at each check let a Settings change mid-send pair one app's chat title with another app in front,
+  or press Return in the other app after the paste went to the first, submitting whatever draft its
+  chat held.
+
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 
 **Context:** Owner, 2026-09-26: an agent-mode reply came out of context, and nothing could say why.
@@ -534,3 +562,29 @@ is still walked into, since Slack keeps its whole message list inside a 1×2 scr
   (`LiveScreenTreeTests`, which needs the Accessibility permission), beside the layout on frames measured in
   Slack and the hidden-box rule on frames measured in Slack and Chrome. Test text is placeholders,
   never what was on the measured screen.
+
+## ADR-DESK-017: Settings are read once, as a dictation starts
+
+**Context:** Owner standing rule, 2026-09-26 (root `Companion/Rules/Active/snapshot-settings-at-operation-start.md`):
+"lock in all the settings … by taking a snapshot when everything starts … the snapshot is the first
+thing that happens on the settings." Three review rounds in a row on the Thunderbird relay each
+found another window where changing the email app in Settings mid-send paired one app's chat with
+another; each fix compared Settings again and missed the next window.
+
+**Decision:**
+- `DictationController.start()` reads `AppSettings.dictation` (a `DictationSettings` value: consent,
+  backend URL, screen reading, email app) as its first step at key-down, and the hold reads only that
+  snapshot until it finishes: consent, whether the screen is read, the server every request of the
+  hold goes to, the email app the Space toggle offers and the relay sends to. A change made during a
+  hold applies from the next one.
+- Nothing downstream reads Settings: the transcription and completions clients are made with the
+  snapshot's URL, `ScreenContextProbe` no longer checks screen reading (the controller doesn't ask
+  it), and `ThunderbirdRelay.send(_:to:)` is given the app.
+- Facts about the world stay live: which app is in front (the key-down app for Edit and Compose), and
+  whether the email app runs, is in front and has the chat focused.
+
+**Consequences:**
+- Every "does Settings still say X" comparison in the relay is deleted; a mid-send Settings change
+  can no longer retarget a send.
+- Not covered: the hotkey itself. Changing it in Settings reinstalls the monitor, which cancels a
+  hold in progress (`HotkeyMonitor.setHotkey`); the owner accepts that behaviour (2026-09-26).

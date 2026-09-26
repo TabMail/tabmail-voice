@@ -60,6 +60,16 @@ final class AppSettings {
         useDevelopmentServer ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL
     }
 
+    /// What a dictation uses, read once as it starts (`DictationSettings`).
+    var dictation: DictationSettings {
+        DictationSettings(
+            hasConsented: hasConsented,
+            backendURL: backendURL,
+            readsScreen: readsScreen,
+            emailApp: EmailClient.resolve(chosen: emailClient, systemDefault: EmailClient.systemDefault()?.bundleIdentifier)
+        )
+    }
+
     /// Mirrors the system's login-item registration rather than storing a copy of it.
     private(set) var launchAtLogin: Bool
 
@@ -86,4 +96,14 @@ final class AppSettings {
         }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
+}
+
+/// The settings one dictation uses, read as the first thing it does when it starts and fixed for the
+/// rest of it: a change in Settings meanwhile applies from the next dictation (owner, 2026-09-26).
+struct DictationSettings: Equatable, Sendable {
+    var hasConsented: Bool
+    var backendURL: URL
+    var readsScreen: Bool
+    /// The email app mail and calendar requests go to (`EmailClient`); nil when there is none.
+    var emailApp: String?
 }

@@ -44,17 +44,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         let settings = settings
-        contextProbe = ScreenContextProbe(isEnabled: { settings.readsScreen })
+        contextProbe = ScreenContextProbe()
         welcome = WelcomeWindowController(settings: settings, permissions: permissions)
         controller = DictationController(
             permissions: permissions,
-            hasConsented: { settings.hasConsented },
+            settings: { settings.dictation },
             account: account,
-            thunderbird: ThunderbirdRelay(system: .live(bundleIdentifier: {
-                EmailClient.resolve(chosen: settings.emailClient, systemDefault: EmailClient.systemDefault()?.bundleIdentifier)
-            })),
-            makeTranscriptionClient: { TranscriptionClient(baseURL: settings.backendURL) },
-            makeCompletionsClient: { CompletionsClient(baseURL: settings.backendURL) }
+            thunderbird: ThunderbirdRelay(system: .live()),
+            makeTranscriptionClient: { TranscriptionClient(baseURL: $0) },
+            makeCompletionsClient: { CompletionsClient(baseURL: $0) }
         )
         super.init()
     }

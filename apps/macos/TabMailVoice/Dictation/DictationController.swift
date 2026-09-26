@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AppKit
 import AVFoundation
 import Observation
 
@@ -44,26 +45,33 @@ final class DictationController {
     private(set) var isHearing = false
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
-    /// Starts reading the screen context when a dictation starts (key-down), with the target app
-    /// still frontmost. Nil result: no context (the cleanup runs without it).
+    /// Starts reading the screen context when a dictation starts (key-down) with screen reading on,
+    /// with the target app still frontmost. Nil result: no context (the cleanup runs without it).
     @ObservationIgnored var captureContext: (() -> Task<ScreenContext, Never>?)?
     /// How long the cleanup waits for that read once the transcript is ready (agent mode waits for
     /// all of it). Internal for tests.
     @ObservationIgnored var contextWait = DictationConfig.contextWait
 
     @ObservationIgnored private let permissions: PermissionsModel
-    @ObservationIgnored private let hasConsented: @MainActor () -> Bool
+    /// Reads the settings, once per dictation.
+    @ObservationIgnored private let readSettings: @MainActor () -> DictationSettings
     @ObservationIgnored private let account: AccountModel
-    @ObservationIgnored private let makeTranscriptionClient: @MainActor () -> TranscriptionClient
-    @ObservationIgnored private let makeCompletionsClient: @MainActor () -> CompletionsClient
+    @ObservationIgnored private let makeTranscriptionClient: @MainActor (URL) -> TranscriptionClient
+    @ObservationIgnored private let makeCompletionsClient: @MainActor (URL) -> CompletionsClient
     @ObservationIgnored private let inserter: TextInserter
     @ObservationIgnored private let thunderbird: ThunderbirdRelay
     @ObservationIgnored private let capture: any AudioCapturing
+    /// The process of the app in front.
+    @ObservationIgnored private let frontmostApp: @MainActor () -> pid_t?
     @ObservationIgnored private let clock = ContinuousClock()
 
     // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var startedAt: ContinuousClock.Instant?
+    /// The settings this dictation started with; it reads no others.
+    @ObservationIgnored private var settings: DictationSettings
+    /// The app in front at key-down, where agent mode's text belongs.
+    @ObservationIgnored private var targetApp: pid_t?
     @ObservationIgnored private var recorder: AudioRecorder?
     @ObservationIgnored private var contextTask: Task<ScreenContext, Never>?
     /// That read's result, once done (nil without a read); `tools` waits for it.
@@ -76,20 +84,23 @@ final class DictationController {
 
     init(
         permissions: PermissionsModel,
-        hasConsented: @escaping @MainActor () -> Bool,
+        settings: @escaping @MainActor () -> DictationSettings,
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
         thunderbird: ThunderbirdRelay,
         capture: any AudioCapturing = MicrophoneCapture(),
-        makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient,
-        makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
+        frontmostApp: @escaping @MainActor () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+        makeTranscriptionClient: @escaping @MainActor (URL) -> TranscriptionClient,
+        makeCompletionsClient: @escaping @MainActor (URL) -> CompletionsClient
     ) {
         self.permissions = permissions
-        self.hasConsented = hasConsented
+        self.readSettings = settings
+        self.settings = settings()
         self.account = account
         self.inserter = inserter
         self.thunderbird = thunderbird
         self.capture = capture
+        self.frontmostApp = frontmostApp
         self.makeTranscriptionClient = makeTranscriptionClient
         self.makeCompletionsClient = makeCompletionsClient
     }
@@ -120,7 +131,9 @@ final class DictationController {
         case .idle, .failed: break
         case .arming, .listening, .transcribing, .running: return
         }
-        guard hasConsented() else {
+        // First, before anything else: the settings this dictation uses, whatever changes meanwhile.
+        settings = readSettings()
+        guard settings.hasConsented else {
             fail("Finish setting up TabMail Voice from its menu to dictate.")
             return
         }
@@ -150,8 +163,9 @@ final class DictationController {
         envelope = LevelEnvelope()
         isHearing = false
         startedAt = clock.now
+        targetApp = frontmostApp()
         phase = .arming
-        contextTask = captureContext?()
+        contextTask = settings.readsScreen ? captureContext?() : nil
         if let read = contextTask {
             Task { [weak self] in
                 let context = await read.value
@@ -202,7 +216,7 @@ final class DictationController {
         case .idle, .transcribing, .running, .failed: return
         }
         mode = mode.toggled
-        emailAppURL = mode == .agent ? thunderbird.applicationURL : nil
+        emailAppURL = mode == .agent ? thunderbird.applicationURL(for: settings.emailApp) : nil
         updateTools()
         Log.debug("DictationController: switched to \(mode)")
     }
@@ -295,8 +309,9 @@ final class DictationController {
         // Both requests go under the account signed in now, even if the user switches accounts
         // while they run.
         let userId = account.session?.userId
+        let settings = settings
         do {
-            let client = makeTranscriptionClient()
+            let client = makeTranscriptionClient(settings.backendURL)
             let transcript = try await Self.withFreshToken(account: account, userId: userId) { try await client.transcribe(wav: wav, accessToken: $0) }
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard generation == current, !Task.isCancelled else { return }
@@ -321,11 +336,11 @@ final class DictationController {
             guard generation == current, !Task.isCancelled else { return }
             switch mode {
             case .dictation:
-                let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
+                let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(settings.backendURL), account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
                 await inserter.insert(text)
             case .agent:
-                let client = makeCompletionsClient()
+                let client = makeCompletionsClient(settings.backendURL)
                 let tool = try await DesktopAgent.tool(for: transcript, context: context, emailAppAvailable: emailAppURL != nil, client: client, account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
                 Log.debug("DictationController: agent chose \(tool.rawValue)")
@@ -334,10 +349,13 @@ final class DictationController {
                 guard generation == current, !Task.isCancelled else { return }
                 switch tool {
                 case .edit, .compose:
+                    // The request may have taken long enough for the user to move on: the text
+                    // belongs in the app they spoke over, and is pasted nowhere else.
+                    guard frontmostApp() == targetApp else { throw DesktopAgent.Failure.appChanged }
                     // An edit pastes over the selection; a compose runs only with nothing selected.
                     await inserter.insert(text)
                 case .thunderbird:
-                    try await thunderbird.send(text)
+                    try await thunderbird.send(text, to: settings.emailApp)
                 }
             }
             guard generation == current else { return }

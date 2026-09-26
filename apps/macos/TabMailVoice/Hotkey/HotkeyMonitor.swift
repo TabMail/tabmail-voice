@@ -61,8 +61,8 @@ final class HotkeyMonitor {
         swallowedKeyUps.removeAll()
     }
 
-    /// Feeds one event to the gesture; whether it may go on to the app in front.
-    fileprivate func handle(_ type: CGEventType, keyCode: UInt16, flags: CGEventFlags, isRepeat: Bool) -> Bool {
+    /// Feeds one event to the gesture; whether it may go on to the app in front. Internal for tests.
+    func handle(_ type: CGEventType, keyCode: UInt16, flags: CGEventFlags, isRepeat: Bool) -> Bool {
         var passes = true
         let action: PushToTalkGesture.Action?
         switch type {

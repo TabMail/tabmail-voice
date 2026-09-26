@@ -90,11 +90,10 @@ final class InMemoryDefaults: UserDefaults, @unchecked Sendable {
     override func removeObject(forKey defaultName: String) { set(nil as Any?, forKey: defaultName) }
 }
 
-/// A user setting that a test switches while the code under test reads it.
+/// Counts calls from a closure the test hands over.
 @MainActor
-final class Switch {
-    var isOn: Bool
-    init(_ isOn: Bool) { self.isOn = isOn }
+final class Counter {
+    var count = 0
 }
 
 /// The `Log.content` entries logged while `body` runs (ADR-DESK-015).
