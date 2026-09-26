@@ -54,6 +54,32 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
     func clear() { stored.withLock { $0 = nil } }
 }
 
+/// Settings kept in memory. A real suite (`UserDefaults(suiteName:)`) is written to a plist in
+/// ~/Library/Preferences, and the preferences daemon writes it again after a test deletes it, so
+/// every run would leave files behind. Every accessor `AppSettings` uses is overridden; anything
+/// else reaches one fixed scratch suite, never the app's own domain.
+final class InMemoryDefaults: UserDefaults, @unchecked Sendable {
+    private let values = OSAllocatedUnfairLock(uncheckedState: [String: Any]())
+
+    init() {
+        super.init(suiteName: "ai.tabmail.desktop.tests.unused")!
+    }
+
+    override func object(forKey defaultName: String) -> Any? { values.withLockUnchecked { $0[defaultName] } }
+    override func string(forKey defaultName: String) -> String? { object(forKey: defaultName) as? String }
+    override func bool(forKey defaultName: String) -> Bool { object(forKey: defaultName) as? Bool ?? false }
+    override func set(_ value: Any?, forKey defaultName: String) { values.withLockUnchecked { $0[defaultName] = value } }
+    override func set(_ value: Bool, forKey defaultName: String) { set(value as Any?, forKey: defaultName) }
+    override func removeObject(forKey defaultName: String) { set(nil as Any?, forKey: defaultName) }
+}
+
+/// A user setting that a test switches while the code under test reads it.
+@MainActor
+final class Switch {
+    var isOn: Bool
+    init(_ isOn: Bool) { self.isOn = isOn }
+}
+
 enum Fixtures {
     static let userId = "user-1"
     static let email = "person@example.com"

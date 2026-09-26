@@ -29,6 +29,10 @@ struct SettingsView: View {
                 Text("Your recording is sent to TabMail for transcription and isn't stored.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("Read the screen while dictating", isOn: $settings.readsScreen)
+                Text("Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn't stored.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Permissions") {

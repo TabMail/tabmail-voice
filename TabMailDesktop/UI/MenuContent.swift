@@ -9,6 +9,7 @@ struct MenuContent: View {
     let permissions: PermissionsModel
     let settings: AppSettings
     let account: AccountModel
+    let showWelcome: () -> Void
     @Environment(\.openSettings) private var openSettings
     #if DEBUG
     @Environment(\.openWindow) private var openWindow
@@ -17,6 +18,9 @@ struct MenuContent: View {
     var body: some View {
         Text(statusLine)
 
+        if !settings.hasConsented {
+            Button("Finish Setting Up TabMail…", action: showWelcome)
+        }
         if !account.isSignedIn {
             Button("Sign In to TabMail…", action: showSettings)
         }
@@ -36,7 +40,8 @@ struct MenuContent: View {
         Button(controller.phase == .listening ? "Stop Dictation" : "Start Dictation") {
             controller.toggle()
         }
-        .disabled(!isReady)
+        // Stop stays available while recording, even if setup has since become incomplete.
+        .disabled(controller.phase != .listening && !isReady)
 
         #if DEBUG
         Button("Play Last Recording") {
@@ -51,6 +56,7 @@ struct MenuContent: View {
 
         Divider()
 
+        Button("Welcome Guide…", action: showWelcome)
         Button("Settings…", action: showSettings)
             .keyboardShortcut(",")
 
@@ -75,9 +81,10 @@ struct MenuContent: View {
     /// The identifier SwiftUI gives the `Settings` scene's window.
     private static let settingsWindowIdentifier = "com_apple_SwiftUI_Settings_window"
 
-    private var isReady: Bool { account.isSignedIn && permissions.allGranted }
+    private var isReady: Bool { settings.hasConsented && account.isSignedIn && permissions.allGranted }
 
     private var statusLine: String {
+        if !settings.hasConsented { return "Setup needed" }
         if !account.isSignedIn { return "Sign in to start dictating" }
         if !permissions.allGranted { return "Setup needed" }
         return "Hold \(settings.hotkey.displayName) to dictate"

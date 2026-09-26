@@ -11,7 +11,7 @@ struct TabMailDesktopApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(controller: appDelegate.controller, permissions: appDelegate.permissions, settings: appDelegate.settings, account: appDelegate.account)
+            MenuContent(controller: appDelegate.controller, permissions: appDelegate.permissions, settings: appDelegate.settings, account: appDelegate.account, showWelcome: appDelegate.showWelcome)
         } label: {
             Image("MenuBarIcon")
                 .accessibilityLabel("TabMail")
@@ -35,16 +35,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let permissions = PermissionsModel()
     let settings = AppSettings()
     let account = AccountModel()
-    let contextProbe = ScreenContextProbe()
+    let contextProbe: ScreenContextProbe
     let controller: DictationController
+    private let welcome: WelcomeWindowController
     private var hotkeyMonitor: HotkeyMonitor?
     private var overlay: OverlayPanelController?
     private let accessibilityActivator = AccessibilityActivator()
 
     override init() {
         let settings = settings
+        contextProbe = ScreenContextProbe(isEnabled: { settings.readsScreen })
+        welcome = WelcomeWindowController(settings: settings, permissions: permissions)
         controller = DictationController(
             permissions: permissions,
+            hasConsented: { settings.hasConsented },
             account: account,
             makeTranscriptionClient: { TranscriptionClient(baseURL: settings.backendURL) },
             makeCompletionsClient: { CompletionsClient(baseURL: settings.backendURL) }
@@ -75,16 +79,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityActivator.start()
         }
         accessibilityActivator.start()
+        permissions.onMicrophoneGranted = { [controller] in controller.prewarm() }
+        permissions.startPollingAccessibility()
+        controller.prewarm()
 
-        Task {
-            if permissions.microphone == .notDetermined {
-                await permissions.requestMicrophone()
-            }
-            controller.prewarm()
-            if !permissions.accessibilityTrusted {
-                permissions.requestAccessibility()
-            }
+        // The welcome wizard asks for consent and the permissions; it opens until finished.
+        if !settings.hasFinishedWelcome {
+            welcome.show()
         }
+    }
+
+    func showWelcome() {
+        welcome.show()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

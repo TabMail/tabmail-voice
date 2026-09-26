@@ -39,6 +39,7 @@ final class DictationController {
     @ObservationIgnored var contextWait = DictationConfig.contextWait
 
     @ObservationIgnored private let permissions: PermissionsModel
+    @ObservationIgnored private let hasConsented: @MainActor () -> Bool
     @ObservationIgnored private let account: AccountModel
     @ObservationIgnored private let makeTranscriptionClient: @MainActor () -> TranscriptionClient
     @ObservationIgnored private let makeCompletionsClient: @MainActor () -> CompletionsClient
@@ -58,6 +59,7 @@ final class DictationController {
 
     init(
         permissions: PermissionsModel,
+        hasConsented: @escaping @MainActor () -> Bool,
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
         capture: any AudioCapturing = MicrophoneCapture(),
@@ -65,6 +67,7 @@ final class DictationController {
         makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
     ) {
         self.permissions = permissions
+        self.hasConsented = hasConsented
         self.account = account
         self.inserter = inserter
         self.capture = capture
@@ -95,6 +98,10 @@ final class DictationController {
         switch phase {
         case .idle, .failed: break
         case .arming, .listening, .transcribing: return
+        }
+        guard hasConsented() else {
+            fail("Finish setting up TabMail from its menu to dictate.")
+            return
         }
         guard account.isSignedIn else {
             fail("Sign in to TabMail in Settings to dictate.")

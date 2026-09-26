@@ -13,6 +13,9 @@ final class AppSettings {
     private enum Key {
         static let hotkey = "dictationHotkey"
         static let useDevelopmentServer = "useDevelopmentServer"
+        static let readsScreen = "readsScreen"
+        static let hasConsented = "hasConsentedToDictationData"
+        static let hasFinishedWelcome = "hasFinishedWelcome"
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -30,6 +33,22 @@ final class AppSettings {
         didSet { defaults.set(useDevelopmentServer, forKey: Key.useDevelopmentServer) }
     }
 
+    /// Read the text of the window in front when a dictation starts and send it with the
+    /// transcript for the cleanup (ADR-DESK-008). On unless the user switches it off.
+    var readsScreen: Bool {
+        didSet { defaults.set(readsScreen, forKey: Key.readsScreen) }
+    }
+
+    /// The user agreed, in the welcome wizard, to what dictation sends. No dictation without it.
+    var hasConsented: Bool {
+        didSet { defaults.set(hasConsented, forKey: Key.hasConsented) }
+    }
+
+    /// The welcome wizard was finished; until then it opens at every launch.
+    var hasFinishedWelcome: Bool {
+        didSet { defaults.set(hasFinishedWelcome, forKey: Key.hasFinishedWelcome) }
+    }
+
     var backendURL: URL {
         useDevelopmentServer ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL
     }
@@ -41,6 +60,9 @@ final class AppSettings {
         self.defaults = defaults
         hotkey = defaults.string(forKey: Key.hotkey).flatMap(DictationHotkey.init(rawValue:)) ?? .rightOption
         useDevelopmentServer = defaults.bool(forKey: Key.useDevelopmentServer)
+        readsScreen = defaults.object(forKey: Key.readsScreen) as? Bool ?? true
+        hasConsented = defaults.bool(forKey: Key.hasConsented)
+        hasFinishedWelcome = defaults.bool(forKey: Key.hasFinishedWelcome)
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

@@ -134,6 +134,21 @@ enum DictationConfig {
     /// While Accessibility is not yet granted, how often to re-check (the grant happens in System Settings).
     static let accessibilityPollInterval: Duration = .seconds(1)
 
+    // MARK: Welcome wizard
+
+    static let termsURL = URL(string: "https://tabmail.ai/terms")!
+    static let privacyURL = URL(string: "https://tabmail.ai/privacy")!
+    static let welcomeWindowSize = CGSize(width: 560, height: 500)
+    /// Top rail, as in the Thunderbird welcome wizard: category labels over one bubble per step.
+    static let welcomeRailBubbleSize: CGFloat = 8
+    /// The current step's bubble is drawn this much larger.
+    static let welcomeRailActiveBubbleScale: CGFloat = 1.4
+    static let welcomeRailCategorySpacing: CGFloat = 32
+    static let welcomeRailBubbleSpacing: CGFloat = 6
+    /// A category not being shown is drawn at this opacity.
+    static let welcomeRailInactiveOpacity: Double = 0.35
+    static let welcomeIconSize: CGFloat = 56
+
     // MARK: Overlay
 
     /// Transparent canvas the overlay draws in; the pill sizes itself inside it.
