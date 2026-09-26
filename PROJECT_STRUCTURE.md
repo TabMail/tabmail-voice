@@ -42,8 +42,8 @@ tabmail-macos/
         │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
         │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
         │   ├── Hotkey/
-        │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel; tap + press → agent mode (held, or hands-free until the next press)
-        │   │   └── HotkeyMonitor.swift       NSEvent global + local monitors feeding the gesture
+        │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel; Space during the hold → toggle agent mode
+        │   │   └── HotkeyMonitor.swift       Keyboard CGEventTap feeding the gesture; keeps the mode-switching Space from the app in front
         │   ├── Insertion/
         │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
         │   │   ├── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)
@@ -57,7 +57,7 @@ tabmail-macos/
         │       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
         │       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
         │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
-        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing; agent mode's tool bubbles floating around the pill, the running one's border circling
+        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing; the Space hint under the listening pill; agent mode's tool bubbles beside it, the running one's border circling
         │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
         └── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
@@ -83,12 +83,13 @@ tabmail-macos/
 
 A `generation` counter makes callbacks from a superseded dictation no-ops.
 
-**Agent mode** (a tap, then a press within `doubleTapWindow`; ADR-DESK-011): the same recording
-and transcription, with the tool bubbles floating around the pill. The transcript is a request:
-`DesktopAgent.chooseTool` asks the backend's `system_prompt_desktop_agent` for the tool, the phase
-becomes `running(tool)` (that bubble's border circles), and `DesktopAgent.write` has the tool's
-prompt write the text. Edit pastes over the selection; Compose pastes at the caret, after the
-selection if there is one. A failure shows a message and pastes nothing.
+**Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
+recording and transcription, with the tool bubbles beside the pill: Edit when text is selected,
+Compose when not, plus Thunderbird when an email app is set up. The transcript is a request:
+`DesktopAgent.tool` picks the tool (asking the backend's `system_prompt_desktop_agent` only whether
+it goes to the email app), the phase becomes `running(tool)` (that bubble's border circles), and
+`DesktopAgent.write` has the tool's prompt write the text. Edit pastes over the selection; Compose
+pastes at the caret. A failure shows a message and pastes nothing. No agent call has a deadline.
 
 ## Relationships
 

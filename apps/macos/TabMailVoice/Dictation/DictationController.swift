@@ -6,9 +6,9 @@ import AVFoundation
 import Observation
 
 /// Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
-/// transcript with the screen context → paste. In agent mode (a double tap) the transcript is a request
-/// instead: the agent chooses a tool, the tool writes the text, and that is pasted, or sent to
-/// TabMail's chat in Thunderbird.
+/// transcript with the screen context → paste. In agent mode (Space pressed during the hold) the
+/// transcript is a request instead: the selection picks Edit or Compose, the agent may send it to
+/// TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there.
 @MainActor
 @Observable
 final class DictationController {
@@ -30,7 +30,9 @@ final class DictationController {
     }
     /// What the current (or last) recording is for.
     private(set) var mode: DictationMode = .dictation
-    /// The tools agent mode offers this time: Thunderbird only when an email app is set up for it.
+    /// The tools agent mode offers this time (`DesktopAgent.tools(for:emailAppAvailable:)`). Empty in
+    /// dictation mode, and until the screen read at key-down is done: its selection decides between
+    /// Edit and Compose.
     private(set) var tools: [AgentTool] = []
     /// That email app's bundle, whose icon the Thunderbird bubble shows.
     private(set) var emailAppURL: URL?
@@ -45,10 +47,9 @@ final class DictationController {
     /// Starts reading the screen context when a dictation starts (key-down), with the target app
     /// still frontmost. Nil result: no context (the cleanup runs without it).
     @ObservationIgnored var captureContext: (() -> Task<ScreenContext, Never>?)?
-    /// How long the cleanup waits for that read once the transcript is ready. Internal for tests.
+    /// How long the cleanup waits for that read once the transcript is ready (agent mode waits for
+    /// all of it). Internal for tests.
     @ObservationIgnored var contextWait = DictationConfig.contextWait
-    /// How long agent mode waits for that read. Internal for tests.
-    @ObservationIgnored var agentContextWait = DictationConfig.agentContextWait
 
     @ObservationIgnored private let permissions: PermissionsModel
     @ObservationIgnored private let hasConsented: @MainActor () -> Bool
@@ -65,6 +66,9 @@ final class DictationController {
     @ObservationIgnored private var startedAt: ContinuousClock.Instant?
     @ObservationIgnored private var recorder: AudioRecorder?
     @ObservationIgnored private var contextTask: Task<ScreenContext, Never>?
+    /// That read's result, once done (nil without a read); `tools` waits for it.
+    @ObservationIgnored private var screenRead: ScreenContext?
+    @ObservationIgnored private var isScreenReadDone = false
     @ObservationIgnored private var revealTask: Task<Void, Never>?
     @ObservationIgnored private var maxDurationTask: Task<Void, Never>?
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
@@ -92,9 +96,10 @@ final class DictationController {
 
     func handle(_ action: PushToTalkGesture.Action) {
         switch action {
-        case .start(let mode): start(mode)
+        case .start: start()
         case .finish: finish()
         case .cancel: cancel()
+        case .toggleMode: toggleMode()
         }
     }
 
@@ -106,10 +111,11 @@ final class DictationController {
 
     /// Menu-driven toggle, for users who prefer clicking to holding a key.
     func toggle() {
-        if phase == .listening { finish() } else { start(.dictation) }
+        if phase == .listening { finish() } else { start() }
     }
 
-    func start(_ mode: DictationMode) {
+    /// Starts a dictation; `toggleMode()` makes it an agent request.
+    func start() {
         switch phase {
         case .idle, .failed: break
         case .arming, .listening, .transcribing, .running: return
@@ -134,9 +140,11 @@ final class DictationController {
         failureResetTask?.cancel()
         generation += 1
         let current = generation
-        self.mode = mode
-        emailAppURL = mode == .agent ? thunderbird.applicationURL : nil
-        tools = mode == .agent ? AgentTool.allCases.filter { $0 != .thunderbird || emailAppURL != nil } : []
+        mode = .dictation
+        emailAppURL = nil
+        screenRead = nil
+        isScreenReadDone = false
+        tools = []
         level = 0
         peakMeterLevel = 0
         envelope = LevelEnvelope()
@@ -144,6 +152,17 @@ final class DictationController {
         startedAt = clock.now
         phase = .arming
         contextTask = captureContext?()
+        if let read = contextTask {
+            Task { [weak self] in
+                let context = await read.value
+                guard let self, self.generation == current else { return }
+                self.screenRead = context
+                self.isScreenReadDone = true
+                self.updateTools()
+            }
+        } else {
+            isScreenReadDone = true
+        }
 
         // Boot the microphone now, off the main thread; the overlay appears only once the hold
         // is long enough, by which time most of the start-up is done.
@@ -173,7 +192,23 @@ final class DictationController {
             Log.debug("DictationController: max duration reached; finishing")
             self.finish()
         }
-        Log.debug("DictationController: arming \(mode) (generation \(current))")
+        Log.debug("DictationController: arming (generation \(current))")
+    }
+
+    /// Space during the hold: switches between dictation and agent mode.
+    func toggleMode() {
+        switch phase {
+        case .arming, .listening: break
+        case .idle, .transcribing, .running, .failed: return
+        }
+        mode = mode.toggled
+        emailAppURL = mode == .agent ? thunderbird.applicationURL : nil
+        updateTools()
+        Log.debug("DictationController: switched to \(mode)")
+    }
+
+    private func updateTools() {
+        tools = mode == .agent && isScreenReadDone ? DesktopAgent.tools(for: screenRead, emailAppAvailable: emailAppURL != nil) : []
     }
 
     func finish() {
@@ -271,10 +306,17 @@ final class DictationController {
                 fail(Self.nothingHeardMessage)
                 return
             }
-            // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008).
             let read = contextTask
-            let context = try? await withTimeout(seconds: mode == .agent ? agentContextWait : contextWait) { await read?.value }
-            if read != nil, context == nil { Log.debug("DictationController: screen read not done in time; continuing without it") }
+            let context: ScreenContext?
+            switch mode {
+            case .dictation:
+                // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008).
+                context = try? await withTimeout(seconds: contextWait) { await read?.value }
+                if read != nil, context == nil { Log.debug("DictationController: screen read not done in time; continuing without it") }
+            case .agent:
+                // All of it: its selection decides between Edit and Compose, as the bubbles showed.
+                context = await read?.value
+            }
             guard generation == current, !Task.isCancelled else { return }
             switch mode {
             case .dictation:
@@ -283,7 +325,7 @@ final class DictationController {
                 await inserter.insert(text)
             case .agent:
                 let client = makeCompletionsClient()
-                let tool = try await DesktopAgent.chooseTool(for: transcript, context: context, offered: tools, client: client, account: account, userId: userId)
+                let tool = try await DesktopAgent.tool(for: transcript, context: context, emailAppAvailable: emailAppURL != nil, client: client, account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
                 Log.debug("DictationController: agent chose \(tool.rawValue)")
                 phase = .running(tool)
@@ -291,8 +333,7 @@ final class DictationController {
                 guard generation == current, !Task.isCancelled else { return }
                 switch tool {
                 case .edit, .compose:
-                    // A compose goes after the selection; pasting over it would replace the user's text.
-                    if tool == .compose, !DesktopAgent.selection(in: context).isEmpty { await inserter.collapseSelection() }
+                    // An edit pastes over the selection; a compose runs only with nothing selected.
                     await inserter.insert(text)
                 case .thunderbird:
                     try await thunderbird.send(text)
@@ -303,9 +344,21 @@ final class DictationController {
             phase = .idle
         } catch {
             guard generation == current, !Task.isCancelled else { return }
-            Log.error("DictationController: \(mode) failed: \(type(of: error))")
+            Log.error("DictationController: \(mode) failed: \(Self.describe(error))")
             teardown()
             fail(error.localizedDescription)
+        }
+    }
+
+    /// An error for the log: the case of this app's own errors (they carry no user content), else the
+    /// type (and a URL error's code).
+    static func describe(_ error: any Error) -> String {
+        switch error {
+        case let failure as DesktopAgent.Failure: "DesktopAgent.Failure.\(failure)"
+        case let failure as ThunderbirdRelay.Failure: "ThunderbirdRelay.Failure.\(failure)"
+        case let failure as BackendError: "BackendError.\(failure)"
+        case let failure as URLError: "URLError \(failure.code.rawValue)"
+        default: "\(type(of: error))"
         }
     }
 

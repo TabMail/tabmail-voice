@@ -5,7 +5,8 @@
 import Foundation
 
 /// What agent mode can do with a spoken request. Each tool is one backend prompt; its bubble shows
-/// beside the pill while agent mode listens, and its border circles while it runs.
+/// beside the pill while agent mode listens, and its border circles while it runs. Edit and Compose
+/// are never offered together: the selection decides which (`DesktopAgent.writingTool(for:)`).
 enum AgentTool: String, CaseIterable, Sendable {
     /// Rewrites the selected text in place, as asked.
     case edit
@@ -40,50 +41,51 @@ enum AgentTool: String, CaseIterable, Sendable {
     }
 }
 
-/// Agent mode on the backend: one call chooses the tool for the spoken request
-/// (`DictationConfig.agentPrompt`), a second has that tool write the text the app then inserts. The
-/// instructions live in the backend prompts, shared by every desktop platform.
+/// Agent mode on the backend: the tool for the spoken request is chosen (`tool(for:…)`), then has the
+/// backend write the text the app inserts, or sends to Thunderbird. The instructions live in the
+/// backend prompts, shared by every desktop platform. No call has a deadline of its own: the request
+/// takes as long as the model does (owner, 2026-09-26: agent mode has no timeout).
 enum DesktopAgent {
     /// Why a request could not be carried out, as the overlay says it.
     enum Failure: LocalizedError, Equatable {
         /// The agent's reply named no tool it has.
         case noTool
-        /// The agent chose a tool this Mac can't use (an app that isn't installed).
-        case unavailable(AgentTool)
-        /// The agent chose to edit, but no selected text could be read.
-        case noSelection
         /// The tool wrote nothing.
         case noText
-        case timedOut
 
         var errorDescription: String? {
             switch self {
             case .noTool: "Couldn't work out what to do. Try again."
-            case .unavailable(.thunderbird): "Mail and calendar requests need Thunderbird with TabMail."
-            case .unavailable(let tool): "\(tool.displayName) isn't available."
-            case .noSelection: "Select the text to edit, then try again."
             case .noText: "Couldn't write that. Try again."
-            case .timedOut: "That took too long. Try again."
             }
         }
     }
 
-    /// The tool for `request`, asked under the account `userId`. Throws `unavailable` when the agent
-    /// chooses a tool that isn't `offered`, and `noSelection` when it chooses to edit and nothing is
-    /// selected.
+    /// The tools agent mode offers for the screen read at key-down: Edit when text is selected,
+    /// Compose when not, and Thunderbird when an email app is set up for it.
+    static func tools(for context: ScreenContext?, emailAppAvailable: Bool) -> [AgentTool] {
+        [writingTool(for: context)] + (emailAppAvailable ? [.thunderbird] : [])
+    }
+
+    /// Edit when text is selected, Compose when not.
+    static func writingTool(for context: ScreenContext?) -> AgentTool {
+        selection(in: context).isEmpty ? .compose : .edit
+    }
+
+    /// The tool for `request`: the writing tool (`writingTool(for:)`), unless an email app is available
+    /// and the agent, asked under the account `userId`, sends the request there.
     @MainActor
-    static func chooseTool(
-        for request: String, context: ScreenContext?, offered: [AgentTool], client: CompletionsClient, account: AccountModel, userId: String?,
-        timeout: TimeInterval = DictationConfig.agentChooseTimeout
+    static func tool(
+        for request: String, context: ScreenContext?, emailAppAvailable: Bool, client: CompletionsClient, account: AccountModel, userId: String?
     ) async throws -> AgentTool {
-        let reply = try await complete(chooseMessage(request: request, context: context), client: client, account: account, userId: userId, timeout: timeout)
-        guard let tool = AgentTool(rawValue: reply) else {
+        let writing = writingTool(for: context)
+        guard emailAppAvailable else { return writing }
+        let reply = try await complete(chooseMessage(request: request, context: context), client: client, account: account, userId: userId)
+        guard let chosen = AgentTool(rawValue: reply) else {
             Log.error("DesktopAgent: reply named no tool (\(reply.count) chars)")
             throw Failure.noTool
         }
-        guard offered.contains(tool) else { throw Failure.unavailable(tool) }
-        if tool == .edit, selection(in: context).isEmpty { throw Failure.noSelection }
-        return tool
+        return chosen == .thunderbird ? .thunderbird : writing
     }
 
     /// The text `tool` writes for `request`, ready to insert (for Thunderbird, to send): for an edit,
@@ -91,10 +93,9 @@ enum DesktopAgent {
     /// line break.
     @MainActor
     static func write(
-        _ tool: AgentTool, for request: String, context: ScreenContext?, client: CompletionsClient, account: AccountModel, userId: String?,
-        timeout: TimeInterval = DictationConfig.agentToolTimeout
+        _ tool: AgentTool, for request: String, context: ScreenContext?, client: CompletionsClient, account: AccountModel, userId: String?
     ) async throws -> String {
-        let text = try await complete(toolMessage(tool, request: request, context: context), client: client, account: account, userId: userId, timeout: timeout)
+        let text = try await complete(toolMessage(tool, request: request, context: context), client: client, account: account, userId: userId)
         guard !text.isEmpty else { throw Failure.noText }
         switch tool {
         case .edit: return fitted(text, toSelection: selection(in: context))
@@ -145,19 +146,12 @@ enum DesktopAgent {
 
     @MainActor
     private static func complete(
-        _ message: CompletionsMessage, client: CompletionsClient, account: AccountModel, userId: String?, timeout: TimeInterval
+        _ message: CompletionsMessage, client: CompletionsClient, account: AccountModel, userId: String?
     ) async throws -> String {
         let clock = ContinuousClock()
         let started = clock.now
-        do {
-            let reply = try await withTimeout(seconds: timeout) { @MainActor in
-                try await DictationController.withFreshToken(account: account, userId: userId) { try await client.complete(message, accessToken: $0) }
-            }
-            Log.debug("DesktopAgent: \(message.content) answered in \(clock.now - started) (\(reply.count) chars)")
-            return reply.trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch is TimeoutError {
-            Log.error("DesktopAgent: \(message.content) timed out after \(clock.now - started)")
-            throw Failure.timedOut
-        }
+        let reply = try await DictationController.withFreshToken(account: account, userId: userId) { try await client.complete(message, accessToken: $0) }
+        Log.debug("DesktopAgent: \(message.content) answered in \(clock.now - started) (\(reply.count) chars)")
+        return reply.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

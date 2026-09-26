@@ -280,6 +280,11 @@ grants. The privacy policy tells users they can switch screen reading off.
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
+> **Amended 2026-09-26 (owner):** the double tap is replaced by **Space during the hold**, the
+> selection alone picks Edit or Compose, the bubbles sit still beside the pill, and agent mode has no
+> timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
+> timeout bullets below are superseded where it says so.
+
 **Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
 request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
 as asked, like Thunderbird's inline editor) and **Compose** (write new text at the caret, for any
@@ -324,6 +329,33 @@ desktop platform, not the Thunderbird email prompts.
   Whether Edit reads the selection anyway is an owner decision.
 - The selected text and the screen are sent to the backend with the request; nothing is stored
   (root ADR-004). The prompts treat both as content, never as instructions.
+
+**Amendment 2026-09-26 (owner):** "I dislike the double tap"; Edit or Compose "should depend
+exactly on … whether we have selected text or not, and … only either of the 2 icons should show";
+the bubbles wiggled too much ("appearing alongside looks okay"); "agent should not have timeout".
+- Gesture: every hold starts as a dictation; **Space during the hold** switches between dictation and
+  agent mode (`PushToTalkGesture.Action.toggleMode`), any number of times; other keys still cancel.
+  `HotkeyMonitor` is now a `CGEventTap` (Accessibility, as before) so that Space, its auto-repeat
+  and its key-up are kept from the app in front; a key monitor can only observe. The double tap,
+  hands-free listening and `doubleTapWindow` are gone. While the pill listens, a hint under it (over
+  it when the overlay opens upward) says "Space to toggle agent mode" / "Space to disable agent mode".
+- Tools: Edit when the key-down screen read found selected text, Compose when not
+  (`DesktopAgent.writingTool`); never both. No bubble shows until that read is done, and agent mode
+  waits for the whole read (no `agentContextWait`), so the tool that runs is the one shown. The agent
+  prompt now only decides whether a request goes to the email app (ADR-DESK-014): it is not called
+  when there is none, and its pick of the other writing tool gives way to the selection's.
+  Consequently "Select the text to edit" and "Compose after the selection" (→ collapse) are gone: a
+  selection always means Edit.
+- No deadline on agent calls: `agentChooseTimeout`, `agentToolTimeout` and `Failure.timedOut` are
+  removed. The completions request keeps its idle timeout (`completionsRequestTimeout`, a pause
+  between stream bytes; the backend sends keepalives), which is a dead-connection check, not a cap.
+- Bubbles sit level with the pill, first to its right, then its left, with no drift; they are
+  icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
+  adds nothing (owner). The name stays as the accessibility label.
+- The "sometimes works" failures the owner saw were not timeouts: the dev backend log showed the
+  agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone
+  system message (`</request>`) or answering empty. Fixed in the backend (ADR-023 amendment: the
+  request is the final user turn, and the agent's first word after `Tool:` counts).
 
 ## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
 
@@ -391,7 +423,8 @@ the agent restating the request as a chat message, and sending being enough (no 
 - A third tool, `thunderbird` (backend `system_prompt_desktop_thunderbird`, ADR-023), offered, and
   shown as a bubble with the email app's own icon, only when there is an email app for it. The agent's
   prompt always names it; the app fails a request given to a tool it did not offer ("Mail and
-  calendar requests need Thunderbird with TabMail").
+  calendar requests need Thunderbird with TabMail"). *(2026-09-26, ADR-DESK-011 amendment: without an
+  email app the agent is not asked at all, so that failure no longer exists.)*
 - `ThunderbirdRelay` sends the chat message: launch Thunderbird if it isn't running (then wait for a
   window and `thunderbirdAddonSettle` for the add-on), bring it to the front through Accessibility
   (`AXFrontmost`: the app is never active, so cooperative activation would ignore

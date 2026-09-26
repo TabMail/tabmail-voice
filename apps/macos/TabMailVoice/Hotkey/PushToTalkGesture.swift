@@ -27,128 +27,77 @@ enum DictationHotkey: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// What the speech is for: text to insert (a hold), or a request for the agent to carry out (a
-/// double tap).
+/// What the speech is for: text to insert, or a request for the agent to carry out. Space, pressed
+/// while the hotkey is held, switches between them.
 enum DictationMode: Equatable, Sendable {
     case dictation
     case agent
+
+    /// The other mode.
+    var toggled: DictationMode {
+        switch self {
+        case .dictation: .agent
+        case .agent: .dictation
+        }
+    }
 }
 
-/// Pure push-to-talk recogniser: turns raw modifier/key events into start / finish / cancel.
+/// Pure push-to-talk recogniser: turns raw modifier/key events into start / finish / cancel / toggle.
 ///
-/// - Pressing the hotkey starts a dictation; releasing it finishes the hold.
-/// - A quick tap followed by another press within `doubleTapWindow` starts agent mode instead. Held,
-///   that second press finishes on release like a dictation; tapped, agent mode keeps listening
-///   hands-free until the hotkey is pressed again.
-/// - Pressing any other key during a hold, or while agent mode listens hands-free, means the user is
-///   typing (e.g. a ⌥-letter shortcut), so it is cancelled and nothing is inserted.
-///
-/// Times are seconds on one monotonic clock (`NSEvent.timestamp`).
+/// - Pressing the hotkey starts a dictation; releasing it finishes the hold. A release too soon to be
+///   deliberate is discarded by the controller, unseen.
+/// - Space during the hold switches between dictation and agent mode. The monitor keeps that Space
+///   from the app in front (`owns(keyCode:)`); its auto-repeat switches nothing.
+/// - Pressing any other key during a hold means the user is typing (e.g. a ⌥-letter shortcut), so it
+///   is cancelled and nothing is inserted.
 struct PushToTalkGesture: Sendable {
     enum Action: Equatable, Sendable {
-        case start(DictationMode)
+        case start
         case finish
         case cancel
+        case toggleMode
     }
+
+    static let toggleKeyCode = UInt16(kVK_Space)
 
     let hotkey: DictationHotkey
-    /// A press released within this long is a tap: it starts no dictation (the controller discards
-    /// it unseen), but it can be the first half of a double tap.
-    let tapMaxDuration: TimeInterval
-    /// A second press this soon after a tap's release makes a double tap.
-    let doubleTapWindow: TimeInterval
     private(set) var isHolding = false
-    /// Agent mode is listening without the key held; the next press finishes it.
-    private(set) var isHandsFree = false
     /// Set when a chord cancelled the hold; the eventual key-up must then be swallowed.
     private var cancelledDuringHold = false
-    /// The press that ended hands-free listening: its release is swallowed.
-    private var releaseEndsNothing = false
-    private var pressedAt: TimeInterval = 0
-    private var pressIsAgent = false
-    /// When the last tap was released, while a second press can still make it a double tap.
-    private var lastTapReleasedAt: TimeInterval?
 
-    init(
-        hotkey: DictationHotkey,
-        tapMaxDuration: TimeInterval = DictationConfig.minimumHoldDuration.timeInterval,
-        doubleTapWindow: TimeInterval = DictationConfig.doubleTapWindow.timeInterval
-    ) {
+    init(hotkey: DictationHotkey) {
         self.hotkey = hotkey
-        self.tapMaxDuration = tapMaxDuration
-        self.doubleTapWindow = doubleTapWindow
     }
 
-    /// Whether a hold or hands-free listening is under way.
-    var isActive: Bool { isHolding || isHandsFree }
-
-    /// A modifier changed at `time`. `isDown` is whether the hotkey's modifier flag is now set.
-    mutating func modifierChanged(keyCode: UInt16, isDown: Bool, at time: TimeInterval) -> Action? {
+    /// A modifier changed. `isDown` is whether the hotkey's modifier flag is now set.
+    mutating func modifierChanged(keyCode: UInt16, isDown: Bool) -> Action? {
         guard keyCode == hotkey.keyCode else { return nil }
         if isDown {
             guard !isHolding else { return nil }
             isHolding = true
             cancelledDuringHold = false
-            pressedAt = time
-            if isHandsFree {
-                isHandsFree = false
-                releaseEndsNothing = true
-                return .finish
-            }
-            if let tap = lastTapReleasedAt, time - tap <= doubleTapWindow {
-                lastTapReleasedAt = nil
-                pressIsAgent = true
-                return .start(.agent)
-            }
-            pressIsAgent = false
-            return .start(.dictation)
+            return .start
         }
         guard isHolding else { return nil }
         isHolding = false
-        if releaseEndsNothing {
-            releaseEndsNothing = false
-            return nil
-        }
         if cancelledDuringHold {
             cancelledDuringHold = false
             return nil
         }
-        let isTap = time - pressedAt < tapMaxDuration
-        if pressIsAgent {
-            pressIsAgent = false
-            if isTap {
-                isHandsFree = true
-                return nil
-            }
-            return .finish
-        }
-        lastTapReleasedAt = isTap ? time : nil
         return .finish
     }
 
-    /// A non-modifier key was pressed somewhere.
-    mutating func otherKeyPressed() -> Action? {
-        lastTapReleasedAt = nil
-        if isHandsFree {
-            isHandsFree = false
-            return .cancel
-        }
+    /// Whether a key-down of `keyCode` belongs to the gesture, and so must not reach the app in front:
+    /// Space while a hold is under way.
+    func owns(keyCode: UInt16) -> Bool {
+        isHolding && !cancelledDuringHold && keyCode == Self.toggleKeyCode
+    }
+
+    /// A non-modifier key was pressed somewhere; `isRepeat` for its auto-repeat.
+    mutating func keyPressed(keyCode: UInt16, isRepeat: Bool) -> Action? {
         guard isHolding, !cancelledDuringHold else { return nil }
+        if keyCode == Self.toggleKeyCode { return isRepeat ? nil : .toggleMode }
         cancelledDuringHold = true
         return .cancel
-    }
-
-    /// The dictation ended on its own (finished at the length cap, failed, or was cancelled from the
-    /// menu): hands-free listening is over, so the next press starts afresh.
-    mutating func dictationEnded() {
-        isHandsFree = false
-    }
-}
-
-extension Duration {
-    /// This duration in seconds.
-    var timeInterval: TimeInterval {
-        let (seconds, attoseconds) = components
-        return TimeInterval(seconds) + TimeInterval(attoseconds) / 1e18
     }
 }

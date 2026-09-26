@@ -93,16 +93,45 @@ struct DesktopAgentTests {
 
     // MARK: Choosing and writing
 
-    @Test(arguments: [("edit", AgentTool.edit), ("compose", AgentTool.compose), ("thunderbird", AgentTool.thunderbird)])
-    func choosesTheToolTheAgentNames(reply: String, tool: AgentTool) async throws {
+    /// Edit and Compose are never offered together: text selected is Edit, nothing (or only blank
+    /// space, or no screen read) is Compose; Thunderbird joins them when an email app is available.
+    @Test func theSelectionDecidesTheWritingTool() {
+        #expect(DesktopAgent.writingTool(for: screen(selected: "Ship it.")) == .edit)
+        #expect(DesktopAgent.writingTool(for: screen(selected: "")) == .compose)
+        #expect(DesktopAgent.writingTool(for: screen(selected: " \n")) == .compose)
+        #expect(DesktopAgent.writingTool(for: nil) == .compose)
+        #expect(DesktopAgent.tools(for: screen(selected: "Ship it."), emailAppAvailable: false) == [.edit])
+        #expect(DesktopAgent.tools(for: screen(selected: "Ship it."), emailAppAvailable: true) == [.edit, .thunderbird])
+        #expect(DesktopAgent.tools(for: nil, emailAppAvailable: true) == [.compose, .thunderbird])
+    }
+
+    /// Without an email app there is nothing to choose between: no agent call.
+    @Test func withoutAnEmailAppTheWritingToolIsUsedUnasked() async throws {
+        let tool = try await DesktopAgent.tool(for: request, context: screen(selected: "Ship it."), emailAppAvailable: false, client: client, account: signedIn(), userId: Fixtures.userId)
+
+        #expect(tool == .edit)
+        #expect(completions.requests.isEmpty)
+    }
+
+    /// With an email app, the agent decides only whether the request goes there; its pick of a
+    /// writing tool gives way to the selection's.
+    @Test(arguments: [
+        ("thunderbird", "Ship it.", AgentTool.thunderbird),
+        ("edit", "Ship it.", AgentTool.edit),
+        ("compose", "Ship it.", AgentTool.edit),
+        ("edit", "", AgentTool.compose),
+        ("compose", "", AgentTool.compose),
+    ])
+    func theAgentDecidesOnlyWhetherTheEmailAppGetsTheRequest(reply: String, selected: String, tool: AgentTool) async throws {
         completions.enqueue(status: 200, text: self.reply(reply))
 
-        let chosen = try await DesktopAgent.chooseTool(for: request, context: screen(selected: "Ship it."), offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId)
+        let chosen = try await DesktopAgent.tool(for: request, context: screen(selected: selected), emailAppAvailable: true, client: client, account: signedIn(), userId: Fixtures.userId)
 
         #expect(chosen == tool)
+        #expect(completions.requests.count == 1)
         #expect(sentMessage(0)?["content"] as? String == "system_prompt_desktop_agent")
         #expect(sentMessage(0)?["user_request"] as? String == request)
-        #expect(sentMessage(0)?["selected_text"] as? String == "Ship it.")
+        #expect(sentMessage(0)?["selected_text"] as? String == selected)
     }
 
     /// The backend returns nothing when the reply named no tool it has.
@@ -111,16 +140,7 @@ struct DesktopAgentTests {
         completions.enqueue(status: 200, text: self.reply(reply))
 
         await #expect(throws: DesktopAgent.Failure.noTool) {
-            try await DesktopAgent.chooseTool(for: request, context: screen(selected: "Ship it."), offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId)
-        }
-    }
-
-    /// Thunderbird is offered only when installed; the agent's prompt names it regardless.
-    @Test func aToolThatWasNotOfferedIsUnavailable() async {
-        completions.enqueue(status: 200, text: reply("thunderbird"))
-
-        await #expect(throws: DesktopAgent.Failure.unavailable(.thunderbird)) {
-            try await DesktopAgent.chooseTool(for: request, context: nil, offered: [.edit, .compose], client: client, account: signedIn(), userId: Fixtures.userId)
+            try await DesktopAgent.tool(for: request, context: screen(selected: "Ship it."), emailAppAvailable: true, client: client, account: signedIn(), userId: Fixtures.userId)
         }
     }
 
@@ -134,31 +154,12 @@ struct DesktopAgentTests {
         #expect(sentMessage(0)?["content"] as? String == "system_prompt_desktop_thunderbird")
     }
 
-    @Test func choosingToEditWithNothingSelectedFails() async {
-        completions.enqueue(status: 200, text: reply("edit"))
-
-        await #expect(throws: DesktopAgent.Failure.noSelection) {
-            try await DesktopAgent.chooseTool(for: request, context: screen(selected: ""), offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId)
-        }
-    }
-
     @Test func aToolThatWritesNothingFails() async {
         completions.enqueue(status: 200, text: reply("  "))
 
         await #expect(throws: DesktopAgent.Failure.noText) {
             try await DesktopAgent.write(.compose, for: request, context: nil, client: client, account: signedIn(), userId: Fixtures.userId)
         }
-    }
-
-    @Test func anAgentThatNeverAnswersTimesOut() async {
-        completions.enqueue(status: 200, text: reply("edit"))
-        completions.gate = { try? await Task.sleep(for: .seconds(60)) }
-        let started = ContinuousClock.now
-
-        await #expect(throws: DesktopAgent.Failure.timedOut) {
-            try await DesktopAgent.chooseTool(for: request, context: nil, offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId, timeout: 0.2)
-        }
-        #expect(ContinuousClock.now - started < .seconds(5))
     }
 
     @Test func aBackendErrorIsReportedAsItself() async {

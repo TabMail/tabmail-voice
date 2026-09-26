@@ -86,29 +86,37 @@ struct OverlayGeometryTests {
         #expect(!CaretLocator.isPlausible(CGRect(x: -5000, y: 400, width: 1, height: 20), screens: screens))
     }
 
-    /// Agent mode's bubbles around the pill (top-left origin): none overlaps the pill or another
-    /// bubble, none reaches past the pill's edge on the caret's side (its top, or its bottom when the
-    /// overlay opens upward), and they spread from the pill's left to its right; a single one sits
-    /// centred under (or over) it. For the listening pill and the circle it shrinks to, with every tool.
+    /// Agent mode's bubbles beside the pill and the Space hint (top-left origin), in the overlay's
+    /// canvas: the bubbles sit level with the pill's line, the first on its right, clear of the pill,
+    /// of each other and of the hint; the hint sits under the pill, or over it when the overlay opens
+    /// upward, so neither covers the caret's line. For the listening pill and the circle it shrinks
+    /// to, with as many bubbles as are ever offered.
     @Test(arguments: [false, true])
-    func bubblesSurroundThePillClearOfItAndOfTheCaretLine(opensUpward: Bool) {
-        let bubble = CGSize(width: 84, height: DictationConfig.agentBubbleHeight)
-        for pill in [CGRect(x: 180, y: 57, width: 79, height: 26), CGRect(x: 207, y: 57, width: 26, height: 26)] {
-            for count in 1...AgentTool.allCases.count {
-                let centres = OverlayPanelController.bubbleCentres(around: pill, sizes: Array(repeating: bubble, count: count), opensUpward: opensUpward)
+    func bubblesSitBesideThePillAndTheHintUnderOrOverIt(opensUpward: Bool) {
+        let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
+        let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
+        let hint = CGSize(width: 170, height: DictationConfig.modeHintHeight)
+        func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
+            CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
+        }
+        for width in [79, DictationConfig.pillHeight] {
+            let pill = CGRect(x: canvas.midX - width / 2, y: (canvas.height - DictationConfig.pillHeight) / 2, width: width, height: DictationConfig.pillHeight)
+            let hintFrame = frame(OverlayPanelController.hintCentre(for: pill, size: hint, opensUpward: opensUpward), hint)
+            #expect(opensUpward ? hintFrame.maxY <= pill.minY : hintFrame.minY >= pill.maxY)
+            #expect(canvas.contains(hintFrame))
+            // Edit and Compose are never offered together: one fewer bubble than there are tools.
+            for count in 1...(AgentTool.allCases.count - 1) {
+                let centres = OverlayPanelController.bubbleCentres(beside: pill, sizes: Array(repeating: bubble, count: count))
                 #expect(centres.count == count)
-                let frames = centres.map { CGRect(x: $0.x - bubble.width / 2, y: $0.y - bubble.height / 2, width: bubble.width, height: bubble.height) }
-                for (index, frame) in frames.enumerated() {
-                    #expect(!frame.intersects(pill), "bubble \(index) of \(count) overlaps the pill")
-                    for other in frames[(index + 1)...] { #expect(!frame.intersects(other), "bubbles overlap (\(count))") }
-                    if opensUpward { #expect(frame.maxY <= pill.maxY) } else { #expect(frame.minY >= pill.minY) }
+                let frames = centres.map { frame($0, bubble) }
+                for (index, bubbleFrame) in frames.enumerated() {
+                    #expect(!bubbleFrame.intersects(pill), "bubble \(index) of \(count) overlaps the pill")
+                    #expect(!bubbleFrame.intersects(hintFrame), "bubble \(index) of \(count) overlaps the hint")
+                    #expect(bubbleFrame.minY >= pill.minY && bubbleFrame.maxY <= pill.maxY)
+                    #expect(canvas.contains(bubbleFrame))
+                    for other in frames[(index + 1)...] { #expect(!bubbleFrame.intersects(other), "bubbles overlap (\(count))") }
                 }
-                #expect(centres.map(\.x) == centres.map(\.x).sorted())
-                if count == 1 {
-                    guard let only = centres.first else { continue }
-                    #expect(only.x == pill.midX)
-                    #expect(opensUpward ? only.y < pill.minY : only.y > pill.maxY)
-                }
+                #expect(frames.first.map { $0.minX > pill.maxX } == true)
             }
         }
     }

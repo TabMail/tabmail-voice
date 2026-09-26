@@ -20,26 +20,16 @@ struct TextInserter {
     let pasteboard: NSPasteboard
     /// Posts ⌘V. Injected so tests can exercise the pasteboard handling without posting events.
     let pasteKeystroke: @MainActor () async -> Void
-    /// Posts →, which collapses a selection to its end. Injected for the same reason.
-    let collapseKeystroke: @MainActor () async -> Void
     let restoreDelay: Duration
 
     init(
         pasteboard: NSPasteboard = .general,
         restoreDelay: Duration = DictationConfig.clipboardRestoreDelay,
-        pasteKeystroke: @escaping @MainActor () async -> Void = TextInserter.postCommandV,
-        collapseKeystroke: @escaping @MainActor () async -> Void = TextInserter.postRightArrow
+        pasteKeystroke: @escaping @MainActor () async -> Void = TextInserter.postCommandV
     ) {
         self.pasteboard = pasteboard
         self.restoreDelay = restoreDelay
         self.pasteKeystroke = pasteKeystroke
-        self.collapseKeystroke = collapseKeystroke
-    }
-
-    /// Moves the caret to the end of the selection, so the next insertion goes after the selected
-    /// text rather than replacing it.
-    func collapseSelection() async {
-        await collapseKeystroke()
     }
 
     func insert(_ text: String) async {
@@ -67,11 +57,6 @@ struct TextInserter {
     static func postCommandV() async {
         // Explicit flags: only ⌘, even if the user is still holding the hotkey modifier.
         await postKeystroke(CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
-    }
-
-    static func postRightArrow() async {
-        // No modifiers: ⇧ or ⌥ held with → would extend the selection or jump a word.
-        await postKeystroke(CGKeyCode(kVK_RightArrow), flags: [])
     }
 
     /// Posts one key press to the frontmost app, with exactly `flags` held.

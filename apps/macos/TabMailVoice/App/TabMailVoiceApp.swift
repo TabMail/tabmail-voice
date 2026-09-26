@@ -72,18 +72,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.controller.handle(action)
         }
         hotkeyMonitor = monitor
-        controller.onPhaseChange = { phase in
-            overlay.update(for: phase)
-            // Agent mode listening hands-free ends with the dictation however it ends.
-            switch phase {
-            case .idle, .failed: monitor.dictationEnded()
-            case .arming, .listening, .transcribing, .running: break
-            }
-        }
+        controller.onPhaseChange = { overlay.update(for: $0) }
         monitor.install()
         settings.onHotkeyChange = { monitor.setHotkey($0) }
-        // Global key monitors deliver nothing until Accessibility is granted, and do not
-        // start retroactively: re-install once the grant lands.
+        // The keyboard event tap can't be created until Accessibility is granted: install again
+        // once the grant lands.
         permissions.onAccessibilityGranted = { [accessibilityActivator] in
             monitor.install()
             accessibilityActivator.start()

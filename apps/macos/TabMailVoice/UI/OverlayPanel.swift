@@ -7,9 +7,9 @@ import SwiftUI
 
 /// The dictation overlay, anchored at the text cursor: a swirl gathers there while the
 /// microphone warms up, then forms a waveform pill. The pill is the surface for dictation status
-/// (and, later, agent responses). In agent mode the agent's tool bubbles float around the pill, and
-/// the running tool's border circles. The panel never takes focus, so the target field keeps
-/// keyboard focus and receives the paste.
+/// (and, later, agent responses). While it listens, a hint under it says Space switches agent mode on
+/// or off; in agent mode the tools' bubbles sit beside it, and the running tool's border circles. The
+/// panel never takes focus, so the target field keeps keyboard focus and receives the paste.
 @MainActor
 final class OverlayPanelController {
     private let panel: NSPanel
@@ -136,25 +136,34 @@ final class OverlayPanelController {
         anchor.minY - DictationConfig.overlayCaretGap - pillHeight < visibleFrame.minY
     }
 
-    /// Centres of agent mode's tool bubbles, of `sizes`, around a pill at `pill` (top-left origin, as
-    /// SwiftUI lays out): spread evenly along an arc from the pill's left end, under it, to its right
-    /// end, each `agentBubbleOrbitGap` clear of it; a single bubble goes under it. When the overlay
-    /// opens upward the arc goes over the pill instead, so no bubble covers the caret's line. Sized for
-    /// agent mode's three tools: a fourth would crowd the arc's diagonals around the smallest pill.
-    nonisolated static func bubbleCentres(around pill: CGRect, sizes: [CGSize], opensUpward: Bool) -> [CGPoint] {
-        let gap = DictationConfig.agentBubbleOrbitGap
+    /// Centres of agent mode's tool bubbles, of `sizes`, beside a pill at `pill` (top-left origin, as
+    /// SwiftUI lays out), level with its first line: the first to its right, the next to its left, and
+    /// so on outward, each `agentBubbleGap` clear of the pill and of the bubble before it on that side.
+    /// Under and over the pill stay free for the hint, and the caret's line for the user's text.
+    nonisolated static func bubbleCentres(beside pill: CGRect, sizes: [CGSize]) -> [CGPoint] {
+        let gap = DictationConfig.agentBubbleGap
+        let y = pill.minY + DictationConfig.pillHeight / 2
+        var trailing = pill.maxX
+        var leading = pill.minX
         return sizes.enumerated().map { index, size in
-            let fraction = sizes.count == 1 ? 0.5 : Double(index) / Double(sizes.count - 1)
-            // π is the pill's left, π/2 under it, 0 its right.
-            let angle = Double.pi * (1 - fraction)
-            let dx = cos(angle) * (pill.width / 2 + gap + size.width / 2)
-            let dy = sin(angle) * (pill.height / 2 + gap + size.height / 2)
-            return CGPoint(x: pill.midX + dx, y: pill.midY + (opensUpward ? -dy : dy))
+            if index.isMultiple(of: 2) {
+                trailing += gap + size.width
+                return CGPoint(x: trailing - size.width / 2, y: y)
+            }
+            leading -= gap + size.width
+            return CGPoint(x: leading + size.width / 2, y: y)
         }
+    }
+
+    /// Centre of the Space hint, of `size`: `modeHintGap` under a pill at `pill`, or over it when the
+    /// overlay opens upward (the pill is then above the caret's line, which the hint must not cover).
+    nonisolated static func hintCentre(for pill: CGRect, size: CGSize, opensUpward: Bool) -> CGPoint {
+        let offset = DictationConfig.modeHintGap + size.height / 2
+        return CGPoint(x: pill.midX, y: opensUpward ? pill.minY - offset : pill.maxY + offset)
     }
 }
 
-/// Where the overlay sits relative to the caret, for the bubbles' arc.
+/// Where the overlay sits relative to the caret, for the hint.
 @MainActor
 @Observable
 final class OverlayPlacement {
@@ -182,6 +191,9 @@ private struct OverlayView: View {
         }
     }
 
+    /// The Space hint shows while the pill listens.
+    private var showsHint: Bool { mode == .listening }
+
     /// The tool bubbles show while agent mode listens and works; an error message stands alone.
     private var showsTools: Bool {
         guard controller.mode == .agent else { return false }
@@ -191,13 +203,12 @@ private struct OverlayView: View {
         }
     }
 
-    private func bubble(_ tool: AgentTool, index: Int) -> some View {
+    private func bubble(_ tool: AgentTool) -> some View {
         let running: AgentTool? = if case .running(let tool) = mode { tool } else { nil }
         return ToolBubble(
             tool: tool, appURL: tool == .thunderbird ? controller.emailAppURL : nil,
             isRunning: running == tool, isDimmed: running != nil && running != tool
         )
-            .modifier(Drift(phase: Double(index) * DictationConfig.agentBubbleDriftPhaseStep))
             .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
     }
 
@@ -213,12 +224,17 @@ private struct OverlayView: View {
                 GatheringSwirl()
                     .transition(.opacity)
             case .listening, .transcribing, .running, .message:
-                OrbitLayout(opensUpward: placement.opensUpward) {
+                PillLayout(opensUpward: placement.opensUpward) {
                     Pill(mode: mode, level: controller.level)
                         .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
+                    if showsHint {
+                        ModeHint(mode: controller.mode)
+                            .layoutValue(key: IsModeHint.self, value: true)
+                            .transition(.opacity)
+                    }
                     if showsTools {
-                        ForEach(Array(controller.tools.enumerated()), id: \.element) { index, tool in
-                            bubble(tool, index: index)
+                        ForEach(controller.tools, id: \.self) { tool in
+                            bubble(tool)
                         }
                     }
                 }
@@ -227,6 +243,8 @@ private struct OverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: mode)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: showsTools)
+        .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: controller.tools)
+        .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: controller.mode)
         .onChange(of: mode) { old, new in
             dispersing = new == .hidden && old != .hidden
         }
@@ -253,7 +271,7 @@ private struct OverlayView: View {
                     Color.clear.frame(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)
                 case .running:
                     Image(systemName: "sparkles")
-                        .font(.system(size: DictationConfig.agentBubbleFontSize, weight: .medium))
+                        .font(.system(size: DictationConfig.agentRunningSymbolSize, weight: .medium))
                         .foregroundStyle(Brand.gradient)
                         .frame(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)
                 case .message(let text):
@@ -291,10 +309,17 @@ private struct OverlayView: View {
     }
 }
 
+/// Marks the Space hint among `PillLayout`'s subviews.
+private struct IsModeHint: LayoutValueKey {
+    static let defaultValue = false
+}
+
 /// Places the pill with its top edge where a one-line pill's would be when centred in the canvas, so
-/// taller pills grow downward, away from the caret line; agent mode's tool bubbles go around it
-/// (`OverlayPanelController.bubbleCentres`), following it as it grows or shrinks to a circle.
-private struct OrbitLayout: Layout {
+/// taller pills grow downward, away from the caret line; the Space hint goes under it (over it when
+/// the overlay opens upward) and agent mode's tool bubbles beside it
+/// (`OverlayPanelController.hintCentre`, `bubbleCentres`), following it as it grows or shrinks to a
+/// circle.
+private struct PillLayout: Layout {
     let opensUpward: Bool
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -309,40 +334,38 @@ private struct OrbitLayout: Layout {
             width: size.width, height: size.height
         )
         pill.place(at: frame.origin, anchor: .topLeading, proposal: .unspecified)
-        let bubbles = subviews.dropFirst()
-        let centres = OverlayPanelController.bubbleCentres(
-            around: frame, sizes: bubbles.map { $0.sizeThatFits(.unspecified) }, opensUpward: opensUpward
-        )
+        let others = subviews.dropFirst()
+        for hint in others where hint[IsModeHint.self] {
+            let centre = OverlayPanelController.hintCentre(for: frame, size: hint.sizeThatFits(.unspecified), opensUpward: opensUpward)
+            hint.place(at: centre, anchor: .center, proposal: .unspecified)
+        }
+        let bubbles = others.filter { !$0[IsModeHint.self] }
+        let centres = OverlayPanelController.bubbleCentres(beside: frame, sizes: bubbles.map { $0.sizeThatFits(.unspecified) })
         for (bubble, centre) in zip(bubbles, centres) {
             bubble.place(at: centre, anchor: .center, proposal: .unspecified)
         }
     }
 }
 
-/// A bubble's gentle float about its place: a slow drift of a few points and a slight tilt, each
-/// bubble on its own phase so they don't move in step. Still under Reduce Motion.
-private struct Drift: ViewModifier {
-    let phase: Double
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// Under the listening pill: what Space does now.
+private struct ModeHint: View {
+    let mode: DictationMode
 
-    func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-        } else {
-            TimelineView(.animation) { timeline in
-                let turns = 2 * Double.pi * timeline.date.timeIntervalSinceReferenceDate
-                content
-                    .offset(
-                        x: DictationConfig.agentBubbleDriftDistance * sin(turns * DictationConfig.agentBubbleDriftSidewaysCyclesPerSecond + phase),
-                        y: DictationConfig.agentBubbleDriftDistance * sin(turns * DictationConfig.agentBubbleDriftVerticalCyclesPerSecond + phase)
-                    )
-                    .rotationEffect(.degrees(DictationConfig.agentBubbleDriftTiltDegrees * sin(turns * DictationConfig.agentBubbleDriftTiltCyclesPerSecond + phase)))
-            }
-        }
+    var body: some View {
+        Text(mode == .agent ? "Space to disable agent mode" : "Space to toggle agent mode")
+            .font(.system(size: DictationConfig.modeHintFontSize, weight: .medium))
+            // Light in light and dark mode alike, as the pill.
+            .foregroundStyle(Color.black.opacity(DictationConfig.modeHintTextOpacity))
+            .padding(.horizontal, DictationConfig.modeHintHorizontalPadding)
+            .frame(height: DictationConfig.modeHintHeight)
+            .background(Color(white: DictationConfig.pillFillWhite), in: Capsule())
+            .overlay { Capsule().strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth) }
+            .fixedSize()
     }
 }
 
-/// One of agent mode's tools around the pill, with its app's icon when it hands the request to an
+/// One of agent mode's tools beside the pill: a circle with its icon only (owner, 2026-09-26: with a
+/// single writing tool shown, the name adds nothing), with its app's icon when it hands the request to an
 /// app. While its tool runs, a gradient arc circles its border; the other tools fade.
 private struct ToolBubble: View {
     let tool: AgentTool
@@ -356,22 +379,19 @@ private struct ToolBubble: View {
     }
 
     var body: some View {
-        HStack(spacing: DictationConfig.agentBubbleIconSpacing) {
+        Group {
             if let appIcon {
                 Image(nsImage: appIcon)
                     .resizable()
                     .frame(width: DictationConfig.agentBubbleAppIconSize, height: DictationConfig.agentBubbleAppIconSize)
             } else {
                 Image(systemName: tool.symbolName)
+                    .font(.system(size: DictationConfig.agentBubbleSymbolSize, weight: .medium))
                     .foregroundStyle(Brand.gradient)
             }
-            Text(tool.displayName)
-                // The bubble is light in light and dark mode alike, as the pill.
-                .foregroundStyle(Color.black)
         }
-        .font(.system(size: DictationConfig.agentBubbleFontSize, weight: .medium))
-        .padding(.horizontal, DictationConfig.agentBubbleHorizontalPadding)
-        .frame(height: DictationConfig.agentBubbleHeight)
+        .frame(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
+        // The bubble is light in light and dark mode alike, as the pill.
         .background(Color(white: DictationConfig.pillFillWhite), in: Capsule())
         .overlay {
             if isRunning {

@@ -13,9 +13,6 @@ enum DictationConfig {
     /// The microphone starts booting at key-down, but the overlay appears only once the key has
     /// been held this long. A shorter hold is an accidental tap: discarded, never shown.
     static let minimumHoldDuration: Duration = .milliseconds(250)
-    /// A tap (released within `minimumHoldDuration`) followed by another press this soon after its
-    /// release enters agent mode.
-    static let doubleTapWindow: Duration = .milliseconds(400)
 
     // MARK: Audio
 
@@ -124,7 +121,7 @@ enum DictationConfig {
     /// (ADR-DESK-008).
     static let cleanupTimeout: TimeInterval = 3
 
-    // MARK: Agent mode (double tap)
+    // MARK: Agent mode (Space during the hold)
 
     /// The backend prompt that chooses the tool for a spoken request.
     static let agentPrompt = "system_prompt_desktop_agent"
@@ -132,13 +129,6 @@ enum DictationConfig {
     static let agentEditPrompt = "system_prompt_desktop_edit"
     static let agentComposePrompt = "system_prompt_desktop_compose"
     static let agentThunderbirdPrompt = "system_prompt_desktop_thunderbird"
-    /// How long agent mode waits for the screen read once the request is transcribed (seconds).
-    /// Longer than `contextWait`: the edit tool cannot work without the selection it carries.
-    static let agentContextWait: TimeInterval = 2
-    /// Longest the agent may take to choose a tool (seconds).
-    static let agentChooseTimeout: TimeInterval = 10
-    /// Longest a tool may take to write its text (seconds).
-    static let agentToolTimeout: TimeInterval = 30
 
     // MARK: Thunderbird connector (spike: drives TabMail's chat window from outside)
 
@@ -267,31 +257,28 @@ enum DictationConfig {
     /// The overlay stays up this long after the dictation ends, for the exit animation (the pill
     /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
     static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
-    /// Agent mode's tool bubbles, around the pill.
-    static let agentBubbleHeight: CGFloat = 24
-    static let agentBubbleHorizontalPadding: CGFloat = 10
-    /// Gap between the pill and each bubble around it.
-    static let agentBubbleOrbitGap: CGFloat = 8
-    static let agentBubbleIconSpacing: CGFloat = 4
+    /// Agent mode's tool bubbles beside the pill: icon-only circles.
+    static let agentBubbleDiameter: CGFloat = 20
+    /// Gap between the pill and a bubble beside it, and between neighbouring bubbles.
+    static let agentBubbleGap: CGFloat = 8
     /// An app tool's icon (Thunderbird's) in its bubble.
-    static let agentBubbleAppIconSize: CGFloat = 16
-    static let agentBubbleFontSize: CGFloat = 12
+    static let agentBubbleAppIconSize: CGFloat = 13
+    /// A tool's symbol in its bubble.
+    static let agentBubbleSymbolSize: CGFloat = 10
+    /// The Space hint under the pill (over it when the overlay opens upward) while it listens.
+    static let modeHintFontSize: CGFloat = 11
+    static let modeHintHeight: CGFloat = 18
+    static let modeHintHorizontalPadding: CGFloat = 8
+    /// Gap between the pill and the hint.
+    static let modeHintGap: CGFloat = 6
+    static let modeHintTextOpacity: Double = 0.7
+    /// The running tool's icon in the pill.
+    static let agentRunningSymbolSize: CGFloat = 12
     /// A bubble whose tool is not the one running fades to this opacity.
     static let agentBubbleIdleOpacity: Double = 0.45
     /// The running tool's bubble: a gradient arc circling its border.
     static let agentBubbleRimWidth: CGFloat = 2
     static let agentBubbleRevolutionsPerSecond: Double = 1
-    /// The bubbles float: each drifts up to this far from its place (points) and tilts up to this
-    /// much (degrees).
-    static let agentBubbleDriftDistance: CGFloat = 2.5
-    static let agentBubbleDriftTiltDegrees: Double = 1.5
-    /// Cycles per second of the sideways drift, the up-and-down drift and the tilt. Unequal, so the
-    /// path wanders rather than loops.
-    static let agentBubbleDriftSidewaysCyclesPerSecond: Double = 0.3
-    static let agentBubbleDriftVerticalCyclesPerSecond: Double = 0.23
-    static let agentBubbleDriftTiltCyclesPerSecond: Double = 0.17
-    /// How far apart neighbouring bubbles' drifts are (radians), so they don't move in step.
-    static let agentBubbleDriftPhaseStep: Double = 2.1
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

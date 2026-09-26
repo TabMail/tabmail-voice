@@ -46,8 +46,6 @@ private final class ToneCapture: AudioCapturing {
 @MainActor
 private final class Pastes {
     var texts: [String] = []
-    /// For each collapse of the selection, how many pastes had happened before it.
-    var collapsedAfter: [Int] = []
 }
 
 /// A finished recording through the controller: transcription, cleanup with the screen context,
@@ -71,8 +69,6 @@ struct DictationControllerTests {
         let pasteboard = self.pasteboard
         let inserter = TextInserter(pasteboard: pasteboard, restoreDelay: .zero, pasteKeystroke: {
             pastes.texts.append(pasteboard.string(forType: .string) ?? "")
-        }, collapseKeystroke: {
-            pastes.collapsedAfter.append(pastes.texts.count)
         })
         let baseURL = URL(string: "https://api.example.com")!
         let transcriptionTransport = transcription.transport
@@ -102,9 +98,11 @@ struct DictationControllerTests {
         return (pastes.texts, dictation)
     }
 
-    /// Holds the dictation key past the reveal delay, then releases it.
+    /// Holds the dictation key past the reveal delay (pressing Space once for agent mode), then
+    /// releases it.
     private func holdAndRelease(_ controller: DictationController, mode: DictationMode = .dictation) async {
-        controller.handle(.start(mode))
+        controller.handle(.start)
+        if mode == .agent { controller.handle(.toggleMode) }
         #expect(await eventually { controller.phase == .listening })
         controller.handle(.finish)
     }
@@ -289,7 +287,7 @@ struct DictationControllerTests {
             return nil
         }
 
-        controller.handle(.start(.dictation))
+        controller.handle(.start)
         controller.handle(.finish)
         try? await Task.sleep(for: .milliseconds(100))
         #expect(controller.phase == .failed("Finish setting up TabMail Voice from its menu to dictate."))
@@ -300,7 +298,7 @@ struct DictationControllerTests {
         #expect(pastes.texts.isEmpty)
 
         consented.isOn = true
-        controller.handle(.start(.dictation))
+        controller.handle(.start)
         #expect(controller.phase == .arming)
         #expect(capture.starts == 1)
         #expect(reads == 1)
@@ -308,7 +306,7 @@ struct DictationControllerTests {
 
         // Withdrawing consent later blocks the next dictation too: an earlier agreement doesn't outlive it.
         consented.isOn = false
-        controller.handle(.start(.dictation))
+        controller.handle(.start)
         controller.handle(.finish)
         try? await Task.sleep(for: .milliseconds(100))
         #expect(controller.phase == .failed("Finish setting up TabMail Voice from its menu to dictate."))
@@ -434,7 +432,7 @@ struct DictationControllerTests {
         #expect(cleanupVars(0)?["app_name"] as? String == "Example Notes A")
     }
 
-    // MARK: Agent mode (double tap)
+    // MARK: Agent mode (Space during the hold)
 
     private let request = "make this friendlier"
 
@@ -470,58 +468,63 @@ struct DictationControllerTests {
         return (controller, pastes, phases)
     }
 
+    /// Without an email app there is nothing to choose: the selection's writing tool runs, with no
+    /// agent call.
     @Test func agentModeEditsTheSelectionInPlace() async {
         transcription.enqueue(status: 200, json: ["text": request])
-        completions.enqueue(status: 200, text: reply("edit"))
         completions.enqueue(status: 200, text: reply("Could we ship on Friday?"))
 
         let (controller, pastes, phases) = await carryOut(screen(selected: "Ship it Friday or else.\n"))
 
         // Pasted over the selection, keeping the selected line's line break; never the request itself.
         #expect(pastes.texts == ["Could we ship on Friday?\n"])
-        #expect(pastes.collapsedAfter.isEmpty)
         #expect(controller.phase == .idle)
         #expect(controller.mode == .agent)
+        #expect(controller.tools == [.edit])
         #expect(phases.contains(.running(.edit)))
-        #expect(!phases.contains(.running(.compose)))
-        #expect(completions.requests.count == 2)
-        #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_agent")
+        #expect(completions.requests.count == 1)
+        #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_edit")
         #expect(cleanupVars(0)?["user_request"] as? String == request)
         #expect(cleanupVars(0)?["selected_text"] as? String == "Ship it Friday or else.\n")
-        #expect(cleanupVars(1)?["content"] as? String == "system_prompt_desktop_edit")
-        #expect(cleanupVars(1)?["user_request"] as? String == request)
-    }
-
-    /// A compose with text selected goes after the selection instead of replacing it.
-    @Test func agentModeComposesAfterTheSelection() async {
-        transcription.enqueue(status: 200, json: ["text": "reply that I can make it"])
-        completions.enqueue(status: 200, text: reply("compose"))
-        completions.enqueue(status: 200, text: reply("I can make it after lunch."))
-
-        let (controller, pastes, phases) = await carryOut(screen(selected: "Can you make Friday?"))
-
-        #expect(pastes.texts == ["I can make it after lunch."])
-        #expect(pastes.collapsedAfter == [0])
-        #expect(controller.phase == .idle)
-        #expect(phases.contains(.running(.compose)))
-        #expect(cleanupVars(1)?["content"] as? String == "system_prompt_desktop_compose")
     }
 
     @Test func agentModeComposesAtTheCaretWithNothingSelected() async {
         transcription.enqueue(status: 200, json: ["text": "write that we ship on Friday"])
-        completions.enqueue(status: 200, text: reply("compose"))
         completions.enqueue(status: 200, text: reply("We ship on Friday."))
 
-        let (_, pastes, _) = await carryOut(screen(selected: ""))
+        let (controller, pastes, phases) = await carryOut(screen(selected: ""))
 
         #expect(pastes.texts == ["We ship on Friday."])
-        #expect(pastes.collapsedAfter.isEmpty)
+        #expect(controller.tools == [.compose])
+        #expect(phases.contains(.running(.compose)))
+        #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_compose")
+    }
+
+    /// The selection alone decides between Edit and Compose, as the bubbles showed it: the agent only
+    /// decides whether the request goes to the email app, and its pick of the other writing tool is
+    /// overruled.
+    @Test(arguments: [
+        ("Ship it Friday or else.", "compose", AgentTool.edit, "system_prompt_desktop_edit"),
+        ("", "edit", AgentTool.compose, "system_prompt_desktop_compose"),
+    ])
+    func theSelectionDecidesTheWritingTool(selected: String, agentChoice: String, tool: AgentTool, prompt: String) async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply(agentChoice))
+        completions.enqueue(status: 200, text: reply("Could we ship on Friday?"))
+
+        let (controller, pastes, phases) = await carryOut(screen(selected: selected), thunderbird: FakeThunderbird())
+
+        #expect(controller.tools == [tool, .thunderbird])
+        #expect(phases.contains(.running(tool)))
+        #expect(!phases.contains(.running(tool == .edit ? .compose : .edit)))
+        #expect(pastes.texts == ["Could we ship on Friday?"])
+        #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_agent")
+        #expect(cleanupVars(1)?["content"] as? String == prompt)
     }
 
     /// Whatever goes wrong, agent mode pastes nothing: the spoken request is not text for the document.
     @Test(arguments: [
         ([(200, "rewrite")], DesktopAgent.Failure.noTool.errorDescription!),
-        ([(200, "edit")], DesktopAgent.Failure.noSelection.errorDescription!),
         ([(200, "compose"), (200, "")], DesktopAgent.Failure.noText.errorDescription!),
         ([(200, "compose"), (500, "")], BackendError.failed(status: 500).errorDescription!),
     ])
@@ -530,11 +533,12 @@ struct DictationControllerTests {
         for (status, assistant) in replies {
             if status == 200 { completions.enqueue(status: 200, text: reply(assistant)) } else { completions.enqueue(status: status, json: ["error": "internal_error"]) }
         }
+        let thunderbird = FakeThunderbird()
 
-        let (controller, pastes, _) = await carryOut(screen(selected: ""))
+        let (controller, pastes, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
 
         #expect(pastes.texts.isEmpty)
-        #expect(pastes.collapsedAfter.isEmpty)
+        #expect(thunderbird.pasted.isEmpty)
         #expect(controller.phase == .failed(message))
         #expect(completions.requests.count == replies.count)
     }
@@ -549,7 +553,7 @@ struct DictationControllerTests {
 
         let (controller, pastes, phases) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
 
-        #expect(controller.tools == [.edit, .compose, .thunderbird])
+        #expect(controller.tools == [.compose, .thunderbird])
         #expect(controller.emailAppURL == URL(fileURLWithPath: "/Applications/Thunderbird.app"))
         #expect(thunderbird.pasted == ["Find the invoice Sam sent last week."])
         #expect(thunderbird.events.last == "return")
@@ -560,22 +564,23 @@ struct DictationControllerTests {
         #expect(cleanupVars(1)?["user_request"] as? String == "find sam's invoice from last week")
     }
 
-    /// Without Thunderbird its bubble isn't shown, and a request the agent gives it fails, sending
-    /// nothing anywhere.
+    /// Without Thunderbird its bubble isn't shown and the agent isn't asked: the request is written
+    /// where the user is, and nothing is sent anywhere else.
     @Test func withoutThunderbirdItsToolIsNotOffered() async {
         transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])
-        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Sam's invoice"))
         let thunderbird = FakeThunderbird()
         thunderbird.installed = false
 
         let (controller, pastes, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
 
-        #expect(controller.tools == [.edit, .compose])
+        #expect(controller.tools == [.compose])
         #expect(controller.emailAppURL == nil)
-        #expect(controller.phase == .failed(DesktopAgent.Failure.unavailable(.thunderbird).errorDescription!))
+        #expect(controller.phase == .idle)
         #expect(completions.requests.count == 1)
+        #expect(cleanupVars(0)?["content"] as? String == "system_prompt_desktop_compose")
         #expect(thunderbird.events.isEmpty)
-        #expect(pastes.texts.isEmpty)
+        #expect(pastes.texts == ["Sam's invoice"])
     }
 
     @Test func aChatThatDoesNotOpenFailsTheRequest() async {
@@ -592,33 +597,54 @@ struct DictationControllerTests {
         #expect(pastes.texts.isEmpty)
     }
 
-    /// Agent mode waits `agentContextWait` for the screen read, not the dictation's shorter
-    /// `contextWait`: the edit needs the selection that read carries.
-    @Test func agentModeWaitsLongerForTheSelection() async {
+    /// Agent mode waits for the whole screen read, however long it takes, and offers no writing tool
+    /// until it is done: the selection it carries decides between Edit and Compose.
+    @Test func agentModeWaitsForTheWholeScreenRead() async {
         transcription.enqueue(status: 200, json: ["text": request])
-        completions.enqueue(status: 200, text: reply("edit"))
         completions.enqueue(status: 200, text: reply("Could we ship on Friday?"))
         let (controller, pastes) = makeController(capture: ToneCapture())
         let read = pendingRead(screen(selected: "Ship it Friday or else."))
         controller.captureContext = { read.task }
         controller.contextWait = 0
-        controller.agentContextWait = 30
 
         await holdAndRelease(controller, mode: .agent)
         #expect(await eventually { transcription.requests.count == 1 })
         try? await Task.sleep(for: .seconds(1))
+        #expect(controller.tools.isEmpty)
         #expect(completions.requests.isEmpty)
         read.release()
 
         #expect(await eventually { controller.phase == .idle && !pastes.texts.isEmpty })
+        #expect(controller.tools == [.edit])
         #expect(pastes.texts == ["Could we ship on Friday?"])
         #expect(cleanupVars(0)?["selected_text"] as? String == "Ship it Friday or else.")
+    }
+
+    /// Space switches the mode only while the key is held: back and forth, with the tools following.
+    @Test func spaceTogglesAgentModeOnlyDuringTheHold() async {
+        let (controller, _) = makeController(capture: ToneCapture(), thunderbird: FakeThunderbird())
+        controller.captureContext = { Task { screen(selected: "") } }
+
+        controller.handle(.toggleMode)
+        #expect(controller.mode == .dictation)
+        controller.handle(.start)
+        #expect(await eventually { controller.phase == .listening })
+        #expect(controller.tools.isEmpty)
+        controller.handle(.toggleMode)
+        #expect(controller.mode == .agent)
+        #expect(controller.tools == [.compose, .thunderbird])
+        controller.handle(.toggleMode)
+        #expect(controller.mode == .dictation)
+        #expect(controller.tools.isEmpty)
+        #expect(controller.emailAppURL == nil)
+        controller.handle(.cancel)
+        controller.handle(.toggleMode)
+        #expect(controller.mode == .dictation)
     }
 
     /// A dictation after agent mode is a dictation again: cleaned up and pasted.
     @Test func aHoldAfterAgentModeDictatesAgain() async {
         transcription.enqueue(status: 200, json: ["text": request])
-        completions.enqueue(status: 200, text: reply("compose"))
         completions.enqueue(status: 200, text: reply("We ship on Friday."))
         transcription.enqueue(status: 200, json: ["text": transcript])
         completions.enqueue(status: 200, text: cleanedStream)
@@ -628,8 +654,9 @@ struct DictationControllerTests {
         #expect(await eventually { pastes.texts.count == 2 })
 
         #expect(controller.mode == .dictation)
+        #expect(controller.tools.isEmpty)
         #expect(pastes.texts == ["We ship on Friday.", cleaned])
-        #expect(cleanupVars(2)?["content"] as? String == DictationConfig.cleanupPrompt)
+        #expect(cleanupVars(1)?["content"] as? String == DictationConfig.cleanupPrompt)
     }
 }
 
