@@ -489,10 +489,11 @@ the agent restating the request as a chat message, and sending being enough (no 
   Return. When that first read finds no chat, Thunderbird is checked to be in front again, and a
   cancel honoured, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
   would go to the app they switched to (Finder, Safari and Chrome bind it to Downloads).
-- The email app is resolved from Settings at each call, so a read also holds only if the app Settings
-  names is the same after it as before: a chat title read from one app, followed by a check that
-  another app (picked in Settings during the read) is in front, would paste into that other app's
-  window unverified.
+- The email app is the one Settings names as a send starts, for the whole send. Every later check
+  (in front, chat focused) also requires Settings to still name it, before and after each title
+  read; a change fails the send. Resolving the app afresh at each check would let a Settings change
+  mid-send pair one app's chat title with another app in front, or press Return in the other app
+  after the paste went to the first, submitting whatever draft its chat held.
 
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 

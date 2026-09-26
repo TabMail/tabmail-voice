@@ -68,48 +68,53 @@ final class ThunderbirdRelay {
     var applicationURL: URL? { system.applicationURL() }
 
     /// Types `message` into TabMail's chat and sends it. Throws `Failure`, or `CancellationError` when
-    /// cancelled; either way nothing is pasted outside the chat window.
+    /// cancelled; either way nothing is pasted outside the chat window. The email app is the one
+    /// Settings names as the send starts: switching it in Settings meanwhile fails the send, rather
+    /// than moving the rest of it (the paste, or Return) to the other app.
     func send(_ message: String) async throws {
-        guard let url = system.applicationURL() else { throw Failure.notInstalled }
+        guard let app = system.applicationURL() else { throw Failure.notInstalled }
         if !system.isRunning() {
             Log.debug("ThunderbirdRelay: launching Thunderbird")
-            try await system.launch(url)
+            try await system.launch(app)
             guard try await wait(launchTimeout, until: system.hasWindow) else { throw Failure.didNotLaunch }
             // The add-on registers its shortcut only once its background page has loaded.
             try await Task.sleep(for: .seconds(addonSettle))
         }
         await system.activate()
-        guard try await wait(activateTimeout, until: system.isFrontmost) else { throw Failure.notFrontmost }
-        if await !isChatFocused() {
+        guard try await wait(activateTimeout, until: { self.isFrontmost(app) }) else { throw Failure.notFrontmost }
+        if await !isChatFocused(app) {
             // The shortcut goes to whatever app is in front, and the user may have switched, or
             // cancelled, during the title read.
-            guard system.isFrontmost() else { throw Failure.notFrontmost }
+            guard isFrontmost(app) else { throw Failure.notFrontmost }
             try Task.checkCancellation()
             Log.debug("ThunderbirdRelay: opening the chat")
             await system.openChat()
-            guard try await wait(chatTimeout, until: isChatFocused) else { throw Failure.chatNotFocused }
+            guard try await wait(chatTimeout, until: { await self.isChatFocused(app) }) else { throw Failure.chatNotFocused }
         }
         try await Task.sleep(for: .seconds(chatInputSettle))
         // The user may have moved on, or cancelled, while this waited: paste and send only into the
         // chat, and only for a request still wanted.
-        guard await isChatFocused() else { throw Failure.chatNotFocused }
+        guard await isChatFocused(app) else { throw Failure.chatNotFocused }
         try Task.checkCancellation()
         await system.paste(message)
-        guard await isChatFocused() else { throw Failure.chatNotFocused }
+        guard await isChatFocused(app) else { throw Failure.chatNotFocused }
         try Task.checkCancellation()
         await system.pressReturn()
         Log.debug("ThunderbirdRelay: sent \(message.count) chars")
         Log.content("ThunderbirdRelay: sent", message)
     }
 
-    /// The title is read first: Thunderbird being in front is only a fact after the read's `await`.
-    /// The whole title must match; a window that merely mentions the chat, such as a draft replying
-    /// to a message about it ("Write: Re: TabMail Chat feedback"), is not it. The email app must still
-    /// be the one Settings named when the read began: a title read from one app says nothing about
-    /// another app now in front.
-    private func isChatFocused() async -> Bool {
-        let app = system.applicationURL()
-        guard let title = await system.focusedWindowTitle(), system.applicationURL() == app, system.isFrontmost() else { return false }
+    /// `app` is still the email app Settings names, and in front.
+    private func isFrontmost(_ app: URL) -> Bool {
+        system.applicationURL() == app && system.isFrontmost()
+    }
+
+    /// The title is read first: `app` being in front is only a fact after the read's `await`. The
+    /// read is of `app` (Settings names it as the read starts), and must still be after it. The whole
+    /// title must match; a window that merely mentions the chat, such as a draft replying to a
+    /// message about it ("Write: Re: TabMail Chat feedback"), is not it.
+    private func isChatFocused(_ app: URL) async -> Bool {
+        guard system.applicationURL() == app, let title = await system.focusedWindowTitle(), isFrontmost(app) else { return false }
         return title == DictationConfig.thunderbirdChatWindowTitle
     }
 

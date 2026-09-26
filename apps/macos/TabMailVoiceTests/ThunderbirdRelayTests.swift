@@ -31,6 +31,8 @@ final class FakeThunderbird {
     var onOpenChat: (@MainActor (FakeThunderbird) -> Void)?
     /// Whether the user switches away as the message is pasted.
     var loseFocusOnPaste = false
+    /// Runs as the message is pasted.
+    var onPaste: (@MainActor (FakeThunderbird) -> Void)?
     /// Runs during the `n`th read of the focused window's title (from 1), before it answers.
     var onTitleRead: (@MainActor (FakeThunderbird, Int) -> Void)?
     private var titleReads = 0
@@ -84,6 +86,7 @@ final class FakeThunderbird {
                 events.append("paste")
                 pasted.append(text)
                 if loseFocusOnPaste { frontmost = false }
+                onPaste?(self)
             },
             pressReturn: { [self] in events.append("return") }
         ))
@@ -242,18 +245,44 @@ struct ThunderbirdRelayTests {
         #expect(thunderbird.events == ["activate"] + sentBefore)
     }
 
-    /// The user switching the email app in Settings while the chat's title is read (before the paste,
-    /// or before Return): the title came from the old app, so nothing goes to the new one in front.
-    @Test(arguments: [(2, [String]()), (3, ["paste"])])
-    func switchingTheEmailAppDuringTheTitleReadGetsNothing(read: Int, sentBefore: [String]) async {
+    /// The user switching the email app in Settings mid-send, with the other app's chat in front:
+    /// nothing more is sent to either. No shortcut after the first title read, no paste after the
+    /// second, and no Return after the third or after the paste itself.
+    @Test(arguments: [
+        (Int?(1), ThunderbirdRelay.Failure.notFrontmost, [String]()),
+        (2, .chatNotFocused, []),
+        (3, .chatNotFocused, ["paste"]),
+        (nil, .chatNotFocused, ["paste"]),
+    ])
+    func switchingTheEmailAppMidSendSendsNothingMore(read: Int?, failure: ThunderbirdRelay.Failure, sentBefore: [String]) async {
         let thunderbird = FakeThunderbird()
         thunderbird.focusedTitle = FakeThunderbird.chatTitle
+        let otherApp = URL(fileURLWithPath: "/Applications/Other Mail.app")
+        if let read {
+            thunderbird.onTitleRead = { fake, n in
+                if n == read { fake.applicationURL = otherApp }
+            }
+        } else {
+            thunderbird.onPaste = { fake in fake.applicationURL = otherApp }
+        }
+
+        await #expect(throws: failure) { try await thunderbird.relay().send(message) }
+        #expect(thunderbird.events == ["activate"] + sentBefore)
+    }
+
+    /// Switched in Settings after the paste, and back while the chat's title is then read: that read
+    /// was of the other app, so it proves nothing, and Return is not pressed.
+    @Test func switchingTheEmailAppAndBackAroundATitleReadPressesNoReturn() async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = FakeThunderbird.chatTitle
+        let app = thunderbird.applicationURL
+        thunderbird.onPaste = { fake in fake.applicationURL = URL(fileURLWithPath: "/Applications/Other Mail.app") }
         thunderbird.onTitleRead = { fake, n in
-            if n == read { fake.applicationURL = URL(fileURLWithPath: "/Applications/Other Mail.app") }
+            if n == 3 { fake.applicationURL = app }
         }
 
         await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
-        #expect(thunderbird.events == ["activate"] + sentBefore)
+        #expect(thunderbird.events == ["activate", "paste"])
     }
 
     /// A slow Thunderbird: its window, its coming to the front and its chat opening are each waited
