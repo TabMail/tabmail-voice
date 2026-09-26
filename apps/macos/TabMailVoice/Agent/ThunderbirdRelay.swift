@@ -12,20 +12,20 @@ import Carbon.HIToolbox
 /// (ADR-DESK-014); it never pastes unless the TabMail chat window has focus.
 @MainActor
 final class ThunderbirdRelay {
-    /// What the relay does to the system. Injected so tests drive it without launching apps or
-    /// posting keystrokes.
+    /// What the relay does to the system, to the email app named by its bundle identifier. Injected
+    /// so tests drive it without launching apps or posting keystrokes.
     struct System {
-        /// Thunderbird's app bundle, when installed.
-        var applicationURL: @MainActor () -> URL?
-        var isRunning: @MainActor () -> Bool
+        /// The app's bundle, when installed.
+        var applicationURL: @MainActor (String) -> URL?
+        var isRunning: @MainActor (String) -> Bool
         var launch: @MainActor (URL) async throws -> Void
-        /// True once Thunderbird shows a window.
-        var hasWindow: @MainActor () async -> Bool
-        /// Asks Thunderbird to come to the front.
-        var activate: @MainActor () async -> Void
-        var isFrontmost: @MainActor () -> Bool
-        /// The title of Thunderbird's focused window.
-        var focusedWindowTitle: @MainActor () async -> String?
+        /// True once the app shows a window.
+        var hasWindow: @MainActor (String) async -> Bool
+        /// Asks the app to come to the front.
+        var activate: @MainActor (String) async -> Void
+        var isFrontmost: @MainActor (String) -> Bool
+        /// The title of the app's focused window.
+        var focusedWindowTitle: @MainActor (String) async -> String?
         /// Posts the add-on's open-chat shortcut.
         var openChat: @MainActor () async -> Void
         /// Pastes into the focused field.
@@ -64,28 +64,27 @@ final class ThunderbirdRelay {
         self.system = system
     }
 
-    /// The email app's bundle, when one is set up and installed.
-    var applicationURL: URL? { system.applicationURL() }
+    /// The bundle of the email app `app`, when there is one and it is installed.
+    func applicationURL(for app: String?) -> URL? { app.flatMap(system.applicationURL) }
 
-    /// Types `message` into TabMail's chat and sends it. Throws `Failure`, or `CancellationError` when
-    /// cancelled; either way nothing is pasted outside the chat window. The email app is the one
-    /// Settings names as the send starts: switching it in Settings meanwhile fails the send, rather
-    /// than moving the rest of it (the paste, or Return) to the other app.
-    func send(_ message: String) async throws {
-        guard let app = system.applicationURL() else { throw Failure.notInstalled }
-        if !system.isRunning() {
+    /// Types `message` into TabMail's chat in the email app `app` (a bundle identifier, from the
+    /// dictation's settings) and sends it. Throws `Failure`, or `CancellationError` when cancelled;
+    /// either way nothing is pasted outside that app's chat window.
+    func send(_ message: String, to app: String?) async throws {
+        guard let app, let url = system.applicationURL(app) else { throw Failure.notInstalled }
+        if !system.isRunning(app) {
             Log.debug("ThunderbirdRelay: launching Thunderbird")
-            try await system.launch(app)
-            guard try await wait(launchTimeout, until: system.hasWindow) else { throw Failure.didNotLaunch }
+            try await system.launch(url)
+            guard try await wait(launchTimeout, until: { await self.system.hasWindow(app) }) else { throw Failure.didNotLaunch }
             // The add-on registers its shortcut only once its background page has loaded.
             try await Task.sleep(for: .seconds(addonSettle))
         }
-        await system.activate()
-        guard try await wait(activateTimeout, until: { self.isFrontmost(app) }) else { throw Failure.notFrontmost }
+        await system.activate(app)
+        guard try await wait(activateTimeout, until: { self.system.isFrontmost(app) }) else { throw Failure.notFrontmost }
         if await !isChatFocused(app) {
             // The shortcut goes to whatever app is in front, and the user may have switched, or
             // cancelled, during the title read.
-            guard isFrontmost(app) else { throw Failure.notFrontmost }
+            guard system.isFrontmost(app) else { throw Failure.notFrontmost }
             try Task.checkCancellation()
             Log.debug("ThunderbirdRelay: opening the chat")
             await system.openChat()
@@ -104,17 +103,11 @@ final class ThunderbirdRelay {
         Log.content("ThunderbirdRelay: sent", message)
     }
 
-    /// `app` is still the email app Settings names, and in front.
-    private func isFrontmost(_ app: URL) -> Bool {
-        system.applicationURL() == app && system.isFrontmost()
-    }
-
     /// The title is read first: `app` being in front is only a fact after the read's `await`. The
-    /// read is of `app` (Settings names it as the read starts), and must still be after it. The whole
-    /// title must match; a window that merely mentions the chat, such as a draft replying to a
+    /// whole title must match; a window that merely mentions the chat, such as a draft replying to a
     /// message about it ("Write: Re: TabMail Chat feedback"), is not it.
-    private func isChatFocused(_ app: URL) async -> Bool {
-        guard system.applicationURL() == app, let title = await system.focusedWindowTitle(), isFrontmost(app) else { return false }
+    private func isChatFocused(_ app: String) async -> Bool {
+        guard let title = await system.focusedWindowTitle(app), system.isFrontmost(app) else { return false }
         return title == DictationConfig.thunderbirdChatWindowTitle
     }
 
@@ -131,51 +124,43 @@ final class ThunderbirdRelay {
 
 extension ThunderbirdRelay.System {
     /// The real Thunderbird, driven through Launch Services, Accessibility and posted keystrokes.
-    /// `bundleIdentifier` names the email app at each call (`EmailClient`), so a change in Settings
-    /// applies at once; nil means there is none.
     @MainActor
-    static func live(
-        bundleIdentifier: @escaping @MainActor () -> String?, inserter: TextInserter = TextInserter()
-    ) -> Self {
-        func running() -> NSRunningApplication? {
-            guard let id = bundleIdentifier() else { return nil }
-            return NSRunningApplication.runningApplications(withBundleIdentifier: id).first { !$0.isTerminated }
+    static func live(inserter: TextInserter = TextInserter()) -> Self {
+        func running(_ app: String) -> NSRunningApplication? {
+            NSRunningApplication.runningApplications(withBundleIdentifier: app).first { !$0.isTerminated }
         }
-        /// Runs `probe` on Thunderbird's Accessibility element off the main thread, where the hotkey's
-        /// event tap runs: a slow Thunderbird holds up only the relay. `absent` without Thunderbird.
-        func accessibility<T: Sendable>(absent: T, _ probe: @escaping @Sendable (AXUIElement) -> T) async -> T {
-            guard let pid = running()?.processIdentifier else { return absent }
+        /// Runs `probe` on the app's Accessibility element off the main thread, where the hotkey's
+        /// event tap runs: a slow Thunderbird holds up only the relay. `absent` when it isn't running.
+        func accessibility<T: Sendable>(_ app: String, absent: T, _ probe: @escaping @Sendable (AXUIElement) -> T) async -> T {
+            guard let pid = running(app)?.processIdentifier else { return absent }
             return await Task.detached { probe(timed(AXUIElementCreateApplication(pid))) }.value
         }
         return Self(
-            applicationURL: { bundleIdentifier().flatMap(NSWorkspace.shared.urlForApplication(withBundleIdentifier:)) },
-            isRunning: { running() != nil },
+            applicationURL: { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) },
+            isRunning: { running($0) != nil },
             launch: { url in
                 let configuration = NSWorkspace.OpenConfiguration()
                 configuration.activates = true
                 _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
             },
-            hasWindow: {
-                await accessibility(absent: false) { app in
+            hasWindow: { app in
+                await accessibility(app, absent: false) { app in
                     (CaretLocator.attribute(app, kAXWindowsAttribute) as? [AXUIElement]).map { !$0.isEmpty } ?? false
                 }
             },
-            activate: {
+            activate: { app in
                 // This app is never active (menu bar, non-activating overlay), and macOS's cooperative
                 // activation ignores an activation request from an inactive app; Accessibility can
                 // still bring an app to the front.
-                let result: Int32? = await accessibility(absent: nil) { app in
+                let result: Int32? = await accessibility(app, absent: nil) { app in
                     AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue).rawValue
                 }
                 guard let result else { return }
                 Log.debug("ThunderbirdRelay: asked Thunderbird to the front (\(result))")
             },
-            isFrontmost: {
-                guard let id = bundleIdentifier() else { return false }
-                return NSWorkspace.shared.frontmostApplication?.bundleIdentifier == id
-            },
-            focusedWindowTitle: {
-                await accessibility(absent: nil) { app in
+            isFrontmost: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == $0 },
+            focusedWindowTitle: { app in
+                await accessibility(app, absent: nil) { app in
                     guard let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute) else { return nil }
                     return CaretLocator.attribute(timed(window as! AXUIElement), kAXTitleAttribute) as? String
                 }

@@ -11,8 +11,6 @@ import Testing
 @MainActor
 final class FakeThunderbird {
     var installed = true
-    /// The email app Settings names.
-    var applicationURL = URL(fileURLWithPath: "/Applications/Thunderbird.app")
     var running = true
     var hasWindow = true
     var frontmost = false
@@ -31,46 +29,61 @@ final class FakeThunderbird {
     var onOpenChat: (@MainActor (FakeThunderbird) -> Void)?
     /// Whether the user switches away as the message is pasted.
     var loseFocusOnPaste = false
-    /// Runs as the message is pasted.
-    var onPaste: (@MainActor (FakeThunderbird) -> Void)?
     /// Runs during the `n`th read of the focused window's title (from 1), before it answers.
     var onTitleRead: (@MainActor (FakeThunderbird, Int) -> Void)?
     private var titleReads = 0
     private(set) var events: [String] = []
+    /// Every app the relay asked about, in order, without repeats.
+    private(set) var apps: [String] = []
     private(set) var pasted: [String] = []
 
     nonisolated static let chatTitle = "TabMail Chat"
+    nonisolated static let app = "org.example.mail"
+
+    private func asked(_ app: String) {
+        if apps.last != app { apps.append(app) }
+    }
 
     /// A relay on this Thunderbird, with waits short enough for tests.
     func relay(chatInputSettle: TimeInterval = 0, chatTimeout: TimeInterval = 0.2) -> ThunderbirdRelay {
         let relay = ThunderbirdRelay(system: ThunderbirdRelay.System(
-            applicationURL: { [self] in installed ? applicationURL : nil },
-            isRunning: { [self] in running },
+            applicationURL: { [self] app in
+                asked(app)
+                return installed ? URL(fileURLWithPath: "/Applications/Thunderbird.app") : nil
+            },
+            isRunning: { [self] app in
+                asked(app)
+                return running
+            },
             launch: { [self] _ in
                 events.append("launch")
                 running = true
                 hasWindow = launchShowsWindow
                 frontmost = launchShowsWindow
             },
-            hasWindow: { [self] in
+            hasWindow: { [self] app in
+                asked(app)
                 guard windowLag == 0 else {
                     windowLag -= 1
                     return false
                 }
                 return hasWindow
             },
-            activate: { [self] in
+            activate: { [self] app in
+                asked(app)
                 events.append("activate")
                 if comesToFront { frontmost = true }
             },
-            isFrontmost: { [self] in
+            isFrontmost: { [self] app in
+                asked(app)
                 guard frontLag == 0 else {
                     frontLag -= 1
                     return false
                 }
                 return frontmost
             },
-            focusedWindowTitle: { [self] in
+            focusedWindowTitle: { [self] app in
+                asked(app)
                 titleReads += 1
                 onTitleRead?(self, titleReads)
                 // Answers after a turn, as an Accessibility call off the main thread does.
@@ -86,7 +99,6 @@ final class FakeThunderbird {
                 events.append("paste")
                 pasted.append(text)
                 if loseFocusOnPaste { frontmost = false }
-                onPaste?(self)
             },
             pressReturn: { [self] in events.append("return") }
         ))
@@ -107,20 +119,22 @@ final class FakeThunderbird {
 struct ThunderbirdRelayTests {
     private let message = "Find the invoice Sam sent last week."
 
+    /// Every step is about the email app the send was given, the dictation's.
     @Test func sendsIntoAnOpenChatWithoutTheShortcut() async throws {
         let thunderbird = FakeThunderbird()
         thunderbird.focusedTitle = FakeThunderbird.chatTitle
 
-        try await thunderbird.relay().send(message)
+        try await thunderbird.relay().send(message, to: FakeThunderbird.app)
 
         #expect(thunderbird.events == ["activate", "paste", "return"])
         #expect(thunderbird.pasted == [message])
+        #expect(thunderbird.apps == [FakeThunderbird.app])
     }
 
     @Test func opensTheChatWithTheShortcut() async throws {
         let thunderbird = FakeThunderbird()
 
-        try await thunderbird.relay().send(message)
+        try await thunderbird.relay().send(message, to: FakeThunderbird.app)
 
         #expect(thunderbird.events == ["activate", "openChat", "paste", "return"])
         #expect(thunderbird.pasted == [message])
@@ -142,7 +156,7 @@ struct ThunderbirdRelayTests {
         thunderbird.focusedTitle = title
         thunderbird.shortcutOpensChat = false
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate", "openChat"])
         #expect(thunderbird.pasted.isEmpty)
     }
@@ -154,7 +168,7 @@ struct ThunderbirdRelayTests {
         thunderbird.focusedTitle = nil
         thunderbird.shortcutOpensChat = false
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate", "openChat"])
         #expect(thunderbird.pasted.isEmpty)
     }
@@ -164,7 +178,7 @@ struct ThunderbirdRelayTests {
         thunderbird.running = false
         thunderbird.hasWindow = false
 
-        try await thunderbird.relay().send(message)
+        try await thunderbird.relay().send(message, to: FakeThunderbird.app)
 
         #expect(thunderbird.events == ["launch", "activate", "openChat", "paste", "return"])
     }
@@ -175,15 +189,17 @@ struct ThunderbirdRelayTests {
         thunderbird.hasWindow = false
         thunderbird.launchShowsWindow = false
 
-        await #expect(throws: ThunderbirdRelay.Failure.didNotLaunch) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.didNotLaunch) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["launch"])
     }
 
-    @Test func withoutThunderbirdNothingHappens() async {
+    /// No email app set up, or one that isn't installed: nothing happens.
+    @Test(arguments: [nil, FakeThunderbird.app])
+    func withoutThunderbirdNothingHappens(app: String?) async {
         let thunderbird = FakeThunderbird()
         thunderbird.installed = false
 
-        await #expect(throws: ThunderbirdRelay.Failure.notInstalled) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.notInstalled) { try await thunderbird.relay().send(message, to: app) }
         #expect(thunderbird.events.isEmpty)
     }
 
@@ -192,7 +208,7 @@ struct ThunderbirdRelayTests {
         let thunderbird = FakeThunderbird()
         thunderbird.comesToFront = false
 
-        await #expect(throws: ThunderbirdRelay.Failure.notFrontmost) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.notFrontmost) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate"])
     }
 
@@ -201,7 +217,7 @@ struct ThunderbirdRelayTests {
         let thunderbird = FakeThunderbird()
         thunderbird.shortcutOpensChat = false
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate", "openChat"])
         #expect(thunderbird.pasted.isEmpty)
     }
@@ -216,7 +232,7 @@ struct ThunderbirdRelayTests {
             }
         }
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay(chatInputSettle: 0.5).send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay(chatInputSettle: 0.5).send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.pasted.isEmpty)
         #expect(!thunderbird.events.contains("return"))
     }
@@ -226,7 +242,7 @@ struct ThunderbirdRelayTests {
         let thunderbird = FakeThunderbird()
         thunderbird.loseFocusOnPaste = true
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate", "openChat", "paste"])
     }
 
@@ -241,48 +257,8 @@ struct ThunderbirdRelayTests {
             if n == read { fake.frontmost = false }
         }
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate"] + sentBefore)
-    }
-
-    /// The user switching the email app in Settings mid-send, with the other app's chat in front:
-    /// nothing more is sent to either. No shortcut after the first title read, no paste after the
-    /// second, and no Return after the third or after the paste itself.
-    @Test(arguments: [
-        (Int?(1), ThunderbirdRelay.Failure.notFrontmost, [String]()),
-        (2, .chatNotFocused, []),
-        (3, .chatNotFocused, ["paste"]),
-        (nil, .chatNotFocused, ["paste"]),
-    ])
-    func switchingTheEmailAppMidSendSendsNothingMore(read: Int?, failure: ThunderbirdRelay.Failure, sentBefore: [String]) async {
-        let thunderbird = FakeThunderbird()
-        thunderbird.focusedTitle = FakeThunderbird.chatTitle
-        let otherApp = URL(fileURLWithPath: "/Applications/Other Mail.app")
-        if let read {
-            thunderbird.onTitleRead = { fake, n in
-                if n == read { fake.applicationURL = otherApp }
-            }
-        } else {
-            thunderbird.onPaste = { fake in fake.applicationURL = otherApp }
-        }
-
-        await #expect(throws: failure) { try await thunderbird.relay().send(message) }
-        #expect(thunderbird.events == ["activate"] + sentBefore)
-    }
-
-    /// Switched in Settings after the paste, and back while the chat's title is then read: that read
-    /// was of the other app, so it proves nothing, and Return is not pressed.
-    @Test func switchingTheEmailAppAndBackAroundATitleReadPressesNoReturn() async {
-        let thunderbird = FakeThunderbird()
-        thunderbird.focusedTitle = FakeThunderbird.chatTitle
-        let app = thunderbird.applicationURL
-        thunderbird.onPaste = { fake in fake.applicationURL = URL(fileURLWithPath: "/Applications/Other Mail.app") }
-        thunderbird.onTitleRead = { fake, n in
-            if n == 3 { fake.applicationURL = app }
-        }
-
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
-        #expect(thunderbird.events == ["activate", "paste"])
     }
 
     /// A slow Thunderbird: its window, its coming to the front and its chat opening are each waited
@@ -304,7 +280,7 @@ struct ThunderbirdRelayTests {
             }
         }
 
-        try await thunderbird.relay().send(message)
+        try await thunderbird.relay().send(message, to: FakeThunderbird.app)
 
         #expect(thunderbird.events == (stage == "window" ? ["launch"] : []) + ["activate", "openChat", "paste", "return"])
         #expect(thunderbird.pasted == [message])
@@ -320,7 +296,7 @@ struct ThunderbirdRelayTests {
             if n == 1 { fake.frontmost = false }
         }
 
-        await #expect(throws: ThunderbirdRelay.Failure.notFrontmost) { try await thunderbird.relay().send(message) }
+        await #expect(throws: ThunderbirdRelay.Failure.notFrontmost) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.events == ["activate"])
     }
 
@@ -339,7 +315,7 @@ struct ThunderbirdRelayTests {
         thunderbird.onTitleRead = { _, n in
             if n == read { sending.task?.cancel() }
         }
-        sending.task = Task { try await relay.send(message) }
+        sending.task = Task { try await relay.send(message, to: FakeThunderbird.app) }
 
         await #expect(throws: CancellationError.self) { try await sending.task?.value }
         #expect(thunderbird.events == ["activate"] + sentBefore)
@@ -349,7 +325,7 @@ struct ThunderbirdRelayTests {
         let thunderbird = FakeThunderbird()
         thunderbird.shortcutOpensChat = false
         let relay = thunderbird.relay(chatTimeout: 30)
-        let sending = Task { try await relay.send(message) }
+        let sending = Task { try await relay.send(message, to: FakeThunderbird.app) }
         try? await Task.sleep(for: .milliseconds(100))
 
         sending.cancel()

@@ -44,6 +44,12 @@ private final class FrontApp {
     var pid: pid_t? = 101
 }
 
+/// The settings, as the controller reads them: values the test changes.
+@MainActor
+private final class Prefs {
+    var value = DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: FakeThunderbird.app)
+}
+
 /// A finished recording through the controller: transcription, cleanup with the screen context,
 /// and what gets pasted. Uses a private pasteboard and a stub keystroke, and never the network.
 @MainActor
@@ -55,19 +61,19 @@ struct DictationControllerTests {
     private let auth = StubTransport()
     private let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))
     private let front = FrontApp()
+    private let prefs = Prefs()
 
     private var cleanedStream: String { Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#) }
 
     /// A controller with both grants and the user's consent, signed in to `account`, on the stub backend.
     /// Thunderbird is not installed unless a test passes one.
-    private func makeController(account: AccountModel? = nil, capture: any AudioCapturing = SilentCapture(), hasConsented: @escaping @MainActor () -> Bool = { true }, thunderbird: FakeThunderbird? = nil) -> (DictationController, Pastes) {
+    private func makeController(account: AccountModel? = nil, capture: any AudioCapturing = SilentCapture(), thunderbird: FakeThunderbird? = nil) -> (DictationController, Pastes) {
         let account = account ?? AccountModel(client: AuthClient(transport: auth.transport), store: InMemorySessionStore(Fixtures.session()))
         let pastes = Pastes()
         let pasteboard = self.pasteboard
         let inserter = TextInserter(pasteboard: pasteboard, restoreDelay: .zero, pasteKeystroke: {
             pastes.texts.append(pasteboard.string(forType: .string) ?? "")
         })
-        let baseURL = URL(string: "https://api.example.com")!
         let transcriptionTransport = transcription.transport
         let completionsTransport = completions.transport
         let thunderbird = thunderbird ?? {
@@ -77,14 +83,14 @@ struct DictationControllerTests {
         }()
         let dictation = DictationController(
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            hasConsented: hasConsented,
+            settings: { [prefs] in prefs.value },
             account: account,
             inserter: inserter,
             thunderbird: thunderbird.relay(),
             capture: capture,
             frontmostApp: { [front] in front.pid },
-            makeTranscriptionClient: { TranscriptionClient(baseURL: baseURL, transport: transcriptionTransport) },
-            makeCompletionsClient: { CompletionsClient(baseURL: baseURL, transport: completionsTransport) }
+            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transcriptionTransport) },
+            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: completionsTransport) }
         )
         return (dictation, pastes)
     }
@@ -276,9 +282,9 @@ struct DictationControllerTests {
     /// comes before the hold counts, so "sends nothing" rests on nothing being recorded or read:
     /// the empty request and paste lists below would hold for a too-short hold too.
     @Test func withoutConsentNothingIsRecordedReadOrSent() async {
-        let consented = Switch(false)
+        prefs.value.hasConsented = false
         let capture = CountingCapture()
-        let (controller, pastes) = makeController(capture: capture, hasConsented: { consented.isOn })
+        let (controller, pastes) = makeController(capture: capture)
         var reads = 0
         controller.captureContext = {
             reads += 1
@@ -295,7 +301,7 @@ struct DictationControllerTests {
         #expect(completions.requests.isEmpty)
         #expect(pastes.texts.isEmpty)
 
-        consented.isOn = true
+        prefs.value.hasConsented = true
         controller.handle(.start)
         #expect(controller.phase == .arming)
         #expect(capture.starts == 1)
@@ -303,7 +309,7 @@ struct DictationControllerTests {
         controller.handle(.cancel)
 
         // Withdrawing consent later blocks the next dictation too: an earlier agreement doesn't outlive it.
-        consented.isOn = false
+        prefs.value.hasConsented = false
         controller.handle(.start)
         controller.handle(.finish)
         try? await Task.sleep(for: .milliseconds(100))
@@ -751,6 +757,45 @@ struct DictationControllerTests {
 
         #expect(await eventually { pastes.texts.count == 2 || controller.phase == .failed(DesktopAgent.Failure.appChanged.errorDescription!) })
         #expect(pastes.texts == ["We ship on Friday.", "We ship on Monday."])
+    }
+
+    /// Settings are read once, as a hold starts: changing the server, the email app and screen reading
+    /// while it runs changes nothing for it, and the change applies from the next hold.
+    @Test func settingsChangedDuringAHoldApplyFromTheNextOne() async {
+        let thunderbird = FakeThunderbird()
+        let reads = Counter()
+        transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Find the invoice Sam sent."))
+        let prefs = prefs
+
+        let (controller, _, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird) { controller in
+            controller.onPhaseChange = { phase in
+                guard phase == .listening else { return }
+                prefs.value = DictationSettings(hasConsented: true, backendURL: URL(string: "https://dev.example.com")!, readsScreen: false, emailApp: "org.example.othermail")
+            }
+            let read = controller.captureContext
+            controller.captureContext = {
+                reads.count += 1
+                return read?()
+            }
+        }
+
+        #expect(thunderbird.pasted == ["Find the invoice Sam sent."])
+        #expect(thunderbird.apps == [FakeThunderbird.app])
+        #expect(Set((transcription.requests + completions.requests).map(\.url?.host)) == ["api.example.com"])
+        #expect(reads.count == 1)
+
+        controller.onPhaseChange = nil
+        transcription.enqueue(status: 200, json: ["text": "find sam's receipt"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Find the receipt Sam sent."))
+        await holdAndRelease(controller, mode: .agent)
+
+        #expect(await eventually { thunderbird.pasted.count == 2 })
+        #expect(thunderbird.apps == [FakeThunderbird.app, "org.example.othermail"])
+        #expect((transcription.requests + completions.requests).map(\.url?.host).filter { $0 == "dev.example.com" }.count == 3)
+        #expect(reads.count == 1)
     }
 
     /// Thunderbird comes to the front to take the chat message: that is no reason to drop it.

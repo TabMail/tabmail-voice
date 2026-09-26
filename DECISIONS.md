@@ -262,8 +262,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   be stopped.
 - **Permission and feature steps** never block Next.
 - **Screen reading** (`AppSettings.readsScreen`) is on by default, since the consent step
-  discloses it. `ScreenContextProbe` checks it at every key-down, so a change applies from the
-  next dictation. It can also be switched in Settings.
+  discloses it. It is read at every key-down with the other settings (ADR-DESK-017), so a change
+  applies from the next dictation. It can also be switched in Settings.
 - **When the wizard opens.** It opens at every launch until the user presses Finish; closing the
   window doesn't count. It can be reopened from the menu (Welcome Guide…).
 - **Replaces the launch-time permission prompts.** The app no longer asks for permissions at
@@ -489,11 +489,12 @@ the agent restating the request as a chat message, and sending being enough (no 
   Return. When that first read finds no chat, Thunderbird is checked to be in front again, and a
   cancel honoured, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
   would go to the app they switched to (Finder, Safari and Chrome bind it to Downloads).
-- The email app is the one Settings names as a send starts, for the whole send. Every later check
-  (in front, chat focused) also requires Settings to still name it, before and after each title
-  read; a change fails the send. Resolving the app afresh at each check would let a Settings change
-  mid-send pair one app's chat title with another app in front, or press Return in the other app
-  after the paste went to the first, submitting whatever draft its chat held.
+- The relay is given the email app (a bundle identifier) with each send and asks every question
+  (running, in front, focused window's title) of that app; it never reads Settings. The dictation
+  takes the app from its key-down settings snapshot (ADR-DESK-017). Resolving the app from Settings
+  at each check let a Settings change mid-send pair one app's chat title with another app in front,
+  or press Return in the other app after the paste went to the first, submitting whatever draft its
+  chat held.
 
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 
@@ -561,3 +562,29 @@ is still walked into, since Slack keeps its whole message list inside a 1×2 scr
   (`LiveScreenTreeTests`, which needs the Accessibility permission), beside the layout on frames measured in
   Slack and the hidden-box rule on frames measured in Slack and Chrome. Test text is placeholders,
   never what was on the measured screen.
+
+## ADR-DESK-017: Settings are read once, as a dictation starts
+
+**Context:** Owner standing rule, 2026-09-26 (root `Companion/Rules/Active/snapshot-settings-at-operation-start.md`):
+"lock in all the settings … by taking a snapshot when everything starts … the snapshot is the first
+thing that happens on the settings." Three review rounds in a row on the Thunderbird relay each
+found another window where changing the email app in Settings mid-send paired one app's chat with
+another; each fix compared Settings again and missed the next window.
+
+**Decision:**
+- `DictationController.start()` reads `AppSettings.dictation` (a `DictationSettings` value: consent,
+  backend URL, screen reading, email app) as its first step at key-down, and the hold reads only that
+  snapshot until it finishes: consent, whether the screen is read, the server every request of the
+  hold goes to, the email app the Space toggle offers and the relay sends to. A change made during a
+  hold applies from the next one.
+- Nothing downstream reads Settings: the transcription and completions clients are made with the
+  snapshot's URL, `ScreenContextProbe` no longer checks screen reading (the controller doesn't ask
+  it), and `ThunderbirdRelay.send(_:to:)` is given the app.
+- Facts about the world stay live: which app is in front (the key-down app for Edit and Compose), and
+  whether the email app runs, is in front and has the chat focused.
+
+**Consequences:**
+- Every "does Settings still say X" comparison in the relay is deleted; a mid-send Settings change
+  can no longer retarget a send.
+- Not covered: the hotkey itself. Changing it in Settings reinstalls the monitor, which cancels a
+  hold in progress (`HotkeyMonitor.setHotkey`); that predates this rule and is left for a follow-up.
