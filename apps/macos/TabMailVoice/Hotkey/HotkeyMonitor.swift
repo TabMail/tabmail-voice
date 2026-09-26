@@ -24,7 +24,7 @@ final class HotkeyMonitor {
 
     func setHotkey(_ hotkey: DictationHotkey) {
         guard hotkey != gesture.hotkey else { return }
-        if gesture.isHolding { onAction(.cancel) }
+        if gesture.isActive { onAction(.cancel) }
         gesture = PushToTalkGesture(hotkey: hotkey)
     }
 
@@ -47,6 +47,11 @@ final class HotkeyMonitor {
         Log.debug("HotkeyMonitor installed for \(gesture.hotkey.rawValue)")
     }
 
+    /// The dictation ended without the hotkey (length cap, failure, menu): stop listening hands-free.
+    func dictationEnded() {
+        gesture.dictationEnded()
+    }
+
     func uninstall() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
@@ -56,7 +61,7 @@ final class HotkeyMonitor {
         let action: PushToTalkGesture.Action?
         switch event.type {
         case .flagsChanged:
-            action = gesture.modifierChanged(keyCode: event.keyCode, isDown: isHotkeyFlagSet(event.modifierFlags))
+            action = gesture.modifierChanged(keyCode: event.keyCode, isDown: isHotkeyFlagSet(event.modifierFlags), at: event.timestamp)
         case .keyDown:
             action = gesture.otherKeyPressed()
         default:

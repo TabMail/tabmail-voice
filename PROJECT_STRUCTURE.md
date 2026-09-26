@@ -21,6 +21,7 @@ tabmail-macos/
         │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
         │   │   ├── SessionStore.swift        Keychain session storage (SessionStoring protocol)
         │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
+        │   ├── Agent/DesktopAgent.swift      Agent mode: `AgentTool` (edit, compose); one call chooses the tool, one has it write the text
         │   ├── Backend/
         │   │   ├── BackendError.swift        Backend HTTP error → user message
         │   │   ├── TranscriptionClient.swift POST /dictation/transcribe
@@ -38,7 +39,7 @@ tabmail-macos/
         │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
         │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
         │   ├── Hotkey/
-        │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel
+        │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel; tap + press → agent mode (held, or hands-free until the next press)
         │   │   └── HotkeyMonitor.swift       NSEvent global + local monitors feeding the gesture
         │   ├── Insertion/
         │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
@@ -53,7 +54,7 @@ tabmail-macos/
         │       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
         │       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
         │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
-        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing
+        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing; agent mode's tool bubbles beside the pill, the running one's border circling
         │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
         └── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
@@ -78,6 +79,13 @@ tabmail-macos/
    is inserted.
 
 A `generation` counter makes callbacks from a superseded dictation no-ops.
+
+**Agent mode** (a tap, then a press within `doubleTapWindow`; ADR-DESK-011): the same recording
+and transcription, with the Edit and Compose bubbles beside the pill. The transcript is a request:
+`DesktopAgent.chooseTool` asks the backend's `system_prompt_desktop_agent` for the tool, the phase
+becomes `running(tool)` (that bubble's border circles), and `DesktopAgent.write` has the tool's
+prompt write the text. Edit pastes over the selection; Compose pastes at the caret, after the
+selection if there is one. A failure shows a message and pastes nothing.
 
 ## Relationships
 

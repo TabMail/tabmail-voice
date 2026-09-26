@@ -278,9 +278,52 @@ grants. The privacy policy tells users they can switch screen reading off.
   skip list. Web search and web reading get their own toggles in Features once they exist.
 
 
-## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
+## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
-(ADR-DESK-011 is agent mode, on its own branch.)
+**Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
+request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
+as asked, like Thunderbird's inline editor) and **Compose** (write new text at the caret, for any
+app, not only mail). Their bubbles show beside the pill; after the request, the chosen tool's
+bubble border circles while it runs. The prompts are the desktop's own, reusable by any later
+desktop platform, not the Thunderbird email prompts.
+
+**Decision:**
+- Gesture (`PushToTalkGesture`): a press released within `minimumHoldDuration` is a tap. A press
+  within `doubleTapWindow` of a tap's release starts agent mode. Held, it finishes on release
+  like a dictation; tapped, agent mode listens hands-free until the next press. Typing cancels,
+  as during a hold. Both readings of "double tap" work, so neither had to be ruled out.
+- Two backend calls, both `POST /completions/chat` template prompts in the backend's `common/`
+  registry at v0.1.0 (backend ADR-023). `system_prompt_desktop_agent` (light tier) chooses the
+  tool from the request, the selection, the app and the window title, and answers `Tool: edit` or
+  `Tool: compose`. The phase becomes `running(tool)` and the tool's prompt
+  (`system_prompt_desktop_edit` / `_compose`, heaviest_fast tier) writes the text from the request
+  and the screen context. Separate calls let the bubble show the chosen tool while it works, and
+  each tool gets a prompt of its own.
+- Edit pastes over the selection, which the non-activating overlay leaves in place; the result
+  keeps the selection's own leading and trailing blank space (a selected line keeps its line
+  break). Compose pastes at the caret; with text selected it first collapses the selection to its
+  end (→), so the selected text stays.
+- The selection is the one the key-down screen read (ADR-DESK-007) found. Agent mode waits
+  `agentContextWait` (2 s) for that read, not the dictation's 0.5 s: an edit cannot work without
+  it.
+- A failed request pastes nothing and says why: no known tool, an edit with nothing selected, an
+  empty text, a timeout (`agentChooseTimeout`, `agentToolTimeout`) or a backend error. Unlike the
+  dictation cleanup, there is no "paste as heard": the spoken request is not text for the document.
+
+**Consequences:**
+- Agent mode adds a model round trip before the tool runs (light tier, reasoning off).
+- No client-side tools: the Mac app at 0.1.0 would read Thunderbird's tool registry, and a
+  desktop tool listed there would reach Thunderbird's agent too. The later Thunderbird connector
+  follows the same tool-choice contract (a third tool name), planned in `PLAN_DESKTOP_AGENT.md`.
+- Apps whose accessibility tree hides the selection (thin trees, some Electron apps) can't be
+  edited; the request fails with "Select the text to edit". Copying the selection with ⌘C
+  instead would be a fallback: an owner decision.
+- With screen reading switched off (ADR-DESK-010), there's no selection, so Edit never runs.
+  Whether Edit reads the selection anyway is an owner decision.
+- The selected text and the screen are sent to the backend with the request; nothing is stored
+  (root ADR-004). The prompts treat both as content, never as instructions.
+
+## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
 
 **Context:** Owner, 2026-09-25. The app built as `TabMail.app` (bundle id `ai.tabmail.desktop`). The
 Thunderbird installer's pkg (`tabmail-release-helpers/tb-mac/build-mac-installer-local.sh`) installs

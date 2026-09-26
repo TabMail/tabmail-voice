@@ -63,13 +63,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let overlay = OverlayPanelController(controller: controller)
         self.overlay = overlay
-        controller.onPhaseChange = { overlay.update(for: $0) }
         controller.captureContext = { [contextProbe] in contextProbe.capture() }
 
         let monitor = HotkeyMonitor(hotkey: settings.hotkey) { [weak self] action in
             self?.controller.handle(action)
         }
         hotkeyMonitor = monitor
+        controller.onPhaseChange = { phase in
+            overlay.update(for: phase)
+            // Agent mode listening hands-free ends with the dictation however it ends.
+            switch phase {
+            case .idle, .failed: monitor.dictationEnded()
+            case .arming, .listening, .transcribing, .running: break
+            }
+        }
         monitor.install()
         settings.onHotkeyChange = { monitor.setHotkey($0) }
         // Global key monitors deliver nothing until Accessibility is granted, and do not

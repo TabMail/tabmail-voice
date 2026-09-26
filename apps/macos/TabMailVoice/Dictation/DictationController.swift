@@ -6,7 +6,8 @@ import AVFoundation
 import Observation
 
 /// Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
-/// transcript with the screen context → paste.
+/// transcript with the screen context → paste. In agent mode (a double tap) the transcript is a request
+/// instead: the agent chooses a tool, the tool writes the text, and that is pasted.
 @MainActor
 @Observable
 final class DictationController {
@@ -18,12 +19,16 @@ final class DictationController {
         case arming
         case listening
         case transcribing
+        /// Agent mode: the agent chose this tool, which is writing its text.
+        case running(AgentTool)
         case failed(String)
     }
 
     private(set) var phase: Phase = .idle {
         didSet { onPhaseChange?(phase) }
     }
+    /// What the current (or last) recording is for.
+    private(set) var mode: DictationMode = .dictation
     private(set) var level: Float = 0
     @ObservationIgnored private var envelope = LevelEnvelope()
     /// Debug tuning aid: the highest waveform level reached this dictation.
@@ -37,6 +42,8 @@ final class DictationController {
     @ObservationIgnored var captureContext: (() -> Task<ScreenContext, Never>?)?
     /// How long the cleanup waits for that read once the transcript is ready. Internal for tests.
     @ObservationIgnored var contextWait = DictationConfig.contextWait
+    /// How long agent mode waits for that read. Internal for tests.
+    @ObservationIgnored var agentContextWait = DictationConfig.agentContextWait
 
     @ObservationIgnored private let permissions: PermissionsModel
     @ObservationIgnored private let hasConsented: @MainActor () -> Bool
@@ -77,7 +84,7 @@ final class DictationController {
 
     func handle(_ action: PushToTalkGesture.Action) {
         switch action {
-        case .start: start()
+        case .start(let mode): start(mode)
         case .finish: finish()
         case .cancel: cancel()
         }
@@ -91,13 +98,13 @@ final class DictationController {
 
     /// Menu-driven toggle, for users who prefer clicking to holding a key.
     func toggle() {
-        if phase == .listening { finish() } else { start() }
+        if phase == .listening { finish() } else { start(.dictation) }
     }
 
-    func start() {
+    func start(_ mode: DictationMode) {
         switch phase {
         case .idle, .failed: break
-        case .arming, .listening, .transcribing: return
+        case .arming, .listening, .transcribing, .running: return
         }
         guard hasConsented() else {
             fail("Finish setting up TabMail Voice from its menu to dictate.")
@@ -119,6 +126,7 @@ final class DictationController {
         failureResetTask?.cancel()
         generation += 1
         let current = generation
+        self.mode = mode
         level = 0
         peakMeterLevel = 0
         envelope = LevelEnvelope()
@@ -155,7 +163,7 @@ final class DictationController {
             Log.debug("DictationController: max duration reached; finishing")
             self.finish()
         }
-        Log.debug("DictationController: arming (generation \(current))")
+        Log.debug("DictationController: arming \(mode) (generation \(current))")
     }
 
     func finish() {
@@ -167,7 +175,7 @@ final class DictationController {
             return
         case .listening:
             break
-        case .idle, .transcribing, .failed:
+        case .idle, .transcribing, .running, .failed:
             return
         }
         guard recorder != nil else { return }
@@ -186,7 +194,7 @@ final class DictationController {
 
     func cancel() {
         switch phase {
-        case .arming, .listening, .transcribing:
+        case .arming, .listening, .transcribing, .running:
             Log.debug("DictationController: cancelled")
             discard()
         case .idle, .failed:
@@ -235,7 +243,8 @@ final class DictationController {
         await transcribe(wav, generation: current)
     }
 
-    /// Transcribes, cleans up and inserts one recording. Internal for tests.
+    /// Transcribes one recording, then cleans it up and inserts it (dictation) or carries it out (agent
+    /// mode). Internal for tests.
     func transcribe(_ wav: Data, generation current: Int) async {
         Log.debug("DictationController: uploading \(wav.count) bytes")
         // Both requests go under the account signed in now, even if the user switches accounts
@@ -254,18 +263,32 @@ final class DictationController {
             }
             // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008).
             let read = contextTask
-            let context = try? await withTimeout(seconds: contextWait) { await read?.value }
-            if read != nil, context == nil { Log.debug("DictationController: screen read not done in time; cleaning up without it") }
+            let context = try? await withTimeout(seconds: mode == .agent ? agentContextWait : contextWait) { await read?.value }
+            if read != nil, context == nil { Log.debug("DictationController: screen read not done in time; continuing without it") }
             guard generation == current, !Task.isCancelled else { return }
-            let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
-            guard generation == current, !Task.isCancelled else { return }
-            await inserter.insert(text)
+            switch mode {
+            case .dictation:
+                let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
+                guard generation == current, !Task.isCancelled else { return }
+                await inserter.insert(text)
+            case .agent:
+                let client = makeCompletionsClient()
+                let tool = try await DesktopAgent.chooseTool(for: transcript, context: context, client: client, account: account, userId: userId)
+                guard generation == current, !Task.isCancelled else { return }
+                Log.debug("DictationController: agent chose \(tool.rawValue)")
+                phase = .running(tool)
+                let text = try await DesktopAgent.write(tool, for: transcript, context: context, client: client, account: account, userId: userId)
+                guard generation == current, !Task.isCancelled else { return }
+                // A compose goes after the selection; pasting over it would replace the user's text.
+                if tool == .compose, !DesktopAgent.selection(in: context).isEmpty { await inserter.collapseSelection() }
+                await inserter.insert(text)
+            }
             guard generation == current else { return }
             teardown()
             phase = .idle
         } catch {
             guard generation == current, !Task.isCancelled else { return }
-            Log.error("DictationController: transcription failed: \(type(of: error))")
+            Log.error("DictationController: \(mode) failed: \(type(of: error))")
             teardown()
             fail(error.localizedDescription)
         }
@@ -312,7 +335,7 @@ final class DictationController {
             let rate = newLevel > level ? DictationConfig.levelAttack : DictationConfig.levelRelease
             level += (newLevel - level) * rate
             peakMeterLevel = max(peakMeterLevel, level)
-        case .idle, .transcribing, .failed:
+        case .idle, .transcribing, .running, .failed:
             return
         }
     }

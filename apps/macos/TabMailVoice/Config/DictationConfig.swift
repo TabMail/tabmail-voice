@@ -13,6 +13,9 @@ enum DictationConfig {
     /// The microphone starts booting at key-down, but the overlay appears only once the key has
     /// been held this long. A shorter hold is an accidental tap: discarded, never shown.
     static let minimumHoldDuration: Duration = .milliseconds(250)
+    /// A tap (released within `minimumHoldDuration`) followed by another press this soon after its
+    /// release enters agent mode.
+    static let doubleTapWindow: Duration = .milliseconds(400)
 
     // MARK: Audio
 
@@ -119,6 +122,21 @@ enum DictationConfig {
     /// (ADR-DESK-008).
     static let cleanupTimeout: TimeInterval = 3
 
+    // MARK: Agent mode (double tap)
+
+    /// The backend prompt that chooses the tool for a spoken request.
+    static let agentPrompt = "system_prompt_desktop_agent"
+    /// The backend prompts behind the agent's tools.
+    static let agentEditPrompt = "system_prompt_desktop_edit"
+    static let agentComposePrompt = "system_prompt_desktop_compose"
+    /// How long agent mode waits for the screen read once the request is transcribed (seconds).
+    /// Longer than `contextWait`: the edit tool cannot work without the selection it carries.
+    static let agentContextWait: TimeInterval = 2
+    /// Longest the agent may take to choose a tool (seconds).
+    static let agentChooseTimeout: TimeInterval = 10
+    /// Longest a tool may take to write its text (seconds).
+    static let agentToolTimeout: TimeInterval = 30
+
     // MARK: Account (Supabase auth at auth.tabmail.ai)
 
     static let authBaseURL = URL(string: "https://auth.tabmail.ai")!
@@ -220,6 +238,17 @@ enum DictationConfig {
     /// The overlay stays up this long after the dictation ends, for the exit animation (the pill
     /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
     static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
+    /// Agent mode's tool bubbles, beside the pill.
+    static let agentBubbleHeight: CGFloat = 24
+    static let agentBubbleHorizontalPadding: CGFloat = 10
+    static let agentBubbleSpacing: CGFloat = 6
+    static let agentBubbleIconSpacing: CGFloat = 4
+    static let agentBubbleFontSize: CGFloat = 12
+    /// A bubble whose tool is not the one running fades to this opacity.
+    static let agentBubbleIdleOpacity: Double = 0.45
+    /// The running tool's bubble: a gradient arc circling its border.
+    static let agentBubbleRimWidth: CGFloat = 2
+    static let agentBubbleRevolutionsPerSecond: Double = 1
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

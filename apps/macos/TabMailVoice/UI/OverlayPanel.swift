@@ -7,7 +7,8 @@ import SwiftUI
 
 /// The dictation overlay, anchored at the text cursor: a swirl gathers there while the
 /// microphone warms up, then forms a waveform pill. The pill is the surface for dictation status
-/// (and, later, agent responses). The panel never takes focus, so the target field keeps
+/// (and, later, agent responses). In agent mode the agent's tool bubbles flank the pill, and the
+/// running tool's border circles. The panel never takes focus, so the target field keeps
 /// keyboard focus and receives the paste.
 @MainActor
 final class OverlayPanelController {
@@ -59,7 +60,7 @@ final class OverlayPanelController {
             // Find the caret while the hold is still invisible, so the overlay can appear
             // there the moment it's revealed.
             locateCaret()
-        case .listening, .transcribing, .failed:
+        case .listening, .transcribing, .running, .failed:
             guard !panel.isVisible else { return }
             if lookupPending {
                 showWhenLocated = true
@@ -136,7 +137,7 @@ private struct OverlayView: View {
     @State private var dispersing = false
 
     private enum Mode: Equatable {
-        case hidden, swirl, listening, transcribing, message(String)
+        case hidden, swirl, listening, transcribing, running(AgentTool), message(String)
     }
 
     private var mode: Mode {
@@ -144,8 +145,28 @@ private struct OverlayView: View {
         case .idle, .arming: .hidden
         case .listening: controller.isHearing ? .listening : .swirl
         case .transcribing: .transcribing
+        case .running(let tool): .running(tool)
         case .failed(let message): .message(message)
         }
+    }
+
+    /// Agent mode's tools, half on each side of the pill.
+    private static let leadingTools = Array(AgentTool.allCases.prefix(AgentTool.allCases.count / 2))
+    private static let trailingTools = Array(AgentTool.allCases.dropFirst(AgentTool.allCases.count / 2))
+
+    /// The tool bubbles show while agent mode listens and works; an error message stands alone.
+    private var showsTools: Bool {
+        guard controller.mode == .agent else { return false }
+        switch mode {
+        case .listening, .transcribing, .running: return true
+        case .hidden, .swirl, .message: return false
+        }
+    }
+
+    private func bubble(_ tool: AgentTool) -> some View {
+        let running: AgentTool? = if case .running(let tool) = mode { tool } else { nil }
+        return ToolBubble(tool: tool, isRunning: running == tool, isDimmed: running != nil && running != tool)
+            .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
     }
 
     var body: some View {
@@ -159,17 +180,22 @@ private struct OverlayView: View {
             case .swirl:
                 GatheringSwirl()
                     .transition(.opacity)
-            case .listening, .transcribing, .message:
-                Pill(mode: mode, level: controller.level)
-                    .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
-                    // Top edge where a one-line pill's would be when centred, so taller pills grow
-                    // downward, away from the caret line.
-                    .padding(.top, (DictationConfig.overlayCanvasSize.height - DictationConfig.pillHeight) / 2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            case .listening, .transcribing, .running, .message:
+                HStack(spacing: DictationConfig.agentBubbleSpacing) {
+                    if showsTools { ForEach(Self.leadingTools, id: \.self, content: bubble) }
+                    Pill(mode: mode, level: controller.level)
+                        .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
+                    if showsTools { ForEach(Self.trailingTools, id: \.self, content: bubble) }
+                }
+                // Top edge where a one-line pill's would be when centred, so taller pills grow
+                // downward, away from the caret line.
+                .padding(.top, (DictationConfig.overlayCanvasSize.height - DictationConfig.pillHeight) / 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: mode)
+        .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: showsTools)
         .onChange(of: mode) { old, new in
             dispersing = new == .hidden && old != .hidden
         }
@@ -180,6 +206,13 @@ private struct OverlayView: View {
         let level: Float
 
         private var isThinking: Bool { mode == .transcribing }
+        /// A circle while transcribing, and while an agent tool works (its bubble shows the progress).
+        private var isCircle: Bool {
+            switch mode {
+            case .transcribing, .running: true
+            default: false
+            }
+        }
 
         var body: some View {
             HStack(spacing: DictationConfig.pillContentSpacing) {
@@ -187,6 +220,11 @@ private struct OverlayView: View {
                 case .transcribing:
                     // Shrinks back to a circle while the words are worked out.
                     Color.clear.frame(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)
+                case .running:
+                    Image(systemName: "sparkles")
+                        .font(.system(size: DictationConfig.agentBubbleFontSize, weight: .medium))
+                        .foregroundStyle(Brand.gradient)
+                        .frame(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)
                 case .message(let text):
                     Image(systemName: "exclamationmark.circle.fill")
                         .foregroundStyle(Brand.gradient)
@@ -201,8 +239,8 @@ private struct OverlayView: View {
                     Waveform(level: level)
                 }
             }
-            .padding(.horizontal, isThinking ? 0 : DictationConfig.pillHorizontalPadding)
-            .padding(.vertical, isThinking ? 0 : DictationConfig.pillVerticalPadding)
+            .padding(.horizontal, isCircle ? 0 : DictationConfig.pillHorizontalPadding)
+            .padding(.vertical, isCircle ? 0 : DictationConfig.pillVerticalPadding)
             .frame(minHeight: DictationConfig.pillHeight)
             // A capsule while one line tall; grows into a rounded rectangle for longer messages,
             // and is a circle (as wide as tall) while thinking.
@@ -219,6 +257,62 @@ private struct OverlayView: View {
         }
 
         private static let shape = RoundedRectangle(cornerRadius: DictationConfig.pillHeight / 2, style: .continuous)
+    }
+}
+
+/// One of agent mode's tools beside the pill. While its tool runs, a gradient arc circles its border;
+/// the other tools fade.
+private struct ToolBubble: View {
+    let tool: AgentTool
+    let isRunning: Bool
+    let isDimmed: Bool
+
+    var body: some View {
+        HStack(spacing: DictationConfig.agentBubbleIconSpacing) {
+            Image(systemName: tool.symbolName)
+                .foregroundStyle(Brand.gradient)
+            Text(tool.displayName)
+                // The bubble is light in light and dark mode alike, as the pill.
+                .foregroundStyle(Color.black)
+        }
+        .font(.system(size: DictationConfig.agentBubbleFontSize, weight: .medium))
+        .padding(.horizontal, DictationConfig.agentBubbleHorizontalPadding)
+        .frame(height: DictationConfig.agentBubbleHeight)
+        .background(Color(white: DictationConfig.pillFillWhite), in: Capsule())
+        .overlay {
+            if isRunning {
+                CirclingBorder()
+            } else {
+                Capsule().strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth)
+            }
+        }
+        .shadow(color: Brand.purple.opacity(DictationConfig.pillGlowOpacity), radius: DictationConfig.pillGlowRadius)
+        .opacity(isDimmed ? DictationConfig.agentBubbleIdleOpacity : 1)
+        .fixedSize()
+        .accessibilityLabel(tool.displayName)
+    }
+}
+
+/// A bubble's border while its tool runs: a blue → violet highlight sweeping around a faint track,
+/// the capsule counterpart of the thinking circle's `SpinningRim`.
+private struct CirclingBorder: View {
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let turns = timeline.date.timeIntervalSinceReferenceDate * DictationConfig.agentBubbleRevolutionsPerSecond
+            ZStack {
+                Capsule()
+                    .strokeBorder(Brand.blue.opacity(DictationConfig.thinkingTrackOpacity), lineWidth: DictationConfig.agentBubbleRimWidth)
+                Capsule()
+                    .strokeBorder(
+                        AngularGradient(
+                            colors: [Brand.blue.opacity(0), Brand.blue, Brand.colour(at: DictationConfig.thinkingArcEndColour), Brand.blue.opacity(0)],
+                            center: .center,
+                            angle: .degrees(360 * turns.truncatingRemainder(dividingBy: 1))
+                        ),
+                        lineWidth: DictationConfig.agentBubbleRimWidth
+                    )
+            }
+        }
     }
 }
 
