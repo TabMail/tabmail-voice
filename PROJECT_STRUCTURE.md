@@ -9,6 +9,7 @@ tabmail-macos/
 ├── project.yml                 XcodeGen spec (app + unit tests). Generate via Scripts/xcodegen.sh
 ├── Secrets.xcconfig.example    → copy to gitignored Secrets.xcconfig (DEVELOPMENT_TEAM); loaded via configFiles
 ├── Scripts/xcodegen.sh         Generates TabMailDesktop.xcodeproj with the signing team injected
+├── Scripts/copy-worktree-secrets.sh  Installs the primary's gitignored signing config into a worktree, unprinted
 ├── TabMailDesktop/
 │   ├── App/
 │   │   ├── TabMailDesktopApp.swift   @main: MenuBarExtra + Settings scenes; AppDelegate wires everything
