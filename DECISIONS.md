@@ -351,7 +351,8 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   The overlay opens below the caret's line only when the listening pill and the hint under it both
   fit on screen there (`opensUpward` counts the hint's `modeHintFootprint` and the listening pill's
   real height, `listeningPillHeight`); otherwise the hint's lower half went off the bottom of the
-  screen for a caret a line or two above it.
+  screen for a caret a line or two above it. Opened above a caret on the screen's bottom line, the
+  overlay is raised as far as the hint under the pill needs to stay on screen.
 - Tools: Edit when the key-down screen read found selected text, Compose when not
   (`DesktopAgent.writingTool`); never both. No bubble shows until that read is done, and agent mode
   waits for the whole read (no `agentContextWait`), so the tool that runs is the one shown. The agent

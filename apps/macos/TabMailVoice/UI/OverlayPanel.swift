@@ -116,14 +116,15 @@ final class OverlayPanelController {
 
     /// Canvas origin that puts the pill's top edge just below the caret's line (the pill just
     /// above the line when there's no room below), centred horizontally on the caret and kept
-    /// inside the screen's visible area. The canvas is larger than the pill (room for the swirl);
-    /// the one-line pill sits vertically centred in it and taller pills grow downward.
+    /// inside the screen's visible area with the Space hint under it. The canvas is larger than the
+    /// pill (room for the swirl); the one-line pill sits vertically centred in it and taller pills
+    /// grow downward.
     static func overlayOrigin(anchor: CGRect, canvas: CGSize, pillHeight: CGFloat, visibleFrame: CGRect) -> CGPoint {
         let gap = DictationConfig.overlayCaretGap
         let pillTopInset = (canvas.height - pillHeight) / 2
         var pillTop = anchor.minY - gap
         if opensUpward(anchor: anchor, pillHeight: pillHeight, visibleFrame: visibleFrame) { pillTop = anchor.maxY + gap + pillHeight }
-        pillTop = min(max(pillTop, visibleFrame.minY + pillHeight), visibleFrame.maxY)
+        pillTop = min(max(pillTop, visibleFrame.minY + heightUnderPillTop(pillHeight)), visibleFrame.maxY)
         var x = anchor.midX - canvas.width / 2
         x = min(max(x, visibleFrame.minX), visibleFrame.maxX - canvas.width)
         return CGPoint(x: x, y: pillTop + pillTopInset - canvas.height)
@@ -132,8 +133,12 @@ final class OverlayPanelController {
     /// Whether the pill goes above the caret's line, there being no room below for the listening pill
     /// and the Space hint under it.
     static func opensUpward(anchor: CGRect, pillHeight: CGFloat, visibleFrame: CGRect) -> Bool {
-        let below = max(pillHeight, DictationConfig.listeningPillHeight) + DictationConfig.modeHintFootprint
-        return anchor.minY - DictationConfig.overlayCaretGap - below < visibleFrame.minY
+        anchor.minY - DictationConfig.overlayCaretGap - heightUnderPillTop(pillHeight) < visibleFrame.minY
+    }
+
+    /// The listening pill and the Space hint under it, from the pill's top edge down.
+    private static func heightUnderPillTop(_ pillHeight: CGFloat) -> CGFloat {
+        max(pillHeight, DictationConfig.listeningPillHeight) + DictationConfig.modeHintFootprint
     }
 
     /// Centres of agent mode's tool bubbles, of `sizes`, above a pill at `pill` (top-left origin, as
@@ -158,7 +163,8 @@ final class OverlayPanelController {
     }
 }
 
-private struct OverlayView: View {
+/// Internal for tests (`Pill`).
+struct OverlayView: View {
     let controller: DictationController
     /// After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring
     /// how the overlay appeared.
@@ -166,7 +172,7 @@ private struct OverlayView: View {
     /// The Space hint has had its `modeHintDisplayDuration` this hold.
     @State private var hintShown = false
 
-    private enum Mode: Equatable {
+    enum Mode: Equatable {
         case hidden, swirl, listening, transcribing, running(AgentTool), message(String)
     }
 
@@ -247,7 +253,7 @@ private struct OverlayView: View {
         }
     }
 
-    private struct Pill: View {
+    struct Pill: View {
         let mode: Mode
         let level: Float
 
