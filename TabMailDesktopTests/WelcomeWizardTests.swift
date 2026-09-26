@@ -10,7 +10,8 @@ import Testing
 struct WelcomeWizardTests {
     private let defaults = InMemoryDefaults()
 
-    /// Consent, then the two permissions, then the features, under three rail categories.
+    /// Consent, then the two permissions, then the features, under three rail categories; Back
+    /// walks them in reverse.
     @Test func stepsRunConsentThenPermissionsThenFeatures() {
         #expect(WelcomeWizard.categories.map(\.label) == ["Consent", "Permissions", "Features"])
         #expect(WelcomeWizard.steps == [.consent, .microphone, .accessibility, .screenReading])
@@ -24,6 +25,14 @@ struct WelcomeWizardTests {
             categories.append(wizard.categoryIndex)
         }
         #expect(categories == [0, 1, 1, 2])
+
+        // Back retraces the same steps one at a time.
+        var steps: [WelcomeWizard.Step] = []
+        while !wizard.isFirstStep {
+            wizard.back()
+            steps.append(wizard.step)
+        }
+        #expect(steps == [.accessibility, .microphone, .consent])
     }
 
     /// No step after consent is reachable until the user agrees; withdrawing it blocks again.
