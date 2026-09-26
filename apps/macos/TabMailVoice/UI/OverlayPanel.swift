@@ -7,13 +7,12 @@ import SwiftUI
 
 /// The dictation overlay, anchored at the text cursor: a swirl gathers there while the
 /// microphone warms up, then forms a waveform pill. The pill is the surface for dictation status
-/// (and, later, agent responses). While it listens, a hint under it says Space switches agent mode on
-/// or off; in agent mode the tools' bubbles sit in a row above it, and the running tool's border circles. The
+/// (and, later, agent responses). As it starts listening, a tooltip under it says Space switches agent
+/// mode on or off, and fades after a moment; in agent mode the tools' bubbles sit in a row above it, and the running tool's border circles. The
 /// panel never takes focus, so the target field keeps keyboard focus and receives the paste.
 @MainActor
 final class OverlayPanelController {
     private let panel: NSPanel
-    private let placement = OverlayPlacement()
     private var anchor: CGRect?
     private var lookupGeneration = 0
     private var lookupPending = false
@@ -38,7 +37,7 @@ final class OverlayPanelController {
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.contentView = NSHostingView(rootView: OverlayView(controller: controller, placement: placement))
+        panel.contentView = NSHostingView(rootView: OverlayView(controller: controller))
     }
 
     func update(for phase: DictationController.Phase) {
@@ -112,7 +111,6 @@ final class OverlayPanelController {
             pillHeight: DictationConfig.pillHeight,
             visibleFrame: screen.visibleFrame
         )
-        placement.opensUpward = Self.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: screen.visibleFrame)
         panel.setFrame(NSRect(origin: origin, size: DictationConfig.overlayCanvasSize), display: true)
     }
 
@@ -149,30 +147,22 @@ final class OverlayPanelController {
         }
     }
 
-    /// Centre of the Space hint, of `size`: `modeHintGap` under a pill at `pill`, or, when the overlay
-    /// opens upward (the pill is then above the caret's line, which the hint must not cover), over
-    /// everything above it (`bubbles`).
-    nonisolated static func hintCentre(for pill: CGRect, bubbles: [CGRect], size: CGSize, opensUpward: Bool) -> CGPoint {
-        let offset = DictationConfig.modeHintGap + size.height / 2
-        guard opensUpward else { return CGPoint(x: pill.midX, y: pill.maxY + offset) }
-        let top = bubbles.map(\.minY).reduce(pill.minY, min)
-        return CGPoint(x: pill.midX, y: top - offset)
+    /// Centre of the Space hint, of `size`: a tooltip centred `modeHintGap` under a pill at `pill`
+    /// (owner, 2026-09-26: "a tooltip that appears below the middle and disappears after a little").
+    /// It fades after `modeHintDisplayDuration`, so even an overlay opened above the caret's line
+    /// covers that line only briefly.
+    nonisolated static func hintCentre(under pill: CGRect, size: CGSize) -> CGPoint {
+        CGPoint(x: pill.midX, y: pill.maxY + DictationConfig.modeHintGap + size.height / 2)
     }
-}
-
-/// Where the overlay sits relative to the caret, for the hint.
-@MainActor
-@Observable
-final class OverlayPlacement {
-    var opensUpward = false
 }
 
 private struct OverlayView: View {
     let controller: DictationController
-    let placement: OverlayPlacement
     /// After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring
     /// how the overlay appeared.
     @State private var dispersing = false
+    /// The Space hint has had its `modeHintDisplayDuration` this hold.
+    @State private var hintShown = false
 
     private enum Mode: Equatable {
         case hidden, swirl, listening, transcribing, running(AgentTool), message(String)
@@ -188,8 +178,8 @@ private struct OverlayView: View {
         }
     }
 
-    /// The Space hint shows while the pill listens.
-    private var showsHint: Bool { mode == .listening }
+    /// The Space hint shows as the pill starts listening, once a hold.
+    private var showsHint: Bool { mode == .listening && !hintShown }
 
     /// The tool bubbles show while agent mode listens and works; an error message stands alone.
     private var showsTools: Bool {
@@ -221,7 +211,7 @@ private struct OverlayView: View {
                 GatheringSwirl()
                     .transition(.opacity)
             case .listening, .transcribing, .running, .message:
-                PillLayout(opensUpward: placement.opensUpward) {
+                PillLayout {
                     Pill(mode: mode, level: controller.level)
                         .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
                     if showsHint {
@@ -242,8 +232,16 @@ private struct OverlayView: View {
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: showsTools)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: controller.tools)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: controller.mode)
+        .animation(.easeOut(duration: DictationConfig.pillSpringResponse), value: hintShown)
         .onChange(of: mode) { old, new in
             dispersing = new == .hidden && old != .hidden
+            if new == .hidden { hintShown = false }
+        }
+        .task(id: showsHint) {
+            guard showsHint else { return }
+            try? await Task.sleep(for: DictationConfig.modeHintDisplayDuration)
+            guard !Task.isCancelled else { return }
+            hintShown = true
         }
     }
 
@@ -313,12 +311,9 @@ private struct IsModeHint: LayoutValueKey {
 
 /// Places the pill with its top edge where a one-line pill's would be when centred in the canvas, so
 /// taller pills grow downward, away from the caret line; agent mode's tool bubbles go in a row above
-/// it, and the Space hint under it (over everything when the overlay opens upward)
-/// (`OverlayPanelController.hintCentre`, `bubbleCentres`), following it as it grows or shrinks to a
-/// circle.
+/// it, and the Space hint under it (`OverlayPanelController.bubbleCentres`, `hintCentre`), following
+/// it as it grows or shrinks to a circle.
 private struct PillLayout: Layout {
-    let opensUpward: Bool
-
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         proposal.replacingUnspecifiedDimensions()
     }
@@ -338,20 +333,33 @@ private struct PillLayout: Layout {
         for (bubble, centre) in zip(bubbles, centres) {
             bubble.place(at: centre, anchor: .center, proposal: .unspecified)
         }
-        let bubbleFrames = zip(centres, sizes).map { CGRect(x: $0.x - $1.width / 2, y: $0.y - $1.height / 2, width: $1.width, height: $1.height) }
         for hint in others where hint[IsModeHint.self] {
-            let centre = OverlayPanelController.hintCentre(for: frame, bubbles: bubbleFrames, size: hint.sizeThatFits(.unspecified), opensUpward: opensUpward)
+            let centre = OverlayPanelController.hintCentre(under: frame, size: hint.sizeThatFits(.unspecified))
             hint.place(at: centre, anchor: .center, proposal: .unspecified)
         }
     }
 }
 
-/// Under the listening pill, kept small and quiet (owner, 2026-09-26): a "space" keycap and what it
-/// switches to.
+/// A tooltip under the listening pill, kept small and quiet (owner, 2026-09-26): a "space" keycap and
+/// what it switches to, with an arrow up at the pill.
 private struct ModeHint: View {
     let mode: DictationMode
 
     var body: some View {
+        VStack(spacing: 0) {
+            Arrow()
+                .fill(Self.fill)
+                .frame(width: DictationConfig.modeHintArrowWidth, height: DictationConfig.modeHintArrowHeight)
+            label
+                .background(Self.fill, in: Capsule())
+        }
+        .fixedSize()
+    }
+
+    /// Light in light and dark mode alike, as the pill.
+    private static let fill = Color(white: DictationConfig.pillFillWhite).opacity(DictationConfig.modeHintBackgroundOpacity)
+
+    private var label: some View {
         HStack(spacing: DictationConfig.modeHintSpacing) {
             Text("space")
                 .font(.system(size: DictationConfig.modeHintKeyFontSize, weight: .medium))
@@ -364,12 +372,20 @@ private struct ModeHint: View {
             Text(mode == .agent ? "exit agent" : "agent mode")
                 .font(.system(size: DictationConfig.modeHintFontSize))
         }
-        // Light in light and dark mode alike, as the pill.
         .foregroundStyle(Color.black.opacity(DictationConfig.modeHintTextOpacity))
         .padding(.horizontal, DictationConfig.modeHintHorizontalPadding)
         .frame(height: DictationConfig.modeHintHeight)
-        .background(Color(white: DictationConfig.pillFillWhite).opacity(DictationConfig.modeHintBackgroundOpacity), in: Capsule())
-        .fixedSize()
+    }
+
+    private struct Arrow: Shape {
+        func path(in rect: CGRect) -> Path {
+            Path { path in
+                path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+                path.closeSubpath()
+            }
+        }
     }
 }
 

@@ -340,7 +340,10 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   hands-free listening and `doubleTapWindow` are gone. While the pill listens, a hint under it (over
   it when the overlay opens upward) says "Space to toggle agent mode" / "Space to disable agent mode";
   later the same day made quieter at the owner's request: a small "space" keycap with "agent mode" /
-  "exit agent", no border.
+  "exit agent", no border. Later again (owner: "a tooltip that appears below the middle and
+  disappears after a little"): a tooltip centred under the pill, with an arrow up at it, always
+  below (even when the overlay opens upward, since it is brief), fading after
+  `modeHintDisplayDuration` (2.5 s), once a hold.
 - Tools: Edit when the key-down screen read found selected text, Compose when not
   (`DesktopAgent.writingTool`); never both. No bubble shows until that read is done, and agent mode
   waits for the whole read (no `agentContextWait`), so the tool that runs is the one shown. The agent
@@ -353,7 +356,7 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   between stream bytes; the backend sends keepalives), which is a dead-connection check, not a cap.
 - Bubbles sit level with the pill, first to its right, then its left, with no drift (later the same
   day, owner: "appear on top … like a list on top": one row centred above the pill; the hint then
-  goes over the whole stack when the overlay opens upward); they are icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
+  went over the whole stack when the overlay opened upward, until it became the tooltip above); they are icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
   adds nothing (owner). The name stays as the accessibility label.
 - The "sometimes works" failures the owner saw were not timeouts: the dev backend log showed the
   agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone

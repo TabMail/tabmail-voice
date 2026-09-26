@@ -87,29 +87,27 @@ struct OverlayGeometryTests {
     }
 
     /// Agent mode's bubbles and the Space hint (top-left origin), in the overlay's canvas: the bubbles
-    /// in one row centred above the pill, clear of it and of each other; the hint under the pill, or,
-    /// when the overlay opens upward, above the pill and the bubbles, so it never covers the caret's
-    /// line; nothing overlaps and everything stays inside the canvas. For the listening pill and the
-    /// circle it shrinks to, with no bubbles (dictation) and as many as are ever offered.
-    @Test(arguments: [false, true])
-    func bubblesSitInARowAboveThePillAndTheHintClearOfThem(opensUpward: Bool) {
+    /// in one row centred above the pill, clear of it and of each other; the hint a tooltip centred
+    /// under the pill; nothing overlaps and everything stays inside the canvas. For the listening pill
+    /// and the circle it shrinks to, with no bubbles (dictation) and as many as are ever offered.
+    @Test func bubblesSitInARowAboveThePillAndTheHintUnderIt() {
         let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
         let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
-        let hint = CGSize(width: 90, height: DictationConfig.modeHintHeight)
+        let hint = CGSize(width: 90, height: DictationConfig.modeHintArrowHeight + DictationConfig.modeHintHeight)
         func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
             CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
         }
         for width in [79, DictationConfig.pillHeight] {
             let pill = CGRect(x: canvas.midX - width / 2, y: (canvas.height - DictationConfig.pillHeight) / 2, width: width, height: DictationConfig.pillHeight)
+            let hintFrame = frame(OverlayPanelController.hintCentre(under: pill, size: hint), hint)
+            #expect(hintFrame.minY >= pill.maxY)
+            #expect(abs(hintFrame.midX - pill.midX) < 0.001, "hint not centred under the pill")
+            #expect(canvas.contains(hintFrame))
             // Edit and Compose are never offered together: one fewer bubble than there are tools.
             for count in 0...(AgentTool.allCases.count - 1) {
                 let centres = OverlayPanelController.bubbleCentres(above: pill, sizes: Array(repeating: bubble, count: count))
                 #expect(centres.count == count)
                 let frames = centres.map { frame($0, bubble) }
-                let hintFrame = frame(OverlayPanelController.hintCentre(for: pill, bubbles: frames, size: hint, opensUpward: opensUpward), hint)
-                #expect(opensUpward ? hintFrame.maxY <= pill.minY : hintFrame.minY >= pill.maxY)
-                #expect(!hintFrame.intersects(pill))
-                #expect(canvas.contains(hintFrame))
                 for (index, bubbleFrame) in frames.enumerated() {
                     #expect(bubbleFrame.maxY <= pill.minY, "bubble \(index) of \(count) is not above the pill")
                     #expect(!bubbleFrame.intersects(hintFrame), "bubble \(index) of \(count) overlaps the hint")

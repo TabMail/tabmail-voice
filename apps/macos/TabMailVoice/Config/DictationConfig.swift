@@ -265,8 +265,9 @@ enum DictationConfig {
     static let agentBubbleAppIconSize: CGFloat = 13
     /// A tool's symbol in its bubble.
     static let agentBubbleSymbolSize: CGFloat = 10
-    /// The Space hint under the pill (over the stack when the overlay opens upward) while it
-    /// listens: small and quiet, a "space" keycap and a word or two.
+    /// The Space hint: a tooltip centred under the listening pill, a "space" keycap and a word or
+    /// two, that fades out after `modeHintDisplayDuration`.
+    static let modeHintDisplayDuration: Duration = .milliseconds(2500)
     static let modeHintFontSize: CGFloat = 10
     static let modeHintHeight: CGFloat = 16
     static let modeHintHorizontalPadding: CGFloat = 5
@@ -276,8 +277,11 @@ enum DictationConfig {
     static let modeHintKeyHeight: CGFloat = 12
     static let modeHintKeyCornerRadius: CGFloat = 3
     static let modeHintKeyBorderOpacity: Double = 0.3
-    /// Gap between the pill and the hint.
-    static let modeHintGap: CGFloat = 5
+    /// The tooltip's arrow, pointing up at the pill.
+    static let modeHintArrowWidth: CGFloat = 8
+    static let modeHintArrowHeight: CGFloat = 4
+    /// Gap between the pill and the tip of the hint's arrow.
+    static let modeHintGap: CGFloat = 3
     static let modeHintTextOpacity: Double = 0.55
     static let modeHintBackgroundOpacity: Double = 0.85
     /// The running tool's icon in the pill.
