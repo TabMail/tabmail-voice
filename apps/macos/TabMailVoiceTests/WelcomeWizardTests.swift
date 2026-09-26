@@ -142,10 +142,13 @@ struct AppSettingsTests {
     }
 
     /// What a dictation takes at key-down is what Settings says: consent, screen reading (off means
-    /// no screen read), the server, and the email app chosen.
-    @Test(arguments: [(false, true, false), (true, false, true)])
-    func aDictationTakesWhatSettingsSay(readsScreen: Bool, hasConsented: Bool, useDevelopmentServer: Bool) {
-        let settings = AppSettings(defaults: defaults)
+    /// no screen read), the server, and the email app chosen, which it only gets while a Thunderbird
+    /// profile has TabMail's add-on.
+    @Test(arguments: [(false, true, false, true), (true, false, true, true), (false, true, false, false)])
+    func aDictationTakesWhatSettingsSay(readsScreen: Bool, hasConsented: Bool, useDevelopmentServer: Bool, hasTabMail: Bool) throws {
+        let thunderbird = try Fixtures.thunderbirdFolder(profiles: [[Fixtures.addon(userDisabled: !hasTabMail)]])
+        defer { try? FileManager.default.removeItem(at: thunderbird) }
+        let settings = AppSettings(defaults: defaults, thunderbirdDirectory: thunderbird)
         settings.readsScreen = readsScreen
         settings.hasConsented = hasConsented
         settings.useDevelopmentServer = useDevelopmentServer
@@ -155,7 +158,7 @@ struct AppSettingsTests {
             hasConsented: hasConsented,
             backendURL: useDevelopmentServer ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL,
             readsScreen: readsScreen,
-            emailApp: "org.example.mail"
+            emailApp: hasTabMail ? "org.example.mail" : nil
         ))
     }
 }

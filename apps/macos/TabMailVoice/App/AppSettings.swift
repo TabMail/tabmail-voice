@@ -66,15 +66,23 @@ final class AppSettings {
             hasConsented: hasConsented,
             backendURL: backendURL,
             readsScreen: readsScreen,
-            emailApp: EmailClient.resolve(chosen: emailClient, systemDefault: EmailClient.systemDefault()?.bundleIdentifier)
+            emailApp: EmailClient.resolve(
+                chosen: emailClient,
+                systemDefault: EmailClient.systemDefault()?.bundleIdentifier,
+                hasTabMail: EmailClient.hasTabMail(in: thunderbirdDirectory)
+            )
         )
     }
+
+    /// Where Thunderbird keeps its profiles, asked whether TabMail's add-on is installed.
+    let thunderbirdDirectory: URL
 
     /// Mirrors the system's login-item registration rather than storing a copy of it.
     private(set) var launchAtLogin: Bool
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, thunderbirdDirectory: URL = DictationConfig.thunderbirdDataDirectory) {
         self.defaults = defaults
+        self.thunderbirdDirectory = thunderbirdDirectory
         hotkey = defaults.string(forKey: Key.hotkey).flatMap(DictationHotkey.init(rawValue:)) ?? .rightOption
         useDevelopmentServer = defaults.bool(forKey: Key.useDevelopmentServer)
         readsScreen = defaults.object(forKey: Key.readsScreen) as? Bool ?? true

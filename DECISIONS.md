@@ -506,6 +506,20 @@ the agent restating the request as a chat message, and sending being enough (no 
   or press Return in the other app after the paste went to the first, submitting whatever draft its
   chat held.
 
+**Amendment 2026-09-26 (add-on probe):** owner: "make sure that the tool doesn't show up if
+Thunderbird does not have [TabMail] installed … sort of a probe?" There is an email app only while a
+Thunderbird profile has TabMail's add-on (`thunderbird@tabmail.ai`) installed and enabled, which
+closes the "cannot tell whether the add-on is installed" weak point above. `EmailClient.hasTabMail`
+reads the profiles `~/Library/Thunderbird/profiles.ini` lists and each one's `extensions.json`; an
+entry the user disabled (`userDisabled`) or Thunderbird disabled (`appDisabled`) does not count.
+`active` is not used: Thunderbird leaves it `true` on an add-on the user has disabled (measured on
+the owner's profiles). It is read at key-down with the rest of the settings snapshot (ADR-DESK-017),
+so installing or enabling the add-on applies to the next dictation. Settings › Agent mode says when
+the add-on is missing.
+- Any profile counts. Thunderbird and Thunderbird Beta share the folder, and nothing in it says which
+  profile a given installation opens, so the add-on in one profile turns the tool on even when the
+  chosen Thunderbird opens another; the chat then never opens, as before.
+
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 
 **Context:** Owner, 2026-09-26: an agent-mode reply came out of context, and nothing could say why.

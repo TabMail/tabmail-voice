@@ -143,6 +143,34 @@ enum Fixtures {
         ": \(String(repeating: " ", count: 20))\n\nevent: keepalive\ndata: {}\n\nevent: keepalive\ndata: {}\n\nevent: final\ndata: \(final)\n\n"
     }
 
+    /// An add-on (TabMail's unless `id` says otherwise) as a Thunderbird profile's
+    /// `extensions.json` lists it.
+    static func addon(id: String = DictationConfig.tabMailAddonID, userDisabled: Bool = false, appDisabled: Bool = false) -> [String: Any] {
+        ["id": id, "active": true, "userDisabled": userDisabled, "appDisabled": appDisabled]
+    }
+
+    /// A Thunderbird data folder in a new temporary directory: a `profiles.ini` listing one relative
+    /// profile per element of `profiles`, each with those add-ons in its `extensions.json`. The
+    /// caller removes it.
+    static func thunderbirdFolder(profiles: [[[String: Any]]]) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "TabMailVoiceTests-\(UUID().uuidString)")
+        var ini = "[General]\nStartWithLastProfile=1\n"
+        for (index, addons) in profiles.enumerated() {
+            let path = "Profiles/test.profile-\(index)"
+            ini += "\n[Profile\(index)]\nName=profile-\(index)\nIsRelative=1\nPath=\(path)\n"
+            try writeExtensions(addons, in: folder.appending(path: path))
+        }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try ini.write(to: folder.appending(path: "profiles.ini"), atomically: true, encoding: .utf8)
+        return folder
+    }
+
+    static func writeExtensions(_ addons: [[String: Any]], in profile: URL) throws {
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 36, "addons": addons])
+        try data.write(to: profile.appending(path: "extensions.json"))
+    }
+
     static func jsonBody(of request: URLRequest) -> [String: Any] {
         guard let body = request.httpBody,
               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
