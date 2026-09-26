@@ -13,7 +13,8 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   (`SWIFT_TREAT_WARNINGS_AS_ERRORS`); the App Intents "Metadata extraction skipped" line is the
   only tolerated diagnostic.
 - **Never log transcript text, audio or tokens.** Dictation is user content. Log lengths, states
-  and error types only, via `Log` (debug-gated).
+  and error types only, via `Log` (debug-gated). Debug builds also write
+  `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual test's app log.
 - **Tests never hit the network.** Inject `HTTPTransport` (`StubTransport` in `TestSupport.swift`)
   and `InMemorySessionStore`; never the real Keychain item.
 - **Every tunable number goes in `DictationConfig`.**

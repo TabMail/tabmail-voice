@@ -52,6 +52,9 @@ struct MenuContent: View {
             NSApp.activate()
             openWindow(id: ScreenContextDebugView.windowID)
         }
+        Button("Show Log File") {
+            NSWorkspace.shared.activateFileViewerSelecting([LogFile.url])
+        }
         #endif
 
         Divider()

@@ -50,7 +50,7 @@ tabmail-macos/
         │   │   └── AccessibilityActivator.swift  Asks Gecko/Electron apps to build their tree as they come to the front
         │   ├── Onboarding/WelcomeWizard.swift  Welcome wizard steps and navigation (ADR-DESK-010): consent → permissions → features
         │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling, grant callbacks
-        │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content)
+        │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content); debug builds also append to ~/Library/Logs/TabMail Voice/TabMail Voice.log (`LogFile`, menu › Show Log File)
         │   └── UI/
         │       ├── MenuContent.swift         Menu-bar menu
         │       ├── SettingsView.swift        Settings window
