@@ -31,16 +31,15 @@ struct ModeHintTests {
         let transport = StubTransport()
         let thunderbird = FakeThunderbird()
         thunderbird.installed = false
-        let baseURL = URL(string: "https://api.example.com")!
         let controller = DictationController(
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            hasConsented: { true },
+            settings: { DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
             account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
             inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
             thunderbird: thunderbird.relay(),
             capture: ToneCapture(),
-            makeTranscriptionClient: { TranscriptionClient(baseURL: baseURL, transport: transport.transport) },
-            makeCompletionsClient: { CompletionsClient(baseURL: baseURL, transport: transport.transport) }
+            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transport.transport) },
+            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: transport.transport) }
         )
         controller.start()
         defer { controller.cancel() }
