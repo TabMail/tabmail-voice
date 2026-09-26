@@ -281,7 +281,7 @@ struct DictationControllerTests {
         controller.handle(.start)
         controller.handle(.finish)
         try? await Task.sleep(for: .milliseconds(100))
-        #expect(controller.phase == .failed(DictationController.consentNeededMessage))
+        #expect(controller.phase == .failed("Finish setting up TabMail from its menu to dictate."))
         #expect(capture.starts == 0)
         #expect(reads == 0)
         #expect(transcription.requests.isEmpty)
@@ -300,58 +300,10 @@ struct DictationControllerTests {
         controller.handle(.start)
         controller.handle(.finish)
         try? await Task.sleep(for: .milliseconds(100))
-        #expect(controller.phase == .failed(DictationController.consentNeededMessage))
+        #expect(controller.phase == .failed("Finish setting up TabMail from its menu to dictate."))
         #expect(capture.starts == 1)
         #expect(reads == 1)
         #expect(transcription.requests.isEmpty)
-        #expect(completions.requests.isEmpty)
-        #expect(pastes.texts.isEmpty)
-    }
-
-    /// Consent withdrawn while recording: however the recording ends (the menu's Stop or letting go
-    /// of the key), nothing is uploaded, cleaned up or pasted. With consent kept, the same dictation is.
-    @Test(arguments: [(true, true), (true, false), (false, true), (false, false)])
-    func consentWithdrawnWhileRecordingSendsNothing(stopsFromMenu: Bool, withdraws: Bool) async {
-        transcription.enqueue(status: 200, json: ["text": transcript])
-        completions.enqueue(status: 200, text: cleanedStream)
-        let consented = Switch(true)
-        let (controller, pastes) = makeController(capture: ToneCapture(), hasConsented: { consented.isOn })
-
-        controller.handle(.start)
-        #expect(await eventually { controller.phase == .listening })
-        if withdraws { consented.isOn = false }
-        if stopsFromMenu { controller.toggle() } else { controller.handle(.finish) }
-
-        if withdraws {
-            #expect(await eventually { controller.phase == .failed(DictationController.consentNeededMessage) })
-            try? await Task.sleep(for: .milliseconds(100))
-            #expect(transcription.requests.isEmpty)
-            #expect(completions.requests.isEmpty)
-            #expect(pastes.texts.isEmpty)
-        } else {
-            #expect(await eventually { pastes.texts == [cleaned] })
-            #expect(transcription.requests.count == 1)
-            #expect(completions.requests.count == 1)
-        }
-    }
-
-    /// Consent withdrawn while the recording is being transcribed: the transcript goes no further,
-    /// so the cleanup (which carries the screen text) is never sent and nothing is pasted.
-    @Test func consentWithdrawnDuringTranscriptionSendsNoCleanup() async {
-        transcription.enqueue(status: 200, json: ["text": transcript])
-        completions.enqueue(status: 200, text: cleanedStream)
-        let (gate, opener) = AsyncStream.makeStream(of: Never.self)
-        transcription.gate = { for await _ in gate {} }
-        let consented = Switch(true)
-        let (controller, pastes) = makeController(capture: ToneCapture(), hasConsented: { consented.isOn })
-
-        await holdAndRelease(controller)
-        #expect(await eventually { transcription.requests.count == 1 })
-        consented.isOn = false
-        opener.finish()
-
-        #expect(await eventually { controller.phase == .failed(DictationController.consentNeededMessage) })
-        try? await Task.sleep(for: .milliseconds(100))
         #expect(completions.requests.isEmpty)
         #expect(pastes.texts.isEmpty)
     }

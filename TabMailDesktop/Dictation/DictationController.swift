@@ -100,7 +100,7 @@ final class DictationController {
         case .arming, .listening, .transcribing: return
         }
         guard hasConsented() else {
-            fail(Self.consentNeededMessage)
+            fail("Finish setting up TabMail from its menu to dictate.")
             return
         }
         guard account.isSignedIn else {
@@ -237,9 +237,6 @@ final class DictationController {
 
     /// Transcribes, cleans up and inserts one recording. Internal for tests.
     func transcribe(_ wav: Data, generation current: Int) async {
-        // Consent withdrawn while recording: send nothing. It is asked again before the cleanup,
-        // which carries the screen text, because it may be withdrawn while this upload runs.
-        guard consentStands() else { return }
         Log.debug("DictationController: uploading \(wav.count) bytes")
         // Both requests go under the account signed in now, even if the user switches accounts
         // while they run.
@@ -259,7 +256,7 @@ final class DictationController {
             let read = contextTask
             let context = try? await withTimeout(seconds: contextWait) { await read?.value }
             if read != nil, context == nil { Log.debug("DictationController: screen read not done in time; cleaning up without it") }
-            guard generation == current, !Task.isCancelled, consentStands() else { return }
+            guard generation == current, !Task.isCancelled else { return }
             let text = await DictationCleanup.cleanUp(transcript, context: context, client: makeCompletionsClient(), account: account, userId: userId)
             guard generation == current, !Task.isCancelled else { return }
             await inserter.insert(text)
@@ -320,17 +317,6 @@ final class DictationController {
         }
     }
 
-    /// False, with the dictation ended and the reason shown, once the user has withdrawn consent.
-    private func consentStands() -> Bool {
-        guard hasConsented() else {
-            Log.debug("DictationController: consent withdrawn; sending nothing")
-            teardown()
-            fail(Self.consentNeededMessage)
-            return false
-        }
-        return true
-    }
-
     private func discard() {
         generation += 1
         transcriptionTask?.cancel()
@@ -353,7 +339,6 @@ final class DictationController {
     }
 
     /// Shown when the recording had no words in it. Kept to one line of the pill.
-    static let consentNeededMessage = "Finish setting up TabMail from its menu to dictate."
     static let nothingHeardMessage = "Didn't catch that. Try again."
 
     private func fail(_ message: String) {

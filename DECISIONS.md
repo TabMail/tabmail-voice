@@ -251,10 +251,11 @@ grants. The privacy policy tells users they can switch screen reading off.
   and links the Terms of Service and the Privacy Policy. Next stays disabled until the user
   ticks the agreement.
 - **Consent gates dictation.** A key-down without consent records nothing, reads no screen,
-  sends nothing and says why. Consent is asked again before the recording is uploaded and
-  before the cleanup (which carries the screen text) is sent, so withdrawing it mid-dictation
-  ends that dictation with nothing sent from then on. The menu's Stop stays enabled while
-  recording, so a recording can always be stopped.
+  sends nothing and says why. Consent is checked at key-down only: a dictation started with
+  consent is still sent if the user withdraws consent before it ends, and the next key-down is
+  refused. The owner chose this over re-checking before each request because it is the simpler
+  code (2026-09-25). The menu's Stop stays enabled while recording, so a recording can always
+  be stopped.
 - **Permission and feature steps** never block Next.
 - **Screen reading** (`AppSettings.readsScreen`) is on by default, since the consent step
   discloses it. `ScreenContextProbe` checks it at every key-down, so a change applies from the
@@ -271,8 +272,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   on the account. The consent isn't versioned; changing what dictation sends means re-asking,
   which is a new decision.
 - A grant made from the wizard is announced by `PermissionsModel`. The Microphone grant is
-  announced once the model already reports it. A Microphone grant prepares the microphone for the first dictation. An
-  Accessibility grant re-installs the hotkey.
+  announced once the model already reports it. A Microphone grant prepares the microphone for
+  the first dictation. An Accessibility grant re-installs the hotkey.
 - **Open (owner):** per-app exclusion. It could be a denylist in the Features step or a built-in
   skip list. Web search and web reading get their own toggles in Features once they exist.
 
