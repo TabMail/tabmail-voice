@@ -267,7 +267,7 @@ enum DictationConfig {
     /// A tool's symbol in its bubble.
     static let agentBubbleSymbolSize: CGFloat = 10
     /// The Space hint: a tooltip centred under the listening pill, a "space" keycap and a word or
-    /// two, that fades out after `modeHintDisplayDuration`. Dark, as macOS tooltips and HUDs are, so it
+    /// two, that fades out after `modeHintDisplayDuration`. Dark, as macOS HUDs are, so it
     /// reads as the system's hint rather than part of the pill.
     static let modeHintDisplayDuration: Duration = .milliseconds(2500)
     static let modeHintFontSize: CGFloat = 11

@@ -372,7 +372,7 @@ private struct ModeHint: View {
         .padding(.horizontal, DictationConfig.modeHintHorizontalPadding)
         .frame(height: DictationConfig.modeHintHeight)
         .padding(.top, DictationConfig.modeHintArrowHeight)
-        // Dark in light and dark mode alike, as the system's tooltips.
+        // Dark in light and dark mode alike, as macOS HUDs are.
         .background(Color(white: DictationConfig.modeHintFillWhite).opacity(DictationConfig.modeHintFillOpacity), in: Self.shape)
         .overlay {
             Self.shape.stroke(Color.white.opacity(DictationConfig.modeHintBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
