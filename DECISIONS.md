@@ -486,7 +486,9 @@ the agent restating the request as a chat message, and sending being enough (no 
   the relay, not the keyboard. Since those reads now suspend, the check that Thunderbird is in front
   comes after the title read (the user may switch away during it, and Accessibility still reports
   the chat as Thunderbird's focused window), and a cancel is honoured before the paste and before
-  Return.
+  Return. When that first read finds no chat, Thunderbird is checked to be in front again, and a
+  cancel honoured, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
+  would go to the app they switched to (Finder, Safari and Chrome bind it to Downloads).
 
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 

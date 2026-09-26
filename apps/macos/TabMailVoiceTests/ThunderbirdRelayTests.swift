@@ -31,7 +31,7 @@ final class FakeThunderbird {
     private(set) var events: [String] = []
     private(set) var pasted: [String] = []
 
-    static let chatTitle = "TabMail Chat"
+    nonisolated static let chatTitle = "TabMail Chat"
 
     /// A relay on this Thunderbird, with waits short enough for tests.
     func relay(chatInputSettle: TimeInterval = 0, chatTimeout: TimeInterval = 0.2) -> ThunderbirdRelay {
@@ -212,12 +212,30 @@ struct ThunderbirdRelayTests {
         #expect(thunderbird.events == ["activate"] + sentBefore)
     }
 
-    /// Cancelled while the chat's title is read (before the paste, or before Return): nothing more
-    /// is sent.
-    @Test(arguments: [(2, [String]()), (3, ["paste"])])
-    func cancelledDuringTheTitleReadSendsNothingMore(read: Int, sentBefore: [String]) async {
+    /// The user switching away while the title is first read gets no shortcut in the app they went
+    /// to, whether or not the chat has focus in Thunderbird.
+    @Test(arguments: [FakeThunderbird.chatTitle, "Inbox - Thunderbird"])
+    func switchingAwayDuringTheFirstTitleReadGetsNoShortcut(title: String) async {
         let thunderbird = FakeThunderbird()
-        thunderbird.focusedTitle = FakeThunderbird.chatTitle
+        thunderbird.focusedTitle = title
+        thunderbird.onTitleRead = { fake, n in
+            if n == 1 { fake.frontmost = false }
+        }
+
+        await #expect(throws: ThunderbirdRelay.Failure.notFrontmost) { try await thunderbird.relay().send(message) }
+        #expect(thunderbird.events == ["activate"])
+    }
+
+    /// Cancelled while the chat's title is read (before the shortcut, the paste, or Return): nothing
+    /// more is sent.
+    @Test(arguments: [
+        (1, "Inbox - Thunderbird", [String]()),
+        (2, FakeThunderbird.chatTitle, []),
+        (3, FakeThunderbird.chatTitle, ["paste"]),
+    ])
+    func cancelledDuringTheTitleReadSendsNothingMore(read: Int, title: String, sentBefore: [String]) async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = title
         let relay = thunderbird.relay()
         let sending = SendingTask()
         thunderbird.onTitleRead = { _, n in

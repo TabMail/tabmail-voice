@@ -81,6 +81,10 @@ final class ThunderbirdRelay {
         await system.activate()
         guard try await wait(activateTimeout, until: system.isFrontmost) else { throw Failure.notFrontmost }
         if await !isChatFocused() {
+            // The shortcut goes to whatever app is in front, and the user may have switched, or
+            // cancelled, during the title read.
+            guard system.isFrontmost() else { throw Failure.notFrontmost }
+            try Task.checkCancellation()
             Log.debug("ThunderbirdRelay: opening the chat")
             await system.openChat()
             guard try await wait(chatTimeout, until: isChatFocused) else { throw Failure.chatNotFocused }
