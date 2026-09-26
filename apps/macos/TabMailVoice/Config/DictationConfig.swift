@@ -160,11 +160,13 @@ enum DictationConfig {
     static let thunderbirdAddonSettle: TimeInterval = 3
     /// Longest Thunderbird may take to come to the front (seconds).
     static let thunderbirdActivateTimeout: TimeInterval = 3
-    /// Longest the chat window may take to open and take focus after the shortcut (seconds).
-    static let thunderbirdChatTimeout: TimeInterval = 5
-    /// Once the chat window has focus, its input takes focus on the next turn of its event loop;
-    /// the paste waits this long for it (seconds).
-    static let thunderbirdChatInputSettle: TimeInterval = 0.3
+    /// The chat's input, a contenteditable that Gecko reports as a text area. The chat focuses it
+    /// only once it is ready for a message (`awaitUserInput` in `chat/modules/converse.js`), after
+    /// loading its history and building its context; its window has its title long before that.
+    static let thunderbirdChatInputRole = "AXTextArea"
+    /// Longest the chat may take, after the shortcut, to open and be ready for a message: a chat
+    /// just opened builds its inbox context and prompt first (seconds).
+    static let thunderbirdChatTimeout: TimeInterval = 15
     /// How often those waits check (seconds).
     static let thunderbirdPollInterval: TimeInterval = 0.1
     /// Accessibility calls into Thunderbird give up after this long (seconds).

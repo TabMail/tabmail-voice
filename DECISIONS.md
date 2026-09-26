@@ -492,6 +492,13 @@ the agent restating the request as a chat message, and sending being enough (no 
   Return. When that first read finds no chat, Thunderbird is checked to be in front again, and a
   cancel honoured, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
   would go to the app they switched to (Finder, Safari and Chrome bind it to Downloads).
+- The chat is ready for a message only once its input has focus (Accessibility role `AXTextArea` in
+  the "TabMail Chat" window), not as soon as the window has its title. A chat just opened has its title
+  at once but focuses its input only after loading its history and building its context
+  (`awaitUserInput`); pasting on the title plus a fixed 0.3 s settle lost the message on a cold open
+  (owner, 2026-09-26: "it opens and then the message doesn't get through"). The relay waits up to
+  `thunderbirdChatTimeout` (15 s, was 5) for the input, and the settle is gone. Measured on the owner's
+  Thunderbird: a ready chat's focused element is the input, an `AXTextArea`.
 - The relay is given the email app (a bundle identifier) with each send and asks every question
   (running, in front, focused window's title) of that app; it never reads Settings. The dictation
   takes the app from its key-down settings snapshot (ADR-DESK-017). Resolving the app from Settings

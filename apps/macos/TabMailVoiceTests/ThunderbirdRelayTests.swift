@@ -17,6 +17,9 @@ final class FakeThunderbird {
     /// Whether asking Thunderbird to the front works.
     var comesToFront = true
     var focusedTitle: String? = "Inbox - Thunderbird"
+    /// For this many reads after the shortcut opens the chat, the chat is still loading: its window
+    /// has its title, but the focus is on the page, not its input, and a paste goes nowhere.
+    var chatLoadingReads = 0
     /// Whether the open-chat shortcut opens the chat.
     var shortcutOpensChat = true
     /// Whether launching shows a window.
@@ -45,7 +48,7 @@ final class FakeThunderbird {
     }
 
     /// A relay on this Thunderbird, with waits short enough for tests.
-    func relay(chatInputSettle: TimeInterval = 0, chatTimeout: TimeInterval = 0.2) -> ThunderbirdRelay {
+    func relay(chatTimeout: TimeInterval = 0.2) -> ThunderbirdRelay {
         let relay = ThunderbirdRelay(system: ThunderbirdRelay.System(
             applicationURL: { [self] app in
                 asked(app)
@@ -82,13 +85,15 @@ final class FakeThunderbird {
                 }
                 return frontmost
             },
-            focusedWindowTitle: { [self] app in
+            focusedElement: { [self] app in
                 asked(app)
                 titleReads += 1
                 onTitleRead?(self, titleReads)
                 // Answers after a turn, as an Accessibility call off the main thread does.
                 await Task.yield()
-                return focusedTitle
+                let loading = chatLoadingReads > 0
+                if loading { chatLoadingReads -= 1 }
+                return .init(role: loading ? "AXWebArea" : "AXTextArea", windowTitle: focusedTitle)
             },
             openChat: { [self] in
                 events.append("openChat")
@@ -97,7 +102,7 @@ final class FakeThunderbird {
             },
             paste: { [self] text in
                 events.append("paste")
-                pasted.append(text)
+                if chatLoadingReads == 0 { pasted.append(text) }
                 if loseFocusOnPaste { frontmost = false }
             },
             pressReturn: { [self] in events.append("return") }
@@ -106,7 +111,6 @@ final class FakeThunderbird {
         relay.addonSettle = 0
         relay.activateTimeout = 0.2
         relay.chatTimeout = chatTimeout
-        relay.chatInputSettle = chatInputSettle
         relay.pollInterval = 0.01
         return relay
     }
@@ -149,7 +153,7 @@ struct ThunderbirdRelayTests {
             },
             activate: { app in if windows.contains(app) { front = app } },
             isFrontmost: { front == $0 },
-            focusedWindowTitle: { windows.contains($0) ? FakeThunderbird.chatTitle : nil },
+            focusedElement: { windows.contains($0) ? .init(role: "AXTextArea", windowTitle: FakeThunderbird.chatTitle) : nil },
             openChat: {},
             paste: { texts[front, default: []].append($0) },
             pressReturn: { returns.append(front) }
@@ -158,7 +162,6 @@ struct ThunderbirdRelayTests {
         relay.addonSettle = 0
         relay.activateTimeout = 0.1
         relay.chatTimeout = 0.1
-        relay.chatInputSettle = 0
         relay.pollInterval = 0.005
 
         if showsWindow {
@@ -272,6 +275,25 @@ struct ThunderbirdRelayTests {
     }
 
     /// No TabMail add-on, or a remapped shortcut: the chat never opens and nothing is typed.
+    /// A chat just opened has its title before it is ready for a message: the message waits for its
+    /// input to take focus, and a chat that never gets ready gets nothing.
+    @Test(arguments: [3, 1000])
+    func aChatStillLoadingIsWaitedFor(loadingReads: Int) async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.chatLoadingReads = loadingReads
+        let send = { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
+
+        if loadingReads < 10 {
+            await #expect(throws: Never.self) { try await send() }
+            #expect(thunderbird.pasted == [message])
+            #expect(thunderbird.events == ["activate", "openChat", "paste", "return"])
+        } else {
+            await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await send() }
+            #expect(!thunderbird.events.contains("paste"))
+            #expect(!thunderbird.events.contains("return"))
+        }
+    }
+
     @Test func aChatThatNeverOpensGetsNothing() async {
         let thunderbird = FakeThunderbird()
         thunderbird.shortcutOpensChat = false
@@ -282,16 +304,18 @@ struct ThunderbirdRelayTests {
     }
 
     /// The user switched away while the chat's input settled: nothing is pasted where they went.
-    @Test func focusLostBeforeThePasteGetsNothing() async {
+    @Test func focusLostWhileTheChatLoadsGetsNothing() async {
         let thunderbird = FakeThunderbird()
+        thunderbird.chatLoadingReads = 1000
         thunderbird.onOpenChat = { fake in
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(50))
                 fake.frontmost = false
+                fake.chatLoadingReads = 0
             }
         }
 
-        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay(chatInputSettle: 0.5).send(message, to: FakeThunderbird.app) }
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message, to: FakeThunderbird.app) }
         #expect(thunderbird.pasted.isEmpty)
         #expect(!thunderbird.events.contains("return"))
     }
