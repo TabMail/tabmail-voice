@@ -211,6 +211,8 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
   `contextCommandTimeout` and is stopped after it, so an abandoned capture does not leave a
   process behind: a stopped tmux server keeps its client's output open, so waiting for the end of
   the output alone could hang.
+- Owner, 2026-09-25: screen reading is switchable (ADR-DESK-010). With it off, nothing is read
+  and the cleanup runs without screen context.
 - The screen text is untrusted input to the model: text on screen, such as terminal output someone
   else wrote, can steer the reply that gets pasted (prompt injection into the paste), including a
   reply with a line break that a terminal without bracketed paste would run as a command. Owner,
@@ -229,3 +231,45 @@ its own device, beside Thunderbird and iOS.
 - The backend reads the Thunderbird prompts for any client type other than `ios`, so prompt and
   tool resolution are unchanged.
 - Usage recorded under `desktop` during development (2026-09-24 and 25) keeps that label.
+
+## ADR-DESK-010: A welcome wizard for consent, permissions and features; screen reading switchable
+
+**Context:** Owner, 2026-09-25: the Mac app needs an onboarding wizard like the Thunderbird
+one, covering (1) consent, (2) permissions and (3) feature toggles, starting with screen
+reading. Until now, screen reading ran on every dictation whenever Accessibility was granted,
+with no setting. At every launch the app asked for any missing Microphone and Accessibility
+grants. The privacy policy tells users they can switch screen reading off.
+
+**Decision:**
+- **Layout.** The wizard copies the Thunderbird welcome wizard's layout:
+  - a top rail of category labels, with one bubble per step;
+  - Back and Next buttons, with Finish on the last step;
+  - bubbles that return only to steps already reached.
+- **Steps.** Consent → Permissions (Microphone, Accessibility) → Features (screen reading).
+- **Consent step.** It says what dictation sends: the voice, and the text in the front window
+  while screen reading is on. It says where that goes (TabMail and its AI providers, not stored)
+  and links the Terms of Service and the Privacy Policy. Next stays disabled until the user
+  ticks the agreement.
+- **Consent gates dictation.** A key-down without consent records nothing, reads no screen,
+  sends nothing and says why.
+- **Permission and feature steps** never block Next.
+- **Screen reading** (`AppSettings.readsScreen`) is on by default, since the consent step
+  discloses it. `ScreenContextProbe` checks it at every key-down, so a change applies from the
+  next dictation. It can also be switched in Settings.
+- **When the wizard opens.** It opens at every launch until the user presses Finish; closing the
+  window doesn't count. It can be reopened from the menu (Welcome Guide…).
+- **Replaces the launch-time permission prompts.** The app no longer asks for permissions at
+  launch; it only polls for the Accessibility grant, so a grant made in System Settings takes
+  effect without a relaunch.
+
+**Consequences:**
+- Existing installs see the wizard at their next launch. They can't dictate until they consent.
+- Consent, the screen-reading choice and "finished" are stored on this Mac (UserDefaults), not
+  on the account. The consent isn't versioned; changing what dictation sends means re-asking,
+  which is a new decision.
+- A grant made from the wizard is announced by `PermissionsModel`, once the model already
+  reports it. A Microphone grant prepares the microphone for the first dictation. An
+  Accessibility grant re-installs the hotkey.
+- **Open (owner):** per-app exclusion. It could be a denylist in the Features step or a built-in
+  skip list. Web search and web reading get their own toggles in Features once they exist.
+

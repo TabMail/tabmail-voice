@@ -17,28 +17,37 @@ final class PermissionsModel {
 
     /// Fires once when Accessibility flips to granted, so the hotkey monitor can be re-installed.
     @ObservationIgnored var onAccessibilityGranted: (() -> Void)?
+    /// Fires once when Microphone flips to granted (the model already reports it), so the
+    /// microphone can be prepared ahead of the first dictation.
+    @ObservationIgnored var onMicrophoneGranted: (() -> Void)?
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private let readMicrophone: () -> AVAuthorizationStatus
+    @ObservationIgnored private let readAccessibility: () -> Bool
 
-    /// The grants as the system reports them now; tests pass fixed ones.
+    /// Reads the grants from the system; tests pass their own readers.
     init(
-        microphone: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio),
-        accessibilityTrusted: Bool = AXIsProcessTrusted()
+        readMicrophone: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) },
+        readAccessibility: @escaping () -> Bool = { AXIsProcessTrusted() }
     ) {
-        self.microphone = microphone
-        self.accessibilityTrusted = accessibilityTrusted
+        self.readMicrophone = readMicrophone
+        self.readAccessibility = readAccessibility
+        microphone = readMicrophone()
+        accessibilityTrusted = readAccessibility()
     }
 
     var allGranted: Bool { microphone == .authorized && accessibilityTrusted }
 
     func refresh() {
-        microphone = AVCaptureDevice.authorizationStatus(for: .audio)
-        let trusted = AXIsProcessTrusted()
+        let wasMicrophoneAuthorized = microphone == .authorized
+        microphone = readMicrophone()
+        if microphone == .authorized, !wasMicrophoneAuthorized { onMicrophoneGranted?() }
+        let trusted = readAccessibility()
         if trusted, !accessibilityTrusted { onAccessibilityGranted?() }
         accessibilityTrusted = trusted
     }
 
     func requestMicrophone() async {
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        switch readMicrophone() {
         case .notDetermined:
             _ = await AVCaptureDevice.requestAccess(for: .audio)
         case .denied, .restricted:

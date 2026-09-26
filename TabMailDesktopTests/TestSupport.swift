@@ -54,6 +54,13 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
     func clear() { stored.withLock { $0 = nil } }
 }
 
+/// A user setting that a test switches while the code under test reads it.
+@MainActor
+final class Switch {
+    var isOn: Bool
+    init(_ isOn: Bool) { self.isOn = isOn }
+}
+
 enum Fixtures {
     static let userId = "user-1"
     static let email = "person@example.com"

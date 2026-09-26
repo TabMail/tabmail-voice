@@ -334,16 +334,32 @@ struct ScreenContextProbeTests {
         }
     }
 
+    /// Screen reading switched off: nothing is read, whatever is granted. The setting is asked at
+    /// every capture, so switching it takes effect from the next dictation.
+    @Test func withScreenReadingOffNothingIsRead() async {
+        let reads = Reads()
+        let readsScreen = Switch(false)
+        let probe = ScreenContextProbe(isEnabled: { readsScreen.isOn }, isTrusted: { true }, frontmostApp: { Self.notes }, read: { reads.record($0) })
+        #expect(probe.capture() == nil)
+        #expect(reads.all.isEmpty)
+
+        readsScreen.isOn = true
+        #expect(await probe.capture()?.value.appName == "Example Notes")
+        readsScreen.isOn = false
+        #expect(probe.capture() == nil)
+        #expect(reads.all == ["Example Notes"])
+    }
+
     @Test func withoutTheAccessibilityGrantNothingIsRead() {
         let reads = Reads()
-        let probe = ScreenContextProbe(isTrusted: { false }, frontmostApp: { Self.notes }, read: { reads.record($0) })
+        let probe = ScreenContextProbe(isEnabled: { true }, isTrusted: { false }, frontmostApp: { Self.notes }, read: { reads.record($0) })
         #expect(probe.capture() == nil)
         #expect(reads.all.isEmpty)
     }
 
     @Test func withoutAFrontmostAppNothingIsRead() {
         let reads = Reads()
-        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { nil }, read: { reads.record($0) })
+        let probe = ScreenContextProbe(isEnabled: { true }, isTrusted: { true }, frontmostApp: { nil }, read: { reads.record($0) })
         #expect(probe.capture() == nil)
         #expect(reads.all.isEmpty)
     }
@@ -353,7 +369,7 @@ struct ScreenContextProbeTests {
     @Test func readsTheAppInFrontWhenCalled() async {
         let reads = Reads()
         var front = Self.notes
-        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { target in
+        let probe = ScreenContextProbe(isEnabled: { true }, isTrusted: { true }, frontmostApp: { front }, read: { target in
             #expect(target.pid == 101)
             return reads.record(target)
         })
@@ -371,7 +387,7 @@ struct ScreenContextProbeTests {
         let reads = Reads()
         let (gate, opener) = AsyncStream.makeStream(of: Never.self)
         var front = Self.notes
-        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { target in
+        let probe = ScreenContextProbe(isEnabled: { true }, isTrusted: { true }, frontmostApp: { front }, read: { target in
             if target.name == "Example Notes" { for await _ in gate {} }
             return reads.record(target)
         })

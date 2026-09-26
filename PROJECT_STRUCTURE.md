@@ -12,8 +12,8 @@ tabmail-macos/
 ├── Scripts/copy-worktree-secrets.sh  Installs the primary's gitignored signing config into a worktree, unprinted
 ├── TabMailDesktop/
 │   ├── App/
-│   │   ├── TabMailDesktopApp.swift   @main: MenuBarExtra + Settings scenes; AppDelegate wires everything
-│   │   └── AppSettings.swift         Hotkey choice (UserDefaults), open-at-login (SMAppService)
+│   │   ├── TabMailDesktopApp.swift   @main: MenuBarExtra + Settings scenes; AppDelegate wires everything, opens the welcome wizard until finished
+│   │   └── AppSettings.swift         Hotkey, screen reading, consent, wizard finished (UserDefaults); open-at-login (SMAppService)
 │   ├── Account/
 │   │   ├── AccountModel.swift        Signed-in session; single-flight token refresh (refresh tokens are single-use)
 │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
@@ -27,7 +27,7 @@ tabmail-macos/
 │   ├── Context/                  Screen context read at key-down, for the transcript cleanup
 │   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks in reading order
 │   │   ├── ScreenContextReader.swift Accessibility walk of the focused window; tmux pane for terminals
-│   │   └── ScreenContextProbe.swift  Captures at key-down in the background; the cleanup waits up to `contextWait` for it; latest kept for the debug window
+│   │   └── ScreenContextProbe.swift  Captures at key-down (when screen reading is on) in the background; the cleanup waits up to `contextWait` for it; latest kept for the debug window
 │   ├── Dictation/
 │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
 │   │   ├── DictationCleanup.swift    The cleanup call: transcript + screen context; the transcript as heard if it fails
@@ -42,11 +42,14 @@ tabmail-macos/
 │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
 │   │   ├── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)
 │   │   └── AccessibilityActivator.swift  Asks Gecko/Electron apps to build their tree as they come to the front
-│   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling
+│   ├── Onboarding/WelcomeWizard.swift  Welcome wizard steps and navigation (ADR-DESK-010): consent → permissions → features
+│   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling, grant callbacks
 │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content)
 │   └── UI/
 │       ├── MenuContent.swift         Menu-bar menu
 │       ├── SettingsView.swift        Settings window
+│       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
+│       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
 │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
 │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing
 │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
@@ -57,7 +60,7 @@ tabmail-macos/
 
 `HotkeyMonitor` → `PushToTalkGesture` action → `DictationController`:
 
-1. **start** (key-down; signed in + both permissions): phase `arming`, nothing shown.
+1. **start** (key-down; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
    `MicrophoneCapture` starts the pre-prepared engine off the main thread and streams buffers
    into `AudioRecorder`; `CaretLocator` finds the caret. After `minimumHoldDuration` the phase
    becomes `listening` and the overlay appears at the caret (swirl until audio arrives, then the

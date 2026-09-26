@@ -15,6 +15,17 @@ private final class SilentCapture: AudioCapturing {
     func stop() {}
 }
 
+/// A microphone that records nothing and counts how often it was started.
+private final class CountingCapture: AudioCapturing, @unchecked Sendable {
+    private let count = OSAllocatedUnfairLock(initialState: 0)
+    var starts: Int { count.withLock { $0 } }
+    func prepare() {}
+    func start(onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void, completion: @escaping @Sendable ((any Error)?) -> Void) {
+        count.withLock { $0 += 1 }
+    }
+    func stop() {}
+}
+
 /// A microphone that hears a tenth of a second of tone as soon as it starts.
 private final class ToneCapture: AudioCapturing {
     func prepare() {}
@@ -50,8 +61,8 @@ struct DictationControllerTests {
 
     private var cleanedStream: String { Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#) }
 
-    /// A controller with both grants, signed in to `account`, on the stub backend.
-    private func makeController(account: AccountModel? = nil, capture: any AudioCapturing = SilentCapture()) -> (DictationController, Pastes) {
+    /// A controller with both grants and the user's consent, signed in to `account`, on the stub backend.
+    private func makeController(account: AccountModel? = nil, capture: any AudioCapturing = SilentCapture(), hasConsented: @escaping @MainActor () -> Bool = { true }) -> (DictationController, Pastes) {
         let account = account ?? AccountModel(client: AuthClient(transport: auth.transport), store: InMemorySessionStore(Fixtures.session()))
         let pastes = Pastes()
         let pasteboard = self.pasteboard
@@ -62,7 +73,8 @@ struct DictationControllerTests {
         let transcriptionTransport = transcription.transport
         let completionsTransport = completions.transport
         let dictation = DictationController(
-            permissions: PermissionsModel(microphone: .authorized, accessibilityTrusted: true),
+            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
+            hasConsented: hasConsented,
             account: account,
             inserter: inserter,
             capture: capture,
@@ -252,6 +264,36 @@ struct DictationControllerTests {
 
     // MARK: Key-down to paste
 
+    /// Until the user consents in the welcome wizard, holding the key records nothing, reads no
+    /// screen and sends nothing; it says why. Consent is asked at every key-down.
+    @Test func withoutConsentNothingIsRecordedReadOrSent() async {
+        let consented = Switch(false)
+        let capture = CountingCapture()
+        let (controller, pastes) = makeController(capture: capture, hasConsented: { consented.isOn })
+        var reads = 0
+        controller.captureContext = {
+            reads += 1
+            return nil
+        }
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(controller.phase == .failed("Finish setting up TabMail from its menu to dictate."))
+        #expect(capture.starts == 0)
+        #expect(reads == 0)
+        #expect(transcription.requests.isEmpty)
+        #expect(completions.requests.isEmpty)
+        #expect(pastes.texts.isEmpty)
+
+        consented.isOn = true
+        controller.handle(.start)
+        #expect(controller.phase == .arming)
+        #expect(capture.starts == 1)
+        #expect(reads == 1)
+        controller.handle(.cancel)
+    }
+
     /// The screen is read at key-down; a read done within `contextWait` of the transcript is sent
     /// with it to the cleanup.
     @Test func cleansUpWithTheScreenReadAtKeyDown() async {
@@ -378,10 +420,45 @@ struct PermissionsModelTests {
         (.authorized, false),
         (.authorized, true),
     ])
-    func keepsTheSuppliedPermissionStates(microphone: AVAuthorizationStatus, accessibilityTrusted: Bool) {
-        let permissions = PermissionsModel(microphone: microphone, accessibilityTrusted: accessibilityTrusted)
+    func startsWithTheStatesReadFromTheSystem(microphone: AVAuthorizationStatus, accessibilityTrusted: Bool) {
+        let permissions = PermissionsModel(readMicrophone: { microphone }, readAccessibility: { accessibilityTrusted })
 
         #expect(permissions.microphone == microphone)
         #expect(permissions.accessibilityTrusted == accessibilityTrusted)
+    }
+
+    /// A grant made in the welcome wizard (or System Settings) is announced once, when the model
+    /// already reports it, so the microphone can be prepared and the hotkey re-installed.
+    @Test func announcesEachGrantOnceWhenItLands() {
+        var microphone = AVAuthorizationStatus.notDetermined
+        var trusted = false
+        let permissions = PermissionsModel(readMicrophone: { microphone }, readAccessibility: { trusted })
+        var microphoneGrants: [AVAuthorizationStatus] = []
+        var accessibilityGrants = 0
+        permissions.onMicrophoneGranted = { [unowned permissions] in microphoneGrants.append(permissions.microphone) }
+        permissions.onAccessibilityGranted = { accessibilityGrants += 1 }
+
+        permissions.refresh()
+        #expect(microphoneGrants.isEmpty)
+        #expect(accessibilityGrants == 0)
+
+        microphone = .authorized
+        permissions.refresh()
+        #expect(microphoneGrants == [.authorized])
+        #expect(accessibilityGrants == 0)
+
+        trusted = true
+        permissions.refresh()
+        permissions.refresh()
+        #expect(microphoneGrants == [.authorized])
+        #expect(accessibilityGrants == 1)
+        #expect(permissions.allGranted)
+
+        // Revoked and granted again: announced again.
+        microphone = .denied
+        permissions.refresh()
+        microphone = .authorized
+        permissions.refresh()
+        #expect(microphoneGrants == [.authorized, .authorized])
     }
 }

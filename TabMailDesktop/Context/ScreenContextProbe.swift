@@ -22,11 +22,14 @@ final class ScreenContextProbe {
     private(set) var lastContext: ScreenContext?
     @ObservationIgnored private var generation = 0
     #endif
+    @ObservationIgnored private let isEnabled: @MainActor () -> Bool
     @ObservationIgnored private let isTrusted: () -> Bool
     @ObservationIgnored private let frontmostApp: () -> Target?
     @ObservationIgnored private let read: @Sendable (Target) async -> ScreenContext
 
+    /// `isEnabled` is the user's screen-reading setting, asked at every capture.
     init(
+        isEnabled: @escaping @MainActor () -> Bool,
         isTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
         frontmostApp: @escaping () -> Target? = {
             NSWorkspace.shared.frontmostApplication.map {
@@ -39,15 +42,17 @@ final class ScreenContextProbe {
             }.value
         }
     ) {
+        self.isEnabled = isEnabled
         self.isTrusted = isTrusted
         self.frontmostApp = frontmostApp
         self.read = read
     }
 
-    /// Nil without the Accessibility grant or a frontmost app. The task yields the screen of the
-    /// app that was frontmost when this was called, even if a newer capture has started since.
+    /// Nil with screen reading switched off, without the Accessibility grant, or without a
+    /// frontmost app. The task yields the screen of the app that was frontmost when this was
+    /// called, even if a newer capture has started since.
     func capture() -> Task<ScreenContext, Never>? {
-        guard isTrusted(), let target = frontmostApp() else { return nil }
+        guard isEnabled(), isTrusted(), let target = frontmostApp() else { return nil }
         let read = read
         #if DEBUG
         generation += 1
