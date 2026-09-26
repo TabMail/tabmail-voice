@@ -83,7 +83,7 @@ private struct EmailClientPicker: View {
     private let installed = EmailClient.installed()
 
     private var defaultIsSupported: Bool {
-        EmailClient.resolve(chosen: nil, systemDefault: systemDefault?.bundleIdentifier) != nil
+        EmailClient.resolve(chosen: nil, systemDefault: systemDefault?.bundleIdentifier, hasTabMail: true) != nil
     }
 
     var body: some View {
@@ -93,7 +93,11 @@ private struct EmailClientPicker: View {
                 Text(app.name).tag(Optional(app.bundleIdentifier))
             }
         }
-        if settings.emailClient == nil, !defaultIsSupported {
+        if !EmailClient.hasTabMail(in: settings.thunderbirdDirectory) {
+            Text("TabMail's add-on isn't installed in Thunderbird, so mail and calendar requests aren't offered.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if settings.emailClient == nil, !defaultIsSupported {
             Text("Mail and calendar requests need Thunderbird with TabMail. Choose it here, or make it your default email app.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

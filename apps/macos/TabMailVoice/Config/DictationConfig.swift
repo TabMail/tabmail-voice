@@ -149,6 +149,10 @@ enum DictationConfig {
     /// The email apps the Thunderbird tool can drive (TabMail's add-on runs in them), in the order
     /// Settings lists them: Thunderbird (release and ESR) and Thunderbird Beta.
     static let thunderbirdBundleIdentifiers = ["org.mozilla.thunderbird", "org.mozilla.thunderbirdbeta"]
+    /// Where Thunderbird (release, ESR and Beta alike) keeps `profiles.ini` and its profiles.
+    static let thunderbirdDataDirectory = FileManager.default.homeDirectoryForCurrentUser.appending(path: "Library/Thunderbird")
+    /// TabMail's add-on (`browser_specific_settings.gecko.id` in its manifest).
+    static let tabMailAddonID = "thunderbird@tabmail.ai"
     /// Asked for the app that opens it, to find the user's default email app.
     static let mailtoURL = URL(string: "mailto:")!
     /// The TabMail chat window's title (`chat/chat.html`). On macOS Thunderbird titles an add-on's
