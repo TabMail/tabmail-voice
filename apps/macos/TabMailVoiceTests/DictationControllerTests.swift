@@ -717,6 +717,25 @@ struct DictationControllerTests {
         #expect(controller.phase == .failed(DesktopAgent.Failure.appChanged.errorDescription!))
     }
 
+    /// The app that counts is the one in front at key-down, not at release: a switch made while the
+    /// key is still held is caught too.
+    @Test func agentTextIsNotPastedAfterASwitchDuringTheHold() async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("We ship on Friday."))
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        controller.captureContext = { Task { screen(selected: "") } }
+
+        controller.handle(.start)
+        controller.handle(.toggleMode)
+        #expect(await eventually { controller.phase == .listening })
+        front.pid = 202
+        controller.handle(.finish)
+
+        #expect(await eventually { controller.phase == .failed(DesktopAgent.Failure.appChanged.errorDescription!) })
+        #expect(completions.requests.count == 1)
+        #expect(pastes.texts.isEmpty)
+    }
+
     /// Thunderbird comes to the front to take the chat message: that is no reason to drop it.
     @Test func aMailRequestIsSentWhateverAppIsInFront() async {
         transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])

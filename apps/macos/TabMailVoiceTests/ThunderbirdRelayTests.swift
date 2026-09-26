@@ -25,6 +25,9 @@ final class FakeThunderbird {
     var onOpenChat: (@MainActor (FakeThunderbird) -> Void)?
     /// Whether the user switches away as the message is pasted.
     var loseFocusOnPaste = false
+    /// Runs during the `n`th read of the focused window's title (from 1), before it answers.
+    var onTitleRead: (@MainActor (FakeThunderbird, Int) -> Void)?
+    private var titleReads = 0
     private(set) var events: [String] = []
     private(set) var pasted: [String] = []
 
@@ -47,7 +50,13 @@ final class FakeThunderbird {
                 if comesToFront { frontmost = true }
             },
             isFrontmost: { [self] in frontmost },
-            focusedWindowTitle: { [self] in focusedTitle },
+            focusedWindowTitle: { [self] in
+                titleReads += 1
+                onTitleRead?(self, titleReads)
+                // Answers after a turn, as an Accessibility call off the main thread does.
+                await Task.yield()
+                return focusedTitle
+            },
             openChat: { [self] in
                 events.append("openChat")
                 if shortcutOpensChat { focusedTitle = Self.chatTitle }
@@ -96,22 +105,15 @@ struct ThunderbirdRelayTests {
         #expect(thunderbird.pasted == [message])
     }
 
-    /// Thunderbird may add its own name to the window title.
-    @Test(arguments: ["TabMail Chat — Mozilla Thunderbird", "TabMail Chat - Thunderbird"])
-    func findsTheChatWindowWithThunderbirdsNameInItsTitle(title: String) async throws {
-        let thunderbird = FakeThunderbird()
-        thunderbird.focusedTitle = title
-
-        try await thunderbird.relay().send(message)
-
-        #expect(thunderbird.events == ["activate", "paste", "return"])
-    }
-
-    /// A window that only mentions the chat is not it: a draft replying to a message about it would
-    /// otherwise get the message pasted in, and sent with Return.
+    /// A window that only mentions the chat is not it: a draft replying to a message about it, or
+    /// the main window showing a message whose subject starts with its name, would otherwise get the
+    /// message pasted in, and Return pressed. On macOS Thunderbird titles the chat's popup window
+    /// with the page title alone.
     @Test(arguments: [
         "Write: Re: TabMail Chat feedback - Thunderbird",
         "TabMail Chat feedback - Mozilla Thunderbird",
+        "TabMail Chat - support thread",
+        "TabMail Chat — Mozilla Thunderbird",
         "Re: TabMail Chat",
     ])
     func aWindowThatOnlyMentionsTheChatGetsNothing(title: String) async {
@@ -195,6 +197,38 @@ struct ThunderbirdRelayTests {
         #expect(thunderbird.events == ["activate", "openChat", "paste"])
     }
 
+    /// Thunderbird is in front only as of the last check: the user switching away while the chat's
+    /// title is read (before the paste, or before Return) gets nothing in the app they went to.
+    /// Accessibility still reports the chat as Thunderbird's focused window.
+    @Test(arguments: [(2, [String]()), (3, ["paste"])])
+    func switchingAwayDuringTheTitleReadGetsNothing(read: Int, sentBefore: [String]) async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = FakeThunderbird.chatTitle
+        thunderbird.onTitleRead = { fake, n in
+            if n == read { fake.frontmost = false }
+        }
+
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        #expect(thunderbird.events == ["activate"] + sentBefore)
+    }
+
+    /// Cancelled while the chat's title is read (before the paste, or before Return): nothing more
+    /// is sent.
+    @Test(arguments: [(2, [String]()), (3, ["paste"])])
+    func cancelledDuringTheTitleReadSendsNothingMore(read: Int, sentBefore: [String]) async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = FakeThunderbird.chatTitle
+        let relay = thunderbird.relay()
+        let sending = SendingTask()
+        thunderbird.onTitleRead = { _, n in
+            if n == read { sending.task?.cancel() }
+        }
+        sending.task = Task { try await relay.send(message) }
+
+        await #expect(throws: CancellationError.self) { try await sending.task?.value }
+        #expect(thunderbird.events == ["activate"] + sentBefore)
+    }
+
     @Test func cancelledWhileWaitingForTheChatPastesNothing() async {
         let thunderbird = FakeThunderbird()
         thunderbird.shortcutOpensChat = false
@@ -208,4 +242,10 @@ struct ThunderbirdRelayTests {
         #expect(thunderbird.pasted.isEmpty)
         #expect(!thunderbird.events.contains("return"))
     }
+}
+
+/// The relay's send, for a fake to cancel from inside it.
+@MainActor
+private final class SendingTask {
+    var task: Task<Void, any Error>?
 }

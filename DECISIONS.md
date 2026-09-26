@@ -473,15 +473,20 @@ the agent restating the request as a chat message, and sending being enough (no 
   focus and timing guesses if the spike shows they matter.
 
 **Amendment 2026-09-26 (review):**
-- The chat is recognised by its whole title: "TabMail Chat", alone or followed by " — " or " - " and
-  Thunderbird's name (`thunderbirdWindowTitleSeparators`). A substring match also took a draft
-  replying to a message about the chat ("Write: Re: TabMail Chat feedback"), which would have got the
-  message pasted in and sent with Return.
+- The chat is recognised by its exact title, "TabMail Chat". On macOS Thunderbird titles an add-on's
+  popup window with the page title alone (`extension-popup-title` in `popup.ftl`, every locale), so no
+  other title is the chat. A substring match also took a draft replying to a message about the chat
+  ("Write: Re: TabMail Chat feedback"), or the main window showing a message whose subject starts with
+  it, which would have got the message pasted in and Return pressed. A message whose subject is
+  exactly "TabMail Chat" still passes for the chat: matching by title can't tell them apart.
 - The relay's Accessibility calls into Thunderbird (window, focus, title, bring to front) run off the
   main thread, where the hotkey's event tap runs, and every element asked gets the
   `thunderbirdAccessibilityTimeout`, the focused window included (a timeout set on the application
   element does not carry over to the elements read from it). A hung Thunderbird then holds up only
-  the relay, not the keyboard.
+  the relay, not the keyboard. Since those reads now suspend, the check that Thunderbird is in front
+  comes after the title read (the user may switch away during it, and Accessibility still reports
+  the chat as Thunderbird's focused window), and a cancel is honoured before the paste and before
+  Return.
 
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 

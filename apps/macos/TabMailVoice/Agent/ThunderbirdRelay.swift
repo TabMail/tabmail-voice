@@ -86,26 +86,24 @@ final class ThunderbirdRelay {
             guard try await wait(chatTimeout, until: isChatFocused) else { throw Failure.chatNotFocused }
         }
         try await Task.sleep(for: .seconds(chatInputSettle))
-        // The user may have moved on while this waited: paste and send only into the chat.
+        // The user may have moved on, or cancelled, while this waited: paste and send only into the
+        // chat, and only for a request still wanted.
         guard await isChatFocused() else { throw Failure.chatNotFocused }
+        try Task.checkCancellation()
         await system.paste(message)
         guard await isChatFocused() else { throw Failure.chatNotFocused }
+        try Task.checkCancellation()
         await system.pressReturn()
         Log.debug("ThunderbirdRelay: sent \(message.count) chars")
         Log.content("ThunderbirdRelay: sent", message)
     }
 
+    /// The title is read first: Thunderbird being in front is only a fact after the read's `await`.
+    /// The whole title must match; a window that merely mentions the chat, such as a draft replying
+    /// to a message about it ("Write: Re: TabMail Chat feedback"), is not it.
     private func isChatFocused() async -> Bool {
-        guard system.isFrontmost(), let title = await system.focusedWindowTitle() else { return false }
-        return Self.isChatTitle(title)
-    }
-
-    /// The chat window's title, alone or followed by Thunderbird's name after a dash. Nothing else
-    /// that merely mentions the chat, such as a draft replying to a message about it
-    /// ("Write: Re: TabMail Chat feedback") or a message whose subject starts with its name.
-    static func isChatTitle(_ title: String) -> Bool {
-        let chat = DictationConfig.thunderbirdChatWindowTitle
-        return title == chat || DictationConfig.thunderbirdWindowTitleSeparators.contains { title.hasPrefix(chat + $0) }
+        guard let title = await system.focusedWindowTitle(), system.isFrontmost() else { return false }
+        return title == DictationConfig.thunderbirdChatWindowTitle
     }
 
     /// Whether `condition` holds within `timeout`, checking every `pollInterval`.
