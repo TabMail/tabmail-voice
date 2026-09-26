@@ -26,6 +26,15 @@ struct DebugModeTests {
         #expect(DebugAccess.allows(email) == allowed)
     }
 
+    /// Each named account outside the domain is allowed, in any case.
+    @Test func namedAccountsMayUseDebugMode() {
+        #expect(!DebugAccess.allowedEmails.isEmpty)
+        for email in DebugAccess.allowedEmails {
+            #expect(DebugAccess.allows(email))
+            #expect(DebugAccess.allows(email.uppercased()))
+        }
+    }
+
     @Test func noAccountMayUseDebugMode() {
         #expect(!DebugAccess.allows(nil))
     }
