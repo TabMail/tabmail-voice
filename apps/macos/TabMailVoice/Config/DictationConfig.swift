@@ -199,7 +199,7 @@ enum DictationConfig {
     // MARK: Overlay
 
     /// Transparent canvas the overlay draws in; the pill sizes itself inside it.
-    static let overlayCanvasSize = CGSize(width: 440, height: 96)
+    static let overlayCanvasSize = CGSize(width: 440, height: 140)
     /// Gap between the caret's line and the top of the pill.
     static let overlayCaretGap: CGFloat = 4
     /// A "caret" rect wider than this is a line or text box; the caret is its leading edge.
@@ -267,10 +267,11 @@ enum DictationConfig {
     /// The overlay stays up this long after the dictation ends, for the exit animation (the pill
     /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
     static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
-    /// Agent mode's tool bubbles, beside the pill.
+    /// Agent mode's tool bubbles, around the pill.
     static let agentBubbleHeight: CGFloat = 24
     static let agentBubbleHorizontalPadding: CGFloat = 10
-    static let agentBubbleSpacing: CGFloat = 6
+    /// Gap between the pill and each bubble around it.
+    static let agentBubbleOrbitGap: CGFloat = 8
     static let agentBubbleIconSpacing: CGFloat = 4
     /// An app tool's icon (Thunderbird's) in its bubble.
     static let agentBubbleAppIconSize: CGFloat = 16
@@ -280,6 +281,17 @@ enum DictationConfig {
     /// The running tool's bubble: a gradient arc circling its border.
     static let agentBubbleRimWidth: CGFloat = 2
     static let agentBubbleRevolutionsPerSecond: Double = 1
+    /// The bubbles float: each drifts up to this far from its place (points) and tilts up to this
+    /// much (degrees).
+    static let agentBubbleDriftDistance: CGFloat = 2.5
+    static let agentBubbleDriftTiltDegrees: Double = 1.5
+    /// Cycles per second of the sideways drift, the up-and-down drift and the tilt. Unequal, so the
+    /// path wanders rather than loops.
+    static let agentBubbleDriftSidewaysCyclesPerSecond: Double = 0.3
+    static let agentBubbleDriftVerticalCyclesPerSecond: Double = 0.23
+    static let agentBubbleDriftTiltCyclesPerSecond: Double = 0.17
+    /// How far apart neighbouring bubbles' drifts are (radians), so they don't move in step.
+    static let agentBubbleDriftPhaseStep: Double = 2.1
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

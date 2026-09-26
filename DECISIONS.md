@@ -283,7 +283,9 @@ grants. The privacy policy tells users they can switch screen reading off.
 **Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
 request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
 as asked, like Thunderbird's inline editor) and **Compose** (write new text at the caret, for any
-app, not only mail). Their bubbles show beside the pill; after the request, the chosen tool's
+app, not only mail). Their bubbles show around the pill (owner, 2026-09-26: they float around it
+and wiggle a little, "not too much": left, under and right of it, over it when the pill sits above
+the caret, so none covers the caret's line); after the request, the chosen tool's
 bubble border circles while it runs. The prompts are the desktop's own, reusable by any later
 desktop platform, not the Thunderbird email prompts.
 

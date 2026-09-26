@@ -10,7 +10,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `TextInserterTests` | text pasted with transient/concealed markers; multi-item/multi-type clipboard restored; empty stays empty; a clipboard changed mid-insert is not clobbered |
 | `AudioRecorderTests` | 48 kHz float → 16 kHz mono Int16; stereo downmix; first-audio time; max-duration cap; empty |
 | `LevelEnvelopeTests` | EMA envelopes: quiet-mic speech 2.5 dB over the room moves the waveform (> 0.4); adapts to the incoming range (louder syllables read higher, no pinning); settles within the first second despite a start-up blip; a steady hum settles low |
-| `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom, always on screen; placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
+| `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom (and then counted as opening upward), always on screen; agent mode's bubbles around the listening pill and the circle, for every tool count: none overlaps the pill or another bubble, none passes the pill's caret-side edge (its top, or its bottom when opening upward; red-verified), left to right, a single one centred under or over it; placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
 | `AccessibilityActivatorTests` | Gecko apps recognised by `Contents/MacOS/XUL`, Electron apps by `Electron Framework.framework`; every other app (and a missing bundle) is left alone |
 | `ScreenContextTests` | Caret text: split around the selection, nearest characters kept, out-of-range clamped, no split emoji; visible text: blanks and repeats dropped, structure marked, the caret block keeps its place in the reading order (empty field, selection); log summary carries sizes, never text; terminal: first visible line by binary search, tmux active pane = most recent client, pane split at the cursor cell (padded past a trimmed line end), foreground program = process-group leader; the pane counts only when its lines are on the front terminal (side-by-side panes match, another tab's tmux and a blank pane don't) |
 | `WAVEncoderTests` | every header field; AVAudioFile reads the output (independent oracle) |
@@ -60,7 +60,8 @@ No test touches the network, the user's clipboard, or the real Keychain item.
   warms up, then the pill. A long message (e.g. signed out) wraps and the pill grows to fit it.
 - Switching the default input in System Settings › Sound is picked up on the next dictation.
 - Agent mode: tap then hold the hotkey (or double tap, speak, tap to stop). Edit and Compose
-  bubbles flank the pill. With text selected in TextEdit, Mail, Slack and a browser, "make this
+  bubbles float around the pill (left, under, right; over it when the caret is near the screen
+  bottom), drifting a little, still with Reduce Motion on. With text selected in TextEdit, Mail, Slack and a browser, "make this
   friendlier" replaces the selection (Edit's border circles while it runs). With nothing selected,
   "write a short thank-you note" pastes at the caret (Compose circles). With a mail selected,
   "reply that I can make it" pastes after the selection, leaving it in place. A failure shows a
