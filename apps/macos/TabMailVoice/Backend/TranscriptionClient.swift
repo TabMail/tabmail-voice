@@ -30,7 +30,9 @@ struct TranscriptionClient: Sendable {
         request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
         request.httpBody = try JSONEncoder().encode(Body(audio: wav.base64EncodedString(), format: "wav"))
 
+        Log.content("Transcription request", BackendLog.request(request, body: Self.loggedBody(wavBytes: wav.count)))
         let (data, response) = try await transport(request)
+        Log.content("Transcription response", BackendLog.response(response, data: data))
         guard let http = response as? HTTPURLResponse else { throw BackendError.invalidResponse }
         guard http.statusCode == 200 else {
             throw BackendError(status: http.statusCode, code: (try? JSONDecoder().decode(BackendError.Body.self, from: data))?.error)
@@ -39,6 +41,12 @@ struct TranscriptionClient: Sendable {
             throw BackendError.invalidResponse
         }
         return result.text
+    }
+
+    /// The request body as the log shows it: the audio's size in its place, never the audio.
+    static func loggedBody(wavBytes: Int) -> String {
+        let body = Body(audio: "<\(wavBytes) bytes of WAV, not logged>", format: "wav")
+        return (try? JSONEncoder().encode(body)).map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 
     private struct Body: Encodable {

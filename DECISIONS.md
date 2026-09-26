@@ -167,7 +167,8 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 - Prototype only: wired in Debug builds; the latest capture is kept in memory and shown in a
   debug window. Logs carry sizes and timings, never text. Nothing is stored or sent.
   ⛔ Superseded by ADR-DESK-008 (2026-09-25): captured in every build and sent with the transcript
-  for the cleanup. Still never logged or stored.
+  for the cleanup. Still never logged or stored. *(Amended by ADR-DESK-015, 2026-09-26: debug builds
+  log it in full to the local debug log file.)*
 - A plain terminal tab without tmux gets its visible lines but no caret mark or program.
 - The tmux pane is the most recently active client's, and is used only when most of its last
   lines appear in the front terminal's text; a tmux attached in another tab or window is ignored.
@@ -456,3 +457,32 @@ the agent restating the request as a chat message, and sending being enough (no 
   just never opens); cold-launch timing is a guess.
 - The native-messaging bridge (plan option B, installed by this app only) replaces the shortcut,
   focus and timing guesses if the spike shows they matter.
+
+## ADR-DESK-015: Debug builds log user content in full, to the local log file only
+
+**Context:** Owner, 2026-09-26: an agent-mode reply came out of context, and nothing could say why.
+The app logged lengths only, and the dev backend logs the model's reply but not the screen text it
+was given. "We need more local observability. The raw responses and things that we send to the
+backend … these logs are saved locally so we just want to be super detailed."
+
+**Decision:** `Log.content(label, text)` writes a named block, whole, to the debug log file
+(`~/Library/Logs/TabMail Voice/TabMail Voice.log`) and nowhere else: not the unified log, and
+compiled out of Release builds. It carries:
+- every backend request as sent (method, URL, headers, exact body), the prompt's variables one by
+  one with their line breaks, and the raw reply (status, headers including `cf-ray`, whole body),
+  also for an HTTP error (`BackendLog`, `CompletionsClient`, `TranscriptionClient`);
+- the screen read at key-down: every field, the text around the caret, the visible text as the
+  prompts get it (`ScreenContext.logDescription`);
+- the transcript, the cleaned text, each agent tool's text, the text pasted and the chat message sent
+  to Thunderbird.
+
+Never logged: audio (the transcription request shows its size in its place) and the access token
+(`Authorization` is masked). `Log.debug` and `Log.error` stay content-free.
+
+**Consequences:**
+- The debug log file on a developer's Mac holds screen text, mail and chat text. ADR-004 governs what
+  the server keeps; this is a local file written only by builds from source.
+- The file is capped at `logFileMaxBytes` (50 MB, was 5 MB), one earlier file kept: a dictation logs
+  its screen read several times.
+- A test sees the entries through the task-local `Log.contentObserver` (`ContentLogTests`), which
+  pins that the token and the audio stay out.

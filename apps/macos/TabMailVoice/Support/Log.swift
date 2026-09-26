@@ -8,8 +8,9 @@ import os
 /// Debug-gated logging. Diagnostic logs are compiled out of Release builds; debug builds also keep
 /// them in a file (`LogFile`).
 ///
-/// Never log transcript text or audio: dictation is user content (ADR-004 spirit).
-/// Log lengths, states and error types only.
+/// `debug` and `error` never carry transcript text or audio: dictation is user content, and those
+/// also reach the unified log. User content goes through `content`, to the debug log file only
+/// (ADR-DESK-015). Nothing logs audio or an access token.
 enum Log {
     private static let logger = Logger(subsystem: "ai.tabmail.voice", category: "dictation")
 
@@ -20,6 +21,22 @@ enum Log {
         LogFile.append("debug", text)
         #endif
     }
+
+    /// Debug builds only: user content in full (a transcript, the screen read, a request to the
+    /// backend and its raw reply, the text pasted), as a block in the log file and nowhere else, so
+    /// a session can be replayed after the fact (ADR-DESK-015). Never audio or an access token.
+    static func content(_ label: String, _ text: @autoclosure () -> String) {
+        #if DEBUG
+        let text = text()
+        contentObserver?(label, text)
+        LogFile.append("CONTENT", LogFile.block(label, text))
+        #endif
+    }
+
+    #if DEBUG
+    /// Sees every `content` entry logged in its task: lets a test check what the log carries.
+    @TaskLocal static var contentObserver: (@Sendable (_ label: String, _ text: String) -> Void)?
+    #endif
 
     /// Structured errors production observability needs. Must never carry user content.
     static func error(_ message: @autoclosure () -> String) {
@@ -67,6 +84,11 @@ enum LogFile {
         // Never write over the start of the file.
         guard (try? handle.seekToEnd()) != nil else { return }
         try? handle.write(contentsOf: data)
+    }
+
+    /// `text` whole, between lines naming it, so a multi-line text reads as it is. Internal for tests.
+    static func block(_ label: String, _ text: String) -> String {
+        "\(label) (\(text.count) chars) >>>\n\(text)\n<<< \(label)"
     }
 
     /// Where a full log file is moved: "TabMail Voice.log" → "TabMail Voice.1.log".

@@ -7,7 +7,8 @@ import Observation
 
 /// Reads the screen context of the frontmost app when a dictation starts, in the background while
 /// the user speaks; the dictation's cleanup uses it if it is done in time. Debug builds keep the
-/// latest capture in memory for the debug window; logs sizes and timings, never the text.
+/// latest capture in memory for the debug window. Logs sizes and timings; the text goes to the
+/// debug log file only (ADR-DESK-015).
 @MainActor
 @Observable
 final class ScreenContextProbe {
@@ -61,6 +62,7 @@ final class ScreenContextProbe {
         return Task {
             let context = await read(target)
             Log.debug("ScreenContext: \(context.summary)")
+            Log.content("ScreenContext", context.logDescription)
             #if DEBUG
             if generation == current { lastContext = context }
             #endif

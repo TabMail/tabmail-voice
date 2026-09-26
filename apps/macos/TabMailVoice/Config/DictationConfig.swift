@@ -44,7 +44,8 @@ enum DictationConfig {
     static let releaseTailDuration: Duration = .milliseconds(300)
     #if DEBUG
     /// Debug builds only: the log file (`LogFile`) moves aside past this size, keeping one earlier file.
-    static let logFileMaxBytes = 5_000_000
+    /// Sized for full content logging (ADR-DESK-015): a dictation logs its screen read several times.
+    static let logFileMaxBytes = 50_000_000
     /// Debug builds only: the latest recording, overwritten each time ("Play Last Recording").
     static let debugLastRecordingURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("TabMail-last-dictation.wav")

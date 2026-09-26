@@ -81,7 +81,10 @@ struct CompletionsClient: Sendable {
             disable_tools: true
         ))
 
+        Log.content("Completions \(message.content) request", BackendLog.request(request))
+        Log.content("Completions \(message.content) variables", Self.describe(message))
         let (data, response) = try await transport(request)
+        Log.content("Completions \(message.content) response", BackendLog.response(response, data: data))
         guard let http = response as? HTTPURLResponse else { throw BackendError.invalidResponse }
         guard http.statusCode == 200 else {
             throw BackendError(status: http.statusCode, code: (try? JSONDecoder().decode(BackendError.Body.self, from: data))?.error)
@@ -93,6 +96,14 @@ struct CompletionsClient: Sendable {
         else { throw BackendError.invalidResponse }
         guard reply.error == nil, let assistant = reply.assistant else { throw BackendError.failed(status: http.statusCode) }
         return assistant
+    }
+
+    /// The prompt's variables one after another, each whole under its name, for the log: the request
+    /// body carries them as escaped JSON strings, which hides the line breaks of a screen read.
+    static func describe(_ message: CompletionsMessage) -> String {
+        (["prompt \(message.content) (role \(message.role))"]
+            + message.vars.sorted { $0.key < $1.key }.map { "--- \($0.key) (\($0.value.count) chars) ---\n\($0.value)" })
+            .joined(separator: "\n")
     }
 
     /// Splits a server-sent-events body into events, as iOS `BackendClient.parseSSELines` does: an
