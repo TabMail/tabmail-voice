@@ -348,6 +348,10 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   `modeHintDisplayDuration` (2.5 s), once a hold. Then styled as a system tooltip (owner: the light
   one "looks cheap … almost a black background"): a near-black rounded box with a hairline border
   and a soft shadow, white text, a raised "space" keycap, the arrow part of the same outline.
+  The overlay opens below the caret's line only when the listening pill and the hint under it both
+  fit on screen there (`opensUpward` counts the hint's `modeHintFootprint` and the listening pill's
+  real height, `listeningPillHeight`); otherwise the hint's lower half went off the bottom of the
+  screen for a caret a line or two above it.
 - Tools: Edit when the key-down screen read found selected text, Compose when not
   (`DesktopAgent.writingTool`); never both. No bubble shows until that read is done, and agent mode
   waits for the whole read (no `agentContextWait`), so the tool that runs is the one shown. The agent

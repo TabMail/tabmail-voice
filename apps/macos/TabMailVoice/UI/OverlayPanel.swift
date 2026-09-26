@@ -129,9 +129,11 @@ final class OverlayPanelController {
         return CGPoint(x: x, y: pillTop + pillTopInset - canvas.height)
     }
 
-    /// Whether the pill goes above the caret's line, there being no room for it below.
+    /// Whether the pill goes above the caret's line, there being no room below for the listening pill
+    /// and the Space hint under it.
     static func opensUpward(anchor: CGRect, pillHeight: CGFloat, visibleFrame: CGRect) -> Bool {
-        anchor.minY - DictationConfig.overlayCaretGap - pillHeight < visibleFrame.minY
+        let below = max(pillHeight, DictationConfig.listeningPillHeight) + DictationConfig.modeHintFootprint
+        return anchor.minY - DictationConfig.overlayCaretGap - below < visibleFrame.minY
     }
 
     /// Centres of agent mode's tool bubbles, of `sizes`, above a pill at `pill` (top-left origin, as
@@ -342,9 +344,12 @@ private struct PillLayout: Layout {
 
 /// A tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost a black
 /// background"): a dark rounded box with an arrow up at the pill, a "space" keycap and what it
-/// switches to.
-private struct ModeHint: View {
+/// switches to. Internal for tests.
+struct ModeHint: View {
     let mode: DictationMode
+
+    /// What Space switches to.
+    var action: String { mode == .agent ? "exit agent" : "agent mode" }
 
     private static let shape = TooltipShape(
         arrowWidth: DictationConfig.modeHintArrowWidth,
@@ -365,7 +370,7 @@ private struct ModeHint: View {
                     RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
                         .strokeBorder(Color.white.opacity(DictationConfig.modeHintKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
                 }
-            Text(mode == .agent ? "exit agent" : "agent mode")
+            Text(action)
                 .font(.system(size: DictationConfig.modeHintFontSize, weight: .medium))
                 .foregroundStyle(Color.white.opacity(DictationConfig.modeHintTextOpacity))
         }

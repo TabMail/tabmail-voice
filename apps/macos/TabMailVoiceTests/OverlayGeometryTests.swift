@@ -44,6 +44,29 @@ struct OverlayGeometryTests {
         #expect(!OverlayPanelController.opensUpward(anchor: CGRect(x: 500, y: 400, width: 1, height: 20), pillHeight: pillHeight, visibleFrame: screen))
     }
 
+    /// The Space hint shows under the listening pill for a moment every hold. With the caret near the
+    /// bottom of the screen, the overlay opens below the caret's line only when the hint fits on
+    /// screen under the pill, and above it only when it wouldn't.
+    @Test func opensBelowTheCaretOnlyWhenTheHintFitsUnderThePill() {
+        let canvas = DictationConfig.overlayCanvasSize
+        let pillHeight = DictationConfig.pillHeight
+        var openedBelow = 0
+        for bottom in stride(from: screen.minY, through: screen.minY + 150, by: 1) {
+            let caret = CGRect(x: 500, y: bottom, width: 1, height: 16)
+            let origin = OverlayPanelController.overlayOrigin(anchor: caret, canvas: canvas, pillHeight: pillHeight, visibleFrame: screen)
+            // As `PillLayout` places it: the pill's top where a one-line pill centred in the canvas has it.
+            let pillTop = origin.y + canvas.height - (canvas.height - pillHeight) / 2
+            let hintBelowCaret = caret.minY - DictationConfig.overlayCaretGap - DictationConfig.listeningPillHeight - DictationConfig.modeHintFootprint
+            if pillTop <= caret.minY {
+                openedBelow += 1
+                #expect(pillTop - DictationConfig.listeningPillHeight - DictationConfig.modeHintFootprint >= screen.minY, "hint off screen for a caret at \(bottom)")
+            } else {
+                #expect(hintBelowCaret < screen.minY, "opened above for a caret at \(bottom) with room below")
+            }
+        }
+        #expect(openedBelow > 0)
+    }
+
     @Test func pillStaysOnScreenAtTheEdges() {
         for caret in [CGRect(x: 2, y: 400, width: 1, height: 20), CGRect(x: 998, y: 790, width: 1, height: 20)] {
             let origin = OverlayPanelController.overlayOrigin(anchor: caret, canvas: canvas, pillHeight: pillHeight, visibleFrame: screen)

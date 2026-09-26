@@ -232,6 +232,8 @@ enum DictationConfig {
     static let overlayMeterBarSpacing: CGFloat = 3
     static let overlayMeterMinBarHeight: CGFloat = 3
     static let overlayMeterMaxBarHeight: CGFloat = 18
+    /// The listening pill's height: the waveform between the pill's vertical padding.
+    static let listeningPillHeight = max(pillHeight, overlayMeterMaxBarHeight + 2 * pillVerticalPadding)
     /// Bar height follows level^exponent (< 1 lifts quieter speech), times the gain.
     static let waveformLevelExponent: Double = 1
     static let waveformGain: Double = 1
@@ -297,6 +299,8 @@ enum DictationConfig {
     static let modeHintArrowHeight: CGFloat = 5
     /// Gap between the pill and the tip of the hint's arrow.
     static let modeHintGap: CGFloat = 4
+    /// Room the hint takes under the pill: the gap, the arrow and the box.
+    static let modeHintFootprint = modeHintGap + modeHintArrowHeight + modeHintHeight
     /// The running tool's icon in the pill.
     static let agentRunningSymbolSize: CGFloat = 12
     /// A bubble whose tool is not the one running fades to this opacity.
