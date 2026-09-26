@@ -5,29 +5,61 @@
 import AppKit
 import Observation
 
-/// Phase 2 prototype: reads the screen context of the frontmost app when a dictation starts, in
-/// the background while the user speaks. Keeps only the latest capture, in memory; logs sizes
-/// and timings, never the text.
+/// Reads the screen context of the frontmost app when a dictation starts, in the background while
+/// the user speaks; the dictation's cleanup uses it if it is done in time. Debug builds keep the
+/// latest capture in memory for the debug window; logs sizes and timings, never the text.
 @MainActor
 @Observable
 final class ScreenContextProbe {
+    /// The app whose screen is read.
+    struct Target: Sendable {
+        let pid: pid_t
+        let name: String
+        let bundleID: String?
+    }
+
+    #if DEBUG
     private(set) var lastContext: ScreenContext?
     @ObservationIgnored private var generation = 0
+    #endif
+    @ObservationIgnored private let isTrusted: () -> Bool
+    @ObservationIgnored private let frontmostApp: () -> Target?
+    @ObservationIgnored private let read: @Sendable (Target) async -> ScreenContext
 
-    func capture() {
-        guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return }
-        let pid = app.processIdentifier
-        let name = app.localizedName ?? ""
-        let bundleID = app.bundleIdentifier
+    init(
+        isTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
+        frontmostApp: @escaping () -> Target? = {
+            NSWorkspace.shared.frontmostApplication.map {
+                Target(pid: $0.processIdentifier, name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier)
+            }
+        },
+        read: @escaping @Sendable (Target) async -> ScreenContext = { target in
+            await Task.detached {
+                ScreenContextReader.read(pid: target.pid, appName: target.name, bundleID: target.bundleID)
+            }.value
+        }
+    ) {
+        self.isTrusted = isTrusted
+        self.frontmostApp = frontmostApp
+        self.read = read
+    }
+
+    /// Nil without the Accessibility grant or a frontmost app. The task yields the screen of the
+    /// app that was frontmost when this was called, even if a newer capture has started since.
+    func capture() -> Task<ScreenContext, Never>? {
+        guard isTrusted(), let target = frontmostApp() else { return nil }
+        let read = read
+        #if DEBUG
         generation += 1
         let current = generation
-        Task {
-            let context = await Task.detached {
-                ScreenContextReader.read(pid: pid, appName: name, bundleID: bundleID)
-            }.value
+        #endif
+        return Task {
+            let context = await read(target)
             Log.debug("ScreenContext: \(context.summary)")
-            guard generation == current else { return }
-            lastContext = context
+            #if DEBUG
+            if generation == current { lastContext = context }
+            #endif
+            return context
         }
     }
 }

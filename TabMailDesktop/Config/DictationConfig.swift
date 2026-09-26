@@ -58,14 +58,22 @@ enum DictationConfig {
     /// Pause between posting the paste keystroke's key-down and key-up events.
     static let pasteKeystrokeGap: Duration = .milliseconds(10)
 
-    // MARK: Screen context (phase 2 prototype, debug builds)
+    // MARK: Screen context
 
-    /// Per-call cap on Accessibility calls while reading the screen context (seconds).
+    /// Accessibility messaging timeout for the target app's own element while reading the screen
+    /// context (seconds). macOS applies it to that element only; the elements reached from it
+    /// (focused field, window, children) wait up to the system-wide timeout.
     static let contextLookupTimeout: Float = 0.25
     /// The walk of the focused window stops after this many elements…
     static let contextNodeBudget = 5_000
     /// …or after this long (seconds). It runs in the background while the user speaks.
     static let contextTimeBudget: Double = 1.5
+    /// How long the cleanup waits for the screen read once the transcript is ready (seconds). The
+    /// read is best effort: not done by then, the cleanup runs without it (ADR-DESK-008).
+    static let contextWait: TimeInterval = 0.5
+    /// Longest a helper command (tmux, ps) may run while reading the context (seconds); they
+    /// normally answer in milliseconds.
+    static let contextCommandTimeout: Double = 0.5
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
     static let contextMaxFocusDepth = 200
     /// Characters kept on each side of the caret.
@@ -97,9 +105,19 @@ enum DictationConfig {
     static let productionBackendURL = URL(string: "https://api.tabmail.ai")!
     static let developmentBackendURL = URL(string: "https://dev.tabmail.ai")!
     static let transcribePath = "dictation/transcribe"
-    /// Sent as `X-Client-Type` to identify this client to the backend.
-    static let clientType = "desktop"
+    static let completionsPath = "completions/chat"
+    /// The backend prompt that fixes recognition errors in a transcript using the screen context.
+    static let cleanupPrompt = "system_prompt_dictate_cleanup"
+    /// Sent as `X-Client-Type` to identify this client to the backend. Usage is recorded under it,
+    /// and the admin panel shows it as the macOS device.
+    static let clientType = "macos"
     static let transcriptionRequestTimeout: TimeInterval = 45
+    /// Longest pause in the cleanup's response stream (the backend sends keepalives while the
+    /// model works).
+    static let completionsRequestTimeout: TimeInterval = 30
+    /// Longest the cleanup may take (seconds); past it the transcript is pasted as heard
+    /// (ADR-DESK-008).
+    static let cleanupTimeout: TimeInterval = 3
 
     // MARK: Account (Supabase auth at auth.tabmail.ai)
 

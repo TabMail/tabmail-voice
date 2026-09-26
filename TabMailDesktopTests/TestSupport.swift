@@ -22,6 +22,10 @@ final class StubTransport: @unchecked Sendable {
         state.withLock { $0.replies.append(Reply(status: status, body: body)) }
     }
 
+    func enqueue(status: Int, text: String) {
+        state.withLock { $0.replies.append(Reply(status: status, body: Data(text.utf8))) }
+    }
+
     var requests: [URLRequest] { state.withLock { $0.requests } }
 
     var transport: HTTPTransport {
@@ -71,6 +75,12 @@ enum Fixtures {
             "expires_at": Int(Date().timeIntervalSince1970) + seconds,
             "user": ["id": userId, "email": email],
         ]
+    }
+
+    /// What `POST /completions/chat` streams: a comment primer, keepalives while the model works,
+    /// then a `final` event with the given payload.
+    static func completionsStream(final: String) -> String {
+        ": \(String(repeating: " ", count: 20))\n\nevent: keepalive\ndata: {}\n\nevent: keepalive\ndata: {}\n\nevent: final\ndata: \(final)\n\n"
     }
 
     static func jsonBody(of request: URLRequest) -> [String: Any] {

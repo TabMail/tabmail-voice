@@ -4,6 +4,7 @@
 
 import CoreGraphics
 import Foundation
+import os
 import Testing
 @testable import TabMail
 
@@ -173,5 +174,216 @@ struct ScreenContextTests {
          34742  4933 -zsh
         """
         #expect(ScreenContext.foregroundProgram(fromPS: output) == "claude")
+    }
+}
+
+/// The helper commands (tmux, ps) run while the context is read: a command that never finishes
+/// must not leave the read, or a process, hanging.
+struct ScreenContextCommandTests {
+    @Test func returnsTheOutputOfACommandThatFinishes() {
+        #expect(ScreenContextReader.run("/bin/echo", ["pane text"]) == "pane text\n")
+    }
+
+    /// More than a pipeful of mixed UTF-8 must come back whole, in order, with no lost reads.
+    @Test func returnsEveryByteOfOutputLargerThanThePipeBuffer() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).txt")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let expected = String(repeating: "Aé😀", count: 28_571) + "END"
+        try Data(expected.utf8).write(to: file)
+
+        let text = try #require(Self.runWithWatchdog(#"exec /bin/cat "$1""#, arguments: [file.path], timeout: 30))
+
+        #expect(text.utf8.count == 200_000)
+        #expect(text == expected)
+    }
+
+    /// EOF can precede exit. A successful command is still awaited, but output and exit share
+    /// one deadline; closing output does not buy a slow command another full timeout.
+    @Test(arguments: [
+        (4, 1, 30.0, Optional("pane text\n")),
+        (8, 8, 10.0, nil),
+    ])
+    func waitsForExitOnlyWithinTheOriginalDeadline(beforeEOF: Int, afterEOF: Int, timeout: Double, expected: String?) {
+        let script = "echo 'pane text'; sleep \(beforeEOF); exec >&-; exec sleep \(afterEOF)"
+        #expect(Self.runWithWatchdog(script, timeout: timeout) == expected)
+    }
+
+    @Test func stopsACommandThatDoesNotFinish() throws {
+        let pid = try #require(Self.pidOfACommandStoppedAtTheDeadline("exec sleep 30"))
+        #expect(Self.exits(pid))
+    }
+
+    /// Output ends (EOF) but the command keeps running: it is stopped at the deadline all the same.
+    @Test func stopsACommandThatClosesItsOutputAndKeepsRunning() throws {
+        let pid = try #require(Self.pidOfACommandStoppedAtTheDeadline("exec >&-; exec sleep 30"))
+        #expect(Self.exits(pid))
+    }
+
+    /// A stopped tmux server holds the client's output open, so it never ends even after the client
+    /// exits. Here a background child holds it the same way after the shell exits.
+    @Test func givesUpOnOutputThatNeverEnds() {
+        let clock = ContinuousClock()
+        let started = clock.now
+        #expect(ScreenContextReader.run("/bin/sh", ["-c", "sleep 5 & echo partial"], timeout: 0.2) == nil)
+        #expect(clock.now - started < .seconds(2))
+    }
+
+    /// Output still flowing at the deadline: the read stops there instead of reading on forever.
+    /// Whether a read is mid-stream at the deadline depends on scheduling, so this runs many short
+    /// reads. Each runs on its own thread, and a read that hasn't returned in time has its command
+    /// killed, so a failure can't hang the suite.
+    @Test func stopsACommandWhoseOutputIsStillFlowingAtTheDeadline() {
+        for _ in 0..<40 {
+            let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+            defer { try? FileManager.default.removeItem(at: pidFile) }
+            let output = OSAllocatedUnfairLock<String?>(initialState: "not returned")
+            let returned = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                let text = ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; while :; do echo x; done"#, pidFile.path], timeout: 0.05)
+                output.withLock { $0 = text }
+                returned.signal()
+            }
+
+            let inTime = returned.wait(timeout: .now() + 1) == .success
+            // No pid file: the shell was stopped before its first command, so nothing was flowing.
+            let pid = Self.pid(in: pidFile)
+            if !inTime, let pid {
+                kill(pid, SIGKILL)
+                _ = returned.wait(timeout: .now() + 5)
+            }
+            #expect(inTime)
+            #expect(output.withLock { $0 } == nil)
+            if let pid { #expect(Self.exits(pid)) }
+            guard inTime else { return }
+        }
+    }
+
+    /// Runs independently of the test thread, with enough slack for a loaded runner. A broken
+    /// read or exit wait fails the test and has its shell stopped instead of hanging the suite.
+    private static func runWithWatchdog(_ script: String, arguments: [String] = [], timeout: Double) -> String? {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let output = OSAllocatedUnfairLock<String?>(initialState: nil)
+        let returned = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            let text = ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; "# + script, pidFile.path] + arguments, timeout: timeout)
+            output.withLock { $0 = text }
+            returned.signal()
+        }
+
+        let inTime = returned.wait(timeout: .now() + timeout + 15) == .success
+        if !inTime {
+            if let pid = pid(in: pidFile) { kill(pid, SIGKILL) }
+            _ = returned.wait(timeout: .now() + 5)
+        }
+        #expect(inTime)
+        return output.withLock { $0 }
+    }
+
+    /// Runs `script` under a deadline, which must stop it, until one run got as far as writing its
+    /// shell's pid, and returns that pid. On a loaded runner starting the shell can take longer than a
+    /// short deadline, which then stops it before its first command; such a run still must end in time,
+    /// but shows nothing about stopping a running command, so it is tried again with twice the deadline
+    /// (0.2 s up to 3.2 s).
+    private static func pidOfACommandStoppedAtTheDeadline(_ script: String) -> pid_t? {
+        var timeout = 0.2
+        for _ in 0..<5 {
+            let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("tabmail-tests-\(UUID().uuidString).pid")
+            defer { try? FileManager.default.removeItem(at: pidFile) }
+            let clock = ContinuousClock()
+            let started = clock.now
+            #expect(ScreenContextReader.run("/bin/sh", ["-c", #"echo $$ > "$0"; "# + script, pidFile.path], timeout: timeout) == nil)
+            #expect(clock.now - started < .seconds(timeout + 2))
+            if let pid = pid(in: pidFile) { return pid }
+            timeout *= 2
+        }
+        return nil
+    }
+
+    /// The process id a test command wrote to `file`, if it got that far.
+    private static func pid(in file: URL) -> pid_t? {
+        (try? String(contentsOf: file, encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// Whether `pid` is gone within a second. Kills it if not, so a failing run leaves nothing behind.
+    private static func exits(_ pid: pid_t) -> Bool {
+        let deadline = ContinuousClock.now + .seconds(1)
+        while ContinuousClock.now < deadline {
+            if kill(pid, 0) == -1, errno == ESRCH { return true }
+            usleep(10_000)
+        }
+        kill(pid, SIGKILL)
+        return false
+    }
+}
+
+/// Every dictation reads the screen through the probe; without it, every cleanup silently runs
+/// without context.
+@MainActor
+struct ScreenContextProbeTests {
+    private static let notes = ScreenContextProbe.Target(pid: 101, name: "Example Notes", bundleID: "com.example.notes")
+    private static let browser = ScreenContextProbe.Target(pid: 202, name: "Example Browser", bundleID: "com.example.browser")
+
+    /// Records which apps were read.
+    private final class Reads: @unchecked Sendable {
+        private let names = OSAllocatedUnfairLock<[String]>(initialState: [])
+        var all: [String] { names.withLock { $0 } }
+        func record(_ target: ScreenContextProbe.Target) -> ScreenContext {
+            names.withLock { $0.append(target.name) }
+            return ScreenContext(appName: target.name, bundleID: target.bundleID)
+        }
+    }
+
+    @Test func withoutTheAccessibilityGrantNothingIsRead() {
+        let reads = Reads()
+        let probe = ScreenContextProbe(isTrusted: { false }, frontmostApp: { Self.notes }, read: { reads.record($0) })
+        #expect(probe.capture() == nil)
+        #expect(reads.all.isEmpty)
+    }
+
+    @Test func withoutAFrontmostAppNothingIsRead() {
+        let reads = Reads()
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { nil }, read: { reads.record($0) })
+        #expect(probe.capture() == nil)
+        #expect(reads.all.isEmpty)
+    }
+
+    /// The app is the one in front when the dictation starts, not whichever is in front by the time
+    /// the read runs.
+    @Test func readsTheAppInFrontWhenCalled() async {
+        let reads = Reads()
+        var front = Self.notes
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { target in
+            #expect(target.pid == 101)
+            return reads.record(target)
+        })
+        let task = probe.capture()
+        front = Self.browser
+        let context = await task?.value
+        #expect(context?.appName == "Example Notes")
+        #expect(context?.bundleID == "com.example.notes")
+        #expect(reads.all == ["Example Notes"])
+    }
+
+    /// A dictation whose read finishes after a newer one started still gets its own screen; the
+    /// debug window shows the newest.
+    @Test func aSupersededCaptureStillYieldsItsOwnScreen() async {
+        let reads = Reads()
+        let (gate, opener) = AsyncStream.makeStream(of: Never.self)
+        var front = Self.notes
+        let probe = ScreenContextProbe(isTrusted: { true }, frontmostApp: { front }, read: { target in
+            if target.name == "Example Notes" { for await _ in gate {} }
+            return reads.record(target)
+        })
+        let first = probe.capture()
+        front = Self.browser
+        let second = probe.capture()
+
+        #expect(await second?.value.appName == "Example Browser")
+        #expect(probe.lastContext?.appName == "Example Browser")
+        opener.finish()
+        #expect(await first?.value.appName == "Example Notes")
+        #expect(probe.lastContext?.appName == "Example Browser")
+        #expect(reads.all == ["Example Browser", "Example Notes"])
     }
 }

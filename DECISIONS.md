@@ -1,6 +1,6 @@
 # TabMail Desktop — Decisions
 
-Compact index of architectural decisions for `tabmail-desktop`. Cross-cutting decisions live in the
+Compact index of architectural decisions for `tabmail-macos` (the TabMail Desktop app). Cross-cutting decisions live in the
 root `DECISIONS.md` (notably ADR-004 zero content retention, which dictation audio and transcripts
 fall under).
 
@@ -166,8 +166,66 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 **Consequences:**
 - Prototype only: wired in Debug builds; the latest capture is kept in memory and shown in a
   debug window. Logs carry sizes and timings, never text. Nothing is stored or sent.
+  ⛔ Superseded by ADR-DESK-008 (2026-09-25): captured in every build and sent with the transcript
+  for the cleanup. Still never logged or stored.
 - A plain terminal tab without tmux gets its visible lines but no caret mark or program.
 - The tmux pane is the most recently active client's, and is used only when most of its last
   lines appear in the front terminal's text; a tmux attached in another tab or window is ignored.
 - OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
 
+## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
+
+**Context:** Owner, 2026-09-25: after transcription, a language-model pass should fix dictation
+errors using what is on screen, with the smallest possible changes. The instructions and the
+model choice live on the backend, so they can be edited and switched there without an app release.
+
+**Decision:** The screen context (ADR-DESK-007) is captured at key-down in every build. When the
+transcript arrives, the app waits up to `contextWait` (0.5 s) for that capture and sends the transcript with the app name,
+web host, terminal program, window title and the visible text (caret marked) to the backend's
+`POST /completions/chat` as the prompt `system_prompt_dictate_cleanup`, then pastes the reply.
+Request shape and server-sent-events parsing follow iOS `BackendClient`, with two deliberate
+differences: the app fails the cleanup on an `event: error` (iOS logs it and waits for `final`),
+and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both `error` and
+`final`, and answers 200, so neither changes an outcome today.
+
+**Consequences:**
+- What is on screen while dictating is sent to the TabMail backend with each dictation; like every
+  TabMail AI request it is not retained (root ADR-004), and the app logs sizes only.
+- Every dictation gains one model round trip; its duration is logged (debug) for tuning. Owner,
+  2026-09-25: the cleanup is capped at `cleanupTimeout` (3 s; the owner asked for 2–3 s); past it
+  the request is cancelled and the transcript is pasted as heard, like any other failed cleanup.
+- ~~A failed or empty cleanup fails the dictation with an error; the raw transcript is not pasted
+  instead (no fallback without an owner decision).~~ Owner, 2026-09-25: when the cleanup fails
+  for any reason (error, refusal, empty reply, offline, signed out), the transcript is pasted as
+  heard. A failed cleanup never costs the user the dictation; the failure is logged (type only).
+- The app sends its own version (`0.x`) as `X-Client-Version`; a backend prompt it uses must be
+  versioned to resolve at that version.
+- A dictation's transcription and cleanup go under the account signed in when its upload starts.
+  If the user signs out and into another account meanwhile, the cleanup is skipped and the
+  transcript pasted as heard (`DictationController.withFreshToken` refuses a token for another
+  account).
+- ~~The cleanup waits for the capture, so the capture must finish.~~ Owner, 2026-09-25: the
+  capture runs in parallel and is best effort. If it is not done within `contextWait` of the
+  transcript arriving, the cleanup runs without it and the capture is forgotten (an Accessibility
+  read of an unresponsive app can take seconds). Each helper command (tmux, ps) still gets
+  `contextCommandTimeout` and is stopped after it, so an abandoned capture does not leave a
+  process behind: a stopped tmux server keeps its client's output open, so waiting for the end of
+  the output alone could hang.
+- The screen text is untrusted input to the model: text on screen, such as terminal output someone
+  else wrote, can steer the reply that gets pasted (prompt injection into the paste), including a
+  reply with a line break that a terminal without bracketed paste would run as a command. Owner,
+  2026-09-25: not a risk for dictation; no guard. The reply is only trimmed of surrounding blank
+  space before it is pasted.
+
+## ADR-DESK-009: The app identifies itself to the backend as `macos`
+
+**Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the
+admin panel should show it.
+
+**Decision:** `X-Client-Type` is `macos` (was `desktop`). The admin panel counts `macos` usage as
+its own device, beside Thunderbird and iOS.
+
+**Consequences:**
+- The backend reads the Thunderbird prompts for any client type other than `ios`, so prompt and
+  tool resolution are unchanged.
+- Usage recorded under `desktop` during development (2026-09-24 and 25) keeps that label.

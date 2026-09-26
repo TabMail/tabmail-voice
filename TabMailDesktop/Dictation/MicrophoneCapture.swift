@@ -6,6 +6,16 @@ import AVFoundation
 import CoreAudio
 import os
 
+/// What dictation needs from a microphone. Tests substitute one that records nothing.
+protocol AudioCapturing: AnyObject, Sendable {
+    func prepare()
+    func start(
+        onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void,
+        completion: @escaping @Sendable ((any Error)?) -> Void
+    )
+    func stop()
+}
+
 /// Streams buffers from the system default microphone while dictation is active.
 ///
 /// Starting a microphone is slow (≈ 0.5 s to open the input node, ≈ 0.5 s to start the device),
@@ -17,7 +27,7 @@ import os
 /// The microphone itself is running only between `start` and `stop`: the engine is stopped and
 /// discarded after every dictation (iOS lesson: a leaked, still-active audio session has
 /// process-wide side effects), and a prepared engine never opens the device.
-final class MicrophoneCapture: @unchecked Sendable {
+final class MicrophoneCapture: AudioCapturing, @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
     }

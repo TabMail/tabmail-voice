@@ -12,12 +12,21 @@ import Observation
 @MainActor
 @Observable
 final class PermissionsModel {
-    private(set) var microphone: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
-    private(set) var accessibilityTrusted: Bool = AXIsProcessTrusted()
+    private(set) var microphone: AVAuthorizationStatus
+    private(set) var accessibilityTrusted: Bool
 
     /// Fires once when Accessibility flips to granted, so the hotkey monitor can be re-installed.
     @ObservationIgnored var onAccessibilityGranted: (() -> Void)?
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+
+    /// The grants as the system reports them now; tests pass fixed ones.
+    init(
+        microphone: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio),
+        accessibilityTrusted: Bool = AXIsProcessTrusted()
+    ) {
+        self.microphone = microphone
+        self.accessibilityTrusted = accessibilityTrusted
+    }
 
     var allGranted: Bool { microphone == .authorized && accessibilityTrusted }
 

@@ -217,17 +217,40 @@ enum ScreenContextReader {
         return true
     }
 
-    private static func run(_ path: String, _ arguments: [String]) -> String? {
+    /// A command's output, or nil when it fails or hasn't finished within `timeout` seconds (then
+    /// it is stopped). Waiting for the end of the output isn't enough: a tmux client hands its
+    /// output to the tmux server, so while that server is stopped the output never ends, even once
+    /// the client is killed.
+    static func run(_ path: String, _ arguments: [String], timeout: Double = DictationConfig.contextCommandTimeout) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         do { try process.run() } catch { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+
+        let deadline = Date().addingTimeInterval(timeout)
+        let reader = output.fileHandleForReading
+        var data = Data()
+        while true {
+            let remaining = Int32(deadline.timeIntervalSinceNow * 1000)
+            var request = pollfd(fd: reader.fileDescriptor, events: Int16(POLLIN), revents: 0)
+            guard remaining > 0, poll(&request, 1, remaining) > 0 else { return stop(process, path) }
+            let chunk = reader.availableData
+            if chunk.isEmpty { break }
+            data.append(chunk)
+        }
+        guard exited.wait(timeout: .now() + max(0, deadline.timeIntervalSinceNow)) == .success else { return stop(process, path) }
         return process.terminationStatus == 0 ? String(data: data, encoding: .utf8) : nil
+    }
+
+    private static func stop(_ process: Process, _ path: String) -> String? {
+        process.terminate()
+        Log.debug("ScreenContext: \((path as NSString).lastPathComponent) didn't finish in time; stopped")
+        return nil
     }
 
     // MARK: Attributes
