@@ -140,4 +140,22 @@ struct AppSettingsTests {
         #expect(relaunched.hasConsented == hasConsented)
         #expect(relaunched.hasFinishedWelcome == hasFinishedWelcome)
     }
+
+    /// What a dictation takes at key-down is what Settings says: consent, screen reading (off means
+    /// no screen read), the server, and the email app chosen.
+    @Test(arguments: [(false, true, false), (true, false, true)])
+    func aDictationTakesWhatSettingsSay(readsScreen: Bool, hasConsented: Bool, useDevelopmentServer: Bool) {
+        let settings = AppSettings(defaults: defaults)
+        settings.readsScreen = readsScreen
+        settings.hasConsented = hasConsented
+        settings.useDevelopmentServer = useDevelopmentServer
+        settings.emailClient = "org.example.mail"
+
+        #expect(settings.dictation == DictationSettings(
+            hasConsented: hasConsented,
+            backendURL: useDevelopmentServer ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL,
+            readsScreen: readsScreen,
+            emailApp: "org.example.mail"
+        ))
+    }
 }

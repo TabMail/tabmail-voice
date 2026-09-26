@@ -798,6 +798,27 @@ struct DictationControllerTests {
         #expect(reads.count == 1)
     }
 
+    /// Space offers the email app Settings named at key-down, not the one it names by the time Space
+    /// is pressed: the bubble shown is the app the request would go to.
+    @Test(arguments: [(FakeThunderbird.app as String?, nil as String?), (nil, FakeThunderbird.app)])
+    func spaceOffersTheEmailAppOfTheHoldsKeyDown(atKeyDown: String?, changedTo: String?) async {
+        prefs.value.emailApp = atKeyDown
+        let (controller, _) = makeController(capture: ToneCapture(), thunderbird: FakeThunderbird())
+        let context = screen(selected: "")
+        controller.captureContext = { Task { context } }
+
+        controller.handle(.start)
+        #expect(await eventually { controller.phase == .listening })
+        prefs.value.emailApp = changedTo
+        controller.handle(.toggleMode)
+
+        let offered: [AgentTool] = atKeyDown == nil ? [.compose] : [.compose, .thunderbird]
+        #expect(await eventually { controller.tools == offered })
+        #expect(controller.emailAppURL == atKeyDown.map { _ in URL(fileURLWithPath: "/Applications/Thunderbird.app") })
+        controller.handle(.cancel)
+        #expect(await eventually { controller.phase == .idle })
+    }
+
     /// Thunderbird comes to the front to take the chat message: that is no reason to drop it.
     @Test func aMailRequestIsSentWhateverAppIsInFront() async {
         transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])
