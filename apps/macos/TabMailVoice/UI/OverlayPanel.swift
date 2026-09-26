@@ -151,8 +151,8 @@ private struct OverlayView: View {
     }
 
     /// Agent mode's tools, half on each side of the pill.
-    private static let leadingTools = Array(AgentTool.allCases.prefix(AgentTool.allCases.count / 2))
-    private static let trailingTools = Array(AgentTool.allCases.dropFirst(AgentTool.allCases.count / 2))
+    private var leadingTools: [AgentTool] { Array(controller.tools.prefix(controller.tools.count / 2)) }
+    private var trailingTools: [AgentTool] { Array(controller.tools.dropFirst(controller.tools.count / 2)) }
 
     /// The tool bubbles show while agent mode listens and works; an error message stands alone.
     private var showsTools: Bool {
@@ -182,10 +182,10 @@ private struct OverlayView: View {
                     .transition(.opacity)
             case .listening, .transcribing, .running, .message:
                 HStack(spacing: DictationConfig.agentBubbleSpacing) {
-                    if showsTools { ForEach(Self.leadingTools, id: \.self, content: bubble) }
+                    if showsTools { ForEach(leadingTools, id: \.self, content: bubble) }
                     Pill(mode: mode, level: controller.level)
                         .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
-                    if showsTools { ForEach(Self.trailingTools, id: \.self, content: bubble) }
+                    if showsTools { ForEach(trailingTools, id: \.self, content: bubble) }
                 }
                 // Top edge where a one-line pill's would be when centred, so taller pills grow
                 // downward, away from the caret line.
@@ -260,17 +260,28 @@ private struct OverlayView: View {
     }
 }
 
-/// One of agent mode's tools beside the pill. While its tool runs, a gradient arc circles its border;
-/// the other tools fade.
+/// One of agent mode's tools beside the pill, with its app's icon when it hands the request to an
+/// app. While its tool runs, a gradient arc circles its border; the other tools fade.
 private struct ToolBubble: View {
     let tool: AgentTool
     let isRunning: Bool
     let isDimmed: Bool
 
+    private var appIcon: NSImage? {
+        guard let id = tool.appBundleIdentifier, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
     var body: some View {
         HStack(spacing: DictationConfig.agentBubbleIconSpacing) {
-            Image(systemName: tool.symbolName)
-                .foregroundStyle(Brand.gradient)
+            if let appIcon {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .frame(width: DictationConfig.agentBubbleAppIconSize, height: DictationConfig.agentBubbleAppIconSize)
+            } else {
+                Image(systemName: tool.symbolName)
+                    .foregroundStyle(Brand.gradient)
+            }
             Text(tool.displayName)
                 // The bubble is light in light and dark mode alike, as the pill.
                 .foregroundStyle(Color.black)

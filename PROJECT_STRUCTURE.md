@@ -21,7 +21,9 @@ tabmail-macos/
         │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
         │   │   ├── SessionStore.swift        Keychain session storage (SessionStoring protocol)
         │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
-        │   ├── Agent/DesktopAgent.swift      Agent mode: `AgentTool` (edit, compose); one call chooses the tool, one has it write the text
+        │   ├── Agent/
+        │   │   ├── DesktopAgent.swift        Agent mode: `AgentTool` (edit, compose, thunderbird); one call chooses the tool, one has it write the text
+        │   │   └── ThunderbirdRelay.swift    Types a chat message into TabMail's chat in Thunderbird: front, ⌥⌘L, paste, Return, only while the chat has focus (spike)
         │   ├── Backend/
         │   │   ├── BackendError.swift        Backend HTTP error → user message
         │   │   ├── TranscriptionClient.swift POST /dictation/transcribe

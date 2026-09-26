@@ -7,7 +7,8 @@ import Observation
 
 /// Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
 /// transcript with the screen context → paste. In agent mode (a double tap) the transcript is a request
-/// instead: the agent chooses a tool, the tool writes the text, and that is pasted.
+/// instead: the agent chooses a tool, the tool writes the text, and that is pasted, or sent to
+/// TabMail's chat in Thunderbird.
 @MainActor
 @Observable
 final class DictationController {
@@ -29,6 +30,8 @@ final class DictationController {
     }
     /// What the current (or last) recording is for.
     private(set) var mode: DictationMode = .dictation
+    /// The tools agent mode offers this time: Thunderbird only when it is installed.
+    private(set) var tools: [AgentTool] = []
     private(set) var level: Float = 0
     @ObservationIgnored private var envelope = LevelEnvelope()
     /// Debug tuning aid: the highest waveform level reached this dictation.
@@ -51,6 +54,7 @@ final class DictationController {
     @ObservationIgnored private let makeTranscriptionClient: @MainActor () -> TranscriptionClient
     @ObservationIgnored private let makeCompletionsClient: @MainActor () -> CompletionsClient
     @ObservationIgnored private let inserter: TextInserter
+    @ObservationIgnored private let thunderbird: ThunderbirdRelay
     @ObservationIgnored private let capture: any AudioCapturing
     @ObservationIgnored private let clock = ContinuousClock()
 
@@ -69,6 +73,7 @@ final class DictationController {
         hasConsented: @escaping @MainActor () -> Bool,
         account: AccountModel,
         inserter: TextInserter = TextInserter(),
+        thunderbird: ThunderbirdRelay = ThunderbirdRelay(),
         capture: any AudioCapturing = MicrophoneCapture(),
         makeTranscriptionClient: @escaping @MainActor () -> TranscriptionClient,
         makeCompletionsClient: @escaping @MainActor () -> CompletionsClient
@@ -77,6 +82,7 @@ final class DictationController {
         self.hasConsented = hasConsented
         self.account = account
         self.inserter = inserter
+        self.thunderbird = thunderbird
         self.capture = capture
         self.makeTranscriptionClient = makeTranscriptionClient
         self.makeCompletionsClient = makeCompletionsClient
@@ -127,6 +133,7 @@ final class DictationController {
         generation += 1
         let current = generation
         self.mode = mode
+        tools = mode == .agent ? AgentTool.allCases.filter { $0 != .thunderbird || thunderbird.isInstalled } : []
         level = 0
         peakMeterLevel = 0
         envelope = LevelEnvelope()
@@ -273,15 +280,20 @@ final class DictationController {
                 await inserter.insert(text)
             case .agent:
                 let client = makeCompletionsClient()
-                let tool = try await DesktopAgent.chooseTool(for: transcript, context: context, client: client, account: account, userId: userId)
+                let tool = try await DesktopAgent.chooseTool(for: transcript, context: context, offered: tools, client: client, account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
                 Log.debug("DictationController: agent chose \(tool.rawValue)")
                 phase = .running(tool)
                 let text = try await DesktopAgent.write(tool, for: transcript, context: context, client: client, account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
-                // A compose goes after the selection; pasting over it would replace the user's text.
-                if tool == .compose, !DesktopAgent.selection(in: context).isEmpty { await inserter.collapseSelection() }
-                await inserter.insert(text)
+                switch tool {
+                case .edit, .compose:
+                    // A compose goes after the selection; pasting over it would replace the user's text.
+                    if tool == .compose, !DesktopAgent.selection(in: context).isEmpty { await inserter.collapseSelection() }
+                    await inserter.insert(text)
+                case .thunderbird:
+                    try await thunderbird.send(text)
+                }
             }
             guard generation == current else { return }
             teardown()

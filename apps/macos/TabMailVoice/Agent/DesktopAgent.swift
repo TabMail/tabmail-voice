@@ -11,19 +11,31 @@ enum AgentTool: String, CaseIterable, Sendable {
     case edit
     /// Writes new text at the caret, as asked.
     case compose
+    /// Sends a mail or calendar request to TabMail's chat in Thunderbird (`ThunderbirdRelay`).
+    case thunderbird
 
     var displayName: String {
         switch self {
         case .edit: "Edit"
         case .compose: "Compose"
+        case .thunderbird: "Thunderbird"
         }
     }
 
-    /// SF Symbol shown in the tool's bubble.
+    /// SF Symbol shown in the tool's bubble, when it is not an app's (`appBundleIdentifier`).
     var symbolName: String {
         switch self {
         case .edit: "pencil"
         case .compose: "square.and.pencil"
+        case .thunderbird: "envelope"
+        }
+    }
+
+    /// The app a tool hands the request to; its bubble shows that app's icon.
+    var appBundleIdentifier: String? {
+        switch self {
+        case .edit, .compose: nil
+        case .thunderbird: DictationConfig.thunderbirdBundleIdentifier
         }
     }
 
@@ -31,6 +43,7 @@ enum AgentTool: String, CaseIterable, Sendable {
         switch self {
         case .edit: DictationConfig.agentEditPrompt
         case .compose: DictationConfig.agentComposePrompt
+        case .thunderbird: DictationConfig.agentThunderbirdPrompt
         }
     }
 }
@@ -43,6 +56,8 @@ enum DesktopAgent {
     enum Failure: LocalizedError, Equatable {
         /// The agent's reply named no tool it has.
         case noTool
+        /// The agent chose a tool this Mac can't use (an app that isn't installed).
+        case unavailable(AgentTool)
         /// The agent chose to edit, but no selected text could be read.
         case noSelection
         /// The tool wrote nothing.
@@ -52,6 +67,8 @@ enum DesktopAgent {
         var errorDescription: String? {
             switch self {
             case .noTool: "Couldn't work out what to do. Try again."
+            case .unavailable(.thunderbird): "Mail and calendar requests need Thunderbird with TabMail."
+            case .unavailable(let tool): "\(tool.displayName) isn't available."
             case .noSelection: "Select the text to edit, then try again."
             case .noText: "Couldn't write that. Try again."
             case .timedOut: "That took too long. Try again."
@@ -59,11 +76,12 @@ enum DesktopAgent {
         }
     }
 
-    /// The tool for `request`, asked under the account `userId`. Throws `noSelection` when the agent
-    /// chooses to edit and nothing is selected.
+    /// The tool for `request`, asked under the account `userId`. Throws `unavailable` when the agent
+    /// chooses a tool that isn't `offered`, and `noSelection` when it chooses to edit and nothing is
+    /// selected.
     @MainActor
     static func chooseTool(
-        for request: String, context: ScreenContext?, client: CompletionsClient, account: AccountModel, userId: String?,
+        for request: String, context: ScreenContext?, offered: [AgentTool], client: CompletionsClient, account: AccountModel, userId: String?,
         timeout: TimeInterval = DictationConfig.agentChooseTimeout
     ) async throws -> AgentTool {
         let reply = try await complete(chooseMessage(request: request, context: context), client: client, account: account, userId: userId, timeout: timeout)
@@ -71,12 +89,14 @@ enum DesktopAgent {
             Log.error("DesktopAgent: reply named no tool (\(reply.count) chars)")
             throw Failure.noTool
         }
+        guard offered.contains(tool) else { throw Failure.unavailable(tool) }
         if tool == .edit, selection(in: context).isEmpty { throw Failure.noSelection }
         return tool
     }
 
-    /// The text `tool` writes for `request`, ready to insert: for an edit, with the selection's own
-    /// leading and trailing blank space, so replacing a whole line keeps its line break.
+    /// The text `tool` writes for `request`, ready to insert (for Thunderbird, to send): for an edit,
+    /// with the selection's own leading and trailing blank space, so replacing a whole line keeps its
+    /// line break.
     @MainActor
     static func write(
         _ tool: AgentTool, for request: String, context: ScreenContext?, client: CompletionsClient, account: AccountModel, userId: String?,
@@ -86,7 +106,7 @@ enum DesktopAgent {
         guard !text.isEmpty else { throw Failure.noText }
         switch tool {
         case .edit: return fitted(text, toSelection: selection(in: context))
-        case .compose: return text
+        case .compose, .thunderbird: return text
         }
     }
 

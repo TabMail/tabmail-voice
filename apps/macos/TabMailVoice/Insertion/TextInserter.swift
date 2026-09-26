@@ -74,7 +74,8 @@ struct TextInserter {
         await postKeystroke(CGKeyCode(kVK_RightArrow), flags: [])
     }
 
-    private static func postKeystroke(_ keyCode: CGKeyCode, flags: CGEventFlags) async {
+    /// Posts one key press to the frontmost app, with exactly `flags` held.
+    static func postKeystroke(_ keyCode: CGKeyCode, flags: CGEventFlags) async {
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)

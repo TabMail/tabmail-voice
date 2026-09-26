@@ -64,7 +64,8 @@ struct DictationControllerTests {
     private var cleanedStream: String { Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#) }
 
     /// A controller with both grants and the user's consent, signed in to `account`, on the stub backend.
-    private func makeController(account: AccountModel? = nil, capture: any AudioCapturing = SilentCapture(), hasConsented: @escaping @MainActor () -> Bool = { true }) -> (DictationController, Pastes) {
+    /// Thunderbird is not installed unless a test passes one.
+    private func makeController(account: AccountModel? = nil, capture: any AudioCapturing = SilentCapture(), hasConsented: @escaping @MainActor () -> Bool = { true }, thunderbird: FakeThunderbird? = nil) -> (DictationController, Pastes) {
         let account = account ?? AccountModel(client: AuthClient(transport: auth.transport), store: InMemorySessionStore(Fixtures.session()))
         let pastes = Pastes()
         let pasteboard = self.pasteboard
@@ -76,11 +77,17 @@ struct DictationControllerTests {
         let baseURL = URL(string: "https://api.example.com")!
         let transcriptionTransport = transcription.transport
         let completionsTransport = completions.transport
+        let thunderbird = thunderbird ?? {
+            let absent = FakeThunderbird()
+            absent.installed = false
+            return absent
+        }()
         let dictation = DictationController(
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
             hasConsented: hasConsented,
             account: account,
             inserter: inserter,
+            thunderbird: thunderbird.relay(),
             capture: capture,
             makeTranscriptionClient: { TranscriptionClient(baseURL: baseURL, transport: transcriptionTransport) },
             makeCompletionsClient: { CompletionsClient(baseURL: baseURL, transport: completionsTransport) }
@@ -448,8 +455,8 @@ struct DictationControllerTests {
 
     /// One agent-mode request, spoken over `context`: the controller, what was pasted, and every phase
     /// it went through.
-    private func carryOut(_ context: ScreenContext?) async -> (controller: DictationController, pastes: Pastes, phases: [DictationController.Phase]) {
-        let (controller, pastes) = makeController(capture: ToneCapture())
+    private func carryOut(_ context: ScreenContext?, thunderbird: FakeThunderbird? = nil) async -> (controller: DictationController, pastes: Pastes, phases: [DictationController.Phase]) {
+        let (controller, pastes) = makeController(capture: ToneCapture(), thunderbird: thunderbird)
         var phases: [DictationController.Phase] = []
         controller.onPhaseChange = { phases.append($0) }
         controller.captureContext = { context.map { context in Task { context } } }
@@ -530,6 +537,57 @@ struct DictationControllerTests {
         #expect(pastes.collapsedAfter.isEmpty)
         #expect(controller.phase == .failed(message))
         #expect(completions.requests.count == replies.count)
+    }
+
+    /// A mail or calendar request is restated as a chat message and typed into TabMail's chat in
+    /// Thunderbird; nothing is pasted where the user was.
+    @Test func agentModeSendsMailRequestsToThunderbird() async {
+        transcription.enqueue(status: 200, json: ["text": "find sam's invoice from last week"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Find the invoice Sam sent last week."))
+        let thunderbird = FakeThunderbird()
+
+        let (controller, pastes, phases) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
+
+        #expect(controller.tools == [.edit, .compose, .thunderbird])
+        #expect(thunderbird.pasted == ["Find the invoice Sam sent last week."])
+        #expect(thunderbird.events.last == "return")
+        #expect(pastes.texts.isEmpty)
+        #expect(controller.phase == .idle)
+        #expect(phases.contains(.running(.thunderbird)))
+        #expect(cleanupVars(1)?["content"] as? String == "system_prompt_desktop_thunderbird")
+        #expect(cleanupVars(1)?["user_request"] as? String == "find sam's invoice from last week")
+    }
+
+    /// Without Thunderbird its bubble isn't shown, and a request the agent gives it fails, sending
+    /// nothing anywhere.
+    @Test func withoutThunderbirdItsToolIsNotOffered() async {
+        transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        let thunderbird = FakeThunderbird()
+        thunderbird.installed = false
+
+        let (controller, pastes, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
+
+        #expect(controller.tools == [.edit, .compose])
+        #expect(controller.phase == .failed(DesktopAgent.Failure.unavailable(.thunderbird).errorDescription!))
+        #expect(completions.requests.count == 1)
+        #expect(thunderbird.events.isEmpty)
+        #expect(pastes.texts.isEmpty)
+    }
+
+    @Test func aChatThatDoesNotOpenFailsTheRequest() async {
+        transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+        completions.enqueue(status: 200, text: reply("Find the invoice Sam sent."))
+        let thunderbird = FakeThunderbird()
+        thunderbird.shortcutOpensChat = false
+
+        let (controller, pastes, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird)
+
+        #expect(controller.phase == .failed(ThunderbirdRelay.Failure.chatNotFocused.errorDescription!))
+        #expect(thunderbird.pasted.isEmpty)
+        #expect(pastes.texts.isEmpty)
     }
 
     /// Agent mode waits `agentContextWait` for the screen read, not the dictation's shorter

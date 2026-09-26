@@ -376,3 +376,33 @@ their copy where it is; `project.yml` reads it as `../../`.
   backend contract and test vectors, not code.
 - The GitHub rename and the local folder rename (`tabmail-macos` → `tabmail-voice`) are separate
   steps, after the open branches merge.
+
+## ADR-DESK-014: Thunderbird connector spike: drive TabMail's chat from outside
+
+**Context:** Owner, 2026-09-25: agent mode's bubbles become the supported apps, starting with
+Thunderbird; any mail or calendar request goes to TabMail's chat in Thunderbird. Nothing outside
+Thunderbird can reach the add-on today (no external messaging, no URL scheme, native messaging is
+request/response). The owner chose a spike with no Thunderbird change before building a bridge,
+the agent restating the request as a chat message, and sending being enough (no reply back).
+
+**Decision:**
+- A third tool, `thunderbird` (backend `system_prompt_desktop_thunderbird`, ADR-023), offered, and
+  shown as a bubble with Thunderbird's own icon, only when Thunderbird is installed. The agent's
+  prompt always names it; the app fails a request given to a tool it did not offer ("Mail and
+  calendar requests need Thunderbird with TabMail").
+- `ThunderbirdRelay` sends the chat message: launch Thunderbird if it isn't running (then wait for a
+  window and `thunderbirdAddonSettle` for the add-on), bring it to the front through Accessibility
+  (`AXFrontmost`: the app is never active, so cooperative activation would ignore
+  `NSRunningApplication.activate`), post the add-on's ⌥⌘L unless the focused window is already
+  the chat, wait for a window titled "TabMail Chat", paste, press Return.
+- Nothing is typed outside the chat: the shortcut is posted only while Thunderbird is in front, the
+  paste only while the chat window has focus (checked again after the input settles), and Return
+  only if it still has focus after the paste. Any failure shows a message.
+
+**Consequences:**
+- Known weak points, for the spike to measure: a chat that is mid-reply ignores Enter (the message
+  stays in the input); the add-on registers ⌥⌘L lazily, so a suspended background page may miss
+  it; a remapped shortcut breaks it; the app cannot tell whether the add-on is installed (the chat
+  just never opens); cold-launch timing is a guess.
+- The native-messaging bridge (plan option B, installed by this app only) replaces the shortcut,
+  focus and timing guesses if the spike shows they matter.

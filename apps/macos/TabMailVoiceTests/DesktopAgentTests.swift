@@ -56,6 +56,10 @@ struct DesktopAgentTests {
         let compose = DesktopAgent.toolMessage(.compose, request: request, context: nil)
         #expect(compose.content == "system_prompt_desktop_compose")
         #expect(Set(compose.vars.keys) == ["app_name", "web_host", "window_title", "screen_text", "selected_text", "user_request", "terminal_program"])
+
+        let thunderbird = DesktopAgent.toolMessage(.thunderbird, request: request, context: nil)
+        #expect(thunderbird.content == "system_prompt_desktop_thunderbird")
+        #expect(Set(thunderbird.vars.keys) == ["app_name", "web_host", "window_title", "screen_text", "selected_text", "user_request"])
     }
 
     @Test func aToolIsSentTheScreenWithTheSelectionMarked() {
@@ -89,11 +93,11 @@ struct DesktopAgentTests {
 
     // MARK: Choosing and writing
 
-    @Test(arguments: [("edit", AgentTool.edit), ("compose", AgentTool.compose)])
+    @Test(arguments: [("edit", AgentTool.edit), ("compose", AgentTool.compose), ("thunderbird", AgentTool.thunderbird)])
     func choosesTheToolTheAgentNames(reply: String, tool: AgentTool) async throws {
         completions.enqueue(status: 200, text: self.reply(reply))
 
-        let chosen = try await DesktopAgent.chooseTool(for: request, context: screen(selected: "Ship it."), client: client, account: signedIn(), userId: Fixtures.userId)
+        let chosen = try await DesktopAgent.chooseTool(for: request, context: screen(selected: "Ship it."), offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId)
 
         #expect(chosen == tool)
         #expect(sentMessage(0)?["content"] as? String == "system_prompt_desktop_agent")
@@ -107,15 +111,34 @@ struct DesktopAgentTests {
         completions.enqueue(status: 200, text: self.reply(reply))
 
         await #expect(throws: DesktopAgent.Failure.noTool) {
-            try await DesktopAgent.chooseTool(for: request, context: screen(selected: "Ship it."), client: client, account: signedIn(), userId: Fixtures.userId)
+            try await DesktopAgent.chooseTool(for: request, context: screen(selected: "Ship it."), offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId)
         }
+    }
+
+    /// Thunderbird is offered only when installed; the agent's prompt names it regardless.
+    @Test func aToolThatWasNotOfferedIsUnavailable() async {
+        completions.enqueue(status: 200, text: reply("thunderbird"))
+
+        await #expect(throws: DesktopAgent.Failure.unavailable(.thunderbird)) {
+            try await DesktopAgent.chooseTool(for: request, context: nil, offered: [.edit, .compose], client: client, account: signedIn(), userId: Fixtures.userId)
+        }
+    }
+
+    /// The Thunderbird tool's message is sent to TabMail's chat as it comes: no fitting to a selection.
+    @Test func theThunderbirdToolWritesAChatMessage() async throws {
+        completions.enqueue(status: 200, text: reply("  Find the invoice Sam sent last week.\n"))
+
+        let message = try await DesktopAgent.write(.thunderbird, for: "find sam's invoice", context: screen(selected: " Sam \n"), client: client, account: signedIn(), userId: Fixtures.userId)
+
+        #expect(message == "Find the invoice Sam sent last week.")
+        #expect(sentMessage(0)?["content"] as? String == "system_prompt_desktop_thunderbird")
     }
 
     @Test func choosingToEditWithNothingSelectedFails() async {
         completions.enqueue(status: 200, text: reply("edit"))
 
         await #expect(throws: DesktopAgent.Failure.noSelection) {
-            try await DesktopAgent.chooseTool(for: request, context: screen(selected: ""), client: client, account: signedIn(), userId: Fixtures.userId)
+            try await DesktopAgent.chooseTool(for: request, context: screen(selected: ""), offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId)
         }
     }
 
@@ -133,7 +156,7 @@ struct DesktopAgentTests {
         let started = ContinuousClock.now
 
         await #expect(throws: DesktopAgent.Failure.timedOut) {
-            try await DesktopAgent.chooseTool(for: request, context: nil, client: client, account: signedIn(), userId: Fixtures.userId, timeout: 0.2)
+            try await DesktopAgent.chooseTool(for: request, context: nil, offered: AgentTool.allCases, client: client, account: signedIn(), userId: Fixtures.userId, timeout: 0.2)
         }
         #expect(ContinuousClock.now - started < .seconds(5))
     }

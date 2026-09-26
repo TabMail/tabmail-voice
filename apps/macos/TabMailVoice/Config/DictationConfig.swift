@@ -129,6 +129,7 @@ enum DictationConfig {
     /// The backend prompts behind the agent's tools.
     static let agentEditPrompt = "system_prompt_desktop_edit"
     static let agentComposePrompt = "system_prompt_desktop_compose"
+    static let agentThunderbirdPrompt = "system_prompt_desktop_thunderbird"
     /// How long agent mode waits for the screen read once the request is transcribed (seconds).
     /// Longer than `contextWait`: the edit tool cannot work without the selection it carries.
     static let agentContextWait: TimeInterval = 2
@@ -136,6 +137,28 @@ enum DictationConfig {
     static let agentChooseTimeout: TimeInterval = 10
     /// Longest a tool may take to write its text (seconds).
     static let agentToolTimeout: TimeInterval = 30
+
+    // MARK: Thunderbird connector (spike: drives TabMail's chat window from outside)
+
+    static let thunderbirdBundleIdentifier = "org.mozilla.thunderbird"
+    /// The TabMail chat window's title (`chat/chat.html`); matched as a substring, since Thunderbird
+    /// may add its own name to a window title.
+    static let thunderbirdChatWindowTitle = "TabMail Chat"
+    /// Longest a Thunderbird that was not running may take to show its first window (seconds).
+    static let thunderbirdLaunchTimeout: TimeInterval = 20
+    /// After that first window, the add-on still has to load and register its shortcut (seconds).
+    static let thunderbirdAddonSettle: TimeInterval = 3
+    /// Longest Thunderbird may take to come to the front (seconds).
+    static let thunderbirdActivateTimeout: TimeInterval = 3
+    /// Longest the chat window may take to open and take focus after the shortcut (seconds).
+    static let thunderbirdChatTimeout: TimeInterval = 5
+    /// Once the chat window has focus, its input takes focus on the next turn of its event loop;
+    /// the paste waits this long for it (seconds).
+    static let thunderbirdChatInputSettle: TimeInterval = 0.3
+    /// How often those waits check (seconds).
+    static let thunderbirdPollInterval: TimeInterval = 0.1
+    /// Accessibility calls into Thunderbird give up after this long (seconds).
+    static let thunderbirdAccessibilityTimeout: Float = 0.5
 
     // MARK: Account (Supabase auth at auth.tabmail.ai)
 
@@ -243,6 +266,8 @@ enum DictationConfig {
     static let agentBubbleHorizontalPadding: CGFloat = 10
     static let agentBubbleSpacing: CGFloat = 6
     static let agentBubbleIconSpacing: CGFloat = 4
+    /// An app tool's icon (Thunderbird's) in its bubble.
+    static let agentBubbleAppIconSize: CGFloat = 16
     static let agentBubbleFontSize: CGFloat = 12
     /// A bubble whose tool is not the one running fades to this opacity.
     static let agentBubbleIdleOpacity: Double = 0.45
