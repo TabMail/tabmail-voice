@@ -40,7 +40,8 @@ struct MenuContent: View {
         Button(controller.phase == .listening ? "Stop Dictation" : "Start Dictation") {
             controller.toggle()
         }
-        .disabled(!isReady)
+        // Stop stays available while recording, even if setup has since become incomplete.
+        .disabled(controller.phase != .listening && !isReady)
 
         #if DEBUG
         Button("Play Last Recording") {

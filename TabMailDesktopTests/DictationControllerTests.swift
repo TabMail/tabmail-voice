@@ -294,6 +294,18 @@ struct DictationControllerTests {
         #expect(capture.starts == 1)
         #expect(reads == 1)
         controller.handle(.cancel)
+
+        // Withdrawing consent later blocks the next dictation too: an earlier agreement doesn't outlive it.
+        consented.isOn = false
+        controller.handle(.start)
+        controller.handle(.finish)
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(controller.phase == .failed("Finish setting up TabMail from its menu to dictate."))
+        #expect(capture.starts == 1)
+        #expect(reads == 1)
+        #expect(transcription.requests.isEmpty)
+        #expect(completions.requests.isEmpty)
+        #expect(pastes.texts.isEmpty)
     }
 
     /// The screen is read at key-down; a read done within `contextWait` of the transcript is sent
