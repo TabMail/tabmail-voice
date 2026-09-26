@@ -191,7 +191,8 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
 
 **Consequences:**
 - What is on screen while dictating is sent to the TabMail backend with each dictation; like every
-  TabMail AI request it is not retained (root ADR-004), and the app logs sizes only.
+  TabMail AI request it is not retained (root ADR-004), and the app logs sizes only. *(Amended by
+  ADR-DESK-015, 2026-09-26: debug builds log the text in full to the local debug log file.)*
 - Every dictation gains one model round trip; its duration is logged (debug) for tuning. Owner,
   2026-09-25: the cleanup is capped at `cleanupTimeout` (3 s; the owner asked for 2–3 s); past it
   the request is cancelled and the transcript is pasted as heard, like any other failed cleanup.
@@ -461,8 +462,7 @@ the agent restating the request as a chat message, and sending being enough (no 
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 
 **Context:** Owner, 2026-09-26: an agent-mode reply came out of context, and nothing could say why.
-The app logged lengths only, and the dev backend logs the model's reply but not the screen text it
-was given. "We need more local observability. The raw responses and things that we send to the
+The app logged lengths only, so what it had sent and received could not be read back. "We need more local observability. The raw responses and things that we send to the
 backend … these logs are saved locally so we just want to be super detailed."
 
 **Decision:** `Log.content(label, text)` writes a named block, whole, to the debug log file
@@ -484,5 +484,7 @@ Never logged: audio (the transcription request shows its size in its place) and 
   the server keeps; this is a local file written only by builds from source.
 - The file is capped at `logFileMaxBytes` (50 MB, was 5 MB), one earlier file kept: a dictation logs
   its screen read several times.
-- A test sees the entries through the task-local `Log.contentObserver` (`ContentLogTests`), which
-  pins that the token and the audio stay out.
+- A test sees the entries through the task-local `Log.contentObserver` (`ContentLogTests`, and the
+  controller's paths in `DictationControllerTests`), which pins that the token and the audio stay
+  out; the task-local `LogFile.destination` lets a test read an entry back from a file of its own.
+- Builds from source are debug builds, so they keep this log too (README).

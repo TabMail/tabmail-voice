@@ -59,11 +59,19 @@ enum LogFile {
     private static let queue = DispatchQueue(label: "ai.tabmail.voice.logfile")
     private static let isEnabled = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
 
+    /// Tests only: the file this task's lines go to. Unit tests otherwise write no log file.
+    @TaskLocal static var destination: URL?
+
     static func append(_ level: String, _ text: String) {
-        guard isEnabled else { return }
+        guard let file = destination ?? (isEnabled ? url : nil) else { return }
         let time = Date.now.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true, timeZone: .current))
         let line = "\(time) \(level) \(text)\n"
-        queue.async { write(line, to: url, maxBytes: DictationConfig.logFileMaxBytes) }
+        queue.async { write(line, to: file, maxBytes: DictationConfig.logFileMaxBytes) }
+    }
+
+    /// Waits until every line appended so far is written. For tests.
+    static func flush() {
+        queue.sync {}
     }
 
     /// Appends `line` to the file at `url`, first moving a file past `maxBytes` aside. Internal for tests.

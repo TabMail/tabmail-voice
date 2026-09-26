@@ -3,7 +3,6 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import Foundation
-import os
 import Testing
 @testable import TabMailVoice
 
@@ -12,18 +11,17 @@ import Testing
 struct ContentLogTests {
     private let baseURL = URL(string: "https://api.example.com")!
 
-    /// The `Log.content` entries logged while `body` runs.
-    private final class Entries: Sendable {
-        private let state = OSAllocatedUnfairLock<[(label: String, text: String)]>(initialState: [])
-        var all: [(label: String, text: String)] { state.withLock { $0 } }
-        var joined: String { all.map { "\($0.label)\n\($0.text)" }.joined(separator: "\n") }
-        func add(_ label: String, _ text: String) { state.withLock { $0.append((label, text)) } }
-    }
+    /// The whole point: an entry lands in the log file, as a named block after its time and level.
+    @Test func contentIsWrittenToTheLogFile() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ContentLogTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("Test.log")
 
-    private func logged(_ body: () async throws -> Void) async rethrows -> Entries {
-        let entries = Entries()
-        try await Log.$contentObserver.withValue({ entries.add($0, $1) }) { try await body() }
-        return entries
+        LogFile.$destination.withValue(file) { Log.content("Transcript (dictation)", "line one\nline two") }
+        LogFile.flush()
+
+        let text = try String(contentsOf: file, encoding: .utf8)
+        #expect(text.hasSuffix(" CONTENT Transcript (dictation) (17 chars) >>>\nline one\nline two\n<<< Transcript (dictation)\n"))
     }
 
     @Test func aCompletionsCallLogsItsRequestVariablesAndRawReplyButNotTheToken() async throws {
@@ -34,7 +32,7 @@ struct ContentLogTests {
         stub.enqueue(status: 200, text: stream)
         let client = CompletionsClient(baseURL: baseURL, clientVersion: "1.0", transport: stub.transport)
 
-        let entries = try await logged { _ = try await client.complete(message, accessToken: "secret-token-123") }
+        let entries = try await ContentLogEntries.logged { _ = try await client.complete(message, accessToken: "secret-token-123") }
 
         #expect(entries.all.map(\.label) == [
             "Completions system_prompt_example request",
@@ -62,7 +60,7 @@ struct ContentLogTests {
         stub.enqueue(status: 502, json: ["error": "upstream_failed"])
         let client = CompletionsClient(baseURL: baseURL, transport: stub.transport)
 
-        let entries = await logged {
+        let entries = await ContentLogEntries.logged {
             _ = try? await client.complete(CompletionsMessage(role: "system", content: "p", vars: [:]), accessToken: "t")
         }
 
@@ -77,7 +75,7 @@ struct ContentLogTests {
         stub.enqueue(status: 200, json: ["text": "Hello there."])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
 
-        let entries = try await logged { _ = try await client.transcribe(wav: wav, accessToken: "secret-token-123") }
+        let entries = try await ContentLogEntries.logged { _ = try await client.transcribe(wav: wav, accessToken: "secret-token-123") }
 
         #expect(entries.all.map(\.label) == ["Transcription request", "Transcription response"])
         guard entries.all.count == 2 else { return }
@@ -90,6 +88,41 @@ struct ContentLogTests {
         #expect(String(decoding: sent, as: UTF8.self).contains(wav.base64EncodedString()))
         #expect(!entries.joined.contains(wav.base64EncodedString()))
         #expect(!entries.joined.contains("secret-token-123"))
+    }
+
+    @Test func aFailedTranscriptionStillLogsTheReply() async {
+        let stub = StubTransport()
+        stub.enqueue(status: 502, json: ["error": "transcription_failed"])
+        let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
+
+        let entries = await ContentLogEntries.logged { _ = try? await client.transcribe(wav: Data("RIFF".utf8), accessToken: "t") }
+
+        #expect(entries.all.map(\.label) == ["Transcription request", "Transcription response"])
+        #expect(entries.all.last?.text.hasPrefix("HTTP 502\n") == true)
+        #expect(entries.all.last?.text.hasSuffix(#"{"error":"transcription_failed"}"#) == true)
+    }
+
+    /// The screen read at key-down is logged whole as it is captured.
+    @MainActor
+    @Test func aScreenReadIsLoggedAsItIsCaptured() async {
+        var context = ScreenContext(appName: "Example Notes", bundleID: "com.example.notes")
+        context.textBeforeCaret = "Dear Alex,"
+        context.appendCaret()
+        let captured = context
+        let probe = ScreenContextProbe(isEnabled: { true }, isTrusted: { true }, frontmostApp: {
+            ScreenContextProbe.Target(pid: 1, name: "Example Notes", bundleID: "com.example.notes")
+        }, read: { _ in captured })
+
+        // Captured inside the observed scope: the read's task inherits the observer from there.
+        let entries = await ContentLogEntries.logged { _ = await probe.capture()?.value }
+
+        #expect(entries.all.map(\.label) == ["ScreenContext"])
+        #expect(entries.all.first?.text == captured.logDescription)
+    }
+
+    @Test func aResponseThatIsNotHTTPStillLogsItsBody() {
+        let response = URLResponse(url: baseURL, mimeType: nil, expectedContentLength: 4, textEncodingName: nil)
+        #expect(BackendLog.response(response, data: Data("body".utf8)) == "(not an HTTP response)\n\nbody")
     }
 
     @Test func theAuthorizationHeaderIsMaskedWhateverItsCase() {

@@ -23,6 +23,11 @@ Requires macOS 15 or later and a TabMail account.
    xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath apps/macos/DerivedData test
    ```
 
+A debug build (what the scheme runs) keeps a detailed log at
+`~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
+every request to the TabMail backend and its reply, and what was pasted. The access token and the
+audio are never in it. Release builds keep no log file.
+
 Sign with a real team. macOS ties the Microphone and Accessibility permissions to the app's
 signature, so an ad-hoc signed build loses them on every rebuild.
 
