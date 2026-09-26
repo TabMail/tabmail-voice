@@ -11,9 +11,10 @@ options:
   generateEmptyDirectories: true
   groupSortPosition: top
 
+# At the repository root, where every worktree's copy is installed.
 configFiles:
-  Debug: Secrets.xcconfig
-  Release: Secrets.xcconfig
+  Debug: ../../Secrets.xcconfig
+  Release: ../../Secrets.xcconfig
 
 settings:
   base:
@@ -21,7 +22,7 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     # DEVELOPMENT_TEAM is sourced from the gitignored Secrets.xcconfig by
-    # Scripts/xcodegen.sh (see Secrets.xcconfig.example), so the Team ID stays
+    # apps/macos/Scripts/xcodegen.sh (see Secrets.xcconfig.example), so the Team ID stays
     # out of the public repo. Always generate via that script.
     DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
     CODE_SIGN_STYLE: Automatic
