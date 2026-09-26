@@ -126,6 +126,18 @@ struct ThunderbirdRelayTests {
         #expect(thunderbird.pasted.isEmpty)
     }
 
+    /// A window whose title can't be read (none has focus, Thunderbird is hung, or it quit) is not
+    /// the chat.
+    @Test func aWindowWithNoReadableTitleGetsNothing() async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = nil
+        thunderbird.shortcutOpensChat = false
+
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        #expect(thunderbird.events == ["activate", "openChat"])
+        #expect(thunderbird.pasted.isEmpty)
+    }
+
     @Test func launchesThunderbirdWhenItIsNotRunning() async throws {
         let thunderbird = FakeThunderbird()
         thunderbird.running = false
