@@ -9,7 +9,7 @@ import Carbon.HIToolbox
 /// Sends a chat message to TabMail's chat in Thunderbird by driving Thunderbird from outside: bring it
 /// to the front (launching it first if it isn't running), open the chat with the add-on's shortcut
 /// (⌥⌘L), paste the message and press Return. A spike that needs no Thunderbird change
-/// (ADR-DESK-014); it never pastes unless the TabMail chat window has focus.
+/// (ADR-DESK-014); it never pastes unless the TabMail chat's input has focus.
 @MainActor
 final class ThunderbirdRelay {
     /// What the relay does to the system, to the email app named by its bundle identifier. Injected
@@ -24,14 +24,20 @@ final class ThunderbirdRelay {
         /// Asks the app to come to the front.
         var activate: @MainActor (String) async -> Void
         var isFrontmost: @MainActor (String) -> Bool
-        /// The title of the app's focused window.
-        var focusedWindowTitle: @MainActor (String) async -> String?
+        /// The app's focused element, if any.
+        var focusedElement: @MainActor (String) async -> FocusedElement?
         /// Posts the add-on's open-chat shortcut.
         var openChat: @MainActor () async -> Void
         /// Pastes into the focused field.
         var paste: @MainActor (String) async -> Void
         /// Posts Return, which sends the chat message.
         var pressReturn: @MainActor () async -> Void
+    }
+
+    /// An element's Accessibility role and the title of the window it is in.
+    struct FocusedElement: Equatable, Sendable {
+        var role: String?
+        var windowTitle: String?
     }
 
     enum Failure: LocalizedError, Equatable {
@@ -57,7 +63,6 @@ final class ThunderbirdRelay {
     var addonSettle = DictationConfig.thunderbirdAddonSettle
     var activateTimeout = DictationConfig.thunderbirdActivateTimeout
     var chatTimeout = DictationConfig.thunderbirdChatTimeout
-    var chatInputSettle = DictationConfig.thunderbirdChatInputSettle
     var pollInterval = DictationConfig.thunderbirdPollInterval
 
     init(system: System) {
@@ -83,14 +88,14 @@ final class ThunderbirdRelay {
         guard try await wait(activateTimeout, until: { self.system.isFrontmost(app) }) else { throw Failure.notFrontmost }
         if await !isChatFocused(app) {
             // The shortcut goes to whatever app is in front, and the user may have switched, or
-            // cancelled, during the title read.
+            // cancelled, during the focus read.
             guard system.isFrontmost(app) else { throw Failure.notFrontmost }
             try Task.checkCancellation()
             Log.debug("ThunderbirdRelay: opening the chat")
             await system.openChat()
             guard try await wait(chatTimeout, until: { await self.isChatFocused(app) }) else { throw Failure.chatNotFocused }
+            Log.debug("ThunderbirdRelay: the chat is ready")
         }
-        try await Task.sleep(for: .seconds(chatInputSettle))
         // The user may have moved on, or cancelled, while this waited: paste and send only into the
         // chat, and only for a request still wanted.
         guard await isChatFocused(app) else { throw Failure.chatNotFocused }
@@ -103,12 +108,14 @@ final class ThunderbirdRelay {
         Log.content("ThunderbirdRelay: sent", message)
     }
 
-    /// The title is read first: `app` being in front is only a fact after the read's `await`. The
-    /// whole title must match; a window that merely mentions the chat, such as a draft replying to a
-    /// message about it ("Write: Re: TabMail Chat feedback"), is not it.
+    /// Whether the chat is ready for a message: its input has focus, which the chat gives it only
+    /// once it has loaded (a chat just opened has its title well before). The focus is read first:
+    /// `app` being in front is only a fact after the read's `await`. The whole title must match; a
+    /// window that merely mentions the chat, such as a draft replying to a message about it
+    /// ("Write: Re: TabMail Chat feedback"), is not it.
     private func isChatFocused(_ app: String) async -> Bool {
-        guard let title = await system.focusedWindowTitle(app), system.isFrontmost(app) else { return false }
-        return title == DictationConfig.thunderbirdChatWindowTitle
+        guard let focused = await system.focusedElement(app), system.isFrontmost(app) else { return false }
+        return focused.role == DictationConfig.thunderbirdChatInputRole && focused.windowTitle == DictationConfig.thunderbirdChatWindowTitle
     }
 
     /// Whether `condition` holds within `timeout`, checking every `pollInterval`.
@@ -159,10 +166,15 @@ extension ThunderbirdRelay.System {
                 Log.debug("ThunderbirdRelay: asked Thunderbird to the front (\(result))")
             },
             isFrontmost: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == $0 },
-            focusedWindowTitle: { app in
-                await accessibility(app, absent: nil) { app in
-                    guard let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute) else { return nil }
-                    return CaretLocator.attribute(timed(window as! AXUIElement), kAXTitleAttribute) as? String
+            focusedElement: { app in
+                await accessibility(app, absent: ThunderbirdRelay.FocusedElement?.none) { app in
+                    guard let element = CaretLocator.attribute(app, kAXFocusedUIElementAttribute) else { return nil }
+                    let focused = timed(element as! AXUIElement)
+                    let window = CaretLocator.attribute(focused, kAXWindowAttribute).map { timed($0 as! AXUIElement) }
+                    return ThunderbirdRelay.FocusedElement(
+                        role: CaretLocator.attribute(focused, kAXRoleAttribute) as? String,
+                        windowTitle: window.flatMap { CaretLocator.attribute($0, kAXTitleAttribute) as? String }
+                    )
                 }
             },
             openChat: { await TextInserter.postKeystroke(CGKeyCode(kVK_ANSI_L), flags: [.maskAlternate, .maskCommand]) },
