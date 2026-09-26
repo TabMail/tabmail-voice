@@ -138,7 +138,7 @@ enum DictationConfig {
 
     static let termsURL = URL(string: "https://tabmail.ai/terms")!
     static let privacyURL = URL(string: "https://tabmail.ai/privacy")!
-    static let welcomeWindowSize = CGSize(width: 560, height: 460)
+    static let welcomeWindowSize = CGSize(width: 560, height: 500)
     /// Top rail, as in the Thunderbird welcome wizard: category labels over one bubble per step.
     static let welcomeRailBubbleSize: CGFloat = 8
     /// The current step's bubble is drawn this much larger.

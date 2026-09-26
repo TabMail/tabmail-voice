@@ -59,7 +59,7 @@ struct WelcomeView: View {
             Text("To do that, TabMail sends:")
             VStack(alignment: .leading, spacing: 10) {
                 Label("Your voice, while you hold the dictation key, to turn it into text.", systemImage: "mic")
-                Label("If screen reading is on, the text in the window in front, with the app's name, the window's title and the website's address, so names and terms are spelled as they appear there.", systemImage: "text.viewfinder")
+                Label("The text in the window in front, with the app's name, the window's title, the website's address and the program running in a terminal, so names and terms are spelled as they appear there. This is screen reading: it's on unless you switch it off in the Features step or in Settings.", systemImage: "text.viewfinder")
                 Label("Both go to TabMail and the AI providers it uses, only to process that dictation, and aren't stored.", systemImage: "lock.shield")
             }
             .fixedSize(horizontal: false, vertical: true)

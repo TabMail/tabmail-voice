@@ -265,7 +265,9 @@ struct DictationControllerTests {
     // MARK: Key-down to paste
 
     /// Until the user consents in the welcome wizard, holding the key records nothing, reads no
-    /// screen and sends nothing; it says why. Consent is asked at every key-down.
+    /// screen and sends nothing; it says why. Consent is asked at every key-down. The release
+    /// comes before the hold counts, so "sends nothing" rests on nothing being recorded or read:
+    /// the empty request and paste lists below would hold for a too-short hold too.
     @Test func withoutConsentNothingIsRecordedReadOrSent() async {
         let consented = Switch(false)
         let capture = CountingCapture()
