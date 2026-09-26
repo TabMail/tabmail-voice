@@ -5,7 +5,7 @@ focus. Speech is transcribed by the TabMail backend (`POST /dictation/transcribe
 Swift 6 / SwiftUI + AppKit, macOS 15+, XcodeGen.
 
 ```
-tabmail-macos/
+tabmail-voice/
 ├── Secrets.xcconfig.example    → copy to gitignored Secrets.xcconfig (DEVELOPMENT_TEAM); loaded via configFiles
 ├── Scripts/copy-worktree-secrets.sh  Installs the primary's gitignored signing config into a worktree, unprinted
 └── apps/                     One folder per platform (ADR-DESK-013)

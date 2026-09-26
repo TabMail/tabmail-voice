@@ -1,6 +1,6 @@
 # TabMail Voice — Decisions
 
-Compact index of architectural decisions for `tabmail-macos` (the TabMail Voice app). Cross-cutting decisions live in the
+Compact index of architectural decisions for `tabmail-voice` (the TabMail Voice app). Cross-cutting decisions live in the
 root `DECISIONS.md` (notably ADR-004 zero content retention, which dictation audio and transcripts
 fall under).
 
@@ -378,7 +378,8 @@ the native-fts `fts_helper`, which `tabmail-native-fts` looks for at that path. 
 `TabMailVoice.xcodeproj`, targets and scheme `TabMailVoice` / `TabMailVoiceTests`, `TabMailVoiceApp`.
 The log subsystem, queue labels and Keychain service use the new id. Text that names the app says
 "TabMail Voice"; text that means the service or the account (sign in, subscription, "sent to
-TabMail") still says "TabMail". The repository stays `tabmail-macos`.
+TabMail") still says "TabMail". The repository stayed `tabmail-macos` at first;
+renamed `tabmail-voice` on 2026-09-26 (owner), see ADR-DESK-013.
 
 **Consequences:**
 - A new bundle id is a new app to macOS: Microphone and Accessibility are asked for again (the
@@ -415,7 +416,9 @@ their copy where it is; `project.yml` reads it as `../../`.
   `apps/shared/` as a Swift package, if that app is Swift; otherwise the second app shares the
   backend contract and test vectors, not code.
 - The GitHub rename and the local folder rename (`tabmail-macos` → `tabmail-voice`) are separate
-  steps, after the open branches merge.
+  steps, after the open branches merge. Done 2026-09-26 at the owner's request, before they merged:
+  `TabMail/tabmail-voice` on GitHub (the old URL redirects), the primary checkout at
+  `tabmail-voice/`, worktrees re-attached with `git worktree repair`.
 
 ## ADR-DESK-014: Thunderbird connector spike: drive TabMail's chat from outside
 
