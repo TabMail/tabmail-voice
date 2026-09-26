@@ -60,7 +60,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
   appears at the pointer first and then jumps. A quick tap shows nothing. Swirl while the mic
   warms up, then the pill. A long message (e.g. signed out) wraps and the pill grows to fit it.
 - Switching the default input in System Settings › Sound is picked up on the next dictation.
-- Agent mode: hold the hotkey; a small tooltip centred under the pill shows a "space" keycap and
+- Agent mode: hold the hotkey; a small dark tooltip centred under the pill shows a "space" keycap and
   "agent mode", and fades after about 2.5 s (once a hold; it is back on the next hold). Press Space
   while it shows: it says "exit agent". Either way no space is typed into the app, and one icon-only bubble appears above the pill, still: Edit's pencil with text selected,
   Compose's without. Space again returns to dictation. With text selected in TextEdit, Mail, Slack and a

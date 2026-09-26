@@ -340,49 +340,66 @@ private struct PillLayout: Layout {
     }
 }
 
-/// A tooltip under the listening pill, kept small and quiet (owner, 2026-09-26): a "space" keycap and
-/// what it switches to, with an arrow up at the pill.
+/// A tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost a black
+/// background"): a dark rounded box with an arrow up at the pill, a "space" keycap and what it
+/// switches to.
 private struct ModeHint: View {
     let mode: DictationMode
 
+    private static let shape = TooltipShape(
+        arrowWidth: DictationConfig.modeHintArrowWidth,
+        arrowHeight: DictationConfig.modeHintArrowHeight,
+        cornerRadius: DictationConfig.modeHintCornerRadius
+    )
+
     var body: some View {
-        VStack(spacing: 0) {
-            Arrow()
-                .fill(Self.fill)
-                .frame(width: DictationConfig.modeHintArrowWidth, height: DictationConfig.modeHintArrowHeight)
-            label
-                .background(Self.fill, in: Capsule())
-        }
-        .fixedSize()
-    }
-
-    /// Light in light and dark mode alike, as the pill.
-    private static let fill = Color(white: DictationConfig.pillFillWhite).opacity(DictationConfig.modeHintBackgroundOpacity)
-
-    private var label: some View {
         HStack(spacing: DictationConfig.modeHintSpacing) {
             Text("space")
                 .font(.system(size: DictationConfig.modeHintKeyFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.modeHintKeyTextOpacity))
                 .padding(.horizontal, DictationConfig.modeHintKeyPadding)
                 .frame(height: DictationConfig.modeHintKeyHeight)
-                .overlay {
+                .background {
                     RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
-                        .strokeBorder(Color.black.opacity(DictationConfig.modeHintKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+                        .fill(Color.white.opacity(DictationConfig.modeHintKeyFillOpacity))
+                    RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
+                        .strokeBorder(Color.white.opacity(DictationConfig.modeHintKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
                 }
             Text(mode == .agent ? "exit agent" : "agent mode")
-                .font(.system(size: DictationConfig.modeHintFontSize))
+                .font(.system(size: DictationConfig.modeHintFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.modeHintTextOpacity))
         }
-        .foregroundStyle(Color.black.opacity(DictationConfig.modeHintTextOpacity))
         .padding(.horizontal, DictationConfig.modeHintHorizontalPadding)
         .frame(height: DictationConfig.modeHintHeight)
+        .padding(.top, DictationConfig.modeHintArrowHeight)
+        // Dark in light and dark mode alike, as the system's tooltips.
+        .background(Color(white: DictationConfig.modeHintFillWhite).opacity(DictationConfig.modeHintFillOpacity), in: Self.shape)
+        .overlay {
+            Self.shape.stroke(Color.white.opacity(DictationConfig.modeHintBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+        }
+        .shadow(color: .black.opacity(DictationConfig.modeHintShadowOpacity), radius: DictationConfig.modeHintShadowRadius, y: DictationConfig.modeHintShadowOffsetY)
+        .fixedSize()
     }
 
-    private struct Arrow: Shape {
+    /// A rounded box under an arrow centred on its top edge, one outline so the fill and the border
+    /// run around the arrow without a seam.
+    private struct TooltipShape: Shape {
+        let arrowWidth: CGFloat
+        let arrowHeight: CGFloat
+        let cornerRadius: CGFloat
+
         func path(in rect: CGRect) -> Path {
-            Path { path in
-                path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-                path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-                path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            let top = rect.minY + arrowHeight
+            let radius = min(cornerRadius, (rect.maxY - top) / 2)
+            return Path { path in
+                path.move(to: CGPoint(x: rect.minX + radius, y: top))
+                path.addLine(to: CGPoint(x: rect.midX - arrowWidth / 2, y: top))
+                path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+                path.addLine(to: CGPoint(x: rect.midX + arrowWidth / 2, y: top))
+                path.addArc(tangent1End: CGPoint(x: rect.maxX, y: top), tangent2End: CGPoint(x: rect.maxX, y: rect.maxY), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: rect.maxY), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.maxY), tangent2End: CGPoint(x: rect.minX, y: top), radius: radius)
+                path.addArc(tangent1End: CGPoint(x: rect.minX, y: top), tangent2End: CGPoint(x: rect.maxX, y: top), radius: radius)
                 path.closeSubpath()
             }
         }
