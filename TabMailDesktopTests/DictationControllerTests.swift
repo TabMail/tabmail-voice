@@ -102,7 +102,7 @@ struct DictationControllerTests {
     }
 
     /// A screen read that finishes only once `release` is called.
-    private func pendingRead(_ context: ScreenContext) -> (task: Task<ScreenContext, Never>, release: () -> Void) {
+    private func pendingRead(_ context: ScreenContext) -> (task: Task<ScreenContext, Never>, release: @Sendable () -> Void) {
         let (gate, opener) = AsyncStream.makeStream(of: Never.self)
         let task = Task {
             for await _ in gate {}
@@ -232,6 +232,20 @@ struct DictationControllerTests {
         #expect(ContinuousClock.now - started < .seconds(DictationConfig.cleanupTimeout + 5))
     }
 
+    /// A cleanup slower than the screen-read wait but within the app's own cleanup timeout is
+    /// pasted: the controller gives the cleanup that timeout, not a shorter one.
+    @Test func aCleanupThatAnswersWithinItsTimeoutIsPasted() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        completions.gate = { try? await Task.sleep(for: .seconds(DictationConfig.contextWait + 0.5)) }
+
+        let (pasted, controller) = await dictate()
+
+        #expect(completions.requests.count == 1)
+        #expect(pasted == [cleaned])
+        #expect(controller.phase == .idle)
+    }
+
     // MARK: Key-down to paste
 
     /// The screen is read at key-down; a read done within `contextWait` of the transcript is sent
@@ -323,6 +337,30 @@ struct DictationControllerTests {
         #expect(cleanupVars(0)?["dictation"] as? String == transcript)
         #expect(cleanupVars(0)?["app_name"] as? String == "")
         #expect(cleanupVars(0)?["screen_text"] as? String == "")
+    }
+
+    /// A screen read done shortly after the transcript, within the app's own `contextWait`, is
+    /// still sent with it to the cleanup.
+    @Test func aScreenReadDoneJustAfterTheTranscriptIsSent() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        let read = pendingRead(screen("A"))
+        controller.captureContext = { read.task }
+        // Released a fifth of the wait after the transcription is asked for; it answers at once.
+        transcription.gate = {
+            Task {
+                try? await Task.sleep(for: .seconds(DictationConfig.contextWait / 5))
+                read.release()
+            }
+        }
+
+        await holdAndRelease(controller)
+
+        #expect(await eventually { controller.phase == .idle && !pastes.texts.isEmpty })
+        #expect(pastes.texts == [cleaned])
+        #expect(completions.requests.count == 1)
+        #expect(cleanupVars(0)?["app_name"] as? String == "Example Notes A")
     }
 }
 
