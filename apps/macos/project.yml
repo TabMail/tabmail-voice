@@ -44,6 +44,7 @@ targets:
         CFBundleDisplayName: TabMail Voice
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         # Menu-bar only: no Dock icon, no main menu.
         LSUIElement: true
