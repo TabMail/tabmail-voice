@@ -28,8 +28,8 @@ enum ScreenContextReader {
             context.windowTitle = string(window, kAXTitleAttribute)
             // Without tmux, a terminal's caret window is the end of its scrollback, not what's on
             // screen: keep its visible lines as a plain field instead of placing the caret.
-            walk(window, frame: CaretLocator.frame(of: window), focused: isTerminal && !paneRead ? nil : focused,
-                 focusPath: focusPath, started: started, into: &context)
+            walk(window, in: LiveScreenTree(), frame: CaretLocator.frame(of: window),
+                 focused: isTerminal && !paneRead ? nil : focused, focusPath: focusPath, started: started, into: &context)
         }
         context.seconds = Date().timeIntervalSince(started)
         return context
@@ -80,51 +80,68 @@ enum ScreenContextReader {
     // MARK: Visible text
 
     /// Depth-first in child order (reading order), skipping chrome and anything outside the window.
+    /// Each piece of text keeps its frame, so it can be laid out in lines as on screen. In web
+    /// content controls and toolbars are read (`contextWebReadRoles`): a control adds the text
+    /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (`isShown`) is left
+    /// out, but its box is still walked into: Slack keeps its message list in one.
     /// The focused element becomes the caret block at its place in that order.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
-    private static func walk(_ window: AXUIElement, frame windowFrame: CGRect?, focused: AXUIElement?,
-                             focusPath: [AXUIElement], started: Date, into context: inout ScreenContext) {
-        var stack = [window]
-        while let element = stack.popLast() {
+    static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
+                                       focusPath: [Tree.Element], started: Date, into context: inout ScreenContext) {
+        // Each element with whether it is inside a web area.
+        var stack = [(window, false)]
+        while let (element, inWeb) = stack.popLast() {
             if context.nodesVisited >= DictationConfig.contextNodeBudget { context.stoppedEarly = "node budget"; return }
             if Date().timeIntervalSince(started) > DictationConfig.contextTimeBudget { context.stoppedEarly = "time budget"; return }
             context.nodesVisited += 1
 
-            if let focused, CFEqual(element, focused) {
-                context.appendCaret()
+            if let focused, tree.isSame(element, focused) {
+                context.appendCaret(frame: tree.frame(of: element))
                 continue
             }
-            if focusPath.contains(where: { CFEqual($0, element) }) {
-                let children = CaretLocator.attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-                stack.append(contentsOf: children.reversed())
+            if focusPath.contains(where: { tree.isSame($0, element) }) {
+                let childrenInWeb = inWeb || tree.string(element, kAXRoleAttribute) == "AXWebArea"
+                stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, childrenInWeb) })
                 continue
             }
-            if let windowFrame, let frame = CaretLocator.frame(of: element),
-               frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
-            let role = string(element, kAXRoleAttribute) ?? ""
-            if DictationConfig.contextSkippedRoles.contains(role) { continue }
+            let frame = tree.frame(of: element)
+            if let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
+            let role = tree.string(element, kAXRoleAttribute) ?? ""
+            if isSkipped(role, inWeb: inWeb) { continue }
+            let shown = frame.map(ScreenContext.isShown) ?? true
 
             switch role {
             case "AXWebArea":
-                if context.host == nil { context.host = host(of: element) }
+                if context.host == nil { context.host = tree.host(of: element) }
             case "AXStaticText":
-                context.append(.text, string(element, kAXValueAttribute) ?? label(of: element) ?? "")
+                if shown { context.append(.text, tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame) }
                 continue
             case "AXHeading", "AXLink", "AXRow":
-                let kind: ScreenContext.Block.Kind = role == "AXHeading" ? .heading : role == "AXLink" ? .link : .row
-                let text = label(of: element) ?? subtreeText(of: element, separator: kind == .row ? " | " : " ", context: &context)
-                context.append(kind, text)
+                if shown {
+                    let kind: ScreenContext.Block.Kind = role == "AXHeading" ? .heading : role == "AXLink" ? .link : .row
+                    let text = label(of: element, in: tree)
+                        ?? subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb, context: &context)
+                    context.append(kind, text, frame: frame)
+                }
                 continue
             case "AXTextArea", "AXTextField":
-                if let text = visibleText(of: element, windowFrame: windowFrame) { context.append(.field, text) }
+                if shown, let text = tree.fieldText(of: element, windowFrame: windowFrame) { context.append(.field, text, frame: frame) }
                 continue
+            case _ where inWeb && DictationConfig.contextWebControlRoles.contains(role):
+                if let title = drawnTitle(of: element, in: tree) {
+                    if shown { context.append(.text, title, frame: frame) }
+                    continue
+                }
             default:
                 break
             }
-            let children = CaretLocator.attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-            stack.append(contentsOf: children.reversed())
+            stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, inWeb || role == "AXWebArea") })
         }
+    }
+
+    static func isSkipped(_ role: String, inWeb: Bool) -> Bool {
+        DictationConfig.contextSkippedRoles.contains(role) && !(inWeb && DictationConfig.contextWebReadRoles.contains(role))
     }
 
     /// The element's parents up to (not including) the application.
@@ -139,33 +156,36 @@ enum ScreenContextReader {
         return chain
     }
 
-    /// Text of a heading, link or row gathered from its descendants.
-    private static func subtreeText(of root: AXUIElement, separator: String, context: inout ScreenContext) -> String {
+    /// Text of a heading, link or row gathered from its descendants, as `walk` reads it.
+    private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, separator: String, inWeb: Bool,
+                                                      context: inout ScreenContext) -> String {
         var parts: [String] = []
         var length = 0
-        var stack = CaretLocator.attribute(root, kAXChildrenAttribute) as? [AXUIElement] ?? []
-        stack.reverse()
+        var stack = Array(tree.children(of: root).reversed())
         while let element = stack.popLast(), length < DictationConfig.contextMaxBlockChars,
               context.nodesVisited < DictationConfig.contextNodeBudget {
             context.nodesVisited += 1
-            let role = string(element, kAXRoleAttribute) ?? ""
-            if DictationConfig.contextSkippedRoles.contains(role) { continue }
-            if role == "AXStaticText" || role == "AXTextField",
-               let text = (string(element, kAXValueAttribute) ?? label(of: element))?
-                   .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty, text != parts.last {
-                parts.append(text)
-                length += text.count
+            let role = tree.string(element, kAXRoleAttribute) ?? ""
+            if isSkipped(role, inWeb: inWeb) { continue }
+            let title = inWeb && DictationConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
+            if role == "AXStaticText" || role == "AXTextField" || title != nil {
+                let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
+                let text = (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if shown, !text.isEmpty, text != parts.last {
+                    parts.append(text)
+                    length += text.count
+                }
                 continue
             }
-            let children = CaretLocator.attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-            stack.append(contentsOf: children.reversed())
+            stack.append(contentsOf: tree.children(of: element).reversed())
         }
         return String(parts.joined(separator: separator).prefix(DictationConfig.contextMaxBlockChars))
     }
 
     /// A field's text, or for a long one (a terminal's scrollback) only the lines inside the window;
     /// nil when a long field can't report its lines.
-    private static func visibleText(of element: AXUIElement, windowFrame: CGRect?) -> String? {
+    fileprivate static func visibleText(of element: AXUIElement, windowFrame: CGRect?) -> String? {
         guard let value = string(element, kAXValueAttribute), !value.isEmpty else { return nil }
         let string = value as NSString
         guard string.length > DictationConfig.contextMaxFieldChars, let windowFrame else {
@@ -256,7 +276,7 @@ enum ScreenContextReader {
     // MARK: Attributes
 
     /// The page's host, or for a non-web page (an extension, an app's own page) its scheme.
-    private static func host(of webArea: AXUIElement) -> String? {
+    fileprivate static func host(of webArea: AXUIElement) -> String? {
         guard let value = CaretLocator.attribute(webArea, kAXURLAttribute) else { return nil }
         let url = CFGetTypeID(value) == CFURLGetTypeID() ? value as? URL : (value as? String).flatMap(URL.init(string:))
         guard let url else { return nil }
@@ -264,11 +284,24 @@ enum ScreenContextReader {
         return ["http", "https"].contains(url.scheme) ? url.host : url.scheme
     }
 
-    private static func label(of element: AXUIElement) -> String? {
+    private static func label<Tree: ScreenTree>(of element: Tree.Element, in tree: Tree) -> String? {
         for name in [kAXTitleAttribute, kAXDescriptionAttribute] {
-            if let text = string(element, name), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
+            if let text = tree.string(element, name), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
         }
         return nil
+    }
+
+    /// A web control's title when it is the text drawn in the control. Chromium and WebKit title a
+    /// control with its contents (Slack's message author, "10 replies"); a label for screen readers
+    /// (an icon button's "Copy") comes as its description, and was seen as the title as well in an
+    /// Electron app.
+    private static func drawnTitle<Tree: ScreenTree>(of element: Tree.Element, in tree: Tree) -> String? {
+        drawnTitle(title: tree.string(element, kAXTitleAttribute), description: tree.string(element, kAXDescriptionAttribute))
+    }
+
+    static func drawnTitle(title: String?, description: String?) -> String? {
+        func text(_ value: String?) -> String? { value.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } }
+        return text(description) == nil ? text(title) : nil
     }
 
     private static func string(_ element: AXUIElement, _ name: String) -> String? {
@@ -278,4 +311,35 @@ enum ScreenContextReader {
     private static func int(_ value: CFTypeRef?) -> Int? {
         (value as? NSNumber)?.intValue
     }
+}
+
+/// What the walk reads from an app's elements: Accessibility (`LiveScreenTree`), or a fake tree in tests.
+protocol ScreenTree {
+    associatedtype Element
+    func children(of element: Element) -> [Element]
+    func frame(of element: Element) -> CGRect?
+    func string(_ element: Element, _ name: String) -> String?
+    /// The host of a web area's page.
+    func host(of webArea: Element) -> String?
+    /// A text field's visible text.
+    func fieldText(of element: Element, windowFrame: CGRect?) -> String?
+    func isSame(_ first: Element, _ second: Element) -> Bool
+}
+
+struct LiveScreenTree: ScreenTree {
+    func children(of element: AXUIElement) -> [AXUIElement] {
+        CaretLocator.attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+    }
+
+    func frame(of element: AXUIElement) -> CGRect? { CaretLocator.frame(of: element) }
+
+    func string(_ element: AXUIElement, _ name: String) -> String? { CaretLocator.attribute(element, name) as? String }
+
+    func host(of webArea: AXUIElement) -> String? { ScreenContextReader.host(of: webArea) }
+
+    func fieldText(of element: AXUIElement, windowFrame: CGRect?) -> String? {
+        ScreenContextReader.visibleText(of: element, windowFrame: windowFrame)
+    }
+
+    func isSame(_ first: AXUIElement, _ second: AXUIElement) -> Bool { CFEqual(first, second) }
 }

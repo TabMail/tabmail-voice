@@ -32,8 +32,8 @@ tabmail-voice/
         │   │   └── BackendLog.swift          A backend request and its raw reply as the debug log file shows them (access token masked, audio left out)
         │   ├── Config/DictationConfig.swift  Every tunable number and endpoint (timings, audio, backend, auth, overlay)
         │   ├── Context/                  Screen context read at key-down, for the transcript cleanup
-        │   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks in reading order
-        │   │   ├── ScreenContextReader.swift Accessibility walk of the focused window; tmux pane for terminals
+        │   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks with frames, laid out in lines as on screen
+        │   │   ├── ScreenContextReader.swift Accessibility walk of the focused window (through `ScreenTree`, faked in tests); tmux pane for terminals
         │   │   └── ScreenContextProbe.swift  Captures at key-down (when screen reading is on) in the background; the cleanup waits up to `contextWait` for it; latest kept for the debug window
         │   ├── Dictation/
         │   │   ├── DictationController.swift State machine idle → arming → listening → transcribing → idle/failed; 401 retry
