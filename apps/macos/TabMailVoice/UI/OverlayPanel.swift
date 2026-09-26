@@ -419,8 +419,9 @@ struct ModeHint: View {
 
 /// One of agent mode's tools above the pill: a circle with its icon only (owner, 2026-09-26: with a
 /// single writing tool shown, the name adds nothing), with its app's icon when it hands the request to an
-/// app. While its tool runs, a gradient arc circles its border; the other tools fade.
-private struct ToolBubble: View {
+/// app. While its tool runs, it springs up larger and a gradient arc circles its border; the other
+/// tools fade. Internal for tests.
+struct ToolBubble: View {
     let tool: AgentTool
     /// The app the tool hands the request to, if any.
     let appURL: URL?
@@ -454,6 +455,8 @@ private struct ToolBubble: View {
             }
         }
         .shadow(color: Brand.purple.opacity(DictationConfig.pillGlowOpacity), radius: DictationConfig.pillGlowRadius)
+        .scaleEffect(isRunning ? DictationConfig.agentBubbleRunningScale : 1, anchor: .bottom)
+        .animation(.spring(response: DictationConfig.agentBubbleRunningSpringResponse, dampingFraction: DictationConfig.agentBubbleRunningSpringDamping), value: isRunning)
         .opacity(isDimmed ? DictationConfig.agentBubbleIdleOpacity : 1)
         .fixedSize()
         .accessibilityLabel(tool.displayName)

@@ -274,13 +274,13 @@ enum DictationConfig {
     /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
     static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
     /// Agent mode's tool bubbles in a row above the pill: icon-only circles.
-    static let agentBubbleDiameter: CGFloat = 20
+    static let agentBubbleDiameter: CGFloat = 24
     /// Gap between the pill and the bubbles' row, and between neighbouring bubbles.
     static let agentBubbleGap: CGFloat = 8
     /// An app tool's icon (Thunderbird's) in its bubble.
-    static let agentBubbleAppIconSize: CGFloat = 13
+    static let agentBubbleAppIconSize: CGFloat = 16
     /// A tool's symbol in its bubble.
-    static let agentBubbleSymbolSize: CGFloat = 10
+    static let agentBubbleSymbolSize: CGFloat = 12
     /// The Space hint: a tooltip centred under the listening pill, a "space" keycap and a word or
     /// two, that fades out after `modeHintDisplayDuration`. Dark, as macOS HUDs are, so it
     /// reads as the system's hint rather than part of the pill.
@@ -321,6 +321,12 @@ enum DictationConfig {
     /// The running tool's bubble: a gradient arc circling its border.
     static let agentBubbleRimWidth: CGFloat = 2
     static let agentBubbleRevolutionsPerSecond: Double = 1
+    /// The running tool's bubble grows to this scale, upward from its bottom edge, on a bouncy spring
+    /// that overshoots a little (owner, 2026-09-26: "a genie effect", so the tool in use is obvious).
+    /// The canvas above the pill has room for it.
+    static let agentBubbleRunningScale: CGFloat = 1.4
+    static let agentBubbleRunningSpringResponse: Double = 0.35
+    static let agentBubbleRunningSpringDamping: Double = 0.55
     /// How long an error message stays on the overlay.
     static let overlayErrorDisplayDuration: Duration = .seconds(3)
 }

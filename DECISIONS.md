@@ -368,7 +368,10 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
 - Bubbles sit level with the pill, first to its right, then its left, with no drift (later the same
   day, owner: "appear on top … like a list on top": one row centred above the pill; the hint then
   went over the whole stack when the overlay opened upward, until it became the tooltip above); they are icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
-  adds nothing (owner). The name stays as the accessibility label.
+  adds nothing (owner). The name stays as the accessibility label. Owner, later the same day: small
+  but slightly larger (now 24 pt, 16 pt app icon, 12 pt symbol), and the running tool's bubble grows
+  further, "sort of like a genie effect", so the tool in use is obvious: it springs up to 1.4× from its
+  bottom edge, away from the pill, with a little overshoot (`agentBubbleRunningScale`).
 - The "sometimes works" failures the owner saw were not timeouts: the dev backend log showed the
   agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone
   system message (`</request>`) or answering empty. Fixed in the backend (ADR-023 amendment: the
