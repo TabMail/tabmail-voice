@@ -59,6 +59,17 @@ struct HotkeyMonitorTests {
         #expect(key(monitor, .keyUp, space))
     }
 
+    /// The hotkey let go before Space: Space's key-up still belongs to the kept key-down.
+    @Test func theKeptSpacesKeyUpIsKeptAfterTheHotkeyIsLetGo() {
+        let (monitor, _) = makeMonitor()
+
+        #expect(hotkey(monitor, down: true))
+        #expect(!key(monitor, .keyDown, space))
+        #expect(hotkey(monitor, down: false))
+        #expect(!key(monitor, .keyUp, space))
+        #expect(key(monitor, .keyUp, space))
+    }
+
     @Test func spaceOutsideAHoldReachesTheApp() async {
         let (monitor, actions) = makeMonitor()
 

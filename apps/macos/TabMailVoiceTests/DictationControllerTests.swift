@@ -736,6 +736,23 @@ struct DictationControllerTests {
         #expect(pastes.texts.isEmpty)
     }
 
+    /// Each hold counts the app in front at its own key-down: after one request done in one app, the
+    /// next, made in another, is pasted there.
+    @Test func eachHoldTakesTheAppInFrontAtItsKeyDown() async {
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("We ship on Friday."))
+        transcription.enqueue(status: 200, json: ["text": request])
+        completions.enqueue(status: 200, text: reply("We ship on Monday."))
+        let (controller, pastes, _) = await carryOut(screen(selected: ""))
+        #expect(pastes.texts == ["We ship on Friday."])
+
+        front.pid = 202
+        await holdAndRelease(controller, mode: .agent)
+
+        #expect(await eventually { pastes.texts.count == 2 || controller.phase == .failed(DesktopAgent.Failure.appChanged.errorDescription!) })
+        #expect(pastes.texts == ["We ship on Friday.", "We ship on Monday."])
+    }
+
     /// Thunderbird comes to the front to take the chat message: that is no reason to drop it.
     @Test func aMailRequestIsSentWhateverAppIsInFront() async {
         transcription.enqueue(status: 200, json: ["text": "find sam's invoice"])

@@ -11,6 +11,8 @@ import Testing
 @MainActor
 final class FakeThunderbird {
     var installed = true
+    /// The email app Settings names.
+    var applicationURL = URL(fileURLWithPath: "/Applications/Thunderbird.app")
     var running = true
     var hasWindow = true
     var frontmost = false
@@ -21,6 +23,10 @@ final class FakeThunderbird {
     var shortcutOpensChat = true
     /// Whether launching shows a window.
     var launchShowsWindow = true
+    /// How many checks find no window, then Thunderbird not in front, before they do: a slow launch
+    /// or activation.
+    var windowLag = 0
+    var frontLag = 0
     /// Runs when the shortcut is posted, after the chat (if it opens) has focus.
     var onOpenChat: (@MainActor (FakeThunderbird) -> Void)?
     /// Whether the user switches away as the message is pasted.
@@ -36,7 +42,7 @@ final class FakeThunderbird {
     /// A relay on this Thunderbird, with waits short enough for tests.
     func relay(chatInputSettle: TimeInterval = 0, chatTimeout: TimeInterval = 0.2) -> ThunderbirdRelay {
         let relay = ThunderbirdRelay(system: ThunderbirdRelay.System(
-            applicationURL: { [self] in installed ? URL(fileURLWithPath: "/Applications/Thunderbird.app") : nil },
+            applicationURL: { [self] in installed ? applicationURL : nil },
             isRunning: { [self] in running },
             launch: { [self] _ in
                 events.append("launch")
@@ -44,12 +50,24 @@ final class FakeThunderbird {
                 hasWindow = launchShowsWindow
                 frontmost = launchShowsWindow
             },
-            hasWindow: { [self] in hasWindow },
+            hasWindow: { [self] in
+                guard windowLag == 0 else {
+                    windowLag -= 1
+                    return false
+                }
+                return hasWindow
+            },
             activate: { [self] in
                 events.append("activate")
                 if comesToFront { frontmost = true }
             },
-            isFrontmost: { [self] in frontmost },
+            isFrontmost: { [self] in
+                guard frontLag == 0 else {
+                    frontLag -= 1
+                    return false
+                }
+                return frontmost
+            },
             focusedWindowTitle: { [self] in
                 titleReads += 1
                 onTitleRead?(self, titleReads)
@@ -222,6 +240,45 @@ struct ThunderbirdRelayTests {
 
         await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
         #expect(thunderbird.events == ["activate"] + sentBefore)
+    }
+
+    /// The user switching the email app in Settings while the chat's title is read (before the paste,
+    /// or before Return): the title came from the old app, so nothing goes to the new one in front.
+    @Test(arguments: [(2, [String]()), (3, ["paste"])])
+    func switchingTheEmailAppDuringTheTitleReadGetsNothing(read: Int, sentBefore: [String]) async {
+        let thunderbird = FakeThunderbird()
+        thunderbird.focusedTitle = FakeThunderbird.chatTitle
+        thunderbird.onTitleRead = { fake, n in
+            if n == read { fake.applicationURL = URL(fileURLWithPath: "/Applications/Other Mail.app") }
+        }
+
+        await #expect(throws: ThunderbirdRelay.Failure.chatNotFocused) { try await thunderbird.relay().send(message) }
+        #expect(thunderbird.events == ["activate"] + sentBefore)
+    }
+
+    /// A slow Thunderbird: its window, its coming to the front and its chat opening are each waited
+    /// for, and the message then sent once.
+    @Test(arguments: ["window", "front", "chat"])
+    func waitsForASlowThunderbird(stage: String) async throws {
+        let thunderbird = FakeThunderbird()
+        switch stage {
+        case "window":
+            thunderbird.running = false
+            thunderbird.hasWindow = false
+            thunderbird.windowLag = 3
+        case "front":
+            thunderbird.frontLag = 3
+        default:
+            thunderbird.shortcutOpensChat = false
+            thunderbird.onTitleRead = { fake, n in
+                if n == 3 { fake.focusedTitle = FakeThunderbird.chatTitle }
+            }
+        }
+
+        try await thunderbird.relay().send(message)
+
+        #expect(thunderbird.events == (stage == "window" ? ["launch"] : []) + ["activate", "openChat", "paste", "return"])
+        #expect(thunderbird.pasted == [message])
     }
 
     /// The user switching away while the title is first read gets no shortcut in the app they went

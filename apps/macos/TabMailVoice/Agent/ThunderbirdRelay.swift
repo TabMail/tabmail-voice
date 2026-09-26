@@ -104,9 +104,12 @@ final class ThunderbirdRelay {
 
     /// The title is read first: Thunderbird being in front is only a fact after the read's `await`.
     /// The whole title must match; a window that merely mentions the chat, such as a draft replying
-    /// to a message about it ("Write: Re: TabMail Chat feedback"), is not it.
+    /// to a message about it ("Write: Re: TabMail Chat feedback"), is not it. The email app must still
+    /// be the one Settings named when the read began: a title read from one app says nothing about
+    /// another app now in front.
     private func isChatFocused() async -> Bool {
-        guard let title = await system.focusedWindowTitle(), system.isFrontmost() else { return false }
+        let app = system.applicationURL()
+        guard let title = await system.focusedWindowTitle(), system.applicationURL() == app, system.isFrontmost() else { return false }
         return title == DictationConfig.thunderbirdChatWindowTitle
     }
 
