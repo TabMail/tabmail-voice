@@ -10,7 +10,7 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `TextInserterTests` | text pasted with transient/concealed markers; multi-item/multi-type clipboard restored; empty stays empty; a clipboard changed mid-insert is not clobbered |
 | `AudioRecorderTests` | 48 kHz float → 16 kHz mono Int16; stereo downmix; first-audio time; max-duration cap; empty |
 | `LevelEnvelopeTests` | EMA envelopes: quiet-mic speech 2.5 dB over the room moves the waveform (> 0.4); adapts to the incoming range (louder syllables read higher, no pinning); settles within the first second despite a start-up blip; a steady hum settles low |
-| `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom (and then counted as opening upward), always on screen; agent mode's bubbles beside the listening pill and the circle, for as many as are ever offered: level with the pill's line, the first on its right, none overlapping the pill, another bubble or the Space hint, all inside the canvas; the hint under the pill, over it when opening upward (red-verified); placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
+| `OverlayGeometryTests` | Accessibility → screen coordinate flip; the pill's top edge exactly the gap below the caret line (not the canvas's), above the caret near the screen bottom (and then counted as opening upward), always on screen; agent mode's bubbles in one row centred above the listening pill and the circle, for none up to as many as are ever offered: none overlapping the pill, another bubble or the Space hint, all inside the canvas; the hint under the pill, over the pill and bubbles when opening upward (red-verified); placeholder/off-screen caret rects rejected; a line-sized "caret" box anchors at its leading edge |
 | `AccessibilityActivatorTests` | Gecko apps recognised by `Contents/MacOS/XUL`, Electron apps by `Electron Framework.framework`; every other app (and a missing bundle) is left alone |
 | `ScreenContextTests` | Caret text: split around the selection, nearest characters kept, out-of-range clamped, no split emoji; visible text: blanks and repeats dropped, structure marked, the caret block keeps its place in the reading order (empty field, selection); log summary carries sizes, never text; terminal: first visible line by binary search, tmux active pane = most recent client, pane split at the cursor cell (padded past a trimmed line end), foreground program = process-group leader; the pane counts only when its lines are on the front terminal (side-by-side panes match, another tab's tmux and a blank pane don't) |
 | `WAVEncoderTests` | every header field; AVAudioFile reads the output (independent oracle) |
@@ -59,10 +59,10 @@ No test touches the network, the user's clipboard, or the real Keychain item.
   appears at the pointer first and then jumps. A quick tap shows nothing. Swirl while the mic
   warms up, then the pill. A long message (e.g. signed out) wraps and the pill grows to fit it.
 - Switching the default input in System Settings › Sound is picked up on the next dictation.
-- Agent mode: hold the hotkey; the hint under the pill (over it near the screen bottom) says "Space
-  to toggle agent mode". Press Space: the hint says "Space to disable agent mode", no space is typed
-  into the app, and one icon-only bubble appears beside the pill, still: Edit's pencil with text
-  selected, Compose's without. Space again returns to dictation. With text selected in TextEdit, Mail, Slack and a
+- Agent mode: hold the hotkey; a small hint under the pill (over it near the screen bottom) shows a
+  "space" keycap and "agent mode". Press Space: it says "exit agent", no space is typed into the
+  app, and one icon-only bubble appears above the pill, still: Edit's pencil with text selected,
+  Compose's without. Space again returns to dictation. With text selected in TextEdit, Mail, Slack and a
   browser, "make this friendlier" replaces the selection (Edit's border circles while it runs).
   With nothing selected, "write a short thank-you note" pastes at the caret (Compose circles). A
   slow model is waited for (no timeout). A failure shows a message and pastes nothing.

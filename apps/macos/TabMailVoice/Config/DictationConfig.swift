@@ -257,21 +257,29 @@ enum DictationConfig {
     /// The overlay stays up this long after the dictation ends, for the exit animation (the pill
     /// shrinks into the swirl, which disperses over `swirlGatherSeconds`).
     static let overlayDismissDuration: Duration = .milliseconds(Int(swirlGatherSeconds * 1000) + 100)
-    /// Agent mode's tool bubbles beside the pill: icon-only circles.
+    /// Agent mode's tool bubbles in a row above the pill: icon-only circles.
     static let agentBubbleDiameter: CGFloat = 20
-    /// Gap between the pill and a bubble beside it, and between neighbouring bubbles.
+    /// Gap between the pill and the bubbles' row, and between neighbouring bubbles.
     static let agentBubbleGap: CGFloat = 8
     /// An app tool's icon (Thunderbird's) in its bubble.
     static let agentBubbleAppIconSize: CGFloat = 13
     /// A tool's symbol in its bubble.
     static let agentBubbleSymbolSize: CGFloat = 10
-    /// The Space hint under the pill (over it when the overlay opens upward) while it listens.
-    static let modeHintFontSize: CGFloat = 11
-    static let modeHintHeight: CGFloat = 18
-    static let modeHintHorizontalPadding: CGFloat = 8
+    /// The Space hint under the pill (over the stack when the overlay opens upward) while it
+    /// listens: small and quiet, a "space" keycap and a word or two.
+    static let modeHintFontSize: CGFloat = 10
+    static let modeHintHeight: CGFloat = 16
+    static let modeHintHorizontalPadding: CGFloat = 5
+    static let modeHintSpacing: CGFloat = 4
+    static let modeHintKeyFontSize: CGFloat = 9
+    static let modeHintKeyPadding: CGFloat = 3
+    static let modeHintKeyHeight: CGFloat = 12
+    static let modeHintKeyCornerRadius: CGFloat = 3
+    static let modeHintKeyBorderOpacity: Double = 0.3
     /// Gap between the pill and the hint.
-    static let modeHintGap: CGFloat = 6
-    static let modeHintTextOpacity: Double = 0.7
+    static let modeHintGap: CGFloat = 5
+    static let modeHintTextOpacity: Double = 0.55
+    static let modeHintBackgroundOpacity: Double = 0.85
     /// The running tool's icon in the pill.
     static let agentRunningSymbolSize: CGFloat = 12
     /// A bubble whose tool is not the one running fades to this opacity.

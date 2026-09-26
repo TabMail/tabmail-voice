@@ -5,7 +5,7 @@
 import Foundation
 
 /// What agent mode can do with a spoken request. Each tool is one backend prompt; its bubble shows
-/// beside the pill while agent mode listens, and its border circles while it runs. Edit and Compose
+/// above the pill while agent mode listens, and its border circles while it runs. Edit and Compose
 /// are never offered together: the selection decides which (`DesktopAgent.writingTool(for:)`).
 enum AgentTool: String, CaseIterable, Sendable {
     /// Rewrites the selected text in place, as asked.

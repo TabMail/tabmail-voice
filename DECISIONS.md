@@ -281,7 +281,7 @@ grants. The privacy policy tells users they can switch screen reading off.
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
 > **Amended 2026-09-26 (owner):** the double tap is replaced by **Space during the hold**, the
-> selection alone picks Edit or Compose, the bubbles sit still beside the pill, and agent mode has no
+> selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
 > timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
 > timeout bullets below are superseded where it says so.
 
@@ -338,7 +338,9 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   `HotkeyMonitor` is now a `CGEventTap` (Accessibility, as before) so that Space, its auto-repeat
   and its key-up are kept from the app in front; a key monitor can only observe. The double tap,
   hands-free listening and `doubleTapWindow` are gone. While the pill listens, a hint under it (over
-  it when the overlay opens upward) says "Space to toggle agent mode" / "Space to disable agent mode".
+  it when the overlay opens upward) says "Space to toggle agent mode" / "Space to disable agent mode";
+  later the same day made quieter at the owner's request: a small "space" keycap with "agent mode" /
+  "exit agent", no border.
 - Tools: Edit when the key-down screen read found selected text, Compose when not
   (`DesktopAgent.writingTool`); never both. No bubble shows until that read is done, and agent mode
   waits for the whole read (no `agentContextWait`), so the tool that runs is the one shown. The agent
@@ -349,8 +351,9 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
 - No deadline on agent calls: `agentChooseTimeout`, `agentToolTimeout` and `Failure.timedOut` are
   removed. The completions request keeps its idle timeout (`completionsRequestTimeout`, a pause
   between stream bytes; the backend sends keepalives), which is a dead-connection check, not a cap.
-- Bubbles sit level with the pill, first to its right, then its left, with no drift; they are
-  icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
+- Bubbles sit level with the pill, first to its right, then its left, with no drift (later the same
+  day, owner: "appear on top … like a list on top": one row centred above the pill; the hint then
+  goes over the whole stack when the overlay opens upward); they are icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
   adds nothing (owner). The name stays as the accessibility label.
 - The "sometimes works" failures the owner saw were not timeouts: the dev backend log showed the
   agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone

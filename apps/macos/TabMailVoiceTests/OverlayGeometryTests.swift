@@ -86,37 +86,39 @@ struct OverlayGeometryTests {
         #expect(!CaretLocator.isPlausible(CGRect(x: -5000, y: 400, width: 1, height: 20), screens: screens))
     }
 
-    /// Agent mode's bubbles beside the pill and the Space hint (top-left origin), in the overlay's
-    /// canvas: the bubbles sit level with the pill's line, the first on its right, clear of the pill,
-    /// of each other and of the hint; the hint sits under the pill, or over it when the overlay opens
-    /// upward, so neither covers the caret's line. For the listening pill and the circle it shrinks
-    /// to, with as many bubbles as are ever offered.
+    /// Agent mode's bubbles and the Space hint (top-left origin), in the overlay's canvas: the bubbles
+    /// in one row centred above the pill, clear of it and of each other; the hint under the pill, or,
+    /// when the overlay opens upward, above the pill and the bubbles, so it never covers the caret's
+    /// line; nothing overlaps and everything stays inside the canvas. For the listening pill and the
+    /// circle it shrinks to, with no bubbles (dictation) and as many as are ever offered.
     @Test(arguments: [false, true])
-    func bubblesSitBesideThePillAndTheHintUnderOrOverIt(opensUpward: Bool) {
+    func bubblesSitInARowAboveThePillAndTheHintClearOfThem(opensUpward: Bool) {
         let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
         let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
-        let hint = CGSize(width: 170, height: DictationConfig.modeHintHeight)
+        let hint = CGSize(width: 90, height: DictationConfig.modeHintHeight)
         func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
             CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
         }
         for width in [79, DictationConfig.pillHeight] {
             let pill = CGRect(x: canvas.midX - width / 2, y: (canvas.height - DictationConfig.pillHeight) / 2, width: width, height: DictationConfig.pillHeight)
-            let hintFrame = frame(OverlayPanelController.hintCentre(for: pill, size: hint, opensUpward: opensUpward), hint)
-            #expect(opensUpward ? hintFrame.maxY <= pill.minY : hintFrame.minY >= pill.maxY)
-            #expect(canvas.contains(hintFrame))
             // Edit and Compose are never offered together: one fewer bubble than there are tools.
-            for count in 1...(AgentTool.allCases.count - 1) {
-                let centres = OverlayPanelController.bubbleCentres(beside: pill, sizes: Array(repeating: bubble, count: count))
+            for count in 0...(AgentTool.allCases.count - 1) {
+                let centres = OverlayPanelController.bubbleCentres(above: pill, sizes: Array(repeating: bubble, count: count))
                 #expect(centres.count == count)
                 let frames = centres.map { frame($0, bubble) }
+                let hintFrame = frame(OverlayPanelController.hintCentre(for: pill, bubbles: frames, size: hint, opensUpward: opensUpward), hint)
+                #expect(opensUpward ? hintFrame.maxY <= pill.minY : hintFrame.minY >= pill.maxY)
+                #expect(!hintFrame.intersects(pill))
+                #expect(canvas.contains(hintFrame))
                 for (index, bubbleFrame) in frames.enumerated() {
-                    #expect(!bubbleFrame.intersects(pill), "bubble \(index) of \(count) overlaps the pill")
+                    #expect(bubbleFrame.maxY <= pill.minY, "bubble \(index) of \(count) is not above the pill")
                     #expect(!bubbleFrame.intersects(hintFrame), "bubble \(index) of \(count) overlaps the hint")
-                    #expect(bubbleFrame.minY >= pill.minY && bubbleFrame.maxY <= pill.maxY)
                     #expect(canvas.contains(bubbleFrame))
                     for other in frames[(index + 1)...] { #expect(!bubbleFrame.intersects(other), "bubbles overlap (\(count))") }
                 }
-                #expect(frames.first.map { $0.minX > pill.maxX } == true)
+                if let first = frames.first, let last = frames.last {
+                    #expect(abs((first.minX + last.maxX) / 2 - pill.midX) < 0.001, "row not centred over the pill (\(count))")
+                }
             }
         }
     }

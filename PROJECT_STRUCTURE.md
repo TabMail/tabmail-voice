@@ -57,7 +57,7 @@ tabmail-macos/
         │       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
         │       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
         │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
-        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing; the Space hint under the listening pill; agent mode's tool bubbles beside it, the running one's border circling
+        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing; a small "space" keycap hint under the listening pill; agent mode's icon-only tool bubbles in a row above it, the running one's border circling
         │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
         └── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
@@ -84,7 +84,7 @@ tabmail-macos/
 A `generation` counter makes callbacks from a superseded dictation no-ops.
 
 **Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
-recording and transcription, with the tool bubbles beside the pill: Edit when text is selected,
+recording and transcription, with the tool bubbles in a row above the pill: Edit when text is selected,
 Compose when not, plus Thunderbird when an email app is set up. The transcript is a request:
 `DesktopAgent.tool` picks the tool (asking the backend's `system_prompt_desktop_agent` only whether
 it goes to the email app), the phase becomes `running(tool)` (that bubble's border circles), and
