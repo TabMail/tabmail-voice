@@ -3,7 +3,18 @@
 Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: the text is typed
 into whatever you're writing in. Speech is transcribed by TabMail's servers and isn't stored.
 
-Requires macOS 15 or later and a TabMail account.
+Requires macOS 15 or later, a TabMail account and an active subscription.
+Supports Apple Silicon and Intel Macs.
+
+## Download
+
+Download the signed, notarized macOS installer from [TabMail downloads](https://tabmail.ai/download#voice-install).
+Install **TabMail Voice.app** in Applications. It is separate from the TabMail Thunderbird launcher.
+
+![TabMail Voice editing selected text](docs/voice-edit.webp)
+
+[Watch the silent demonstration](https://tabmail.ai/demos/tabmail-promo-voice.mp4).
+The demonstration uses the native overlay with simulated speech input.
 
 ## Build
 
@@ -47,7 +58,8 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
   go, the pill shrinks to a spinning circle while your words are transcribed, then the text is
   typed in.
   A quick tap does nothing.
-- Pressing any other key while holding cancels (so ⌥-shortcuts keep working).
+- Press **Space** while holding to toggle agent mode. With text selected, ask Voice to edit it; otherwise, ask it to compose.
+- Pressing another key while holding cancels (so ⌥-shortcuts keep working).
 - Choose Fn/Globe instead of Right Option in Settings. If you do, set System Settings › Keyboard ›
   "Press 🌐 key to" to "Do Nothing".
 
@@ -66,6 +78,18 @@ sudo extract only the key line, and keeps the key in memory without writing it a
 ```sh
 python3 Scripts/stt-compare/compare.py --sudo --env-file /path/to/secrets.env
 ```
+
+## Privacy
+
+Audio is sent to the TabMail service for transcription. Optional screen reading sends context
+from the front window to help with writing. Turn screen reading off in Settings if desired.
+See the [Privacy Policy](https://tabmail.ai/privacy/).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the DCO and development workflow,
+[SECURITY.md](SECURITY.md) for private vulnerability reports, and
+[TRADEMARKS.md](TRADEMARKS.md) for name and logo usage.
 
 ## License
 
