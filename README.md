@@ -1,4 +1,4 @@
-# TabMail Desktop
+# TabMail Voice
 
 Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: the text is typed
 into whatever you're writing in. Speech is transcribed by TabMail's servers and isn't stored.
@@ -14,13 +14,13 @@ Requires macOS 15 or later and a TabMail account.
    `Secrets.xcconfig` is gitignored. The comments in the template explain each value.
 2. Generate the Xcode project (requires [XcodeGen](https://github.com/yonaskolb/XcodeGen)):
    ```sh
-   ./Scripts/xcodegen.sh
+   ./apps/macos/Scripts/xcodegen.sh
    ```
    Always use this script rather than a bare `xcodegen generate`: it reads your
    `DEVELOPMENT_TEAM` from `Secrets.xcconfig` and passes it to XcodeGen.
-3. Open `TabMailDesktop.xcodeproj` and run the `TabMailDesktop` scheme, or run the tests:
+3. Open `apps/macos/TabMailVoice.xcodeproj` and run the `TabMailVoice` scheme, or run the tests:
    ```sh
-   xcodebuild -project TabMailDesktop.xcodeproj -scheme TabMailDesktop -derivedDataPath DerivedData test
+   xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath apps/macos/DerivedData test
    ```
 
 Sign with a real team. macOS ties the Microphone and Accessibility permissions to the app's

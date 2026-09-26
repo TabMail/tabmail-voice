@@ -1,6 +1,6 @@
 # XcodeGen-generated project — sourced from project.yml. Regenerate with
-# ./Scripts/xcodegen.sh; none of it is tracked.
-TabMailDesktop.xcodeproj/
+# ./apps/macos/Scripts/xcodegen.sh; none of it is tracked.
+TabMailVoice.xcodeproj/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/

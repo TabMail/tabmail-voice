@@ -1,6 +1,6 @@
-# TabMail Desktop — Decisions
+# TabMail Voice — Decisions
 
-Compact index of architectural decisions for `tabmail-macos` (the TabMail Desktop app). Cross-cutting decisions live in the
+Compact index of architectural decisions for `tabmail-voice` (the TabMail Voice app). Cross-cutting decisions live in the
 root `DECISIONS.md` (notably ADR-004 zero content retention, which dictation audio and transcripts
 fall under).
 
@@ -277,3 +277,182 @@ grants. The privacy policy tells users they can switch screen reading off.
 - **Open (owner):** per-app exclusion. It could be a denylist in the Features step or a built-in
   skip list. Web search and web reading get their own toggles in Features once they exist.
 
+
+## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
+
+> **Amended 2026-09-26 (owner):** the double tap is replaced by **Space during the hold**, the
+> selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
+> timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
+> timeout bullets below are superseded where it says so.
+
+**Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
+request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
+as asked, like Thunderbird's inline editor) and **Compose** (write new text at the caret, for any
+app, not only mail). Their bubbles show around the pill (owner, 2026-09-26: they float around it
+and wiggle a little, "not too much": left, under and right of it, over it when the pill sits above
+the caret, so none covers the caret's line); after the request, the chosen tool's
+bubble border circles while it runs. The prompts are the desktop's own, reusable by any later
+desktop platform, not the Thunderbird email prompts.
+
+**Decision:**
+- Gesture (`PushToTalkGesture`): a press released within `minimumHoldDuration` is a tap. A press
+  within `doubleTapWindow` of a tap's release starts agent mode. Held, it finishes on release
+  like a dictation; tapped, agent mode listens hands-free until the next press. Typing cancels,
+  as during a hold. Both readings of "double tap" work, so neither had to be ruled out.
+- Two backend calls, both `POST /completions/chat` template prompts in the backend's `common/`
+  registry at v0.1.0 (backend ADR-023). `system_prompt_desktop_agent` (light tier) chooses the
+  tool from the request, the selection, the app and the window title, and answers `Tool: edit` or
+  `Tool: compose`. The phase becomes `running(tool)` and the tool's prompt
+  (`system_prompt_desktop_edit` / `_compose`, heaviest_fast tier) writes the text from the request
+  and the screen context. Separate calls let the bubble show the chosen tool while it works, and
+  each tool gets a prompt of its own.
+- Edit pastes over the selection, which the non-activating overlay leaves in place; the result
+  keeps the selection's own leading and trailing blank space (a selected line keeps its line
+  break). Compose pastes at the caret; with text selected it first collapses the selection to its
+  end (→), so the selected text stays.
+- The selection is the one the key-down screen read (ADR-DESK-007) found. Agent mode waits
+  `agentContextWait` (2 s) for that read, not the dictation's 0.5 s: an edit cannot work without
+  it.
+- A failed request pastes nothing and says why: no known tool, an edit with nothing selected, an
+  empty text, a timeout (`agentChooseTimeout`, `agentToolTimeout`) or a backend error. Unlike the
+  dictation cleanup, there is no "paste as heard": the spoken request is not text for the document.
+
+**Consequences:**
+- Agent mode adds a model round trip before the tool runs (light tier, reasoning off).
+- No client-side tools: the Mac app at 0.1.0 would read Thunderbird's tool registry, and a
+  desktop tool listed there would reach Thunderbird's agent too. The later Thunderbird connector
+  follows the same tool-choice contract (a third tool name), planned in `PLAN_DESKTOP_AGENT.md`.
+- Apps whose accessibility tree hides the selection (thin trees, some Electron apps) can't be
+  edited; the request fails with "Select the text to edit". Copying the selection with ⌘C
+  instead would be a fallback: an owner decision.
+- With screen reading switched off (ADR-DESK-010), there's no selection, so Edit never runs.
+  Whether Edit reads the selection anyway is an owner decision.
+- The selected text and the screen are sent to the backend with the request; nothing is stored
+  (root ADR-004). The prompts treat both as content, never as instructions.
+
+**Amendment 2026-09-26 (owner):** "I dislike the double tap"; Edit or Compose "should depend
+exactly on … whether we have selected text or not, and … only either of the 2 icons should show";
+the bubbles wiggled too much ("appearing alongside looks okay"); "agent should not have timeout".
+- Gesture: every hold starts as a dictation; **Space during the hold** switches between dictation and
+  agent mode (`PushToTalkGesture.Action.toggleMode`), any number of times; other keys still cancel.
+  `HotkeyMonitor` is now a `CGEventTap` (Accessibility, as before) so that Space, its auto-repeat
+  and its key-up are kept from the app in front; a key monitor can only observe. The double tap,
+  hands-free listening and `doubleTapWindow` are gone. While the pill listens, a hint under it (over
+  it when the overlay opens upward) says "Space to toggle agent mode" / "Space to disable agent mode";
+  later the same day made quieter at the owner's request: a small "space" keycap with "agent mode" /
+  "exit agent", no border. Later again (owner: "a tooltip that appears below the middle and
+  disappears after a little"): a tooltip centred under the pill, with an arrow up at it, always
+  below (even when the overlay opens upward, since it is brief), fading after
+  `modeHintDisplayDuration` (2.5 s), once a hold.
+- Tools: Edit when the key-down screen read found selected text, Compose when not
+  (`DesktopAgent.writingTool`); never both. No bubble shows until that read is done, and agent mode
+  waits for the whole read (no `agentContextWait`), so the tool that runs is the one shown. The agent
+  prompt now only decides whether a request goes to the email app (ADR-DESK-014): it is not called
+  when there is none, and its pick of the other writing tool gives way to the selection's.
+  Consequently "Select the text to edit" and "Compose after the selection" (→ collapse) are gone: a
+  selection always means Edit.
+- No deadline on agent calls: `agentChooseTimeout`, `agentToolTimeout` and `Failure.timedOut` are
+  removed. The completions request keeps its idle timeout (`completionsRequestTimeout`, a pause
+  between stream bytes; the backend sends keepalives), which is a dead-connection check, not a cap.
+- Bubbles sit level with the pill, first to its right, then its left, with no drift (later the same
+  day, owner: "appear on top … like a list on top": one row centred above the pill; the hint then
+  went over the whole stack when the overlay opened upward, until it became the tooltip above); they are icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
+  adds nothing (owner). The name stays as the accessibility label.
+- The "sometimes works" failures the owner saw were not timeouts: the dev backend log showed the
+  agent model drafting text after `Tool: compose`, and the edit/compose model continuing the lone
+  system message (`</request>`) or answering empty. Fixed in the backend (ADR-023 amendment: the
+  request is the final user turn, and the agent's first word after `Tool:` counts).
+
+## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
+
+**Context:** Owner, 2026-09-25. The app built as `TabMail.app` (bundle id `ai.tabmail.desktop`). The
+Thunderbird installer's pkg (`tabmail-release-helpers/tb-mac/build-mac-installer-local.sh`) installs
+`/Applications/TabMail.app` too: the launcher that starts Thunderbird, carrying `tabmail.xpi` and
+the native-fts `fts_helper`, which `tabmail-native-fts` looks for at that path. Dragging this app into
+`/Applications` would replace the launcher and break Thunderbird's local search. "Tabby" was ruled out
+(an app by that name exists).
+
+**Decision:** The app is **TabMail Voice**: `PRODUCT_NAME` and `CFBundleDisplayName` "TabMail Voice"
+(`TabMail Voice.app`), module `TabMailVoice`, bundle id `ai.tabmail.voice` (tests
+`ai.tabmail.voice.tests`). The code moves with it: `TabMailVoice/`, `TabMailVoiceTests/`,
+`TabMailVoice.xcodeproj`, targets and scheme `TabMailVoice` / `TabMailVoiceTests`, `TabMailVoiceApp`.
+The log subsystem, queue labels and Keychain service use the new id. Text that names the app says
+"TabMail Voice"; text that means the service or the account (sign in, subscription, "sent to
+TabMail") still says "TabMail". The repository stayed `tabmail-macos` at first;
+renamed `tabmail-voice` on 2026-09-26 (owner), see ADR-DESK-013.
+
+**Consequences:**
+- A new bundle id is a new app to macOS: Microphone and Accessibility are asked for again (the
+  welcome wizard, ADR-DESK-010, walks through them), the saved sign-in is not found (service
+  `ai.tabmail.voice.session`), and settings start fresh. Grants for the old id stay in System
+  Settings until removed (`tccutil reset All ai.tabmail.desktop`).
+- Automatic signing covers the new id with no portal change while the app uses no capability
+  that needs a provisioning profile; Developer ID distribution needs no App ID of its own.
+- Earlier decisions keep the name they were written under ("TabMail Desktop", `ai.tabmail.desktop`)
+  where they describe history.
+
+## ADR-DESK-013: One repository for TabMail Voice on every platform, one folder per platform
+
+**Context:** Owner, 2026-09-25: the repository will be renamed `tabmail-voice` on GitHub, with the
+macOS app in a folder of its own so that other platforms (Windows, Linux) can follow. The layout
+follows the OpenClaw reference (`references/openclaw/apps/{macos,ios,android,shared}`): each
+platform is a native app in `apps/<platform>/`, and shared code is a package in `apps/shared/`
+used only by apps in the same language (there, Swift for the Apple apps; Android is separate
+Kotlin).
+
+**Decision:** The macOS app, its XcodeGen spec and `xcodegen.sh` live in `apps/macos/`. Repository-wide
+files stay at the root: the docs, `Scripts/copy-worktree-secrets.sh`, `Scripts/stt-compare/` (backend
+speech-to-text comparison, platform-free), and the gitignored signing config with its template.
+The signing config stays at the root so the worktree helper and every existing checkout keep
+their copy where it is; `project.yml` reads it as `../../`.
+
+**Consequences:**
+- Commands run from the repository root with `apps/macos/` paths; each worktree's DerivedData is
+  `apps/macos/DerivedData`.
+- No shared package yet. Most of the app is platform-specific (hotkey, microphone, Accessibility
+  reading, paste, overlay), and the intelligence (transcription, cleanup, agent prompts) is on the
+  backend, which is already shared. When a second app needs the platform-free parts (gesture
+  recogniser, dictation and agent flow, backend clients, WAV encoding), they move into
+  `apps/shared/` as a Swift package, if that app is Swift; otherwise the second app shares the
+  backend contract and test vectors, not code.
+- The GitHub rename and the local folder rename (`tabmail-macos` → `tabmail-voice`) are separate
+  steps, after the open branches merge. Done 2026-09-26 at the owner's request, before they merged:
+  `TabMail/tabmail-voice` on GitHub (the old URL redirects), the primary checkout at
+  `tabmail-voice/`, worktrees re-attached with `git worktree repair`.
+
+## ADR-DESK-014: Thunderbird connector spike: drive TabMail's chat from outside
+
+**Context:** Owner, 2026-09-25: agent mode's bubbles become the supported apps, starting with
+Thunderbird; any mail or calendar request goes to TabMail's chat in Thunderbird. Nothing outside
+Thunderbird can reach the add-on today (no external messaging, no URL scheme, native messaging is
+request/response). The owner chose a spike with no Thunderbird change before building a bridge,
+the agent restating the request as a chat message, and sending being enough (no reply back).
+
+**Decision:**
+- A third tool, `thunderbird` (backend `system_prompt_desktop_thunderbird`, ADR-023), offered, and
+  shown as a bubble with the email app's own icon, only when there is an email app for it. The agent's
+  prompt always names it; the app fails a request given to a tool it did not offer ("Mail and
+  calendar requests need Thunderbird with TabMail"). *(2026-09-26, ADR-DESK-011 amendment: without an
+  email app the agent is not asked at all, so that failure no longer exists.)*
+- `ThunderbirdRelay` sends the chat message: launch Thunderbird if it isn't running (then wait for a
+  window and `thunderbirdAddonSettle` for the add-on), bring it to the front through Accessibility
+  (`AXFrontmost`: the app is never active, so cooperative activation would ignore
+  `NSRunningApplication.activate`), post the add-on's ⌥⌘L unless the focused window is already
+  the chat, wait for a window titled "TabMail Chat", paste, press Return.
+- The email app (owner, 2026-09-26: "configurable in settings (which email client) default to user
+  default email client") is the one chosen in Settings › Agent mode, else the default email app
+  (the `mailto:` handler) if it is a Thunderbird TabMail runs in: Thunderbird (release and ESR share
+  `org.mozilla.thunderbird`) or Thunderbird Beta (`org.mozilla.thunderbirdbeta`, the add-on's dev
+  instance). Any other default email app leaves the tool out until a Thunderbird is chosen.
+  `EmailClient` resolves it at every call, so a change applies to the next request.
+- Nothing is typed outside the chat: the shortcut is posted only while Thunderbird is in front, the
+  paste only while the chat window has focus (checked again after the input settles), and Return
+  only if it still has focus after the paste. Any failure shows a message.
+
+**Consequences:**
+- Known weak points, for the spike to measure: a chat that is mid-reply ignores Enter (the message
+  stays in the input); the add-on registers ⌥⌘L lazily, so a suspended background page may miss
+  it; a remapped shortcut breaks it; the app cannot tell whether the add-on is installed (the chat
+  just never opens); cold-launch timing is a guess.
+- The native-messaging bridge (plan option B, installed by this app only) replaces the shortcut,
+  focus and timing guesses if the spike shows they matter.

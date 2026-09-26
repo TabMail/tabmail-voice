@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copy the primary checkout's private macOS build configuration into one
-# registered tabmail-macos worktree without inspecting or printing its contents.
+# registered tabmail-voice worktree without inspecting or printing its contents.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
@@ -10,7 +10,7 @@ WORKTREE_ROOT="$WORKSPACE_ROOT/.worktrees"
 SOURCE_FILE="$PRIMARY_REPO/Secrets.xcconfig"
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: $0 /absolute/path/to/tabmail-macos-worktree" >&2
+    echo "usage: $0 /absolute/path/to/tabmail-voice-worktree" >&2
     exit 64
 fi
 
