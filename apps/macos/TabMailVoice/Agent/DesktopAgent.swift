@@ -97,10 +97,12 @@ enum DesktopAgent {
     ) async throws -> String {
         let text = try await complete(toolMessage(tool, request: request, context: context), client: client, account: account, userId: userId)
         guard !text.isEmpty else { throw Failure.noText }
-        switch tool {
-        case .edit: return fitted(text, toSelection: selection(in: context))
-        case .compose, .thunderbird: return text
+        let written = switch tool {
+        case .edit: fitted(text, toSelection: selection(in: context))
+        case .compose, .thunderbird: text
         }
+        Log.content("DesktopAgent: \(tool.rawValue) wrote", written)
+        return written
     }
 
     /// The selected text read at key-down; empty when nothing is selected or it could not be read.

@@ -33,6 +33,7 @@ struct TextInserter {
     }
 
     func insert(_ text: String) async {
+        Log.content("TextInserter: pasting", text)
         let saved = PasteboardSnapshot(pasteboard)
 
         pasteboard.clearContents()

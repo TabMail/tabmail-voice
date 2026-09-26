@@ -92,6 +92,7 @@ final class ThunderbirdRelay {
         guard isChatFocused() else { throw Failure.chatNotFocused }
         await system.pressReturn()
         Log.debug("ThunderbirdRelay: sent \(message.count) chars")
+        Log.content("ThunderbirdRelay: sent", message)
     }
 
     private func isChatFocused() -> Bool {

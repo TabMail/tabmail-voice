@@ -5,7 +5,8 @@
 import Foundation
 
 /// What was on screen when a dictation started: the app, where in it, the text around the caret
-/// and the visible text in reading order. User content: never logged or stored (see `summary`).
+/// and the visible text in reading order. User content: never stored, and logged only to the debug
+/// log file (`logDescription`, ADR-DESK-015); `summary` is what the other logs carry.
 struct ScreenContext: Sendable, Equatable {
     struct Block: Sendable, Equatable {
         enum Kind: String, Sendable {
@@ -76,6 +77,18 @@ struct ScreenContext: Sendable, Equatable {
             + "\(blocks.count) blocks (\(counts[.heading] ?? 0) headings, \(counts[.row] ?? 0) rows, "
             + "\(counts[.link] ?? 0) links, \(counts[.field] ?? 0) fields, caret placed \(counts[.caret] != nil)) \(visible) chars, "
             + "\(nodesVisited) nodes, \(Int(seconds * 1000)) ms" + (stoppedEarly.map { ", stopped: \($0)" } ?? "")
+    }
+
+    /// Everything read, for the debug log file (`Log.content`): the fields, the text around the caret
+    /// and the visible text as the prompts receive it.
+    var logDescription: String {
+        "app \(appName) (\(bundleID ?? "-")), window title \(windowTitle ?? "-"), host \(host ?? "-"), "
+            + "terminal program \(terminalProgram ?? "-"), focused \(focusedRole ?? "-")"
+            + (stoppedEarly.map { ", stopped: \($0)" } ?? "") + "\n"
+            + "--- text before the caret ---\n\(textBeforeCaret)\n"
+            + "--- selected text ---\n\(selectedText)\n"
+            + "--- text after the caret ---\n\(textAfterCaret)\n"
+            + "--- visible text ---\n\(renderedText())"
     }
 
     /// Up to `maxChars` on each side of the selection. Accessibility ranges count UTF-16 units;

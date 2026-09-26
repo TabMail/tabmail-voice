@@ -28,7 +28,8 @@ tabmail-voice/
         │   ├── Backend/
         │   │   ├── BackendError.swift        Backend HTTP error → user message
         │   │   ├── TranscriptionClient.swift POST /dictation/transcribe
-        │   │   └── CompletionsClient.swift   POST /completions/chat with one named backend prompt; reply from the SSE `final` event (as iOS)
+        │   │   ├── CompletionsClient.swift   POST /completions/chat with one named backend prompt; reply from the SSE `final` event (as iOS)
+        │   │   └── BackendLog.swift          A backend request and its raw reply as the debug log file shows them (access token masked, audio left out)
         │   ├── Config/DictationConfig.swift  Every tunable number and endpoint (timings, audio, backend, auth, overlay)
         │   ├── Context/                  Screen context read at key-down, for the transcript cleanup
         │   │   ├── ScreenContext.swift       App, host, terminal program, caret text, visible text blocks in reading order
@@ -50,7 +51,7 @@ tabmail-voice/
         │   │   └── AccessibilityActivator.swift  Asks Gecko/Electron apps to build their tree as they come to the front
         │   ├── Onboarding/WelcomeWizard.swift  Welcome wizard steps and navigation (ADR-DESK-010): consent → permissions → features
         │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling, grant callbacks
-        │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content); debug builds also append to ~/Library/Logs/TabMail Voice/TabMail Voice.log (`LogFile`, menu › Show Log File)
+        │   ├── Support/Log.swift             Debug-gated os.Logger (never logs transcript content); debug builds also append to ~/Library/Logs/TabMail Voice/TabMail Voice.log (`LogFile`, menu › Show Log File), where `Log.content` also writes user content in full (ADR-DESK-015)
         │   └── UI/
         │       ├── MenuContent.swift         Menu-bar menu
         │       ├── SettingsView.swift        Settings window

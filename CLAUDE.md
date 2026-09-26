@@ -12,8 +12,10 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   `CODE_SIGN_IDENTITY=-` when its `DEVELOPMENT_TEAM` is unset. Warnings are errors
   (`SWIFT_TREAT_WARNINGS_AS_ERRORS`); the App Intents "Metadata extraction skipped" line is the
   only tolerated diagnostic.
-- **Never log transcript text, audio or tokens.** Dictation is user content. Log lengths, states
-  and error types only, via `Log` (debug-gated). Debug builds also write
+- **User content goes to the debug log file only, through `Log.content`** (ADR-DESK-015):
+  transcripts, the screen read, every backend request and its raw reply, the text pasted.
+  `Log.debug`/`Log.error` also reach the unified log, so they carry lengths, states and error types
+  only. Never log audio or an access token (`BackendLog` masks `Authorization`). Debug builds write
   `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual test's app log.
 - **Tests never hit the network.** Inject `HTTPTransport` (`StubTransport` in `TestSupport.swift`)
   and `InMemorySessionStore`; never the real Keychain item.

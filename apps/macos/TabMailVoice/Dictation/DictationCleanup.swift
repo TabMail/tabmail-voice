@@ -32,6 +32,7 @@ enum DictationCleanup {
                 Log.error("DictationCleanup: empty reply; pasting the transcript as heard")
                 return transcript
             }
+            Log.content("DictationCleanup: cleaned text", text)
             return text
         } catch {
             Log.error("DictationCleanup: failed after \(clock.now - started): \(type(of: error)); pasting the transcript as heard")

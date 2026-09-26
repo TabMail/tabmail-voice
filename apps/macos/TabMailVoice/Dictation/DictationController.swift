@@ -301,6 +301,7 @@ final class DictationController {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard generation == current, !Task.isCancelled else { return }
             Log.debug("DictationController: transcript ready (\(transcript.count) chars)")
+            Log.content("Transcript (\(mode))", transcript)
             guard !transcript.isEmpty else {
                 teardown()
                 fail(Self.nothingHeardMessage)
