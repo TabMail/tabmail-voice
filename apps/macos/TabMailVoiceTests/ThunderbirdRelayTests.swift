@@ -119,6 +119,65 @@ final class FakeThunderbird {
 struct ThunderbirdRelayTests {
     private let message = "Find the invoice Sam sent last week."
 
+    /// A window in the other installed mail app cannot satisfy the chosen app's cold-launch wait.
+    @Test(arguments: [true, false])
+    func aColdLaunchWaitsForTheChosenAppsOwnWindow(showsWindow: Bool) async {
+        let chosen = "org.example.chosen-mail"
+        let other = "org.example.wrong-app"
+        let chosenURL = URL(fileURLWithPath: "/Applications/ChosenMail.app")
+        let otherURL = URL(fileURLWithPath: "/Applications/OtherMail.app")
+        var running: Set<String> = [other]
+        var windows: Set<String> = [other]
+        var front = other
+        var chosenWindowChecks = 0
+        var texts = [chosen: [String](), other: ["Unrelated draft"]]
+        var returns: [String] = []
+        var launched: [URL] = []
+        let relay = ThunderbirdRelay(system: .init(
+            applicationURL: { $0 == chosen ? chosenURL : ($0 == other ? otherURL : nil) },
+            isRunning: { running.contains($0) },
+            launch: { url in
+                launched.append(url)
+                if url == chosenURL { running.insert(chosen) }
+            },
+            hasWindow: { app in
+                if app == chosen {
+                    chosenWindowChecks += 1
+                    if showsWindow && chosenWindowChecks >= 3 { windows.insert(chosen) }
+                }
+                return windows.contains(app)
+            },
+            activate: { app in if windows.contains(app) { front = app } },
+            isFrontmost: { front == $0 },
+            focusedWindowTitle: { windows.contains($0) ? FakeThunderbird.chatTitle : nil },
+            openChat: {},
+            paste: { texts[front, default: []].append($0) },
+            pressReturn: { returns.append(front) }
+        ))
+        relay.launchTimeout = 0.5
+        relay.addonSettle = 0
+        relay.activateTimeout = 0.1
+        relay.chatTimeout = 0.1
+        relay.chatInputSettle = 0
+        relay.pollInterval = 0.005
+
+        if showsWindow {
+            do { try await relay.send(message, to: chosen) }
+            catch { Issue.record("The chosen app showed its window, but sending failed: \(error)") }
+            #expect(texts[chosen] == [message])
+            #expect(returns == [chosen])
+        } else {
+            await #expect(throws: ThunderbirdRelay.Failure.didNotLaunch) {
+                try await relay.send(message, to: chosen)
+            }
+            #expect(texts[chosen] == [])
+            #expect(returns.isEmpty)
+        }
+        #expect(launched == [chosenURL])
+        #expect(texts[other] == ["Unrelated draft"])
+        #expect(chosenWindowChecks >= (showsWindow ? 3 : 1))
+    }
+
     /// Every step is about the email app the send was given, the dictation's.
     @Test func sendsIntoAnOpenChatWithoutTheShortcut() async throws {
         let thunderbird = FakeThunderbird()

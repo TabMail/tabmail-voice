@@ -798,6 +798,36 @@ struct DictationControllerTests {
         #expect(reads.count == 1)
     }
 
+    /// Both requests of one ordinary dictation use its key-down server; the next hold uses the new server.
+    @Test func anOrdinaryDictationKeepsItsServerUntilTheNextHold() async {
+        let prefs = prefs
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        transcription.gate = {
+            await MainActor.run {
+                prefs.value.backendURL = URL(string: "https://dev.example.com")!
+            }
+        }
+
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 1 })
+        #expect(pastes.texts == [cleaned])
+        #expect(transcription.requests.map(\.url?.host) == ["api.example.com"])
+        #expect(completions.requests.map(\.url?.host) == ["api.example.com"])
+        #expect(cleanupVars(0)?["dictation"] as? String == transcript)
+
+        transcription.gate = nil
+        transcription.enqueue(status: 200, json: ["text": "next dictated words"])
+        completions.enqueue(status: 200, text: reply("Next dictated words."))
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 2 })
+        #expect(pastes.texts == [cleaned, "Next dictated words."])
+        #expect(transcription.requests.map(\.url?.host) == ["api.example.com", "dev.example.com"])
+        #expect(completions.requests.map(\.url?.host) == ["api.example.com", "dev.example.com"])
+        #expect(cleanupVars(1)?["dictation"] as? String == "next dictated words")
+    }
+
     /// Space offers the email app Settings named at key-down, not the one it names by the time Space
     /// is pressed: the bubble shown is the app the request would go to.
     @Test(arguments: [(FakeThunderbird.app as String?, nil as String?), (nil, FakeThunderbird.app)])

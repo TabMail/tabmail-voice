@@ -587,4 +587,4 @@ another; each fix compared Settings again and missed the next window.
 - Every "does Settings still say X" comparison in the relay is deleted; a mid-send Settings change
   can no longer retarget a send.
 - Not covered: the hotkey itself. Changing it in Settings reinstalls the monitor, which cancels a
-  hold in progress (`HotkeyMonitor.setHotkey`); that predates this rule and is left for a follow-up.
+  hold in progress (`HotkeyMonitor.setHotkey`); the owner accepts that behaviour (2026-09-26).
