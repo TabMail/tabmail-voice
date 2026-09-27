@@ -117,7 +117,8 @@ struct HotkeyMonitorTests {
     @Test func anFnDoubleTapIsHandsFreeDespiteTheGlobeKeysOwnKeyDown() async {
         let (monitor, actions) = makeMonitor(.function)
         let fn = DictationHotkey.function.keyCode
-        let globe = DictationHotkey.globeKeyCode
+        // The recorded code itself, not the app's constant, so a wrong constant fails here.
+        let globe = UInt16(0xB3)
         func event(_ type: CGEventType, _ keyCode: UInt16, _ flags: CGEventFlags, at time: TimeInterval) -> Bool {
             monitor.handle(type, keyCode: keyCode, flags: flags, isRepeat: false, at: time)
         }

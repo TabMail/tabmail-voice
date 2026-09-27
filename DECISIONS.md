@@ -824,4 +824,4 @@ switching the setting for the user, the owner chose the second ("option 2").
   second press", then a new arming instead of hands-free, about 100 ms apart.
 - `PushToTalkGesture.keyPressed` ignores that key-down while fn is the hotkey
   (`DictationHotkey.globeKeyCode`); both events still reach the app. `HotkeyMonitorTests` replays
-  the recorded sequence.
+  the recorded sequence. The owner confirmed the double tap with fn on a build with this change.
