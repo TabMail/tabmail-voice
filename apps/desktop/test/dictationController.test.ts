@@ -4,7 +4,7 @@
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../src/core/account.js";
 import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
 import { AgentFailure, type AgentTool } from "../src/core/agent/tools.js";
@@ -101,7 +101,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null> } = {},
   ): { controller: DictationController; pastes: string[] } {
     const pastes: string[] = [];
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
@@ -121,7 +121,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       },
       thunderbird: thunderbird.relay(),
       capture: options.capture ?? new CountingCapture(),
-      frontmostApp: async () => front.pid,
+      frontmostApp: options.frontmostApp ?? (async () => front.pid),
       keyboardLanguage: async () => keyboard.language,
       systemEmailApp: async () => null,
       makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", options.transcriptionTransport ?? transcription.transport),
@@ -799,6 +799,42 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(failed(appChanged));
     });
 
+    /** Cancelled while the app in front is read for the paste, the last wait before it, with the next
+     * dictation already listening: the old request's text is pasted nowhere. */
+    test.each<[string, AgentTool]>([
+      ["Ship it Friday or else.", "edit"],
+      ["", "compose"],
+    ])("agent text cancelled during the last app check is not pasted (selection %j)", async (selected, tool) => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("Could we ship on Friday?"));
+      const checking = deferred<void>();
+      const lastCheck = deferred<number | null>();
+      let reads = 0;
+      // The first read is key-down's; the second, the check before the paste.
+      const frontmostApp = (): Promise<number | null> => {
+        reads += 1;
+        if (reads !== 2) return Promise.resolve(front.pid);
+        checking.resolve();
+        return lastCheck.promise;
+      };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), frontmostApp });
+      controller.captureContext = async () => selectionScreen(selected);
+
+      await holdAndRelease(controller, "agent");
+      await checking.promise;
+      expect(controller.phase).toEqual(running(tool));
+      expect(completions.requests).toHaveLength(1);
+      controller.handle("cancel");
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      lastCheck.resolve(front.pid);
+      await sleep(50);
+
+      expect(pastes).toEqual([]);
+      expect(controller.phase.kind).toBe("listening");
+      controller.handle("cancel");
+    });
+
     /** The app that counts is the one in front at key-down: a switch made while the request is still
      * being transcribed is caught too. */
     test("agent text is not pasted after a switch during the transcription", async () => {
@@ -1369,6 +1405,40 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await sleep(config.releaseTailDuration * 2);
       expect(transcription.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
+    });
+
+    /** Hands-free listening, which no key release ends, stops at `maxRecordingDuration`: the
+     * microphone is released and what it heard is pasted, and the next dictation listens afresh. */
+    test("a hands-free dictation stops at the length cap and is pasted", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("startHandsFree");
+        await vi.advanceTimersByTimeAsync(config.maxRecordingDuration - 1);
+        expect(controller.phase).toEqual(listening);
+        expect(capture.events).toEqual(["start"]);
+        expect(transcription.requests).toHaveLength(0);
+
+        await vi.advanceTimersByTimeAsync(1 + config.releaseTailDuration);
+        // Released: stopped after its one start (a finish stops it once more as it tears down).
+        expect(capture.starts).toBe(1);
+        expect(capture.events.at(-1)).toBe("stop");
+        await vi.advanceTimersByTimeAsync(0);
+        expect(pastes).toEqual([cleaned]);
+        expect(controller.phase).toEqual(idle);
+
+        controller.handle("startHandsFree");
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(listening);
+        expect(capture.starts).toBe(2);
+        expect(capture.events.at(-1)).toBe("start");
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
     });
   });
 });

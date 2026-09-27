@@ -151,8 +151,8 @@ export interface SessionStore {
 export class AccountModel extends Observable {
   private current: TabMailSession | null;
   /** Supabase refresh tokens are single-use: concurrent refreshes would invalidate each other, so
-   * every caller awaits the one in flight. */
-  private refreshing: Promise<TabMailSession> | null = null;
+   * every caller awaits the one in flight, and gets what it gave its own caller. */
+  private refreshing: Promise<string | null> | null = null;
 
   constructor(
     private readonly client: AuthClient,
@@ -193,28 +193,37 @@ export class AccountModel extends Observable {
   /** A usable access token, refreshing first if it expires soon (or `forceRefresh`). Null when
    * signed out; signs out when the refresh token is rejected. */
   async validToken(forceRefresh = false): Promise<string | null> {
-    if (this.refreshing) return (await this.refreshing).accessToken;
+    if (this.refreshing) return this.refreshing;
     const current = this.current;
     if (!current) return null;
     if (!forceRefresh && !expiresWithin(current, config.tokenRefreshLeewaySeconds)) return current.accessToken;
 
-    const task = this.client.refresh(current);
+    const task = this.refresh(current);
     this.refreshing = task;
     try {
-      const refreshed = await task;
-      // Signed out while refreshing: don't resurrect the session.
-      if (this.current?.userId !== current.userId) return null;
+      return await task;
+    } finally {
+      if (this.refreshing === task) this.refreshing = null;
+    }
+  }
+
+  /** Refreshes `session`, and keeps the result only while `session` is still the one signed in: a
+   * sign-out, or a sign-in afresh (even as the same user), while it refreshed leaves this refresh's
+   * answer, token or rejection, to the session it was for. */
+  private async refresh(session: TabMailSession): Promise<string | null> {
+    try {
+      const refreshed = await this.client.refresh(session);
+      if (this.current !== session) return null;
       this.store.save(refreshed);
       this.set(refreshed);
       return refreshed.accessToken;
     } catch (error) {
+      if (this.current !== session) return null;
       if (error instanceof AuthError && error.kind === "refreshRejected") {
         log.debug("AccountModel: refresh rejected; signing out");
         this.signOut();
       }
       throw error;
-    } finally {
-      if (this.refreshing === task) this.refreshing = null;
     }
   }
 

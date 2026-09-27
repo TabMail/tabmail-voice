@@ -23,19 +23,14 @@ export class KeychainSessionStore implements SessionStore {
     }
   }
 
+  /** Throws when the store refuses it: the account then stays as it was. */
   save(session: TabMailSession): void {
-    try {
-      this.entry.setPassword(JSON.stringify(sessionToWire(session)));
-    } catch (error) {
-      log.error(`KeychainSessionStore: save failed: ${errorName(error)}`);
-    }
+    this.entry.setPassword(JSON.stringify(sessionToWire(session)));
   }
 
+  /** Throws when the store refuses it (a missing entry is no failure): the account then stays
+   * signed in, rather than coming back at the next launch. */
   clear(): void {
-    try {
-      this.entry.deletePassword();
-    } catch (error) {
-      log.error(`KeychainSessionStore: clear failed: ${errorName(error)}`);
-    }
+    this.entry.deletePassword();
   }
 }

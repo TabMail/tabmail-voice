@@ -159,6 +159,61 @@ describe("AccountModel", () => {
     expect(await before).toBeNull();
   });
 
+  /** A refresh answers for the session it was started for. Signed out and signed in afresh while it
+   * ran, its answer (a rejection, or a new token even for the same user) leaves the new session, as
+   * kept and as stored, alone. */
+  test.each([
+    ["a rejected refresh, another account signed in", 400, "user-2"],
+    ["a refreshed token, the same user signed in again", 200, Fixtures.userId],
+  ])("a refresh outlived by a new sign-in leaves it alone: %s", async (_, refreshStatus, newUser) => {
+    const refreshing = deferred<void>();
+    const release = deferred<void>();
+    const stub = new StubTransport();
+    stub.gate = async (request) => {
+      if (!request.url.includes("grant_type=refresh_token")) return;
+      refreshing.resolve();
+      await release.promise;
+    };
+    // Replies go out in the order requests are answered: the sign-in's, then the held refresh's.
+    stub.enqueue(200, Fixtures.sessionJSON({ access: "new-sign-in", refresh: "new-refresh", userId: newUser }));
+    stub.enqueue(refreshStatus, refreshStatus === 200 ? Fixtures.sessionJSON({ access: "old-refreshed", refresh: "old-refresh-2" }) : { error: "invalid_grant" });
+    const store = new InMemorySessionStore(Fixtures.session({ expiresIn: 0 }));
+    const account = new AccountModel(client(stub), store);
+
+    const old = account.validToken();
+    await refreshing.promise;
+    account.signOut();
+    await account.verify(Fixtures.email, "123456");
+    const signedIn = store.load();
+    expect(signedIn?.accessToken).toBe("new-sign-in");
+    release.resolve();
+
+    expect(await old).toBeNull();
+    expect(account.session).toEqual(signedIn);
+    expect(store.load()).toEqual(signedIn);
+    expect(await account.validToken()).toBe("new-sign-in");
+  });
+
+  /** Every caller sharing a refresh gets what its first caller got: none gets the old account's
+   * token after a sign-out. */
+  test("callers sharing a refresh get no token after a sign-out", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.sessionJSON({ access: "old-account", refresh: "refresh-2" }));
+    const release = deferred<void>();
+    stub.gate = () => release.promise;
+    const store = new InMemorySessionStore(Fixtures.session({ expiresIn: 0 }));
+    const account = new AccountModel(client(stub), store);
+
+    const first = account.validToken();
+    const second = account.validToken();
+    account.signOut();
+    release.resolve();
+
+    expect(await Promise.all([first, second])).toEqual([null, null]);
+    expect(stub.requests).toHaveLength(1);
+    expect(store.load()).toBeNull();
+  });
+
   test("signed out has no token", async () => {
     const account = new AccountModel(client(new StubTransport()), new InMemorySessionStore());
     expect(await account.validToken()).toBeNull();

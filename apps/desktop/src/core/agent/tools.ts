@@ -58,6 +58,9 @@ export interface ToolContext {
  * user to move on: the text belongs in that app, and is pasted nowhere else. */
 async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<void> {
   if (!(await context.isTargetAppFrontmost())) throw new AgentFailure("appChanged");
+  // Cancelled while the app in front was read (the Swift app reads it synchronously): the text is
+  // no longer wanted anywhere.
+  if (context.signal.aborted) return;
   await context.paste(text);
 }
 

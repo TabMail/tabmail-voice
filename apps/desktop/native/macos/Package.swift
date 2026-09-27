@@ -21,7 +21,7 @@ let package = Package(
         .executableTarget(name: "voice-hotkey", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
         .target(name: "VoiceMacOSKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
         .executableTarget(name: "voice-macos", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
-        .testTarget(name: "VoiceHotkeyKitTests", dependencies: ["VoiceHotkeyKit"], swiftSettings: strict),
+        .testTarget(name: "VoiceHotkeyKitTests", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceMacOSKitTests", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceHelperSupportTests", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
     ]

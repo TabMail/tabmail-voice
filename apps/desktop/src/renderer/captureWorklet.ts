@@ -31,8 +31,8 @@ class CaptureProcessor extends AudioWorkletProcessor {
       this.filled += count;
       offset += count;
       if (this.filled === this.chunk.length) {
-        this.port.postMessage(this.chunk, [this.chunk.buffer]);
-        this.chunk = new Float32Array(this.chunk.length);
+        // Copied as it is posted: transferring it would detach the buffer this chunk refills.
+        this.port.postMessage(this.chunk);
         this.filled = 0;
       }
     }

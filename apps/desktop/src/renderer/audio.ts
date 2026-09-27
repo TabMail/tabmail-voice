@@ -53,6 +53,7 @@ async function start(id: number): Promise<void> {
   current = session;
   try {
     const audio = await prepare();
+    if (session.stopped) return release(session);
     // The raw signal, as the Swift app's AVAudioEngine input gave it: no voice processing.
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     session.stream = stream;

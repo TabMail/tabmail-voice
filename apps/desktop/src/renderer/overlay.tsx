@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentTool } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
@@ -49,12 +49,11 @@ function modeOf(state: OverlayState): Mode {
 
 const springTransition = (properties: string[]): string => properties.map((property) => `${property} ${config.pillSpringResponse}s ${config.pillSpringEasing}`).join(", ");
 
-/** The element's laid-out size, following it as it changes. */
-function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {
-  const ref = useRef<T>(null);
+/** The element's laid-out size, following it as it changes. A callback ref, so an element mounted
+ * after its component (a tip that appears during a hold) is measured too. */
+function useSize<T extends HTMLElement>(): [React.RefCallback<T>, Size] {
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
-  useLayoutEffect(() => {
-    const element = ref.current;
+  const ref = useCallback((element: T | null) => {
     if (!element) return;
     const observer = new ResizeObserver(() => setSize({ width: element.offsetWidth, height: element.offsetHeight }));
     observer.observe(element);
