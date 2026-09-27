@@ -26,13 +26,18 @@ struct DebugModeTests {
         #expect(DebugAccess.allows(email) == allowed)
     }
 
-    /// Each named account outside the domain is allowed, in any case.
-    @Test func namedAccountsMayUseDebugMode() {
-        #expect(!DebugAccess.allowedEmails.isEmpty)
-        for email in DebugAccess.allowedEmails {
+    /// The named account outside the domain (TabMail's own, as on iOS) is allowed, in any case, and
+    /// gets the development server; another account on its mail domain is not.
+    @Test func theNamedAccountMayUseDebugMode() {
+        let settings = AppSettings(defaults: defaults)
+        settings.debugMode = true
+
+        for email in ["tabmail.ai@gmail.com", "TABMAIL.AI@GMAIL.COM"] {
             #expect(DebugAccess.allows(email))
-            #expect(DebugAccess.allows(email.uppercased()))
+            #expect(settings.dictation(for: email).backendURL == DictationConfig.developmentBackendURL)
         }
+        #expect(!DebugAccess.allows("someone@gmail.com"))
+        #expect(settings.dictation(for: "someone@gmail.com").backendURL == DictationConfig.productionBackendURL)
     }
 
     @Test func noAccountMayUseDebugMode() {
@@ -55,12 +60,26 @@ struct DebugModeTests {
         #expect(settings.dictation(for: email).backendURL == (isOn ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL))
     }
 
-    /// The switch is kept across launches, and starts off.
+    /// The switch is kept across launches, on and then off again, and starts off.
     @Test func theSwitchIsStoredAndStartsOff() {
         #expect(!AppSettings(defaults: defaults).debugMode)
 
         AppSettings(defaults: defaults).debugMode = true
-        #expect(AppSettings(defaults: defaults).debugMode)
+        #expect(AppSettings(defaults: defaults).isDebugMode(for: "tester@tabmail.ai"))
+
+        AppSettings(defaults: defaults).debugMode = false
+        let relaunched = AppSettings(defaults: defaults)
+        #expect(!relaunched.isDebugMode(for: "tester@tabmail.ai"))
+        #expect(relaunched.dictation(for: "tester@tabmail.ai").backendURL == DictationConfig.productionBackendURL)
+    }
+
+    /// The old "Use development server" switch left on doesn't turn debug mode on (ADR-DESK-018).
+    @Test func theOldDevelopmentServerSwitchIsNotCarriedOver() {
+        defaults.set(true, forKey: "useDevelopmentServer")
+        let settings = AppSettings(defaults: defaults)
+
+        #expect(!settings.isDebugMode(for: "tester@tabmail.ai"))
+        #expect(settings.dictation(for: "tester@tabmail.ai").backendURL == DictationConfig.productionBackendURL)
     }
 
     /// The menu's Start Dictation shows only in debug mode; a Stop for a recording in progress

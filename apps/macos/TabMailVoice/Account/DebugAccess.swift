@@ -10,7 +10,7 @@ enum DebugAccess {
     private static let allowedEmailDomain = "tabmail.ai"
 
     /// Individual accounts outside `allowedEmailDomain`. Keep short: each one bypasses the domain check.
-    static let allowedEmails: Set<String> = [
+    private static let allowedEmails: Set<String> = [
         "tabmail.ai@gmail.com",
     ]
 
