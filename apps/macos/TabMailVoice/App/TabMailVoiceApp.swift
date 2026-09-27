@@ -81,7 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         monitor.install()
-        settings.onHotkeyChange = { monitor.setHotkey($0) }
+        // After the XCTest guard: the test host must never change, or put back, the real Globe setting.
+        Self.connectHotkey(settings, monitor: monitor, globeKey: GlobeKeyAction())
         // The keyboard event tap can't be created until Accessibility is granted: install again
         // once the grant lands.
         permissions.onAccessibilityGranted = { [accessibilityActivator] in
@@ -105,5 +106,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         permissions.refresh()
+    }
+
+    /// The hotkey follows Settings, and so does the Globe key's own action: off while fn is the
+    /// hotkey, the user's choice back at another key and when the app quits (ADR-DESK-031).
+    static func connectHotkey(_ settings: AppSettings, monitor: HotkeyMonitor, globeKey: GlobeKeyAction, notifications: NotificationCenter = .default) {
+        globeKey.hotkeyIs(settings.hotkey)
+        settings.onHotkeyChange = { hotkey in
+            monitor.setHotkey(hotkey)
+            globeKey.hotkeyIs(hotkey)
+        }
+        // No queue: runs as the notification is posted, on the main thread, before the app exits.
+        notifications.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { globeKey.restore() }
+        }
     }
 }

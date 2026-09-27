@@ -48,8 +48,9 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
   typed in.
   A quick tap does nothing.
 - Pressing any other key while holding cancels (so ⌥-shortcuts keep working).
-- Choose Fn/Globe instead of Right Option in Settings. If you do, set System Settings › Keyboard ›
-  "Press 🌐 key to" to "Do Nothing".
+- Choose Fn/Globe instead of Right Option in Settings. While it is the hotkey, TabMail Voice sets
+  System Settings › Keyboard › "Press 🌐 key to" to "Do Nothing", and puts your choice back when you
+  pick another key or quit.
 
 ## Comparing speech-to-text models
 

@@ -22,7 +22,7 @@ struct SettingsView: View {
                     }
                 }
                 if settings.hotkey == .function {
-                    Text("Set System Settings › Keyboard › “Press 🌐 key to” to “Do Nothing”, or macOS will also open its own picker.")
+                    Text("While fn is the hotkey, the 🌐 key's own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
