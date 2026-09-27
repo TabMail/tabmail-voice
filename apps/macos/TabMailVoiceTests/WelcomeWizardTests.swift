@@ -142,21 +142,21 @@ struct AppSettingsTests {
     }
 
     /// What a dictation takes at key-down is what Settings says: consent, screen reading (off means
-    /// no screen read), the server, and the email app chosen, which it only gets while a Thunderbird
-    /// profile has TabMail's add-on.
+    /// no screen read), the server (debug mode, for an account allowed it), and the email app chosen,
+    /// which it only gets while a Thunderbird profile has TabMail's add-on.
     @Test(arguments: [(false, true, false, true), (true, false, true, true), (false, true, false, false)])
-    func aDictationTakesWhatSettingsSay(readsScreen: Bool, hasConsented: Bool, useDevelopmentServer: Bool, hasTabMail: Bool) throws {
+    func aDictationTakesWhatSettingsSay(readsScreen: Bool, hasConsented: Bool, debugMode: Bool, hasTabMail: Bool) throws {
         let thunderbird = try Fixtures.thunderbirdFolder(profiles: [[Fixtures.addon(userDisabled: !hasTabMail)]])
         defer { try? FileManager.default.removeItem(at: thunderbird) }
         let settings = AppSettings(defaults: defaults, thunderbirdDirectory: thunderbird)
         settings.readsScreen = readsScreen
         settings.hasConsented = hasConsented
-        settings.useDevelopmentServer = useDevelopmentServer
+        settings.debugMode = debugMode
         settings.emailClient = "org.example.mail"
 
-        #expect(settings.dictation == DictationSettings(
+        #expect(settings.dictation(for: "tester@tabmail.ai") == DictationSettings(
             hasConsented: hasConsented,
-            backendURL: useDevelopmentServer ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL,
+            backendURL: debugMode ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL,
             readsScreen: readsScreen,
             emailApp: hasTabMail ? "org.example.mail" : nil
         ))

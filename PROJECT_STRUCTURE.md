@@ -18,6 +18,7 @@ tabmail-voice/
         │   │   └── AppSettings.swift         Hotkey, screen reading, consent, wizard finished (UserDefaults); open-at-login (SMAppService)
         │   ├── Account/
         │   │   ├── AccountModel.swift        Signed-in session; single-flight token refresh (refresh tokens are single-use)
+        │   │   ├── DebugAccess.swift       Accounts allowed debug mode (same as iOS DebugModeManager)
         │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
         │   │   ├── SessionStore.swift        Keychain session storage (SessionStoring protocol)
         │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
@@ -53,7 +54,7 @@ tabmail-voice/
         │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling, grant callbacks
         │   ├── Support/Log.swift             Debug-gated os.Logger (`debug`/`error` never carry transcript content); debug builds also append to ~/Library/Logs/TabMail Voice/TabMail Voice.log (`LogFile`, menu › Show Log File), where `Log.content` also writes user content in full (ADR-DESK-015)
         │   └── UI/
-        │       ├── MenuContent.swift         Menu-bar menu
+        │       ├── MenuContent.swift         Menu-bar menu (Start Dictation and debug items in debug mode only)
         │       ├── SettingsView.swift        Settings window
         │       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
         │       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
@@ -95,4 +96,5 @@ pastes at the caret. A failure shows a message and pastes nothing. No agent call
 ## Relationships
 
 Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) with a Supabase
-JWT from `auth.tabmail.ai`. Settings has a "Use development server" toggle (dev.tabmail.ai).
+JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
+dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
