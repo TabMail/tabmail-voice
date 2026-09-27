@@ -814,3 +814,14 @@ switching the setting for the user, the owner chose the second ("option 2").
 - Numbered 031: ADR-DESK-022 to 030 are taken by agent-tool branches not yet merged.
 - Whether fn still reaches the event tap with Do Nothing selected is reported both ways online; the
   owner's manual test on this change settles it for the hotkey.
+
+**Amendment 2026-09-27 (owner report: with fn, a double tap never went hands-free; Right Option's did):**
+- Settled by a listen-only probe on the owner's MacBook keyboard, Globe action on Do Nothing: fn does
+  reach the event tap (`flagsChanged`, key code 63), and each release from a tap is followed 0–3 ms
+  later by a `keyDown` and `keyUp` of key code 0xB3, the Globe key's own, which Carbon has no name for.
+  The gesture read that key-down as typing between the taps (ADR-DESK-021: typing breaks a double
+  tap), so the second press started an ordinary hold. The app log showed it: "tap; waiting for a
+  second press", then a new arming instead of hands-free, about 100 ms apart.
+- `PushToTalkGesture.keyPressed` ignores that key-down while fn is the hotkey
+  (`DictationHotkey.globeKeyCode`); both events still reach the app. `HotkeyMonitorTests` replays
+  the recorded sequence. The owner confirmed the double tap with fn on a build with this change.
