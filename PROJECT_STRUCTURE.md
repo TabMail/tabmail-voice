@@ -75,6 +75,46 @@ tabmail-voice/
         └── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
 
+## `apps/desktop/`: the Electron app (ADR-DESK-032)
+
+The unified app for macOS, Windows and Linux that replaces `apps/macos/` once at parity. TypeScript,
+Electron 44, React 19, Vite, Vitest, electron-builder; npm (`npx -y npm@11.19.1 install`).
+
+```
+apps/desktop/
+├── package.json, electron-builder.json, tsconfig.{base,main,renderer,test}.json, vite.config.mts, vitest.config.mts, eslint.config.mjs
+├── resources/               App icon, tray template images, macOS entitlements (electron-builder's buildResources)
+├── scripts/
+│   ├── build-native.mts         Builds the platform's helpers into dist/helpers (macOS: SwiftPM, arm64)
+│   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries
+│   └── preview/                 `npm run preview`: renders every window with sample states offscreen, saved as PNGs
+├── native/macos/            SwiftPM package: the macOS helpers and their tests
+│   ├── Sources/VoiceHelperSupport/  The line protocol (requests, replies, events, debug-gated stderr)
+│   ├── Sources/VoiceHotkeyKit/      Event tap + push-to-talk gesture (`voice-hotkey`)
+│   └── Sources/VoiceMacOSKit/       Paste/restore, screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird (`voice-macos`)
+├── src/
+│   ├── core/                Platform-free logic (DOM lib only; no Node/Electron): the Swift app's port
+│   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
+│   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, cleanup
+│   │   ├── agent/                   DesktopAgent, the tools, EmailClient, ThunderbirdRelay
+│   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
+│   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
+│   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows
+│   │   └── config.ts, log.ts, observable.ts, keyValueStore.ts, timeout.ts, text.ts, hotkey.ts
+│   ├── main/                The main process (Node + Electron)
+│   │   ├── main.ts                  Wires everything (the Swift AppDelegate): helpers, controller, windows, IPC, tray
+│   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
+│   │   ├── macos.ts                 `voice-macos`'s methods, typed
+│   │   ├── audioCapture.ts          The microphone through the hidden audio window, one session per dictation
+│   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
+│   │   ├── permissions.ts, keychainSessionStore.ts, fileStore.ts, logFile.ts, profileFiles.ts
+│   ├── preload/preload.ts   `window.voice` (sandboxed: imports only electron; channel names written out)
+│   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
+│   └── renderer/            One page per window: overlay (pill, waveform, swirl, tips, bubbles), settings,
+│                            welcome, audio (getUserMedia → captureWorklet), context-debug
+└── test/                    Vitest: the core (ported Swift suites), main-process modules against a fake helper, IPC
+```
+
 ## Flow
 
 `HotkeyMonitor` → `PushToTalkGesture` action → `DictationController`:

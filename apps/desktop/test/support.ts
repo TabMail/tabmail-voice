@@ -2,11 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AccountModel, AuthClient, type SessionStore, type TabMailSession } from "../src/core/account.js";
-import type { ProfileFiles } from "../src/core/agent/emailClient.js";
 import type { AudioCapture } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
 import { type HTTPRequest, type HTTPTransport, TransportError } from "../src/core/http.js";
@@ -125,17 +124,6 @@ export const Fixtures = {
   },
 };
 
-/** The real file system, as the main process reads Thunderbird's profiles. */
-export const nodeProfileFiles: ProfileFiles = {
-  readText(path) {
-    try {
-      return readFileSync(path, "utf8");
-    } catch {
-      return null;
-    }
-  },
-  join,
-};
 
 export function signedIn(auth = new StubTransport(), session: TabMailSession | null = Fixtures.session()): AccountModel {
   return new AccountModel(new AuthClient(auth.transport, "https://auth.example.com", "publishable-key"), new InMemorySessionStore(session));

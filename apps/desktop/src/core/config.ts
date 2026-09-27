@@ -142,6 +142,9 @@ export const accessibilityPollInterval = 1_000;
 /** Longest a request to the macOS helper may take before it counts as failed. The screen read has
  * its own, longer budget (the helper's `HelperConfig.contextTimeBudget`) on top of this. */
 export const helperRequestTimeout = 3_000;
+/** Longest the helper's screen read may take: its own time budget for the Accessibility walk
+ * (`HelperConfig.contextTimeBudget`, 1.5 s) and then some for a busy app's replies. */
+export const screenReadTimeout = 5_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
 
@@ -159,6 +162,8 @@ export const welcomeRailBubbleSpacing = 6;
 /** A category not being shown is drawn at this opacity. */
 export const welcomeRailInactiveOpacity = 0.35;
 export const welcomeIconSize = 56;
+/** The icon beside each of the consent page's points, as SwiftUI draws a label's beside body text. */
+export const welcomeLabelIconSize = 16;
 export const settingsWindowSize = { width: 480, height: 620 };
 export const contextDebugWindowSize = { width: 720, height: 560 };
 
@@ -183,7 +188,8 @@ export const pillGlowRadius = 8;
 /** The pill grows out of the swirl from this fraction of its size. */
 export const pillAppearScale = 0.2;
 export const pillSpringResponse = 0.25;
-export const pillSpringDamping = 0.75;
+/** CSS's stand-in for that spring: a little overshoot. */
+export const pillSpringEasing = "cubic-bezier(0.3, 1.25, 0.5, 1)";
 /** Warm-up swirl: particles spiral from `swirlStartRadius` to `swirlOrbitRadius`. */
 export const swirlParticleCount = 14;
 export const swirlStartRadius = 36;
@@ -291,6 +297,7 @@ export const agentBubbleRevolutionsPerSecond = 1;
  * that overshoots a little ("a genie effect", so the tool in use is obvious). */
 export const agentBubbleRunningScale = 1.4;
 export const agentBubbleRunningSpringResponse = 0.35;
-export const agentBubbleRunningSpringDamping = 0.55;
+/** CSS's stand-in for that spring: a bouncier overshoot than the pill's. */
+export const agentBubbleRunningSpringEasing = "cubic-bezier(0.3, 1.7, 0.5, 1)";
 /** How long an error message stays on the overlay. */
 export const overlayErrorDisplayDuration = 3_000;

@@ -9,7 +9,7 @@
   "private": true,
   "main": "dist/node/main/main.js",
   "scripts": {
-    "compile:native": "node scripts/build-native.mjs",
+    "compile:native": "node scripts/build-native.mts",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run compile:native && npm run build:main && npm run build:renderer",
@@ -18,7 +18,8 @@
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
-    "dist:dir": "npm run build && electron-builder --dir"
+    "dist:dir": "npm run build && electron-builder --dir",
+    "preview": "npm run build:renderer && electron scripts/preview/preview.mts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.0.0",

@@ -9,6 +9,8 @@ fall under).
 ## ADR-DESK-001: Native Swift menu-bar app, on-device speech recognition
 
 > ⛔ **Speech-recognition half SUPERSEDED by ADR-DESK-005 (owner 2026-09-24).** The native Swift menu-bar app stands; on-device `SpeechAnalyzer` was removed in favour of backend STT so all platforms share one engine. Kept for history.
+>
+> ⛔ **Native-Swift half being SUPERSEDED by ADR-DESK-032 (owner 2026-09-27):** one Electron app for macOS, Windows and Linux replaces the Swift app once it reaches parity. Kept for history.
 
 **Context:** Phase 1 replaces Wispr Flow for basic system-wide dictation. Options: Electron/Tauri
 (cross-platform) or native Swift; cloud STT (Groq Whisper via the backend) or on-device.
@@ -417,6 +419,8 @@ renamed `tabmail-voice` on 2026-09-26 (owner), see ADR-DESK-013.
 
 ## ADR-DESK-013: One repository for TabMail Voice on every platform, one folder per platform
 
+> ⚠️ **Amended by ADR-DESK-032 (owner 2026-09-27):** the platforms share one Electron app, `apps/desktop/`, not a native app each; `apps/macos/` is deleted at cutover.
+
 **Context:** Owner, 2026-09-25: the repository will be renamed `tabmail-voice` on GitHub, with the
 macOS app in a folder of its own so that other platforms (Windows, Linux) can follow. The layout
 follows the OpenClaw reference (`references/openclaw/apps/{macos,ios,android,shared}`): each
@@ -814,3 +818,57 @@ switching the setting for the user, the owner chose the second ("option 2").
 - Numbered 031: ADR-DESK-022 to 030 are taken by agent-tool branches not yet merged.
 - Whether fn still reaches the event tap with Do Nothing selected is reported both ways online; the
   owner's manual test on this change settles it for the hotkey.
+
+## ADR-DESK-032: One Electron app for macOS, Windows and Linux
+
+**Context:** Owner, 2026-09-27, after a study of OpenWhispr (MIT), which ships one Electron app on
+all three platforms: "We should move to a unified one NOW (move mac to electron). mimic openwhispr,
+don't reinvent the wheel. prefer ts over js." Then: "we should build our own app — our focus is
+different. we hold the release until unification. Current feature parity must be matched before …
+we're working towards using the Electron Mac app to replace the Swift one." Wayland may be tap to
+start, tap to stop. The study and the phase plan are in the gitignored `PLAN_VOICE_CROSS_PLATFORM.md`.
+
+**Decision:**
+- `apps/desktop/` is one Electron app in TypeScript (strict `tsc`, eslint with zero warnings):
+  Electron, React and Vite for the windows, Vitest for the tests, electron-builder for the packages.
+  Our own app, not a fork of OpenWhispr; we copy its patterns.
+- `src/core/` is the platform-free port of the Swift app's logic (the dictation controller, the
+  gesture timing, the backend clients, the agent and its tools, tips, the welcome wizard, settings,
+  the overlay geometry): no Node or Electron imports, so every OS runs the same code and Vitest
+  tests it directly. The Swift app is its behavioural spec, as Thunderbird is iOS's (ADR-IOS-008);
+  its tests were ported with it.
+- What needs the OS is a **native helper executable** per role, spawned by the main process and
+  spoken to over stdin/stdout, one JSON object a line (`{id, method, params}` → `{id, result}` or
+  `{id, error}`; events as `{event, …}`; stderr lines `debug …`/`error …`, the debug ones only
+  with `TABMAIL_VOICE_DEBUG=1`). A helper exits when its stdin closes and is restarted after
+  `helperRestartDelay` if it dies (`HelperClient`). On macOS the helpers are the Swift app's own code
+  as a SwiftPM package (`native/macos`): `voice-hotkey` owns the keyboard event tap (it must decide
+  within the tap whether Space or Escape is kept from the app, so the gesture runs there) and
+  `voice-macos` the rest (paste and clipboard restore, the screen read, the caret, the keyboard's
+  language, the Globe setting, the Accessibility activator, the email apps, Thunderbird). The
+  Accessibility grant is expected to be the app's, macOS attributing a spawned helper's use of it to
+  the app that launched it; the first manual pass on a packaged, signed build confirms it. Helpers are executables, not Node addons, so they need no rebuild per Electron version and can
+  crash without taking the app down.
+- The microphone is `getUserMedia` in a hidden window, into an AudioWorklet in an `AudioContext`
+  at the recording rate (Chromium resamples), each chunk sent to the main process; each dictation is
+  a session and the tracks are stopped when it ends. Only that window may use the microphone
+  (`setPermissionRequestHandler`), and only for audio.
+- The main process owns every model; each window draws the state it is sent and sends back commands,
+  which are checked at the boundary (`isCommand`, `isAudioReport`). Every window is sandboxed with
+  context isolation, no Node, no navigation and no new windows, under a CSP with no inline script.
+- The session stays in the Keychain item the Swift app uses (`@napi-rs/keyring`), settings in a JSON
+  file in the app's data folder, the debug log in `~/Library/Logs/TabMail Voice/`.
+- macOS first, to the Swift app's parity; Windows and Linux follow with their own helpers. The
+  public release waits for the Electron app, which then replaces the Swift app (`apps/macos/` is
+  deleted then).
+
+**Consequences:**
+- A resident Electron app uses more memory than the Swift one; accepted by the owner's choice.
+- Every Swift change merged before cutover must be ported too (the parity checklist in the plan).
+- Wayland has no global key-up: tap to start, tap to stop there (owner, 2026-09-27).
+- The first launch of the Electron build asks for access to the Swift app's Keychain item once, as
+  the item's access list names the Swift app.
+- The macOS helpers are built for Apple silicon only, as the Swift app is (Xcode 27 deprecates
+  x86_64).
+- Numbered 032: ADR-DESK-031 is the Globe key's, and 022 to 030 are taken by agent-tool branches not
+  yet merged.

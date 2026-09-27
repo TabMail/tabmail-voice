@@ -40,6 +40,28 @@ No test touches the network, the user's clipboard, or the real Keychain item.
 | `DebugModeTests` | only `tabmail.ai` accounts and the named accounts, in any case, may use debug mode (lookalike domains, subdomains, other domains, none refused; the named account named in the test, not read from the list, red-verified against replacing it); debug mode and the development server are on only with the switch on AND an allowed account (red-verified against the switch alone); the switch starts off and persists on and then off again (red-verified against storing only on), and the old development-server switch is not carried over (red-verified); the menu shows Start Dictation only in debug mode, and Stop while recording whatever the mode (red-verified) |
 | `AccountTests` | OTP send/verify request shape + errors; refresh user mismatch; session persisted; fresh token reused; expiring token refreshed; **concurrent callers share one refresh** (red-verified); rejected refresh signs out; sign-out during refresh doesn't resurrect |
 
+## `apps/desktop/` (the Electron app, ADR-DESK-032)
+
+Run from `apps/desktop/`: `npm test` (Vitest), `npm run typecheck`, `npm run lint` (zero warnings),
+and `./scripts/swift-errors.sh test` for the macOS helpers. `npm run preview` renders every window
+with sample states and saves PNGs, to check the UI without starting the app. No test touches the
+network, the clipboard, the Keychain or the real Globe setting.
+
+| Suite | Covers |
+|-------|--------|
+| `dictationController.test.ts` | The Swift `DictationControllerTests`, ported: hold, tap, double tap and hands-free, mode switch, tips, cleanup and paste, agent tools, failures and cancellation at every await, settings snapshotted at key-down, the screen read started as arming begins (red-verified), a cancelled cleanup ends at once (red-verified) |
+| `account`, `transcription`, `completions`, `cleanup`, `contentLog` | Sign-in and single-flight refresh, the backend clients over a stub transport, the cleanup prompt, user content only in the debug log |
+| `desktopAgent`, `thunderbirdRelay`, `emailClient` | Tool choice and writing, the Thunderbird relay against a fake system, the email app and the add-on check on a temporary profile folder |
+| `audio`, `settings`, `onboarding`, `globeKeyAction` | Recording and levels, settings, the welcome wizard, tips and permissions (each grant announced once), the Globe action against a stand-in |
+| `overlay.test.ts` | The overlay's place at the caret (a sweep of caret heights on three displays: the tip is always on screen, the pill never covers the line), the bubbles and the tip in the canvas, the tip text, the tray menu's items and status line |
+| `mainProcess.test.ts` | `LogFile` (timestamps, rotation), `FileStore` (atomic saves, an unreadable file), `HelperClient` against a fake helper run by Node (requests, errors, timeouts, events, stderr, restart after a crash, stop) |
+| `ipc.test.ts` | The preload's channel names equal the main process's; malformed commands, audio reports and window names are refused |
+| Swift `native/macos/Tests` | The helpers' gesture, protocol, screen read and paste suites; `theSystemCallsExist` for the Globe calls |
+
+Not yet covered, to check by hand on a signed build: the app launched end to end (helpers, tray,
+windows, the microphone window's permission, the Keychain prompt on first launch), the Accessibility
+grant covering the spawned helpers, and the overlay's look and motion against the Swift app's.
+
 ## Not covered by unit tests (manual checklist)
 
 - Sign in with an email code in Settings; relaunch — still signed in.

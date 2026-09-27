@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "./config.js";
+import { type DictationHotkey, hotkeyNames } from "./hotkey.js";
 import { type KeyValueStore, storedBool, storedInteger } from "./keyValueStore.js";
 
 /** A tip the overlay shows under the listening pill, as TipKit tips behave: it shows until the user
@@ -16,6 +17,26 @@ export const tipDetails: Record<DictationTip, { maxDisplays: number; displayDura
   switchMode: { maxDisplays: config.switchModeTipMaxDisplays, displayDuration: config.switchModeTipDisplayDuration },
   doubleTap: { maxDisplays: config.doubleTapTipMaxDisplays, displayDuration: config.doubleTapTipDisplayDuration },
 };
+
+/** One piece of a tip's line: words, or a key drawn as a keycap. */
+export type TipPart = { words: string } | { key: string };
+
+/** The tip's lines, a few words each, so the tooltip stays not much wider than the pill (owner,
+ * 2026-09-26: "should be multi-line instead"). The double-tap tip names the key held to dictate. */
+export function tipLines(tip: DictationTip, hotkey: DictationHotkey): TipPart[][] {
+  switch (tip) {
+    case "switchMode":
+      return [[{ words: "Press" }, { key: "space" }, { words: "to switch" }], [{ words: "between dictation" }], [{ words: "and agent mode" }]];
+    case "doubleTap":
+      return [[{ words: "Double-tap" }, { key: hotkeyNames[hotkey].keycap }], [{ words: "to dictate" }], [{ words: "without holding" }]];
+  }
+}
+
+/** The key a tip names. */
+export function tipKeycap(tip: DictationTip, hotkey: DictationHotkey): string | null {
+  for (const part of tipLines(tip, hotkey).flat()) if ("key" in part) return part.key;
+  return null;
+}
 
 /** Which tips have been shown how often, and which the user has learned, kept in the app's store. */
 export class TipBook {

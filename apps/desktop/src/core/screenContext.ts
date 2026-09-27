@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { isDebugLogging, log } from "./log.js";
+import { errorName, isDebugLogging, log } from "./log.js";
 
 /** What was on screen in the app in front when a dictation started, as the platform helper read it
  * (macOS: `readScreen`). The helper renders the text for the prompts and the logs itself. */
@@ -62,7 +62,7 @@ export class ScreenContextProbe {
         return context;
       },
       (error: unknown) => {
-        log.error(`ScreenContext: read failed: ${error instanceof Error ? error.name : typeof error}`);
+        log.error(`ScreenContext: read failed: ${errorName(error)}`);
         return null;
       },
     );

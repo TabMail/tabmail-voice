@@ -358,6 +358,56 @@ struct ScreenContextTests {
         #expect(context.summary.contains("caret 12/0/0 chars"))
     }
 
+    /// The debug log file gets every field, the text around the caret and the visible text as the
+    /// prompts receive it (ADR-DESK-015).
+    @Test func aScreenReadLogsEveryField() {
+        var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
+        context.windowTitle = "Inbox"
+        context.host = "mail.example.com"
+        context.terminalProgram = "vim"
+        context.focusedRole = "AXTextArea"
+        context.textBeforeCaret = "Dear Alex,"
+        context.selectedText = "draft"
+        context.textAfterCaret = "Thanks"
+        context.stoppedEarly = "time budget"
+        context.append(.heading, "Inbox")
+        context.appendCaret()
+
+        let text = context.logDescription
+
+        #expect(text.hasPrefix("app Example (com.example.app), window title Inbox, host mail.example.com, terminal program vim, focused AXTextArea, stopped: time budget\n"))
+        #expect(text.contains("--- text before the caret ---\nDear Alex,\n"))
+        #expect(text.contains("--- selected text ---\ndraft\n"))
+        #expect(text.contains("--- text after the caret ---\nThanks\n"))
+        #expect(text.hasSuffix("--- visible text ---\n" + context.renderedText()))
+    }
+
+    /// What the app receives for a screen read: every field it reads, unknown ones as null, the text
+    /// already rendered, and the two log forms.
+    @Test func theAppReceivesEveryFieldAndTheRenderedText() {
+        var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
+        context.windowTitle = "Inbox"
+        context.textBeforeCaret = "Note: "
+        context.selectedText = "Ship it."
+        context.append(.heading, "Agenda")
+        context.appendCaret()
+
+        let json = context.json
+
+        #expect(json["appName"]?.string == "Example")
+        #expect(json["bundleID"]?.string == "com.example.app")
+        #expect(json["windowTitle"]?.string == "Inbox")
+        #expect(json["host"] == .null)
+        #expect(json["terminalProgram"] == .null)
+        #expect(json["focusedRole"] == .null)
+        #expect(json["textBeforeCaret"]?.string == "Note: ")
+        #expect(json["selectedText"]?.string == "Ship it.")
+        #expect(json["textAfterCaret"]?.string == "")
+        #expect(json["renderedText"]?.string == "## Agenda\n» Note: ‸Ship it.‸")
+        #expect(json["summary"]?.string == context.summary)
+        #expect(json["logDescription"]?.string == context.logDescription)
+    }
+
     // MARK: Terminal visible lines
 
     @Test func firstVisibleLineFindsTheWindowTop() {

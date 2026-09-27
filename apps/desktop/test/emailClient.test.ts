@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { EmailClient } from "../src/core/agent/emailClient.js";
 import * as config from "../src/core/config.js";
-import { Fixtures, nodeProfileFiles } from "./support.js";
+import { nodeProfileFiles } from "../src/main/profileFiles.js";
+import { Fixtures } from "./support.js";
 
 const thunderbird = "org.mozilla.thunderbird";
 const beta = "org.mozilla.thunderbirdbeta";
