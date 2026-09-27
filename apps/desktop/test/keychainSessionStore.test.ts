@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AccountModel, AuthClient } from "../src/core/account.js";
-import { KeychainSessionStore, saveFailedMessage } from "../src/main/keychainSessionStore.js";
+import { KeychainSessionStore, saveFailedMessage, savedSignInKeptMessage } from "../src/main/keychainSessionStore.js";
 import { Fixtures, StubTransport } from "./support.js";
 
 /** The system's credential store, in memory: one item, and a switch each to refuse a write or a
@@ -50,7 +50,7 @@ describe("KeychainSessionStore", () => {
     await model.verify(Fixtures.email, "123456");
     expect(new KeychainSessionStore().load()?.accessToken).toBe("access-a");
 
-    model.signOut();
+    expect(() => model.signOut()).not.toThrow();
     expect(new KeychainSessionStore().load()).toBeNull();
     expect(account(new StubTransport()).isSignedIn).toBe(false);
   });
@@ -71,14 +71,15 @@ describe("KeychainSessionStore", () => {
     expect(new KeychainSessionStore().load()).toBeNull();
   });
 
-  /** The app signs out all the same, and says the saved sign-in is still there, to come back at the
-   * next launch (owner, 2026-09-27). */
+  /** The app signs out all the same, and says, in the app's words (the Settings reply carries this
+   * error's message), that the saved sign-in is still there, to come back at the next launch (owner,
+   * 2026-09-27). */
   test("a sign-out the store refuses still signs out, and says the sign-in was kept", async () => {
     const model = account(signInReply());
     await model.verify(Fixtures.email, "123456");
     credentials.refusesDelete = true;
 
-    expect(model.signOut()).toBe(false);
+    expect(() => model.signOut()).toThrow(new Error(savedSignInKeptMessage));
 
     expect(model.isSignedIn).toBe(false);
     expect(await model.validToken()).toBeNull();

@@ -887,6 +887,6 @@ start, tap to stop. The study and the phase plan are in the gitignored `PLAN_VOI
 **Amendment 2026-09-27 (owner): a sign-out the credential store refuses.** The Swift app signs out
 in memory and only logs a refused Keychain delete, so the old sign-in returns at the next launch
 without a word. Asked, the owner chose "sign out, show a warning": `AccountModel.signOut` signs out
-in the app first, then removes the saved sign-in; when the store refuses, Settings says the sign-in
-may come back at the next launch. A refused save (sign-in or refresh) fails with the app's own
+in the app first, then removes the saved sign-in; when the store refuses, its error says, in the
+app's words, that the sign-in may come back at the next launch, and Settings shows it. A refused save (sign-in or refresh) fails with the app's own
 message and leaves the account as it was, as the Swift store's throwing `save` does.

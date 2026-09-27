@@ -231,7 +231,7 @@ describe("AccountModel", () => {
     const account = new AccountModel(client(stub), new KeepingStore(Fixtures.session({ expiresIn: 0 })));
 
     const before = account.validToken();
-    expect(account.signOut()).toBe(false);
+    expect(() => account.signOut()).toThrow("denied");
     expect(account.isSignedIn).toBe(false);
     expect(await account.validToken()).toBeNull();
     release.resolve();

@@ -184,19 +184,13 @@ export class AccountModel extends Observable {
     this.set(session);
   }
 
-  /** Signs out. Returns false when the saved sign-in could not be removed (the store refused): the
-   * app is signed out all the same, but that sign-in may be back at the next launch (owner,
+  /** Signs out in the app, then removes the saved sign-in. Throws the store's error when it refuses:
+   * the app is signed out all the same, but that sign-in may be back at the next launch (owner,
    * 2026-09-27: sign out, and say so). */
-  signOut(): boolean {
+  signOut(): void {
     this.refreshing = null;
     this.set(null);
-    try {
-      this.store.clear();
-      return true;
-    } catch (error) {
-      log.error(`AccountModel: saved sign-in not removed: ${errorName(error)}`);
-      return false;
-    }
+    this.store.clear();
   }
 
   /** A usable access token, refreshing first if it expires soon (or `forceRefresh`). Null when
@@ -230,7 +224,12 @@ export class AccountModel extends Observable {
       if (this.current !== session) return null;
       if (error instanceof AuthError && error.kind === "refreshRejected") {
         log.debug("AccountModel: refresh rejected; signing out");
-        this.signOut();
+        try {
+          this.signOut();
+        } catch (clearError) {
+          // Signed out all the same; the rejection is what this refresh reports.
+          log.error(`AccountModel: saved sign-in not removed: ${errorName(clearError)}`);
+        }
       }
       throw error;
     }
@@ -272,5 +271,3 @@ export const DebugAccess = {
   },
 };
 
-/** Shown when a sign-out could not remove the saved sign-in. */
-export const savedSignInKeptMessage = "Signed out, but your saved sign-in couldn't be removed from the system's credential store. It may come back when TabMail Voice next opens.";
