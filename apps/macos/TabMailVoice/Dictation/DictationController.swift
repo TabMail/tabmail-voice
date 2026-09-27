@@ -99,6 +99,8 @@ final class DictationController {
     @ObservationIgnored private var dueTips: [DictationTip] = []
     @ObservationIgnored private var tipTask: Task<Void, Never>?
     @ObservationIgnored private var longHoldTask: Task<Void, Never>?
+    /// Set while a tap's recording waits `doubleTapWindow` for a second press, which makes it hands-free.
+    @ObservationIgnored private var secondTapTask: Task<Void, Never>?
 
     init(
         permissions: PermissionsModel,
@@ -149,8 +151,17 @@ final class DictationController {
     }
 
     /// Starts a dictation; `toggleMode()` makes it an agent request. A hands-free one (a double tap) shows
-    /// at once, and goes on until `finish()` or `cancel()`.
+    /// at once, and goes on until `finish()` or `cancel()`: it carries on the first tap's recording, whose
+    /// microphone is already running, if that tap is still waiting for it.
     func start(handsFree: Bool = false) {
+        if secondTapTask != nil {
+            if handsFree {
+                latchHandsFree()
+                return
+            }
+            // A new hold: the tap before it was only a tap.
+            discard()
+        }
         switch phase {
         case .idle, .failed: break
         case .arming, .listening, .transcribing, .running: return
@@ -223,6 +234,7 @@ final class DictationController {
             // A double tap is deliberate: no hold to wait for.
             tips.markLearned(.doubleTap)
             phase = .listening
+            showDueTip()
         } else {
             revealTask = Task { [weak self] in
                 try? await Task.sleep(for: DictationConfig.minimumHoldDuration)
@@ -271,9 +283,21 @@ final class DictationController {
     func finish() {
         switch phase {
         case .arming:
-            // Released before the hold became deliberate: an accidental tap. Nothing was shown.
-            Log.debug("DictationController: hold too short; discarding")
-            discard()
+            // Released before the hold became deliberate: a tap. Nothing was shown. Unless a second
+            // press follows within `doubleTapWindow` (a double tap: hands-free), it is discarded unseen.
+            guard secondTapTask == nil else { return }
+            Log.debug("DictationController: tap; waiting for a second press")
+            revealTask?.cancel()
+            revealTask = nil
+            longHoldTask?.cancel()
+            longHoldTask = nil
+            let current = generation
+            secondTapTask = Task { [weak self] in
+                try? await Task.sleep(for: DictationConfig.doubleTapWindow)
+                guard !Task.isCancelled, let self, self.generation == current else { return }
+                Log.debug("DictationController: no second press; discarding")
+                self.discard()
+            }
             return
         case .listening:
             break
@@ -469,6 +493,17 @@ final class DictationController {
         }
     }
 
+    /// The second press of a double tap, while the first tap's recording waits for it: that recording
+    /// goes on, hands-free, and shows at once.
+    private func latchHandsFree() {
+        secondTapTask?.cancel()
+        secondTapTask = nil
+        tips.markLearned(.doubleTap)
+        phase = .listening
+        showDueTip()
+        Log.debug("DictationController: listening hands-free (generation \(generation))")
+    }
+
     /// Shows the next due tip the user may still see, while the pill listens and hears (the overlay
     /// shows no tip over the warm-up swirl), for its display duration.
     private func showDueTip() {
@@ -521,6 +556,8 @@ final class DictationController {
         isHearing = false
         maxDurationTask?.cancel()
         maxDurationTask = nil
+        secondTapTask?.cancel()
+        secondTapTask = nil
         endTips()
         transcriptionTask = nil
         startedAt = nil

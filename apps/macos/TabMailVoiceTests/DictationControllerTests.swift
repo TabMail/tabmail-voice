@@ -1144,6 +1144,43 @@ struct DictationControllerTests {
         #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
     }
 
+    /// A double tap carries on the first tap's recording: the microphone started at the first press is
+    /// not restarted, and the pill shows at once (owner, 2026-09-26: the double tap started slower than
+    /// a hold, as it restarted the microphone).
+    @Test func aDoubleTapCarriesOnTheFirstTapsRecording() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        #expect(controller.phase == .arming)
+        controller.handle(.startHandsFree)
+
+        #expect(controller.phase == .listening)
+        #expect(capture.starts == 1)
+        #expect(await throughout(DictationConfig.doubleTapWindow * 2) { controller.phase == .listening })
+        controller.handle(.cancel)
+    }
+
+    /// A tap with no second press is discarded unseen once `doubleTapWindow` has passed; a hold that
+    /// follows a tap is a new recording.
+    @Test func aLoneTapIsDiscardedAndAHoldAfterItStartsAfresh() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        #expect(await throughout(DictationConfig.minimumHoldDuration) { controller.phase == .arming })
+        #expect(await eventually { controller.phase == .idle })
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.start)
+        #expect(capture.starts == 3)
+        #expect(await eventually { controller.phase == .listening })
+        controller.handle(.cancel)
+    }
+
     /// Escape during a hands-free dictation: nothing is sent or pasted.
     @Test func aHandsFreeDictationCancelledSendsNothing() async {
         let (controller, pastes) = makeController(capture: ToneCapture())

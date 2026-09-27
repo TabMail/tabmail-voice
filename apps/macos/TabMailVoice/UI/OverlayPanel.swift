@@ -373,19 +373,31 @@ private struct PillLayout: Layout {
 }
 
 /// A tip in a tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost
-/// a black background"): a dark rounded box with an arrow up at the pill, the tip's words around a
-/// keycap. Internal for tests.
+/// a black background", then a larger font over a few lines): a dark rounded box with an arrow up at
+/// the pill, the tip's words around a keycap. Internal for tests.
 struct TipTooltip: View {
     let tip: DictationTip
     /// The key held to dictate, which the double-tap tip names.
     let hotkey: DictationHotkey
 
-    /// The words before the keycap, the key, and the words after it.
-    var words: (before: String, key: String, after: String) {
+    /// One piece of a tip's line: words, or the key as a keycap.
+    enum Part: Equatable {
+        case words(String)
+        case key(String)
+    }
+
+    /// The tip's lines, a few words each, so the tooltip stays not much wider than the pill (owner,
+    /// 2026-09-26: "should be multi-line instead").
+    var lines: [[Part]] {
         switch tip {
-        case .switchMode: ("Press", "space", "to switch between dictation and agent mode")
-        case .doubleTap: ("Double-tap", hotkey.keycap, "to dictate without holding")
+        case .switchMode: [[.words("Press"), .key("space"), .words("to switch")], [.words("between dictation")], [.words("and agent mode")]]
+        case .doubleTap: [[.words("Double-tap"), .key(hotkey.keycap)], [.words("to dictate")], [.words("without holding")]]
         }
+    }
+
+    /// The key the tip names.
+    var keycap: String? {
+        lines.joined().lazy.compactMap { if case .key(let key) = $0 { key } else { nil } }.first
     }
 
     private static let shape = TooltipShape(
@@ -395,26 +407,25 @@ struct TipTooltip: View {
     )
 
     var body: some View {
-        HStack(spacing: DictationConfig.tipSpacing) {
-            Text(words.before)
-                .font(.system(size: DictationConfig.tipFontSize, weight: .medium))
-                .foregroundStyle(Color.white.opacity(DictationConfig.tipTextOpacity))
-            Text(words.key)
-                .font(.system(size: DictationConfig.tipKeyFontSize, weight: .medium))
-                .foregroundStyle(Color.white.opacity(DictationConfig.tipKeyTextOpacity))
-                .padding(.horizontal, DictationConfig.tipKeyPadding)
-                .frame(height: DictationConfig.tipKeyHeight)
-                .background {
-                    RoundedRectangle(cornerRadius: DictationConfig.tipKeyCornerRadius)
-                        .fill(Color.white.opacity(DictationConfig.tipKeyFillOpacity))
-                    RoundedRectangle(cornerRadius: DictationConfig.tipKeyCornerRadius)
-                        .strokeBorder(Color.white.opacity(DictationConfig.tipKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+        VStack(spacing: DictationConfig.tipLineSpacing) {
+            ForEach(lines.indices, id: \.self) { index in
+                HStack(spacing: DictationConfig.tipSpacing) {
+                    ForEach(lines[index].indices, id: \.self) { part in
+                        switch lines[index][part] {
+                        case .words(let words):
+                            Text(words)
+                                .font(.system(size: DictationConfig.tipFontSize, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(DictationConfig.tipTextOpacity))
+                        case .key(let key):
+                            keycap(key)
+                        }
+                    }
                 }
-            Text(words.after)
-                .font(.system(size: DictationConfig.tipFontSize, weight: .medium))
-                .foregroundStyle(Color.white.opacity(DictationConfig.tipTextOpacity))
+                .frame(height: DictationConfig.tipLineHeight)
+            }
         }
         .padding(.horizontal, DictationConfig.tipHorizontalPadding)
+        .padding(.vertical, DictationConfig.tipVerticalPadding)
         .frame(height: DictationConfig.tipHeight)
         .padding(.top, DictationConfig.tipArrowHeight)
         // Dark in light and dark mode alike, as macOS HUDs are.
@@ -424,6 +435,20 @@ struct TipTooltip: View {
         }
         .shadow(color: .black.opacity(DictationConfig.tipShadowOpacity), radius: DictationConfig.tipShadowRadius, y: DictationConfig.tipShadowOffsetY)
         .fixedSize()
+    }
+
+    private func keycap(_ key: String) -> some View {
+        Text(key)
+            .font(.system(size: DictationConfig.tipKeyFontSize, weight: .medium))
+            .foregroundStyle(Color.white.opacity(DictationConfig.tipKeyTextOpacity))
+            .padding(.horizontal, DictationConfig.tipKeyPadding)
+            .frame(height: DictationConfig.tipKeyHeight)
+            .background {
+                RoundedRectangle(cornerRadius: DictationConfig.tipKeyCornerRadius)
+                    .fill(Color.white.opacity(DictationConfig.tipKeyFillOpacity))
+                RoundedRectangle(cornerRadius: DictationConfig.tipKeyCornerRadius)
+                    .strokeBorder(Color.white.opacity(DictationConfig.tipKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+            }
     }
 
     /// A rounded box under an arrow centred on its top edge, one outline so the fill and the border
