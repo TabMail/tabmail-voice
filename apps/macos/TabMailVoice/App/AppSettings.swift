@@ -73,6 +73,7 @@ final class AppSettings {
     func dictation(for email: String?) -> DictationSettings {
         DictationSettings(
             hasConsented: hasConsented,
+            hotkey: hotkey,
             backendURL: backendURL(for: email),
             readsScreen: readsScreen,
             emailApp: EmailClient.resolve(
@@ -119,6 +120,8 @@ final class AppSettings {
 /// rest of it: a change in Settings meanwhile applies from the next dictation (owner, 2026-09-26).
 struct DictationSettings: Equatable, Sendable {
     var hasConsented: Bool
+    /// The key held to dictate, which the double-tap tip names.
+    var hotkey: DictationHotkey
     var backendURL: URL
     var readsScreen: Bool
     /// The email app mail and calendar requests go to (`EmailClient`); nil when there is none.

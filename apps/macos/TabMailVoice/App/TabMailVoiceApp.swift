@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             permissions: permissions,
             settings: { settings.dictation(for: account.email) },
             account: account,
+            tips: TipBook(defaults: .standard),
             thunderbird: ThunderbirdRelay(system: .live()),
             makeTranscriptionClient: { TranscriptionClient(baseURL: $0) },
             makeCompletionsClient: { CompletionsClient(baseURL: $0) }
@@ -71,7 +72,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.controller.handle(action)
         }
         hotkeyMonitor = monitor
-        controller.onPhaseChange = { overlay.update(for: $0) }
+        controller.onPhaseChange = { phase in
+            overlay.update(for: phase)
+            switch phase {
+            case .arming, .listening: break
+            // Finished, failed or cancelled without the hotkey: hands-free listening is over too.
+            case .idle, .transcribing, .running, .failed: monitor.dictationEnded()
+            }
+        }
         monitor.install()
         settings.onHotkeyChange = { monitor.setHotkey($0) }
         // The keyboard event tap can't be created until Accessibility is granted: install again

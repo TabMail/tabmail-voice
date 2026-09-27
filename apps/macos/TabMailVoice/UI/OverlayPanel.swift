@@ -8,8 +8,8 @@ import SwiftUI
 /// The dictation overlay, anchored at the text cursor: a swirl gathers there while the
 /// microphone warms up, then forms a waveform pill, with the dictation's language in a small circle
 /// left of the waveform. The pill is the surface for dictation status
-/// (and, later, agent responses). As it starts listening, a tooltip under it says Space switches agent
-/// mode on or off, and fades after a moment; in agent mode the tools' bubbles sit in a row above it, and the running tool's border circles. The
+/// (and, later, agent responses). While it listens, a tip may show in a tooltip under it and fade after a
+/// moment (`DictationTip`: Space switches agent mode, a double tap dictates without holding); in agent mode the tools' bubbles sit in a row above it, and the running tool's border circles. The
 /// panel never takes focus, so the target field keeps keyboard focus and receives the paste.
 @MainActor
 final class OverlayPanelController {
@@ -117,7 +117,7 @@ final class OverlayPanelController {
 
     /// Canvas origin that puts the pill's top edge just below the caret's line (the pill just
     /// above the line when there's no room below), centred horizontally on the caret and kept
-    /// inside the screen's visible area with the Space hint under it. The canvas is larger than the
+    /// inside the screen's visible area with a tip under it. The canvas is larger than the
     /// pill (room for the swirl); the one-line pill sits vertically centred in it and taller pills
     /// grow downward.
     static func overlayOrigin(anchor: CGRect, canvas: CGSize, pillHeight: CGFloat, visibleFrame: CGRect) -> CGPoint {
@@ -132,14 +132,14 @@ final class OverlayPanelController {
     }
 
     /// Whether the pill goes above the caret's line, there being no room below for the listening pill
-    /// and the Space hint under it.
+    /// and a tip under it.
     static func opensUpward(anchor: CGRect, pillHeight: CGFloat, visibleFrame: CGRect) -> Bool {
         anchor.minY - DictationConfig.overlayCaretGap - heightUnderPillTop(pillHeight) < visibleFrame.minY
     }
 
-    /// The listening pill and the Space hint under it, from the pill's top edge down.
+    /// The listening pill and a tip under it, from the pill's top edge down.
     private static func heightUnderPillTop(_ pillHeight: CGFloat) -> CGFloat {
-        max(pillHeight, DictationConfig.listeningPillHeight) + DictationConfig.modeHintFootprint
+        max(pillHeight, DictationConfig.listeningPillHeight) + DictationConfig.tipFootprint
     }
 
     /// Centres of agent mode's tool bubbles, of `sizes`, above a pill at `pill` (top-left origin, as
@@ -155,12 +155,12 @@ final class OverlayPanelController {
         }
     }
 
-    /// Centre of the Space hint, of `size`: a tooltip centred `modeHintGap` under a pill at `pill`
+    /// Centre of a tip, of `size`: a tooltip centred `tipGap` under a pill at `pill`
     /// (owner, 2026-09-26: "a tooltip that appears below the middle and disappears after a little").
-    /// It fades after `modeHintDisplayDuration`, so even an overlay opened above the caret's line
+    /// It fades after its display duration, so even an overlay opened above the caret's line
     /// covers that line only briefly.
     nonisolated static func hintCentre(under pill: CGRect, size: CGSize) -> CGPoint {
-        CGPoint(x: pill.midX, y: pill.maxY + DictationConfig.modeHintGap + size.height / 2)
+        CGPoint(x: pill.midX, y: pill.maxY + DictationConfig.tipGap + size.height / 2)
     }
 }
 
@@ -170,8 +170,6 @@ struct OverlayView: View {
     /// After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring
     /// how the overlay appeared.
     @State private var dispersing = false
-    /// The Space hint has had its `modeHintDisplayDuration` this hold.
-    @State private var hintShown = false
 
     enum Mode: Equatable {
         case hidden, swirl, listening, transcribing, running(AgentTool), message(String)
@@ -187,8 +185,8 @@ struct OverlayView: View {
         }
     }
 
-    /// The Space hint shows as the pill starts listening, once a hold.
-    private var showsHint: Bool { mode == .listening && !hintShown }
+    /// The controller's tip, while the pill listens.
+    private var tip: DictationTip? { mode == .listening ? controller.tip : nil }
 
     /// The tool bubbles show while agent mode listens and works; an error message stands alone.
     private var showsTools: Bool {
@@ -223,9 +221,9 @@ struct OverlayView: View {
                 PillLayout {
                     Pill(mode: mode, level: controller.level, language: controller.language)
                         .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
-                    if showsHint {
-                        ModeHint(mode: controller.mode)
-                            .layoutValue(key: IsModeHint.self, value: true)
+                    if let tip {
+                        TipTooltip(tip: tip, hotkey: controller.settings.hotkey)
+                            .layoutValue(key: IsTip.self, value: true)
                             .transition(.opacity)
                     }
                     if showsTools {
@@ -241,16 +239,9 @@ struct OverlayView: View {
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: showsTools)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: controller.tools)
         .animation(.spring(response: DictationConfig.pillSpringResponse, dampingFraction: DictationConfig.pillSpringDamping), value: controller.mode)
-        .animation(.easeOut(duration: DictationConfig.pillSpringResponse), value: hintShown)
+        .animation(.easeOut(duration: DictationConfig.pillSpringResponse), value: tip)
         .onChange(of: mode) { old, new in
             dispersing = new == .hidden && old != .hidden
-            if new == .hidden { hintShown = false }
-        }
-        .task(id: showsHint) {
-            guard showsHint else { return }
-            try? await Task.sleep(for: DictationConfig.modeHintDisplayDuration)
-            guard !Task.isCancelled else { return }
-            hintShown = true
         }
     }
 
@@ -345,14 +336,14 @@ struct LanguageBadge: View {
     }
 }
 
-/// Marks the Space hint among `PillLayout`'s subviews.
-private struct IsModeHint: LayoutValueKey {
+/// Marks the tip among `PillLayout`'s subviews.
+private struct IsTip: LayoutValueKey {
     static let defaultValue = false
 }
 
 /// Places the pill with its top edge where a one-line pill's would be when centred in the canvas, so
 /// taller pills grow downward, away from the caret line; agent mode's tool bubbles go in a row above
-/// it, and the Space hint under it (`OverlayPanelController.bubbleCentres`, `hintCentre`), following
+/// it, and a tip under it (`OverlayPanelController.bubbleCentres`, `hintCentre`), following
 /// it as it grows or shrinks to a circle.
 private struct PillLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -368,60 +359,70 @@ private struct PillLayout: Layout {
         )
         pill.place(at: frame.origin, anchor: .topLeading, proposal: .unspecified)
         let others = subviews.dropFirst()
-        let bubbles = others.filter { !$0[IsModeHint.self] }
+        let bubbles = others.filter { !$0[IsTip.self] }
         let sizes = bubbles.map { $0.sizeThatFits(.unspecified) }
         let centres = OverlayPanelController.bubbleCentres(above: frame, sizes: sizes)
         for (bubble, centre) in zip(bubbles, centres) {
             bubble.place(at: centre, anchor: .center, proposal: .unspecified)
         }
-        for hint in others where hint[IsModeHint.self] {
+        for hint in others where hint[IsTip.self] {
             let centre = OverlayPanelController.hintCentre(under: frame, size: hint.sizeThatFits(.unspecified))
             hint.place(at: centre, anchor: .center, proposal: .unspecified)
         }
     }
 }
 
-/// A tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost a black
-/// background"): a dark rounded box with an arrow up at the pill, a "space" keycap and what it
-/// switches to. Internal for tests.
-struct ModeHint: View {
-    let mode: DictationMode
+/// A tip in a tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost
+/// a black background"): a dark rounded box with an arrow up at the pill, the tip's words around a
+/// keycap. Internal for tests.
+struct TipTooltip: View {
+    let tip: DictationTip
+    /// The key held to dictate, which the double-tap tip names.
+    let hotkey: DictationHotkey
 
-    /// What Space switches to.
-    var action: String { mode == .agent ? "exit agent" : "agent mode" }
+    /// The words before the keycap, the key, and the words after it.
+    var words: (before: String, key: String, after: String) {
+        switch tip {
+        case .switchMode: ("Press", "space", "to switch between dictation and agent mode")
+        case .doubleTap: ("Double-tap", hotkey.keycap, "to dictate without holding")
+        }
+    }
 
     private static let shape = TooltipShape(
-        arrowWidth: DictationConfig.modeHintArrowWidth,
-        arrowHeight: DictationConfig.modeHintArrowHeight,
-        cornerRadius: DictationConfig.modeHintCornerRadius
+        arrowWidth: DictationConfig.tipArrowWidth,
+        arrowHeight: DictationConfig.tipArrowHeight,
+        cornerRadius: DictationConfig.tipCornerRadius
     )
 
     var body: some View {
-        HStack(spacing: DictationConfig.modeHintSpacing) {
-            Text("space")
-                .font(.system(size: DictationConfig.modeHintKeyFontSize, weight: .medium))
-                .foregroundStyle(Color.white.opacity(DictationConfig.modeHintKeyTextOpacity))
-                .padding(.horizontal, DictationConfig.modeHintKeyPadding)
-                .frame(height: DictationConfig.modeHintKeyHeight)
+        HStack(spacing: DictationConfig.tipSpacing) {
+            Text(words.before)
+                .font(.system(size: DictationConfig.tipFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.tipTextOpacity))
+            Text(words.key)
+                .font(.system(size: DictationConfig.tipKeyFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.tipKeyTextOpacity))
+                .padding(.horizontal, DictationConfig.tipKeyPadding)
+                .frame(height: DictationConfig.tipKeyHeight)
                 .background {
-                    RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
-                        .fill(Color.white.opacity(DictationConfig.modeHintKeyFillOpacity))
-                    RoundedRectangle(cornerRadius: DictationConfig.modeHintKeyCornerRadius)
-                        .strokeBorder(Color.white.opacity(DictationConfig.modeHintKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+                    RoundedRectangle(cornerRadius: DictationConfig.tipKeyCornerRadius)
+                        .fill(Color.white.opacity(DictationConfig.tipKeyFillOpacity))
+                    RoundedRectangle(cornerRadius: DictationConfig.tipKeyCornerRadius)
+                        .strokeBorder(Color.white.opacity(DictationConfig.tipKeyBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
                 }
-            Text(action)
-                .font(.system(size: DictationConfig.modeHintFontSize, weight: .medium))
-                .foregroundStyle(Color.white.opacity(DictationConfig.modeHintTextOpacity))
+            Text(words.after)
+                .font(.system(size: DictationConfig.tipFontSize, weight: .medium))
+                .foregroundStyle(Color.white.opacity(DictationConfig.tipTextOpacity))
         }
-        .padding(.horizontal, DictationConfig.modeHintHorizontalPadding)
-        .frame(height: DictationConfig.modeHintHeight)
-        .padding(.top, DictationConfig.modeHintArrowHeight)
+        .padding(.horizontal, DictationConfig.tipHorizontalPadding)
+        .frame(height: DictationConfig.tipHeight)
+        .padding(.top, DictationConfig.tipArrowHeight)
         // Dark in light and dark mode alike, as macOS HUDs are.
-        .background(Color(white: DictationConfig.modeHintFillWhite).opacity(DictationConfig.modeHintFillOpacity), in: Self.shape)
+        .background(Color(white: DictationConfig.tipFillWhite).opacity(DictationConfig.tipFillOpacity), in: Self.shape)
         .overlay {
-            Self.shape.stroke(Color.white.opacity(DictationConfig.modeHintBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+            Self.shape.stroke(Color.white.opacity(DictationConfig.tipBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
         }
-        .shadow(color: .black.opacity(DictationConfig.modeHintShadowOpacity), radius: DictationConfig.modeHintShadowRadius, y: DictationConfig.modeHintShadowOffsetY)
+        .shadow(color: .black.opacity(DictationConfig.tipShadowOpacity), radius: DictationConfig.tipShadowRadius, y: DictationConfig.tipShadowOffsetY)
         .fixedSize()
     }
 

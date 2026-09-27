@@ -15,6 +15,9 @@ struct HotkeyMonitorTests {
     private let space = UInt16(kVK_Space)
     private let letterA = UInt16(kVK_ANSI_A)
     private let rightOption = UInt16(kVK_RightOption)
+    private let escape = UInt16(kVK_Escape)
+    /// Event times: a second apart, so every press is a hold and none makes a double tap.
+    private let clock = Ticker()
 
     /// A monitor for `hotkey` and the actions it has dispatched so far.
     private func makeMonitor(_ hotkey: DictationHotkey = .rightOption) -> (HotkeyMonitor, Actions) {
@@ -29,11 +32,11 @@ struct HotkeyMonitorTests {
     }
 
     private func key(_ monitor: HotkeyMonitor, _ type: CGEventType, _ keyCode: UInt16, isRepeat: Bool = false) -> Bool {
-        monitor.handle(type, keyCode: keyCode, flags: [], isRepeat: isRepeat)
+        monitor.handle(type, keyCode: keyCode, flags: [], isRepeat: isRepeat, at: clock.tick())
     }
 
-    private func hotkey(_ monitor: HotkeyMonitor, down: Bool, keyCode: UInt16? = nil, flag: CGEventFlags = .maskAlternate) -> Bool {
-        monitor.handle(.flagsChanged, keyCode: keyCode ?? rightOption, flags: down ? flag : [], isRepeat: false)
+    private func hotkey(_ monitor: HotkeyMonitor, down: Bool, keyCode: UInt16? = nil, flag: CGEventFlags = .maskAlternate, at time: TimeInterval? = nil) -> Bool {
+        monitor.handle(.flagsChanged, keyCode: keyCode ?? rightOption, flags: down ? flag : [], isRepeat: false, at: time ?? clock.tick())
     }
 
     @Test func spaceDuringAHoldIsKeptFromTheAppAndSwitchesTheMode() async {
@@ -112,7 +115,7 @@ struct HotkeyMonitorTests {
     func aDisabledTapPassesTheEventOn(type: CGEventType) async {
         let (monitor, actions) = makeMonitor()
 
-        #expect(monitor.handle(type, keyCode: 0, flags: [], isRepeat: false))
+        #expect(monitor.handle(type, keyCode: 0, flags: [], isRepeat: false, at: clock.tick()))
         #expect(await dispatched(actions).isEmpty)
     }
 
@@ -126,7 +129,54 @@ struct HotkeyMonitorTests {
 
         #expect(key(monitor, .keyUp, space))
     }
+
+    /// Tapped twice: listening hands-free, the app loses only Space and Escape (their key-ups too);
+    /// Escape cancels, and then both reach the app again.
+    @Test func handsFreeKeepsOnlySpaceAndEscapeFromTheApp() async {
+        let (monitor, actions) = makeMonitor()
+        for (down, time) in [(true, 0.0), (false, 0.1), (true, 0.4), (false, 0.45)] {
+            #expect(hotkey(monitor, down: down, at: time))
+        }
+
+        #expect(key(monitor, .keyDown, letterA))
+        #expect(key(monitor, .keyUp, letterA))
+        #expect(!key(monitor, .keyDown, space))
+        #expect(!key(monitor, .keyUp, space))
+        #expect(!key(monitor, .keyDown, escape))
+        #expect(!key(monitor, .keyUp, escape))
+        #expect(key(monitor, .keyDown, space))
+        #expect(key(monitor, .keyDown, escape))
+
+        #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .toggleMode, .cancel])
+    }
+
+    /// The dictation ended without the hotkey: Space reaches the app, and the next press starts a hold.
+    @Test func aDictationEndedGivesSpaceBackToTheApp() async {
+        let (monitor, actions) = makeMonitor()
+        for (down, time) in [(true, 0.0), (false, 0.1), (true, 0.4), (false, 0.45)] {
+            #expect(hotkey(monitor, down: down, at: time))
+        }
+        monitor.dictationEnded()
+
+        #expect(key(monitor, .keyDown, space))
+        #expect(hotkey(monitor, down: true))
+        #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .start])
+    }
+
+    /// Changing the hotkey while listening hands-free cancels the dictation, as during a hold.
+    @Test func changingTheHotkeyCancelsHandsFreeListening() async {
+        let (monitor, actions) = makeMonitor()
+        for (down, time) in [(true, 0.0), (false, 0.1), (true, 0.4), (false, 0.45)] {
+            #expect(hotkey(monitor, down: down, at: time))
+        }
+        #expect(await dispatched(actions) == [.start, .finish, .startHandsFree])
+        monitor.setHotkey(.function)
+
+        #expect(key(monitor, .keyDown, space))
+        #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .cancel])
+    }
 }
+
 
 /// What the monitor dispatched, in order.
 @MainActor

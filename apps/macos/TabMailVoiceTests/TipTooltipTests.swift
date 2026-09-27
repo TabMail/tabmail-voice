@@ -8,33 +8,47 @@ import Testing
 import Vision
 @testable import TabMailVoice
 
-/// The Space hint as drawn: a dark tooltip, in light and dark mode alike, with an arrow up at the
-/// pill, saying what Space switches to.
+/// The tips as drawn: a dark tooltip, in light and dark mode alike, with an arrow up at the pill,
+/// saying what a key does.
 @MainActor
-struct ModeHintTests {
+struct TipTooltipTests {
     private let scale: CGFloat = 2
+    private nonisolated static let tips: [(DictationTip, DictationHotkey)] = [(.switchMode, .rightOption), (.doubleTap, .function), (.doubleTap, .rightOption)]
 
-    /// Read off the drawn hint, on device: the keycap, then what Space switches to.
-    @Test(arguments: zip([DictationMode.dictation, .agent], ["agent mode", "exit agent"]))
-    func saysWhatSpaceSwitchesTo(mode: DictationMode, action: String) throws {
-        let renderer = ImageRenderer(content: ModeHint(mode: mode))
+    /// Read off the drawn tip, on device: its words around the keycap. (The right ⌥ keycap's symbol
+    /// is not text Vision reads.)
+    @Test(arguments: zip(
+        [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function)],
+        ["press space to switch between dictation and agent mode", "double-tap fn to dictate without holding"]
+    ))
+    func saysWhatTheKeyDoes(tip: (DictationTip, DictationHotkey), words: String) throws {
+        let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1))
         renderer.scale = 2 * scale
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: try #require(renderer.cgImage)).perform([request])
-        #expect((request.results ?? []).compactMap { $0.topCandidates(1).first?.string } == ["space", action])
+        let read = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        #expect(read.joined(separator: " ").lowercased() == words, "read \(read)")
     }
 
-    /// The whole overlay as a listening hold draws it: the dark hint under the light pill.
+    /// The double-tap tip names the key the user holds.
+    @Test func theDoubleTapTipNamesTheHotkey() {
+        #expect(TipTooltip(tip: .doubleTap, hotkey: .rightOption).words.key == "right ⌥")
+        #expect(TipTooltip(tip: .doubleTap, hotkey: .function).words.key == "fn")
+        #expect(TipTooltip(tip: .switchMode, hotkey: .function).words.key == "space")
+    }
+
+    /// The whole overlay as a listening hold draws it: the dark Space tip under the light pill.
     @Test func showsUnderTheListeningPill() async throws {
         let transport = StubTransport()
         let thunderbird = FakeThunderbird()
         thunderbird.installed = false
         let controller = DictationController(
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            settings: { DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
+            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
             account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            tips: TipBook(defaults: InMemoryDefaults()),
             inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
             thunderbird: thunderbird.relay(),
             capture: ToneCapture(),
@@ -64,24 +78,27 @@ struct ModeHintTests {
         }
         try #require(!darkRows.isEmpty && !lightRows.isEmpty)
         let middle = { (rows: [Int]) in Double(rows.reduce(0, +)) / Double(rows.count) }
-        #expect(middle(darkRows) > middle(lightRows), "the hint is not under the pill")
+        #expect(controller.tip == .switchMode)
+        #expect(middle(darkRows) > middle(lightRows), "the tip is not under the pill")
         #expect(transport.requests.isEmpty)
     }
 
-    /// As tall as its arrow and box, the room `OverlayPanelController.opensUpward` leaves for it.
-    @Test(arguments: [DictationMode.dictation, .agent])
-    func takesTheRoomLeftForIt(mode: DictationMode) {
-        let size = NSHostingView(rootView: ModeHint(mode: mode)).fittingSize
-        #expect(size.height == DictationConfig.modeHintArrowHeight + DictationConfig.modeHintHeight)
+    /// As tall as its arrow and box, the room `OverlayPanelController.opensUpward` leaves for it, and
+    /// narrower than the overlay it is drawn in.
+    @Test(arguments: tips)
+    func takesTheRoomLeftForIt(tip: (DictationTip, DictationHotkey)) {
+        let size = NSHostingView(rootView: TipTooltip(tip: tip.0, hotkey: tip.1)).fittingSize
+        #expect(size.height == DictationConfig.tipArrowHeight + DictationConfig.tipHeight)
         #expect(size.width > size.height)
+        #expect(size.width < DictationConfig.overlayCanvasSize.width)
     }
 
-    @Test(arguments: [DictationMode.dictation, .agent], [ColorScheme.light, .dark])
-    func isADarkTooltipWithAnArrowUpAtThePill(mode: DictationMode, scheme: ColorScheme) throws {
-        let hint = try render(mode, scheme)
+    @Test(arguments: tips, [ColorScheme.light, .dark])
+    func isADarkTooltipWithAnArrowUpAtThePill(tip: (DictationTip, DictationHotkey), scheme: ColorScheme) throws {
+        let hint = try render(tip, scheme)
         let width = CGFloat(hint.pixelsWide) / scale
-        let arrow = DictationConfig.modeHintArrowHeight
-        let boxMiddle = arrow + DictationConfig.modeHintHeight / 2
+        let arrow = DictationConfig.tipArrowHeight
+        let boxMiddle = arrow + DictationConfig.tipHeight / 2
 
         // The box, left of the keycap, and the arrow's tip at the top centre: dark and opaque.
         for (x, y) in [(3, boxMiddle), (width - 3, boxMiddle), (width / 2, arrow - 1)] {
@@ -89,19 +106,19 @@ struct ModeHintTests {
             #expect(white < 0.3, "not dark at \(x), \(y)")
             #expect(alpha > 0.8, "not opaque at \(x), \(y)")
         }
-        // The keycap's "space", and the action right of it: light text on the dark box.
-        let key = stride(from: 10, to: width * 0.4, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
-        #expect((key.max() ?? 0) > 0.6, "no light text in the keycap")
-        let action = stride(from: width * 0.6, to: width - 8, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
-        #expect((action.max() ?? 0) > 0.6, "no light text in the action")
+        // The words: light text on the dark box, in its left and right parts.
+        let left = stride(from: 10, to: width * 0.4, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
+        #expect((left.max() ?? 0) > 0.6, "no light text on the left")
+        let right = stride(from: width * 0.6, to: width - 8, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
+        #expect((right.max() ?? 0) > 0.6, "no light text on the right")
         // Beside the arrow, above the box: nothing drawn.
         for x in [width / 4, width * 3 / 4] {
             #expect(pixel(hint, x, 1).alpha < 0.5, "drawn beside the arrow at \(x)")
         }
     }
 
-    private func render(_ mode: DictationMode, _ scheme: ColorScheme) throws -> NSBitmapImageRep {
-        let renderer = ImageRenderer(content: ModeHint(mode: mode).environment(\.colorScheme, scheme))
+    private func render(_ tip: (DictationTip, DictationHotkey), _ scheme: ColorScheme) throws -> NSBitmapImageRep {
+        let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1).environment(\.colorScheme, scheme))
         renderer.scale = scale
         return NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
     }

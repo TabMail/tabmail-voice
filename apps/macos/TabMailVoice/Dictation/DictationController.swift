@@ -9,7 +9,9 @@ import Observation
 /// Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
 /// transcript with the screen context → paste. In agent mode (Space pressed during the hold) the
 /// transcript is a request instead: the selection picks Edit or Compose, the agent may send it to
-/// TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there.
+/// TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there. A double tap of
+/// the hotkey starts a hands-free dictation instead of a hold. While the pill listens, a tip may show
+/// under it (`DictationTip`).
 @MainActor
 @Observable
 final class DictationController {
@@ -46,6 +48,8 @@ final class DictationController {
     /// The language this dictation is transcribed in: the keyboard's at key-down, read once so the
     /// overlay's badge and the request always agree (ADR-DESK-019). Nil: none sent, no badge.
     private(set) var language: String?
+    /// The tip shown under the listening pill, if any.
+    private(set) var tip: DictationTip?
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
     /// Starts reading the screen context when a dictation starts (key-down) with screen reading on,
@@ -54,6 +58,10 @@ final class DictationController {
     /// How long the cleanup waits for that read once the transcript is ready (agent mode waits for
     /// all of it). Internal for tests.
     @ObservationIgnored var contextWait = DictationConfig.contextWait
+    /// How long a hold goes on before the double-tap tip is due, and how long a tip shows. Internal
+    /// for tests.
+    @ObservationIgnored var doubleTapTipHoldDuration = DictationConfig.doubleTapTipHoldDuration
+    @ObservationIgnored var tipDisplayDuration: (DictationTip) -> Duration = { $0.displayDuration }
 
     @ObservationIgnored private let permissions: PermissionsModel
     /// Reads the settings, once per dictation.
@@ -69,12 +77,13 @@ final class DictationController {
     /// The active keyboard input source's language (`KeyboardLanguage`).
     @ObservationIgnored private let keyboardLanguage: @MainActor () -> String?
     @ObservationIgnored private let clock = ContinuousClock()
+    @ObservationIgnored private let tips: TipBook
 
     // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var startedAt: ContinuousClock.Instant?
     /// The settings this dictation started with; it reads no others.
-    @ObservationIgnored private var settings: DictationSettings
+    @ObservationIgnored private(set) var settings: DictationSettings
     /// The app in front at key-down, where agent mode's text belongs.
     @ObservationIgnored private var targetApp: pid_t?
     @ObservationIgnored private var recorder: AudioRecorder?
@@ -86,11 +95,16 @@ final class DictationController {
     @ObservationIgnored private var maxDurationTask: Task<Void, Never>?
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
     @ObservationIgnored private var failureResetTask: Task<Void, Never>?
+    /// Tips to show this dictation, in turn, once the pill listens and hears (`showDueTip`).
+    @ObservationIgnored private var dueTips: [DictationTip] = []
+    @ObservationIgnored private var tipTask: Task<Void, Never>?
+    @ObservationIgnored private var longHoldTask: Task<Void, Never>?
 
     init(
         permissions: PermissionsModel,
         settings: @escaping @MainActor () -> DictationSettings,
         account: AccountModel,
+        tips: TipBook,
         inserter: TextInserter = TextInserter(),
         thunderbird: ThunderbirdRelay,
         capture: any AudioCapturing = MicrophoneCapture(),
@@ -103,6 +117,7 @@ final class DictationController {
         self.readSettings = settings
         self.settings = settings()
         self.account = account
+        self.tips = tips
         self.inserter = inserter
         self.thunderbird = thunderbird
         self.capture = capture
@@ -115,6 +130,7 @@ final class DictationController {
     func handle(_ action: PushToTalkGesture.Action) {
         switch action {
         case .start: start()
+        case .startHandsFree: start(handsFree: true)
         case .finish: finish()
         case .cancel: cancel()
         case .toggleMode: toggleMode()
@@ -132,8 +148,9 @@ final class DictationController {
         if phase == .listening { finish() } else { start() }
     }
 
-    /// Starts a dictation; `toggleMode()` makes it an agent request.
-    func start() {
+    /// Starts a dictation; `toggleMode()` makes it an agent request. A hands-free one (a double tap) shows
+    /// at once, and goes on until `finish()` or `cancel()`.
+    func start(handsFree: Bool = false) {
         switch phase {
         case .idle, .failed: break
         case .arming, .listening, .transcribing, .running: return
@@ -173,6 +190,7 @@ final class DictationController {
         targetApp = frontmostApp()
         language = keyboardLanguage()
         phase = .arming
+        dueTips = [.switchMode]
         contextTask = settings.readsScreen ? captureContext?() : nil
         if let read = contextTask {
             Task { [weak self] in
@@ -201,10 +219,25 @@ final class DictationController {
                 Task { @MainActor [weak self] in self?.microphoneFailed(error, generation: current) }
             }
         )
-        revealTask = Task { [weak self] in
-            try? await Task.sleep(for: DictationConfig.minimumHoldDuration)
-            guard !Task.isCancelled, let self, self.generation == current, self.phase == .arming else { return }
-            self.phase = .listening
+        if handsFree {
+            // A double tap is deliberate: no hold to wait for.
+            tips.markLearned(.doubleTap)
+            phase = .listening
+        } else {
+            revealTask = Task { [weak self] in
+                try? await Task.sleep(for: DictationConfig.minimumHoldDuration)
+                guard !Task.isCancelled, let self, self.generation == current, self.phase == .arming else { return }
+                self.phase = .listening
+                self.showDueTip()
+            }
+            // A long hold: this user might rather not hold the key.
+            let longHold = doubleTapTipHoldDuration
+            longHoldTask = Task { [weak self] in
+                try? await Task.sleep(for: longHold)
+                guard !Task.isCancelled, let self, self.generation == current else { return }
+                self.dueTips.append(.doubleTap)
+                self.showDueTip()
+            }
         }
 
         // Past the upload cap, stop and send what was said rather than silently dropping audio.
@@ -214,7 +247,7 @@ final class DictationController {
             Log.debug("DictationController: max duration reached; finishing")
             self.finish()
         }
-        Log.debug("DictationController: arming (generation \(current), language \(language ?? "none"))")
+        Log.debug("DictationController: \(handsFree ? "listening hands-free" : "arming") (generation \(current), language \(language ?? "none"))")
     }
 
     /// Space during the hold: switches between dictation and agent mode.
@@ -224,6 +257,8 @@ final class DictationController {
         case .idle, .transcribing, .running, .failed: return
         }
         mode = mode.toggled
+        tips.markLearned(.switchMode)
+        if tip == .switchMode { hideTip() }
         emailAppURL = mode == .agent ? thunderbird.applicationURL(for: settings.emailApp) : nil
         updateTools()
         Log.debug("DictationController: switched to \(mode)")
@@ -247,6 +282,7 @@ final class DictationController {
         }
         guard recorder != nil else { return }
         maxDurationTask?.cancel()
+        endTips()
 
         // Keep the microphone open briefly after release so the last word isn't clipped.
         let current = generation
@@ -419,7 +455,10 @@ final class DictationController {
         case .arming, .listening:
             // The device delivers digital silence while it starts; the waveform appears with the
             // first real signal.
-            if !isHearing, decibels > DictationConfig.silenceDecibels { isHearing = true }
+            if !isHearing, decibels > DictationConfig.silenceDecibels {
+                isHearing = true
+                showDueTip()
+            }
             guard isHearing else { return }
             let newLevel = envelope.level(forDecibels: decibels)
             let rate = newLevel > level ? DictationConfig.levelAttack : DictationConfig.levelRelease
@@ -428,6 +467,42 @@ final class DictationController {
         case .idle, .transcribing, .running, .failed:
             return
         }
+    }
+
+    /// Shows the next due tip the user may still see, while the pill listens and hears (the overlay
+    /// shows no tip over the warm-up swirl), for its display duration.
+    private func showDueTip() {
+        guard phase == .listening, isHearing, tip == nil else { return }
+        while !dueTips.isEmpty {
+            let next = dueTips.removeFirst()
+            guard tips.isEligible(next) else { continue }
+            tip = next
+            tips.recordDisplay(next)
+            let current = generation
+            let duration = tipDisplayDuration(next)
+            tipTask = Task { [weak self] in
+                try? await Task.sleep(for: duration)
+                guard !Task.isCancelled, let self, self.generation == current, self.tip == next else { return }
+                self.hideTip()
+            }
+            return
+        }
+    }
+
+    private func hideTip() {
+        tipTask?.cancel()
+        tipTask = nil
+        tip = nil
+        showDueTip()
+    }
+
+    private func endTips() {
+        dueTips = []
+        longHoldTask?.cancel()
+        longHoldTask = nil
+        tipTask?.cancel()
+        tipTask = nil
+        tip = nil
     }
 
     private func discard() {
@@ -446,6 +521,7 @@ final class DictationController {
         isHearing = false
         maxDurationTask?.cancel()
         maxDurationTask = nil
+        endTips()
         transcriptionTask = nil
         startedAt = nil
         level = 0

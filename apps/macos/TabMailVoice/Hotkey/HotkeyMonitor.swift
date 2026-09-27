@@ -5,7 +5,8 @@
 import AppKit
 
 /// Watches the keyboard system-wide and feeds `PushToTalkGesture`, through an event tap so the Space
-/// that switches modes during a hold can be kept from the app in front (a key monitor only observes).
+/// that switches modes during a hold, and hands-free listening's Escape, can be kept from the app in
+/// front (a key monitor only observes).
 ///
 /// The tap can only be created once the app is trusted for Accessibility, so `install()` must be
 /// called again after the grant (see `PermissionsModel`).
@@ -27,8 +28,13 @@ final class HotkeyMonitor {
 
     func setHotkey(_ hotkey: DictationHotkey) {
         guard hotkey != gesture.hotkey else { return }
-        if gesture.isHolding { onAction(.cancel) }
+        if gesture.isActive { onAction(.cancel) }
         gesture = PushToTalkGesture(hotkey: hotkey)
+    }
+
+    /// The dictation ended without the hotkey (length cap, failure, the menu): stop listening hands-free.
+    func dictationEnded() {
+        gesture.dictationEnded()
     }
 
     func install() {
@@ -61,8 +67,9 @@ final class HotkeyMonitor {
         swallowedKeyUps.removeAll()
     }
 
-    /// Feeds one event to the gesture; whether it may go on to the app in front. Internal for tests.
-    func handle(_ type: CGEventType, keyCode: UInt16, flags: CGEventFlags, isRepeat: Bool) -> Bool {
+    /// Feeds one event, at `time` (seconds of system uptime), to the gesture; whether it may go on to
+    /// the app in front. Internal for tests.
+    func handle(_ type: CGEventType, keyCode: UInt16, flags: CGEventFlags, isRepeat: Bool, at time: TimeInterval) -> Bool {
         var passes = true
         let action: PushToTalkGesture.Action?
         switch type {
@@ -72,7 +79,7 @@ final class HotkeyMonitor {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             action = nil
         case .flagsChanged:
-            action = gesture.modifierChanged(keyCode: keyCode, isDown: isHotkeyFlagSet(flags))
+            action = gesture.modifierChanged(keyCode: keyCode, isDown: isHotkeyFlagSet(flags), at: time)
         case .keyDown:
             if gesture.owns(keyCode: keyCode) {
                 swallowedKeyUps.insert(keyCode)
@@ -109,6 +116,7 @@ private func hotkeyTapCallback(
     let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
     let flags = event.flags
     let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-    let passes = MainActor.assumeIsolated { monitor.handle(type, keyCode: keyCode, flags: flags, isRepeat: isRepeat) }
+    let time = ProcessInfo.processInfo.systemUptime
+    let passes = MainActor.assumeIsolated { monitor.handle(type, keyCode: keyCode, flags: flags, isRepeat: isRepeat, at: time) }
     return passes ? Unmanaged.passUnretained(event) : nil
 }
