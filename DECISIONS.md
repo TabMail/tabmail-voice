@@ -809,7 +809,8 @@ switching the setting for the user, the owner chose the second ("option 2").
   explicitly; it reads the same.
 - The unit-test host never creates `GlobeKeyAction` (it is made after the XCTest guard), so a test
   run can never restore a setting the running app holds. (No test pins that placement: the SwiftUI
-  delegate adaptor keeps the `AppDelegate` out of the test's reach.) Tests use a stand-in for the setting and only read the real one.
+  delegate adaptor keeps the `AppDelegate` out of the test's reach, and so is the launch call to
+  `connectHotkey`, like all wiring after the guard; the owner's use of fn exercises it.) Tests use a stand-in for the setting and only read the real one.
 - Numbered 031: ADR-DESK-022 to 030 are taken by agent-tool branches not yet merged.
 - Whether fn still reaches the event tap with Do Nothing selected is reported both ways online; the
   owner's manual test on this change settles it for the hotkey.

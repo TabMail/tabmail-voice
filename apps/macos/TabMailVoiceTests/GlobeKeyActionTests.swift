@@ -24,6 +24,9 @@ struct GlobeKeyActionTests {
         }
     }
 
+    /// `AppleFnUsageType`'s Do Nothing, as the system defines it: not the app's own constant, so a
+    /// wrong one fails here.
+    private let doNothing: Int32 = 0
     /// `AppleFnUsageType`'s Change Input Source, a choice other than Do Nothing.
     private let changeInputSource: Int32 = 1
     /// Show Emoji & Symbols, another.
@@ -35,9 +38,9 @@ struct GlobeKeyActionTests {
         let globe = GlobeKeyAction(system: setting.system, defaults: defaults)
 
         globe.hotkeyIs(.function)
-        #expect(setting.value == GlobeKeyAction.doNothing)
+        #expect(setting.value == doNothing)
         globe.hotkeyIs(.function)
-        #expect(setting.updates == [GlobeKeyAction.doNothing])
+        #expect(setting.updates == [doNothing])
 
         globe.hotkeyIs(.rightOption)
         #expect(setting.value == changeInputSource)
@@ -52,11 +55,11 @@ struct GlobeKeyActionTests {
         globe.restore()
 
         #expect(setting.value == showEmoji)
-        #expect(setting.updates == [GlobeKeyAction.doNothing, showEmoji])
+        #expect(setting.updates == [doNothing, showEmoji])
     }
 
     /// Right Option as the hotkey, or a user who chose Do Nothing themselves: the setting is never touched.
-    @Test(arguments: [(DictationHotkey.rightOption, Int32(1)), (.function, GlobeKeyAction.doNothing)])
+    @Test(arguments: [(DictationHotkey.rightOption, Int32(1)), (.function, Int32(0))])
     func leavesTheSettingAloneWhenThereIsNothingToTurnOff(hotkey: DictationHotkey, value: Int32) {
         let setting = Setting(value)
         let globe = GlobeKeyAction(system: setting.system, defaults: defaults)
@@ -89,7 +92,7 @@ struct GlobeKeyActionTests {
         GlobeKeyAction(system: setting.system, defaults: defaults).hotkeyIs(.function)
 
         GlobeKeyAction(system: setting.system, defaults: defaults).hotkeyIs(.function)
-        #expect(setting.value == GlobeKeyAction.doNothing)
+        #expect(setting.value == doNothing)
 
         GlobeKeyAction(system: setting.system, defaults: defaults).hotkeyIs(.rightOption)
         #expect(setting.value == changeInputSource)
@@ -104,7 +107,7 @@ struct GlobeKeyActionTests {
 
         let globe = GlobeKeyAction(system: setting.system, defaults: defaults)
         globe.hotkeyIs(.function)
-        #expect(setting.value == GlobeKeyAction.doNothing)
+        #expect(setting.value == doNothing)
         globe.restore()
 
         #expect(setting.value == showEmoji)
@@ -153,7 +156,7 @@ struct GlobeKeyActionTests {
         let monitor = HotkeyMonitor(hotkey: settings.hotkey) { _ in }
         let notifications = NotificationCenter()
         AppDelegate.connectHotkey(settings, monitor: monitor, globeKey: GlobeKeyAction(system: setting.system, defaults: defaults), notifications: notifications)
-        #expect(setting.value == GlobeKeyAction.doNothing)
+        #expect(setting.value == doNothing)
 
         settings.hotkey = .rightOption
         #expect(monitor.hotkey == .rightOption)
@@ -161,7 +164,7 @@ struct GlobeKeyActionTests {
 
         settings.hotkey = .function
         #expect(monitor.hotkey == .function)
-        #expect(setting.value == GlobeKeyAction.doNothing)
+        #expect(setting.value == doNothing)
 
         notifications.post(name: NSApplication.willTerminateNotification, object: nil)
         #expect(setting.value == changeInputSource)
