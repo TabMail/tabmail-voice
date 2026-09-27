@@ -13,8 +13,9 @@ Install **TabMail Voice.app** in Applications. It is separate from the TabMail T
 
 ![TabMail Voice editing selected text](docs/voice-edit.webp)
 
+![TabMail Voice composing from visible chat history](docs/voice-compose.webp)
+
 [Watch the silent demonstration](https://tabmail.ai/demos/tabmail-promo-voice.mp4).
-The demonstration uses the native overlay with simulated speech input.
 
 ## Build
 
@@ -57,6 +58,7 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
   into a pill whose waveform follows your voice once the microphone is listening. When you let
   go, the pill shrinks to a spinning circle while your words are transcribed, then the text is
   typed in.
+  The language badge follows the keyboard language selected when you start speaking.
   A quick tap does nothing.
 - Press **Space** while holding to toggle agent mode. With text selected, ask Voice to edit it; otherwise, ask it to compose.
 - Pressing another key while holding cancels (so ⌥-shortcuts keep working).
