@@ -11,6 +11,8 @@ Supports Apple Silicon and Intel Macs.
 Download the signed, notarized macOS installer from [TabMail downloads](https://tabmail.ai/download#voice-install).
 Install **TabMail Voice.app** in Applications. It is separate from the TabMail Thunderbird launcher.
 
+![TabMail Voice cleaning up grammar and filler words](docs/voice-dictation.webp)
+
 ![TabMail Voice editing selected text](docs/voice-edit.webp)
 
 ![TabMail Voice composing from visible chat history](docs/voice-compose.webp)
