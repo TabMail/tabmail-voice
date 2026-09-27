@@ -55,7 +55,7 @@ struct OverlayGeometryTests {
         let canvas = DictationConfig.overlayCanvasSize
         let pillHeight = DictationConfig.pillHeight
         let pill = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0)).fittingSize
-        let hint = NSHostingView(rootView: ModeHint(mode: .dictation)).fittingSize
+        let hint = NSHostingView(rootView: TipTooltip(tip: .switchMode, hotkey: .rightOption)).fittingSize
         // The hint's bottom edge, down from the pill's top edge.
         let hintBottom = OverlayPanelController.hintCentre(under: CGRect(origin: .zero, size: pill), size: hint).y + hint.height / 2
         var openedBelow = 0
@@ -131,7 +131,7 @@ struct OverlayGeometryTests {
     @Test func bubblesSitInARowAboveThePillAndTheHintUnderIt() {
         let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
         let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
-        let hint = CGSize(width: 90, height: DictationConfig.modeHintArrowHeight + DictationConfig.modeHintHeight)
+        let hint = CGSize(width: 90, height: DictationConfig.tipArrowHeight + DictationConfig.tipHeight)
         func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
             CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
         }

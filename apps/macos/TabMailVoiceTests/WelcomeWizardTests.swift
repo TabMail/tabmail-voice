@@ -153,9 +153,11 @@ struct AppSettingsTests {
         settings.hasConsented = hasConsented
         settings.debugMode = debugMode
         settings.emailClient = "org.example.mail"
+        settings.hotkey = .function
 
         #expect(settings.dictation(for: "tester@tabmail.ai") == DictationSettings(
             hasConsented: hasConsented,
+            hotkey: .function,
             backendURL: debugMode ? DictationConfig.developmentBackendURL : DictationConfig.productionBackendURL,
             readsScreen: readsScreen,
             emailApp: hasTabMail ? "org.example.mail" : nil

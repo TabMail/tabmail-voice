@@ -45,8 +45,9 @@ struct KeyboardLanguageTests {
         let transport = StubTransport()
         let controller = DictationController(
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            settings: { DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: false, emailApp: nil) },
+            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: false, emailApp: nil) },
             account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            tips: TipBook(defaults: InMemoryDefaults()),
             inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
             thunderbird: FakeThunderbird().relay(),
             capture: ToneCapture(),
@@ -73,10 +74,14 @@ struct LanguageBadgeTests {
         transport.enqueue(status: 200, json: ["text": ""])
         let thunderbird = FakeThunderbird()
         thunderbird.installed = false
+        // No tip under the pill: Vision reads the small badge less reliably beside a line of text.
+        let tips = TipBook(defaults: InMemoryDefaults())
+        tips.markLearned(.switchMode)
         let controller = DictationController(
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            settings: { DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: false, emailApp: nil) },
+            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: false, emailApp: nil) },
             account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            tips: tips,
             inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
             thunderbird: thunderbird.relay(),
             capture: ToneCapture(),
@@ -91,8 +96,16 @@ struct LanguageBadgeTests {
         let size = DictationConfig.overlayCanvasSize
         let renderer = ImageRenderer(content: OverlayView(controller: controller).frame(width: size.width, height: size.height))
         renderer.scale = scale
-        // Besides the Space hint under the pill.
-        let read = try recognisedText(try #require(renderer.cgImage)).filter { !$0.contains("space") && !$0.contains("agent mode") }
+        // The badge's place: the square at the pill's leading end, placed as `PillLayout` places the pill,
+        // with a margin (Vision misses text cropped close).
+        let pill = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0, language: keyboard)).fittingSize
+        let badge = CGRect(
+            x: (size.width - pill.width) / 2, y: (size.height - DictationConfig.pillHeight) / 2,
+            width: pill.height, height: pill.height
+        ).insetBy(dx: -pill.height, dy: -pill.height)
+        let image = try #require(renderer.cgImage?.cropping(to: badge.applying(CGAffineTransform(scaleX: scale, y: scale))))
+        // Letters only: the badge's circle can read as brackets, a waveform dot as a bullet.
+        let read = try recognisedText(image).map { $0.filter(\.isLetter) }.filter { !$0.isEmpty }
         #expect(read == drawn, "read \(read)")
 
         controller.finish()

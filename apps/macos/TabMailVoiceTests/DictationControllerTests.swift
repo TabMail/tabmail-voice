@@ -55,7 +55,7 @@ private final class Keyboard {
 /// The settings, as the controller reads them: values the test changes.
 @MainActor
 private final class Prefs {
-    var value = DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: FakeThunderbird.app)
+    var value = DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: FakeThunderbird.app)
 }
 
 /// A finished recording through the controller: transcription, cleanup with the screen context,
@@ -71,6 +71,8 @@ struct DictationControllerTests {
     private let front = FrontApp()
     private let keyboard = Keyboard()
     private let prefs = Prefs()
+    /// Which tips were shown and learned, as `TipBook` keeps them.
+    private let tipDefaults = InMemoryDefaults()
 
     private var cleanedStream: String { Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#) }
 
@@ -94,6 +96,7 @@ struct DictationControllerTests {
             permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
             settings: { [prefs] in prefs.value },
             account: account,
+            tips: TipBook(defaults: tipDefaults),
             inserter: inserter,
             thunderbird: thunderbird.relay(),
             capture: capture,
@@ -787,7 +790,7 @@ struct DictationControllerTests {
         let (controller, _, _) = await carryOut(screen(selected: ""), thunderbird: thunderbird) { controller in
             controller.onPhaseChange = { phase in
                 guard phase == .listening else { return }
-                prefs.value = DictationSettings(hasConsented: true, backendURL: URL(string: "https://dev.example.com")!, readsScreen: false, emailApp: "org.example.othermail")
+                prefs.value = DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://dev.example.com")!, readsScreen: false, emailApp: "org.example.othermail")
             }
             let read = controller.captureContext
             controller.captureContext = {
@@ -1044,6 +1047,142 @@ struct DictationControllerTests {
         #expect(controller.tools.isEmpty)
         #expect(pastes.texts == ["We ship on Friday.", cleaned])
         #expect(cleanupVars(1)?["content"] as? String == DictationConfig.cleanupPrompt)
+    }
+
+    // MARK: Tips and hands-free dictation
+
+    /// Polls for `duration`: whether `condition` held at every look.
+    private func throughout(_ duration: Duration, _ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + duration
+        while ContinuousClock.now < deadline {
+            guard condition() else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
+
+    /// The Space tip shows as the pill listens, until the user switches modes once; then never again.
+    @Test func theSpaceTipShowsUntilSpaceIsUsed() async {
+        let (controller, _) = makeController(capture: ToneCapture())
+        controller.tipDisplayDuration = { _ in .seconds(60) }
+
+        controller.handle(.start)
+        #expect(await eventually { controller.tip == .switchMode })
+        #expect(controller.phase == .listening)
+        controller.handle(.toggleMode)
+        #expect(controller.tip == nil)
+        controller.handle(.cancel)
+
+        controller.handle(.start)
+        #expect(await eventually { controller.phase == .listening && controller.isHearing })
+        #expect(await throughout(.milliseconds(300)) { controller.tip == nil })
+        controller.handle(.cancel)
+        #expect(!TipBook(defaults: tipDefaults).isEligible(.switchMode))
+    }
+
+    /// A tip shows for its display duration, and goes away with the hold.
+    @Test func aTipShowsForItsDisplayDurationAndGoesWithTheHold() async {
+        let (controller, _) = makeController(capture: ToneCapture())
+        controller.tipDisplayDuration = { _ in .milliseconds(150) }
+
+        controller.handle(.start)
+        #expect(await eventually { controller.tip == .switchMode })
+        #expect(await eventually { controller.tip == nil })
+        #expect(controller.phase == .listening)
+        controller.handle(.cancel)
+
+        controller.tipDisplayDuration = { _ in .seconds(60) }
+        controller.handle(.start)
+        #expect(await eventually { controller.tip == .switchMode })
+        controller.handle(.cancel)
+        #expect(controller.tip == nil)
+    }
+
+    /// No tip over the warm-up swirl: it waits for the microphone's first audio.
+    @Test func noTipShowsBeforeTheMicrophoneIsHeard() async {
+        let (controller, _) = makeController()
+
+        controller.handle(.start)
+        #expect(await eventually { controller.phase == .listening })
+        #expect(await throughout(.milliseconds(300)) { controller.tip == nil })
+        controller.handle(.cancel)
+    }
+
+    /// A hold past `doubleTapTipHoldDuration` shows the double-tap tip; a shorter one never does.
+    @Test func aLongHoldShowsTheDoubleTapTip() async {
+        let (controller, _) = makeController(capture: ToneCapture())
+        controller.doubleTapTipHoldDuration = .milliseconds(800)
+        controller.tipDisplayDuration = { $0 == .switchMode ? .milliseconds(50) : .seconds(60) }
+
+        controller.handle(.start)
+        #expect(await eventually { controller.phase == .listening })
+        controller.handle(.cancel)
+        #expect(await throughout(.seconds(1)) { controller.tip != .doubleTap })
+
+        controller.handle(.start)
+        #expect(await eventually { controller.tip == .doubleTap })
+        #expect(controller.phase == .listening)
+        controller.handle(.cancel)
+        #expect(controller.tip == nil)
+    }
+
+    /// A double tap listens at once, with no hold to wait for, until the hotkey is tapped again: then
+    /// it is transcribed, cleaned up and pasted like a hold. The double-tap tip is learned.
+    @Test func aHandsFreeDictationListensAtOnceUntilFinished() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        controller.doubleTapTipHoldDuration = .milliseconds(100)
+        controller.tipDisplayDuration = { _ in .milliseconds(50) }
+
+        controller.handle(.startHandsFree)
+        #expect(controller.phase == .listening)
+        #expect(!TipBook(defaults: tipDefaults).isEligible(.doubleTap))
+        #expect(await throughout(.milliseconds(400)) { controller.phase == .listening && controller.tip != .doubleTap })
+        controller.handle(.finish)
+
+        #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
+    }
+
+    /// Escape during a hands-free dictation: nothing is sent or pasted.
+    @Test func aHandsFreeDictationCancelledSendsNothing() async {
+        let (controller, pastes) = makeController(capture: ToneCapture())
+
+        controller.handle(.startHandsFree)
+        #expect(await eventually { controller.isHearing })
+        controller.handle(.cancel)
+
+        #expect(controller.phase == .idle)
+        try? await Task.sleep(for: DictationConfig.releaseTailDuration * 2)
+        #expect(transcription.requests.isEmpty)
+        #expect(pastes.texts.isEmpty)
+    }
+}
+
+/// Which tips may show, as TipKit decides it: until learned, or until shown `maxDisplays` times.
+@MainActor
+struct TipBookTests {
+    @Test(arguments: DictationTip.allCases)
+    func aTipShowsAtMostItsMaxDisplays(tip: DictationTip) {
+        let defaults = InMemoryDefaults()
+        let book = TipBook(defaults: defaults)
+        for _ in 0..<tip.maxDisplays {
+            #expect(book.isEligible(tip))
+            book.recordDisplay(tip)
+        }
+        #expect(!book.isEligible(tip))
+        // Kept: a new launch reads the same count.
+        #expect(!TipBook(defaults: defaults).isEligible(tip))
+    }
+
+    /// Learning one tip retires it, and only it.
+    @Test func aLearnedTipNeverShowsAgain() {
+        let defaults = InMemoryDefaults()
+        let book = TipBook(defaults: defaults)
+        book.markLearned(.switchMode)
+        #expect(!book.isEligible(.switchMode))
+        #expect(book.isEligible(.doubleTap))
+        #expect(!TipBook(defaults: defaults).isEligible(.switchMode))
     }
 }
 

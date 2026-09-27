@@ -52,13 +52,15 @@ tabmail-voice/
         │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
         │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
         │   ├── Hotkey/
-        │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel; Space during the hold → toggle agent mode
-        │   │   └── HotkeyMonitor.swift       Keyboard CGEventTap feeding the gesture; keeps the mode-switching Space from the app in front
+        │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel; Space during the hold → toggle agent mode; tap + press → hands-free dictation until the next tap (Escape cancels)
+        │   │   └── HotkeyMonitor.swift       Keyboard CGEventTap feeding the gesture; keeps the mode-switching Space (and hands-free Escape) from the app in front
         │   ├── Insertion/
         │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
         │   │   ├── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)
         │   │   └── AccessibilityActivator.swift  Asks Gecko/Electron apps to build their tree as they come to the front
-        │   ├── Onboarding/WelcomeWizard.swift  Welcome wizard steps and navigation (ADR-DESK-010): consent → permissions → features
+        │   ├── Onboarding/
+        │   │   ├── WelcomeWizard.swift     Welcome wizard steps and navigation (ADR-DESK-010): consent → permissions → features
+        │   │   └── DictationTips.swift     TipKit-style tips under the pill (Space switches the mode; double-tap to dictate hands-free), retired once learned (ADR-DESK-021)
         │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling, grant callbacks
         │   ├── Support/Log.swift             Debug-gated os.Logger (`debug`/`error` never carry transcript content); debug builds also append to ~/Library/Logs/TabMail Voice/TabMail Voice.log (`LogFile`, menu › Show Log File), where `Log.content` also writes user content in full (ADR-DESK-015)
         │   └── UI/
@@ -67,7 +69,7 @@ tabmail-voice/
         │       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
         │       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
         │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
-        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill (the dictation's language in a small circle left of the waveform) → spinning circle while transcribing; a dark "space" keycap tooltip under the listening pill that fades after a moment; agent mode's icon-only tool bubbles in a row above it, the running one's border circling
+        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill (the dictation's language in a small circle left of the waveform) → spinning circle while transcribing; a dark tooltip under the listening pill with the controller's tip (`TipTooltip`), fading after a moment; agent mode's icon-only tool bubbles in a row above it, the running one's border circling
         │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
         └── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
@@ -93,6 +95,12 @@ tabmail-voice/
    is inserted.
 
 A `generation` counter makes callbacks from a superseded dictation no-ops.
+
+**Hands-free** (a tap, then a press within `doubleTapWindow`; ADR-DESK-021): the overlay shows at
+once and the dictation goes on without the key until the hotkey is tapped again (finish) or Escape
+(cancel); Space still switches the mode. **Tips** (`DictationTip`, under the listening pill): the Space
+tip as a hold starts listening, the double-tap tip once a hold passes 20 s; each shows until learned
+or shown its maximum number of times (`TipBook`, UserDefaults).
 
 **Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
 recording and transcription, with the tool bubbles in a row above the pill: Edit when text is selected,

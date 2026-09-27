@@ -291,6 +291,9 @@ grants. The privacy policy tells users they can switch screen reading off.
 > selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
 > timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
 > timeout bullets below are superseded where it says so.
+>
+> **Later (ADR-DESK-021):** the Space hint became a tip that retires once learned, and a double tap is
+> back, for hands-free dictation (not agent mode).
 
 **Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
 request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
@@ -710,3 +713,43 @@ protocol-and-registry design with generic connectors.
   another branch changes that file); a second app-backed tool moves it into the protocol.
 - No behaviour change: the suite passes unchanged except `fitted(_:toSelection:)` moving from
   `DesktopAgent` to `EditTool`.
+
+## ADR-DESK-021: Tips that retire once learned, and hands-free dictation on a double tap
+
+**Context:** Owner, 2026-09-26: the Space hint (ADR-DESK-011 amendment) should become a real tip,
+"sort of a TipKit": "Press space to switch between dictation and agent mode", shown at the
+beginning. After a dictation held for more than 20 seconds, a second tip: double-tap the hotkey to
+dictate without holding it. The double tap starts a hands-free dictation that goes on until the
+hotkey is tapped again (finish) or Escape is pressed (cancel). The double tap ADR-DESK-011 removed was
+for agent mode; this one is for dictation, and Space still switches the mode.
+
+**Decision:**
+- Tips (`DictationTip`, `TipBook`) behave as TipKit's: a tip shows until the user has done what it
+  teaches, or has seen it `switchModeTipMaxDisplays` (10) / `doubleTapTipMaxDisplays` (5) times,
+  then never again; the counts and the learned flags are kept in UserDefaults (`tip.<name>.displays`,
+  `tip.<name>.learned`; no user content). Switching the mode learns the Space tip; a double tap
+  learns the double-tap tip. The TipKit framework itself is not used: the overlay is a click-through,
+  non-activating panel, so TipKit's views (dismissed by a click) do not fit, and its rules and
+  datastore are global state a unit test cannot own.
+- The controller decides which tip shows (`DictationController.tip`); the overlay draws it in the
+  same dark tooltip under the pill (`TipTooltip`, formerly `ModeHint`) and shows none over the warm-up
+  swirl. The Space tip is due as the pill starts listening; the double-tap tip once a hold has gone on
+  `doubleTapTipHoldDuration` (20 s), shown right then, while the user is holding. One tip at a time,
+  each for its display duration (2.5 s, 4 s); a tip that is used (Space) goes away at once.
+- Gesture (`PushToTalkGesture`): a press released within `minimumHoldDuration` is a tap (discarded
+  unseen, as before); a press within `doubleTapWindow` (400 ms) of a tap's release is `startHandsFree`:
+  the overlay shows at once (no reveal delay: the double tap is deliberate). Released as a tap, the
+  dictation goes on hands-free; held, it finishes on release like any hold. Hands-free, the next
+  hotkey press finishes (its release does nothing), Escape cancels, Space switches the mode; the
+  monitor keeps that Space and Escape from the app in front. Other keys reach the app and change
+  nothing (unlike a hold, where a key means a chord and cancels). Typing between the two taps makes
+  them no double tap.
+- A dictation that ends without the hotkey (length cap, failure, Escape, the menu) ends hands-free
+  listening: the app calls `HotkeyMonitor.dictationEnded()` on every phase past listening, so Space and
+  Escape are never kept from the app while nothing listens.
+
+**Consequences:**
+- Hands-free listening is capped like a hold (`maxRecordingDuration`, 5 min), then transcribed.
+- While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
+- A first tap is still a discarded recording start (the microphone boots and stops); a double tap
+  starts it twice.

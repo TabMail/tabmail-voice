@@ -73,7 +73,7 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
 
 /// Settings kept in memory. A real suite (`UserDefaults(suiteName:)`) is written to a plist in
 /// ~/Library/Preferences, and the preferences daemon writes it again after a test deletes it, so
-/// every run would leave files behind. Every accessor `AppSettings` uses is overridden; anything
+/// every run would leave files behind. Every accessor `AppSettings` and `TipBook` use is overridden; anything
 /// else reaches one fixed scratch suite, never the app's own domain.
 final class InMemoryDefaults: UserDefaults, @unchecked Sendable {
     private let values = OSAllocatedUnfairLock(uncheckedState: [String: Any]())
@@ -85,6 +85,8 @@ final class InMemoryDefaults: UserDefaults, @unchecked Sendable {
     override func object(forKey defaultName: String) -> Any? { values.withLockUnchecked { $0[defaultName] } }
     override func string(forKey defaultName: String) -> String? { object(forKey: defaultName) as? String }
     override func bool(forKey defaultName: String) -> Bool { object(forKey: defaultName) as? Bool ?? false }
+    override func integer(forKey defaultName: String) -> Int { object(forKey: defaultName) as? Int ?? 0 }
+    override func set(_ value: Int, forKey defaultName: String) { set(value as Any?, forKey: defaultName) }
     override func set(_ value: Any?, forKey defaultName: String) { values.withLockUnchecked { $0[defaultName] = value } }
     override func set(_ value: Bool, forKey defaultName: String) { set(value as Any?, forKey: defaultName) }
     override func removeObject(forKey defaultName: String) { set(nil as Any?, forKey: defaultName) }
@@ -176,5 +178,15 @@ enum Fixtures {
               let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
         else { return [:] }
         return object
+    }
+}
+
+/// Seconds that go up by one each reading: a key event's time, for tests of holds.
+final class Ticker {
+    private var now: TimeInterval = 0
+
+    func tick() -> TimeInterval {
+        now += 1
+        return now
     }
 }

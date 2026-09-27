@@ -13,6 +13,9 @@ enum DictationConfig {
     /// The microphone starts booting at key-down, but the overlay appears only once the key has
     /// been held this long. A shorter hold is an accidental tap: discarded, never shown.
     static let minimumHoldDuration: Duration = .milliseconds(250)
+    /// A tap (released within `minimumHoldDuration`) followed by another press this soon after its
+    /// release starts a hands-free dictation.
+    static let doubleTapWindow: Duration = .milliseconds(400)
 
     // MARK: Audio
 
@@ -292,39 +295,45 @@ enum DictationConfig {
     static let agentBubbleAppIconSize: CGFloat = 16
     /// A tool's symbol in its bubble.
     static let agentBubbleSymbolSize: CGFloat = 12
-    /// The Space hint: a tooltip centred under the listening pill, a "space" keycap and a word or
-    /// two, that fades out after `modeHintDisplayDuration`. Dark, as macOS HUDs are, so it
-    /// reads as the system's hint rather than part of the pill.
-    static let modeHintDisplayDuration: Duration = .milliseconds(2500)
-    static let modeHintFontSize: CGFloat = 11
-    static let modeHintHeight: CGFloat = 22
-    static let modeHintHorizontalPadding: CGFloat = 8
-    static let modeHintSpacing: CGFloat = 6
-    static let modeHintCornerRadius: CGFloat = 6
+    /// A tip (`DictationTip`): a tooltip centred under the listening pill, a keycap and a few words,
+    /// that fades out after its display duration. Dark, as macOS HUDs are, so it reads as the
+    /// system's hint rather than part of the pill.
+    static let switchModeTipDisplayDuration: Duration = .milliseconds(2500)
+    static let doubleTapTipDisplayDuration: Duration = .seconds(4)
+    /// A hold this long shows the double-tap tip: this user dictates at length, and need not hold.
+    static let doubleTapTipHoldDuration: Duration = .seconds(20)
+    /// A tip shows until the user does what it teaches, or at most this many times.
+    static let switchModeTipMaxDisplays = 10
+    static let doubleTapTipMaxDisplays = 5
+    static let tipFontSize: CGFloat = 11
+    static let tipHeight: CGFloat = 22
+    static let tipHorizontalPadding: CGFloat = 8
+    static let tipSpacing: CGFloat = 6
+    static let tipCornerRadius: CGFloat = 6
     /// Near-black fill, a hairline light border, and a soft drop shadow.
-    static let modeHintFillWhite: Double = 0.11
-    static let modeHintFillOpacity: Double = 0.94
-    static let modeHintBorderOpacity: Double = 0.12
-    static let modeHintShadowOpacity: Double = 0.3
-    static let modeHintShadowRadius: CGFloat = 5
-    static let modeHintShadowOffsetY: CGFloat = 2
+    static let tipFillWhite: Double = 0.11
+    static let tipFillOpacity: Double = 0.94
+    static let tipBorderOpacity: Double = 0.12
+    static let tipShadowOpacity: Double = 0.3
+    static let tipShadowRadius: CGFloat = 5
+    static let tipShadowOffsetY: CGFloat = 2
     /// White text, the keycap's word a little brighter than the action's.
-    static let modeHintTextOpacity: Double = 0.78
-    static let modeHintKeyTextOpacity: Double = 0.95
+    static let tipTextOpacity: Double = 0.78
+    static let tipKeyTextOpacity: Double = 0.95
     /// The "space" keycap: a raised key, a lighter fill with a light border.
-    static let modeHintKeyFontSize: CGFloat = 10
-    static let modeHintKeyPadding: CGFloat = 5
-    static let modeHintKeyHeight: CGFloat = 15
-    static let modeHintKeyCornerRadius: CGFloat = 3.5
-    static let modeHintKeyFillOpacity: Double = 0.14
-    static let modeHintKeyBorderOpacity: Double = 0.22
+    static let tipKeyFontSize: CGFloat = 10
+    static let tipKeyPadding: CGFloat = 5
+    static let tipKeyHeight: CGFloat = 15
+    static let tipKeyCornerRadius: CGFloat = 3.5
+    static let tipKeyFillOpacity: Double = 0.14
+    static let tipKeyBorderOpacity: Double = 0.22
     /// The tooltip's arrow, pointing up at the pill.
-    static let modeHintArrowWidth: CGFloat = 10
-    static let modeHintArrowHeight: CGFloat = 5
+    static let tipArrowWidth: CGFloat = 10
+    static let tipArrowHeight: CGFloat = 5
     /// Gap between the pill and the tip of the hint's arrow.
-    static let modeHintGap: CGFloat = 4
+    static let tipGap: CGFloat = 4
     /// Room the hint takes under the pill: the gap, the arrow and the box.
-    static let modeHintFootprint = modeHintGap + modeHintArrowHeight + modeHintHeight
+    static let tipFootprint = tipGap + tipArrowHeight + tipHeight
     /// The running tool's icon in the pill.
     static let agentRunningSymbolSize: CGFloat = 12
     /// A bubble whose tool is not the one running fades to this opacity.
