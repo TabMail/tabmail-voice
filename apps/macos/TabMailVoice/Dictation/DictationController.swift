@@ -61,7 +61,7 @@ final class DictationController {
     /// How long a hold goes on before the double-tap tip is due, and how long a tip shows. Internal
     /// for tests.
     @ObservationIgnored var doubleTapTipHoldDuration = DictationConfig.doubleTapTipHoldDuration
-    @ObservationIgnored var tipDisplayDuration: (DictationTip) -> Duration = { $0.displayDuration }
+    @ObservationIgnored var tipDisplayDuration: (DictationTip) -> Duration? = { $0.displayDuration }
 
     @ObservationIgnored private let permissions: PermissionsModel
     /// Reads the settings, once per dictation.
@@ -233,6 +233,7 @@ final class DictationController {
         if handsFree {
             // A double tap is deliberate: no hold to wait for.
             tips.markLearned(.doubleTap)
+            dueTips = [.handsFree]
             phase = .listening
             showDueTip()
         } else {
@@ -501,13 +502,15 @@ final class DictationController {
         secondTapTask?.cancel()
         secondTapTask = nil
         tips.markLearned(.doubleTap)
+        dueTips = [.handsFree]
         phase = .listening
         showDueTip()
         Log.debug("DictationController: listening hands-free (generation \(generation))")
     }
 
     /// Shows the next due tip the user may still see, while the pill listens and hears (the overlay
-    /// shows no tip over the warm-up swirl), for its display duration.
+    /// shows no tip over the warm-up swirl), for its display duration, or with none (the hands-free
+    /// tip) until the dictation stops listening.
     private func showDueTip() {
         guard phase == .listening, isHearing, tip == nil else { return }
         while !dueTips.isEmpty {
@@ -516,7 +519,7 @@ final class DictationController {
             tip = next
             tips.recordDisplay(next)
             let current = generation
-            let duration = tipDisplayDuration(next)
+            guard let duration = tipDisplayDuration(next) else { return }
             tipTask = Task { [weak self] in
                 try? await Task.sleep(for: duration)
                 guard !Task.isCancelled, let self, self.generation == current, self.tip == next else { return }

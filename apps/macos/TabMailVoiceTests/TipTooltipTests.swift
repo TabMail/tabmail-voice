@@ -13,13 +13,13 @@ import Vision
 @MainActor
 struct TipTooltipTests {
     private let scale: CGFloat = 2
-    private nonisolated static let tips: [(DictationTip, DictationHotkey)] = [(.switchMode, .rightOption), (.doubleTap, .function), (.doubleTap, .rightOption)]
+    private nonisolated static let tips: [(DictationTip, DictationHotkey)] = [(.switchMode, .rightOption), (.doubleTap, .function), (.doubleTap, .rightOption), (.handsFree, .function), (.handsFree, .rightOption)]
 
     /// Read off the drawn tip, on device, line by line: its words around the keycap. (The right ⌥
     /// keycap's symbol is not text Vision reads.)
     @Test(arguments: zip(
-        [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function)],
-        ["press space to switch between dictation and agent mode", "double-tap fn to dictate without holding"]
+        [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function), (.handsFree, .function)],
+        ["press space to switch between dictation and agent mode", "double-tap fn to dictate without holding", "tap fn to finish dictating, or tap esc to cancel"]
     ))
     func saysWhatTheKeyDoes(tip: (DictationTip, DictationHotkey), words: String) throws {
         let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1))
@@ -78,6 +78,16 @@ struct TipTooltipTests {
         request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: image).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first }
+    }
+
+    /// A configured line's `[key]` is a keycap and `[hotkey]` the dictation key's; the rest is words.
+    @Test func configuredLinesBecomeWordsAndKeycaps() {
+        #expect(TipTooltip.parts(of: "Tap [hotkey] to finish", hotkey: .function) == [.words("Tap"), .key("fn"), .words("to finish")])
+        #expect(TipTooltip.parts(of: "[space] then [hotkey]", hotkey: .rightOption) == [.key("space"), .words("then"), .key("right ⌥")])
+        #expect(TipTooltip.parts(of: "dictating, or", hotkey: .function) == [.words("dictating, or")])
+        #expect(TipTooltip(tip: .handsFree, hotkey: .function).lines == [
+            [.words("Tap"), .key("fn"), .words("to finish")], [.words("dictating, or")], [.words("tap"), .key("esc"), .words("to cancel")],
+        ])
     }
 
     /// The double-tap tip names the key the user holds.

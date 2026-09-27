@@ -1162,6 +1162,24 @@ struct DictationControllerTests {
         #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
     }
 
+    /// Hands-free, the tip says how to end it (tap the hotkey, or Escape), the whole time it listens
+    /// and every time (owner, 2026-09-27): with no display duration, however often it has shown, a
+    /// mode switch or not, and in place of the Space tip. It goes when the dictation stops listening.
+    @Test func theHandsFreeTipShowsTheWholeTimeEveryTime() async {
+        let book = TipBook(defaults: tipDefaults)
+        for _ in 0..<(DictationConfig.switchModeTip.maxDisplays ?? 0) + 5 { book.recordDisplay(.handsFree) }
+        let (controller, _) = makeController(capture: ToneCapture())
+
+        for _ in 0..<3 {
+            controller.handle(.startHandsFree)
+            #expect(await eventually { controller.tip == .handsFree })
+            controller.handle(.toggleMode)
+            #expect(await throughout(.milliseconds(400)) { controller.tip == .handsFree })
+            controller.handle(.cancel)
+            #expect(controller.tip == nil)
+        }
+    }
+
     /// A double tap carries on the first tap's recording: the microphone started at the first press is
     /// not restarted, and the pill shows at once (owner, 2026-09-26: the double tap started slower than
     /// a hold, as it restarted the microphone).
@@ -1270,9 +1288,10 @@ struct DictationControllerTests {
         #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
     }
 
-    /// The Space tip shows in a double-tapped dictation even when the microphone was already heard
-    /// during the first tap, before anything was shown.
-    @Test func aDoubleTapHeardDuringTheTapShowsTheSpaceTip() async {
+    /// The hands-free tip shows in a double-tapped dictation even when the microphone was already
+    /// heard during the first tap, before anything was shown, and stays until it stops listening.
+    /// (It took the Space tip's place in a double tap: owner, 2026-09-27.)
+    @Test func aDoubleTapHeardDuringTheTapShowsTheHandsFreeTip() async {
         let (controller, _) = makeController(capture: ToneCapture())
 
         controller.handle(.start)
@@ -1281,8 +1300,10 @@ struct DictationControllerTests {
         controller.handle(.finish)
         controller.handle(.startHandsFree)
 
-        #expect(await eventually { controller.tip == .switchMode })
-        controller.handle(.cancel)
+        #expect(await eventually { controller.tip == .handsFree })
+        #expect(await throughout(.milliseconds(300)) { controller.tip == .handsFree })
+        controller.handle(.finish)
+        #expect(controller.tip == nil)
     }
 
     /// Every lone tap is discarded unseen, not only the first: none ever shows a pill or keeps the
@@ -1337,17 +1358,25 @@ struct DictationControllerTests {
 /// Which tips may show, as TipKit decides it: until learned, or until shown `maxDisplays` times.
 @MainActor
 struct TipBookTests {
-    @Test(arguments: DictationTip.allCases)
-    func aTipShowsAtMostItsMaxDisplays(tip: DictationTip) {
+    @Test(arguments: DictationTip.allCases.filter { $0.maxDisplays != nil })
+    func aTipShowsAtMostItsMaxDisplays(tip: DictationTip) throws {
         let defaults = InMemoryDefaults()
         let book = TipBook(defaults: defaults)
-        for _ in 0..<tip.maxDisplays {
+        for _ in 0..<(try #require(tip.maxDisplays)) {
             #expect(book.isEligible(tip))
             book.recordDisplay(tip)
         }
         #expect(!book.isEligible(tip))
         // Kept: a new launch reads the same count.
         #expect(!TipBook(defaults: defaults).isEligible(tip))
+    }
+
+    /// A tip configured with no maximum shows however often it has shown.
+    @Test func aTipWithNoMaximumShowsEveryTime() {
+        #expect(DictationTip.handsFree.maxDisplays == nil)
+        let book = TipBook(defaults: InMemoryDefaults())
+        for _ in 0..<100 { book.recordDisplay(.handsFree) }
+        #expect(book.isEligible(.handsFree))
     }
 
     /// Learning one tip retires it, and only it.

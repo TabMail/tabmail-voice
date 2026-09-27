@@ -377,7 +377,7 @@ private struct PillLayout: Layout {
 /// the pill, the tip's words around a keycap. Internal for tests.
 struct TipTooltip: View {
     let tip: DictationTip
-    /// The key held to dictate, which the double-tap tip names.
+    /// The key held to dictate, which the double-tap and hands-free tips name.
     let hotkey: DictationHotkey
 
     /// One piece of a tip's line: words, or the key as a keycap.
@@ -387,15 +387,30 @@ struct TipTooltip: View {
     }
 
     /// The tip's lines, a few words each, so the tooltip stays not much wider than the pill (owner,
-    /// 2026-09-26: "should be multi-line instead").
+    /// 2026-09-26: "should be multi-line instead"), as `DictationConfig` writes them.
     var lines: [[Part]] {
-        switch tip {
-        case .switchMode: [[.words("Press"), .key("space"), .words("to switch")], [.words("between dictation")], [.words("and agent mode")]]
-        case .doubleTap: [[.words("Double-tap"), .key(hotkey.keycap)], [.words("to dictate")], [.words("without holding")]]
-        }
+        tip.settings.lines.map { Self.parts(of: $0, hotkey: hotkey) }
     }
 
-    /// The key the tip names.
+    /// A configured line's words and keycaps: `[space]` is a keycap, `[hotkey]` the dictation key's.
+    static func parts(of line: String, hotkey: DictationHotkey) -> [Part] {
+        var parts: [Part] = []
+        var rest = Substring(line)
+        func addWords(_ words: Substring) {
+            let words = words.trimmingCharacters(in: .whitespaces)
+            if !words.isEmpty { parts.append(.words(words)) }
+        }
+        while let open = rest.firstIndex(of: "["), let close = rest[open...].firstIndex(of: "]") {
+            addWords(rest[..<open])
+            let key = String(rest[rest.index(after: open)..<close])
+            parts.append(.key(key == "hotkey" ? hotkey.keycap : key))
+            rest = rest[rest.index(after: close)...]
+        }
+        addWords(rest)
+        return parts
+    }
+
+    /// The first key the tip names.
     var keycap: String? {
         lines.joined().lazy.compactMap { if case .key(let key) = $0 { key } else { nil } }.first
     }

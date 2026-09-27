@@ -296,16 +296,43 @@ enum DictationConfig {
     static let agentBubbleAppIconSize: CGFloat = 16
     /// A tool's symbol in its bubble.
     static let agentBubbleSymbolSize: CGFloat = 12
-    /// A tip (`DictationTip`): a tooltip centred under the listening pill, a keycap and a few words,
-    /// that fades out after its display duration. Dark, as macOS HUDs are, so it reads as the
-    /// system's hint rather than part of the pill.
-    static let switchModeTipDisplayDuration: Duration = .milliseconds(2500)
-    static let doubleTapTipDisplayDuration: Duration = .seconds(4)
+    // MARK: Tips
+
+    /// A tip (`DictationTip`): what it says, how long it shows and how many times, all set here
+    /// (owner, 2026-09-27: "the exact text and duration, or how many times we show it … at a single
+    /// location"). `lines` are the tooltip's `tipLineCount` lines; `[space]` in a line is drawn as a
+    /// keycap, and `[hotkey]` as the dictation key's. `displayDuration` nil: shown for as long as it
+    /// applies. `maxDisplays` nil: shown every time; otherwise it shows until the user does what it
+    /// teaches, or at most this many times.
+    struct TipSettings: Sendable {
+        let lines: [String]
+        let displayDuration: Duration?
+        let maxDisplays: Int?
+    }
+
+    /// Space switches between dictation and agent mode: shown as a hold starts listening.
+    static let switchModeTip = TipSettings(
+        lines: ["Press [space] to switch", "between dictation", "and agent mode"],
+        displayDuration: .milliseconds(2500),
+        maxDisplays: 10
+    )
+    /// A double tap dictates without holding: shown once a hold passes `doubleTapTipHoldDuration`.
+    static let doubleTapTip = TipSettings(
+        lines: ["Double-tap [hotkey]", "to dictate", "without holding"],
+        displayDuration: .seconds(4),
+        maxDisplays: 5
+    )
+    /// How hands-free listening ends: shown the whole time it listens, every time (owner, 2026-09-27).
+    static let handsFreeTip = TipSettings(
+        lines: ["Tap [hotkey] to finish", "dictating, or", "tap [esc] to cancel"],
+        displayDuration: nil,
+        maxDisplays: nil
+    )
     /// A hold this long shows the double-tap tip: this user dictates at length, and need not hold.
     static let doubleTapTipHoldDuration: Duration = .seconds(20)
-    /// A tip shows until the user does what it teaches, or at most this many times.
-    static let switchModeTipMaxDisplays = 10
-    static let doubleTapTipMaxDisplays = 5
+
+    /// The tooltip a tip is drawn in: centred under the listening pill, a few words around keycaps.
+    /// Dark, as macOS HUDs are, so it reads as the system's hint rather than part of the pill.
     static let tipFontSize: CGFloat = 13
     /// A tip is `tipLineCount` centred lines of a few words, each `tipLineHeight` tall.
     static let tipLineCount = 3

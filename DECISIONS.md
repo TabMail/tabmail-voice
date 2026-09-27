@@ -725,7 +725,8 @@ for agent mode; this one is for dictation, and Space still switches the mode.
 
 **Decision:**
 - Tips (`DictationTip`, `TipBook`) behave as TipKit's: a tip shows until the user has done what it
-  teaches, or has seen it `switchModeTipMaxDisplays` (10) / `doubleTapTipMaxDisplays` (5) times,
+  teaches, or has seen it ~~`switchModeTipMaxDisplays`~~ (10) / ~~`doubleTapTipMaxDisplays`~~ (5) times
+  (now each tip's `DictationConfig.TipSettings.maxDisplays`, amendment 2026-09-27),
   then never again; the counts and the learned flags are kept in UserDefaults (`tip.<name>.displays`,
   `tip.<name>.learned`; no user content). Switching the mode learns the Space tip; a double tap
   learns the double-tap tip. The TipKit framework itself is not used: the overlay is a click-through,
@@ -773,6 +774,22 @@ wider than the pill itself, so it should be multi-line".
   bottom lines the overlay is raised that much further above the caret.
 - The double-tap tip did not show in the owner's test because it was already learned (a double tap
   came first), and the Space tip had used its 10 displays: working as decided, not a defect.
+
+**Amendment 2026-09-27 (owner):** "when in double tap lock in mode, we should show tool tip saying
+tap <hotkey> to finish dictating or tap <esc> to cancel", shown "whole time, every time"; and "the
+exact text and duration, or how many times we show it, as a configurable variable that we can
+change easily at a single location."
+- A third tip, `handsFree`: "Tap [hotkey] to finish / dictating, or / tap [esc] to cancel". It is due
+  whenever a dictation becomes hands-free (`startHandsFree`, or a double tap latching the first
+  tap's recording) and shows for the whole hands-free listening, on every hands-free dictation: no
+  display duration and no maximum, so it is never counted out or learned. It takes the Space tip's
+  place in hands-free listening (Space still switches the mode there; the Space tip still shows on
+  holds). It goes when listening ends (finish, cancel, Escape, the length cap).
+- Each tip's words, display duration and maximum displays are one `DictationConfig.TipSettings`
+  (`switchModeTip`, `doubleTapTip`, `handsFreeTip`), replacing the four separate duration and count
+  constants. A line's `[space]`/`[esc]` is drawn as a keycap and `[hotkey]` as the dictation key's
+  (`TipTooltip.parts`); `displayDuration` nil means "while it applies", `maxDisplays` nil "every time".
+  The tooltip's layout still counts on `tipLineCount` lines, so a tip's `lines` must keep that count.
 
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
