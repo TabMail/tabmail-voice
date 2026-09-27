@@ -9,6 +9,8 @@ import Testing
 @MainActor
 struct DebugModeTests {
     private let defaults = InMemoryDefaults()
+    /// No Thunderbird: these tests read only the server, never this Mac's Thunderbird profiles.
+    private let noThunderbird = FileManager.default.temporaryDirectory.appending(path: "TabMailVoiceTests-\(UUID().uuidString)")
 
     /// Accounts on the TabMail domain, in any case, are allowed; lookalike domains, subdomains,
     /// other domains and no account are not.
@@ -29,7 +31,7 @@ struct DebugModeTests {
     /// The named account outside the domain (TabMail's own, as on iOS) is allowed, in any case, and
     /// gets the development server; another account on its mail domain is not.
     @Test func theNamedAccountMayUseDebugMode() {
-        let settings = AppSettings(defaults: defaults)
+        let settings = AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird)
         settings.debugMode = true
 
         for email in ["tabmail.ai@gmail.com", "TABMAIL.AI@GMAIL.COM"] {
@@ -53,7 +55,7 @@ struct DebugModeTests {
         (true, nil, false),
     ] as [(Bool, String?, Bool)])
     func debugModeNeedsTheSwitchAndAnAllowedAccount(switchOn: Bool, email: String?, isOn: Bool) {
-        let settings = AppSettings(defaults: defaults)
+        let settings = AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird)
         settings.debugMode = switchOn
 
         #expect(settings.isDebugMode(for: email) == isOn)
@@ -62,13 +64,13 @@ struct DebugModeTests {
 
     /// The switch is kept across launches, on and then off again, and starts off.
     @Test func theSwitchIsStoredAndStartsOff() {
-        #expect(!AppSettings(defaults: defaults).debugMode)
+        #expect(!AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird).debugMode)
 
-        AppSettings(defaults: defaults).debugMode = true
-        #expect(AppSettings(defaults: defaults).isDebugMode(for: "tester@tabmail.ai"))
+        AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird).debugMode = true
+        #expect(AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird).isDebugMode(for: "tester@tabmail.ai"))
 
-        AppSettings(defaults: defaults).debugMode = false
-        let relaunched = AppSettings(defaults: defaults)
+        AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird).debugMode = false
+        let relaunched = AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird)
         #expect(!relaunched.isDebugMode(for: "tester@tabmail.ai"))
         #expect(relaunched.dictation(for: "tester@tabmail.ai").backendURL == DictationConfig.productionBackendURL)
     }
@@ -76,7 +78,7 @@ struct DebugModeTests {
     /// The old "Use development server" switch left on doesn't turn debug mode on (ADR-DESK-018).
     @Test func theOldDevelopmentServerSwitchIsNotCarriedOver() {
         defaults.set(true, forKey: "useDevelopmentServer")
-        let settings = AppSettings(defaults: defaults)
+        let settings = AppSettings(defaults: defaults, thunderbirdDirectory: noThunderbird)
 
         #expect(!settings.isDebugMode(for: "tester@tabmail.ai"))
         #expect(settings.dictation(for: "tester@tabmail.ai").backendURL == DictationConfig.productionBackendURL)
