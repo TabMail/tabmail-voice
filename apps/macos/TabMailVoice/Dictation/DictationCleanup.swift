@@ -6,10 +6,11 @@ import Foundation
 
 /// The backend pass over a transcript: with what was on screen when the dictation started, it
 /// fixes speech-recognition errors (names and terms shown on screen, capitalisation that doesn't
-/// fit where the text lands) and changes nothing else. The instructions live in the backend
-/// prompt `DictationConfig.cleanupPrompt`.
+/// fit where the text lands), removes filler words and accidentally repeated words, and corrects
+/// grammar, changing nothing else. The instructions live in the backend prompt
+/// `DictationConfig.cleanupPrompt`.
 enum DictationCleanup {
-    /// The transcript with its recognition errors fixed, requested under the account `userId` that
+    /// The transcript cleaned up, requested under the account `userId` that
     /// transcribed it. When the cleanup fails for any reason, including that account no longer being
     /// signed in or no reply within `timeout` seconds, the transcript as heard: a failed cleanup
     /// never costs the user their dictation (ADR-DESK-008).
@@ -27,7 +28,8 @@ enum DictationCleanup {
             }
             .trimmingCharacters(in: .whitespacesAndNewlines)
             Log.debug("DictationCleanup: cleaned up in \(clock.now - started) (\(transcript.count) → \(text.count) chars, screen text \(message.vars["screen_text"]?.count ?? 0) chars)")
-            // The prompt never removes dictated words, so an empty reply is a malfunction.
+            // The prompt removes only fillers and repetitions, and returns a dictation of nothing but
+            // fillers as given, so an empty reply is a malfunction.
             guard !text.isEmpty else {
                 Log.error("DictationCleanup: empty reply; pasting the transcript as heard")
                 return transcript

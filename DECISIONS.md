@@ -186,6 +186,9 @@ model choice live on the backend, so they can be edited and switched there witho
 transcript arrives, the app waits up to `contextWait` (0.5 s) for that capture and sends the transcript with the app name,
 web host, terminal program, window title and the visible text (caret marked) to the backend's
 `POST /completions/chat` as the prompt `system_prompt_dictate_cleanup`, then pastes the reply.
+*(Amended 2026-09-26, owner: the cleanup also removes filler words and accidentally repeated
+words and corrects grammar, still changing nothing else. It is a backend prompt change, edited in
+place in `v0.1.0` because the app's version line is `0.1.0`; no app change.)*
 Request shape and server-sent-events parsing follow iOS `BackendClient`, with two deliberate
 differences: the app fails the cleanup on an `event: error` (iOS logs it and waits for `final`),
 and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both `error` and
@@ -506,6 +509,20 @@ the agent restating the request as a chat message, and sending being enough (no 
   or press Return in the other app after the paste went to the first, submitting whatever draft its
   chat held.
 
+**Amendment 2026-09-26 (add-on probe):** owner: "make sure that the tool doesn't show up if
+Thunderbird does not have [TabMail] installed … sort of a probe?" There is an email app only while a
+Thunderbird profile has TabMail's add-on (`thunderbird@tabmail.ai`) installed and enabled, which
+closes the "cannot tell whether the add-on is installed" weak point above. `EmailClient.hasTabMail`
+reads the profiles `~/Library/Thunderbird/profiles.ini` lists and each one's `extensions.json`; an
+entry the user disabled (`userDisabled`) or Thunderbird disabled (`appDisabled`) does not count.
+`active` is not used: Thunderbird leaves it `true` on an add-on the user has disabled (measured on
+the owner's profiles). It is read at key-down with the rest of the settings snapshot (ADR-DESK-017),
+so installing or enabling the add-on applies to the next dictation. Settings › Agent mode says when
+the add-on is missing.
+- Any profile counts. Thunderbird and Thunderbird Beta share the folder, and nothing in it says which
+  profile a given installation opens, so the add-on in one profile turns the tool on even when the
+  chosen Thunderbird opens another; the chat then never opens, as before.
+
 ## ADR-DESK-015: Debug builds log user content in full, to the local log file only
 
 **Context:** Owner, 2026-09-26: an agent-mode reply came out of context, and nothing could say why.
@@ -598,3 +615,98 @@ another; each fix compared Settings again and missed the next window.
   can no longer retarget a send.
 - Not covered: the hotkey itself. Changing it in Settings reinstalls the monitor, which cancels a
   hold in progress (`HotkeyMonitor.setHotkey`); the owner accepts that behaviour (2026-09-26).
+
+## ADR-DESK-018: Debug mode, only for allowed accounts
+
+**Context:** Owner, 2026-09-26: the menu's Start Dictation and debug items (Play Last Recording,
+Show Last Screen Context, Show Log File) should show only in debug mode; debug mode is the
+"Use development server" switch, and that switch should show only to the allowed debug accounts.
+
+**Decision:**
+- `DebugAccess` allows the same accounts as iOS `DebugModeManager`: the `tabmail.ai` domain and its
+  short list of named addresses, compared case-insensitively.
+- The Settings switch is now "Debug mode" (stored as `debugMode`), shown only while an allowed
+  account is signed in. Debug mode is on only when the switch is on AND the account signed in is
+  allowed (`AppSettings.isDebugMode(for:)`); a switch left on does nothing once another account, or
+  none, is signed in.
+- Debug mode sends dictation to the development server, and is part of the settings snapshot read
+  at key-down (ADR-DESK-017, `dictation(for:)`).
+- The menu shows Start Dictation and the debug items only in debug mode. A Stop for a recording in
+  progress stays whatever the mode, so a recording can always be stopped (ADR-DESK-010). The debug
+  items are also compiled only into debug builds, as before.
+
+**Consequences:**
+- Everyone else dictates with the hotkey only; the menu keeps setup, Welcome Guide, Settings and Quit.
+- The old `useDevelopmentServer` switch isn't carried over: debug mode starts off once.
+
+## ADR-DESK-019: Dictate in the keyboard's language, shown beside the waveform
+
+**Context:** Owner, 2026-09-26 (issue #3): dictation must work in languages the backend's default
+model does not cover (Korean first). The keyboard's language shows as a small circle left of the
+waveform, as other dictation tools do; the request sends the language, and the backend picks the
+model for it from a JSON file of language–model pairs (backend ADR-024).
+
+**Decision:**
+- At key-down, beside the app in front, `DictationController.start()` reads the active keyboard input
+  source's language once (`KeyboardLanguage.current()`, Text Input Sources) into `language`. The
+  recording is sent with it (`TranscriptionClient.transcribe(wav:language:accessToken:)`) and the
+  overlay's badge shows it, so the two can never disagree. A keyboard switched during the hold or the
+  upload applies from the next hold.
+- The language is the source's first one, reduced to its ISO-639-1 primary subtag (`zh-Hans` → `zh`,
+  `pt_BR` → `pt`); without a two-letter code (`yue`, `fil`, or no languages) none is sent and no badge
+  shows. Every source's first language counts: macOS lists a Korean 2-Set's languages as `["ko"]` but
+  the U.S. layout's as 96 languages with English first, so "several languages → none", as the issue
+  first proposed, would have left every English keyboard without a language.
+- It is sent for every language, including those the default model covers; the backend decides what
+  it means (today: a model for the languages the default lacks, the model's own detection
+  otherwise).
+- The badge: the code in capitals (`KO`) in a small gradient-ringed circle, as tall as the waveform
+  (the pill keeps its height), concentric with the pill's rounded left end, while the pill listens
+  (not in the thinking circle or a message).
+
+**Consequences:**
+- The keyboard is a proxy: Korean said with the U.S. layout on goes to the default model, which does
+  not cover Korean. There is no manual override in Settings yet; add one if that proves common.
+- Needs the backend with ADR-024 deployed first: the earlier backend forwarded the language to its
+  default model, asking it for languages it does not cover.
+
+## ADR-DESK-020: Agent tools one file each, connectors one folder each
+
+**Context:** Owner, 2026-09-26: agent mode will gain more tools and more connectors (apps a request
+is handed to), so the code is split first. All three tools lived in one `AgentTool` enum inside
+`DesktopAgent.swift`, their prompt, variables, fitting and delivery spread over that enum's switches,
+`DesktopAgent.toolMessage`/`write` and a `switch tool` in `DictationController`; adding a tool meant
+editing all of them. The owner chose one file per tool with an enum as the registry, structured like
+the Thunderbird add-on (`chat/tools/<tool>.js`, routed by `chat/tools/core.js`) and the iOS app
+(`Services/AI/Tools/<Name>Tool.swift` behind the `AgentTool` protocol), over a folder-only move or a
+protocol-and-registry design with generic connectors.
+
+**Decision:**
+- `Agent/AgentTool.swift` holds the registry: the `AgentTool` enum (raw value = the name the agent
+  answers with; `Hashable`, so the phase and the bubbles keep using it) maps each case to its
+  implementation, a `DesktopTool`. The protocol gives a tool its display name, symbol, backend prompt,
+  prompt variables (default: `screenVariables`, the request and the key-down screen read), the fitting
+  of the written text (default: as written) and `deliver(_:in:)`. `ToolContext` is what a tool
+  delivers with: the dictation's settings snapshot (ADR-DESK-017), the inserter, whether the key-down
+  app is still in front, and the connectors.
+- `Agent/Tools/` has one file per tool: `EditTool` (fits to the selection, pastes over it),
+  `ComposeTool` (adds `terminal_program`, pastes at the caret), `ThunderbirdTool` (hands the message
+  to the Thunderbird connector for the snapshot's email app). Edit and Compose paste through
+  `ToolContext.pasteIntoTargetApp`, which keeps the `appChanged` check.
+- `Agent/Connectors/<App>/` has one folder per connector: `Connectors/Thunderbird/` holds
+  `EmailClient` and `ThunderbirdRelay`, unchanged.
+- `DesktopAgent` keeps what is about the agent, not a tool: which tools are offered, the choice, the
+  write call and its `Failure`s. `DictationController` calls `tool.implementation.deliver` instead
+  of switching on the tool.
+
+**Consequences:**
+- A new tool is a case in `AgentTool`, a file in `Tools/`, and its prompt name in `DictationConfig`.
+  When it is offered stays in `DesktopAgent.tools(for:emailAppAvailable:)`/`tool(for:…)`, since the
+  offer rules (the selection picks Edit or Compose; the email app gates Thunderbird) span tools.
+- A new connector is a folder in `Connectors/`, passed into `DictationController` and carried in
+  `ToolContext`. There is no `Connector` protocol yet: with one connector there is nothing to
+  generalise, and the next one decides its shape.
+- The bubble's app icon still comes from `tool == .thunderbird` in `OverlayPanel` (left alone while
+  another branch changes that file); a second app-backed tool moves it into the protocol.
+- No behaviour change: the suite passes unchanged except `fitted(_:toSelection:)` moving from
+  `DesktopAgent` to `EditTool`.

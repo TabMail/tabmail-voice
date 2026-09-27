@@ -88,7 +88,7 @@ struct DesktopAgentTests {
         ("\n\nparagraph\n\n", "New paragraph", "\n\nNew paragraph\n\n"),
     ])
     func anEditKeepsTheSelectionsOwnSurroundingSpace(selection: String, edited: String, expected: String) {
-        #expect(DesktopAgent.fitted(edited, toSelection: selection) == expected)
+        #expect(EditTool.fitted(edited, toSelection: selection) == expected)
     }
 
     // MARK: Choosing and writing

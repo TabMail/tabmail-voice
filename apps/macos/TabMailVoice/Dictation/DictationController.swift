@@ -43,6 +43,9 @@ final class DictationController {
     @ObservationIgnored private var peakMeterLevel: Float = 0
     /// True once the microphone delivers audio; until then the overlay shows its warm-up swirl.
     private(set) var isHearing = false
+    /// The language this dictation is transcribed in: the keyboard's at key-down, read once so the
+    /// overlay's badge and the request always agree (ADR-DESK-019). Nil: none sent, no badge.
+    private(set) var language: String?
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
     /// Starts reading the screen context when a dictation starts (key-down) with screen reading on,
@@ -63,6 +66,8 @@ final class DictationController {
     @ObservationIgnored private let capture: any AudioCapturing
     /// The process of the app in front.
     @ObservationIgnored private let frontmostApp: @MainActor () -> pid_t?
+    /// The active keyboard input source's language (`KeyboardLanguage`).
+    @ObservationIgnored private let keyboardLanguage: @MainActor () -> String?
     @ObservationIgnored private let clock = ContinuousClock()
 
     // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
@@ -90,6 +95,7 @@ final class DictationController {
         thunderbird: ThunderbirdRelay,
         capture: any AudioCapturing = MicrophoneCapture(),
         frontmostApp: @escaping @MainActor () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+        keyboardLanguage: @escaping @MainActor () -> String? = { KeyboardLanguage.current() },
         makeTranscriptionClient: @escaping @MainActor (URL) -> TranscriptionClient,
         makeCompletionsClient: @escaping @MainActor (URL) -> CompletionsClient
     ) {
@@ -101,6 +107,7 @@ final class DictationController {
         self.thunderbird = thunderbird
         self.capture = capture
         self.frontmostApp = frontmostApp
+        self.keyboardLanguage = keyboardLanguage
         self.makeTranscriptionClient = makeTranscriptionClient
         self.makeCompletionsClient = makeCompletionsClient
     }
@@ -164,6 +171,7 @@ final class DictationController {
         isHearing = false
         startedAt = clock.now
         targetApp = frontmostApp()
+        language = keyboardLanguage()
         phase = .arming
         contextTask = settings.readsScreen ? captureContext?() : nil
         if let read = contextTask {
@@ -206,7 +214,7 @@ final class DictationController {
             Log.debug("DictationController: max duration reached; finishing")
             self.finish()
         }
-        Log.debug("DictationController: arming (generation \(current))")
+        Log.debug("DictationController: arming (generation \(current), language \(language ?? "none"))")
     }
 
     /// Space during the hold: switches between dictation and agent mode.
@@ -310,9 +318,10 @@ final class DictationController {
         // while they run.
         let userId = account.session?.userId
         let settings = settings
+        let language = language
         do {
             let client = makeTranscriptionClient(settings.backendURL)
-            let transcript = try await Self.withFreshToken(account: account, userId: userId) { try await client.transcribe(wav: wav, accessToken: $0) }
+            let transcript = try await Self.withFreshToken(account: account, userId: userId) { try await client.transcribe(wav: wav, language: language, accessToken: $0) }
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard generation == current, !Task.isCancelled else { return }
             Log.debug("DictationController: transcript ready (\(transcript.count) chars)")
@@ -347,16 +356,10 @@ final class DictationController {
                 phase = .running(tool)
                 let text = try await DesktopAgent.write(tool, for: transcript, context: context, client: client, account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
-                switch tool {
-                case .edit, .compose:
-                    // The request may have taken long enough for the user to move on: the text
-                    // belongs in the app they spoke over, and is pasted nowhere else.
-                    guard frontmostApp() == targetApp else { throw DesktopAgent.Failure.appChanged }
-                    // An edit pastes over the selection; a compose runs only with nothing selected.
-                    await inserter.insert(text)
-                case .thunderbird:
-                    try await thunderbird.send(text, to: settings.emailApp)
-                }
+                let targetApp = targetApp
+                try await tool.implementation.deliver(text, in: ToolContext(
+                    settings: settings, inserter: inserter, isTargetAppFrontmost: { [frontmostApp] in frontmostApp() == targetApp }, thunderbird: thunderbird
+                ))
             }
             guard generation == current else { return }
             teardown()

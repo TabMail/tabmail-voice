@@ -35,25 +35,20 @@ struct MenuContent: View {
             }
         }
 
-        Divider()
+        let debugMode = settings.isDebugMode(for: account.email)
+        if Self.showsDictationButton(debugMode: debugMode, phase: controller.phase) {
+            Divider()
 
-        Button(controller.phase == .listening ? "Stop Dictation" : "Start Dictation") {
-            controller.toggle()
+            Button(controller.phase == .listening ? "Stop Dictation" : "Start Dictation") {
+                controller.toggle()
+            }
+            // Stop stays available while recording, even if setup has since become incomplete.
+            .disabled(controller.phase != .listening && !isReady)
         }
-        // Stop stays available while recording, even if setup has since become incomplete.
-        .disabled(controller.phase != .listening && !isReady)
 
         #if DEBUG
-        Button("Play Last Recording") {
-            NSWorkspace.shared.open(DictationConfig.debugLastRecordingURL)
-        }
-        .disabled(!FileManager.default.fileExists(atPath: DictationConfig.debugLastRecordingURL.path))
-        Button("Show Last Screen Context") {
-            NSApp.activate()
-            openWindow(id: ScreenContextDebugView.windowID)
-        }
-        Button("Show Log File") {
-            NSWorkspace.shared.activateFileViewerSelecting([LogFile.url])
+        if debugMode {
+            debugItems
         }
         #endif
 
@@ -68,6 +63,29 @@ struct MenuContent: View {
         }
         .keyboardShortcut("q")
     }
+
+    /// Start Dictation is a debug item: dictation starts from the hotkey. Once a recording started
+    /// from here, its Stop stays even if debug mode goes off, so it can always be stopped.
+    static func showsDictationButton(debugMode: Bool, phase: DictationController.Phase) -> Bool {
+        debugMode || phase == .listening
+    }
+
+    #if DEBUG
+    @ViewBuilder
+    private var debugItems: some View {
+        Button("Play Last Recording") {
+            NSWorkspace.shared.open(DictationConfig.debugLastRecordingURL)
+        }
+        .disabled(!FileManager.default.fileExists(atPath: DictationConfig.debugLastRecordingURL.path))
+        Button("Show Last Screen Context") {
+            NSApp.activate()
+            openWindow(id: ScreenContextDebugView.windowID)
+        }
+        Button("Show Log File") {
+            NSWorkspace.shared.activateFileViewerSelecting([LogFile.url])
+        }
+    }
+    #endif
 
     /// A menu-bar-only app isn't active when its menu is used, so a plain `SettingsLink` opens the
     /// window behind the frontmost app. Activate first, then bring the window forward once it exists.

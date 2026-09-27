@@ -20,7 +20,9 @@ struct TranscriptionClient: Sendable {
         self.transport = transport
     }
 
-    func transcribe(wav: Data, accessToken: String) async throws -> String {
+    /// `language`: the keyboard's at key-down (`KeyboardLanguage`), which picks the backend's model;
+    /// nil sends none (the default model).
+    func transcribe(wav: Data, language: String?, accessToken: String) async throws -> String {
         var request = URLRequest(url: baseURL.appending(path: DictationConfig.transcribePath))
         request.httpMethod = "POST"
         request.timeoutInterval = DictationConfig.transcriptionRequestTimeout
@@ -28,9 +30,9 @@ struct TranscriptionClient: Sendable {
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(DictationConfig.clientType, forHTTPHeaderField: "X-Client-Type")
         request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
-        request.httpBody = try JSONEncoder().encode(Body(audio: wav.base64EncodedString(), format: "wav"))
+        request.httpBody = try JSONEncoder().encode(Body(audio: wav.base64EncodedString(), format: "wav", language: language))
 
-        Log.content("Transcription request", BackendLog.request(request, body: Self.loggedBody(wavBytes: wav.count)))
+        Log.content("Transcription request", BackendLog.request(request, body: Self.loggedBody(wavBytes: wav.count, language: language)))
         let (data, response) = try await transport(request)
         Log.content("Transcription response", BackendLog.response(response, data: data))
         guard let http = response as? HTTPURLResponse else { throw BackendError.invalidResponse }
@@ -44,14 +46,16 @@ struct TranscriptionClient: Sendable {
     }
 
     /// The request body as the log shows it: the audio's size in its place, never the audio.
-    static func loggedBody(wavBytes: Int) -> String {
-        let body = Body(audio: "<\(wavBytes) bytes of WAV, not logged>", format: "wav")
+    static func loggedBody(wavBytes: Int, language: String?) -> String {
+        let body = Body(audio: "<\(wavBytes) bytes of WAV, not logged>", format: "wav", language: language)
         return (try? JSONEncoder().encode(body)).map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 
     private struct Body: Encodable {
         let audio: String
         let format: String
+        /// Left out when nil.
+        let language: String?
     }
 
     private struct ResultBody: Decodable {

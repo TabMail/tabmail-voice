@@ -18,16 +18,24 @@ tabmail-voice/
         │   │   └── AppSettings.swift         Hotkey, screen reading, consent, wizard finished (UserDefaults); open-at-login (SMAppService)
         │   ├── Account/
         │   │   ├── AccountModel.swift        Signed-in session; single-flight token refresh (refresh tokens are single-use)
+        │   │   ├── DebugAccess.swift       Accounts allowed debug mode (same as iOS DebugModeManager)
         │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
         │   │   ├── SessionStore.swift        Keychain session storage (SessionStoring protocol)
         │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
-        │   ├── Agent/
-        │   │   ├── DesktopAgent.swift        Agent mode: `AgentTool` (edit, compose, thunderbird); one call chooses the tool, one has it write the text
-        │   │   ├── EmailClient.swift         The email app the Thunderbird tool drives: chosen in Settings, else the default email app if it is a Thunderbird
-        │   │   └── ThunderbirdRelay.swift    Types a chat message into TabMail's chat in Thunderbird: front, ⌥⌘L, paste, Return, only while the chat has focus (spike)
+        │   ├── Agent/                    Agent mode (ADR-DESK-020: one file per tool, one folder per connector)
+        │   │   ├── DesktopAgent.swift        Which tools are offered; one call chooses the tool, one has it write the text
+        │   │   ├── AgentTool.swift           Tool registry: `AgentTool` enum (the name the agent answers) → its `DesktopTool`; `ToolContext` a tool delivers with
+        │   │   ├── Tools/
+        │   │   │   ├── EditTool.swift            Rewrites the selection; fitted to its blank space, pasted over it
+        │   │   │   ├── ComposeTool.swift         Writes at the caret (gets the terminal program)
+        │   │   │   └── ThunderbirdTool.swift     Hands a mail/calendar request to the Thunderbird connector
+        │   │   └── Connectors/
+        │   │       └── Thunderbird/
+        │   │           ├── EmailClient.swift         The email app the Thunderbird tool drives: chosen in Settings, else the default email app if it is a Thunderbird
+        │   │           └── ThunderbirdRelay.swift    Types a chat message into TabMail's chat in Thunderbird: front, ⌥⌘L, paste, Return, only while the chat has focus (spike)
         │   ├── Backend/
         │   │   ├── BackendError.swift        Backend HTTP error → user message
-        │   │   ├── TranscriptionClient.swift POST /dictation/transcribe
+        │   │   ├── TranscriptionClient.swift POST /dictation/transcribe, with the dictation's language (the backend picks the model by it)
         │   │   ├── CompletionsClient.swift   POST /completions/chat with one named backend prompt; reply from the SSE `final` event (as iOS)
         │   │   └── BackendLog.swift          A backend request and its raw reply as the debug log file shows them (access token masked, audio left out)
         │   ├── Config/DictationConfig.swift  Every tunable number and endpoint (timings, audio, backend, auth, overlay)
@@ -40,6 +48,7 @@ tabmail-voice/
         │   │   ├── DictationCleanup.swift    The cleanup call: transcript + screen context; the transcript as heard if it fails
         │   │   ├── MicrophoneCapture.swift   System default mic; engine pre-prepared (mic off), started per dictation on a serial queue; `AudioCapturing` (tests inject a silent one)
         │   │   ├── AudioRecorder.swift       Converts to 16 kHz mono Int16, accumulates, tracks peak, caps duration
+        │   │   ├── KeyboardLanguage.swift    The active keyboard input source's language as an ISO-639-1 code (ADR-DESK-019)
         │   │   ├── LevelEnvelope.swift       Waveform level adapted to the incoming range (EMA floor/peak envelopes)
         │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
         │   ├── Hotkey/
@@ -53,12 +62,12 @@ tabmail-voice/
         │   ├── Permissions/PermissionsModel.swift  Microphone + Accessibility status, prompts, grant polling, grant callbacks
         │   ├── Support/Log.swift             Debug-gated os.Logger (`debug`/`error` never carry transcript content); debug builds also append to ~/Library/Logs/TabMail Voice/TabMail Voice.log (`LogFile`, menu › Show Log File), where `Log.content` also writes user content in full (ADR-DESK-015)
         │   └── UI/
-        │       ├── MenuContent.swift         Menu-bar menu
+        │       ├── MenuContent.swift         Menu-bar menu (Start Dictation and debug items in debug mode only)
         │       ├── SettingsView.swift        Settings window
         │       ├── WelcomeView.swift         Welcome wizard: Thunderbird-style top rail, step pages, Back / Next
         │       ├── WelcomeWindowController.swift  Opens the wizard window (one at a time)
         │       ├── ScreenContextDebugView.swift  Debug builds: "Show Last Screen Context" window
-        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill → spinning circle while transcribing; a dark "space" keycap tooltip under the listening pill that fades after a moment; agent mode's icon-only tool bubbles in a row above it, the running one's border circling
+        │       └── OverlayPanel.swift        Non-activating overlay at the caret: warm-up swirl → voice waveform pill (the dictation's language in a small circle left of the waveform) → spinning circle while transcribing; a dark "space" keycap tooltip under the listening pill that fades after a moment; agent mode's icon-only tool bubbles in a row above it, the running one's border circling
         │   └── Resources/Assets.xcassets     AppIcon (from the iOS icon) + MenuBarIcon template glyph
         └── TabMailVoiceTests/          Swift Testing suites (see TESTS.md)
 ```
@@ -69,7 +78,8 @@ tabmail-voice/
 
 1. **start** (key-down; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
    `MicrophoneCapture` starts the pre-prepared engine off the main thread and streams buffers
-   into `AudioRecorder`; `CaretLocator` finds the caret. After `minimumHoldDuration` the phase
+   into `AudioRecorder`; `CaretLocator` finds the caret; the keyboard's language is read once
+   (`KeyboardLanguage`), for the overlay's badge and the transcription request. After `minimumHoldDuration` the phase
    becomes `listening` and the overlay appears at the caret (swirl until audio arrives, then the
    waveform pill). Releasing earlier discards everything unseen.
 2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. No audio, or an empty
@@ -95,4 +105,5 @@ pastes at the caret. A failure shows a message and pastes nothing. No agent call
 ## Relationships
 
 Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) with a Supabase
-JWT from `auth.tabmail.ai`. Settings has a "Use development server" toggle (dev.tabmail.ai).
+JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
+dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.

@@ -75,7 +75,7 @@ struct ContentLogTests {
         stub.enqueue(status: 200, json: ["text": "Hello there."])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
 
-        let entries = try await ContentLogEntries.logged { _ = try await client.transcribe(wav: wav, accessToken: "secret-token-123") }
+        let entries = try await ContentLogEntries.logged { _ = try await client.transcribe(wav: wav, language: nil, accessToken: "secret-token-123") }
 
         #expect(entries.all.map(\.label) == ["Transcription request", "Transcription response"])
         guard entries.all.count == 2 else { return }
@@ -95,7 +95,7 @@ struct ContentLogTests {
         stub.enqueue(status: 502, json: ["error": "transcription_failed"])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
 
-        let entries = await ContentLogEntries.logged { _ = try? await client.transcribe(wav: Data("RIFF".utf8), accessToken: "t") }
+        let entries = await ContentLogEntries.logged { _ = try? await client.transcribe(wav: Data("RIFF".utf8), language: nil, accessToken: "t") }
 
         #expect(entries.all.map(\.label) == ["Transcription request", "Transcription response"])
         #expect(entries.all.last?.text.hasPrefix("HTTP 502\n") == true)
