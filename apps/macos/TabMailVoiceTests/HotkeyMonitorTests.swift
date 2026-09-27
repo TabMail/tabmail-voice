@@ -113,8 +113,11 @@ struct HotkeyMonitorTests {
     /// An fn double tap as macOS delivers it: each tap's release is followed at once by a key-down and
     /// key-up of the Globe key's own code (recorded on a MacBook keyboard, 2026-09-27, with the Globe
     /// action on Do Nothing). That key-down is the hotkey, not typing, so the second press still
-    /// starts hands-free listening; both reach the app, as before.
-    @Test func anFnDoubleTapIsHandsFreeDespiteTheGlobeKeysOwnKeyDown() async {
+    /// starts hands-free listening; both reach the app, as before. Hands-free listening then goes on
+    /// past the second tap's Globe key: Space switches the mode and is kept from the app, and an fn
+    /// press (finishing at the press) or Escape ends it, after which Space reaches the app again.
+    @Test(arguments: [false, true])
+    func anFnDoubleTapIsHandsFreeDespiteTheGlobeKeysOwnKeyDown(endsWithEscape: Bool) async {
         let (monitor, actions) = makeMonitor(.function)
         let fn = DictationHotkey.function.keyCode
         // The recorded code itself, not the app's constant, so a wrong constant fails here.
@@ -131,8 +134,25 @@ struct HotkeyMonitorTests {
         #expect(event(.flagsChanged, fn, [], at: 0.293))
         #expect(event(.keyDown, globe, [], at: 0.293))
         #expect(event(.keyUp, globe, [], at: 0.293))
-
         #expect(await dispatched(actions) == [.start, .finish, .startHandsFree])
+
+        #expect(!event(.keyDown, space, [], at: 1))
+        #expect(!event(.keyUp, space, [], at: 1.1))
+        #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .toggleMode])
+        if endsWithEscape {
+            #expect(!event(.keyDown, escape, [], at: 2))
+            #expect(!event(.keyUp, escape, [], at: 2.1))
+            #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .toggleMode, .cancel])
+        } else {
+            #expect(event(.flagsChanged, fn, .maskSecondaryFn, at: 2))
+            #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .toggleMode, .finish])
+            #expect(event(.flagsChanged, fn, [], at: 2.1))
+            #expect(event(.keyDown, globe, [], at: 2.103))
+            #expect(event(.keyUp, globe, [], at: 2.103))
+            #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .toggleMode, .finish])
+        }
+        #expect(event(.keyDown, space, [], at: 3))
+        #expect(event(.keyUp, space, [], at: 3.1))
     }
 
     /// macOS switched the tap off: the event goes on, and nothing reaches the controller.
