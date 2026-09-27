@@ -795,7 +795,8 @@ switching the setting for the user, the owner chose the second ("option 2").
   longer the hotkey, still held if it is.
 - The user's own later choice wins: the setting is put back only while it is still Do Nothing, and a
   choice made while the app was not running is the one saved. A user who chose Do Nothing already
-  is never touched.
+  is never touched. A later choice of Do Nothing itself cannot be told from the app's own, so after
+  a crash it is replaced by the saved choice.
 - Settings says so under the hotkey picker, in place of asking the user to change the setting.
 
 **Consequences:**

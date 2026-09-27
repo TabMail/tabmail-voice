@@ -110,6 +110,14 @@ struct GlobeKeyActionTests {
         #expect(setting.value == showEmoji)
     }
 
+    /// A choice saved by a run that crashed, on a macOS that has since dropped the calls: it cannot be
+    /// put back, and is forgotten rather than kept for ever.
+    @Test func aSavedChoiceTheSystemCanNoLongerTakeIsForgotten() {
+        defaults.set(Int(changeInputSource), forKey: GlobeKeyAction.savedChoiceKey)
+        GlobeKeyAction(system: nil, defaults: defaults).restore()
+        #expect(defaults.object(forKey: GlobeKeyAction.savedChoiceKey) == nil)
+    }
+
     /// Without the system calls nothing is changed or saved.
     @Test func withoutTheSystemCallsNothingIsSaved() {
         let globe = GlobeKeyAction(system: nil, defaults: defaults)
