@@ -22,10 +22,17 @@ tabmail-voice/
         │   │   ├── AuthClient.swift          Supabase email one-time-code sign-in + refresh; injectable HTTPTransport
         │   │   ├── SessionStore.swift        Keychain session storage (SessionStoring protocol)
         │   │   └── TabMailSession.swift      GoTrue session wire model (same shape as iOS)
-        │   ├── Agent/
-        │   │   ├── DesktopAgent.swift        Agent mode: `AgentTool` (edit, compose, thunderbird); one call chooses the tool, one has it write the text
-        │   │   ├── EmailClient.swift         The email app the Thunderbird tool drives: chosen in Settings, else the default email app if it is a Thunderbird
-        │   │   └── ThunderbirdRelay.swift    Types a chat message into TabMail's chat in Thunderbird: front, ⌥⌘L, paste, Return, only while the chat has focus (spike)
+        │   ├── Agent/                    Agent mode (ADR-DESK-020: one file per tool, one folder per connector)
+        │   │   ├── DesktopAgent.swift        Which tools are offered; one call chooses the tool, one has it write the text
+        │   │   ├── AgentTool.swift           Tool registry: `AgentTool` enum (the name the agent answers) → its `DesktopTool`; `ToolContext` a tool delivers with
+        │   │   ├── Tools/
+        │   │   │   ├── EditTool.swift            Rewrites the selection; fitted to its blank space, pasted over it
+        │   │   │   ├── ComposeTool.swift         Writes at the caret (gets the terminal program)
+        │   │   │   └── ThunderbirdTool.swift     Hands a mail/calendar request to the Thunderbird connector
+        │   │   └── Connectors/
+        │   │       └── Thunderbird/
+        │   │           ├── EmailClient.swift         The email app the Thunderbird tool drives: chosen in Settings, else the default email app if it is a Thunderbird
+        │   │           └── ThunderbirdRelay.swift    Types a chat message into TabMail's chat in Thunderbird: front, ⌥⌘L, paste, Return, only while the chat has focus (spike)
         │   ├── Backend/
         │   │   ├── BackendError.swift        Backend HTTP error → user message
         │   │   ├── TranscriptionClient.swift POST /dictation/transcribe, with the dictation's language (the backend picks the model by it)

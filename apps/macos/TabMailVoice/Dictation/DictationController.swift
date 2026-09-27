@@ -356,16 +356,10 @@ final class DictationController {
                 phase = .running(tool)
                 let text = try await DesktopAgent.write(tool, for: transcript, context: context, client: client, account: account, userId: userId)
                 guard generation == current, !Task.isCancelled else { return }
-                switch tool {
-                case .edit, .compose:
-                    // The request may have taken long enough for the user to move on: the text
-                    // belongs in the app they spoke over, and is pasted nowhere else.
-                    guard frontmostApp() == targetApp else { throw DesktopAgent.Failure.appChanged }
-                    // An edit pastes over the selection; a compose runs only with nothing selected.
-                    await inserter.insert(text)
-                case .thunderbird:
-                    try await thunderbird.send(text, to: settings.emailApp)
-                }
+                let targetApp = targetApp
+                try await tool.implementation.deliver(text, in: ToolContext(
+                    settings: settings, inserter: inserter, isTargetAppFrontmost: { [frontmostApp] in frontmostApp() == targetApp }, thunderbird: thunderbird
+                ))
             }
             guard generation == current else { return }
             teardown()
