@@ -7,7 +7,7 @@ import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, ipcMain, session, shell } from "electron";
-import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
+import { AccountModel, AuthClient, DebugAccess, savedSignInKeptMessage } from "../core/account.js";
 import { EmailClient } from "../core/agent/emailClient.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
@@ -366,7 +366,8 @@ function launch(): void {
       case "verify":
         return account.verify(command.email, command.code);
       case "signOut":
-        return account.signOut();
+        if (!account.signOut()) throw new Error(savedSignInKeptMessage);
+        return;
       case "setHotkey":
         settings.hotkey = command.hotkey;
         return;

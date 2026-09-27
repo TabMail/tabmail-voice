@@ -171,7 +171,7 @@ function AccountSection({ email: signedInEmail }: { email: string | null }) {
           <span>{signedInEmail}</span>
         </div>
         <div className="row">
-          <button onClick={() => void send({ type: "signOut" })}>Sign Out</button>
+          <button onClick={() => void run(() => send({ type: "signOut" }), () => {})}>Sign Out</button>
         </div>
       </>
     );

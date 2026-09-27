@@ -5,6 +5,7 @@
 import * as config from "../config.js";
 import type { ScreenContext } from "../screenContext.js";
 import { trimWhitespace } from "../text.js";
+import { CancellationError } from "../timeout.js";
 import type { ThunderbirdRelay } from "./thunderbirdRelay.js";
 
 /**
@@ -60,7 +61,7 @@ async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<v
   if (!(await context.isTargetAppFrontmost())) throw new AgentFailure("appChanged");
   // Cancelled while the app in front was read (the Swift app reads it synchronously): the text is
   // no longer wanted anywhere.
-  if (context.signal.aborted) return;
+  if (context.signal.aborted) throw new CancellationError();
   await context.paste(text);
 }
 

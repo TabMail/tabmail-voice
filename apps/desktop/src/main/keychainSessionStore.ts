@@ -7,6 +7,9 @@ import { type SessionStore, sessionFromWire, sessionToWire, type TabMailSession 
 import * as config from "../core/config.js";
 import { errorName, log } from "../core/log.js";
 
+/** Shown when the credential store refuses to keep a sign-in. */
+export const saveFailedMessage = "Couldn't save your sign-in in the system's credential store. Try again.";
+
 /** The signed-in session in the system's credential store (the macOS Keychain, the Windows
  * Credential Manager, the Secret Service on Linux), as GoTrue's JSON. Tests use
  * `InMemorySessionStore` and never touch it. */
@@ -25,11 +28,15 @@ export class KeychainSessionStore implements SessionStore {
 
   /** Throws when the store refuses it: the account then stays as it was. */
   save(session: TabMailSession): void {
-    this.entry.setPassword(JSON.stringify(sessionToWire(session)));
+    try {
+      this.entry.setPassword(JSON.stringify(sessionToWire(session)));
+    } catch (error) {
+      log.error(`KeychainSessionStore: save failed: ${errorName(error)}`);
+      throw new Error(saveFailedMessage, { cause: error });
+    }
   }
 
-  /** Throws when the store refuses it (a missing entry is no failure): the account then stays
-   * signed in, rather than coming back at the next launch. */
+  /** Throws when the store refuses it (a missing entry is no failure). */
   clear(): void {
     this.entry.deletePassword();
   }

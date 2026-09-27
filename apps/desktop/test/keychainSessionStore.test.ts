@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AccountModel, AuthClient } from "../src/core/account.js";
-import { KeychainSessionStore } from "../src/main/keychainSessionStore.js";
+import { KeychainSessionStore, saveFailedMessage } from "../src/main/keychainSessionStore.js";
 import { Fixtures, StubTransport } from "./support.js";
 
 /** The system's credential store, in memory: one item, and a switch each to refuse a write or a
@@ -59,27 +59,29 @@ describe("KeychainSessionStore", () => {
     expect(() => new KeychainSessionStore().clear()).not.toThrow();
   });
 
-  /** A session the store refused would be gone at the next launch: the sign-in fails instead. */
+  /** A session the store refused would be gone at the next launch: the sign-in fails instead, saying
+   * so in words, not the credential library's. */
   test("a sign-in the store refuses fails and signs nothing in", async () => {
     credentials.refusesSave = true;
     const model = account(signInReply());
 
-    await expect(model.verify(Fixtures.email, "123456")).rejects.toThrow();
+    await expect(model.verify(Fixtures.email, "123456")).rejects.toThrow(new Error(saveFailedMessage));
 
     expect(model.isSignedIn).toBe(false);
     expect(new KeychainSessionStore().load()).toBeNull();
   });
 
-  /** A session the store kept would be back at the next launch: the sign-out fails instead, and the
-   * account stays signed in. */
-  test("a sign-out the store refuses fails and leaves the account signed in", async () => {
+  /** The app signs out all the same, and says the saved sign-in is still there, to come back at the
+   * next launch (owner, 2026-09-27). */
+  test("a sign-out the store refuses still signs out, and says the sign-in was kept", async () => {
     const model = account(signInReply());
     await model.verify(Fixtures.email, "123456");
     credentials.refusesDelete = true;
 
-    expect(() => model.signOut()).toThrow();
+    expect(model.signOut()).toBe(false);
 
-    expect(model.isSignedIn).toBe(true);
+    expect(model.isSignedIn).toBe(false);
+    expect(await model.validToken()).toBeNull();
     expect(new KeychainSessionStore().load()?.accessToken).toBe("access-a");
   });
 });

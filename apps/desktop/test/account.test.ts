@@ -214,6 +214,45 @@ describe("AccountModel", () => {
     expect(store.load()).toBeNull();
   });
 
+  /** A store that refuses to delete the saved sign-in: signing out still signs out, and says so. */
+  class KeepingStore extends InMemorySessionStore {
+    override clear(): void {
+      throw new Error("denied");
+    }
+  }
+
+  /** Signed out during a refresh, with the saved sign-in kept by the store: signed out all the same,
+   * and no second refresh spends the same single-use refresh token. */
+  test("a sign-out that keeps the saved sign-in during a refresh signs out, with one refresh", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.sessionJSON({ access: "refreshed", refresh: "refresh-2" }));
+    const release = deferred<void>();
+    stub.gate = () => release.promise;
+    const account = new AccountModel(client(stub), new KeepingStore(Fixtures.session({ expiresIn: 0 })));
+
+    const before = account.validToken();
+    expect(account.signOut()).toBe(false);
+    expect(account.isSignedIn).toBe(false);
+    expect(await account.validToken()).toBeNull();
+    release.resolve();
+
+    expect(await before).toBeNull();
+    expect(stub.requests).toHaveLength(1);
+  });
+
+  /** A rejected refresh token signs out and says so as a rejection, even when the store keeps the
+   * saved sign-in. */
+  test("a rejected refresh signs out even when the store keeps the saved sign-in", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(400, { error: "invalid_grant" });
+    const account = new AccountModel(client(stub), new KeepingStore(Fixtures.session({ expiresIn: 0 })));
+
+    expect((await authError(account.validToken()))?.kind).toBe("refreshRejected");
+    expect(account.isSignedIn).toBe(false);
+    expect(await account.validToken()).toBeNull();
+    expect(stub.requests).toHaveLength(1);
+  });
+
   test("signed out has no token", async () => {
     const account = new AccountModel(client(new StubTransport()), new InMemorySessionStore());
     expect(await account.validToken()).toBeNull();

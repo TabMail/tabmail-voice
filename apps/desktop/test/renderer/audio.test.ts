@@ -9,18 +9,21 @@ vi.mock("../../src/renderer/captureWorklet.ts?worker&url", () => ({ default: "ca
 
 /** The audio window's page against a fake Web Audio and microphone: what it asks of the microphone
  * and reports back, in order. No real device is touched. */
-async function audioPage(): Promise<{
+async function audioPage(options: { holdsResume?: boolean } = {}): Promise<{
   send(command: AudioCommand): void;
   events: string[];
   reports: AudioReport[];
   loadWorklet(): void;
   grantMicrophone(): void;
   hear(samples: Float32Array): void;
+  resume(): void;
 }> {
   const events: string[] = [];
   const reports: AudioReport[] = [];
   let loaded!: () => void;
   const loading = new Promise<void>((resolve) => (loaded = resolve));
+  let resumed!: () => void;
+  const resuming = options.holdsResume ? new Promise<void>((resolve) => (resumed = resolve)) : Promise.resolve();
   let granted!: () => void;
   const granting = new Promise<void>((resolve) => (granted = resolve));
   let port: { onmessage: ((event: { data: Float32Array }) => void) | null } | null = null;
@@ -33,7 +36,7 @@ async function audioPage(): Promise<{
       readonly audioWorklet = { addModule: () => loading };
       readonly destination = {};
       suspend = async () => {};
-      resume = async () => {};
+      resume = () => resuming;
       createMediaStreamSource = node;
       createGain = () => ({ ...node(), gain: { value: 1 } });
     },
@@ -73,6 +76,7 @@ async function audioPage(): Promise<{
     loadWorklet: loaded,
     grantMicrophone: granted,
     hear: (samples) => port?.onmessage?.({ data: samples }),
+    resume: () => resumed?.(),
   };
 }
 
@@ -115,6 +119,21 @@ describe("audio page", () => {
     await settle();
 
     expect(page.events).not.toContain("microphone taken");
+    expect(page.reports).toEqual([]);
+  });
+
+  test("a session stopped while the audio context resumes releases the microphone and reports nothing", async () => {
+    const page = await audioPage({ holdsResume: true });
+    page.loadWorklet();
+    page.grantMicrophone();
+
+    page.send({ type: "start", session: 1 });
+    await settle();
+    page.send({ type: "stop", session: 1 });
+    page.resume();
+    await settle();
+
+    expect(page.events.filter((event) => event.startsWith("microphone"))).toEqual(["microphone taken", "microphone released"]);
     expect(page.reports).toEqual([]);
   });
 

@@ -5,7 +5,7 @@
 import { BackendError } from "./backend.js";
 import * as config from "./config.js";
 import type { HTTPTransport } from "./http.js";
-import { log } from "./log.js";
+import { errorName, log } from "./log.js";
 import { Observable } from "./observable.js";
 import { trimWhitespace } from "./text.js";
 
@@ -184,10 +184,19 @@ export class AccountModel extends Observable {
     this.set(session);
   }
 
-  signOut(): void {
+  /** Signs out. Returns false when the saved sign-in could not be removed (the store refused): the
+   * app is signed out all the same, but that sign-in may be back at the next launch (owner,
+   * 2026-09-27: sign out, and say so). */
+  signOut(): boolean {
     this.refreshing = null;
-    this.store.clear();
     this.set(null);
+    try {
+      this.store.clear();
+      return true;
+    } catch (error) {
+      log.error(`AccountModel: saved sign-in not removed: ${errorName(error)}`);
+      return false;
+    }
   }
 
   /** A usable access token, refreshing first if it expires soon (or `forceRefresh`). Null when
@@ -262,3 +271,6 @@ export const DebugAccess = {
     return lower.endsWith(`@${DebugAccess.allowedEmailDomain}`) || DebugAccess.allowedEmails.has(lower);
   },
 };
+
+/** Shown when a sign-out could not remove the saved sign-in. */
+export const savedSignInKeptMessage = "Signed out, but your saved sign-in couldn't be removed from the system's credential store. It may come back when TabMail Voice next opens.";
