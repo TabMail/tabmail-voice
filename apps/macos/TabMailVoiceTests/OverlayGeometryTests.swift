@@ -37,8 +37,10 @@ struct OverlayGeometryTests {
         #expect(pillFrame(origin).maxY == caret.minY - DictationConfig.overlayCaretGap)
     }
 
+    /// A caret too low for the pill and a tip under it, but high enough that no raise is needed to keep
+    /// that tip on screen above it (`theHintUnderTheListeningPillIsAlwaysOnScreen` sweeps the lines below).
     @Test func movesAboveTheCaretWhenThereIsNoRoomBelow() {
-        let caret = CGRect(x: 500, y: 10, width: 1, height: 20)
+        let caret = CGRect(x: 500, y: DictationConfig.listeningPillHeight + DictationConfig.tipFootprint, width: 1, height: 20)
         let origin = OverlayPanelController.overlayOrigin(anchor: caret, canvas: canvas, pillHeight: pillHeight, visibleFrame: screen)
         #expect(pillFrame(origin).minY == caret.maxY + DictationConfig.overlayCaretGap)
         #expect(OverlayPanelController.opensUpward(anchor: caret, pillHeight: pillHeight, visibleFrame: screen))
@@ -124,23 +126,26 @@ struct OverlayGeometryTests {
         #expect(!CaretLocator.isPlausible(CGRect(x: -5000, y: 400, width: 1, height: 20), screens: screens))
     }
 
-    /// Agent mode's bubbles and the Space hint (top-left origin), in the overlay's canvas: the bubbles
-    /// in one row centred above the pill, clear of it and of each other; the hint a tooltip centred
-    /// under the pill; nothing overlaps and everything stays inside the canvas. For the listening pill
-    /// and the circle it shrinks to, with no bubbles (dictation) and as many as are ever offered.
+    /// Agent mode's bubbles and a tip (top-left origin), in the overlay's canvas: the bubbles in one row
+    /// centred above the pill, clear of it and of each other; the tip a tooltip centred under the pill;
+    /// nothing overlaps and everything, the tip's shadow included, stays inside the canvas. For the
+    /// listening pill and the circle it shrinks to, each tip as drawn, with no bubbles (dictation) and
+    /// as many as are ever offered.
     @Test func bubblesSitInARowAboveThePillAndTheHintUnderIt() {
         let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
         let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
-        let hint = CGSize(width: 90, height: DictationConfig.tipArrowHeight + DictationConfig.tipHeight)
+        let tips = [TipTooltip(tip: .switchMode, hotkey: .rightOption), TipTooltip(tip: .doubleTap, hotkey: .rightOption)]
+        let shadow = DictationConfig.tipShadowRadius + DictationConfig.tipShadowOffsetY
         func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
             CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
         }
-        for width in [79, DictationConfig.pillHeight] {
-            let pill = CGRect(x: canvas.midX - width / 2, y: (canvas.height - DictationConfig.pillHeight) / 2, width: width, height: DictationConfig.pillHeight)
+        let listening = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0, language: "en")).fittingSize
+        for (size, hint) in [listening, CGSize(width: DictationConfig.pillHeight, height: DictationConfig.pillHeight)].flatMap({ size in tips.map { (size, NSHostingView(rootView: $0).fittingSize) } }) {
+            let pill = CGRect(x: canvas.midX - size.width / 2, y: (canvas.height - DictationConfig.pillHeight) / 2, width: size.width, height: size.height)
             let hintFrame = frame(OverlayPanelController.hintCentre(under: pill, size: hint), hint)
             #expect(hintFrame.minY >= pill.maxY)
             #expect(abs(hintFrame.midX - pill.midX) < 0.001, "hint not centred under the pill")
-            #expect(canvas.contains(hintFrame))
+            #expect(canvas.contains(hintFrame.insetBy(dx: -shadow, dy: -shadow)), "\(hintFrame) under a \(size) pill leaves the canvas")
             // Edit and Compose are never offered together: one fewer bubble than there are tools.
             for count in 0...(AgentTool.allCases.count - 1) {
                 let centres = OverlayPanelController.bubbleCentres(above: pill, sizes: Array(repeating: bubble, count: count))

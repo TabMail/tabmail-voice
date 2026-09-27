@@ -211,8 +211,9 @@ enum DictationConfig {
 
     // MARK: Overlay
 
-    /// Transparent canvas the overlay draws in; the pill sizes itself inside it.
-    static let overlayCanvasSize = CGSize(width: 440, height: 140)
+    /// Transparent canvas the overlay draws in; the pill sizes itself inside it. Tall enough for a tip
+    /// (and its shadow) under the listening pill, which sits vertically centred.
+    static let overlayCanvasSize = CGSize(width: 440, height: 210)
     /// Gap between the caret's line and the top of the pill.
     static let overlayCaretGap: CGFloat = 4
     /// A "caret" rect wider than this is a line or text box; the caret is its leading edge.
@@ -305,11 +306,16 @@ enum DictationConfig {
     /// A tip shows until the user does what it teaches, or at most this many times.
     static let switchModeTipMaxDisplays = 10
     static let doubleTapTipMaxDisplays = 5
-    static let tipFontSize: CGFloat = 11
-    static let tipHeight: CGFloat = 22
-    static let tipHorizontalPadding: CGFloat = 8
-    static let tipSpacing: CGFloat = 6
-    static let tipCornerRadius: CGFloat = 6
+    static let tipFontSize: CGFloat = 13
+    /// A tip is `tipLineCount` centred lines of a few words, each `tipLineHeight` tall.
+    static let tipLineCount = 3
+    static let tipLineHeight: CGFloat = 18
+    static let tipLineSpacing: CGFloat = 1
+    static let tipVerticalPadding: CGFloat = 6
+    static let tipHeight = 2 * tipVerticalPadding + CGFloat(tipLineCount) * tipLineHeight + CGFloat(tipLineCount - 1) * tipLineSpacing
+    static let tipHorizontalPadding: CGFloat = 10
+    static let tipSpacing: CGFloat = 5
+    static let tipCornerRadius: CGFloat = 8
     /// Near-black fill, a hairline light border, and a soft drop shadow.
     static let tipFillWhite: Double = 0.11
     static let tipFillOpacity: Double = 0.94
@@ -321,9 +327,9 @@ enum DictationConfig {
     static let tipTextOpacity: Double = 0.78
     static let tipKeyTextOpacity: Double = 0.95
     /// The "space" keycap: a raised key, a lighter fill with a light border.
-    static let tipKeyFontSize: CGFloat = 10
+    static let tipKeyFontSize: CGFloat = 12
     static let tipKeyPadding: CGFloat = 5
-    static let tipKeyHeight: CGFloat = 15
+    static let tipKeyHeight: CGFloat = 17
     static let tipKeyCornerRadius: CGFloat = 3.5
     static let tipKeyFillOpacity: Double = 0.14
     static let tipKeyBorderOpacity: Double = 0.22

@@ -15,8 +15,8 @@ struct TipTooltipTests {
     private let scale: CGFloat = 2
     private nonisolated static let tips: [(DictationTip, DictationHotkey)] = [(.switchMode, .rightOption), (.doubleTap, .function), (.doubleTap, .rightOption)]
 
-    /// Read off the drawn tip, on device: its words around the keycap. (The right ⌥ keycap's symbol
-    /// is not text Vision reads.)
+    /// Read off the drawn tip, on device, line by line: its words around the keycap. (The right ⌥
+    /// keycap's symbol is not text Vision reads.)
     @Test(arguments: zip(
         [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function)],
         ["press space to switch between dictation and agent mode", "double-tap fn to dictate without holding"]
@@ -32,11 +32,59 @@ struct TipTooltipTests {
         #expect(read.joined(separator: " ").lowercased() == words, "read \(read)")
     }
 
+    /// The keycap's name is light on its dark key, and the words are drawn larger than the single-line
+    /// tip's 11 pt (owner, 2026-09-26: "a bit of a larger font"), measured on device by Vision against
+    /// the same words drawn at 11 pt.
+    @Test(arguments: zip(
+        [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function)],
+        ["space", "fn"]
+    ))
+    func drawsALightKeycapAndLargerWords(tip: (DictationTip, DictationHotkey), key: String) throws {
+        let image = try #require({
+            let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1))
+            renderer.scale = 2 * scale
+            return renderer.cgImage
+        }())
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let lines = try recognize(image)
+        let keyLine = try #require(lines.first { $0.string.localizedCaseInsensitiveContains(key) }, "read \(lines.map(\.string))")
+        let keyRange = try #require(keyLine.string.range(of: key, options: .caseInsensitive))
+        let keyBox = try #require(try keyLine.boundingBox(for: keyRange)?.boundingBox)
+        let pixels = VNImageRectForNormalizedRect(keyBox, image.width, image.height)
+        var brightest: CGFloat = 0
+        for x in Int(pixels.minX)..<Int(pixels.maxX) {
+            for y in Int(pixels.minY)..<Int(pixels.maxY) {
+                // Vision's rects grow up from the bottom; the bitmap's rows go down from the top.
+                brightest = max(brightest, bitmap.colorAt(x: x, y: image.height - 1 - y)?.usingColorSpace(.genericGray)?.whiteComponent ?? 0)
+            }
+        }
+        #expect(brightest > 0.6, "the \(key) keycap's name is not light")
+
+        // The middle line has no keycap: all words.
+        let words = try #require(lines.first { !$0.string.localizedCaseInsensitiveContains(key) }?.string)
+        let height = { (image: CGImage) throws -> CGFloat in
+            let line = try #require(try self.recognize(image).first { $0.string == words })
+            return try #require(try line.boundingBox(for: line.string.startIndex..<line.string.endIndex)?.boundingBox).height * CGFloat(image.height)
+        }
+        let reference = ImageRenderer(content: Text(words).font(.system(size: 11)).foregroundStyle(.white).padding().background(.black))
+        reference.scale = 2 * scale
+        let referenceImage = try #require(reference.cgImage)
+        #expect(try height(image) > height(referenceImage), "\"\(words)\" is not larger than at 11 pt")
+    }
+
+    private func recognize(_ image: CGImage) throws -> [VNRecognizedText] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first }
+    }
+
     /// The double-tap tip names the key the user holds.
     @Test func theDoubleTapTipNamesTheHotkey() {
-        #expect(TipTooltip(tip: .doubleTap, hotkey: .rightOption).words.key == "right ⌥")
-        #expect(TipTooltip(tip: .doubleTap, hotkey: .function).words.key == "fn")
-        #expect(TipTooltip(tip: .switchMode, hotkey: .function).words.key == "space")
+        #expect(TipTooltip(tip: .doubleTap, hotkey: .rightOption).keycap == "right ⌥")
+        #expect(TipTooltip(tip: .doubleTap, hotkey: .function).keycap == "fn")
+        #expect(TipTooltip(tip: .switchMode, hotkey: .function).keycap == "space")
     }
 
     /// The whole overlay as a listening hold draws it: the dark Space tip under the light pill.
@@ -83,14 +131,17 @@ struct TipTooltipTests {
         #expect(transport.requests.isEmpty)
     }
 
-    /// As tall as its arrow and box, the room `OverlayPanelController.opensUpward` leaves for it, and
-    /// narrower than the overlay it is drawn in.
+    /// As tall as its arrow and box, the room `OverlayPanelController.opensUpward` leaves for it, in
+    /// `tipLineCount` lines, and not much wider than the listening pill (owner, 2026-09-26: "should
+    /// not go too much wider than the pill itself").
     @Test(arguments: tips)
     func takesTheRoomLeftForIt(tip: (DictationTip, DictationHotkey)) {
-        let size = NSHostingView(rootView: TipTooltip(tip: tip.0, hotkey: tip.1)).fittingSize
+        let tooltip = TipTooltip(tip: tip.0, hotkey: tip.1)
+        let size = NSHostingView(rootView: tooltip).fittingSize
+        let pill = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0, language: "en")).fittingSize
+        #expect(tooltip.lines.count == DictationConfig.tipLineCount)
         #expect(size.height == DictationConfig.tipArrowHeight + DictationConfig.tipHeight)
-        #expect(size.width > size.height)
-        #expect(size.width < DictationConfig.overlayCanvasSize.width)
+        #expect(size.width < 2 * pill.width, "\(size.width) wide beside a \(pill.width) pill")
     }
 
     @Test(arguments: tips, [ColorScheme.light, .dark])

@@ -751,5 +751,25 @@ for agent mode; this one is for dictation, and Space still switches the mode.
 **Consequences:**
 - Hands-free listening is capped like a hold (`maxRecordingDuration`, 5 min), then transcribed.
 - While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
-- A first tap is still a discarded recording start (the microphone boots and stops); a double tap
-  starts it twice.
+- ~~A first tap is still a discarded recording start (the microphone boots and stops); a double tap
+  starts it twice.~~ Superseded by the amendment below.
+
+**Amendment 2026-09-26 (owner, after trying it):** "the double tap launches slower than just
+holding"; the tip "is just too wide in a single line … a bit of a larger font … not go too much
+wider than the pill itself, so it should be multi-line".
+- The debug log showed why: the first audio came ~1.4 s after a double tap against ~0.6 s after a
+  hold, because the first tap's release discarded its recording and the second press restarted the
+  microphone. Now a tap's release (in `arming`) keeps that recording, unseen, for `doubleTapWindow`;
+  a second press latches it hands-free and shows it at once (`latchHandsFree`), the microphone
+  already running. With no second press it is discarded as before; a hold pressed meanwhile (after
+  the gesture's window) discards it and starts afresh. The microphone is still released after
+  every dictation, at most `doubleTapWindow` after a lone tap. A microphone that fails to start while a released tap waits for its
+  second press is discarded unseen too; a failure after the second press shows, and a double tap
+  after a failed tap starts the microphone again.
+- A tip is three centred lines at 13 pt ("Press [space] to switch / between dictation / and agent
+  mode"; "Double-tap [key] / to dictate / without holding"), each `tipLineHeight` tall, so its height
+  is a config constant (`tipHeight`) and `opensUpward` still counts it exactly. The overlay canvas grew
+  to 210 pt tall so the tip and its shadow fit under the vertically centred pill; on the screen's
+  bottom lines the overlay is raised that much further above the caret.
+- The double-tap tip did not show in the owner's test because it was already learned (a double tap
+  came first), and the Space tip had used its 10 displays: working as decided, not a defect.

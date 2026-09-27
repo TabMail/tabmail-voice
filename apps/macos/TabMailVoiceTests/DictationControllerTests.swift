@@ -15,15 +15,33 @@ private final class SilentCapture: AudioCapturing {
     func stop() {}
 }
 
-/// A microphone that records nothing and counts how often it was started.
+/// A microphone that logs each start and stop, in order, and records nothing or (`hears`) a
+/// `ToneCapture`'s tone. It can fail to start after the fact, as a real one reports it.
 private final class CountingCapture: AudioCapturing, @unchecked Sendable {
-    private let count = OSAllocatedUnfairLock(initialState: 0)
-    var starts: Int { count.withLock { $0 } }
+    enum Failure: Error { case unavailable }
+    private let hears: Bool
+    init(hears: Bool = false) {
+        self.hears = hears
+    }
+    private let state = OSAllocatedUnfairLock(initialState: (events: [String](), completion: (@Sendable ((any Error)?) -> Void)?.none))
+    var events: [String] { state.withLock { $0.events } }
+    var starts: Int { events.filter { $0 == "start" }.count }
+    var stops: Int { events.filter { $0 == "stop" }.count }
     func prepare() {}
     func start(onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void, completion: @escaping @Sendable ((any Error)?) -> Void) {
-        count.withLock { $0 += 1 }
+        state.withLock {
+            $0.events.append("start")
+            $0.completion = completion
+        }
+        if hears { ToneCapture().start(onBuffer: onBuffer, completion: { _ in }) }
     }
-    func stop() {}
+    func stop() {
+        state.withLock { $0.events.append("stop") }
+    }
+    /// The last start's completion, with an error.
+    func fail() {
+        state.withLock { $0.completion }?(Failure.unavailable)
+    }
 }
 
 /// What the stub keystroke pasted, in order.
@@ -1142,6 +1160,163 @@ struct DictationControllerTests {
         controller.handle(.finish)
 
         #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
+    }
+
+    /// A double tap carries on the first tap's recording: the microphone started at the first press is
+    /// not restarted, and the pill shows at once (owner, 2026-09-26: the double tap started slower than
+    /// a hold, as it restarted the microphone).
+    @Test func aDoubleTapCarriesOnTheFirstTapsRecording() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        #expect(controller.phase == .arming)
+        controller.handle(.startHandsFree)
+
+        #expect(controller.phase == .listening)
+        #expect(capture.starts == 1)
+        #expect(!TipBook(defaults: tipDefaults).isEligible(.doubleTap))
+        #expect(await throughout(DictationConfig.doubleTapWindow * 2) { controller.phase == .listening && capture.stops == 0 })
+        controller.handle(.cancel)
+    }
+
+    /// A double tap after its first tap's microphone failed starts the microphone again, rather than
+    /// carrying on a recording that never started.
+    @Test func aDoubleTapAfterAFailedTapStartsTheMicrophoneAgain() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        capture.fail()
+        // The second press, well inside the window the tap waits for it.
+        try? await Task.sleep(for: DictationConfig.doubleTapWindow / 4)
+        controller.handle(.startHandsFree)
+
+        #expect(capture.events == ["start", "stop", "start"])
+        #expect(controller.phase == .listening)
+        controller.handle(.cancel)
+    }
+
+    /// A double tap whose microphone fails after the second press shows the failure: by then the user
+    /// asked to dictate.
+    @Test func aDoubleTapWhoseMicrophoneFailsShowsIt() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+        #expect(controller.phase == .listening)
+        capture.fail()
+
+        #expect(await eventually { controller.phase == .failed("Couldn't start the microphone.") })
+    }
+
+    /// A press while a double-tapped dictation is being transcribed leaves it alone: no new recording
+    /// starts, and its text is still pasted.
+    @Test func aPressWhileADoubleTapIsTranscribedLeavesItAlone() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        let capture = CountingCapture(hears: true)
+        let (controller, pastes) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+        controller.handle(.finish)
+        #expect(controller.phase == .transcribing)
+        controller.handle(.start)
+
+        #expect(controller.phase == .transcribing)
+        #expect(capture.starts == 1)
+        #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
+    }
+
+    /// A lone tap whose microphone fails to start while the tap waits for a second press stays unseen,
+    /// as any lone tap does; a deliberate dictation's failure still shows.
+    @Test func aLoneTapWhoseMicrophoneFailsStaysUnseen() async {
+        let capture = CountingCapture()
+        let (controller, pastes) = makeController(capture: capture)
+        var phases: [DictationController.Phase] = []
+        controller.onPhaseChange = { phases.append($0) }
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        capture.fail()
+        #expect(await throughout(DictationConfig.doubleTapWindow * 2) { phases.allSatisfy { $0 == .arming || $0 == .idle } }, "shown: \(phases)")
+        #expect(controller.phase == .idle)
+        #expect(capture.events.last == "stop")
+        #expect(transcription.requests.isEmpty && pastes.texts.isEmpty)
+
+        controller.handle(.startHandsFree)
+        capture.fail()
+        #expect(await eventually { controller.phase == .failed("Couldn't start the microphone.") })
+    }
+
+    /// A double-tapped dictation, tapped again, is transcribed, cleaned up and pasted like a hold.
+    @Test func aDoubleTappedDictationIsPastedWhenTappedAgain() async {
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        let (controller, pastes) = makeController(capture: ToneCapture())
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+        #expect(controller.phase == .listening)
+        controller.handle(.finish)
+
+        #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
+    }
+
+    /// The Space tip shows in a double-tapped dictation even when the microphone was already heard
+    /// during the first tap, before anything was shown.
+    @Test func aDoubleTapHeardDuringTheTapShowsTheSpaceTip() async {
+        let (controller, _) = makeController(capture: ToneCapture())
+
+        controller.handle(.start)
+        #expect(await eventually { controller.isHearing })
+        #expect(controller.phase == .arming)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+
+        #expect(await eventually { controller.tip == .switchMode })
+        controller.handle(.cancel)
+    }
+
+    /// Every lone tap is discarded unseen, not only the first: none ever shows a pill or keeps the
+    /// microphone listening.
+    @Test func everyLoneTapIsDiscardedUnseen() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        for _ in 0..<3 {
+            controller.handle(.start)
+            controller.handle(.finish)
+            #expect(await throughout(DictationConfig.doubleTapWindow * 2) { controller.phase != .listening })
+            #expect(controller.phase == .idle)
+            #expect(capture.events.last == "stop", "the microphone is still on: \(capture.events)")
+        }
+    }
+
+    /// A tap with no second press is discarded unseen once `doubleTapWindow` has passed; a hold that
+    /// follows a tap is a new recording.
+    @Test func aLoneTapIsDiscardedAndAHoldAfterItStartsAfresh() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        #expect(await throughout(DictationConfig.minimumHoldDuration) { controller.phase == .arming })
+        #expect(await eventually { controller.phase == .idle })
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.start)
+        #expect(capture.events == ["start", "stop", "start", "stop", "start"])
+        #expect(await eventually { controller.phase == .listening })
+        controller.handle(.cancel)
     }
 
     /// Escape during a hands-free dictation: nothing is sent or pasted.
