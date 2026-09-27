@@ -42,6 +42,9 @@ export class TransportError extends Error {
 /** The real network, through fetch. The body is read as it arrives, and the request is abandoned
  * when nothing has arrived for `timeout`. */
 export const liveTransport: HTTPTransport = async (request) => {
+  // Cancelled before it went out (during a token refresh): an abort listener added now would never
+  // fire, so nothing would stop the upload.
+  if (request.signal?.aborted) throw new TransportError("cancelled");
   const controller = new AbortController();
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;

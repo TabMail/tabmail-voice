@@ -110,7 +110,8 @@ export class HelperClient {
       if (line.startsWith("error ")) log.error(`${name}: ${line.slice("error ".length)}`);
       else log.debug(`${name}: ${line.startsWith("debug ") ? line.slice("debug ".length) : line}`);
     });
-    // A failed spawn (a missing executable) reports here, then as an exit.
+    // A failed spawn (a missing executable) reports here only: Node sends no exit for it, so the
+    // helper isn't restarted (it would fail the same way) and its requests time out.
     child.on("error", (error) => log.error(`${name}: could not run: ${error.name}`));
     child.stdin.on("error", () => {});
     child.on("exit", (code, signal) => {

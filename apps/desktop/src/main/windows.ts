@@ -5,6 +5,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, type BrowserWindowConstructorOptions } from "electron";
 import * as config from "../core/config.js";
+import { log } from "../core/log.js";
 import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
 
 /** The renderer page of each window, built by Vite into `dist/renderer`. */
@@ -49,7 +50,14 @@ export class Windows {
 
   /** The hidden window that owns the microphone (`getUserMedia` needs a renderer). */
   audio(): BrowserWindow {
-    return this.window("audio", { show: false, width: 1, height: 1, skipTaskbar: true, webPreferences: { backgroundThrottling: false } });
+    return this.window("audio", { show: false, width: 1, height: 1, skipTaskbar: true, webPreferences: { backgroundThrottling: false } }, (window) => {
+      // A page whose renderer died stays dead: drop the window, and the next command opens a fresh
+      // one (otherwise every dictation after a crash fails until the app is relaunched).
+      window.webContents.on("render-process-gone", (_event, details) => {
+        log.error(`windows: audio page gone (${details.reason})`);
+        window.destroy();
+      });
+    });
   }
 
   isAudioWindow(contents: Electron.WebContents): boolean {

@@ -18,14 +18,20 @@ export class StubTransport {
   private readonly replies: { status: number; body: string }[] = [];
   /** Suspends each request until it resolves (for single-flight and cancellation tests). */
   gate: ((request: HTTPRequest) => Promise<void>) | undefined;
+  /** Answers a cancelled request as `liveTransport` does: one cancelled before it goes out is never
+   * sent, and one cancelled while it waits fails. Off, a reply arrives however the request is
+   * cancelled (as one already on its way does). */
+  honoursCancel = false;
 
   enqueue(status: number, body: unknown): void {
     this.replies.push({ status, body: typeof body === "string" ? body : JSON.stringify(body) });
   }
 
   readonly transport: HTTPTransport = async (request) => {
+    if (this.honoursCancel && request.signal?.aborted) throw new TransportError("cancelled");
     this.requests.push(request);
     await this.gate?.(request);
+    if (this.honoursCancel && request.signal?.aborted) throw new TransportError("cancelled");
     const reply = this.replies.shift();
     if (!reply) throw new TransportError("network");
     return { status: reply.status, headers: {}, body: reply.body };

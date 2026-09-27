@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { AccountModel } from "../src/core/account.js";
 import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
@@ -11,12 +13,13 @@ import * as config from "../src/core/config.js";
 import { DictationController, nothingHeardMessage, type Phase } from "../src/core/dictationController.js";
 import type { DictationMode } from "../src/core/hotkey.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
-import { PermissionsModel } from "../src/core/permissions.js";
+import { type MicrophoneStatus, PermissionsModel } from "../src/core/permissions.js";
 import type { ScreenContext } from "../src/core/screenContext.js";
 import type { DictationSettings } from "../src/core/settings.js";
 import { TipBook } from "../src/core/tips.js";
 import { sleep } from "../src/core/timeout.js";
 import { encodeWAV } from "../src/core/wav.js";
+import { type HTTPTransport, liveTransport } from "../src/core/http.js";
 import { FakeThunderbird } from "./fakeThunderbird.js";
 import { screen as blankScreen } from "./screens.js";
 import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport } from "./support.js";
@@ -97,13 +100,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
-  function makeController(options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird } = {}): { controller: DictationController; pastes: string[] } {
+  function makeController(
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport } = {},
+  ): { controller: DictationController; pastes: string[] } {
     const pastes: string[] = [];
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
     const controller = new DictationController({
       permissions: new PermissionsModel({
-        readMicrophone: () => "granted",
-        readAccessibility: () => true,
+        readMicrophone: () => options.microphone ?? "granted",
+        readAccessibility: () => options.accessibility ?? true,
         askForMicrophone: async () => {},
         askForAccessibility: () => true,
         openSettings: () => {},
@@ -119,7 +124,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       frontmostApp: async () => front.pid,
       keyboardLanguage: async () => keyboard.language,
       systemEmailApp: async () => null,
-      makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", transcription.transport),
+      makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", options.transcriptionTransport ?? transcription.transport),
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
     });
     return { controller, pastes };
@@ -321,6 +326,109 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await sleep(100);
       expect(controller.phase).toEqual(blocked);
       expect([capture.starts, reads, transcription.requests.length, completions.requests.length, pastes.length]).toEqual([1, 1, 0, 0, 0]);
+    });
+
+    /** Everything else a dictation needs is checked at key-down too, before anything is recorded,
+     * read or sent; the overlay says what is missing. */
+    test.each<[string, () => Parameters<typeof makeController>[0], string]>([
+      ["signed out", () => ({ account: signedIn(auth, null) }), "Sign in to TabMail in Settings to dictate."],
+      ["without the microphone", () => ({ microphone: "denied" }), "Allow microphone access in TabMail Voice's menu to dictate."],
+      ["without Accessibility", () => ({ accessibility: false }), "Allow Accessibility access in TabMail Voice's menu so dictation can type for you."],
+    ])("%s nothing is recorded, read or sent", async (_, options, message) => {
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ ...options(), capture });
+      let reads = 0;
+      controller.captureContext = () => {
+        reads += 1;
+        return null;
+      };
+      transcription.enqueue(200, { text: transcript });
+
+      controller.handle("start");
+      controller.handle("finish");
+      await sleep(100);
+
+      expect(controller.phase).toEqual(failed(message));
+      expect([capture.starts, reads, transcription.requests.length, completions.requests.length, pastes.length]).toEqual([0, 0, 0, 0, 0]);
+    });
+
+    /** Cancelled while the transcription runs: nothing is cleaned up or pasted, and the overlay just
+     * goes, with no error for the user's own cancel (not even "nothing heard"), whether the reply
+     * still arrives or the request fails as cancelled. */
+    test.each([
+      ["whose reply arrives anyway", false, transcript],
+      ["whose empty reply arrives anyway", false, "  "],
+      ["whose request fails as cancelled", true, transcript],
+    ])("a dictation cancelled during the transcription %s shows nothing", async (_, honoursCancel, heard) => {
+      transcription.honoursCancel = honoursCancel;
+      transcription.enqueue(200, { text: heard });
+      completions.enqueue(200, cleanedStream);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const phases: Phase[] = [];
+      transcription.gate = async () => {
+        controller.onPhaseChange = (phase) => phases.push(phase);
+        controller.handle("cancel");
+      };
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+      await sleep(200);
+      expect(phases).toEqual([idle]);
+      expect(completions.requests).toHaveLength(0);
+      expect(pastes).toEqual([]);
+    });
+
+    /** A hold started while the cancelled dictation's request is still failing keeps its microphone:
+     * the older dictation's end doesn't stop the newer one. */
+    test("a hold right after a cancel during the transcription keeps listening", async () => {
+      transcription.honoursCancel = true;
+      transcription.enqueue(200, { text: transcript });
+      const capture = new CountingCapture(true);
+      const { controller } = makeController({ capture });
+      transcription.gate = async () => {
+        controller.handle("cancel");
+        controller.handle("start");
+      };
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      await sleep(200);
+      expect(controller.phase).toEqual(listening);
+      expect(capture.events.at(-1)).toBe("start");
+      controller.handle("cancel");
+    });
+
+    /** Cancelled while the sign-in is refreshed, before the recording goes out: the recording is
+     * never sent. The real transport, against a server on the loopback interface. */
+    test("a dictation cancelled during a sign-in refresh sends nothing", async () => {
+      const uploads: string[] = [];
+      const server = createServer((incoming, response) => {
+        uploads.push(incoming.url ?? "");
+        response.end(JSON.stringify({ text: transcript }));
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        prefs.value = { ...prefs.value, backendURL: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+        const account = signedIn(auth, Fixtures.session({ expiresIn: config.tokenRefreshLeewaySeconds / 2 }));
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+        const { controller, pastes } = makeController({ account, capture: new CountingCapture(true), transcriptionTransport: liveTransport });
+        auth.gate = async () => {
+          controller.handle("cancel");
+        };
+
+        await holdAndRelease(controller);
+
+        expect(await eventually(() => auth.requests.length === 1)).toBe(true);
+        await sleep(300);
+        expect(uploads).toEqual([]);
+        expect(pastes).toEqual([]);
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        server.closeAllConnections();
+        server.close();
+      }
     });
 
     /** The screen is read at key-down; a read done within `contextWait` of the transcript is sent with
