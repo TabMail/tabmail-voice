@@ -1037,6 +1037,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(seen).toEqual([running("compose")]);
       expect(completions.requests).toHaveLength(1);
+      // The request itself is cancelled, not just its reply ignored: it stops at once, and one not
+      // yet sent (behind a sign-in refresh) never goes.
+      expect(completions.requests[0]?.signal?.aborted).toBe(true);
       expect(pastes).toEqual([]);
       expect(controller.phase).toEqual(idle);
     });

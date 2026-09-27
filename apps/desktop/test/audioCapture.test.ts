@@ -104,6 +104,8 @@ describe("WindowAudioCapture", () => {
     microphone.stop();
 
     microphone.receive({ type: "chunk", session: 1, samples: new Float32Array(4) });
+    microphone.receive({ type: "failed", session: 1, error: "NotReadableError" });
+    microphone.receive({ type: "started", session: 1 });
     await sleep(150);
 
     expect([current.completions, current.chunks]).toEqual([[], []]);
