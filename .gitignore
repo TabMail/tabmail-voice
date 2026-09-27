@@ -49,3 +49,8 @@ scratchpad/
 # Speech-to-text comparison: your voice recordings and their transcripts stay local.
 Scripts/stt-compare/recordings/
 Scripts/stt-compare/results/
+
+# Electron app (apps/desktop): dependencies and build output.
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/release/
