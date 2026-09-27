@@ -6,7 +6,8 @@ import AppKit
 import SwiftUI
 
 /// The dictation overlay, anchored at the text cursor: a swirl gathers there while the
-/// microphone warms up, then forms a waveform pill. The pill is the surface for dictation status
+/// microphone warms up, then forms a waveform pill, with the dictation's language in a small circle
+/// left of the waveform. The pill is the surface for dictation status
 /// (and, later, agent responses). As it starts listening, a tooltip under it says Space switches agent
 /// mode on or off, and fades after a moment; in agent mode the tools' bubbles sit in a row above it, and the running tool's border circles. The
 /// panel never takes focus, so the target field keeps keyboard focus and receives the paste.
@@ -220,7 +221,7 @@ struct OverlayView: View {
                     .transition(.opacity)
             case .listening, .transcribing, .running, .message:
                 PillLayout {
-                    Pill(mode: mode, level: controller.level)
+                    Pill(mode: mode, level: controller.level, language: controller.language)
                         .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
                     if showsHint {
                         ModeHint(mode: controller.mode)
@@ -256,6 +257,8 @@ struct OverlayView: View {
     struct Pill: View {
         let mode: Mode
         let level: Float
+        /// The language the dictation is transcribed in, shown while listening; nil shows none.
+        var language: String?
 
         private var isThinking: Bool { mode == .transcribing }
         /// A circle while transcribing, and while an agent tool works (its bubble shows the progress).
@@ -288,10 +291,14 @@ struct OverlayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: DictationConfig.pillMaxTextWidth, alignment: .leading)
                 default:
+                    if let language {
+                        LanguageBadge(code: language)
+                    }
                     Waveform(level: level)
                 }
             }
-            .padding(.horizontal, isCircle ? 0 : DictationConfig.pillHorizontalPadding)
+            .padding(.leading, leadingPadding)
+            .padding(.trailing, isCircle ? 0 : DictationConfig.pillHorizontalPadding)
             .padding(.vertical, isCircle ? 0 : DictationConfig.pillVerticalPadding)
             .frame(minHeight: DictationConfig.pillHeight)
             // A capsule while one line tall; grows into a rounded rectangle for longer messages,
@@ -308,7 +315,33 @@ struct OverlayView: View {
             .fixedSize()
         }
 
+        /// The language badge sits in the pill's rounded end, centred on its curve.
+        private var leadingPadding: CGFloat {
+            if isCircle { return 0 }
+            if case .message = mode { return DictationConfig.pillHorizontalPadding }
+            return language == nil ? DictationConfig.pillHorizontalPadding : DictationConfig.languageBadgeInset
+        }
+
         private static let shape = RoundedRectangle(cornerRadius: DictationConfig.pillHeight / 2, style: .continuous)
+    }
+}
+
+/// The dictation's language in a small circle at the pill's left end, as its ISO code (`KO`), like the
+/// input menu's own label (owner, 2026-09-26: "a small circle … just left of the wave icon"). Internal
+/// for tests.
+struct LanguageBadge: View {
+    let code: String
+
+    var body: some View {
+        Text(code.uppercased())
+            .font(.system(size: DictationConfig.languageBadgeFontSize, weight: .semibold))
+            .foregroundStyle(Brand.gradient)
+            .frame(width: DictationConfig.languageBadgeDiameter, height: DictationConfig.languageBadgeDiameter)
+            .overlay {
+                Circle().strokeBorder(Brand.gradient, lineWidth: DictationConfig.pillBorderWidth)
+            }
+            .fixedSize()
+            .accessibilityLabel(Locale.current.localizedString(forLanguageCode: code) ?? code)
     }
 }
 

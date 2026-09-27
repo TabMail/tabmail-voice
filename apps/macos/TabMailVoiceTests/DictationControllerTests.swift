@@ -44,6 +44,14 @@ private final class FrontApp {
     var pid: pid_t? = 101
 }
 
+/// The keyboard input source's language, as the controller reads it: a value the test changes. Also
+/// records what the controller showed as its language when each hold was revealed.
+@MainActor
+private final class Keyboard {
+    var language: String?
+    var atReveal: [String?] = []
+}
+
 /// The settings, as the controller reads them: values the test changes.
 @MainActor
 private final class Prefs {
@@ -61,6 +69,7 @@ struct DictationControllerTests {
     private let auth = StubTransport()
     private let pasteboard = NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)"))
     private let front = FrontApp()
+    private let keyboard = Keyboard()
     private let prefs = Prefs()
 
     private var cleanedStream: String { Fixtures.completionsStream(final: #"{"assistant":"Ask Jordan about the roadmap."}"#) }
@@ -89,6 +98,7 @@ struct DictationControllerTests {
             thunderbird: thunderbird.relay(),
             capture: capture,
             frontmostApp: { [front] in front.pid },
+            keyboardLanguage: { [keyboard] in keyboard.language },
             makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transcriptionTransport) },
             makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: completionsTransport) }
         )
@@ -140,6 +150,11 @@ struct DictationControllerTests {
     private func cleanupVars(_ index: Int) -> [String: Any]? {
         guard completions.requests.indices.contains(index) else { return nil }
         return (Fixtures.jsonBody(of: completions.requests[index])["messages"] as? [[String: Any]])?.first
+    }
+
+    /// The `language` of each transcription request (nil: none sent).
+    private var transcriptionLanguages: [String?] {
+        transcription.requests.map { Fixtures.jsonBody(of: $0)["language"] as? String }
     }
 
     private func authorization(_ stub: StubTransport) -> [String?] {
@@ -796,6 +811,54 @@ struct DictationControllerTests {
         #expect(thunderbird.apps == [FakeThunderbird.app, "org.example.othermail"])
         #expect((transcription.requests + completions.requests).map(\.url?.host).filter { $0 == "dev.example.com" }.count == 3)
         #expect(reads.count == 1)
+    }
+
+    /// A hold is transcribed in the keyboard's language at its key-down, which the overlay shows from the
+    /// reveal on: switching the keyboard while the hold listens or while its recording uploads changes
+    /// neither, and the next hold takes the new keyboard's.
+    @Test func eachHoldIsTranscribedInTheKeyboardLanguageAtItsKeyDown() async {
+        let keyboard = keyboard
+        keyboard.language = "ko"
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        controller.onPhaseChange = { [weak controller] phase in
+            guard phase == .listening else { return }
+            keyboard.atReveal.append(controller?.language)
+            keyboard.language = keyboard.language == "ko" ? "en" : "ko"
+        }
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+        transcription.gate = {
+            await MainActor.run { keyboard.language = "ja" }
+        }
+
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 1 })
+        #expect(keyboard.atReveal == ["ko"])
+        #expect(controller.language == "ko")
+        #expect(transcriptionLanguages == ["ko"])
+
+        transcription.gate = nil
+        transcription.enqueue(status: 200, json: ["text": "next dictated words"])
+        completions.enqueue(status: 200, text: reply("Next dictated words."))
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 2 })
+        #expect(keyboard.atReveal == ["ko", "ja"])
+        #expect(transcriptionLanguages == ["ko", "ja"])
+    }
+
+    /// A keyboard with no language of its own sends none: the backend's default model transcribes it.
+    @Test func aKeyboardWithoutALanguageSendsNone() async {
+        keyboard.language = nil
+        let (controller, pastes) = makeController(capture: ToneCapture())
+        transcription.enqueue(status: 200, json: ["text": transcript])
+        completions.enqueue(status: 200, text: cleanedStream)
+
+        await holdAndRelease(controller)
+        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 1 })
+        #expect(controller.language == nil)
+        #expect(transcription.requests.count == 1)
+        guard transcription.requests.count == 1 else { return }
+        #expect(Fixtures.jsonBody(of: transcription.requests[0])["language"] == nil)
     }
 
     /// Both requests of one ordinary dictation use its key-down server; the next hold uses the new server.

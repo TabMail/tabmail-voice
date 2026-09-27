@@ -16,7 +16,7 @@ struct TranscriptionClientTests {
         stub.enqueue(status: 200, json: ["text": "Hello there.", "duration_seconds": 1.2])
         let client = TranscriptionClient(baseURL: baseURL, clientVersion: "0.1.0", transport: stub.transport)
 
-        let text = try await client.transcribe(wav: wav, accessToken: "token-abc")
+        let text = try await client.transcribe(wav: wav, language: nil, accessToken: "token-abc")
 
         #expect(text == "Hello there.")
         let request = try #require(stub.requests.first)
@@ -28,6 +28,29 @@ struct TranscriptionClientTests {
         let body = Fixtures.jsonBody(of: request)
         #expect(body["format"] as? String == "wav")
         #expect(body["audio"] as? String == wav.base64EncodedString())
+        #expect(body["language"] == nil)
+    }
+
+    /// The language picks the backend's model; without one, the body has no `language` at all.
+    @Test func sendsTheLanguageWhenThereIsOne() async throws {
+        let stub = StubTransport()
+        stub.enqueue(status: 200, json: ["text": "안녕하세요."])
+        stub.enqueue(status: 200, json: ["text": "Hello."])
+        let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
+
+        _ = try await client.transcribe(wav: wav, language: "ko", accessToken: "t")
+        _ = try await client.transcribe(wav: wav, language: nil, accessToken: "t")
+
+        #expect(stub.requests.count == 2)
+        guard stub.requests.count == 2 else { return }
+        #expect(Fixtures.jsonBody(of: stub.requests[0])["language"] as? String == "ko")
+        #expect(Fixtures.jsonBody(of: stub.requests[1]).keys.sorted() == ["audio", "format"])
+    }
+
+    /// The debug log's copy of the body shows the language sent, beside the audio's size.
+    @Test func theLoggedBodyShowsTheLanguage() {
+        #expect(TranscriptionClient.loggedBody(wavBytes: 12, language: "ko").contains(#""language":"ko""#))
+        #expect(!TranscriptionClient.loggedBody(wavBytes: 12, language: nil).contains("language"))
     }
 
     @Test(arguments: [
@@ -44,7 +67,7 @@ struct TranscriptionClientTests {
         stub.enqueue(status: status, json: ["error": code])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
         await #expect(throws: expected) {
-            _ = try await client.transcribe(wav: wav, accessToken: "t")
+            _ = try await client.transcribe(wav: wav, language: nil, accessToken: "t")
         }
     }
 
@@ -53,7 +76,7 @@ struct TranscriptionClientTests {
         stub.enqueue(status: 200, json: ["unexpected": true])
         let client = TranscriptionClient(baseURL: baseURL, transport: stub.transport)
         await #expect(throws: BackendError.invalidResponse) {
-            _ = try await client.transcribe(wav: wav, accessToken: "t")
+            _ = try await client.transcribe(wav: wav, language: nil, accessToken: "t")
         }
     }
 
@@ -70,7 +93,7 @@ struct TranscriptionClientTests {
         )
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
 
-        let text = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, accessToken: $0) }
+        let text = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, language: nil, accessToken: $0) }
 
         #expect(text == "Retried.")
         #expect(backend.requests.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer access-1", "Bearer access-2"])
@@ -85,7 +108,7 @@ struct TranscriptionClientTests {
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
 
         await #expect(throws: BackendError.subscriptionRequired) {
-            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, accessToken: $0) }
+            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, language: nil, accessToken: $0) }
         }
         #expect(backend.requests.count == 1)
         #expect(auth.requests.isEmpty)
@@ -96,7 +119,7 @@ struct TranscriptionClientTests {
         let account = AccountModel(client: AuthClient(transport: StubTransport().transport), store: InMemorySessionStore())
         let client = TranscriptionClient(baseURL: baseURL, transport: backend.transport)
         await #expect(throws: BackendError.unauthorized) {
-            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, accessToken: $0) }
+            _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) { try await client.transcribe(wav: wav, language: nil, accessToken: $0) }
         }
         #expect(backend.requests.isEmpty)
     }
@@ -122,7 +145,7 @@ struct TranscriptionClientTests {
 
         await #expect(throws: BackendError.unauthorized) {
             _ = try await DictationController.withFreshToken(account: account, userId: Fixtures.userId) {
-                try await client.transcribe(wav: wav, accessToken: $0)
+                try await client.transcribe(wav: wav, language: nil, accessToken: $0)
             }
         }
         #expect(backend.requests.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer access-1"])
