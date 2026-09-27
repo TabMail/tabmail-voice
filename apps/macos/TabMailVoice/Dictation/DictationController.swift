@@ -332,6 +332,8 @@ final class DictationController {
     private func microphoneFailed(_ error: any Error, generation current: Int) {
         guard generation == current else { return }
         Log.error("DictationController: microphone start failed: \(type(of: error))")
+        // A tap waiting for its second press was never shown: it goes unseen, failure or not.
+        guard secondTapTask == nil else { return discard() }
         generation += 1
         teardown()
         fail("Couldn't start the microphone.")

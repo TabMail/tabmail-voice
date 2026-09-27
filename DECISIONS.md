@@ -763,7 +763,8 @@ wider than the pill itself, so it should be multi-line".
   a second press latches it hands-free and shows it at once (`latchHandsFree`), the microphone
   already running. With no second press it is discarded as before; a hold pressed meanwhile (after
   the gesture's window) discards it and starts afresh. The microphone is still released after
-  every dictation, at most `doubleTapWindow` after a lone tap.
+  every dictation, at most `doubleTapWindow` after a lone tap. A microphone that fails to start while a tap waits is discarded
+  unseen too: a lone tap never shows, not even an error.
 - A tip is three centred lines at 13 pt ("Press [space] to switch / between dictation / and agent
   mode"; "Double-tap [key] / to dictate / without holding"), each `tipLineHeight` tall, so its height
   is a config constant (`tipHeight`) and `opensUpward` still counts it exactly. The overlay canvas grew
