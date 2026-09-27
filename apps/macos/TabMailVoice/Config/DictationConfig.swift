@@ -253,6 +253,11 @@ enum DictationConfig {
     static let overlayMeterMaxBarHeight: CGFloat = 18
     /// The listening pill's height: the waveform between the pill's vertical padding.
     static let listeningPillHeight = max(pillHeight, overlayMeterMaxBarHeight + 2 * pillVerticalPadding)
+    /// The language badge left of the waveform: a circle as tall as the waveform, so the pill keeps
+    /// its height, inset so it is concentric with the pill's rounded end.
+    static let languageBadgeDiameter: CGFloat = overlayMeterMaxBarHeight
+    static let languageBadgeInset: CGFloat = (listeningPillHeight - languageBadgeDiameter) / 2
+    static let languageBadgeFontSize: CGFloat = 8
     /// Bar height follows level^exponent (< 1 lifts quieter speech), times the gain.
     static let waveformLevelExponent: Double = 1
     static let waveformGain: Double = 1
