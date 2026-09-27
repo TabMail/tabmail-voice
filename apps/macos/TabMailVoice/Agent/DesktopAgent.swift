@@ -4,43 +4,6 @@
 
 import Foundation
 
-/// What agent mode can do with a spoken request. Each tool is one backend prompt; its bubble shows
-/// above the pill while agent mode listens, and its border circles while it runs. Edit and Compose
-/// are never offered together: the selection decides which (`DesktopAgent.writingTool(for:)`).
-enum AgentTool: String, CaseIterable, Sendable {
-    /// Rewrites the selected text in place, as asked.
-    case edit
-    /// Writes new text at the caret, as asked.
-    case compose
-    /// Sends a mail or calendar request to TabMail's chat in Thunderbird (`ThunderbirdRelay`).
-    case thunderbird
-
-    var displayName: String {
-        switch self {
-        case .edit: "Edit"
-        case .compose: "Compose"
-        case .thunderbird: "Thunderbird"
-        }
-    }
-
-    /// SF Symbol shown in the tool's bubble, unless it shows the app's icon (Thunderbird's).
-    var symbolName: String {
-        switch self {
-        case .edit: "pencil"
-        case .compose: "square.and.pencil"
-        case .thunderbird: "envelope"
-        }
-    }
-
-    var prompt: String {
-        switch self {
-        case .edit: DictationConfig.agentEditPrompt
-        case .compose: DictationConfig.agentComposePrompt
-        case .thunderbird: DictationConfig.agentThunderbirdPrompt
-        }
-    }
-}
-
 /// Agent mode on the backend: the tool for the spoken request is chosen (`tool(for:…)`), then has the
 /// backend write the text the app inserts, or sends to Thunderbird. The instructions live in the
 /// backend prompts, shared by every desktop platform. No call has a deadline of its own: the request
@@ -100,10 +63,7 @@ enum DesktopAgent {
     ) async throws -> String {
         let text = try await complete(toolMessage(tool, request: request, context: context), client: client, account: account, userId: userId)
         guard !text.isEmpty else { throw Failure.noText }
-        let written = switch tool {
-        case .edit: fitted(text, toSelection: selection(in: context))
-        case .compose, .thunderbird: text
-        }
+        let written = tool.implementation.fitted(text, context: context)
         Log.content("DesktopAgent: \(tool.rawValue) wrote", written)
         return written
     }
@@ -114,13 +74,6 @@ enum DesktopAgent {
               !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return "" }
         return selected
-    }
-
-    /// `text` with the leading and trailing blank space of `selection` in place of its own.
-    static func fitted(_ text: String, toSelection selection: String) -> String {
-        let leading = selection.prefix(while: \.isWhitespace)
-        let trailing = selection.reversed().prefix(while: \.isWhitespace).reversed()
-        return leading + text.trimmingCharacters(in: .whitespacesAndNewlines) + String(trailing)
     }
 
     /// The agent's prompt and its variables. Every variable is sent, empty when unknown: the backend
@@ -137,16 +90,8 @@ enum DesktopAgent {
 
     /// A tool's prompt and its variables.
     static func toolMessage(_ tool: AgentTool, request: String, context: ScreenContext?) -> CompletionsMessage {
-        var vars = [
-            "app_name": context?.appName ?? "",
-            "web_host": context?.host ?? "",
-            "window_title": context?.windowTitle ?? "",
-            "screen_text": context?.renderedText() ?? "",
-            "selected_text": selection(in: context),
-            "user_request": request,
-        ]
-        if tool == .compose { vars["terminal_program"] = context?.terminalProgram ?? "" }
-        return CompletionsMessage(role: "system", content: tool.prompt, vars: vars)
+        let implementation = tool.implementation
+        return CompletionsMessage(role: "system", content: implementation.prompt, vars: implementation.variables(request: request, context: context))
     }
 
     @MainActor
