@@ -41,7 +41,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyMonitor: HotkeyMonitor?
     private var overlay: OverlayPanelController?
     private let accessibilityActivator = AccessibilityActivator()
-    private var globeKey: GlobeKeyAction?
 
     override init() {
         let settings = settings
@@ -82,14 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         monitor.install()
-        // fn as the hotkey: macOS's own Globe action is off meanwhile (ADR-DESK-022).
-        let globeKey = GlobeKeyAction()
-        self.globeKey = globeKey
-        globeKey.hotkeyIs(settings.hotkey)
-        settings.onHotkeyChange = { hotkey in
-            monitor.setHotkey(hotkey)
-            globeKey.hotkeyIs(hotkey)
-        }
+        // After the XCTest guard: the test host must never change, or put back, the real Globe setting.
+        Self.connectHotkey(settings, monitor: monitor, globeKey: GlobeKeyAction())
         // The keyboard event tap can't be created until Accessibility is granted: install again
         // once the grant lands.
         permissions.onAccessibilityGranted = { [accessibilityActivator] in
@@ -111,12 +104,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         welcome.show()
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        // Nil in the test host, which must not put back a setting the running app holds.
-        globeKey?.restore()
-    }
-
     func applicationDidBecomeActive(_ notification: Notification) {
         permissions.refresh()
+    }
+
+    /// The hotkey follows Settings, and so does the Globe key's own action: off while fn is the
+    /// hotkey, the user's choice back at another key and when the app quits (ADR-DESK-031).
+    static func connectHotkey(_ settings: AppSettings, monitor: HotkeyMonitor, globeKey: GlobeKeyAction, notifications: NotificationCenter = .default) {
+        globeKey.hotkeyIs(settings.hotkey)
+        settings.onHotkeyChange = { hotkey in
+            monitor.setHotkey(hotkey)
+            globeKey.hotkeyIs(hotkey)
+        }
+        // No queue: runs as the notification is posted, on the main thread, before the app exits.
+        notifications.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { globeKey.restore() }
+        }
     }
 }

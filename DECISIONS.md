@@ -774,7 +774,7 @@ wider than the pill itself, so it should be multi-line".
 - The double-tap tip did not show in the owner's test because it was already learned (a double tap
   came first), and the Space tip had used its 10 displays: working as decided, not a defect.
 
-## ADR-DESK-022: While fn is the hotkey, the Globe key's own action is off
+## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
 **Context:** Owner, 2026-09-27: with fn as the hotkey, a press or a double tap also switched the
 input source, macOS's "Press 🌐 key to" action. The event tap cannot stop it: WindowServer runs the
@@ -785,7 +785,8 @@ switching the setting for the user, the owner chose the second ("option 2").
 
 **Decision:**
 - While fn is the hotkey, `GlobeKeyAction` sets the Globe action to Do Nothing, and puts the user's
-  choice back when another key becomes the hotkey or the app quits (`applicationWillTerminate`). It
+  choice back when another key becomes the hotkey or the app quits (`NSApplication.willTerminateNotification`,
+  observed in `AppDelegate.connectHotkey`, which also points the hotkey monitor at each change). It
   calls HIToolbox's private `TISGetFnUsageType`/`TISUpdateFnUsageType`, looked up with `dlsym` in
   Carbon: what System Settings calls, which applies at once; writing `AppleFnUsageType` itself takes
   effect only at the next login. OpenWhispr (MIT) and Inputalk ship the same approach.
@@ -806,7 +807,8 @@ switching the setting for the user, the owner chose the second ("option 2").
 - Put back through `TISUpdateFnUsageType`, a choice that was macOS's computed default is now stored
   explicitly; it reads the same.
 - The unit-test host never creates `GlobeKeyAction` (it is made after the XCTest guard), so a test
-  run can never restore a setting the running app holds. Tests use a stand-in for the setting and
-  only read the real one.
+  run can never restore a setting the running app holds. (No test pins that placement: the SwiftUI
+  delegate adaptor keeps the `AppDelegate` out of the test's reach.) Tests use a stand-in for the setting and only read the real one.
+- Numbered 031: ADR-DESK-022 to 030 are taken by agent-tool branches not yet merged.
 - Whether fn still reaches the event tap with Do Nothing selected is reported both ways online; the
   owner's manual test on this change settles it for the hotkey.

@@ -2,10 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AppKit
 import Testing
 @testable import TabMailVoice
 
-/// The Globe key's own action while fn is the hotkey (ADR-DESK-022): off meanwhile, the user's
+/// The Globe key's own action while fn is the hotkey (ADR-DESK-031): off meanwhile, the user's
 /// choice back afterwards. Against a stand-in for the system setting; no test changes the real one.
 @MainActor
 struct GlobeKeyActionTests {
@@ -115,6 +116,47 @@ struct GlobeKeyActionTests {
         globe.hotkeyIs(.function)
         #expect(defaults.object(forKey: GlobeKeyAction.savedChoiceKey) == nil)
         globe.restore()
+    }
+
+    /// The choice is saved before the setting changes, and forgotten only after it is put back: a crash
+    /// at any point still knows the way back.
+    @Test func theChoiceIsSavedWheneverTheSettingIsDoNothingBecauseOfTheApp() {
+        let setting = Setting(changeInputSource)
+        var savedAtEachUpdate: [Int?] = []
+        let system = GlobeKeyAction.System(read: { setting.value }, update: { [defaults] in
+            savedAtEachUpdate.append(defaults.object(forKey: GlobeKeyAction.savedChoiceKey) as? Int)
+            setting.value = $0
+        })
+        let globe = GlobeKeyAction(system: system, defaults: defaults)
+
+        globe.hotkeyIs(.function)
+        globe.restore()
+
+        #expect(savedAtEachUpdate == [Int(changeInputSource), Int(changeInputSource)])
+        #expect(defaults.object(forKey: GlobeKeyAction.savedChoiceKey) == nil)
+    }
+
+    /// As the app wires it: the setting follows the hotkey at launch and at each change in Settings,
+    /// the monitor still switches keys, and quitting puts the choice back.
+    @Test func followsTheHotkeyInSettingsAndPutsTheChoiceBackAtQuit() {
+        let setting = Setting(changeInputSource)
+        let settings = AppSettings(defaults: defaults)
+        settings.hotkey = .function
+        let monitor = HotkeyMonitor(hotkey: settings.hotkey) { _ in }
+        let notifications = NotificationCenter()
+        AppDelegate.connectHotkey(settings, monitor: monitor, globeKey: GlobeKeyAction(system: setting.system, defaults: defaults), notifications: notifications)
+        #expect(setting.value == GlobeKeyAction.doNothing)
+
+        settings.hotkey = .rightOption
+        #expect(monitor.hotkey == .rightOption)
+        #expect(setting.value == changeInputSource)
+
+        settings.hotkey = .function
+        #expect(monitor.hotkey == .function)
+        #expect(setting.value == GlobeKeyAction.doNothing)
+
+        notifications.post(name: NSApplication.willTerminateNotification, object: nil)
+        #expect(setting.value == changeInputSource)
     }
 
     /// The calls exist on this macOS. Only read: the real setting is never changed by a test.

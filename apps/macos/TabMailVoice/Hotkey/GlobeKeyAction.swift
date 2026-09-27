@@ -7,7 +7,7 @@ import Foundation
 /// The Globe (fn) key's own action, Keyboard settings' "Press 🌐 key to". macOS runs it ahead of
 /// every event tap, so a press of fn as the hotkey also switched the input source. While fn is the
 /// hotkey the app sets it to Do Nothing, and puts the user's choice back when fn stops being the
-/// hotkey or the app quits (ADR-DESK-022).
+/// hotkey or the app quits (ADR-DESK-031).
 @MainActor
 final class GlobeKeyAction {
     /// The system's setting, through HIToolbox's private `TISGetFnUsageType`/`TISUpdateFnUsageType`,
@@ -51,13 +51,16 @@ final class GlobeKeyAction {
     /// Puts the user's choice back, unless they picked another action since. At quit, too.
     func restore() {
         guard let saved = defaults.object(forKey: Self.savedChoiceKey) as? Int else { return }
-        defaults.removeObject(forKey: Self.savedChoiceKey)
-        guard let system, system.read() == Self.doNothing else {
+        if let system, system.read() == Self.doNothing {
+            system.update(Int32(saved))
+            Log.debug("GlobeKeyAction: Globe action restored to \(saved)")
+        } else if system == nil {
+            Log.error("GlobeKeyAction: TISUpdateFnUsageType unavailable; the Globe action stays Do Nothing")
+        } else {
             Log.debug("GlobeKeyAction: the Globe action was changed meanwhile; leaving it")
-            return
         }
-        system.update(Int32(saved))
-        Log.debug("GlobeKeyAction: Globe action restored to \(saved)")
+        // Forgotten only now, so a crash before the update still knows the way back.
+        defaults.removeObject(forKey: Self.savedChoiceKey)
     }
 
     private func takeOver() {
