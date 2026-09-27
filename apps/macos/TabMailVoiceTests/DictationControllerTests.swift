@@ -1181,6 +1181,39 @@ struct DictationControllerTests {
         controller.handle(.cancel)
     }
 
+    /// A double tap after its first tap's microphone failed starts the microphone again, rather than
+    /// carrying on a recording that never started.
+    @Test func aDoubleTapAfterAFailedTapStartsTheMicrophoneAgain() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        capture.fail()
+        // The second press, well inside the window the tap waits for it.
+        try? await Task.sleep(for: DictationConfig.doubleTapWindow / 4)
+        controller.handle(.startHandsFree)
+
+        #expect(capture.events == ["start", "stop", "start"])
+        #expect(controller.phase == .listening)
+        controller.handle(.cancel)
+    }
+
+    /// A double tap whose microphone fails after the second press shows the failure: by then the user
+    /// asked to dictate.
+    @Test func aDoubleTapWhoseMicrophoneFailsShowsIt() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+        #expect(controller.phase == .listening)
+        capture.fail()
+
+        #expect(await eventually { controller.phase == .failed("Couldn't start the microphone.") })
+    }
+
     /// A press while a double-tapped dictation is being transcribed leaves it alone: no new recording
     /// starts, and its text is still pasted.
     @Test func aPressWhileADoubleTapIsTranscribedLeavesItAlone() async {
