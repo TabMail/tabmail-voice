@@ -815,50 +815,49 @@ struct DictationControllerTests {
 
     /// A hold is transcribed in the keyboard's language at its key-down, which the overlay shows from the
     /// reveal on: switching the keyboard while the hold listens or while its recording uploads changes
-    /// neither, and the next hold takes the new keyboard's.
-    @Test func eachHoldIsTranscribedInTheKeyboardLanguageAtItsKeyDown() async {
+    /// neither, the next hold takes the new keyboard's, and a keyboard with none sends none. In both modes.
+    @Test(arguments: [DictationMode.dictation, .agent])
+    func eachHoldIsTranscribedInTheKeyboardLanguageAtItsKeyDown(mode: DictationMode) async {
         let keyboard = keyboard
         keyboard.language = "ko"
         let (controller, pastes) = makeController(capture: ToneCapture())
+        controller.captureContext = { nil }
         controller.onPhaseChange = { [weak controller] phase in
             guard phase == .listening else { return }
             keyboard.atReveal.append(controller?.language)
             keyboard.language = keyboard.language == "ko" ? "en" : "ko"
         }
-        transcription.enqueue(status: 200, json: ["text": transcript])
-        completions.enqueue(status: 200, text: cleanedStream)
+        for (words, written) in [("first words", "First words."), ("second words", "Second words."), ("third words", "Third words.")] {
+            transcription.enqueue(status: 200, json: ["text": words])
+            completions.enqueue(status: 200, text: reply(written))
+        }
         transcription.gate = {
             await MainActor.run { keyboard.language = "ja" }
         }
 
-        await holdAndRelease(controller)
+        await holdAndRelease(controller, mode: mode)
         #expect(await eventually { controller.phase == .idle && pastes.texts.count == 1 })
         #expect(keyboard.atReveal == ["ko"])
         #expect(controller.language == "ko")
         #expect(transcriptionLanguages == ["ko"])
 
         transcription.gate = nil
-        transcription.enqueue(status: 200, json: ["text": "next dictated words"])
-        completions.enqueue(status: 200, text: reply("Next dictated words."))
-        await holdAndRelease(controller)
+        await holdAndRelease(controller, mode: mode)
         #expect(await eventually { controller.phase == .idle && pastes.texts.count == 2 })
         #expect(keyboard.atReveal == ["ko", "ja"])
         #expect(transcriptionLanguages == ["ko", "ja"])
-    }
 
-    /// A keyboard with no language of its own sends none: the backend's default model transcribes it.
-    @Test func aKeyboardWithoutALanguageSendsNone() async {
+        // A keyboard without a language after one with: none, not the last hold's.
         keyboard.language = nil
-        let (controller, pastes) = makeController(capture: ToneCapture())
-        transcription.enqueue(status: 200, json: ["text": transcript])
-        completions.enqueue(status: 200, text: cleanedStream)
-
-        await holdAndRelease(controller)
-        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 1 })
+        await holdAndRelease(controller, mode: mode)
+        #expect(await eventually { controller.phase == .idle && pastes.texts.count == 3 })
+        #expect(keyboard.atReveal == ["ko", "ja", nil])
         #expect(controller.language == nil)
-        #expect(transcription.requests.count == 1)
-        guard transcription.requests.count == 1 else { return }
-        #expect(Fixtures.jsonBody(of: transcription.requests[0])["language"] == nil)
+        #expect(transcriptionLanguages == ["ko", "ja", nil])
+        #expect(transcription.requests.count == 3)
+        guard transcription.requests.count == 3 else { return }
+        #expect(Fixtures.jsonBody(of: transcription.requests[2]).keys.sorted() == ["audio", "format"])
+        #expect(pastes.texts == ["First words.", "Second words.", "Third words."])
     }
 
     /// Both requests of one ordinary dictation use its key-down server; the next hold uses the new server.

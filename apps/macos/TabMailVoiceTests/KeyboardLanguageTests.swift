@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import AppKit
+import Carbon
 import SwiftUI
 import Testing
 import Vision
@@ -31,12 +32,31 @@ struct KeyboardLanguageTests {
         #expect(KeyboardLanguage.code(forSourceLanguages: languages) == nil)
     }
 
-    /// The live read: whatever the Mac's keyboard is, a two-letter lowercase code or none.
+    /// The live read, through the controller's own reader: a dictation started on this Mac takes the
+    /// language its active keyboard input source reports, read here without `KeyboardLanguage`.
     @MainActor
-    @Test func readsTheActiveKeyboard() {
-        if let code = KeyboardLanguage.current() {
-            #expect(code.count == 2 && code.allSatisfy { ("a"..."z").contains($0) })
-        }
+    @Test func aDictationTakesTheActiveKeyboardsLanguage() throws {
+        let source = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
+        let property = try #require(TISGetInputSourceProperty(source, kTISPropertyInputSourceLanguages))
+        let first = (Unmanaged<CFArray>.fromOpaque(property).takeUnretainedValue() as? [String])?.first ?? ""
+        let primary = String(first.prefix { $0 != "-" && $0 != "_" }).lowercased()
+        let expected = primary.utf8.count == 2 && primary.utf8.allSatisfy({ (97...122).contains($0) }) ? primary : nil
+
+        let transport = StubTransport()
+        let controller = DictationController(
+            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
+            settings: { DictationSettings(hasConsented: true, backendURL: URL(string: "https://api.example.com")!, readsScreen: false, emailApp: nil) },
+            account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
+            thunderbird: FakeThunderbird().relay(),
+            capture: ToneCapture(),
+            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transport.transport) },
+            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: transport.transport) }
+        )
+        controller.start()
+        defer { controller.cancel() }
+        #expect(controller.language == expected, "the keyboard's first language is \(first)")
+        #expect(KeyboardLanguage.current() == expected)
     }
 }
 
