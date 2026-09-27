@@ -110,6 +110,30 @@ struct HotkeyMonitorTests {
         #expect(await dispatched(actions) == [.start])
     }
 
+    /// An fn double tap as macOS delivers it: each tap's release is followed at once by a key-down and
+    /// key-up of the Globe key's own code (recorded on a MacBook keyboard, 2026-09-27, with the Globe
+    /// action on Do Nothing). That key-down is the hotkey, not typing, so the second press still
+    /// starts hands-free listening; both reach the app, as before.
+    @Test func anFnDoubleTapIsHandsFreeDespiteTheGlobeKeysOwnKeyDown() async {
+        let (monitor, actions) = makeMonitor(.function)
+        let fn = DictationHotkey.function.keyCode
+        let globe = DictationHotkey.globeKeyCode
+        func event(_ type: CGEventType, _ keyCode: UInt16, _ flags: CGEventFlags, at time: TimeInterval) -> Bool {
+            monitor.handle(type, keyCode: keyCode, flags: flags, isRepeat: false, at: time)
+        }
+
+        #expect(event(.flagsChanged, fn, .maskSecondaryFn, at: 0))
+        #expect(event(.flagsChanged, fn, [], at: 0.056))
+        #expect(event(.keyDown, globe, [], at: 0.059))
+        #expect(event(.keyUp, globe, [], at: 0.059))
+        #expect(event(.flagsChanged, fn, .maskSecondaryFn, at: 0.182))
+        #expect(event(.flagsChanged, fn, [], at: 0.293))
+        #expect(event(.keyDown, globe, [], at: 0.293))
+        #expect(event(.keyUp, globe, [], at: 0.293))
+
+        #expect(await dispatched(actions) == [.start, .finish, .startHandsFree])
+    }
+
     /// macOS switched the tap off: the event goes on, and nothing reaches the controller.
     @Test(arguments: [CGEventType.tapDisabledByTimeout, .tapDisabledByUserInput])
     func aDisabledTapPassesTheEventOn(type: CGEventType) async {

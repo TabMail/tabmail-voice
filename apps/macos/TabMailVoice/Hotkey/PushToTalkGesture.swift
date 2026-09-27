@@ -26,6 +26,11 @@ enum DictationHotkey: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The Globe key's own key code, which Carbon has no name for. macOS sends a key-down and key-up
+    /// of it as fn is released from a tap (measured 2026-09-27: every tap, 0–3 ms after the release,
+    /// with the Globe action on Do Nothing).
+    static let globeKeyCode: UInt16 = 0xB3
+
     /// The key as a tip's keycap names it.
     var keycap: String {
         switch self {
@@ -156,6 +161,8 @@ struct PushToTalkGesture: Sendable {
 
     /// A non-modifier key was pressed somewhere; `isRepeat` for its auto-repeat.
     mutating func keyPressed(keyCode: UInt16, isRepeat: Bool) -> Action? {
+        // fn released from a tap comes with the Globe key's own key-down: that is the hotkey, not typing.
+        if hotkey == .function && keyCode == DictationHotkey.globeKeyCode { return nil }
         // Typing between two taps makes them no double tap.
         lastTapReleasedAt = nil
         if isHandsFree {

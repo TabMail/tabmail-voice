@@ -174,6 +174,19 @@ struct PushToTalkGestureTests {
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 0.3) == .start)
     }
 
+    /// With fn as the hotkey, the Globe key's own key-down (sent as each tap is released) is the
+    /// hotkey, not typing: the double tap still counts. A real key between the taps still breaks it.
+    @Test func theGlobeKeysKeyDownAfterAnFnTapIsNoTyping() {
+        let fn = DictationHotkey.function.keyCode
+        for (between, expected) in [(DictationHotkey.globeKeyCode, PushToTalkGesture.Action.startHandsFree), (letterA, .start)] {
+            var gesture = makeGesture(.function)
+            _ = gesture.modifierChanged(keyCode: fn, isDown: true, at: 0)
+            _ = gesture.modifierChanged(keyCode: fn, isDown: false, at: 0.1)
+            #expect(gesture.keyPressed(keyCode: between, isRepeat: false) == nil)
+            #expect(gesture.modifierChanged(keyCode: fn, isDown: true, at: 0.3) == expected)
+        }
+    }
+
     /// Hands-free, Space switches the mode and Escape cancels, both kept from the app; any other key
     /// reaches it and changes nothing.
     @Test func handsFreeSpaceTogglesAndEscapeCancels() {
