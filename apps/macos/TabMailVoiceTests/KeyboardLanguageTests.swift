@@ -81,12 +81,26 @@ struct LanguageBadgeTests {
     }
 
     /// Left of the waveform, inside the pill, which keeps its listening height.
-    @Test func sitsLeftOfTheWaveformWithoutGrowingThePill() {
+    @Test func sitsLeftOfTheWaveformWithoutGrowingThePill() throws {
         let plain = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0)).fittingSize
         let badged = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0, language: "ko")).fittingSize
+        let diameter = DictationConfig.languageBadgeDiameter
         #expect(badged.height == plain.height)
-        #expect(badged.width > plain.width)
-        #expect(NSHostingView(rootView: LanguageBadge(code: "ko")).fittingSize == CGSize(width: DictationConfig.languageBadgeDiameter, height: DictationConfig.languageBadgeDiameter))
+        #expect(NSHostingView(rootView: LanguageBadge(code: "ko")).fittingSize == CGSize(width: diameter, height: diameter))
+        // The badge and its gap to the waveform, in the pill's rounded end in place of its usual padding.
+        let inset = DictationConfig.languageBadgeInset
+        #expect(badged.width - plain.width == diameter + DictationConfig.pillContentSpacing + inset - DictationConfig.pillHorizontalPadding)
+        #expect(inset == (badged.height - diameter) / 2, "not concentric with the rounded end")
+
+        // Drawn, "KO" is within the badge's room at the pill's left end, not beside the waveform's right.
+        let renderer = ImageRenderer(content: OverlayView.Pill(mode: .listening, level: 0, language: "ko"))
+        renderer.scale = scale
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: try #require(renderer.cgImage)).perform([request])
+        let code = try #require(request.results?.first { $0.topCandidates(1).first?.string == "KO" })
+        #expect(code.boundingBox.maxX * badged.width <= inset + diameter, "KO drawn at \(code.boundingBox.minX * badged.width)…\(code.boundingBox.maxX * badged.width) of \(badged.width)")
     }
 
     /// The badge is for the listening pill only: a message or the thinking circle draws the same with
