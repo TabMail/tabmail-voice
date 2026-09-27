@@ -53,7 +53,8 @@ tabmail-voice/
         │   │   └── WAVEncoder.swift          44-byte RIFF header around the PCM
         │   ├── Hotkey/
         │   │   ├── PushToTalkGesture.swift   Pure recogniser: press → start, release → finish, chord → cancel; Space during the hold → toggle agent mode; tap + press → hands-free dictation until the next tap (Escape cancels)
-        │   │   └── HotkeyMonitor.swift       Keyboard CGEventTap feeding the gesture; keeps the mode-switching Space (and hands-free Escape) from the app in front
+        │   │   ├── HotkeyMonitor.swift       Keyboard CGEventTap feeding the gesture; keeps the mode-switching Space (and hands-free Escape) from the app in front
+        │   │   └── GlobeKeyAction.swift      While fn is the hotkey, macOS's own Globe action is Do Nothing; the user's choice comes back after (ADR-DESK-022)
         │   ├── Insertion/
         │   │   ├── TextInserter.swift        Paste-and-restore insertion; PasteboardSnapshot
         │   │   ├── CaretLocator.swift        Caret (else focused field) rect via Accessibility (anchors the overlay)

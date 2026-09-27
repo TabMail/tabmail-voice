@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyMonitor: HotkeyMonitor?
     private var overlay: OverlayPanelController?
     private let accessibilityActivator = AccessibilityActivator()
+    private var globeKey: GlobeKeyAction?
 
     override init() {
         let settings = settings
@@ -81,7 +82,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         monitor.install()
-        settings.onHotkeyChange = { monitor.setHotkey($0) }
+        // fn as the hotkey: macOS's own Globe action is off meanwhile (ADR-DESK-022).
+        let globeKey = GlobeKeyAction()
+        self.globeKey = globeKey
+        globeKey.hotkeyIs(settings.hotkey)
+        settings.onHotkeyChange = { hotkey in
+            monitor.setHotkey(hotkey)
+            globeKey.hotkeyIs(hotkey)
+        }
         // The keyboard event tap can't be created until Accessibility is granted: install again
         // once the grant lands.
         permissions.onAccessibilityGranted = { [accessibilityActivator] in
@@ -101,6 +109,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showWelcome() {
         welcome.show()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Nil in the test host, which must not put back a setting the running app holds.
+        globeKey?.restore()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
