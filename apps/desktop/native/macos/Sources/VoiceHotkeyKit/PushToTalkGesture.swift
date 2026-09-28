@@ -164,8 +164,9 @@ public struct PushToTalkGesture: Sendable {
         return .cancel
     }
 
-    /// The dictation ended without the hotkey (length cap, failure, Escape, the menu): hands-free
-    /// listening is over, so the next press starts afresh and Space and Escape reach the app again.
+    /// The dictation ended without the hotkey (length cap, failure, Escape, the menu), or a double
+    /// tap's release found no dictation listening: hands-free listening is over, so the next press
+    /// starts afresh and Space and Escape reach the app again.
     public mutating func dictationEnded() {
         isHandsFree = false
     }

@@ -8,7 +8,8 @@ import VoiceHelperSupport
 /// `voice-hotkey`'s requests, over `HelperChannel`:
 /// - `configure {hotkey, tapMaxDuration, doubleTapWindow}` (seconds) → `{installed}`: sets the
 ///   gesture and (re)installs the tap; call it again once Accessibility is granted.
-/// - `dictationEnded` → `{}`: the dictation ended without the hotkey.
+/// - `dictationEnded` → `{}`: nothing listens hands-free (the dictation ended without the hotkey, or a
+///   double tap's release found no dictation listening).
 /// - `setChatOpen {isOpen}` → `{}`: the chat window opened or closed (Escape closes it while open).
 /// and its event `{"event": "action", "action": "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat"}`.
 public enum HotkeyService {

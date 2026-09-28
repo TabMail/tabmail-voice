@@ -23,7 +23,7 @@ const app = vi.hoisted(() => ({
   prewarms: 0,
   audioCommands: [] as unknown[],
   overlay: null as { opensUpward: boolean; chatOpensUpward: boolean; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
-  controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; calls: string[] } | null,
+  controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
@@ -157,6 +157,7 @@ vi.mock("../src/core/dictationController.js", () => ({
     chat: object | null = null;
     onChatChange: ((isOpen: boolean) => void) | undefined;
     onPhaseChange: ((phase: { kind: string }) => void) | undefined;
+    onNothingListening: (() => void) | undefined;
     readonly calls: string[] = [];
     keepChatOpen() {
       this.calls.push("keepChatOpen");
@@ -577,5 +578,24 @@ describe("main process wiring", () => {
     expect(app.loopTools).toEqual([]);
     expect(state("settings").connectors).toEqual([]);
     expect(state("welcome").connectors).toEqual([]);
+    });
+
+  /** The hotkey helper hears that nothing listens hands-free, so it stops keeping Space and Escape
+   * from the app in front: when a dictation ends without the hotkey, and when a double tap's release
+   * finds no hands-free dictation listening; never while one arms or listens. */
+  test("the hotkey helper is told when nothing listens hands-free", async () => {
+    await launch("darwin");
+    const helper = app.helpers.get("voice-hotkey");
+    const controller = app.controller;
+    expect(controller).not.toBeNull();
+    const ended = () => helper?.requests.filter((request) => request.method === "dictationEnded").length;
+
+    controller?.onPhaseChange?.({ kind: "arming" });
+    controller?.onPhaseChange?.({ kind: "listening" });
+    expect(ended()).toBe(0);
+    controller?.onPhaseChange?.({ kind: "transcribing" });
+    expect(ended()).toBe(1);
+    controller?.onNothingListening?.();
+    expect(ended()).toBe(2);
   });
 });

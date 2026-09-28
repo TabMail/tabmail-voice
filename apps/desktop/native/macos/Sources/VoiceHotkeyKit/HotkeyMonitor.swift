@@ -45,7 +45,8 @@ public final class HotkeyMonitor {
         gesture.isChatOpen = isOpen
     }
 
-    /// The dictation ended without the hotkey (length cap, failure, the menu): stop listening hands-free.
+    /// Nothing listens hands-free (the dictation ended without the hotkey, or a double tap's release
+    /// found no dictation listening): stop listening hands-free.
     public func dictationEnded() {
         gesture.dictationEnded()
     }
