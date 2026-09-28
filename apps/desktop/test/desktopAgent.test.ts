@@ -226,6 +226,16 @@ describe("the answer's tool loop", () => {
     expect(DesktopAgent.answerTools([tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "example_read", "example_create"]);
   });
 
+  /** An app whose tools are offered brings the backend's own tools it has (the web, its search), after
+   * the date tools, once however many of its tools there are; one with none of its tools offered
+   * (switched off, or none on this computer), or an app with no backend tools, brings nothing. */
+  test("an app switched on brings its backend tools", () => {
+    const tool = (name: string, connector: LoopTool["connector"]): LoopTool => ({ name, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
+    expect(DesktopAgent.answerTools([tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "example_read", "web_read", "web_open"]);
+    expect(DesktopAgent.answerTools([tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "example_read", "example_note"]);
+    expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
+  });
+
   /** The first round offers the tools with tools on and sends no state; its reply, trimmed, is the
    * answer. */
   test("an answer offers its tools and returns the reply", async () => {

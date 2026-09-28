@@ -1912,9 +1912,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await done;
 
           expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "example_read"]);
+          expect(completions.body(0).web_search_enabled).toBe(false);
           expect(reminders.runs).toEqual([]);
           expect(calendar.runs).toEqual([{}]);
           expect(told(1)).toEqual(["Error: there is no tool named example_add.", "Added."]);
+        });
+
+        /** Web on at key-down (the default) brings the backend's search with the web's tools, and the
+         * request says so; switched off, neither, and the backend refuses the web. */
+        test.each([true, false])("the web's search comes with its tools while Web is on (%s)", async (webOn) => {
+          const calendar = new FakeLoopTool("example_read", "Checking your calendar", "calendar");
+          const web = new FakeLoopTool("web_read", "Reading the page", "web");
+
+          const { done } = await ask([calendar, web], [reply(answer)], () => {
+            if (!webOn) prefs.value = { ...prefs.value, enabledConnectors: ["calendar"] };
+          });
+          await done;
+
+          expect(completions.body(0).available_tools).toEqual(webOn ? ["date_to_day", "time_delta", "search_web", "example_read", "web_read"] : ["date_to_day", "time_delta", "example_read"]);
+          expect(completions.body(0).web_search_enabled).toBe(webOn);
         });
 
         /** Touched while a tool runs, the chat window no longer times out once the answer arrives. */
