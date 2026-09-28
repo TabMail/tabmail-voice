@@ -6,8 +6,8 @@ import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
 import { type MenuState, showsDictationButton, statusLine } from "../src/core/menuModel.js";
-import { bubbleCentres, hintCentre, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size } from "../src/core/overlayGeometry.js";
-import { tipKeycap, tipLines } from "../src/core/tips.js";
+import { bubbleCentres, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove } from "../src/core/overlayGeometry.js";
+import { type DictationTip, tipDetails, tipKeycap, tipLines, tipParts } from "../src/core/tips.js";
 
 const canvas = { width: 200, height: 60 };
 const pillHeight = 30;
@@ -33,6 +33,8 @@ function framed(centre: Point, size: Size): Rect {
 function pillFrame(origin: Point): Rect {
   return rect(origin.x, origin.y + (canvas.height - pillHeight) / 2, canvas.width, pillHeight);
 }
+
+const allTips = Object.keys(tipDetails) as DictationTip[];
 
 /** The tip as the overlay draws it: its arrow and box, as wide as allowed. */
 const tip: Size = { width: 2 * 150, height: config.tipArrowHeight + config.tipHeight };
@@ -129,11 +131,37 @@ describe("overlay geometry", () => {
     }
   });
 
-  /** The tip's room under the pill is its gap, arrow and box, in `tipLineCount` lines. */
+  /** Only a tip that stays up while listening goes over the pill, and only in an overlay opened
+   * above the caret's line: the hands-free tip (owner, 2026-09-27). Timed tips stay under the pill. */
+  test.each(allTips.flatMap((name) => [false, true].map((upward) => [name, upward] as const)))("only the hands-free tip goes over the pill, only when opened upward (%s, %s)", (name, upward) => {
+    expect(tipGoesAbove(tipDetails[name].displayDuration, upward)).toBe(upward && name === "handsFree");
+  });
+
+  /** A tip over the pill: centred over it, clear of the pill and of agent mode's bubbles above it,
+   * overlapping neither, and inside the canvas with its shadow. For the listening pill and the circle
+   * it shrinks to, with no bubbles and as many as are ever offered. */
+  test("a tip over the pill clears the bubbles and stays in the canvas", () => {
+    const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
+    const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
+    const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
+    for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
+      const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
+      for (let count = 0; count <= 2; count += 1) {
+        const bubbles = bubbleCentres(pill, Array<Size>(count).fill(bubble)).map((centre) => framed(centre, bubble));
+        const tipFrame = framed(hintCentreOver(pill, bubbles, tip), tip);
+        expect(maxY(tipFrame), `not over the pill (${count} bubbles)`).toBeLessThanOrEqual(pill.y);
+        expect(Math.abs(midX(tipFrame) - midX(pill))).toBeLessThan(0.001);
+        for (const frame of bubbles) expect(maxY(tipFrame), `not over the bubbles (${count})`).toBeLessThanOrEqual(frame.y);
+        expect(contains(area, rect(tipFrame.x - shadow, tipFrame.y - shadow, tipFrame.width + 2 * shadow, tipFrame.height + 2 * shadow)), `leaves the canvas over ${count} bubbles`).toBe(true);
+      }
+    }
+  });
+
+  /** The tip's room beside the pill is its gap, arrow and box, in `tipLineCount` lines. */
   test("the tip takes the room left for it", () => {
     expect(config.tipFootprint).toBe(config.tipGap + tip.height);
-    for (const [name, hotkey] of [["switchMode", "rightOption"], ["doubleTap", "function"], ["doubleTap", "rightOption"]] as const) {
-      expect(tipLines(name, hotkey)).toHaveLength(config.tipLineCount);
+    for (const name of allTips) {
+      for (const hotkey of ["rightOption", "function"] as const) expect(tipLines(name, hotkey)).toHaveLength(config.tipLineCount);
     }
   });
 });
@@ -150,6 +178,17 @@ describe("tips", () => {
     const words = (lines: ReturnType<typeof tipLines>) => lines.flat().map((part) => ("words" in part ? part.words : part.key)).join(" ").toLowerCase();
     expect(words(tipLines("switchMode", "rightOption"))).toBe("press space to switch between dictation and agent mode");
     expect(words(tipLines("doubleTap", "function"))).toBe("double-tap fn to dictate without holding");
+    expect(words(tipLines("handsFree", "function"))).toBe("tap fn to finish dictating, or tap esc to cancel");
+  });
+
+  /** A configured line's `[key]` is a keycap and `[hotkey]` the dictation key's; the rest is words,
+   * an unclosed bracket included. */
+  test("configured lines become words and keycaps", () => {
+    expect(tipParts("Tap [hotkey] to finish", "function")).toEqual([{ words: "Tap" }, { key: "fn" }, { words: "to finish" }]);
+    expect(tipParts("[space] then [hotkey]", "rightOption")).toEqual([{ key: "space" }, { words: "then" }, { key: "right ⌥" }]);
+    expect(tipParts("dictating, or", "function")).toEqual([{ words: "dictating, or" }]);
+    expect(tipParts("press [esc", "function")).toEqual([{ words: "press [esc" }]);
+    expect(tipLines("handsFree", "function")).toEqual([[{ words: "Tap" }, { key: "fn" }, { words: "to finish" }], [{ words: "dictating, or" }], [{ words: "tap" }, { key: "esc" }, { words: "to cancel" }]]);
   });
 });
 

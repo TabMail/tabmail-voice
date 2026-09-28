@@ -71,9 +71,23 @@ export function bubbleCentres(pill: Rect, sizes: Size[]): Point[] {
 }
 
 /** Centre of a tip, of `size`: a tooltip centred `tipGap` under a pill at `pill` (owner,
- * 2026-09-26: "a tooltip that appears below the middle and disappears after a little"). It fades
- * after its display duration, so even an overlay opened above the caret's line covers that line only
- * briefly. */
+ * 2026-09-26: "a tooltip that appears below the middle and disappears after a little"). A tip that
+ * fades after its display duration covers the caret's line only briefly, even in an overlay opened
+ * above that line; one that stays up goes over the pill there (`tipGoesAbove`). */
 export function hintCentre(pill: Rect, size: Size): Point {
   return { x: midX(pill), y: maxY(pill) + config.tipGap + size.height / 2 };
+}
+
+/** Centre of a tip, of `size`, over the pill instead: a tooltip centred `tipGap` over a pill at
+ * `pill`, or over agent mode's bubbles at `bubbles` when they show. */
+export function hintCentreOver(pill: Rect, bubbles: Rect[], size: Size): Point {
+  const top = bubbles.reduce((least, bubble) => Math.min(least, bubble.y), pill.y);
+  return { x: midX(pill), y: top - config.tipGap - size.height / 2 };
+}
+
+/** Whether a tip goes over the pill: when it stays up while listening (no display duration, as
+ * the hands-free tip) and the overlay opened above the caret's line, so it never covers that line
+ * for the whole dictation (owner, 2026-09-27: "above pill when opening up"). */
+export function tipGoesAbove(displayDuration: number | null, opensUpward: boolean): boolean {
+  return opensUpward && displayDuration === null;
 }

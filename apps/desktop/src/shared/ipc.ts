@@ -20,6 +20,9 @@ export interface OverlayState {
   isHearing: boolean;
   language: string | null;
   tip: DictationTip | null;
+  /** The overlay opened above the caret's line, so a tip that stays up goes over the pill
+   * (`tipGoesAbove`). */
+  opensUpward: boolean;
   hotkey: DictationHotkey;
   tools: AgentTool[];
   /** The email app's icon, for the Thunderbird bubble; null without one. */

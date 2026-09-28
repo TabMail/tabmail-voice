@@ -127,13 +127,23 @@ describe("TipBook", () => {
   test.each<DictationTip>(["switchMode", "doubleTap"])("%s shows at most its max displays", (tip) => {
     const store = new MemoryStore();
     const tips = new TipBook(store);
-    for (let index = 0; index < tipDetails[tip].maxDisplays; index += 1) {
+    const maxDisplays = tipDetails[tip].maxDisplays;
+    expect(maxDisplays).not.toBeNull();
+    for (let index = 0; index < (maxDisplays ?? 0); index += 1) {
       expect(tips.isEligible(tip)).toBe(true);
       tips.recordDisplay(tip);
     }
     expect(tips.isEligible(tip)).toBe(false);
     // Kept across launches.
     expect(new TipBook(store).isEligible(tip)).toBe(false);
+  });
+
+  /** A tip configured with no maximum shows however often it has shown. */
+  test("a tip with no maximum shows every time", () => {
+    expect(tipDetails.handsFree.maxDisplays).toBeNull();
+    const tips = new TipBook(new MemoryStore());
+    for (let index = 0; index < 100; index += 1) tips.recordDisplay("handsFree");
+    expect(tips.isEligible("handsFree")).toBe(true);
   });
 
   test("a learned tip never shows again, and learning one leaves the other", () => {
@@ -145,9 +155,8 @@ describe("TipBook", () => {
     expect(tips.isEligible("doubleTap")).toBe(true);
   });
 
-  test("the tips' limits and durations come from the config", () => {
-    expect(tipDetails.switchMode).toEqual({ maxDisplays: config.switchModeTipMaxDisplays, displayDuration: config.switchModeTipDisplayDuration });
-    expect(tipDetails.doubleTap).toEqual({ maxDisplays: config.doubleTapTipMaxDisplays, displayDuration: config.doubleTapTipDisplayDuration });
+  test("the tips' words, limits and durations come from the config", () => {
+    expect(tipDetails).toEqual({ switchMode: config.switchModeTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip });
   });
 });
 

@@ -9,7 +9,7 @@ import VoiceHelperSupport
 /// - `configure {hotkey, tapMaxDuration, doubleTapWindow}` (seconds) → `{installed}`: sets the
 ///   gesture and (re)installs the tap; call it again once Accessibility is granted.
 /// - `dictationEnded` → `{}`: the dictation ended without the hotkey.
-/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "finish" | "cancel" | "toggleMode"}`.
+/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode"}`.
 public enum HotkeyService {
     @MainActor
     public static func register(on channel: HelperChannel) -> HotkeyMonitor {

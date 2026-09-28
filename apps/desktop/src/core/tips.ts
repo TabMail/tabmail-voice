@@ -6,30 +6,50 @@ import * as config from "./config.js";
 import { type DictationHotkey, hotkeyNames } from "./hotkey.js";
 import { type KeyValueStore, storedBool, storedInteger } from "./keyValueStore.js";
 
-/** A tip the overlay shows under the listening pill, as TipKit tips behave: it shows until the user
- * has done what it teaches, or has seen it `maxDisplays` times, and then never again.
+/** A tip the overlay shows by the listening pill (`hintCentre`). Most behave as TipKit tips do: a
+ * tip shows until the user has done what it teaches, or has seen it `maxDisplays` times, and then
+ * never again. Its words, display duration and display count are in the config (`tipDetails`).
  * - `switchMode`: Space switches between dictation and agent mode; shown as a hold starts listening.
  * - `doubleTap`: a double tap of the hotkey dictates without holding it; shown once a hold passes
- *   `config.doubleTapTipHoldDuration`. */
-export type DictationTip = "switchMode" | "doubleTap";
+ *   `config.doubleTapTipHoldDuration`.
+ * - `handsFree`: how hands-free listening ends (tap the hotkey, or Escape); shown the whole time it
+ *   listens, every time. Never learned: nothing marks it so. */
+export type DictationTip = "switchMode" | "doubleTap" | "handsFree";
 
-export const tipDetails: Record<DictationTip, { maxDisplays: number; displayDuration: number }> = {
-  switchMode: { maxDisplays: config.switchModeTipMaxDisplays, displayDuration: config.switchModeTipDisplayDuration },
-  doubleTap: { maxDisplays: config.doubleTapTipMaxDisplays, displayDuration: config.doubleTapTipDisplayDuration },
+export const tipDetails: Record<DictationTip, config.TipSettings> = {
+  switchMode: config.switchModeTip,
+  doubleTap: config.doubleTapTip,
+  handsFree: config.handsFreeTip,
 };
 
 /** One piece of a tip's line: words, or a key drawn as a keycap. */
 export type TipPart = { words: string } | { key: string };
 
 /** The tip's lines, a few words each, so the tooltip stays not much wider than the pill (owner,
- * 2026-09-26: "should be multi-line instead"). The double-tap tip names the key held to dictate. */
+ * 2026-09-26: "should be multi-line instead"), as the config writes them. */
 export function tipLines(tip: DictationTip, hotkey: DictationHotkey): TipPart[][] {
-  switch (tip) {
-    case "switchMode":
-      return [[{ words: "Press" }, { key: "space" }, { words: "to switch" }], [{ words: "between dictation" }], [{ words: "and agent mode" }]];
-    case "doubleTap":
-      return [[{ words: "Double-tap" }, { key: hotkeyNames[hotkey].keycap }], [{ words: "to dictate" }], [{ words: "without holding" }]];
+  return tipDetails[tip].lines.map((line) => tipParts(line, hotkey));
+}
+
+/** A configured line's words and keycaps: `[space]` is a keycap, `[hotkey]` the dictation key's. */
+export function tipParts(line: string, hotkey: DictationHotkey): TipPart[] {
+  const parts: TipPart[] = [];
+  const addWords = (words: string) => {
+    const trimmed = words.trim();
+    if (trimmed !== "") parts.push({ words: trimmed });
+  };
+  let rest = line;
+  for (;;) {
+    const open = rest.indexOf("[");
+    const close = open < 0 ? -1 : rest.indexOf("]", open);
+    if (close < 0) break;
+    addWords(rest.slice(0, open));
+    const key = rest.slice(open + 1, close);
+    parts.push({ key: key === "hotkey" ? hotkeyNames[hotkey].keycap : key });
+    rest = rest.slice(close + 1);
   }
+  addWords(rest);
+  return parts;
 }
 
 /** The key a tip names. */
@@ -44,7 +64,9 @@ export class TipBook {
 
   /** Whether `tip` may still show. */
   isEligible(tip: DictationTip): boolean {
-    return !(storedBool(this.store, learnedKey(tip)) ?? false) && this.displays(tip) < tipDetails[tip].maxDisplays;
+    if (storedBool(this.store, learnedKey(tip)) ?? false) return false;
+    const { maxDisplays } = tipDetails[tip];
+    return maxDisplays === null || this.displays(tip) < maxDisplays;
   }
 
   recordDisplay(tip: DictationTip): void {

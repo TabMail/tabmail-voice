@@ -28,9 +28,9 @@ export function toggled(mode: DictationMode): DictationMode {
 
 /** What the platform's hotkey helper recognised (the push-to-talk gesture runs beside the key tap,
  * so a key that starts a dictation is swallowed before any app sees it). */
-export type HotkeyAction = "start" | "startHandsFree" | "finish" | "cancel" | "toggleMode";
+export type HotkeyAction = "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode";
 
-export const hotkeyActions: readonly HotkeyAction[] = ["start", "startHandsFree", "finish", "cancel", "toggleMode"];
+export const hotkeyActions: readonly HotkeyAction[] = ["start", "startHandsFree", "listenHandsFree", "finish", "cancel", "toggleMode"];
 
 export function isHotkeyAction(value: unknown): value is HotkeyAction {
   return typeof value === "string" && (hotkeyActions as readonly string[]).includes(value);

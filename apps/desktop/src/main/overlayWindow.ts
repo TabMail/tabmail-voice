@@ -6,7 +6,7 @@ import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
 import type { Phase } from "../core/dictationController.js";
 import { errorName, log } from "../core/log.js";
-import { overlayOrigin, type Rect } from "../core/overlayGeometry.js";
+import { opensUpward, overlayOrigin, type Rect } from "../core/overlayGeometry.js";
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
@@ -22,12 +22,21 @@ export class OverlayWindowController {
    * never flashes at the mouse pointer and then jumps. */
   private showWhenLocated = false;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The overlay last opened above the caret's line (`opensUpward`), which the view places its tip
+   * by (`tipGoesAbove`). */
+  private placedUpward = false;
+  /** The overlay was placed afresh: its view's state changed. */
+  onPlace: (() => void) | undefined;
 
   constructor(
     private readonly window: BrowserWindow,
     /** The caret's rect in the app in front, in top-left screen points; null when it has none. */
     private readonly locateCaret: () => Promise<Rect | null>,
   ) {}
+
+  get opensUpward(): boolean {
+    return this.placedUpward;
+  }
 
   update(phase: Phase): void {
     switch (phase.kind) {
@@ -91,6 +100,8 @@ export class OverlayWindowController {
     const display = screen.getDisplayNearestPoint({ x: Math.round(anchor.x + anchor.width / 2), y: Math.round(anchor.y + anchor.height / 2) });
     const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, display.workArea);
     this.window.setBounds({ x: Math.round(origin.x), y: Math.round(origin.y), ...config.overlayCanvasSize });
+    this.placedUpward = opensUpward(anchor, config.pillHeight, display.workArea);
+    this.onPlace?.();
   }
 
   private cancelHide(): void {

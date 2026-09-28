@@ -175,6 +175,7 @@ function launch(): void {
       isHearing: controller.isHearing,
       language: controller.language,
       tip: controller.tip,
+      opensUpward: overlay.opensUpward,
       hotkey: controller.settings.hotkey,
       tools: controller.tools,
       emailAppIcon: emailAppIcon.path === controller.emailAppPath ? emailAppIcon.dataURL : null,
@@ -335,6 +336,7 @@ function launch(): void {
     updateEmailAppIcon();
     windows.push("overlay");
   });
+  overlay.onPlace = () => windows.push("overlay");
   settings.observe(pushSettingsWindows);
   account.observe(pushSettingsWindows);
   permissions.observe(pushSettingsWindows);
