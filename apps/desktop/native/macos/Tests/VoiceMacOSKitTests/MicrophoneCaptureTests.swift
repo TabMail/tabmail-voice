@@ -128,6 +128,22 @@ struct MicrophoneSessionsTests {
     }
 
     /// Start(2) failed while the app's stop(1) is still on its way: a late start(1) does not run.
+    /// The running session's microphone stopped by itself: it is the one reported, nothing runs, an
+    /// older start (before any stop) and its late stop change nothing, and the next session starts.
+    @Test func aLostSessionIsReportedOnceAndKeepsOlderSessionsOff() {
+        var sessions = MicrophoneSessions()
+        let noneRunning = sessions.lost()
+        let started = sessions.start(3)
+        let lost = sessions.lost()
+        let runningAfter = sessions.running
+        let lostAgain = sessions.lost()
+        let olderStart = sessions.start(2)
+        let lateStop = sessions.stop(3)
+        let nextStart = sessions.start(4)
+        #expect(noneRunning == nil && started && lost == 3 && runningAfter == nil && lostAgain == nil)
+        #expect(!lateStop && !olderStart && nextStart && sessions.running == 4)
+    }
+
     @Test func aFailedStartKeepsOlderSessionsOff() {
         var sessions = MicrophoneSessions()
         let started = sessions.start(2)
@@ -183,5 +199,18 @@ struct MicrophoneChunkEventTests {
             Float(bitPattern: UInt32(bytes[index * 4]) | UInt32(bytes[index * 4 + 1]) << 8 | UInt32(bytes[index * 4 + 2]) << 16 | UInt32(bytes[index * 4 + 3]) << 24)
         }
         #expect(decoded == samples)
+    }
+
+    /// The app reads a lost event's session as a number.
+    @Test func aLostEventCarriesANumericSession() throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+
+        channel.emit(MacService.microphoneLostEvent, MacService.microphoneLost(session: 7))
+
+        let line = try #require(lines.withLock { $0.first })
+        let object = try #require(try JSONSerialization.jsonObject(with: line) as? [String: Any])
+        #expect(object["event"] as? String == "microphoneLost")
+        #expect((object["session"] as? NSNumber)?.intValue == 7 && !(object["session"] is String))
     }
 }

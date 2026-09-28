@@ -103,6 +103,9 @@ export class MacSystem {
       const samples = decodeSamples(message.samples);
       if (Number.isInteger(message.session) && samples) report({ type: "chunk", session: message.session as number, samples });
     });
+    this.helper.on("microphoneLost", (message) => {
+      if (Number.isInteger(message.session)) report({ type: "lost", session: message.session as number });
+    });
     return (command) => {
       switch (command.type) {
         case "prepare":

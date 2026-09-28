@@ -150,6 +150,9 @@ describe("helper wire contract", () => {
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from(samples.buffer).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from([1, 2, 3]).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: "3", samples: Buffer.from(samples.buffer).toString("base64") });
+    const lostName = /microphoneLostEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"))?.[1] ?? "";
+    events.get(lostName)?.({ event: lostName, session: "3" });
+    events.get(lostName)?.({ event: lostName, session: 3 });
     refuse = true;
     microphone({ type: "start", session: 4 });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -163,6 +166,7 @@ describe("helper wire contract", () => {
     expect(reports).toEqual([
       { type: "started", session: 3 },
       { type: "chunk", session: 3, samples },
+      { type: "lost", session: 3 },
       { type: "failed", session: 4, error: "Error" },
     ]);
   });

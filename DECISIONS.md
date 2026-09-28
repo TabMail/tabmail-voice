@@ -988,6 +988,14 @@ only be seen in the running app on macOS, not in the offscreen previews.
   waits for it within its own timeout; one that times out, or whose dictation is cancelled, while it
   waits is never sent (a cancelled dictation pastes nothing). Every other request fails at once
   during a restart, as before.
+- The helper's engine stopping by itself mid-dictation (AVAudioEngine stops on a configuration
+  change: the input's sample rate or channels changed) is the same loss: `MicrophoneCapture`
+  watches the running engine for `AVAudioEngineConfigurationChange`, stops that session
+  (`MicrophoneSessions.lost`, like a failed start) and emits `microphoneLost {session}` after the
+  chunks already queued; the app reports it as `lost`, and the controller sends what was said, as
+  above. One arriving while the start is still pending fails that start. (The Swift app does not
+  watch for this; its dictation keeps listening to a stopped engine.) The audio window's path
+  (Windows, Linux) does not report it yet.
 - `MicrophoneSessions` treats a failed start like its stop (no older session starts after it), and
   the whole-number request params (session, pid, Globe value) are read with `JSON.integer`, the
   restore delay rounded to whole milliseconds with `Int(exactly:)`, so a malformed number is refused

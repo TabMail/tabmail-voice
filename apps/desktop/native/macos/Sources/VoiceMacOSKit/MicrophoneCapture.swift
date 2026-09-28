@@ -15,7 +15,9 @@ import VoiceHelperSupport
 ///
 /// Sessions are numbered by the app; which one runs is `MicrophoneSessions`' decision. The
 /// microphone runs only between a start and its stop: the engine is discarded after every
-/// dictation, and a prepared engine never opens the device.
+/// dictation, and a prepared engine never opens the device. A running engine that stops by itself
+/// (the input's format changed: AVAudioEngine stops on a configuration change) is that session's
+/// microphone lost, told to `onLost`.
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
@@ -36,6 +38,8 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Receives each converted chunk, with its session, on the audio render thread.
     private let onSamples: @Sendable (Int, [Float]) -> Void
+    /// Receives the session whose microphone stopped by itself, on the capture queue.
+    private let onLost: @Sendable (Int) -> Void
     private let queue = DispatchQueue(label: "ai.tabmail.voice.helper.microphone", qos: .userInitiated)
     /// The running session and its converter, read on the render thread.
     private let tap = OSAllocatedUnfairLock<TapState?>(uncheckedState: nil)
@@ -45,9 +49,12 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var sessions = MicrophoneSessions()
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
+    /// Watches the running engine for a configuration change.
+    private var configurationObserver: NSObjectProtocol?
 
-    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void) {
+    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onLost: @escaping @Sendable (Int) -> Void) {
         self.onSamples = onSamples
+        self.onLost = onLost
         // The user switched the default input (System Settings › Sound, AirPods connecting…): a
         // prepared engine is bound to the old device, so rebuild it.
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
@@ -127,6 +134,10 @@ final class MicrophoneCapture: @unchecked Sendable {
                 throw error
             }
             self.engine = engine
+            configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
+                guard let self else { return }
+                self.queue.async { self.engineStoppedOnQueue(engine) }
+            }
         } catch {
             sessions.failed(session)
             throw error
@@ -134,8 +145,19 @@ final class MicrophoneCapture: @unchecked Sendable {
         HelperLog.debug("MicrophoneCapture: session \(session) started")
     }
 
+    /// `engine` stopped by itself: if it still runs a session, that session's microphone is lost.
+    private func engineStoppedOnQueue(_ stopped: AVAudioEngine) {
+        guard stopped === engine, let session = sessions.lost() else { return }
+        HelperLog.error("MicrophoneCapture: session \(session) lost: the input's configuration changed")
+        stopEngine()
+        prepareOnQueue()
+        onLost(session)
+    }
+
     private func stopEngine() {
         tap.withLockUnchecked { $0 = nil }
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        configurationObserver = nil
         guard let engine else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
@@ -262,6 +284,14 @@ struct MicrophoneSessions {
         guard let current = running, current <= session else { return false }
         running = nil
         return true
+    }
+
+    /// The running session's microphone stopped by itself: nothing runs, and, as after its stop, no
+    /// older session starts. Returns that session, nil when none ran.
+    mutating func lost() -> Int? {
+        guard let current = running else { return nil }
+        failed(current)
+        return current
     }
 
     /// `session`'s start failed: nothing runs, and, as after its stop, no older session starts.

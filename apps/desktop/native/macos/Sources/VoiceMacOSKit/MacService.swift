@@ -27,9 +27,11 @@ import VoiceHelperSupport
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
-///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}`: the microphone off.
+///   32-bit float mono samples at `sampleRate`, and `{"event": "microphoneLost", session}` should the
+///   microphone stop by itself. `microphoneStop {session}` → `{}`: the microphone off.
 public enum MacService {
     static let microphoneChunkEvent = "microphoneChunk"
+    static let microphoneLostEvent = "microphoneLost"
 
     /// A chunk event's fields: its session, and its samples as base64 of little-endian 32-bit floats.
     static func microphoneChunk(session: Int, samples: [Float]) -> [String: JSON] {
@@ -37,16 +39,29 @@ public enum MacService {
         return ["session": .number(Double(session)), "samples": .string(data.base64EncodedString())]
     }
 
+    /// A lost event's fields: the session whose microphone stopped by itself.
+    static func microphoneLost(session: Int) -> [String: JSON] {
+        ["session": .number(Double(session))]
+    }
+
     @MainActor
     public static func register(on channel: HelperChannel) -> AnyObject {
         let activator = AccessibilityActivator()
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
-        let microphone = MicrophoneCapture { session, samples in
-            chunkQueue.async {
-                channel.emit(microphoneChunkEvent, microphoneChunk(session: session, samples: samples))
+        let microphone = MicrophoneCapture(
+            onSamples: { session, samples in
+                chunkQueue.async {
+                    channel.emit(microphoneChunkEvent, microphoneChunk(session: session, samples: samples))
+                }
+            },
+            // After the chunks already queued, so the app has all that was heard.
+            onLost: { session in
+                chunkQueue.async {
+                    channel.emit(microphoneLostEvent, microphoneLost(session: session))
+                }
             }
-        }
+        )
 
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
         channel.on("readScreen") { _ in
