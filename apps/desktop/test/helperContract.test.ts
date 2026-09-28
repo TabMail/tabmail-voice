@@ -96,6 +96,27 @@ describe("helper wire contract", () => {
     ]);
   });
 
+  /** The helper's drawn icon reaches the bubble's `<img>` as a PNG data URL; no icon, none. */
+  test("an app's icon comes back as a PNG data URL, or null", async () => {
+    const calls: { method: string; params: unknown }[] = [];
+    let png: string | null = "iVBORw0KGgo=";
+    const helper = {
+      request: async (method: string, params?: unknown) => {
+        calls.push({ method, params });
+        return { png };
+      },
+    } as unknown as HelperClient;
+    const mac = new MacSystem(helper);
+
+    expect(await mac.appIcon("/Applications/Example.app", 32)).toBe("data:image/png;base64,iVBORw0KGgo=");
+    png = null;
+    expect(await mac.appIcon("/Applications/Example.app", 32)).toBeNull();
+    expect(calls).toEqual([
+      { method: "appIcon", params: { path: "/Applications/Example.app", pixels: 32 } },
+      { method: "appIcon", params: { path: "/Applications/Example.app", pixels: 32 } },
+    ]);
+  });
+
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {
     const main = readFileSync(join(root, "src/main/main.ts"), "utf8");
     const sent = [...main.matchAll(/hotkeyHelper\s*\.request(?:<[^>]*>)?\("(\w+)"(?:,\s*\{([^}]*)\})?/g)].map((match) => ({

@@ -165,6 +165,21 @@ describe("overlay page", () => {
     }
   });
 
+  /** Released while it warms up: the swirl fades out beside the dispersing one, as the Swift app's
+   * does, and both go; the next hold, heard at once, shows its pill with no swirl left behind it. */
+  test("a swirl released while it warms up goes, leaving nothing behind the next pill", async () => {
+    const page = await overlayPage();
+    await page.show(warmingUp);
+    await page.show(idle);
+    expect(document.querySelectorAll("canvas.swirl")).toHaveLength(2);
+    await act(() => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponse * 1000 + 50)));
+
+    await page.show({ ...listening, phase: { kind: "arming" } });
+    await page.show(listening);
+    expect(document.querySelector(".pill-anchor")).not.toBeNull();
+    expect(document.querySelectorAll("canvas.swirl")).toHaveLength(0);
+  });
+
   /** The pill growing moves the tip with it, and a closed page observes nothing more. */
   test("a pill that grows moves its tip, and unmounting stops observing", async () => {
     const page = await overlayPage();
