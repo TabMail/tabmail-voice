@@ -937,9 +937,13 @@ Dictation, Agent mode, Permissions, General), the chosen section's cards beside 
 TabMail icon's blue → purple (`brand.ts`, as the overlay): the selected section, switches and the
 default button carry the gradient, section icons the brand blue, and a red dot marks a section that
 needs the user (signed out, a permission missing), in light and dark. White text sits on the
-gradient darkened by `textShade`, so small text keeps WCAG AA's 4.5:1 along it, and the account
-shows in the text colour; under a Windows contrast theme (`forced-colors`), which drops gradients,
-the switches are the system's checkboxes and the chosen section is outlined in its highlight. On macOS the sidebar shows the
+gradient darkened by `textShade`, so small text keeps WCAG AA's 4.5:1 along it, the account shows
+in the text colour (in the content and the sidebar), and focus is Chromium's own ring (the brand
+blue's was under 3:1 on the light sidebar); under a Windows contrast theme (`forced-colors`), which
+drops gradients, the switches are the system's checkboxes, the chosen section is in the system's
+selection colours (so the focus ring still shows on it) and the attention mark in the text colour.
+The page's transparency outranks `form.css`'s page colour by specificity, since the build links the
+shared `form.css` after `settings.css`: at equal specificity it painted over the frosted sidebar. On macOS the sidebar shows the
 window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
 no material, so the window has its own colour (`settingsWindowColour`). The settings and their
 wording are unchanged (a test holds the notes to the Swift app's); the sidebar adds only its own

@@ -22,8 +22,10 @@
   }
 }
 
-html,
-body,
+/* Above `form.css`'s `html, body` whichever loads last (the build links the shared `form.css`
+ * after this file), so the page stays clear for the frosted sidebar. */
+:root,
+:root > body,
 #root {
   height: 100%;
   background: transparent;
@@ -71,7 +73,9 @@ body,
   font-weight: 600;
 }
 
-.identity-account {
+/* In the text colour: the caption grey is too faint for small text on the sidebar. */
+.identity .identity-account {
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -190,13 +194,6 @@ body,
   background: var(--brand-text-gradient);
 }
 
-.settings select:focus-visible,
-.settings input:focus-visible,
-.settings button:focus-visible {
-  outline: 2px solid var(--brand-blue);
-  outline-offset: 1px;
-}
-
 /* A switch, as macOS draws one, on in the brand gradient. */
 
 input.switch {
@@ -233,8 +230,9 @@ input.switch:checked::before {
 }
 
 /* Windows' contrast themes drop gradients and force colours: the switch is the system's checkbox
- * again, the chosen section is outlined in the system's highlight, and the icons take its text
- * colour (the chosen one's white would vanish). */
+ * again, the chosen section is drawn in the system's selection colours (leaving the focus ring
+ * free to show), the icons take the text colour (the chosen one's white would vanish), and the
+ * attention mark the text colour (its red is forced to the page's). */
 @media (forced-colors: active) {
   input.switch {
     width: auto;
@@ -246,13 +244,25 @@ input.switch:checked::before {
     content: none;
   }
 
-  .sidebar button.nav.selected {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
+  .sidebar button.nav svg {
+    color: CanvasText;
   }
 
-  .sidebar button.nav svg,
+  .attention {
+    background: CanvasText;
+  }
+
+  .sidebar button.nav.selected {
+    background: SelectedItem;
+    color: SelectedItemText;
+    forced-color-adjust: none;
+  }
+
   .sidebar button.nav.selected svg {
-    color: CanvasText;
+    color: SelectedItemText;
+  }
+
+  .nav.selected .attention {
+    background: SelectedItemText;
   }
 }

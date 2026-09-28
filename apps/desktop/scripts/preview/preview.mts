@@ -50,8 +50,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings", page: "settings.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
-  // As under a Windows contrast theme, on a section with switches.
-  { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  // As under a Windows contrast theme, on a section with switches, others needing attention.
+  { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
   { name: "welcome-consent", page: "welcome.html", size: { width: 560, height: 500 }, state: welcome },
   { name: "welcome-accessibility", page: "welcome.html", size: { width: 560, height: 500 }, state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
 ];

@@ -75,7 +75,28 @@ function type(input: HTMLInputElement, text: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+/** The menu in the row titled `title`. */
+function menu(title: string): HTMLSelectElement {
+  const found = [...document.querySelectorAll(".row")].find((row) => row.firstElementChild?.textContent === title)?.querySelector("select");
+  if (!found) throw new Error(`no ${title} menu`);
+  return found;
+}
+
+/** Picks `value` in `select` as the user would. */
+function pick(select: HTMLSelectElement, value: string): void {
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/** The Allow… button in the permission row titled `title`. */
+function allow(title: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll(".row")].find((row) => row.firstElementChild?.textContent === title)?.querySelector("button");
+  if (!found) throw new Error(`no Allow… for ${title}`);
+  return found;
+}
+
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
@@ -158,6 +179,58 @@ describe("Settings page", () => {
       { type: "setOpenAtLogin", value: false },
       { type: "setDebugMode", value: true },
     ]);
+  });
+
+  /** Every other control sends its own command: each menu its choice (the email app's Default as
+   * none), each Allow… its own permission's request, and Sign In the email and the code typed. */
+  test("each menu, Allow… and Sign In sends its command", async () => {
+    const shown: SettingsState = {
+      ...signedIn,
+      email: null,
+      systemEmailApp: { bundleIdentifier: "com.example.default", name: "Default Mail" },
+      installedEmailApps: [{ bundleIdentifier: "com.example.mail", name: "Example Mail" }],
+      microphoneGranted: false,
+      accessibilityTrusted: false,
+    };
+    const page = await settingsPage({ error: null }, shown, shown);
+
+    await act(async () => pick(menu("Hold to dictate"), "function"));
+    await act(async () => pick(menu("Email app"), "com.example.mail"));
+    await act(async () => pick(menu("Email app"), ""));
+    await act(async () => allow("Accessibility (hotkey and typing)").click());
+    await act(async () => allow("Microphone").click());
+    const email = document.querySelector<HTMLInputElement>('input[type="email"]');
+    if (!email) throw new Error("no email field");
+    await act(async () => type(email, "person@example.com"));
+    await act(async () => button("Email Me a Code").click());
+    const code = document.querySelector<HTMLInputElement>('input[placeholder="Code"]');
+    if (!code) throw new Error("no code field");
+    await act(async () => type(code, "123456"));
+    await act(async () => button("Sign In").click());
+
+    expect(page.commands).toEqual([
+      { type: "setHotkey", hotkey: "function" },
+      { type: "setEmailClient", bundleIdentifier: "com.example.mail" },
+      { type: "setEmailClient", bundleIdentifier: null },
+      { type: "requestAccessibility" },
+      { type: "requestMicrophone" },
+      { type: "sendCode", email: "person@example.com" },
+      { type: "verify", email: "person@example.com", code: "123456" },
+    ]);
+  });
+
+  /** Only on macOS, where the window is frosted under inset traffic lights, is the page clear with
+   * its sidebar the title bar (`.mac`); elsewhere the page has its own colour. */
+  test("the page is styled for the Mac only on a Mac", async () => {
+    const userAgent = vi.spyOn(navigator, "userAgent", "get");
+    userAgent.mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron");
+    await settingsPage({ error: null }, signedIn);
+    expect(document.querySelector(".settings")?.classList.contains("mac")).toBe(true);
+
+    userAgent.mockReturnValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Electron");
+    await settingsPage({ error: null }, signedIn);
+    expect(document.querySelector(".settings")).not.toBeNull();
+    expect(document.querySelector(".settings")?.classList.contains("mac")).toBe(false);
   });
 
   /** Debug mode is offered, under General, only to an account allowed it. */
