@@ -15,6 +15,8 @@ import type { Command, OverlayState } from "../../src/shared/ipc.js";
 
 /** Each React root the page creates, to unmount as the window closes. */
 const mounted = vi.hoisted(() => ({ roots: [] as { unmount(): void }[] }));
+// The question's time to answer, unlike the chat window's own timeout, so a bar timed by the wrong one shows.
+vi.mock("../../src/core/config.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/core/config.js")>()), chatConfirmationTimeout: 20_000 }));
 vi.mock("react-dom/client", async (importOriginal) => {
   const real = await importOriginal<typeof import("react-dom/client")>();
   return {
@@ -467,6 +469,7 @@ describe("the chat window", () => {
       touched,
       activity: null,
       confirmation: null,
+      confirmationExpiresAt: null,
     };
   }
 
@@ -665,6 +668,32 @@ describe("the chat window", () => {
     await act(async () => button?.click());
 
     expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed }]);
+  });
+
+  /** A question shows the time left to answer it as a bar along its own bottom edge, running down with
+   * no state pushed; without a time, none. */
+  test("its question's time to answer runs down under it", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const page = await overlayPage();
+      const question = "Add “Launch party” to your calendar on Friday at 18:00?";
+      await page.show({ ...running, chat: { ...chat(null), confirmation: question, confirmationExpiresAt: Date.now() + config.chatConfirmationTimeout } });
+      const bars = () => [...document.querySelectorAll<HTMLElement>(".chat-timeout")];
+      const width = () => parseFloat(bars()[0]?.style.width ?? "");
+
+      expect(bars()).toHaveLength(1);
+      expect(bars()[0]?.parentElement?.className).toBe("chat-confirmation");
+      expect(width()).toBeCloseTo(100, 0);
+      vi.advanceTimersByTime(config.chatConfirmationTimeout / 2);
+      expect(width()).toBeCloseTo(50, 0);
+      vi.advanceTimersByTime(config.chatConfirmationTimeout);
+      expect(width()).toBe(0);
+
+      await page.show({ ...running, chat: { ...chat(null), confirmation: question } });
+      expect(bars()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /** A window a tool opened has no timeout yet, but is untouched: a touch there keeps it open once the

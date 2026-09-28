@@ -33,12 +33,14 @@ export interface AgentChat {
   /** What a tool the answer's model called is doing, while it runs ("Checking your calendar"). */
   activity: string | null;
   /** What the window asks before a tool sends or creates anything, until the user confirms or
-   * declines it. */
+   * declines it, or it goes unanswered until `confirmationExpiresAt`. */
   confirmation: string | null;
+  /** When the question is declined unless answered (epoch milliseconds); null with no question. */
+  confirmationExpiresAt: number | null;
 }
 
 /** The chat window as it opens: no turns yet, and untouched. */
-export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null };
+export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null, confirmationExpiresAt: null };
 
 export function appendTurn(chat: AgentChat, request: string, tool: AgentTool, reply: string): AgentChat {
   return { ...chat, turns: [...chat.turns, { id: chat.turns.length, request, tool, reply }], pendingRequest: null };

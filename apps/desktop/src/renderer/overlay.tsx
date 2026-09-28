@@ -287,14 +287,14 @@ function ChatWindow({ chat, status, state }: { chat: AgentChat; status: Mode | n
           ))}
           {chat.pendingRequest !== null && <RequestBubble text={chat.pendingRequest} />}
           {chat.activity !== null && <Activity label={chat.activity} />}
-          {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} />}
+          {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} expiresAt={chat.confirmationExpiresAt} />}
           {status && (
             <div className="chat-status">
               <Pill mode={status} level={state.level} language={state.language} />
             </div>
           )}
         </div>
-        {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} />}
+        {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} timeout={config.chatTimeout} />}
         <button
           type="button"
           className="chat-close"
@@ -323,8 +323,9 @@ function Activity({ label }: { label: string }) {
   );
 }
 
-/** What a tool asks before it sends or creates anything: it runs only on Confirm. */
-function ConfirmationCard({ question }: { question: string }) {
+/** What a tool asks before it sends or creates anything: it runs only on Confirm, and a bar along its
+ * bottom edge shows the time left to answer. */
+function ConfirmationCard({ question, expiresAt }: { question: string; expiresAt: number | null }) {
   const button = (title: string, confirmed: boolean) => (
     <button
       type="button"
@@ -348,6 +349,7 @@ function ConfirmationCard({ question }: { question: string }) {
         {button("Cancel", false)}
         {button("Confirm", true)}
       </div>
+      {expiresAt !== null && <TimeoutBar closesAt={expiresAt} timeout={config.chatConfirmationTimeout} />}
     </div>
   );
 }
@@ -419,17 +421,18 @@ function FormattedReply({ reply }: { reply: string }) {
   );
 }
 
-/** A thin gradient line pinned to the chat's bottom-left edge, as wide as the share of time left. */
-function TimeoutBar({ closesAt }: { closesAt: number }) {
+/** A thin gradient line pinned to the bottom-left edge of what holds it (the chat, or its question), as
+ * wide as the share of `timeout` left. */
+function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useAnimationFrame(() => {
-    if (ref.current) ref.current.style.width = `${remainingFraction(closesAt, Date.now(), config.chatTimeout) * 100}%`;
+    if (ref.current) ref.current.style.width = `${remainingFraction(closesAt, Date.now(), timeout) * 100}%`;
   });
   return (
     <div
       ref={ref}
       className="chat-timeout"
-      style={{ height: config.chatTimeoutBarHeight, width: `${remainingFraction(closesAt, Date.now(), config.chatTimeout) * 100}%`, backgroundImage: brandGradient, opacity: config.chatTimeoutBarOpacity }}
+      style={{ height: config.chatTimeoutBarHeight, width: `${remainingFraction(closesAt, Date.now(), timeout) * 100}%`, backgroundImage: brandGradient, opacity: config.chatTimeoutBarOpacity }}
     />
   );
 }

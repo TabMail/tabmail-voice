@@ -100,6 +100,8 @@ export class DictationController extends Observable {
   chatTimeout = config.chatTimeout;
   /** How long the chat window's question shows before an answer to it counts. Settable for tests. */
   confirmationMinimumDisplay = config.chatConfirmationMinimumDisplay;
+  /** How long the chat window's question waits for an answer. Settable for tests. */
+  confirmationTimeout = config.chatConfirmationTimeout;
   /** A double tap's second press was released as a tap, leaving the hotkey helper hands-free, but no
    * hands-free dictation listens: the press came while the last dictation was still busy, or failed
    * to start, or its dictation ended while the key was down. The helper must be told, or it keeps
@@ -153,7 +155,9 @@ export class DictationController extends Observable {
   /** Closes the chat window when its timeout runs out. */
   private chatCloseTimer: Timer | null = null;
   /** Gives the user's answer to the question the chat window shows, awaited by the tool that asked. */
-  private confirmationReply: ((confirmed: boolean) => void) | null = null;
+  private confirmationReply: ((answer: ConfirmationAnswer) => void) | null = null;
+  /** Declines the question when it has gone unanswered for `confirmationTimeout`. */
+  private confirmationTimer: Timer | null = null;
   /** When the question now showing appeared. */
   private confirmationShownAt = 0;
 
@@ -539,10 +543,10 @@ export class DictationController extends Observable {
     const question = tool.confirmation(args);
     // Closing the window or ending the request declines the question (`teardown`).
     if (question !== null) {
-      const confirmed = await this.confirm(question);
-      if (!confirmed) {
-        log.debug(`DictationController: ${tool.name} declined`);
-        return config.loopToolDeclined;
+      const answer = await this.confirm(question);
+      if (answer !== "confirmed") {
+        log.debug(`DictationController: ${tool.name} ${answer}`);
+        return answer === "declined" ? config.loopToolDeclined : config.loopToolUnanswered;
       }
     }
     log.debug(`DictationController: running ${tool.name}`);
@@ -558,12 +562,17 @@ export class DictationController extends Observable {
   }
 
   /** Shows `question` in the chat window, and waits for the user to confirm or decline it
-   * (`answerConfirmation`); closing the window or cancelling the request declines it. */
-  private confirm(question: string): Promise<boolean> {
-    this.updateChat({ confirmation: question });
+   * (`answerConfirmation`); closing the window or cancelling the request declines it, and so does
+   * leaving it unanswered for `confirmationTimeout`. */
+  private confirm(question: string): Promise<ConfirmationAnswer> {
     this.confirmationShownAt = Date.now();
+    this.updateChat({ confirmation: question, confirmationExpiresAt: this.confirmationShownAt + this.confirmationTimeout });
     return new Promise((resolve) => {
       this.confirmationReply = resolve;
+      this.confirmationTimer = after(this.confirmationTimeout, () => {
+        this.confirmationTimer = null;
+        this.replyToConfirmation("unanswered");
+      });
     });
   }
 
@@ -575,15 +584,17 @@ export class DictationController extends Observable {
       log.debug("DictationController: an answer too soon after the question was ignored");
       return;
     }
-    this.replyToConfirmation(confirmed);
+    this.replyToConfirmation(confirmed ? "confirmed" : "declined");
   }
 
-  private replyToConfirmation(confirmed: boolean): void {
+  private replyToConfirmation(answer: ConfirmationAnswer): void {
     const reply = this.confirmationReply;
     if (reply === null) return;
     this.confirmationReply = null;
-    this.updateChat({ confirmation: null });
-    reply(confirmed);
+    cancelTimer(this.confirmationTimer);
+    this.confirmationTimer = null;
+    this.updateChat({ confirmation: null, confirmationExpiresAt: null });
+    reply(answer);
   }
 
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015). */
@@ -868,7 +879,7 @@ export class DictationController extends Observable {
     // A tool runs only with its request pending.
     const chat = this.currentChat;
     if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
-    this.replyToConfirmation(false);
+    this.replyToConfirmation("declined");
     // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
     // cancelled or ended with the account: the pill says what failed, and the next hold dictates.
     if (this.currentChat?.turns.length === 0) this.dropChat();
@@ -899,6 +910,10 @@ function parsedJSON(json: string): unknown {
 }
 
 type Timer = ReturnType<typeof setTimeout>;
+
+/** How the chat window's question ended: the user confirmed or declined it, or it went unanswered
+ * for `confirmationTimeout`. */
+type ConfirmationAnswer = "confirmed" | "declined" | "unanswered";
 
 function after(ms: number, action: () => void): Timer {
   return setTimeout(action, ms);
