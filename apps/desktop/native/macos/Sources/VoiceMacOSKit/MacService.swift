@@ -34,6 +34,11 @@ import VoiceHelperSupport
 ///   (`ContactMatch`), in the user's sort order; `contactsAdd {firstName, lastName, organization,
 ///   emails, phones}` → the contact as saved in the default container. The first request asks macOS
 ///   for access, and one without it fails with `ContactsFrameworkStore.Failure.contactsNoAccess`.
+/// - `filesSearch {words, kind, changedAfter, changedBefore, limit}` → `{items}`: at most `limit`
+///   items in the home folder Spotlight finds (`SpotlightQuery`), newest first, the dates in
+///   milliseconds or null; `fileOpen {path, reveal}` → `{opened}`: the item opened in its usual app,
+///   or shown in the Finder (with `reveal`, or when `OpenPolicy` says it can run something). A
+///   failure is a `Files.Failure` name.
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
@@ -59,9 +64,13 @@ public enum MacService {
         register(on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore())
     }
 
-    /// `eventStore` and `contactStore` are the user's calendars and contacts, or a test's stand-ins.
+    /// `eventStore` and `contactStore` are the user's calendars and contacts, `fileSearch` Spotlight
+    /// and `fileOpener` the Finder, or a test's stand-ins.
     @MainActor
-    static func register(on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore) -> AnyObject {
+    static func register(
+        on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore,
+        fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace
+    ) -> AnyObject {
         let activator = AccessibilityActivator()
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
@@ -200,6 +209,24 @@ public enum MacService {
             }
             let contact = ContactCard(firstName: firstName, lastName: lastName, organization: organization, emails: emails, phones: phones)
             return try await contactStore.add(contact).json
+        }
+        channel.on("filesSearch") { params in
+            guard let words = params["words"]?.array?.compactMap(\.string), let rawKind = params["kind"]?.string,
+                  let kind = SpotlightQuery.Kind(rawValue: rawKind), let limit = params["limit"]?.integer, limit > 0
+            else {
+                throw HelperError("filesSearch needs words, a known kind and a positive limit")
+            }
+            let query = SpotlightQuery(
+                words: words, kind: kind,
+                changedAfter: params["changedAfter"]?.number.map(EventWire.date), changedBefore: params["changedBefore"]?.number.map(EventWire.date)
+            )
+            return ["items": .array(try await fileSearch(query, limit).map(\.json))]
+        }
+        channel.on("fileOpen") { params in
+            guard let path = params["path"]?.string, path.hasPrefix("/"), let reveal = params["reveal"]?.bool else {
+                throw HelperError("fileOpen needs an absolute path and reveal")
+            }
+            return ["opened": .bool(try await Files.open(path, reveal: reveal, opener: fileOpener))]
         }
         channel.on("microphonePrepare") { _ in
             await microphone.prepare()

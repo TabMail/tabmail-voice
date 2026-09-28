@@ -4,6 +4,7 @@
 
 import { type CalendarEvent, type EventStore, EventStoreFailure, type ReminderItem } from "../core/agent/calendarTools.js";
 import { type ContactCard, type ContactStore, ContactStoreFailure } from "../core/agent/contactsTools.js";
+import { type FileStore, FileStoreFailure, type FoundItem } from "../core/agent/filesTools.js";
 import type { FocusedElement, ThunderbirdSystem } from "../core/agent/thunderbirdRelay.js";
 import * as config from "../core/config.js";
 import type { GlobeKeySystem } from "../core/globeKeyAction.js";
@@ -153,6 +154,32 @@ export class MacSystem {
     }
   }
 
+  /** Spotlight and the Finder in the helper (ADR-DESK-026): the helper builds the Spotlight query and
+   * decides what is only shown, not opened. */
+  readonly fileStore: FileStore = {
+    search: async (query, limit) => {
+      const { items } = await this.fileRequest<{ items: FoundItemJSON[] }>("filesSearch", {
+        words: query.words,
+        kind: query.kind,
+        changedAfter: query.changedAfter?.getTime() ?? null,
+        changedBefore: query.changedBefore?.getTime() ?? null,
+        limit,
+      });
+      return items.map(foundItem);
+    },
+    open: async (path, reveal) => (await this.fileRequest<{ opened: boolean }>("fileOpen", { path, reveal })).opened,
+  };
+
+  /** A Files request; one that failed goes back by name, for the model to pass on. */
+  private async fileRequest<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    try {
+      return await this.helper.request<T>(method, params, config.fileStoreRequestTimeout);
+    } catch (error) {
+      if (error instanceof HelperFailure && FileStoreFailure.isKind(error.helperMessage)) throw new FileStoreFailure(error.helperMessage);
+      throw error;
+    }
+  }
+
   /** The microphone, run in the helper as the Swift app runs it (prepared ahead, so a start only
    * starts the device): `SessionAudioCapture`'s commands go to the helper, and what the helper says
    * comes back to `report`. */
@@ -224,6 +251,13 @@ interface ReminderJSON {
 
 function reminderItem(json: ReminderJSON): ReminderItem {
   return { ...json, due: json.due === null ? null : new Date(json.due) };
+}
+
+/** A found item as the helper sends it: its change time in milliseconds since 1970. */
+type FoundItemJSON = Omit<FoundItem, "changed"> & { changed: number | null };
+
+function foundItem(json: FoundItemJSON): FoundItem {
+  return { ...json, changed: json.changed === null ? null : new Date(json.changed) };
 }
 
 export interface EmailAppInfo {

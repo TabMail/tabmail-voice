@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { homedir } from "node:os";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectors } from "../src/core/agent/connectors.js";
 import { mailtoURL } from "../src/core/agent/emailTools.js";
@@ -142,7 +143,7 @@ vi.mock("../src/main/helperClient.js", () => ({
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
-      return this.replies.get(method) ?? { value: null, events: [], contacts: [] };
+      return this.replies.get(method) ?? { value: null, events: [], contacts: [], items: [] };
     }
   },
 }));
@@ -526,26 +527,41 @@ describe("main process wiring", () => {
     expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
   });
 
-  /** On macOS the Answer tool reaches Calendar, Reminders and Contacts through `voice-macos`, and the
-   * email app, and each has a switch, stored and shown in the Settings and welcome windows; a name
-   * that is no app is refused. */
-  test("on macOS, Calendar, Reminders, Contacts and Email and their switches", async () => {
+  /** On macOS the Answer tool reaches Calendar, Reminders, Contacts and Files through `voice-macos`,
+   * and the email app, and each has a switch, stored and shown in the Settings and welcome windows; a
+   * name that is no app is refused. */
+  test("on macOS, Calendar, Reminders, Contacts, Files and Email and their switches", async () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "email_compose"]);
+    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.loopTools.map((tool) => tool.connector))).toEqual(new Set(connectors));
     await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({});
     await app.loopTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" });
-    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "contactsSearch"]));
+    await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" });
+    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "contactsSearch", "filesSearch"]));
 
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
     expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
     for (const name of ["settings", "welcome"]) {
-      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "email"]);
-      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "email"]);
+      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email"]);
     }
+  });
+
+  /** Files reads the home folder as `~`: a found item's path is given to the model with it, and a
+   * `~` path the model gives back opens the item there. */
+  test("Files reads the home folder as ~", async () => {
+    await launch("darwin");
+    const home = homedir();
+    const macHelper = app.helpers.get("voice-macos");
+    macHelper?.replies.set("filesSearch", { items: [{ path: `${home}/Documents/Tax return.pdf`, name: "Tax return.pdf", kind: "PDF document", changed: null, subject: null, authors: [], isEmail: false }] });
+    macHelper?.replies.set("fileOpen", { opened: true });
+
+    expect(await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" })).toContain(": ~/Documents/Tax return.pdf");
+    expect(await app.loopTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" })).toBe("Opened Tax return.pdf.");
+    expect(macHelper?.requests.find((request) => request.method === "fileOpen")?.params).toEqual({ path: `${home}/Documents/Tax return.pdf`, reveal: false });
   });
 
   /** A draft opens with the app macOS opens `mailto:` links with, named in the result; with none, the

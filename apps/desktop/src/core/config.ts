@@ -108,6 +108,8 @@ export const calendarReadMaxDays = 4 * 365;
 export const calendarEventDefaultDuration = 60 * 60 * 1_000;
 /** The most contacts one search returns to the model; more say so, for a narrower search. */
 export const contactsSearchMaxResults = 10;
+/** The most items one file search returns to the model, newest first; more say so. */
+export const filesSearchMaxResults = 10;
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
@@ -165,6 +167,9 @@ export const eventStoreRequestTimeout = 120_000;
 /** Longest a Contacts request to the helper may take: the first one waits while macOS asks the user
  * for access, as for Calendar. */
 export const contactStoreRequestTimeout = eventStoreRequestTimeout;
+/** Longest a Spotlight search or an open may take in the helper: a search over the whole home
+ * folder, or an app launching to open a document. */
+export const fileStoreRequestTimeout = 30_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
 

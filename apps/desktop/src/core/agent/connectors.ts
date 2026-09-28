@@ -7,9 +7,9 @@
  * Settings and the welcome wizard, on by default (owner, 2026-09-26). The OS asks for access the
  * first time a request needs it. All are macOS apps for now: elsewhere none is offered or shown.
  */
-export type Connector = "calendar" | "reminders" | "contacts" | "email";
+export type Connector = "calendar" | "reminders" | "contacts" | "files" | "email";
 
-export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "email"];
+export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "files", "email"];
 
 export function isConnector(name: unknown): name is Connector {
   return typeof name === "string" && (connectors as readonly string[]).includes(name);
@@ -33,6 +33,10 @@ export const connectorInfo: Record<Connector, ConnectorInfo> = {
   contacts: {
     displayName: "Contacts",
     settingsDescription: "Finds people’s details in your contacts, and adds ones you ask for once you confirm.",
+  },
+  files: {
+    displayName: "Files",
+    settingsDescription: "Finds files, and Apple Mail messages, with Spotlight, and opens the ones you ask for.",
   },
   email: {
     displayName: "Email",

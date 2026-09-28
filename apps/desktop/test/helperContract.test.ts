@@ -9,6 +9,7 @@ import * as config from "../src/core/config.js";
 import { hotkeyActions } from "../src/core/hotkey.js";
 import { EventStoreFailure } from "../src/core/agent/calendarTools.js";
 import { ContactStoreFailure } from "../src/core/agent/contactsTools.js";
+import { FileStoreFailure } from "../src/core/agent/filesTools.js";
 import { type HelperClient, HelperFailure } from "../src/main/helperClient.js";
 import { decodeSamples, MacSystem } from "../src/main/macos.js";
 import type { AudioReport } from "../src/shared/ipc.js";
@@ -40,7 +41,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null, events: [], reminders: [] };
+      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
     },
     on() {},
   } as unknown as HelperClient;
@@ -79,6 +80,8 @@ describe("helper wire contract", () => {
     await mac.eventStore.addReminder({ title: "Example", list: "", due: null, dueHasTime: false, notes: null });
     await mac.contactStore.search("Example", 1);
     await mac.contactStore.add({ firstName: "Example", lastName: "", organization: "", emails: [], phones: [] });
+    await mac.fileStore.search({ words: ["Example"], kind: "any", changedAfter: null, changedBefore: null }, 1);
+    await mac.fileStore.open("/tmp/example.pdf", false);
     const microphone = mac.microphone(() => {});
     microphone({ type: "prepare" });
     microphone({ type: "start", session: 1 });
@@ -220,6 +223,59 @@ describe("helper wire contract", () => {
 
     expect(cases).toEqual(["contactsNoAccess"]);
     expect(cases.every((name) => ContactStoreFailure.isKind(name))).toBe(true);
+  });
+
+  /** Files requests carry the search and the item as the helper reads them, times in milliseconds,
+   * and wait for a whole-home search or an app launching; a failure the helper names is its message
+   * for the model, and any other failure stays as it was. */
+  test("Files cross the wire as they are, and a named failure is its message", async () => {
+    const calls: { method: string; params: unknown; timeout: unknown }[] = [];
+    const changed = new Date();
+    const item = { path: "/Users/example/Documents/Tax return.pdf", name: "Tax return.pdf", kind: "PDF document", subject: null, authors: [], isEmail: false };
+    let failure: Error | null = null;
+    const helper = {
+      request: async (method: string, params?: unknown, timeout?: unknown) => {
+        calls.push({ method, params, timeout });
+        if (failure) throw failure;
+        return method === "filesSearch" ? { items: [{ ...item, changed: changed.getTime() }, { ...item, changed: null }] } : { opened: true };
+      },
+    } as unknown as HelperClient;
+    const store = new MacSystem(helper).fileStore;
+    const after = new Date(changed.getTime() - 86_400_000);
+
+    expect(await store.search({ words: ["tax", "return"], kind: "pdf", changedAfter: after, changedBefore: changed }, 11)).toEqual([
+      { ...item, changed },
+      { ...item, changed: null },
+    ]);
+    await store.search({ words: ["tax"], kind: "any", changedAfter: null, changedBefore: null }, 11);
+    expect(await store.open(item.path, true)).toBe(true);
+
+    const timeout = config.fileStoreRequestTimeout;
+    expect(calls).toEqual([
+      { method: "filesSearch", params: { words: ["tax", "return"], kind: "pdf", changedAfter: after.getTime(), changedBefore: changed.getTime(), limit: 11 }, timeout },
+      { method: "filesSearch", params: { words: ["tax"], kind: "any", changedAfter: null, changedBefore: null, limit: 11 }, timeout },
+      { method: "fileOpen", params: { path: item.path, reveal: true }, timeout },
+    ]);
+
+    for (const kind of ["searchFailed", "openFailed"] as const) {
+      failure = new HelperFailure("failed", "fileOpen", kind);
+      await expect(store.open(item.path, false)).rejects.toEqual(new FileStoreFailure(kind));
+    }
+    for (const other of [new HelperFailure("failed", "fileOpen", "fileOpen needs an absolute path and reveal"), new HelperFailure("timeout", "fileOpen")]) {
+      failure = other;
+      await expect(store.open(item.path, false)).rejects.toBe(other);
+    }
+  });
+
+  /** The failures `voice-macos` sends by name are the ones the app turns into messages. */
+  test("the helper's Files failures are the ones the app knows", () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/FileSearch.swift"), "utf8");
+    const block = /enum Failure: String, Error \{([^}]*)\}/.exec(source)?.[1] ?? "";
+    const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
+
+    expect(cases).toEqual(["searchFailed", "openFailed"]);
+    expect(cases.every((name) => FileStoreFailure.isKind(name))).toBe(true);
+    expect(FileStoreFailure.isKind("toString")).toBe(false);
   });
 
   /** The helper's drawn icon reaches the bubble's `<img>` as a PNG data URL; no icon, none. */
