@@ -65,17 +65,29 @@ function Settings() {
           <button key={name} className={name === shown ? "nav selected" : "nav"} aria-current={name === shown ? "page" : undefined} onClick={() => setShown(name)}>
             {sectionIcon(config.settingsSectionIconSize)}
             <span>{title}</span>
-            {needsAttention(name, state) && <span className="attention" aria-label="Needs attention" />}
+            {needsAttention(name, state) && <span className="attention" role="img" aria-label="Needs attention" />}
           </button>
         ))}
       </nav>
       <main className="content">
         <h1>{section?.title}</h1>
-        {shown === "account" && <AccountPane state={state} />}
-        {shown === "dictation" && <DictationPane state={state} />}
-        {shown === "agent" && <AgentPane state={state} />}
-        {shown === "permissions" && <PermissionsPane state={state} />}
-        {shown === "general" && <GeneralPane state={state} />}
+        {/* Every pane stays mounted, so a sign-in half done or a sign-out warning outlives a look
+            at another section. */}
+        <div hidden={shown !== "account"}>
+          <AccountPane state={state} />
+        </div>
+        <div hidden={shown !== "dictation"}>
+          <DictationPane state={state} />
+        </div>
+        <div hidden={shown !== "agent"}>
+          <AgentPane state={state} />
+        </div>
+        <div hidden={shown !== "permissions"}>
+          <PermissionsPane state={state} />
+        </div>
+        <div hidden={shown !== "general"}>
+          <GeneralPane state={state} />
+        </div>
       </main>
     </div>
   );
@@ -83,7 +95,7 @@ function Settings() {
 
 function AccountPane({ state }: { state: SettingsState }) {
   return (
-    <Group caption="Your TabMail account, which dictation and agent mode run under.">
+    <Group>
       <AccountSection email={state.email} />
     </Group>
   );
@@ -92,7 +104,12 @@ function AccountPane({ state }: { state: SettingsState }) {
 function DictationPane({ state }: { state: SettingsState }) {
   return (
     <>
-      <Group caption={state.hotkey === "function" ? "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit." : undefined}>
+      <Group
+        captions={[
+          state.hotkey === "function" && "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
+          "Your recording is sent to TabMail for transcription and isn’t stored.",
+        ]}
+      >
         <div className="row">
           <span>Hold to dictate</span>
           <select
@@ -109,7 +126,7 @@ function DictationPane({ state }: { state: SettingsState }) {
           </select>
         </div>
       </Group>
-      <Group caption="Your recording is sent to TabMail for transcription and isn’t stored.">
+      <Group>
         <Toggle label="Read the screen while dictating" checked={state.readsScreen} onChange={(value) => send({ type: "setReadsScreen", value })}>
           Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.
         </Toggle>
@@ -124,7 +141,7 @@ function AgentPane({ state }: { state: SettingsState }) {
 
 function PermissionsPane({ state }: { state: SettingsState }) {
   return (
-    <Group caption="TabMail Voice hears you only while you dictate, and types only what you dictated.">
+    <Group>
       <PermissionRow title="Microphone" granted={state.microphoneGranted} onRequest={() => send({ type: "requestMicrophone" })} />
       <PermissionRow title="Accessibility (hotkey and typing)" granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
     </Group>
@@ -144,12 +161,12 @@ function GeneralPane({ state }: { state: SettingsState }) {
   );
 }
 
-/** A card of rows, with an optional note under it. */
-function Group({ caption, children }: { caption?: string | undefined; children: ReactNode }) {
+/** A card of rows, with the notes under it that apply (a `false` one is left out). */
+function Group({ captions = [], children }: { captions?: (string | false)[]; children: ReactNode }) {
   return (
     <section className="card-section">
       <div className="group">{children}</div>
-      {caption && <p className="caption group-caption">{caption}</p>}
+      {captions.map((caption) => caption && <p key={caption} className="caption group-caption">{caption}</p>)}
     </section>
   );
 }
@@ -185,7 +202,7 @@ function EmailClientPicker({ state }: { state: SettingsState }) {
   else if (state.emailClient === null && !state.defaultEmailAppIsSupported) caption = "Mail and calendar requests need Thunderbird with TabMail. Choose it here, or make it your default email app.";
   else caption = "Mail and calendar requests go to TabMail’s chat in this app.";
   return (
-    <Group caption={caption}>
+    <Group captions={[caption]}>
       <div className="row">
         <span>Email app</span>
         <select value={state.emailClient ?? defaultValue} onChange={(event) => void send({ type: "setEmailClient", bundleIdentifier: event.target.value === defaultValue ? null : event.target.value })}>

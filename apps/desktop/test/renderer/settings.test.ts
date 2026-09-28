@@ -56,6 +56,25 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
+/** The switch of the setting labelled `label`. */
+function toggle(label: string): HTMLInputElement {
+  const found = [...document.querySelectorAll("label.toggle")].find((row) => row.querySelector(".toggle-text > span")?.textContent === label);
+  const input = found?.querySelector("input");
+  if (!input) throw new Error(`no ${label} switch`);
+  return input;
+}
+
+/** The text of the visible section's rows and notes. */
+function visibleText(): string {
+  return [...document.querySelectorAll("main > div:not([hidden])")].map((pane) => pane.textContent ?? "").join("\n");
+}
+
+/** Types `text` into `input` as the user would, so React sees the change. */
+function type(input: HTMLInputElement, text: string): void {
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set?.call(input, text);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -92,7 +111,7 @@ describe("Settings page", () => {
       expect(heading()).toBe(section);
       expect(button(section).getAttribute("aria-current")).toBe("page");
       expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-      shown[section] = [...document.querySelectorAll("main .row")].map((row) => row.textContent ?? "");
+      shown[section] = [...document.querySelectorAll("main > div:not([hidden]) .row")].map((row) => row.textContent ?? "");
     }
 
     const everything = Object.values(shown).flat().join("\n");
@@ -103,9 +122,10 @@ describe("Settings page", () => {
     expect(shown.Dictation?.join()).not.toContain("Sign Out");
   });
 
-  /** A section with something to do (signed out, a permission missing) is marked in the sidebar. */
+  /** A section with something to do (signed out, a permission missing) is marked in the sidebar,
+   * with a mark a screen reader announces (an image with a label, not a bare dot). */
   test("the sidebar marks the sections that need the user", async () => {
-    const marked = () => [...document.querySelectorAll("button.nav")].filter((nav) => nav.querySelector(".attention")).map((nav) => nav.textContent);
+    const marked = () => [...document.querySelectorAll("button.nav")].filter((nav) => nav.querySelector('[role="img"][aria-label="Needs attention"]')).map((nav) => nav.textContent);
 
     await settingsPage({ error: null }, signedIn);
     expect(marked()).toEqual([]);
@@ -115,5 +135,69 @@ describe("Settings page", () => {
 
     await settingsPage({ error: null }, signedIn, { ...signedIn, accessibilityTrusted: false });
     expect(marked()).toEqual(["Permissions"]);
+  });
+
+  /** Each switch sends its own setting with the value it was switched to. */
+  test("each switch sends its setting", async () => {
+    const shown = { ...signedIn, readsScreen: false, openAtLogin: true, debugAllowed: true, debugMode: false };
+    const page = await settingsPage({ error: null }, shown, shown);
+
+    await act(async () => toggle("Read the screen while dictating").click());
+    await act(async () => toggle("Open at login").click());
+    await act(async () => toggle("Debug mode").click());
+
+    expect(page.commands).toEqual([
+      { type: "setReadsScreen", value: true },
+      { type: "setOpenAtLogin", value: false },
+      { type: "setDebugMode", value: true },
+    ]);
+  });
+
+  /** Debug mode is offered, under General, only to an account allowed it. */
+  test("Debug mode shows only when allowed", async () => {
+    await settingsPage({ error: null }, signedIn, { ...signedIn, debugAllowed: true });
+    await act(async () => button("General").click());
+    expect(visibleText()).toContain("Debug mode");
+
+    await settingsPage({ error: null }, signedIn);
+    await act(async () => button("General").click());
+    expect(visibleText()).not.toContain("Debug mode");
+  });
+
+  /** Under the hotkey: the Globe key's note while fn is the hotkey, then the recording's. */
+  test("the hotkey's notes", async () => {
+    const globe = "While fn is the hotkey";
+    const recording = "Your recording is sent to TabMail for transcription and isn’t stored.";
+    const notes = () => [...document.querySelectorAll("main > div:not([hidden]) .card-section")].find((card) => card.textContent?.includes("Hold to dictate"))?.querySelectorAll(".group-caption");
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, hotkey: "function" });
+    await act(async () => button("Dictation").click());
+    expect([...(notes() ?? [])].map((note) => note.textContent?.slice(0, globe.length))).toEqual([globe, recording.slice(0, globe.length)]);
+
+    await settingsPage({ error: null }, signedIn);
+    await act(async () => button("Dictation").click());
+    expect([...(notes() ?? [])].map((note) => note.textContent)).toEqual([recording]);
+  });
+
+  /** A sign-in half done, or a sign-out warning, is still there after a look at another section. */
+  test("the account's progress outlives a switch of section", async () => {
+    const signedOut = { ...signedIn, email: null };
+    await settingsPage({ error: null }, signedOut, signedOut);
+    const email = document.querySelector<HTMLInputElement>('input[type="email"]');
+    if (!email) throw new Error("no email field");
+    await act(async () => type(email, "person@example.com"));
+    await act(async () => button("Email Me a Code").click());
+    expect(visibleText()).toContain("Enter the code we emailed to person@example.com.");
+
+    await act(async () => button("Permissions").click());
+    await act(async () => button("Account").click());
+    expect(visibleText()).toContain("Enter the code we emailed to person@example.com.");
+
+    const warning = "Signed out, but your saved sign-in couldn't be removed.";
+    await settingsPage({ error: warning }, signedOut);
+    await act(async () => button("Sign Out").click());
+    await act(async () => button("General").click());
+    await act(async () => button("Account").click());
+    expect(document.querySelector(".error")?.textContent).toBe(warning);
   });
 });
