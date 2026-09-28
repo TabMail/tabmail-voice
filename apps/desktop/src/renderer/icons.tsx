@@ -82,6 +82,14 @@ const connectorPaths: Record<Connector, ReactNode> = {
       <path d="M6.2 18.4a6.5 6.5 0 0 1 11.6 0" />
     </>
   ),
+  // A letter coming out of an open envelope: a new email, not Thunderbird's closed one.
+  email: (
+    <>
+      <path d="M7 12.5V4h10v8.5M9.5 7.5h5M9.5 10h5" />
+      <path d="M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9" />
+      <path d="m3 10 9 6 9-6" />
+    </>
+  ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {

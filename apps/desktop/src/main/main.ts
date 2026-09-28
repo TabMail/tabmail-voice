@@ -13,6 +13,7 @@ import { calendarTools } from "../core/agent/calendarTools.js";
 import { contactsTools } from "../core/agent/contactsTools.js";
 import { connectors } from "../core/agent/connectors.js";
 import { EmailClient } from "../core/agent/emailClient.js";
+import { type EmailOpener, emailTools, NoEmailAppFailure } from "../core/agent/emailTools.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
 import * as config from "../core/config.js";
@@ -117,6 +118,17 @@ function launch(): void {
   // A helper that exits takes a running microphone with it.
   if (process.platform === "darwin") macHelper.onExit = () => capture.lost();
 
+  // `email_compose`'s draft (ADR-DESK-027), opened with the app macOS opens `mailto:` links with,
+  // which the result names.
+  const emailOpener: EmailOpener = {
+    open: async (url) => {
+      const { systemDefault } = await mac.emailApps([]);
+      if (!systemDefault) throw new NoEmailAppFailure();
+      await shell.openExternal(url);
+      return systemDefault.name;
+    },
+  };
+
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
     () => mac.readScreen(),
@@ -138,7 +150,7 @@ function launch(): void {
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
     // apps (ADR-DESK-024), none elsewhere.
-    loopTools: process.platform === "darwin" ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore)] : [],
+    loopTools: process.platform === "darwin" ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...emailTools(emailOpener)] : [],
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {

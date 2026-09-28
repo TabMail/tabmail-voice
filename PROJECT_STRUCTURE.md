@@ -34,7 +34,7 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
 │   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, cleanup
-│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts), EmailClient, ThunderbirdRelay
+│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts; `emailTools.ts`: a prefilled new email), EmailClient, ThunderbirdRelay
 │   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
 │   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
 │   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows

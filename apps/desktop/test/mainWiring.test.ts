@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectors } from "../src/core/agent/connectors.js";
+import { mailtoURL } from "../src/core/agent/emailTools.js";
 import type { AudioCapture } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
 import { channels } from "../src/shared/ipc.js";
@@ -16,7 +17,7 @@ const app = vi.hoisted(() => ({
   listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
   credential: null as string | null,
   refusesDelete: false,
-  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[] }>(),
+  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   prewarms: 0,
@@ -25,6 +26,7 @@ const app = vi.hoisted(() => ({
   controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
+  openFailure: null as Error | null,
   loopTools: [] as { name: string; connector: string; run(args: Record<string, unknown>): Promise<string> }[],
 }));
 
@@ -44,6 +46,7 @@ vi.mock("electron", () => ({
   session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
   shell: {
     openExternal: async (url: string) => {
+      if (app.openFailure) throw app.openFailure;
       app.opened.push(url);
     },
   },
@@ -134,10 +137,12 @@ vi.mock("../src/main/helperClient.js", () => ({
     /** While set, a request waits until the test answers it, as a helper still applying it. */
     hold = false;
     readonly unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[] = [];
+    /** The helper's answer to a method, where the test gives one. */
+    readonly replies = new Map<string, unknown>();
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
-      return { value: null, events: [], contacts: [] };
+      return this.replies.get(method) ?? { value: null, events: [], contacts: [] };
     }
   },
 }));
@@ -239,6 +244,7 @@ afterEach(() => {
   app.controller = null;
   app.stored.clear();
   app.opened = [];
+  app.openFailure = null;
   app.loopTools = [];
 });
 
@@ -519,14 +525,14 @@ describe("main process wiring", () => {
     expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
   });
 
-  /** On macOS the Answer tool reaches Calendar, Reminders and Contacts through `voice-macos`, and each
-   * has a switch, stored and shown in the Settings and welcome windows; a name that is no app is
-   * refused. */
-  test("on macOS, Calendar, Reminders and Contacts and their switches", async () => {
+  /** On macOS the Answer tool reaches Calendar, Reminders and Contacts through `voice-macos`, and the
+   * email app, and each has a switch, stored and shown in the Settings and welcome windows; a name
+   * that is no app is refused. */
+  test("on macOS, Calendar, Reminders, Contacts and Email and their switches", async () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add"]);
+    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "email_compose"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.loopTools.map((tool) => tool.connector))).toEqual(new Set(connectors));
     await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({});
@@ -536,9 +542,31 @@ describe("main process wiring", () => {
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
     expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
     for (const name of ["settings", "welcome"]) {
-      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts"]);
-      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts"]);
+      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "email"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "email"]);
     }
+  });
+
+  /** A draft opens with the app macOS opens `mailto:` links with, named in the result; with none, the
+   * tool says so and opens nothing. */
+  test("a draft opens in the default email app", async () => {
+    await launch("darwin");
+    const compose = app.loopTools.find((tool) => tool.name === "email_compose");
+    const args = { to: ["sam@example.com"], subject: "Lunch", body: "Friday?" };
+    const macHelper = app.helpers.get("voice-macos");
+
+    // `launch` loads the app afresh, so the failure is its own module's class: matched by name.
+    await expect(compose?.run(args)).rejects.toMatchObject({ name: "NoEmailAppFailure" });
+    expect(app.opened).toEqual([]);
+
+    macHelper?.replies.set("emailApps", { systemDefault: { bundleIdentifier: "com.example.mail", name: "Example Mail" }, installed: [] });
+    expect(await compose?.run(args)).toBe("Opened a new email to sam@example.com in Example Mail, for the user to review and send. Nothing was sent.");
+    expect(app.opened).toEqual([mailtoURL({ to: ["sam@example.com"], cc: [], bcc: [], subject: "Lunch", body: "Friday?" })]);
+    expect(macHelper?.requests.filter((request) => request.method === "emailApps").at(-1)?.params).toEqual({ bundleIdentifiers: [] });
+
+    // An app that fails to launch fails the call, so the model never says it opened.
+    app.openFailure = new Error("Failed to open URL");
+    await expect(compose?.run(args)).rejects.toThrow("Failed to open URL");
   });
 
   /** Elsewhere the Answer tool reaches no app on the computer, and none has a switch. */
