@@ -17,6 +17,7 @@ const app = vi.hoisted(() => ({
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown }[]; events: Map<string, (message: Record<string, unknown>) => void> }>(),
   capture: null as AudioCapture | null,
   prewarms: 0,
+  audioCommands: [] as unknown[],
 }));
 
 vi.mock("electron", () => ({
@@ -153,6 +154,9 @@ vi.mock("../src/main/windows.js", () => ({
     overlay() {
       return {};
     }
+    audio() {
+      return { webContents: { isLoading: () => false, send: (_channel: string, command: unknown) => app.audioCommands.push(command) } };
+    }
     push(name: string) {
       for (const listener of app.listeners.get("voice:state") ?? []) listener({}, name, this.state(name));
     }
@@ -176,6 +180,7 @@ afterEach(() => {
   app.helpers.clear();
   app.capture = null;
   app.prewarms = 0;
+  app.audioCommands = [];
 });
 
 describe("main process wiring", () => {
@@ -226,5 +231,30 @@ describe("main process wiring", () => {
       { method: "microphoneStart", params: { session: 1, sampleRate: config.recordingSampleRate } },
       { method: "microphoneStop", params: { session: 1 } },
     ]);
+  });
+
+  /** Elsewhere the microphone stays in the audio window, until those platforms have a native
+   * helper: the capture's start and stop are commands to that window for the dictation's session,
+   * and `voice-macos` is never asked for the microphone nor its exit taken for a lost one. */
+  test("elsewhere the capture runs in the audio window", async () => {
+    await launch("linux");
+    const helper = app.helpers.get("voice-macos");
+    const capture = app.capture;
+    expect(capture).not.toBeNull();
+
+    capture?.start(
+      () => {},
+      () => {},
+      () => {},
+    );
+    capture?.stop();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(app.audioCommands).toEqual([
+      { type: "start", session: 1 },
+      { type: "stop", session: 1 },
+    ]);
+    expect(helper?.requests.filter((request) => request.method.startsWith("microphone") && request.method !== "microphonePrepare")).toEqual([]);
+    expect(helper?.onExit).toBeUndefined();
   });
 });
