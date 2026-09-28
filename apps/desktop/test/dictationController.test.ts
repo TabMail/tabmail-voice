@@ -2014,6 +2014,86 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Nothing was added."]);
         });
 
+        /** A question left unanswered for the time to answer is declined as unanswered: the tool doesn't
+         * run and the model is told why. A touch in the window doesn't stop its clock. */
+        test("a question left unanswered is declined when its time runs out", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply("Nothing was added.")], (controller) => {
+            controller.confirmationTimeout = 300;
+          });
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          const left = (controller.chat?.confirmationExpiresAt ?? 0) - Date.now();
+          expect(left).toBeGreaterThan(0);
+          expect(left).toBeLessThanOrEqual(300);
+
+          controller.keepChatOpen();
+          // Declined when its time runs out, not later.
+          await sleep(450);
+          expect(controller.chat?.confirmation).toBeNull();
+          await done;
+
+          expect(tool.runs).toEqual([]);
+          expect(told(1)).toEqual([config.loopToolUnanswered]);
+          expect(controller.chat?.confirmation).toBeNull();
+          expect(controller.chat?.confirmationExpiresAt).toBeNull();
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Nothing was added."]);
+        });
+
+        /** Each question gets the whole time to answer: the clock of one answered in time never
+         * declines the next, asked while the first's time would still have been running. */
+        test("a question answered in time leaves the next its whole time", async () => {
+          const first = Object.assign(new FakeLoopTool("example_create", "Adding it"), { question: "Add A?" });
+          const second = Object.assign(new FakeLoopTool("example_send", "Sending it"), { question: "Send B?" });
+          first.during = () => sleep(600);
+          const { controller, done } = await ask([first, second], [calling(["example_create", "{}"], ["example_send", "{}"]), reply(answer)], (controller) => {
+            controller.confirmationTimeout = 1000;
+          });
+          expect(await eventually(() => controller.chat?.confirmation === "Add A?")).toBe(true);
+          controller.answerConfirmation(true);
+          expect(controller.chat?.confirmationExpiresAt).toBeNull();
+          expect(await eventually(() => controller.chat?.confirmation === "Send B?")).toBe(true);
+
+          // Past where the first question's time ran out, and within the second's.
+          await sleep(700);
+          expect(controller.chat?.confirmation).toBe("Send B?");
+          controller.answerConfirmation(true);
+          await done;
+
+          expect(first.runs).toEqual([{}]);
+          expect(second.runs).toEqual([{}]);
+          expect(told(1)).toEqual(["Added.", "Added."]);
+        });
+
+        /** A question dropped with its request (the window closed, or the request cancelled) takes its
+         * clock with it: the next request's question gets its whole time. */
+        test.each(["closed", "cancelled"])("a question whose request is %s leaves the next its whole time", async (how) => {
+          const timeout = 1_500;
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"])], (controller) => {
+            controller.confirmationTimeout = timeout;
+          });
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          const firstDeadline = Date.now() + timeout;
+          if (how === "closed") controller.closeChat();
+          if (how === "cancelled") controller.handle("cancel");
+          await done;
+          expect(tool.runs).toEqual([]);
+
+          transcription.enqueue(200, { text: toolRequest });
+          completions.enqueue(200, calling(["example_create", '{"title":"Launch review"}']));
+          completions.enqueue(200, reply(answer));
+          await holdAndRelease(controller, "agent");
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          // The next question is up well before the first one's time would have run out, and still up past it.
+          expect(firstDeadline - Date.now()).toBeGreaterThan(200);
+          await sleep(firstDeadline - Date.now() + 150);
+          expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+          controller.answerConfirmation(true);
+
+          expect(await eventually(() => tool.runs.length === 1)).toBe(true);
+          expect(tool.runs).toEqual([{ title: "Launch review" }]);
+        });
+
         /** An answer that comes before its question has shown for the minimum time is ignored: the
          * second click of a double-click on one question's Confirm never confirms the next, which
          * the user has not seen. A later answer decides it. */

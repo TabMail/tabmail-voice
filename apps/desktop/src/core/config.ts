@@ -100,6 +100,8 @@ export const agentAnswerPrompt = "system_prompt_desktop_answer";
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
 /** What the model reads for a tool call the user declined in the chat window. */
 export const loopToolDeclined = "The user declined, so nothing was done.";
+/** What the model reads when the user left a tool's question unanswered (`chatConfirmationTimeout`). */
+export const loopToolUnanswered = "The user didn't confirm in time, so nothing was done.";
 /** The longest range `calendar_read` reads at once, in days: EventKit reads at most four years of
  * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
 export const calendarReadMaxDays = 4 * 365;
@@ -422,6 +424,10 @@ export const chatTimeout = 30_000;
  * answers the next one, which the user has not seen (a double-click's two clicks come within about
  * half a second on macOS by default). */
 export const chatConfirmationMinimumDisplay = 500;
+/** The chat window's question is declined when left unanswered this long, a bar under it showing the
+ * time left, as the chat window's own (owner, 2026-09-28: "Confirmation should get a time limit of 30
+ * seconds max, and it should show a timer ticking, similar to the undo toast"). A touch doesn't stop it. */
+export const chatConfirmationTimeout = 30_000;
 export const chatWidth = 380;
 /** The chat grows with its conversation up to this height, then scrolls. */
 export const chatMaxHeight = 320;

@@ -970,9 +970,22 @@ Electron app (ADR-DESK-032), which is the one that ships.
 - Server tools run inside a round and show no progress in the chat window (the whole stream is read,
   then parsed); a slow server tool (web search, later) would need the stream read as it arrives.
 - A request waiting on a confirmation holds agent mode: the hotkey starts nothing until the user
-  confirms, declines or closes the window.
+  confirms, declines or closes the window, or the question's time runs out (below).
 - Each round has the completions request timeout of its own (`completionsRequestTimeout`); a tool's
-  run and a confirmation have none.
+  run has none. A confirmation had none at first.
+
+**Amendment 2026-09-28: a question has 30 seconds.** Owner: "Confirmation should get a time limit of
+30 seconds max, and it should show a timer ticking, similar to the undo toast that we have." (It came
+up as an event confirmed after its time had passed.)
+- A question left unanswered for `config.chatConfirmationTimeout` (30 seconds) is declined: the tool
+  doesn't run, and the model reads `config.loopToolUnanswered` ("didn't confirm in time"), not the
+  decline, so it can say why. A touch in the window doesn't stop the clock, as it does the window's
+  own timeout: the limit is a maximum.
+- `AgentChat.confirmationExpiresAt` says when; the card shows the time left as a thin bar along its
+  bottom edge, the chat window's `TimeoutBar` (itself the iOS undo toast's), timed by the question's
+  own timeout.
+- Each question has its own clock, stopped by any answer (the user's, the window closing, the request
+  ending), so one answered in time never declines the next.
 
 ## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
 

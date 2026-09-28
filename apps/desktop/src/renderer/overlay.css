@@ -234,6 +234,8 @@ body {
 }
 
 .chat-confirmation {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: rgba(0, 0, 0, 0.04);
