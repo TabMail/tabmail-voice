@@ -256,7 +256,7 @@ final class DictationController {
             }
         }
 
-        // Past the upload cap, stop and send what was said rather than silently dropping audio.
+        // Past the length the backend transcribes, stop and send what was said rather than silently dropping audio.
         maxDurationTask = Task { [weak self] in
             try? await Task.sleep(for: DictationConfig.maxRecordingDuration)
             guard !Task.isCancelled, let self, self.generation == current else { return }

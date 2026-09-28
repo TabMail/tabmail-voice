@@ -51,9 +51,9 @@ export const logFileMaxBytes = 50_000_000;
 /** Debug builds only: the latest recording's file name in the temporary directory, overwritten each
  * time ("Play Last Recording"). */
 export const debugLastRecordingFileName = "TabMail-last-dictation.wav";
-/** Recording stops and is sent automatically at this length. Must stay under the backend's upload
- * limit (10 MiB): 5 minutes of 16 kHz 16-bit mono is ~9.6 MB. */
-export const maxRecordingDuration = 300_000;
+/** Recording stops and is sent automatically at this length: the backend transcribes at most
+ * 120 s of audio, until chunking arrives (issue #1). */
+export const maxRecordingDuration = 120_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
 

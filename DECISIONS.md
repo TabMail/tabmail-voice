@@ -94,11 +94,20 @@ multilingual accuracy than Apple's on-device model.
   from silence either. The model, chosen by comparison with `Scripts/stt-compare/`, handles
   that input. Recording continues `releaseTailDuration` after the key is released so the last
   word isn't clipped.
-- Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).
+- ~~Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).~~
+  Superseded 2026-09-27: auto-stops at 120 s, below.
 - A failed transcription loses that recording (no retry queue yet). Chunking long dictations
   (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
   issue #1 (P3).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
+
+**Amendment 2026-09-27 — the length cap is 120 s.** Owner: *"there was a bug before about this
+recording limit being five minutes instead of just two, which is the 120 second limit that fits the
+back end… we should do it for two minutes for now until the chunking arrives in the back end."* The
+5-minute cap fitted the backend's 10 MiB upload limit, but the backend's transcription model takes
+at most 120 s of audio (backend ADR-022), so a longer recording was uploaded only to fail.
+`maxRecordingDuration` is 120 s in both apps (`DictationConfig`, `config.ts`), for a hold and
+hands-free alike; the recorder keeps nothing past it. Raise it once chunking (issue #1) lands.
 
 ## ADR-DESK-006: Boot the microphone at key-down, reveal the overlay at the caret after the hold
 
@@ -754,7 +763,8 @@ for agent mode; this one is for dictation, and Space still switches the mode.
   Escape are never kept from the app while nothing listens.
 
 **Consequences:**
-- Hands-free listening is capped like a hold (`maxRecordingDuration`, 5 min), then transcribed.
+- Hands-free listening is capped like a hold (`maxRecordingDuration`, 120 s since the ADR-DESK-005
+  amendment of 2026-09-27), then transcribed.
 - While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
 - ~~A first tap is still a discarded recording start (the microphone boots and stops); a double tap
   starts it twice.~~ Superseded by the amendment below.
