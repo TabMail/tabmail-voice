@@ -335,7 +335,8 @@ enum DictationConfig {
     /// A hold this long shows the double-tap tip: this user dictates at length, and need not hold.
     static let doubleTapTipHoldDuration: Duration = .seconds(20)
 
-    /// The tooltip a tip is drawn in: centred under the listening pill, a few words around keycaps.
+    /// The tooltip a tip is drawn in: centred under the listening pill (or over it,
+    /// `OverlayPanelController.tipGoesAbove`), a few words around keycaps.
     /// Dark, as macOS HUDs are, so it reads as the system's hint rather than part of the pill.
     static let tipFontSize: CGFloat = 13
     /// A tip is `tipLineCount` centred lines of a few words, each `tipLineHeight` tall.

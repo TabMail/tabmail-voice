@@ -16,7 +16,8 @@ import SwiftUI
 @MainActor
 final class OverlayPanelController {
     private let panel: NSPanel
-    private let view: NSHostingView<OverlayView>
+    /// Internal for tests (`place`).
+    let view: NSHostingView<OverlayView>
     private var anchor: CGRect?
     private var lookupGeneration = 0
     private var lookupPending = false
@@ -110,13 +111,19 @@ final class OverlayPanelController {
         let point = CGPoint(x: anchor.midX, y: anchor.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) })
             ?? NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main else { return }
+        place(at: anchor, in: screen.visibleFrame)
+    }
+
+    /// Puts the canvas at `anchor` in a screen's `visibleFrame`, and tells the view which way it
+    /// opened. Internal for tests.
+    func place(at anchor: CGRect, in visibleFrame: CGRect) {
         let origin = Self.overlayOrigin(
             anchor: anchor,
             canvas: DictationConfig.overlayCanvasSize,
             pillHeight: DictationConfig.pillHeight,
-            visibleFrame: screen.visibleFrame
+            visibleFrame: visibleFrame
         )
-        view.rootView.opensUpward = Self.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: screen.visibleFrame)
+        view.rootView.opensUpward = Self.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: visibleFrame)
         panel.setFrame(NSRect(origin: origin, size: DictationConfig.overlayCanvasSize), display: true)
     }
 
@@ -402,9 +409,10 @@ private struct PillLayout: Layout {
     }
 }
 
-/// A tip in a tooltip under the listening pill (owner, 2026-09-26: small, then "professional … almost
-/// a black background", then a larger font over a few lines): a dark rounded box with an arrow up at
-/// the pill, the tip's words around a keycap. Internal for tests.
+/// A tip in a tooltip by the listening pill, under it or over it (`OverlayPanelController.tipGoesAbove`)
+/// (owner, 2026-09-26: small, then "professional … almost a black background", then a larger font over
+/// a few lines): a dark rounded box with an arrow at the pill, the tip's words around a keycap.
+/// Internal for tests.
 struct TipTooltip: View {
     let tip: DictationTip
     /// The key held to dictate, which the double-tap and hands-free tips name.

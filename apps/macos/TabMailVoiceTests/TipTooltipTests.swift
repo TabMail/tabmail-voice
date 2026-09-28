@@ -102,20 +102,7 @@ struct TipTooltipTests {
     /// when opening up"). A hold's Space tip stays under the pill either way.
     @Test(arguments: [(false, false, false), (false, true, false), (true, false, false), (true, true, true)])
     func showsByTheListeningPill(handsFree: Bool, opensUpward: Bool, over: Bool) async throws {
-        let transport = StubTransport()
-        let thunderbird = FakeThunderbird()
-        thunderbird.installed = false
-        let controller = DictationController(
-            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
-            account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
-            tips: TipBook(defaults: InMemoryDefaults()),
-            inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
-            thunderbird: thunderbird.relay(),
-            capture: ToneCapture(),
-            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transport.transport) },
-            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: transport.transport) }
-        )
+        let (controller, transport) = makeController()
         if handsFree {
             controller.handle(.startHandsFree)
             controller.handle(.listenHandsFree)
@@ -124,11 +111,7 @@ struct TipTooltipTests {
         }
         defer { controller.cancel() }
         let tip: DictationTip = handsFree ? .handsFree : .switchMode
-        let deadline = ContinuousClock.now + .seconds(5)
-        while !(controller.phase == .listening && controller.tip == tip), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        try #require(controller.phase == .listening && controller.tip == tip)
+        try #require(await eventually { controller.phase == .listening && controller.tip == tip })
 
         let size = DictationConfig.overlayCanvasSize
         let renderer = ImageRenderer(content: OverlayView(controller: controller, opensUpward: opensUpward).frame(width: size.width, height: size.height))
@@ -167,6 +150,51 @@ struct TipTooltipTests {
         } else {
             #expect(try #require(dark(centre).min()) < (try #require(dark(side).min())), "the arrow does not point up at the pill")
         }
+        #expect(transport.requests.isEmpty)
+    }
+
+    /// The overlay tells its view which way it opened, so a tip over the pill goes there in the app,
+    /// not only in a view built so: up by a caret near the screen's bottom, down by one mid-screen.
+    @Test func theOverlayTellsItsViewWhichWayItOpened() {
+        let (controller, _) = makeController()
+        let overlay = OverlayPanelController(controller: controller)
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let nearBottom = CGRect(x: 700, y: screen.minY + DictationConfig.pillHeight, width: 1, height: 18)
+        let midScreen = CGRect(x: 700, y: screen.midY, width: 1, height: 18)
+        for (anchor, upward) in [(nearBottom, true), (midScreen, false)] {
+            #expect(OverlayPanelController.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: screen) == upward)
+            overlay.place(at: anchor, in: screen)
+            #expect(overlay.view.rootView.opensUpward == upward, "at \(anchor.minY)")
+        }
+    }
+
+    /// In agent mode, in an overlay opened above the caret's line, the hands-free tip goes over the
+    /// tools' bubbles, not onto them (ADR-DESK-021: "over agent mode's bubbles when they show").
+    @Test func theHandsFreeTipGoesOverAgentModesBubbles() async throws {
+        let (controller, transport) = makeController()
+        var context = ScreenContext(appName: "Example Notes", windowTitle: "Weekly sync")
+        context.appendCaret()
+        controller.captureContext = { [context] in Task { context } }
+        controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
+        defer { controller.cancel() }
+        controller.handle(.toggleMode)
+        try #require(await eventually { controller.phase == .listening && controller.tip == .handsFree && controller.tools == [.compose] })
+
+        let size = DictationConfig.overlayCanvasSize
+        let renderer = ImageRenderer(content: OverlayView(controller: controller, opensUpward: true).frame(width: size.width, height: size.height))
+        renderer.scale = scale
+        let overlay = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+        // A column through the tip, clear of its arrow and of the one bubble centred over the pill.
+        let x = size.width / 2 + DictationConfig.agentBubbleDiameter + DictationConfig.tipArrowWidth
+        let pillTop = (size.height - DictationConfig.pillHeight) / 2
+        let bubblesTop = pillTop - DictationConfig.agentBubbleGap - DictationConfig.agentBubbleDiameter
+        let dark = stride(from: 0, to: pillTop, by: 1 / scale).filter { y in
+            let (white, alpha) = pixel(overlay, x, y)
+            return alpha > 0.8 && white < 0.3
+        }
+        #expect(!dark.isEmpty, "no tip over the pill")
+        #expect(dark.allSatisfy { $0 < bubblesTop }, "the tip reaches \(dark.max() ?? 0), past the bubbles' top at \(bubblesTop)")
         #expect(transport.requests.isEmpty)
     }
 
@@ -210,6 +238,34 @@ struct TipTooltipTests {
         for x in [width / 4, width * 3 / 4] {
             #expect(pixel(x, 1).alpha < 0.5, "drawn beside the arrow at \(x)")
         }
+    }
+
+    /// Polls `condition` until it holds, for up to five seconds.
+    private func eventually(_ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !condition() {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
+
+    private func makeController() -> (DictationController, StubTransport) {
+        let transport = StubTransport()
+        let thunderbird = FakeThunderbird()
+        thunderbird.installed = false
+        let controller = DictationController(
+            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
+            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
+            account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            tips: TipBook(defaults: InMemoryDefaults()),
+            inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
+            thunderbird: thunderbird.relay(),
+            capture: ToneCapture(),
+            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transport.transport) },
+            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: transport.transport) }
+        )
+        return (controller, transport)
     }
 
     private func render(_ tip: (DictationTip, DictationHotkey), _ scheme: ColorScheme, pointsDown: Bool = false) throws -> NSBitmapImageRep {

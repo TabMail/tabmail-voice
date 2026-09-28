@@ -11,7 +11,7 @@ import Observation
 /// transcript is a request instead: the selection picks Edit or Compose, the agent may send it to
 /// TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there. A double tap of
 /// the hotkey starts a hands-free dictation instead of a hold. While the pill listens, a tip may show
-/// under it (`DictationTip`).
+/// by it (`DictationTip`).
 @MainActor
 @Observable
 final class DictationController {
@@ -48,7 +48,7 @@ final class DictationController {
     /// The language this dictation is transcribed in: the keyboard's at key-down, read once so the
     /// overlay's badge and the request always agree (ADR-DESK-019). Nil: none sent, no badge.
     private(set) var language: String?
-    /// The tip shown under the listening pill, if any.
+    /// The tip shown by the listening pill, if any.
     private(set) var tip: DictationTip?
 
     @ObservationIgnored var onPhaseChange: ((Phase) -> Void)?
