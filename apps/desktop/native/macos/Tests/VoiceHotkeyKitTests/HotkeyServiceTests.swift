@@ -25,7 +25,8 @@ struct HotkeyServiceTests {
     private let space = UInt16(kVK_Space)
 
     /// A dictation that ended without the hotkey (the length cap, a failure, the menu) ends hands-free
-    /// listening: once the app says so, Space reaches the app in front again.
+    /// listening: once the app says so, Space reaches the app in front again. The gesture's actions
+    /// reach the app as events, in order, each named as the app reads it.
     @Test func dictationEndedEndsHandsFreeListening() async {
         let lines = Lines()
         let channel = HelperChannel(output: { lines.append($0) })
@@ -37,6 +38,9 @@ struct HotkeyServiceTests {
         }
         #expect(!monitor.handle(.keyDown, keyCode: space, flags: [], isRepeat: false, at: 0.2), "Space reached the app while listening hands-free")
         _ = monitor.handle(.keyUp, keyCode: space, flags: [], isRepeat: false, at: 0.25)
+        // The actions are sent from the main queue, after the event tap returns.
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in DispatchQueue.main.async { done.resume() } }
+        #expect(lines.all.compactMap { $0["action"]?.string } == ["start", "finish", "startHandsFree", "toggleMode"])
 
         await channel.handle(line: Data(#"{"id":1,"method":"dictationEnded"}"#.utf8))
 

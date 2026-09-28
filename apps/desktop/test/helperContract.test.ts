@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import * as config from "../src/core/config.js";
 import type { HelperClient } from "../src/main/helperClient.js";
 import { MacSystem } from "../src/main/macos.js";
 
@@ -71,6 +72,27 @@ describe("helper wire contract", () => {
     for (const { method, params } of requests) {
       for (const param of handlers.get(method) ?? []) expect(params, `${method} without ${param}`).toHaveProperty(param);
     }
+  });
+
+  /** Values, not only names: the paste's text and its restore delay in the seconds the helper reads,
+   * and the frontmost app's process as the helper answers it. */
+  test("a paste carries its text and a restore delay in seconds, and the frontmost app's reply keeps its process", async () => {
+    const calls: { method: string; params: unknown; timeout: unknown }[] = [];
+    const helper = {
+      request: async (method: string, params?: unknown, timeout?: unknown) => {
+        calls.push({ method, params, timeout });
+        return method === "frontmostApp" ? { pid: 321 } : {};
+      },
+    } as unknown as HelperClient;
+    const mac = new MacSystem(helper);
+
+    await mac.paste("some text");
+    expect(await mac.frontmostApp()).toBe(321);
+
+    expect(calls).toEqual([
+      { method: "insert", params: { text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000 }, timeout: config.helperRequestTimeout + config.clipboardRestoreDelay },
+      { method: "frontmostApp", params: undefined, timeout: undefined },
+    ]);
   });
 
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {

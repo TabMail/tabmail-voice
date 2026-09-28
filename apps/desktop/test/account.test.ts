@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { AccountModel, AuthClient, AuthError } from "../src/core/account.js";
+import { AccountModel, AuthClient, AuthError, type TabMailSession } from "../src/core/account.js";
 import * as config from "../src/core/config.js";
 import { deferred, Fixtures, InMemorySessionStore, StubTransport } from "./support.js";
 
@@ -251,6 +251,66 @@ describe("AccountModel", () => {
     expect(account.isSignedIn).toBe(false);
     expect(await account.validToken()).toBeNull();
     expect(stub.requests).toHaveLength(1);
+  });
+
+  /** An old account's refresh settling while the new account's forced refresh is still out leaves that
+   * refresh shared: a caller after it gets the same answer from the one request. */
+  test("an old refresh settling leaves the new account's shared refresh alone", async () => {
+    const old = deferred<TabMailSession>();
+    const fresh = deferred<TabMailSession>();
+    const sent: string[] = [];
+    const newSignIn = Fixtures.session({ access: "access-b", refresh: "refresh-b", userId: "user-2" });
+    const auth = {
+      verify: async () => newSignIn,
+      refresh: (session: TabMailSession) => {
+        sent.push(session.refreshToken);
+        return session.userId === "user-2" ? fresh.promise : old.promise;
+      },
+    } as unknown as AuthClient;
+    const store = new InMemorySessionStore(Fixtures.session({ expiresIn: 0 }));
+    const account = new AccountModel(auth, store);
+
+    const first = account.validToken();
+    account.signOut();
+    await account.verify(Fixtures.email, "123456");
+    const second = account.validToken(true);
+    old.resolve(Fixtures.session({ access: "obsolete", refresh: "obsolete-r" }));
+    expect(await first).toBeNull();
+    const third = account.validToken(true);
+    const refreshed = Fixtures.session({ access: "access-b2", refresh: "refresh-b2", userId: "user-2" });
+    fresh.resolve(refreshed);
+
+    expect(await Promise.all([second, third])).toEqual(["access-b2", "access-b2"]);
+    expect(sent).toEqual([Fixtures.session().refreshToken, "refresh-b"]);
+    expect(account.session).toEqual(refreshed);
+    expect(store.load()).toEqual(refreshed);
+  });
+
+  /** A refreshed session the store refuses is not used: every caller sharing the refresh fails, and
+   * the account and the saved session stay as they were. */
+  test("a refresh the store refuses to save fails every caller and keeps the old session", async () => {
+    const previous = Fixtures.session({ expiresIn: 0 });
+    class RefusingStore extends InMemorySessionStore {
+      override save(): void {
+        throw new Error("denied");
+      }
+    }
+    const store = new RefusingStore(previous);
+    let requests = 0;
+    const auth = {
+      refresh: async () => {
+        requests += 1;
+        return Fixtures.session({ access: "rotated", refresh: "rotated-r" });
+      },
+    } as unknown as AuthClient;
+    const account = new AccountModel(auth, store);
+
+    const outcomes = await Promise.allSettled([account.validToken(), account.validToken()]);
+
+    expect(requests).toBe(1);
+    expect(outcomes.map((outcome) => outcome.status)).toEqual(["rejected", "rejected"]);
+    expect(account.session).toBe(previous);
+    expect(store.load()).toBe(previous);
   });
 
   test("signed out has no token", async () => {

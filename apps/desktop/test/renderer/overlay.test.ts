@@ -8,6 +8,23 @@ import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { OverlayState } from "../../src/shared/ipc.js";
 
+/** Each React root the page creates, to unmount as the window closes. */
+const mounted = vi.hoisted(() => ({ roots: [] as { unmount(): void }[] }));
+vi.mock("react-dom/client", async (importOriginal) => {
+  const real = await importOriginal<typeof import("react-dom/client")>();
+  return {
+    ...real,
+    createRoot: (...args: Parameters<typeof real.createRoot>) => {
+      const root = real.createRoot(...args);
+      mounted.roots.push(root);
+      return root;
+    },
+  };
+});
+
+/** The size observers observing now, each able to report a new layout. */
+const observers = new Set<{ changed(): void }>();
+
 /** Sizes as the page lays them out (happy-dom lays nothing out): the pill's and the tip's. */
 const pillSize = { width: 180, height: 30 };
 const tipSize = { width: 200, height: 73 };
@@ -35,11 +52,14 @@ async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private readonly changed: () => void) {}
+      constructor(readonly changed: () => void) {}
       observe(): void {
+        observers.add(this);
         queueMicrotask(() => this.changed());
       }
-      disconnect(): void {}
+      disconnect(): void {
+        observers.delete(this);
+      }
     },
   );
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
@@ -70,7 +90,14 @@ async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>
   };
 }
 
-afterEach(() => {
+async function unmount(): Promise<void> {
+  await act(async () => {
+    for (const root of mounted.roots.splice(0)) root.unmount();
+  });
+}
+
+afterEach(async () => {
+  await unmount();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
@@ -92,5 +119,30 @@ describe("overlay page", () => {
 
     expect(later.tipFrame()).toEqual(expected);
     expect(later.tipFrame()?.top).toBeGreaterThanOrEqual(later.pillFrame().bottom);
+  });
+
+  /** The pill growing moves the tip with it, and a closed page observes nothing more. */
+  test("a pill that grows moves its tip, and unmounting stops observing", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, tip: "doubleTap" });
+    const before = page.tipFrame();
+    expect(before).not.toBeNull();
+    expect(observers.size).toBeGreaterThan(0);
+
+    const grownBy = 30;
+    pillSize.height += grownBy;
+    try {
+      await act(async () => {
+        for (const observer of observers) observer.changed();
+      });
+      expect(page.tipFrame()?.top).toBe((before?.top ?? 0) + grownBy);
+      expect(page.tipFrame()?.top).toBeGreaterThanOrEqual(page.pillFrame().bottom);
+    } finally {
+      pillSize.height -= grownBy;
+    }
+
+    await unmount();
+    expect(document.querySelector(".pill-anchor")).toBeNull();
+    expect(observers.size).toBe(0);
   });
 });
