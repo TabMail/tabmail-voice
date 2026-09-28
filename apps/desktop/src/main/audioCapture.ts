@@ -43,12 +43,12 @@ export class SessionAudioCapture implements AudioCapture {
     this.send({ type: "prepare" });
   }
 
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost?: () => void): void {
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost: () => void): void {
     this.session += 1;
     const session = this.session;
     this.onChunk = onChunk;
     this.completion = completion;
-    this.onLost = onLost ?? null;
+    this.onLost = onLost;
     this.startTimer = setTimeout(() => this.finishStart(session, new MicrophoneFailure("timeout")), this.startTimeout);
     this.send({ type: "start", session });
   }

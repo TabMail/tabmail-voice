@@ -59,6 +59,8 @@ export class HelperClient {
   private readonly eventHandlers = new Map<string, (message: Record<string, unknown>) => void>();
   private stopped = true;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Requests made while the helper restarts, written to it once it has. */
+  private waiting: { id: number; line: string }[] = [];
   /** Runs each time the helper starts, the first time included. */
   onStart: (() => void) | undefined;
   /** Runs each time the helper exits unasked (it is then started again). */
@@ -87,10 +89,11 @@ export class HelperClient {
   }
 
   /** Asks the helper; rejects with `HelperFailure` when it answers with an error, takes longer than
-   * `timeout`, or is not running. */
+   * `timeout`, or is not running. While it restarts, the request waits for it (within `timeout`), so
+   * what a crash sets off (sending what was said, then pasting it) still reaches the helper. */
   request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = this.options.requestTimeout ?? config.helperRequestTimeout): Promise<T> {
     const child = this.child;
-    if (!child) return Promise.reject(new HelperFailure("exited", method));
+    if (!child && this.restartTimer === null) return Promise.reject(new HelperFailure("exited", method));
     const id = this.nextID;
     this.nextID += 1;
     return new Promise<T>((resolve, reject) => {
@@ -99,7 +102,9 @@ export class HelperClient {
         reject(new HelperFailure("timeout", method));
       }, timeout);
       this.pending.set(id, { method, resolve: resolve as (value: unknown) => void, reject, timer });
-      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+      const line = `${JSON.stringify({ id, method, params })}\n`;
+      if (child) child.stdin.write(line);
+      else this.waiting.push({ id, line });
     });
   }
 
@@ -116,6 +121,8 @@ export class HelperClient {
     // helper isn't restarted (it would fail the same way) and its requests time out.
     child.on("error", (error) => log.error(`${name}: could not run: ${error.name}`));
     child.stdin.on("error", () => {});
+    // Those that timed out while it restarted are dropped: their callers have given up.
+    for (const { id, line } of this.waiting.splice(0)) if (this.pending.has(id)) child.stdin.write(line);
     child.on("exit", (code, signal) => {
       if (this.child !== child) return;
       this.child = null;

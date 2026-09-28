@@ -26,7 +26,7 @@ describe("SessionAudioCapture", () => {
     const { microphone, sent } = capture();
     const first = recording();
     microphone.prepare();
-    microphone.start(first.onChunk, first.completion);
+    microphone.start(first.onChunk, first.completion, () => {});
     microphone.receive({ type: "started", session: 1 });
     microphone.receive({ type: "chunk", session: 1, samples: new Float32Array(4) });
     microphone.stop();
@@ -42,9 +42,9 @@ describe("SessionAudioCapture", () => {
     const { microphone } = capture();
     const first = recording();
     const second = recording();
-    microphone.start(first.onChunk, first.completion);
+    microphone.start(first.onChunk, first.completion, () => {});
     microphone.stop();
-    microphone.start(second.onChunk, second.completion);
+    microphone.start(second.onChunk, second.completion, () => {});
 
     microphone.receive({ type: "failed", session: 1, error: "NotReadableError" });
     microphone.receive({ type: "started", session: 1 });
@@ -86,7 +86,7 @@ describe("SessionAudioCapture", () => {
   test("a microphone that fails to start says why, once", () => {
     const { microphone } = capture();
     const current = recording();
-    microphone.start(current.onChunk, current.completion);
+    microphone.start(current.onChunk, current.completion, () => {});
 
     microphone.receive({ type: "failed", session: 1, error: "NotAllowedError" });
     microphone.receive({ type: "started", session: 1 });
@@ -100,7 +100,7 @@ describe("SessionAudioCapture", () => {
   test("a start the window never reports fails at its timeout, once", async () => {
     const { microphone } = capture(50);
     const current = recording();
-    microphone.start(current.onChunk, current.completion);
+    microphone.start(current.onChunk, current.completion, () => {});
 
     await sleep(150);
     microphone.receive({ type: "started", session: 1 });
@@ -115,9 +115,9 @@ describe("SessionAudioCapture", () => {
     const { microphone } = capture(100);
     const first = recording();
     const second = recording();
-    microphone.start(first.onChunk, first.completion);
+    microphone.start(first.onChunk, first.completion, () => {});
     await sleep(50);
-    microphone.start(second.onChunk, second.completion);
+    microphone.start(second.onChunk, second.completion, () => {});
 
     await sleep(80);
     microphone.receive({ type: "started", session: 2 });
@@ -128,7 +128,7 @@ describe("SessionAudioCapture", () => {
   test("a stopped session delivers nothing more", async () => {
     const { microphone } = capture(50);
     const current = recording();
-    microphone.start(current.onChunk, current.completion);
+    microphone.start(current.onChunk, current.completion, () => {});
     microphone.stop();
 
     microphone.receive({ type: "chunk", session: 1, samples: new Float32Array(4) });

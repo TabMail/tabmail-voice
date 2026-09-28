@@ -980,7 +980,10 @@ only be seen in the running app on macOS, not in the offscreen previews.
   microphone is in-process). Asked, the owner chose *"send what was said"*: `macHelper.onExit` makes
   `SessionAudioCapture.lost()` tell the started session, and the controller finishes the dictation as
   at the length cap, transcribing what was heard; lost during the release tail, the tail's end
-  transcribes it; lost before the hold is deliberate, it fails as the microphone does. A start still pending when the helper exits fails through its request, as before.
+  transcribes it; lost before the hold is deliberate, it fails as the microphone does. A start still pending when the helper exits fails through its request, as before. What was said
+  is then pasted through the restarted helper: a request made while the helper restarts (from
+  `onExit` on, the restart being due first) waits for it within its own timeout, and one that times
+  out waiting is never sent.
 - `MicrophoneSessions` treats a failed start like its stop (no older session starts after it), and
   the whole-number request params (session, pid, Globe value) are read with `JSON.integer`, the
   restore delay rounded to whole milliseconds with `Int(exactly:)`, so a malformed number is refused

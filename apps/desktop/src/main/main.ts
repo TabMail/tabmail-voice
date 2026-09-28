@@ -437,7 +437,6 @@ function launch(): void {
   macHelper.start();
   void globeKey.hotkeyIs(settings.hotkey);
   permissions.startPollingAccessibility();
-  controller.prewarm();
 
   // The welcome wizard asks for consent and the permissions; it opens until finished.
   if (!settings.hasFinishedWelcome) showWelcome();

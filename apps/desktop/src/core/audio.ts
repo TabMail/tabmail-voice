@@ -14,7 +14,7 @@ export interface AudioCapture {
    * `config.recordingSampleRate`; `completion` runs once, with the error if the microphone could
    * not start; `onLost` runs if the microphone, once started, stops by itself before `stop` (the
    * macOS helper that runs it exited). */
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost?: () => void): void;
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost: () => void): void;
   stop(): void;
 }
 

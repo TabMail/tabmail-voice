@@ -193,7 +193,7 @@ export class CountingCapture implements AudioCapture {
 
   prepare(): void {}
 
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost?: () => void): void {
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost: () => void): void {
     this.events.push("start");
     this.completion = completion;
     this.onLosts.push(onLost);

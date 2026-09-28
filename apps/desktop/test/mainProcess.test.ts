@@ -187,6 +187,43 @@ describe("HelperClient", () => {
     expect(restarted.pid).not.toBe(pid);
   });
 
+  /** What a crash sets off reaches the restarted helper: a request made on the exit, or while the
+   * helper restarts, waits for it (the paste of what was said after the microphone is lost), and the
+   * restart is due before `onExit` runs, so a request made there isn't refused. */
+  test("a request made while the helper restarts is answered by the restarted helper", async () => {
+    const client = helper({ restartDelay: 100 });
+    const { pid } = await client.request<{ pid: number }>("pid");
+    let onExit: Promise<{ pid: number }> | undefined;
+    client.onExit = () => {
+      onExit = client.request<{ pid: number }>("pid");
+    };
+
+    expect((await failure(client.request("exit"))).kind).toBe("exited");
+    const during = client.request<{ pid: number }>("pid");
+
+    const [first, second] = await Promise.all([onExit, during]);
+    expect(first?.pid).not.toBe(pid);
+    expect(second.pid).toBe(first?.pid);
+  });
+
+  /** One that timed out waiting is never sent: its caller has given up, so the helper mustn't act on
+   * it; and stopping fails whatever still waits. */
+  test("a request that gives up while the helper restarts is never sent", async () => {
+    const client = helper({ restartDelay: 150 });
+    const actions: unknown[] = [];
+    client.on("action", (message) => actions.push(message.action));
+    await failure(client.request("exit"));
+
+    expect((await failure(client.request("emit", { action: "late" }, 30))).kind).toBe("timeout");
+    await client.request("echo");
+    expect(actions).toEqual([]);
+
+    await failure(client.request("exit"));
+    const waiting = client.request("echo");
+    client.stop();
+    expect((await failure(waiting)).kind).toBe("exited");
+  });
+
   test("a stopped helper is not restarted and answers nothing", async () => {
     const client = helper({ restartDelay: 10 });
     let exits = 0;
