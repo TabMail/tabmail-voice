@@ -302,6 +302,18 @@ export const agentBubbleGap = 8;
  * once (three) and every connector (nine), a row over it, one bubble each side, and a row under it
  * (or a second over it). */
 export const agentBubbleRowCapacity = 5;
+/** A bubble under the mouse pointer grows to this scale (upward from its bottom edge, as a running
+ * one does), and a tooltip says what it is (owner, 2026-09-28: "when mouse hovers over them, make them
+ * sort of enlarged and also show tooltips on what this tool is"). */
+export const agentBubbleHoverScale = 1.3;
+/** The hovered bubble's tooltip: its name over what it does, at most this wide, `bubbleTooltipGap`
+ * clear of the bubble, drawn as the tips are (`tip…`). */
+export const bubbleTooltipMaxWidth = 240;
+export const bubbleTooltipGap = 6;
+export const bubbleTooltipPadding = 8;
+export const bubbleTooltipNameFontSize = 13;
+export const bubbleTooltipFontSize = 12;
+export const bubbleTooltipLineSpacing = 2;
 /** Rows of bubbles over the pill at most: the first, and the one that goes over it when none fits
  * under it (`bubblesFitUnder`). */
 export const agentBubbleRowsAbove = 2;

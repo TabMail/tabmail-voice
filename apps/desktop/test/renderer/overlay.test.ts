@@ -6,6 +6,8 @@
 
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { connectorInfo } from "../../src/core/agent/connectors.js";
+import { toolImplementations } from "../../src/core/agent/tools.js";
 import * as config from "../../src/core/config.js";
 import type { DictationTip } from "../../src/core/tips.js";
 import type { AgentChat } from "../../src/core/agent/agentChat.js";
@@ -28,14 +30,19 @@ vi.mock("react-dom/client", async (importOriginal) => {
 /** The size observers observing now, each able to report a new layout. */
 const observers = new Set<{ changed(): void }>();
 
-/** Sizes as the page lays them out (happy-dom lays nothing out): the pill's and the tip's. */
+/** Sizes as the page lays them out (happy-dom lays nothing out): the pill's, the tip's and a bubble's
+ * tooltip's. */
 const pillSize = { width: 180, height: 30 };
 const tipSize = { width: 200, height: 73 };
+const tooltipSize = { width: config.bubbleTooltipMaxWidth, height: 64 };
+/** Whether the page has laid a tooltip out yet: until it has, it measures nothing. */
+let tooltipLaidOut = true;
 const chatSize = { width: 380, height: 146 };
 
 function laidOut(element: HTMLElement): { width: number; height: number } {
   if (element.classList.contains("pill-anchor")) return pillSize;
   if (element.classList.contains("chat")) return chatSize;
+  if (element.classList.contains("bubble-tooltip")) return tooltipLaidOut ? tooltipSize : { width: 0, height: 0 };
   if (element.querySelector(".tip") || element.classList.contains("tip")) return tipSize;
   return { width: 0, height: 0 };
 }
@@ -111,6 +118,7 @@ async function unmount(): Promise<void> {
 }
 
 afterEach(async () => {
+  tooltipLaidOut = true;
   await unmount();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -199,6 +207,141 @@ describe("overlay page", () => {
     await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], emailAppIcon: null });
     expect(images()).toEqual([null, null]);
     expect(symbols()).toEqual([true, true]);
+  });
+
+  /** A bubble under the pointer grows and says what it is: its name over its Settings description, a
+   * tool's and an app's alike, in a tooltip clear over it. Faded while another tool runs, it shows in
+   * full while hovered; the running tool's stays at its running size. The pointer leaving takes the
+   * tooltip away (owner, 2026-09-28: "when mouse hovers over them, make them sort of enlarged and also
+   * show tooltips on what this tool is"). */
+  test("a hovered bubble grows and says what it is", async () => {
+    const page = await overlayPage();
+    const state: OverlayState = { ...listening, mode: "agent", tools: ["compose", "answer"], connectors: ["calendar"] };
+    await page.show(state);
+    const bubble = (label: string) => document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`) as HTMLElement;
+    const pointer = (label: string, type: "pointerover" | "pointerout") =>
+      act(async () => {
+        bubble(label).dispatchEvent(new PointerEvent(type, { bubbles: true, relatedTarget: null }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    const tooltip = () => document.querySelector<HTMLElement>('[role="tooltip"]');
+    const said = () => [...(tooltip()?.children ?? [])].map((line) => line.textContent);
+    // The tooltip's bottom, and the top of `label`'s bubble grown to `scale`, which it clears.
+    const tooltipBottom = () => parseFloat(tooltip()?.style.top ?? "") + tooltipSize.height / 2;
+    const grownTop = (label: string, scale: number) => parseFloat(bubble(label).closest<HTMLElement>(".centred")?.style.top ?? "") + config.agentBubbleDiameter / 2 - config.agentBubbleDiameter * scale;
+    expect(tooltip()).toBeNull();
+
+    await pointer("compose", "pointerover");
+    expect([bubble("compose").style.transform, bubble("answer").style.transform]).toEqual([`scale(${config.agentBubbleHoverScale})`, "scale(1)"]);
+    expect(said()).toEqual([toolImplementations.compose.displayName, toolImplementations.compose.settingsDescription]);
+    expect(tooltip()?.style.visibility).toBe("visible");
+    // Over the bubble as it has grown, clear of it.
+    expect(tooltipBottom()).toBeCloseTo(grownTop("compose", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
+    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(parseFloat(bubble("compose").closest<HTMLElement>(".centred")?.style.left ?? ""));
+
+    await pointer("compose", "pointerout");
+    expect(tooltip()).toBeNull();
+    // Hidden until it is measured, so it never shows for a frame where it doesn't belong.
+    tooltipLaidOut = false;
+    await pointer("compose", "pointerover");
+    expect(tooltip()?.style.visibility).toBe("hidden");
+    tooltipLaidOut = true;
+    await act(async () => {
+      for (const observer of observers) observer.changed();
+    });
+    expect(tooltip()?.style.visibility).toBe("visible");
+    await pointer("compose", "pointerout");
+    expect(bubble("compose").style.transform).toBe("scale(1)");
+
+    // Each bubble's tooltip over that bubble: centred on it, clear of it.
+    const left = (label: string) => parseFloat(bubble(label).closest<HTMLElement>(".centred")?.style.left ?? "");
+    await pointer("calendar", "pointerover");
+    expect(said()).toEqual([connectorInfo.calendar.displayName, connectorInfo.calendar.settingsDescription]);
+    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("calendar"));
+    expect(tooltipBottom()).toBeCloseTo(grownTop("calendar", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
+    await page.show({ ...state, phase: { kind: "running", tool: "answer" } });
+    expect([bubble("calendar").style.opacity, bubble("compose").style.opacity]).toEqual(["1", String(config.agentBubbleIdleOpacity)]);
+    expect(said()[0]).toBe(connectorInfo.calendar.displayName);
+
+    await pointer("calendar", "pointerout");
+    await pointer("answer", "pointerover");
+    expect(bubble("answer").style.transform).toBe(`scale(${config.agentBubbleRunningScale})`);
+    expect(said()[0]).toBe(toolImplementations.answer.displayName);
+    expect(tooltipBottom()).toBeCloseTo(grownTop("answer", config.agentBubbleRunningScale) - config.bubbleTooltipGap);
+    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("answer"));
+  });
+
+  /** The pointer straight from one bubble onto the next: the next bubble's tooltip is its own, hidden
+   * until measured, never the last one's showing the new words at the old size. */
+  test("a tooltip for the next bubble is measured afresh", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, mode: "agent", tools: ["compose", "answer"] });
+    const bubble = (label: string) => document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`) as HTMLElement;
+    await act(async () => {
+      bubble("compose").dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const first = document.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(first?.style.visibility).toBe("visible");
+
+    tooltipLaidOut = false;
+    await act(async () => {
+      bubble("compose").dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: bubble("answer") }));
+      bubble("answer").dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: bubble("compose") }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const next = document.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(next?.firstElementChild?.textContent).toBe(toolImplementations.answer.displayName);
+    expect(next === first).toBe(false);
+    expect(next?.style.visibility).toBe("hidden");
+  });
+
+  /** Space back to dictation takes the bubbles away and their hover with them: back in agent mode, no
+   * bubble is hovered until the pointer comes to one. */
+  test("a bubble that goes and comes back is not hovered", async () => {
+    const page = await overlayPage();
+    const state: OverlayState = { ...listening, mode: "agent", tools: ["compose", "answer"] };
+    await page.show(state);
+    await act(async () => {
+      document.querySelector('.bubble[aria-label="compose"]')?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(document.querySelector('[role="tooltip"]')).not.toBeNull();
+
+    await page.show({ ...state, mode: "dictation", tools: [] });
+    await page.show(state);
+
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    expect(document.querySelector<HTMLElement>('.bubble[aria-label="compose"]')?.style.transform).toBe("scale(1)");
+  });
+
+  /** A bubble beside the pill is nearer the canvas's edge than half the widest tooltip: its tooltip
+   * moves in to stay whole. */
+  test("a side bubble's tooltip stays inside the canvas", async () => {
+    const page = await overlayPage();
+    const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
+    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+    await page.show({ ...listening, mode: "agent", tools, connectors: apps });
+    // The first two after the row of five over the pill: the left and the right one beside it.
+    for (const label of ["contacts", "files"]) {
+      const bubble = document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`) as HTMLElement;
+      await act(async () => {
+        bubble.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
+      const centre = parseFloat(tooltip?.style.left ?? "");
+      // Over this bubble, beside the pill, not over the row above it.
+      const grownTop = parseFloat((bubble.closest(".centred") as HTMLElement).style.top) + config.agentBubbleDiameter / 2 - config.agentBubbleDiameter * config.agentBubbleHoverScale;
+      expect(parseFloat(tooltip?.style.top ?? "") + tooltipSize.height / 2, label).toBeCloseTo(grownTop - config.bubbleTooltipGap);
+      expect(centre - tooltipSize.width / 2, label).toBeGreaterThanOrEqual(0);
+      expect(centre + tooltipSize.width / 2, label).toBeLessThanOrEqual(config.overlayCanvasSize.width);
+      expect(Math.abs(centre - parseFloat((bubble.closest(".centred") as HTMLElement).style.left)), label).toBeGreaterThan(1);
+      await act(async () => {
+        bubble.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: null }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
   });
 
   /** In dictation mode, and in agent mode before the tools are known, no app's bubble shows. */

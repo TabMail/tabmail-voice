@@ -46,7 +46,8 @@ export class Windows {
     }, (window) => {
       window.setAlwaysOnTop(true, "status");
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
-      window.setIgnoreMouseEvents(true);
+      // Click-through, but the pointer's moves still reach the page: a bubble shows what it is on hover.
+      window.setIgnoreMouseEvents(true, { forward: true });
     });
   }
 

@@ -116,6 +116,18 @@ body {
   }
 }
 
+.bubble-tooltip {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: max-content;
+  pointer-events: none;
+}
+
+.bubble-tooltip-name {
+  font-weight: 600;
+}
+
 .tip {
   position: relative;
   white-space: nowrap;

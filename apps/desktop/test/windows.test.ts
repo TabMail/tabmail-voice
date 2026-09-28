@@ -37,8 +37,10 @@ const electron = vi.hoisted(() => {
       return Promise.resolve();
     }
     ignoresMouse = false;
-    setIgnoreMouseEvents(ignore: boolean): void {
+    forwardsMouse = false;
+    setIgnoreMouseEvents(ignore: boolean, options?: { forward?: boolean }): void {
       this.ignoresMouse = ignore;
+      this.forwardsMouse = options?.forward === true;
     }
     setAlwaysOnTop(): void {}
     setVisibleOnAllWorkspaces(): void {}
@@ -82,12 +84,13 @@ describe("Windows", () => {
 
   /** The overlay is never focused, so every click on it is a first click: the chat window's close
    * button and links answer only because a first click counts. Until the chat opens it lets clicks
-   * through. */
+   * through, while the pointer's moves still reach the page, for a bubble to show what it is. */
   test("the overlay takes a first click but is never focused", () => {
-    const overlay = new Windows(() => null as never).overlay() as unknown as { ignoresMouse: boolean };
+    const overlay = new Windows(() => null as never).overlay() as unknown as { ignoresMouse: boolean; forwardsMouse: boolean };
 
     expect(electron.BrowserWindow.made.at(-1)).toMatchObject({ focusable: false, acceptFirstMouse: true });
     expect(overlay.ignoresMouse).toBe(true);
+    expect(overlay.forwardsMouse).toBe(true);
   });
 
   /** A dead audio page is dropped, so the next dictation's command opens a fresh one instead of

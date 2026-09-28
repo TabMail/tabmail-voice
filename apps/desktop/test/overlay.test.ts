@@ -8,7 +8,7 @@ import { agentTools } from "../src/core/agent/tools.js";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
 import { type MenuState, showsDictationButton, statusLine } from "../src/core/menuModel.js";
-import { bubbleCentres, bubblesFitUnder, chatFrame, chatOpensUpward, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../src/core/overlayGeometry.js";
+import { bubbleCentres, bubblesFitUnder, bubbleTooltipCentre, chatFrame, chatOpensUpward, grownBubble, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../src/core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipKeycap, tipLines, tipParts } from "../src/core/tips.js";
 
 const canvas = { width: 200, height: 60 };
@@ -215,6 +215,67 @@ describe("overlay geometry", () => {
         expect(contains(area, rect(tipFrame.x - shadow, tipFrame.y - shadow, tipFrame.width + 2 * shadow, tipFrame.height + 2 * shadow)), `leaves the canvas over ${count} bubbles`).toBe(true);
       }
     }
+  });
+
+  /** A bubble grows from its bottom edge, as the page scales it (`transform-origin: bottom center`):
+   * same bottom and centre, `scale` times the size. */
+  test("a grown bubble keeps its bottom edge and centre", () => {
+    expect(grownBubble(rect(100, 50, 40, 40), 1.5)).toEqual(rect(90, 30, 60, 60));
+    expect(grownBubble(rect(100, 50, 40, 40), 1)).toEqual(rect(100, 50, 40, 40));
+  });
+
+  /** The hovered bubble's tooltip, as wide as it gets and taller than its longest description wraps, for every bubble as many are
+   * ever offered, grown as hovered or running, whether bubbles fit under the pill or not: over the
+   * bubble when there is room, else under it; clear of it by `bubbleTooltipGap` and never over it;
+   * centred on it unless that would leave the canvas, and always inside the canvas. */
+  test.each([true, false])("a bubble's tooltip clears it and stays in the canvas (under fits: %s)", (underFits) => {
+    const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
+    const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
+    const tooltip: Size = { width: config.bubbleTooltipMaxWidth, height: 130 };
+    const pill = rect(midX(area) - 60, (area.height - config.pillHeight) / 2, 120, config.listeningPillHeight);
+    const frames = bubbleCentres(pill, Array<Size>(agentTools.length - 1 + connectors.length).fill(bubble), underFits).map((centre) => framed(centre, bubble));
+    let over = 0;
+    let under = 0;
+    for (const scale of [config.agentBubbleHoverScale, config.agentBubbleRunningScale]) {
+      for (const [index, frame] of frames.entries()) {
+        const grown = grownBubble(frame, scale);
+        const tooltipFrame = framed(bubbleTooltipCentre(grown, tooltip, config.overlayCanvasSize), tooltip);
+        const roomOver = grown.y - config.bubbleTooltipGap - tooltip.height >= 0;
+        if (roomOver) {
+          over += 1;
+          expect(maxY(tooltipFrame), `bubble ${index} at ${scale}`).toBeCloseTo(grown.y - config.bubbleTooltipGap);
+        } else {
+          under += 1;
+          expect(tooltipFrame.y, `bubble ${index} at ${scale}`).toBeCloseTo(maxY(grown) + config.bubbleTooltipGap);
+        }
+        expect(intersects(tooltipFrame, grown), `bubble ${index} at ${scale} covered`).toBe(false);
+        expect(contains(area, tooltipFrame), `bubble ${index} at ${scale}: tooltip outside the canvas`).toBe(true);
+        expect(Math.abs(midX(tooltipFrame) - midX(grown)), `bubble ${index} at ${scale} off centre`).toBeLessThan(0.001);
+      }
+    }
+    // Both were met: over a bubble with room, and under one without (a row near the canvas's top).
+    expect([over > 0, under > 0]).toEqual([true, true]);
+  });
+
+  /** A bubble nearer an edge of the canvas than half its tooltip's width gets the tooltip moved in to
+   * that edge, still clear of the bubble. */
+  test("a tooltip by an edge of the canvas moves in", () => {
+    const tooltip: Size = { width: config.bubbleTooltipMaxWidth, height: 90 };
+    const canvasSize = config.overlayCanvasSize;
+    const left = framed(bubbleTooltipCentre(rect(10, 200, 30, 30), tooltip, canvasSize), tooltip);
+    const right = framed(bubbleTooltipCentre(rect(canvasSize.width - 40, 200, 30, 30), tooltip, canvasSize), tooltip);
+    expect([left.x, maxY(left)]).toEqual([0, 200 - config.bubbleTooltipGap]);
+    expect([maxX(right), maxY(right)]).toEqual([canvasSize.width, 200 - config.bubbleTooltipGap]);
+  });
+
+  /** Over the bubble while the tooltip fits over it exactly, under it a point short of that. */
+  test("a tooltip goes under its bubble only without room over it", () => {
+    const tooltip: Size = { width: 100, height: 90 };
+    const fits = config.bubbleTooltipGap + tooltip.height;
+    const over = framed(bubbleTooltipCentre(rect(200, fits, 30, 30), tooltip, config.overlayCanvasSize), tooltip);
+    const under = framed(bubbleTooltipCentre(rect(200, fits - 1, 30, 30), tooltip, config.overlayCanvasSize), tooltip);
+    expect(over.y).toBe(0);
+    expect(under.y).toBe(fits - 1 + 30 + config.bubbleTooltipGap);
   });
 
   /** The tip's room beside the pill is its gap, arrow and box, in `tipLineCount` lines. */
