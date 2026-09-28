@@ -4,6 +4,11 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
 
 - **Layout:** one folder per platform under `apps/` (ADR-DESK-013); the macOS app is `apps/macos/`.
   Repository-wide files (docs, the signing-config helper, `Scripts/stt-compare/`) stay at the root.
+- **`apps/desktop/`** is the Electron app replacing the Swift one at parity (ADR-DESK-032):
+  TypeScript only; `src/core` stays free of Node and Electron; OS work goes in a native helper
+  (`native/<os>`), not a Node addon. Check it from `apps/desktop/` with `npm test`,
+  `npm run typecheck`, `npm run lint` and `./scripts/swift-errors.sh test`; a fresh worktree needs
+  `npx -y npm@11.19.1 install` first.
 - **Build and test** (from the repository root): `./apps/macos/Scripts/xcodegen.sh` after any
   `project.yml` or file add/remove, then
   `xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath apps/macos/DerivedData test`.

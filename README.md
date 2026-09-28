@@ -31,6 +31,19 @@ audio are never in it. Release builds keep no log file.
 Sign with a real team. macOS ties the Microphone and Accessibility permissions to the app's
 signature, so an ad-hoc signed build loses them on every rebuild.
 
+### The Electron app (`apps/desktop/`)
+
+The cross-platform app that will replace the Swift one (macOS first). Needs Node 24 and, on macOS,
+Xcode for the helpers:
+
+```sh
+cd apps/desktop
+npx -y npm@11.19.1 install
+npm start          # builds the helpers, the main process and the windows, then runs the app
+npm test           # unit tests; also: npm run typecheck, npm run lint
+npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is in the keychain)
+```
+
 ## First run
 
 TabMail lives in the menu bar. It asks for:

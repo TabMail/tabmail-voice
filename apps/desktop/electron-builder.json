@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "ai.tabmail.voice",
+  "productName": "TabMail Voice",
+  "copyright": "TabMail",
+  "directories": {
+    "buildResources": "resources",
+    "output": "release"
+  },
+  "files": ["dist/node/**", "dist/renderer/**", "package.json"],
+  "extraResources": [
+    { "from": "dist/helpers", "to": "helpers" },
+    { "from": "resources", "to": ".", "filter": ["trayTemplate*.png"] }
+  ],
+  "asar": true,
+  "mac": {
+    "category": "public.app-category.productivity",
+    "icon": "resources/icon.png",
+    "target": [
+      { "target": "dmg", "arch": ["arm64"] },
+      { "target": "zip", "arch": ["arm64"] }
+    ],
+    "minimumSystemVersion": "15.0",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "resources/entitlements.mac.plist",
+    "entitlementsInherit": "resources/entitlements.mac.plist",
+    "extendInfo": {
+      "LSUIElement": true,
+      "NSMicrophoneUsageDescription": "TabMail Voice listens only while you hold the dictation key."
+    }
+  }
+}
