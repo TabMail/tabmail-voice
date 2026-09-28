@@ -131,6 +131,9 @@ function launch(): void {
     systemEmailApp: () => mac.systemEmailApp(),
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
+    // The tools that run on this computer, for the Answer prompt's model: none until the first
+    // connector (ADR-DESK-023).
+    loopTools: [],
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -456,6 +459,9 @@ function launch(): void {
       case "openChatLink":
         // Only a web page, and only while the chat window is open.
         if (controller.chat !== null && opensLink(command.url)) await shell.openExternal(command.url);
+        return;
+      case "answerConfirmation":
+        controller.answerConfirmation(command.confirmed);
         return;
       case "chatHeight":
         overlay.fitChat(command.height);

@@ -156,6 +156,9 @@ vi.mock("../src/core/dictationController.js", () => ({
     closeChat() {
       this.calls.push("closeChat");
     }
+    answerConfirmation(confirmed: boolean) {
+      this.calls.push(`answerConfirmation ${confirmed}`);
+    }
     phase = { kind: "idle" };
     mode = "dictation";
     tools = [];
@@ -468,7 +471,8 @@ describe("main process wiring", () => {
     expect(app.overlay?.updates.at(-1)).toEqual(["listening", false]);
   });
 
-  /** The chat window's commands reach the controller and the overlay; its links open only a web page,
+  /** The chat window's commands (a touch, closing, the answer to its question) reach the controller
+   * and the overlay; its links open only a web page,
    * and only while it is open. */
   test("the chat window's commands", async () => {
     await launch("darwin");
@@ -476,6 +480,8 @@ describe("main process wiring", () => {
 
     await send({ type: "keepChatOpen" });
     await send({ type: "closeChat" });
+    await send({ type: "answerConfirmation", confirmed: true });
+    await send({ type: "answerConfirmation", confirmed: false });
     await send({ type: "chatHeight", height: 180 });
     expect(await send({ type: "chatHeight", height: -1 })).toEqual({ error: expect.any(String) });
     await send({ type: "openChatLink", url: "https://example.com/closed" });
@@ -483,7 +489,7 @@ describe("main process wiring", () => {
     await send({ type: "openChatLink", url: "https://example.com/docs" });
     await send({ type: "openChatLink", url: "file:///Applications/Calculator.app" });
 
-    expect(controller?.calls).toEqual(["keepChatOpen", "closeChat"]);
+    expect(controller?.calls).toEqual(["keepChatOpen", "closeChat", "answerConfirmation true", "answerConfirmation false"]);
     expect(app.overlay?.heights).toEqual([180]);
     expect(app.opened).toEqual(["https://example.com/docs"]);
   });

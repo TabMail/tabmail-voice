@@ -43,6 +43,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
 const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, hotkey: "function", tools: [], emailAppIcon: null, chat: null, chatOpensUpward: false };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
+const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent" };
 
 /** The overlay page, mounted afresh; `show` pushes it a state as the main process does. */
 async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>; tipFrame(): { top: number; bottom: number } | null; pillFrame(): { top: number; bottom: number }; commands: Command[] }> {
@@ -256,8 +257,8 @@ describe("overlay page", () => {
 });
 
 describe("the chat window", () => {
-  /** An answer, then an Edit follow-up, with a third under way. */
-  function chat(closesAt: number | null): AgentChat {
+  /** An answer, then an Edit follow-up, with a third under way; untouched while it times out. */
+  function chat(closesAt: number | null, touched = closesAt === null): AgentChat {
     return {
       turns: [
         { id: 0, request: "When do we ship", tool: "answer", reply: "We ship on **Friday**, see [the plan](https://example.com/plan)" },
@@ -265,6 +266,9 @@ describe("the chat window", () => {
       ],
       pendingRequest: "And the launch party",
       closesAt,
+      touched,
+      activity: null,
+      confirmation: null,
     };
   }
 
@@ -292,7 +296,7 @@ describe("the chat window", () => {
   test("a reply's inline Markdown shows as it reads", async () => {
     const page = await overlayPage();
     const reply = "Run `npm test`, **now**, *please*, ~~not~~ [the plan](https://example.com/plan)";
-    await page.show({ ...idle, chat: { turns: [{ id: 0, request: "What next", tool: "answer", reply }], pendingRequest: null, closesAt: null } });
+    await page.show({ ...idle, chat: { ...chat(null), turns: [{ id: 0, request: "What next", tool: "answer", reply }], pendingRequest: null } });
 
     expect(texts(".chat-text")).toEqual(["Run npm test, now, please, not the plan"]);
     expect(texts(".chat-text code")).toEqual(["npm test"]);
@@ -359,6 +363,22 @@ describe("the chat window", () => {
     scroll.scrollTop = 120;
     await page.show({ ...transcribing, chat: { ...chat(null), pendingRequest: "And the launch party" } });
     expect(scroll.scrollTop).toBe(500);
+
+    // A tool's question, then its progress, joining a full window each scroll to it on its own, so its
+    // buttons show; the same question pushed again doesn't.
+    const loop: OverlayState = { ...running, chat: { ...chat(null), pendingRequest: "And the launch party" } };
+    await page.show(loop);
+    const shown = async (fields: Partial<AgentChat>, level = loop.level): Promise<number> => {
+      scroll.scrollTop = 120;
+      await page.show({ ...loop, level, chat: { ...(loop.chat as AgentChat), ...fields } });
+      return scroll.scrollTop;
+    };
+    expect(await shown({ confirmation: "Add the launch party?" })).toBe(500);
+    expect(document.querySelector(".chat-confirmation")).not.toBeNull();
+    expect(await shown({ confirmation: "Add the launch party?" }, 0.4)).toBe(120);
+    await shown({});
+    expect(await shown({ activity: "Adding it to your calendar" })).toBe(500);
+    expect(await shown({ activity: "Adding it to your calendar" }, 0.4)).toBe(120);
   });
 
   /** The timeout bar shows the time left while the window can still time out, and goes once it is
@@ -414,6 +434,51 @@ describe("the chat window", () => {
     await act(async () => {
       box?.dispatchEvent(new Event(type, { bubbles: true }));
     });
+    expect(page.commands.filter((command) => command.type === "keepChatOpen")).toHaveLength(1);
+  });
+
+  /** While a tool the answer's model called runs, the window says what it is doing, under the request,
+   * and nothing else about it shows. */
+  test("it shows what a tool is doing while it runs", async () => {
+    const page = await overlayPage();
+    await page.show({ ...running, chat: chat(null) });
+    expect(document.querySelector(".chat-activity")).toBeNull();
+
+    await page.show({ ...running, chat: { ...chat(null), activity: "Checking your calendar" } });
+
+    expect(document.querySelector(".chat-activity")?.textContent).toBe("Checking your calendar");
+    expect(document.querySelector(".chat-activity .chat-spinner.spinning")).not.toBeNull();
+    expect([...document.querySelectorAll(".chat-request")].at(-1)?.nextElementSibling?.className).toBe("chat-caption chat-activity");
+    expect(document.querySelector(".chat-confirmation")).toBeNull();
+  });
+
+  /** A tool that sends or creates asks first: Cancel declines, Confirm runs it. */
+  test.each([
+    ["Cancel", ".chat-cancel", false],
+    ["Confirm", ".chat-confirm", true],
+  ])("its question's %s button answers it", async (title, selector, confirmed) => {
+    const page = await overlayPage();
+    await page.show({ ...running, chat: { ...chat(null), confirmation: "Add “Launch party” to your calendar on Friday at 18:00?" } });
+
+    expect(document.querySelector(".chat-confirmation .chat-text")?.textContent).toBe("Add “Launch party” to your calendar on Friday at 18:00?");
+    expect(texts(".chat-confirmation button")).toEqual(["Cancel", "Confirm"]);
+    const button = document.querySelector<HTMLElement>(`.chat-confirmation ${selector}`);
+    expect(button?.textContent).toBe(title);
+    await act(async () => button?.click());
+
+    expect(page.commands.filter((command) => command.type === "answerConfirmation")).toEqual([{ type: "answerConfirmation", confirmed }]);
+  });
+
+  /** A window a tool opened has no timeout yet, but is untouched: a touch there keeps it open once the
+   * answer arrives. */
+  test("a touch while a tool runs keeps it open", async () => {
+    const page = await overlayPage();
+    await page.show({ ...running, chat: { ...chat(null, false), activity: "Checking your calendar" } });
+
+    await act(async () => {
+      document.querySelector(".chat-scroll")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+
     expect(page.commands.filter((command) => command.type === "keepChatOpen")).toHaveLength(1);
   });
 

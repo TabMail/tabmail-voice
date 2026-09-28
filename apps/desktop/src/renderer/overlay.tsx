@@ -205,15 +205,15 @@ function ChatWindow({ chat, status, state }: { chat: AgentChat; status: Mode | n
   useEffect(() => {
     if (boxSize.height > 0) void send({ type: "chatHeight", height: boxSize.height });
   }, [boxSize.height]);
-  // The newest turn, or the follow-up's status, in view: only when one of them changes, since every
-  // state push (a follow-up's level, many times a second) brings a new copy of the same chat, and the
-  // user may have scrolled up to read an earlier answer.
+  // The newest turn, the follow-up's status, or the tool's progress or question in view: only when
+  // one of them changes, since every state push (a follow-up's level, many times a second) brings a
+  // new copy of the same chat, and the user may have scrolled up to read an earlier answer.
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
-  }, [chat.turns.length, chat.pendingRequest, status?.kind]);
+  }, [chat.turns.length, chat.pendingRequest, chat.activity, chat.confirmation, status?.kind]);
   const touch = () => {
-    if (chat.closesAt !== null) void send({ type: "keepChatOpen" });
+    if (!chat.touched) void send({ type: "keepChatOpen" });
   };
   return (
     <div className="chat-canvas" style={{ padding: config.chatShadowMargin, justifyContent: state.chatOpensUpward ? "flex-end" : "flex-start" }}>
@@ -244,6 +244,8 @@ function ChatWindow({ chat, status, state }: { chat: AgentChat; status: Mode | n
             </div>
           ))}
           {chat.pendingRequest !== null && <RequestBubble text={chat.pendingRequest} />}
+          {chat.activity !== null && <Activity label={chat.activity} />}
+          {chat.confirmation !== null && <ConfirmationCard question={chat.confirmation} />}
           {status && (
             <div className="chat-status">
               <Pill mode={status} level={state.level} language={state.language} />
@@ -260,6 +262,49 @@ function ChatWindow({ chat, status, state }: { chat: AgentChat; status: Mode | n
         >
           ✕
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** What a tool the answer's model called is doing, beside a spinner, while it runs. */
+function Activity({ label }: { label: string }) {
+  const size = config.chatCaptionFontSize;
+  return (
+    <div className="chat-caption chat-activity" style={{ fontSize: size, gap: config.chatBubblePadding / 2 }}>
+      <div
+        className="chat-spinner spinning"
+        style={{ width: size, height: size, borderWidth: config.chatActivitySpinnerLineWidth, animationDuration: `${1 / config.chatActivitySpinnerRevolutionsPerSecond}s` }}
+      />
+      {label}
+    </div>
+  );
+}
+
+/** What a tool asks before it sends or creates anything: it runs only on Confirm. */
+function ConfirmationCard({ question }: { question: string }) {
+  const button = (title: string, confirmed: boolean) => (
+    <button
+      type="button"
+      className={confirmed ? "chat-confirm" : "chat-cancel"}
+      onClick={() => void send({ type: "answerConfirmation", confirmed })}
+      style={{
+        fontSize: config.chatCaptionFontSize,
+        padding: `${config.chatBubblePadding / 2}px ${config.chatBubblePadding}px`,
+        ...(confirmed ? { background: brandBlue } : {}),
+      }}
+    >
+      {title}
+    </button>
+  );
+  return (
+    <div className="chat-confirmation" style={{ gap: config.chatBubblePadding, padding: config.chatBubblePadding, borderRadius: config.chatBubbleCornerRadius }}>
+      <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
+        {question}
+      </div>
+      <div className="chat-confirmation-buttons" style={{ gap: config.chatBubblePadding }}>
+        {button("Cancel", false)}
+        {button("Confirm", true)}
       </div>
     </div>
   );

@@ -4,8 +4,9 @@
 
 import { describe, expect, test } from "vitest";
 import { DesktopAgent } from "../src/core/agent/desktopAgent.js";
+import type { LoopTool } from "../src/core/agent/loopTool.js";
 import { AgentFailure, type AgentTool, agentTools, EditTool } from "../src/core/agent/tools.js";
-import { BackendError, CompletionsClient } from "../src/core/backend.js";
+import { BackendError, CompletionsClient, type ToolCall } from "../src/core/backend.js";
 import { screen } from "./screens.js";
 import { Fixtures, signedIn, StubTransport } from "./support.js";
 
@@ -210,5 +211,191 @@ describe("DesktopAgent", () => {
     const error = await thrown(DesktopAgent.write("edit", request, selectionScreen("Ship it."), "", client, account, Fixtures.userId));
     expect(error).toBeInstanceOf(BackendError);
     expect((error as BackendError).kind).toBe("subscriptionRequired");
+  });
+});
+
+/** The Answer prompt's tool loop: each round's tool calls run here, and their results go back with the
+ * loop's state until the model answers. Never the network. */
+describe("the answer's tool loop", () => {
+  const tools = ["date_to_day", "time_delta", "example_read"];
+
+  /** The Answer prompt is offered the backend's date tools and every tool that runs on this computer. */
+  test("an answer is offered the date tools and this computer's tools", () => {
+    const tool = (name: string): LoopTool => ({ name, progressLabel: "", confirmation: () => null, run: async () => "" });
+    expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
+    expect(DesktopAgent.answerTools([tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "example_read", "example_create"]);
+  });
+
+  /** The first round offers the tools with tools on and sends no state; its reply, trimmed, is the
+   * answer. */
+  test("an answer offers its tools and returns the reply", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply("  Friday is the 3rd.\n"));
+    const calls: ToolCall[] = [];
+
+    const answer = await DesktopAgent.answer("what day is friday", null, "User: hi\nTabMail: Hello.", tools, client, account, Fixtures.userId, async (call) => {
+      calls.push(call);
+      return "";
+    });
+
+    expect(answer).toBe("Friday is the 3rd.");
+    expect(calls).toEqual([]);
+    expect(completions.message(0)?.content).toBe("system_prompt_desktop_answer");
+    expect(completions.message(0)?.conversation).toBe("User: hi\nTabMail: Hello.");
+    expect(completions.body(0).available_tools).toEqual(tools);
+    expect(completions.body(0).disable_tools).toBe(false);
+    expect(completions.body(0)).not.toHaveProperty("conversation_state");
+  });
+
+  /** The tools a round calls run in order, and their results go back, each under its call's id, with
+   * the rest of the loop's state as it came and the rounds the app has run (whatever round the state
+   * says: the app's count is what reaches the backend's round limit). */
+  test("the tools a round calls run, and their results go back", async () => {
+    const { completions, client, account } = setup();
+    const first = { ...Fixtures.loopState(), current_round: 4, tool_traces: [{ name: "date_to_day" }], ratio: 0.5, nothing: null };
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: '{"n":1}' }, { id: "call_b", name: "example_other", arguments: "{}" }], first));
+    const second = { ...Fixtures.loopState(), harmony_messages: [{ role: "user", content: "Second" }], current_round: 9 };
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_c", name: "example_read", arguments: '{"n":2}' }], second));
+    completions.enqueue(200, Fixtures.reply("Both done."));
+    const ran: string[] = [];
+
+    const answer = await DesktopAgent.answer("do both", null, "", tools, client, account, Fixtures.userId, async (call) => {
+      ran.push(`${call.id} ${call.function.name} ${call.function.arguments}`);
+      return `result of ${call.id}`;
+    });
+
+    expect(answer).toBe("Both done.");
+    expect(ran).toEqual(['call_a example_read {"n":1}', "call_b example_other {}", 'call_c example_read {"n":2}']);
+    expect(completions.body(1).conversation_state).toEqual({
+      ...first,
+      harmony_messages: [...(Fixtures.loopState().harmony_messages as unknown[]), { role: "tool", content: "result of call_a", tool_call_id: "call_a" }, { role: "tool", content: "result of call_b", tool_call_id: "call_b" }],
+      current_round: 1,
+    });
+    expect(completions.body(2).conversation_state).toEqual({
+      ...second,
+      harmony_messages: [{ role: "user", content: "Second" }, { role: "tool", content: "result of call_c", tool_call_id: "call_c" }],
+      current_round: 2,
+    });
+    expect(completions.requests).toHaveLength(3);
+  });
+
+  /** A round refused for an expired session is sent once more, the same, with a refreshed one: the
+   * first round, or a later one, whose tools already ran and are not run again. */
+  test.each([false, true])("a refused round is retried once with a fresh session (after a tool: %s)", async (afterTool) => {
+    const auth = new StubTransport();
+    const completions = new StubTransport();
+    const client = new CompletionsClient("https://api.example.com", "v", completions.transport);
+    const call = { id: "call_a", name: "example_read", arguments: '{"n":1}' };
+    if (afterTool) completions.enqueue(200, Fixtures.toolCalls([call]));
+    completions.enqueue(401, { error: "invalid_token" });
+    completions.enqueue(200, Fixtures.reply("Done."));
+    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+    const ran: string[] = [];
+
+    const answer = await DesktopAgent.answer("read it", null, "", tools, client, signedIn(auth), Fixtures.userId, async (toolCall) => {
+      ran.push(toolCall.id);
+      return "read";
+    });
+
+    expect(answer).toBe("Done.");
+    expect(ran).toEqual(afterTool ? ["call_a"] : []);
+    expect(auth.requests).toHaveLength(1);
+    const refused = afterTool ? 1 : 0;
+    expect(completions.authorizations).toEqual([...(afterTool ? ["Bearer access-1"] : []), "Bearer access-1", "Bearer access-2"]);
+    const { client_timestamp_ms: _sent, ...first } = completions.body(refused);
+    const { client_timestamp_ms: _resent, ...again } = completions.body(refused + 1);
+    expect(again).toEqual(first);
+  });
+
+  /** Refused again with the fresh session, the answer fails as unauthorized, sending no third time. */
+  test("a round refused twice fails", async () => {
+    const auth = new StubTransport();
+    const completions = new StubTransport();
+    const client = new CompletionsClient("https://api.example.com", "v", completions.transport);
+    completions.enqueue(401, { error: "invalid_token" });
+    completions.enqueue(401, { error: "invalid_token" });
+    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+
+    const error = await thrown(DesktopAgent.answer("read it", null, "", tools, client, signedIn(auth), Fixtures.userId, async () => ""));
+
+    expect((error as BackendError).kind).toBe("unauthorized");
+    expect(completions.requests).toHaveLength(2);
+    expect(auth.requests).toHaveLength(1);
+  });
+
+  /** State with no tool history to add to can't be continued: the request fails, running nothing. */
+  test.each([{ current_round: 1 }, { harmony_messages: {} }, [], "state"])("a state of %j fails", async (state) => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }], state));
+    let ran = 0;
+
+    const error = await thrown(
+      DesktopAgent.answer("read it", null, "", tools, client, account, Fixtures.userId, async () => {
+        ran += 1;
+        return "";
+      }),
+    );
+
+    expect((error as BackendError).kind).toBe("invalidResponse");
+    expect(ran).toBe(0);
+    expect(completions.requests).toHaveLength(1);
+  });
+
+  /** An empty answer is a failure, as for any tool. */
+  test("an empty answer fails", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply(" \n"));
+
+    const error = await thrown(DesktopAgent.answer("what now", null, "", tools, client, account, Fixtures.userId, async () => ""));
+    expect((error as AgentFailure).kind).toBe("noText");
+  });
+
+  /** Cancelled before it starts, the answer asks nothing. */
+  test("a cancelled answer asks nothing", async () => {
+    const { completions, client, account } = setup();
+    const abort = new AbortController();
+    abort.abort();
+
+    await thrown(DesktopAgent.answer("what now", null, "", tools, client, account, Fixtures.userId, async () => "", abort.signal));
+    expect(completions.requests).toHaveLength(0);
+  });
+
+  /** Cancelled while a tool runs (the chat window closed as it asked), the round's later calls don't
+   * run and the model is asked nothing more. */
+  test("cancelled while a tool runs, it runs and asks nothing more", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }, { id: "call_b", name: "example_read", arguments: "{}" }]));
+    completions.enqueue(200, Fixtures.reply("Never asked."));
+    const abort = new AbortController();
+    const ran: string[] = [];
+
+    const error = await thrown(
+      DesktopAgent.answer("read it", null, "", tools, client, account, Fixtures.userId, async (call) => {
+        ran.push(call.id);
+        abort.abort();
+        return "";
+      }, abort.signal),
+    );
+
+    expect((error as Error).name).toBe("AbortError");
+    expect(ran).toEqual(["call_a"]);
+    expect(completions.requests).toHaveLength(1);
+  });
+
+  /** Cancelled after a round's last tool, the next round is not asked. */
+  test("cancelled after a round's tools, the next round is not asked", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }]));
+    completions.enqueue(200, Fixtures.reply("Never asked."));
+    const abort = new AbortController();
+
+    await thrown(
+      DesktopAgent.answer("read it", null, "", tools, client, account, Fixtures.userId, async () => {
+        abort.abort();
+        return "";
+      }, abort.signal),
+    );
+
+    expect(completions.requests).toHaveLength(1);
   });
 });

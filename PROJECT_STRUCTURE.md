@@ -34,7 +34,7 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
 │   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, cleanup
-│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), EmailClient, ThunderbirdRelay
+│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), EmailClient, ThunderbirdRelay
 │   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
 │   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
 │   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows
@@ -93,8 +93,10 @@ only one is on), the phase becomes `running(tool)` (that bubble's border circles
 `DesktopAgent.write` has the tool's prompt write the text. Edit pastes over the selection; Compose
 pastes at the caret; Thunderbird sends it to TabMail's chat; Answer opens a chat window where the pill
 was, and while it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X
-or 30 untouched seconds close it. A failure shows a message and pastes nothing. No agent call has a
-deadline.
+or 30 untouched seconds close it. Answer's prompt runs the backend's tool loop (`DesktopAgent.answer`,
+ADR-DESK-023): the backend's date tools run there, and tools that run on this computer (`LoopTool`)
+run in the app, shown in the chat window, asking first before sending or creating. A failure shows a
+message and pastes nothing. No agent call has a deadline.
 
 ## Relationships
 

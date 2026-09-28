@@ -3,13 +3,14 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "./account.js";
-import { type AgentChat, appendTurn, chatTranscript } from "./agent/agentChat.js";
+import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "./agent/agentChat.js";
 import { DesktopAgent } from "./agent/desktopAgent.js";
 import { EmailClient } from "./agent/emailClient.js";
+import { isJSONObject, type LoopTool } from "./agent/loopTool.js";
 import type { ThunderbirdRelay } from "./agent/thunderbirdRelay.js";
 import { type AgentTool, toolImplementations } from "./agent/tools.js";
 import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "./audio.js";
-import type { CompletionsClient, TranscriptionClient } from "./backend.js";
+import type { CompletionsClient, ToolCall, TranscriptionClient } from "./backend.js";
 import { DictationCleanup } from "./cleanup.js";
 import * as config from "./config.js";
 import { type DictationMode, type HotkeyAction, toggled } from "./hotkey.js";
@@ -62,6 +63,8 @@ export interface DictationDependencies {
   systemEmailApp: () => Promise<string | null>;
   makeTranscriptionClient: (baseURL: string) => TranscriptionClient;
   makeCompletionsClient: (baseURL: string) => CompletionsClient;
+  /** The tools the Answer prompt's model can call that run on this computer. */
+  loopTools: readonly LoopTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
 }
@@ -94,6 +97,8 @@ export class DictationController extends Observable {
   onChatChange: ((isOpen: boolean) => void) | undefined;
   /** How long the chat window stays open untouched. Settable for tests. */
   chatTimeout = config.chatTimeout;
+  /** How long the chat window's question shows before an answer to it counts. Settable for tests. */
+  confirmationMinimumDisplay = config.chatConfirmationMinimumDisplay;
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
   captureContext: (() => Promise<ScreenContext | null> | null) | undefined;
@@ -141,6 +146,10 @@ export class DictationController extends Observable {
   private secondPressTimer: Timer | null = null;
   /** Closes the chat window when its timeout runs out. */
   private chatCloseTimer: Timer | null = null;
+  /** Gives the user's answer to the question the chat window shows, awaited by the tool that asked. */
+  private confirmationReply: ((confirmed: boolean) => void) | null = null;
+  /** When the question now showing appeared. */
+  private confirmationShownAt = 0;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
@@ -454,7 +463,20 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
         log.debug(`DictationController: agent chose ${tool}`);
         this.setPhase({ kind: "running", tool });
-        const text = await DesktopAgent.write(tool, transcript, context, conversation, client, account, userId, signal);
+        const text =
+          tool === "answer"
+            ? await DesktopAgent.answer(
+                transcript,
+                context,
+                conversation,
+                DesktopAgent.answerTools(this.deps.loopTools),
+                client,
+                account,
+                userId,
+                (call) => this.runLoopTool(call, transcript, isCurrent),
+                signal,
+              )
+            : await DesktopAgent.write(tool, transcript, context, conversation, client, account, userId, signal);
         if (!isCurrent()) return;
         const targetApp = await this.targetApp;
         await toolImplementations[tool].deliver(text, {
@@ -482,6 +504,71 @@ export class DictationController extends Observable {
       this.teardown();
       this.fail(error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again.");
     }
+  }
+
+  /** Runs a tool the Answer prompt's model called, and returns what the model reads next: the tool's
+   * result, that the user declined, or why it could not run. The chat window opens (if the request
+   * was not a follow-up) to show which tool runs and, for one that sends or creates, to ask first. */
+  private async runLoopTool(call: ToolCall, request: string, isCurrent: () => boolean): Promise<string> {
+    const tool = this.deps.loopTools.find((candidate) => candidate.name === call.function.name);
+    if (tool === undefined) {
+      log.error("DictationController: the agent called a tool this app doesn't have");
+      return `Error: there is no tool named ${call.function.name}.`;
+    }
+    const args = parsedJSON(call.function.arguments);
+    if (!isJSONObject(args)) {
+      log.error(`DictationController: ${tool.name} called with arguments that aren't a JSON object`);
+      return "Error: the arguments were not a JSON object.";
+    }
+    this.setChat({ ...(this.currentChat ?? this.newChat()), pendingRequest: request });
+    const question = tool.confirmation(args);
+    // Closing the window or ending the request declines the question (`teardown`).
+    if (question !== null) {
+      const confirmed = await this.confirm(question);
+      if (!confirmed) {
+        log.debug(`DictationController: ${tool.name} declined`);
+        return config.loopToolDeclined;
+      }
+    }
+    log.debug(`DictationController: running ${tool.name}`);
+    this.updateChat({ activity: tool.progressLabel });
+    try {
+      return await tool.run(args);
+    } catch (error) {
+      log.error(`DictationController: ${tool.name} failed: ${errorName(error)}`);
+      return `Error: ${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      if (isCurrent()) this.updateChat({ activity: null });
+    }
+  }
+
+  /** Shows `question` in the chat window, and waits for the user to confirm or decline it
+   * (`answerConfirmation`); closing the window or cancelling the request declines it. */
+  private confirm(question: string): Promise<boolean> {
+    this.updateChat({ confirmation: question });
+    this.confirmationShownAt = Date.now();
+    return new Promise((resolve) => {
+      this.confirmationReply = resolve;
+    });
+  }
+
+  /** The user confirmed (true) or declined the chat window's question. An answer that comes before
+   * the question has shown for `confirmationMinimumDisplay` was meant for the one before it (the
+   * second click of a double-click), and is ignored. */
+  answerConfirmation(confirmed: boolean): void {
+    if (Date.now() - this.confirmationShownAt < this.confirmationMinimumDisplay) {
+      log.debug("DictationController: an answer too soon after the question was ignored");
+      return;
+    }
+    this.replyToConfirmation(confirmed);
+  }
+
+  private replyToConfirmation(confirmed: boolean): void {
+    const reply = this.confirmationReply;
+    if (reply === null) return;
+    this.confirmationReply = null;
+    this.updateChat({ confirmation: null });
+    reply(confirmed);
   }
 
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015). */
@@ -660,30 +747,35 @@ export class DictationController extends Observable {
     this.currentTip = null;
   }
 
-  /** Adds a turn to the chat window, opening it if it is closed: then it closes after `chatTimeout`
-   * unless the user touches it (`keepChatOpen()`). */
+  /** Adds a turn to the chat window, opening it if it is closed: then, unless the user has touched
+   * it, it closes after `chatTimeout` (`keepChatOpen()`). */
   private showInChat(request: string, tool: AgentTool, reply: string): void {
-    let chat = this.currentChat;
-    if (chat === null) {
-      chat = { turns: [], pendingRequest: null, closesAt: Date.now() + this.chatTimeout };
-      this.chatCloseTimer = after(this.chatTimeout, () => {
-        this.chatCloseTimer = null;
-        log.debug("DictationController: chat window timed out");
-        this.closeChat();
-      });
-      log.debug("DictationController: chat window opened");
-    }
-    this.setChat(appendTurn(chat, request, tool, reply));
+    const chat = appendTurn(this.currentChat ?? this.newChat(), request, tool, reply);
+    // Only the first answer finds it untouched: a follow-up touches it.
+    if (chat.touched) return this.setChat(chat);
+    this.chatCloseTimer = after(this.chatTimeout, () => {
+      this.chatCloseTimer = null;
+      log.debug("DictationController: chat window timed out");
+      this.closeChat();
+    });
+    this.setChat({ ...chat, closesAt: Date.now() + this.chatTimeout });
+  }
+
+  /** The chat window as it opens, empty and untouched: for an answer, or a tool the answer's model
+   * calls. */
+  private newChat(): AgentChat {
+    log.debug("DictationController: chat window opened");
+    return emptyChat;
   }
 
   /** The user touched the chat window (a hover, click or scroll) or followed up: it no longer times
    * out, and stays open until closed. */
   keepChatOpen(): void {
     const chat = this.currentChat;
-    if (chat?.closesAt == null) return;
+    if (chat === null || chat.touched) return;
     cancelTimer(this.chatCloseTimer);
     this.chatCloseTimer = null;
-    this.setChat({ ...chat, closesAt: null });
+    this.setChat({ ...chat, closesAt: null, touched: true });
     log.debug("DictationController: chat window kept open");
   }
 
@@ -697,10 +789,14 @@ export class DictationController extends Observable {
 
   /** The conversation and any request under way end: the chat window closes. */
   private endConversation(): void {
-    cancelTimer(this.chatCloseTimer);
-    this.chatCloseTimer = null;
     // A failure still showing goes too: the pill it shows is where the conversation started.
     if (this.currentPhase.kind !== "idle") this.discard();
+    this.dropChat();
+  }
+
+  private dropChat(): void {
+    cancelTimer(this.chatCloseTimer);
+    this.chatCloseTimer = null;
     this.setChat(null);
   }
 
@@ -712,6 +808,11 @@ export class DictationController extends Observable {
     if (this.currentMode !== "agent") return;
     log.debug("DictationController: account changed; conversation ended");
     this.endConversation();
+  }
+
+  /** Changes the open chat window's `change` fields; nothing while it is closed. */
+  private updateChat(change: Partial<AgentChat>): void {
+    if (this.currentChat !== null) this.setChat({ ...this.currentChat, ...change });
   }
 
   private setChat(chat: AgentChat | null): void {
@@ -744,7 +845,13 @@ export class DictationController extends Observable {
     this.releaseTailTimer = null;
     this.startedAt = null;
     this.currentLevel = 0;
-    if (this.currentChat?.pendingRequest != null) this.setChat({ ...this.currentChat, pendingRequest: null });
+    // A tool runs only with its request pending.
+    const chat = this.currentChat;
+    if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
+    this.replyToConfirmation(false);
+    // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
+    // cancelled or ended with the account: the pill says what failed, and the next hold dictates.
+    if (this.currentChat?.turns.length === 0) this.dropChat();
   }
 
   private fail(message: string): void {
@@ -759,6 +866,15 @@ export class DictationController extends Observable {
     this.currentPhase = phase;
     this.onPhaseChange?.(phase);
     this.changed();
+  }
+}
+
+/** `json` parsed; undefined when it isn't JSON. */
+function parsedJSON(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
   }
 }
 

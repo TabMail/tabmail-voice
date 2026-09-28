@@ -107,10 +107,11 @@ export type Command =
   | { type: "welcomeGoTo"; index: number }
   | { type: "openURL"; url: string }
   /** The chat window: the user touched it (a hover, click or scroll), closed it, opened a reply's
-   * link, or it measured its height. */
+   * link, confirmed or declined its question, or it measured its height. */
   | { type: "keepChatOpen" }
   | { type: "closeChat" }
   | { type: "openChatLink"; url: string }
+  | { type: "answerConfirmation"; confirmed: boolean }
   | { type: "chatHeight"; height: number };
 
 /** A command's outcome: an error message to show, or none. */
@@ -183,6 +184,8 @@ export function isCommand(value: unknown): value is Command {
     case "openURL":
     case "openChatLink":
       return typeof command.url === "string";
+    case "answerConfirmation":
+      return typeof command.confirmed === "boolean";
     case "setAgentToolEnabled":
       return isAgentTool(command.tool) && typeof command.value === "boolean";
     case "chatHeight":

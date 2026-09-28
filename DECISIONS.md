@@ -341,7 +341,8 @@ desktop platform, not the Thunderbird email prompts.
 **Consequences:**
 - Agent mode adds a model round trip before the tool runs (light tier, reasoning off).
 - No client-side tools: the Mac app at 0.1.0 would read Thunderbird's tool registry, and a
-  desktop tool listed there would reach Thunderbird's agent too. The later Thunderbird connector
+  desktop tool listed there would reach Thunderbird's agent too. *(Later (ADR-DESK-023): the app has
+  its own `macos` registry, and the Answer prompt calls tools that run on the user's computer.)* The later Thunderbird connector
   follows the same tool-choice contract (a third tool name; ADR-DESK-014).
 - Apps whose accessibility tree hides the selection (thin trees, some Electron apps) can't be
   edited; the request fails with "Select the text to edit". Copying the selection with ⌘C
@@ -897,6 +898,71 @@ one that ships.
   backend context-length error for that follow-up.
 - Whether hover and the first click reach the never-focused overlay window on macOS is checked by
   hand; the tests drive the page's events and the window's calls.
+
+## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
+
+**Context:** Owner, 2026-09-26: agent mode gains tools that run on the user's computer (calendar,
+reminders, contacts, file search, email prefill, notes, messages, shortcuts, web), "the tool JSON
+definitions live in the backend", and "sending or creating anything, you should ask for confirmation
+first". The backend gave the app its own `macos` platform, whose Answer prompt runs the
+function-calling loop with the tools the app lists in `available_tools` (backend ADR-017
+amendment), starting with its own date tools. ADR-DESK-011's "no client-side tools" held while the
+app read Thunderbird's registry; it no longer does. First built in the Swift app; built here in the
+Electron app (ADR-DESK-032), which is the one that ships.
+
+**Decision:**
+- The Answer prompt is a loop (`DesktopAgent.answer`); Edit, Compose and Thunderbird stay one call
+  each, and the choice stays one call. Each round (`CompletionsClient.round`) sends tools on
+  (`disable_tools: false`), `available_tools` = the backend's date tools
+  (`config.answerServerTools`) plus every `LoopTool`'s name (`DesktopAgent.answerTools`), and, after
+  the first round, the loop's `conversation_state`. A round either replies (the answer) or returns
+  `tool_calls` (each an `id`, a function `name` and its `arguments` as a JSON string; anything else
+  is `invalidResponse`) and the state.
+- The state stays opaque JSON: the app appends one `role: tool` message per call to its
+  `harmony_messages` (`content`, `tool_call_id`), sets `current_round` to the rounds it has run, and
+  sends every other field back as it came (reasoning signatures included). The backend's round limit
+  counts that `current_round`, as for the iOS app (`BackendClient.sendCompletionsWithToolsInternal`).
+  State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
+  `AbortSignal` is checked before each round and each call: a request cancelled while a tool ran
+  runs no later call and sends no further round.
+- `LoopTool` (`src/core/agent/loopTool.ts`): a tool that runs on this computer: its backend function
+  `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
+  a read), and `run(args)`. The controller takes them as `DictationDependencies.loopTools`, which the
+  main process builds (a tool reaches the OS through a native helper); the list is empty until the
+  first connector (a later PR). The backend's server tools (the date tools) run on the backend.
+- `DictationController.runLoopTool`: a call to a tool the app doesn't have, or with arguments that
+  aren't a JSON object, runs nothing and tells the model why (`Error: …`), as does a tool that
+  throws (its error's message). The chat window opens for the first tool (if the request was not a
+  follow-up), showing the request and the tool's `progressLabel` (`AgentChat.activity`) while it
+  runs. A tool with a `confirmation` asks it in the window (`AgentChat.confirmation`, Cancel /
+  Confirm, the `answerConfirmation` command) and runs only once confirmed; declined, the model
+  reads `config.loopToolDeclined`. An answer that comes before the question has shown for
+  `config.chatConfirmationMinimumDisplay` (half a second) is ignored: the second click of a
+  double-click on one question's Confirm, or a click aimed at its card as the next question
+  replaces it, would otherwise confirm a question the user never saw (found in review; a question
+  id sent back with the answer would catch only the stale card). Closing the window or cancelling
+  the request declines the question at once (`teardown`, the one place a request ends) and drops
+  the request: the round's request in flight is cancelled, the round's later calls don't run, and
+  nothing is left waiting for the answer. A tool still running for a request that ended clears
+  nothing of a newer one's.
+- The chat window's timeout starts when the first answer joins it, and only if the user has not
+  touched it (`AgentChat.touched`, which the page reads too, so a touch counts before the timeout
+  starts): a window a tool opened waits for the answer, and one touched while a tool ran stays
+  open. Each window opens untouched, so one touched and closed leaves the next to
+  time out. A request that fails, is cancelled or ends with the account after a tool opened an empty
+  window closes it (`teardown`): the pill says what failed, and the next hold dictates.
+- The date tools are not a switch in Settings or the wizard: they read nothing of the user's and
+  only make dates right. Each tool that runs on this computer adds its switch with its connector.
+
+**Consequences:**
+- The backend's `macos` platform (ADR-017 amendment) is deployed before this build: an older backend
+  offers the Answer prompt no tools, and the answer is written without them.
+- Server tools run inside a round and show no progress in the chat window (the whole stream is read,
+  then parsed); a slow server tool (web search, later) would need the stream read as it arrives.
+- A request waiting on a confirmation holds agent mode: the hotkey starts nothing until the user
+  confirms, declines or closes the window.
+- Each round has the completions request timeout of its own (`completionsRequestTimeout`); a tool's
+  run and a confirmation have none.
 
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 

@@ -104,6 +104,28 @@ export interface CompletionsMessage {
   vars: Record<string, string>;
 }
 
+/** A tool the model called that the app runs (the backend runs its own server tools). */
+export interface ToolCall {
+  id: string;
+  function: {
+    name: string;
+    /** The arguments, as a JSON object in a string. */
+    arguments: string;
+  };
+}
+
+function isToolCall(value: unknown): value is ToolCall {
+  if (!value || typeof value !== "object") return false;
+  const { id, function: called } = value as { id?: unknown; function?: unknown };
+  if (typeof id !== "string" || !called || typeof called !== "object") return false;
+  const { name, arguments: args } = called as { name?: unknown; arguments?: unknown };
+  return typeof name === "string" && typeof args === "string";
+}
+
+/** One round of the backend's tool loop: the reply, or the tools the app is to run before the next
+ * round, and the loop's state (opaque JSON) to send back with their results. */
+export type Round = { kind: "reply"; text: string } | { kind: "toolCalls"; calls: ToolCall[]; state: unknown };
+
 /** One server-sent event. */
 export interface SSEEvent {
   name: string;
@@ -136,8 +158,45 @@ export class CompletionsClient {
   ) {}
 
   /** `availableTools`: the agent tools the backend may offer this request (`available_tools`), for
-   * the agent's choice; left out of the body for every other prompt. */
+   * the agent's choice; left out of the body for every other prompt. A prompt that calls no tools. */
   async complete(message: CompletionsMessage, accessToken: string, signal?: AbortSignal, availableTools?: readonly string[]): Promise<string> {
+    const { reply, status } = await this.send(message, accessToken, signal, {
+      disable_tools: true,
+      ...(availableTools === undefined ? {} : { available_tools: availableTools }),
+    });
+    if (typeof reply.assistant !== "string") throw new BackendError("failed", status);
+    return reply.assistant;
+  }
+
+  /** One round of a prompt that may call the `tools` named (`available_tools`, tools on): the loop's
+   * first round with `conversationState` undefined, else the next one with the state the last round
+   * returned and the tools' results added. */
+  async round(message: CompletionsMessage, tools: readonly string[], conversationState: unknown, accessToken: string, signal?: AbortSignal): Promise<Round> {
+    const { reply, status } = await this.send(message, accessToken, signal, {
+      disable_tools: false,
+      available_tools: tools,
+      ...(conversationState === undefined ? {} : { conversation_state: conversationState }),
+    });
+    const calls = reply.tool_calls;
+    if (calls !== undefined && calls !== null) {
+      if (!Array.isArray(calls) || !calls.every(isToolCall)) throw new BackendError("invalidResponse");
+      if (calls.length > 0) {
+        if (reply.conversation_state === undefined || reply.conversation_state === null) throw new BackendError("invalidResponse");
+        return { kind: "toolCalls", calls, state: reply.conversation_state };
+      }
+    }
+    if (typeof reply.assistant !== "string") throw new BackendError("failed", status);
+    return { kind: "reply", text: reply.assistant };
+  }
+
+  /** Sends `message` with the request's other `fields`, and returns the stream's `final` payload,
+   * which carries no error, and the HTTP status. */
+  private async send(
+    message: CompletionsMessage,
+    accessToken: string,
+    signal: AbortSignal | undefined,
+    fields: Record<string, unknown>,
+  ): Promise<{ reply: Record<string, unknown>; status: number }> {
     const request: HTTPRequest = {
       method: "POST",
       url: joinURL(this.baseURL, config.completionsPath),
@@ -147,8 +206,7 @@ export class CompletionsClient {
         messages: [{ role: message.role, content: message.content, ...message.vars }],
         client_timestamp_ms: Date.now(),
         client_timezone: this.timeZone(),
-        disable_tools: true,
-        ...(availableTools === undefined ? {} : { available_tools: availableTools }),
+        ...fields,
       }),
       signal,
     };
@@ -168,12 +226,13 @@ export class CompletionsClient {
       throw new BackendError("invalidResponse");
     }
     if (!reply || typeof reply !== "object") throw new BackendError("invalidResponse");
-    const { assistant, error } = reply as { assistant?: unknown; error?: unknown };
+    const fieldsOf = reply as Record<string, unknown>;
+    const { assistant, error } = fieldsOf;
     if ((assistant !== undefined && assistant !== null && typeof assistant !== "string") || (error !== undefined && error !== null && typeof error !== "string")) {
       throw new BackendError("invalidResponse");
     }
-    if ((error !== undefined && error !== null) || typeof assistant !== "string") throw new BackendError("failed", response.status);
-    return assistant;
+    if (error !== undefined && error !== null) throw new BackendError("failed", response.status);
+    return { reply: fieldsOf, status: response.status };
   }
 
   /** The prompt's variables one after another, each whole under its name, for the log: the request

@@ -95,6 +95,11 @@ export const agentEditPrompt = "system_prompt_desktop_edit";
 export const agentComposePrompt = "system_prompt_desktop_compose";
 export const agentThunderbirdPrompt = "system_prompt_desktop_thunderbird";
 export const agentAnswerPrompt = "system_prompt_desktop_answer";
+/** The backend's own tools the Answer prompt may call, always listed in its `available_tools`: they
+ * run on the server, read nothing of the user's, and answer "what day is next Friday" right. */
+export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
+/** What the model reads for a tool call the user declined in the chat window. */
+export const loopToolDeclined = "The user declined, so nothing was done.";
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
@@ -351,6 +356,11 @@ export const overlayErrorDisplayDuration = 3_000;
 /** Left untouched, the chat window closes after this long; a hover, click or scroll, or a follow-up,
  * keeps it open until closed (owner, 2026-09-26). */
 export const chatTimeout = 30_000;
+/** How long the chat window's question shows before an answer to it counts: a double-click on the
+ * last question's Confirm, or a click aimed at its card as the next question replaces it, never
+ * answers the next one, which the user has not seen (a double-click's two clicks come within about
+ * half a second on macOS by default). */
+export const chatConfirmationMinimumDisplay = 500;
 export const chatWidth = 380;
 /** The chat grows with its conversation up to this height, then scrolls. */
 export const chatMaxHeight = 320;
@@ -367,6 +377,9 @@ export const chatRequestFillOpacity = 0.12;
 export const chatFontSize = 13;
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
+/** The spinner beside what a tool the answer's model called is doing, while it runs. */
+export const chatActivitySpinnerRevolutionsPerSecond = 1;
+export const chatActivitySpinnerLineWidth = 1.5;
 /** The timeout bar along the chat's bottom edge, shrinking from right to left as the time runs out
  * (like the iOS app's `PendingSendToast`). */
 export const chatTimeoutBarHeight = 2;

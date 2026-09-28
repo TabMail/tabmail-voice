@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test, vi } from "vitest";
-import { type AgentChat, appendTurn, chatTranscript, formattedReply, opensLink, type ReplyRun, remainingFraction } from "../src/core/agent/agentChat.js";
+import { type AgentChat, appendTurn, chatTranscript, emptyChat, formattedReply, opensLink, type ReplyRun, remainingFraction } from "../src/core/agent/agentChat.js";
 
-const empty: AgentChat = { turns: [], pendingRequest: null, closesAt: null };
+const empty: AgentChat = emptyChat;
 
 /** A run of `text` in the plain style, with `style` on top. */
 function run(text: string, style: Partial<Omit<ReplyRun, "text">> = {}): ReplyRun {

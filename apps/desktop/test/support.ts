@@ -104,6 +104,19 @@ export const Fixtures = {
     return Fixtures.completionsStream(JSON.stringify({ assistant }));
   },
 
+  /** A completions stream whose tool-loop round calls `calls`, with the loop's `state`. */
+  toolCalls(calls: { id: string; name: string; arguments: string }[], state: unknown = Fixtures.loopState()): string {
+    return Fixtures.completionsStream(
+      JSON.stringify({ tool_calls: calls.map((call) => ({ id: call.id, type: "function", function: { name: call.name, arguments: call.arguments } })), conversation_state: state }),
+    );
+  },
+
+  /** The loop's state as the backend returns it with a round's tool calls: its history so far, which
+   * the app adds the tools' results to. */
+  loopState(): Record<string, unknown> {
+    return { harmony_messages: [{ role: "user", content: "Example request" }], tool_traces: [], current_round: 1, ts_ms: 1 };
+  },
+
   /** An add-on (TabMail's unless `id` says otherwise) as a Thunderbird profile's `extensions.json`
    * lists it. */
   addon(options: { id?: string; userDisabled?: boolean; appDisabled?: boolean } = {}): Record<string, unknown> {
