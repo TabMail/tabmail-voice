@@ -79,6 +79,13 @@ body {
   gap: 14px;
 }
 
+.step hr {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--separator);
+}
+
 .stack-text {
   display: flex;
   flex-direction: column;

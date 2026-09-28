@@ -58,6 +58,9 @@ describe("IPC", () => {
     { type: "setEmailClient", bundleIdentifier: 1 },
     { type: "welcomeGoTo", index: 1.5 },
     { type: "openURL", url: 1 },
+    { type: "chatHeight", height: -1 },
+    { type: "chatHeight", height: Number.POSITIVE_INFINITY },
+    { type: "chatHeight", height: Number.NaN },
   ])("a malformed command is refused (%j)", (command) => {
     expect(isCommand(command)).toBe(false);
   });

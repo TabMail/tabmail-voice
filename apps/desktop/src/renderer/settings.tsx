@@ -5,12 +5,13 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../resources/icon.png";
+import { agentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
-import { GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon } from "./icons.js";
+import { GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
 import "./form.css";
 import "./settings.css";
 
@@ -137,7 +138,24 @@ function DictationPane({ state }: { state: SettingsState }) {
 }
 
 function AgentPane({ state }: { state: SettingsState }) {
-  return <EmailClientPicker state={state} />;
+  return (
+    <>
+      <Group>
+        {agentTools.map((tool) => (
+          <Toggle
+            key={tool}
+            label={toolImplementations[tool].displayName}
+            icon={<ToolIcon tool={tool} size={config.settingsToolIconSize} />}
+            checked={state.enabledTools.includes(tool)}
+            onChange={(value) => send({ type: "setAgentToolEnabled", tool, value })}
+          >
+            {toolImplementations[tool].settingsDescription}
+          </Toggle>
+        ))}
+      </Group>
+      <EmailClientPicker state={state} />
+    </>
+  );
 }
 
 function PermissionsPane({ state }: { state: SettingsState }) {
@@ -172,14 +190,18 @@ function Group({ captions = [], children }: { captions?: (string | false)[]; chi
   );
 }
 
-/** A setting that is on or off: its label, a switch at the end of the row, and what it does. Only
- * the label and the switch toggle it; its note is text to read (or select), as in the Swift app. */
-function Toggle({ label, checked, onChange, children }: { label: string; checked: boolean; onChange: (value: boolean) => unknown; children?: ReactNode }) {
+/** A setting that is on or off: its label (after its icon, if any), a switch at the end of the row,
+ * and what it does. Only the label and the switch toggle it; its note is text to read (or select),
+ * as in the Swift app. */
+function Toggle({ label, icon, checked, onChange, children }: { label: string; icon?: ReactNode; checked: boolean; onChange: (value: boolean) => unknown; children?: ReactNode }) {
   const id = useId();
   return (
     <div className="row toggle">
       <span className="toggle-text">
-        <label htmlFor={id}>{label}</label>
+        <label htmlFor={id} className={icon ? "labelled-icon" : undefined}>
+          {icon}
+          {label}
+        </label>
         {children && <span className="caption">{children}</span>}
       </span>
       <input id={id} type="checkbox" role="switch" className="switch" checked={checked} onChange={(event) => void onChange(event.target.checked)} />

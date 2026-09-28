@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../src/core/account.js";
+import { agentTools } from "../src/core/agent/tools.js";
 import * as config from "../src/core/config.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
 import { AppSettings } from "../src/core/settings.js";
@@ -134,14 +135,75 @@ describe("AppSettings", () => {
     app.readsScreen = false;
     app.hotkey = "function";
     app.emailClient = "org.mozilla.thunderbirdbeta";
+    app.setEnabled("answer", false);
 
     expect(snapshot).toEqual({
       hasConsented: true,
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,
       readsScreen: true,
+      enabledTools: [...agentTools],
       emailClient: null,
       hasTabMail: true,
     });
+  });
+});
+
+/** The agent tools the user switches on and off in Settings and the welcome wizard. */
+describe("agent tools", () => {
+  /** Every tool is on until the user turns it off. */
+  test("every tool is on by default", () => {
+    const app = settings();
+
+    for (const tool of agentTools) expect(app.isEnabled(tool)).toBe(true);
+    expect(app.dictation(null).enabledTools).toEqual(agentTools);
+  });
+
+  /** A tool turned off is left out of every dictation from then on, and stays off after a relaunch;
+   * turned back on, it is offered again. */
+  test.each(agentTools)("%s turned off stays off", (tool) => {
+    const store = new MemoryStore();
+    const changes: number[] = [];
+    const app = settings(store);
+    app.observe(() => changes.push(changes.length));
+    app.setEnabled(tool, false);
+    expect(changes).toHaveLength(1);
+
+    const relaunched = settings(store);
+    expect(relaunched.isEnabled(tool)).toBe(false);
+    expect(relaunched.dictation(null).enabledTools).toEqual(agentTools.filter((other) => other !== tool));
+
+    relaunched.setEnabled(tool, true);
+    expect(settings(store).dictation(null).enabledTools).toEqual(agentTools);
+  });
+
+  /** Turning off two tools keeps both off; turning one off twice lists it once. */
+  test("tools turned off add up", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    app.setEnabled("thunderbird", false);
+    app.setEnabled("answer", false);
+    app.setEnabled("answer", false);
+
+    expect(store.get("disabledAgentTools")).toEqual(["answer", "thunderbird"]);
+    expect(app.enabledTools).toEqual(["edit", "compose"]);
+  });
+
+  /** A stored name no longer an agent tool, or a stored value of another type, is ignored rather
+   * than turning anything off. */
+  test.each<[unknown, string[]]>([
+    [["answer", "retired-tool"], ["edit", "compose", "thunderbird"]],
+    ["answer", ["edit", "compose", "thunderbird", "answer"]],
+    [[7, null], ["edit", "compose", "thunderbird", "answer"]],
+  ])("a stored %j turns off only known tools", (stored, enabled) => {
+    expect(settings(new MemoryStore({ disabledAgentTools: stored })).dictation(null).enabledTools).toEqual(enabled);
+  });
+
+  /** A switch changed after that stores only tools: a name no longer a tool is dropped. */
+  test("a switch changed stores only tools", () => {
+    const store = new MemoryStore({ disabledAgentTools: ["answer", "retired-tool", 7] });
+    settings(store).setEnabled("edit", false);
+
+    expect(store.get("disabledAgentTools")).toEqual(["answer", "edit"]);
   });
 });

@@ -302,6 +302,18 @@ describe("ThunderbirdRelay", () => {
     expect(thunderbird.events).toEqual(["activate", ...sentBefore]);
   });
 
+  /** Cancelled while the relay reads whether Thunderbird runs: a newer dictation may have started,
+   * so Thunderbird is neither launched nor brought to the front. */
+  test.each([true, false])("cancelled before Thunderbird is reached (running: %s) touches no app", async (running) => {
+    const thunderbird = new FakeThunderbird();
+    thunderbird.running = running;
+    const controller = new AbortController();
+    thunderbird.onRunningRead = () => controller.abort();
+
+    expect(await failure(send(thunderbird, FakeThunderbird.app, controller.signal))).toBe("cancelled");
+    expect(thunderbird.events).toEqual([]);
+  });
+
   test("cancelled while waiting for the chat pastes nothing", async () => {
     const thunderbird = new FakeThunderbird();
     thunderbird.shortcutOpensChat = false;

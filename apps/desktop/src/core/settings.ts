@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { DebugAccess } from "./account.js";
+import { type AgentTool, agentTools, isAgentTool } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey.js";
 import { type KeyValueStore, storedBool, storedString } from "./keyValueStore.js";
@@ -15,6 +16,7 @@ const Key = {
   hasConsented: "hasConsentedToDictationData",
   hasFinishedWelcome: "hasFinishedWelcome",
   emailClient: "emailClient",
+  disabledAgentTools: "disabledAgentTools",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -26,6 +28,8 @@ export interface DictationSettings {
   hotkey: DictationHotkey;
   backendURL: string;
   readsScreen: boolean;
+  /** Agent mode's tools the user has on. */
+  enabledTools: AgentTool[];
   /** The email app chosen in Settings; null for the user's default email app. With the system's
    * default, asked as agent mode needs it, it resolves to the app mail and calendar requests go to
    * (`EmailClient.resolve`). */
@@ -107,6 +111,28 @@ export class AppSettings extends Observable {
     this.changed();
   }
 
+  /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
+  private get disabledAgentTools(): AgentTool[] {
+    const stored = this.store.get(Key.disabledAgentTools);
+    return Array.isArray(stored) ? stored.filter(isAgentTool) : [];
+  }
+
+  /** Whether agent mode may use `tool`. Every tool is on unless switched off (owner, 2026-09-26). */
+  isEnabled(tool: AgentTool): boolean {
+    return !this.disabledAgentTools.includes(tool);
+  }
+
+  setEnabled(tool: AgentTool, enabled: boolean): void {
+    const others = this.disabledAgentTools.filter((disabled) => disabled !== tool);
+    this.store.set(Key.disabledAgentTools, (enabled ? others : [...others, tool]).sort());
+    this.changed();
+  }
+
+  /** Agent mode's tools the user has on, in the registry's order. */
+  get enabledTools(): AgentTool[] {
+    return agentTools.filter((tool) => this.isEnabled(tool));
+  }
+
   /** Debug mode: dictation goes to dev.tabmail.ai (the development server) instead of
    * api.tabmail.ai, and the menu shows its debug items. On only while the account signed in
    * (`email`) is one `DebugAccess` allows, so a switch left on by an allowed account does nothing
@@ -126,6 +152,7 @@ export class AppSettings extends Observable {
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),
       readsScreen: this.readsScreen,
+      enabledTools: this.enabledTools,
       emailClient: this.emailClient,
       hasTabMail: this.hasTabMail(),
     };

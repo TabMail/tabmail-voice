@@ -225,6 +225,23 @@ struct HotkeyMonitorTests {
         #expect(key(monitor, .keyDown, space))
         #expect(await dispatched(actions) == [.start, .finish, .startHandsFree, .listenHandsFree, .cancel])
     }
+
+    /// With the chat window open, Escape (and its key-up) is kept from the app and closes it; closed,
+    /// Escape reaches the app again. A hotkey change keeps the window's Escape.
+    @Test func escapeClosesTheOpenChatWindow() async {
+        let (monitor, actions) = makeMonitor()
+        monitor.setChatOpen(true)
+        monitor.configure(gesture(.function))
+
+        #expect(key(monitor, .keyDown, letterA))
+        #expect(!key(monitor, .keyDown, escape))
+        #expect(!key(monitor, .keyUp, escape))
+        monitor.setChatOpen(false)
+        #expect(key(monitor, .keyDown, escape))
+        #expect(key(monitor, .keyUp, escape))
+
+        #expect(await dispatched(actions) == [.closeChat])
+    }
 }
 
 

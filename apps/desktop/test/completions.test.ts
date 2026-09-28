@@ -51,6 +51,19 @@ describe("CompletionsClient", () => {
     expect(body.client_timestamp_ms).toBeLessThanOrEqual(latest);
     // Variables sit beside role and content, not nested: the backend reads them from there.
     expect(body.messages).toEqual([{ role: "system", content: "system_prompt_example", dictation: "hello world", app_name: "Example" }]);
+    // Only the agent's choice names the tools it may pick.
+    expect(body).not.toHaveProperty("available_tools");
+  });
+
+  /** The agent's choice lists the tools on offer beside the messages, for the backend to choose
+   * among. */
+  test("sends the tools on offer", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.reply("answer"));
+
+    await makeClient(stub).complete(message, "token-abc", undefined, ["compose", "answer"]);
+
+    expect(stub.body(0).available_tools).toEqual(["compose", "answer"]);
   });
 
   test("the time zone is the system's by default", async () => {

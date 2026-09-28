@@ -34,7 +34,7 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
 │   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, cleanup
-│   │   ├── agent/                   DesktopAgent, the tools, EmailClient, ThunderbirdRelay
+│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), EmailClient, ThunderbirdRelay
 │   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
 │   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
 │   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows
@@ -86,11 +86,15 @@ listening, over the pill when the overlay opened above the caret's line; it is n
 
 **Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
 recording and transcription, with the tool bubbles in a row above the pill: Edit when text is selected,
-Compose when not, plus Thunderbird when an email app is set up. The transcript is a request:
-`DesktopAgent.tool` picks the tool (asking the backend's `system_prompt_desktop_agent` only whether
-it goes to the email app), the phase becomes `running(tool)` (that bubble's border circles), and
+Compose when not, plus Thunderbird when an email app is set up, and Answer; each only while switched on
+in Settings (ADR-DESK-022). The transcript is a request: `DesktopAgent.tool` picks among the tools
+offered (asking the backend's `system_prompt_desktop_agent`, with them in `available_tools`, unless
+only one is on), the phase becomes `running(tool)` (that bubble's border circles), and
 `DesktopAgent.write` has the tool's prompt write the text. Edit pastes over the selection; Compose
-pastes at the caret. A failure shows a message and pastes nothing. No agent call has a deadline.
+pastes at the caret; Thunderbird sends it to TabMail's chat; Answer opens a chat window where the pill
+was, and while it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X
+or 30 untouched seconds close it. A failure shows a message and pastes nothing. No agent call has a
+deadline.
 
 ## Relationships
 

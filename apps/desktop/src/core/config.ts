@@ -94,6 +94,7 @@ export const agentPrompt = "system_prompt_desktop_agent";
 export const agentEditPrompt = "system_prompt_desktop_edit";
 export const agentComposePrompt = "system_prompt_desktop_compose";
 export const agentThunderbirdPrompt = "system_prompt_desktop_thunderbird";
+export const agentAnswerPrompt = "system_prompt_desktop_answer";
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
@@ -152,7 +153,9 @@ export const helperRestartDelay = 1_000;
 
 export const termsURL = "https://tabmail.ai/terms";
 export const privacyURL = "https://tabmail.ai/privacy";
-export const welcomeWindowSize = { width: 560, height: 500 };
+export const welcomeWindowSize = { width: 560, height: 660 };
+/** An agent tool's icon beside its switch in Settings and the welcome wizard. */
+export const settingsToolIconSize = 14;
 /** Top rail, as in the Thunderbird welcome wizard: category labels over one bubble per step. */
 export const welcomeRailBubbleSize = 8;
 /** The current step's bubble is drawn this much larger. */
@@ -342,3 +345,29 @@ export const agentBubbleRunningSpringResponse = 0.35;
 export const agentBubbleRunningSpringEasing = "cubic-bezier(0.3, 1.7, 0.5, 1)";
 /** How long an error message stays on the overlay. */
 export const overlayErrorDisplayDuration = 3_000;
+
+// MARK: Chat window (the Answer tool's replies; the pill grows into it)
+
+/** Left untouched, the chat window closes after this long; a hover, click or scroll, or a follow-up,
+ * keeps it open until closed (owner, 2026-09-26). */
+export const chatTimeout = 30_000;
+export const chatWidth = 380;
+/** The chat grows with its conversation up to this height, then scrolls. */
+export const chatMaxHeight = 320;
+/** Room around the chat window in the overlay window, for its shadow. */
+export const chatShadowMargin = 16;
+export const chatCornerRadius = 14;
+export const chatPadding = 12;
+export const chatTurnSpacing = 10;
+export const chatBubblePadding = 8;
+export const chatBubbleCornerRadius = 10;
+/** The user's words, in a tinted bubble on the right, as far as this share of the chat's width. */
+export const chatRequestMaxWidthFraction = 0.8;
+export const chatRequestFillOpacity = 0.12;
+export const chatFontSize = 13;
+export const chatCaptionFontSize = 11;
+export const chatCloseButtonSize = 18;
+/** The timeout bar along the chat's bottom edge, shrinking from right to left as the time runs out
+ * (like the iOS app's `PendingSendToast`). */
+export const chatTimeoutBarHeight = 2;
+export const chatTimeoutBarOpacity = 0.7;

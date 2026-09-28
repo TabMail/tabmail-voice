@@ -9,7 +9,8 @@ import VoiceHelperSupport
 /// - `configure {hotkey, tapMaxDuration, doubleTapWindow}` (seconds) → `{installed}`: sets the
 ///   gesture and (re)installs the tap; call it again once Accessibility is granted.
 /// - `dictationEnded` → `{}`: the dictation ended without the hotkey.
-/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode"}`.
+/// - `setChatOpen {isOpen}` → `{}`: the chat window opened or closed (Escape closes it while open).
+/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat"}`.
 public enum HotkeyService {
     @MainActor
     public static func register(on channel: HelperChannel) -> HotkeyMonitor {
@@ -31,6 +32,11 @@ public enum HotkeyService {
         }
         channel.on("dictationEnded") { _ in
             await MainActor.run { monitor.dictationEnded() }
+            return [:]
+        }
+        channel.on("setChatOpen") { params in
+            guard let isOpen = params["isOpen"]?.bool else { throw HelperError("setChatOpen needs isOpen") }
+            await MainActor.run { monitor.setChatOpen(isOpen) }
             return [:]
         }
         return monitor

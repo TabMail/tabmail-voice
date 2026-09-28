@@ -135,7 +135,9 @@ export class CompletionsClient {
     private readonly timeZone: () => string = () => Intl.DateTimeFormat().resolvedOptions().timeZone,
   ) {}
 
-  async complete(message: CompletionsMessage, accessToken: string, signal?: AbortSignal): Promise<string> {
+  /** `availableTools`: the agent tools the backend may offer this request (`available_tools`), for
+   * the agent's choice; left out of the body for every other prompt. */
+  async complete(message: CompletionsMessage, accessToken: string, signal?: AbortSignal, availableTools?: readonly string[]): Promise<string> {
     const request: HTTPRequest = {
       method: "POST",
       url: joinURL(this.baseURL, config.completionsPath),
@@ -146,6 +148,7 @@ export class CompletionsClient {
         client_timestamp_ms: Date.now(),
         client_timezone: this.timeZone(),
         disable_tools: true,
+        ...(availableTools === undefined ? {} : { available_tools: availableTools }),
       }),
       signal,
     };

@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AudioCapture } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
+import { channels } from "../src/shared/ipc.js";
 
 /** The main process as the app wires it, over stand-ins for Electron, the helpers and the
  * controller: which helper a dictation's microphone runs in, and what a restarted helper does.
@@ -14,12 +15,15 @@ const app = vi.hoisted(() => ({
   listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
   credential: null as string | null,
   refusesDelete: false,
-  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void> }>(),
+  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[] }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   prewarms: 0,
   audioCommands: [] as unknown[],
-  overlay: null as { opensUpward: boolean; onPlace: (() => void) | undefined } | null,
+  overlay: null as { opensUpward: boolean; chatOpensUpward: boolean; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
+  controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; calls: string[] } | null,
+  stored: new Map<string, unknown>(),
+  opened: [] as string[],
 }));
 
 vi.mock("electron", () => ({
@@ -36,7 +40,11 @@ vi.mock("electron", () => ({
     getLoginItemSettings: () => ({ openAtLogin: false }),
   },
   session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
-  shell: {},
+  shell: {
+    openExternal: async (url: string) => {
+      app.opened.push(url);
+    },
+  },
   systemPreferences: {},
   ipcMain: {
     handle: (channel: string, handler: (event: unknown, argument: unknown) => unknown) => app.handlers.set(channel, handler),
@@ -67,10 +75,14 @@ vi.mock("../src/core/http.js", () => ({
 vi.mock("../src/main/fileStore.js", () => ({
   FileStore: class {
     get(key: string) {
-      return key === "hasFinishedWelcome" ? true : undefined;
+      return key === "hasFinishedWelcome" ? true : app.stored.get(key);
     }
-    set() {}
-    remove() {}
+    set(key: string, value: unknown) {
+      app.stored.set(key, value);
+    }
+    remove(key: string) {
+      app.stored.delete(key);
+    }
   },
 }));
 vi.mock("../src/main/logFile.js", () => ({
@@ -117,8 +129,12 @@ vi.mock("../src/main/helperClient.js", () => ({
       this.onStart?.();
     }
     stop() {}
+    /** While set, a request waits until the test answers it, as a helper still applying it. */
+    hold = false;
+    readonly unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[] = [];
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
+      if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       return { value: null };
     }
   },
@@ -128,6 +144,17 @@ vi.mock("../src/core/dictationController.js", () => ({
     constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void> }) {
       app.capture = dependencies.capture;
       app.paste = dependencies.paste;
+      app.controller = this;
+    }
+    chat: object | null = null;
+    onChatChange: ((isOpen: boolean) => void) | undefined;
+    onPhaseChange: ((phase: { kind: string }) => void) | undefined;
+    readonly calls: string[] = [];
+    keepChatOpen() {
+      this.calls.push("keepChatOpen");
+    }
+    closeChat() {
+      this.calls.push("closeChat");
     }
     phase = { kind: "idle" };
     mode = "dictation";
@@ -148,11 +175,19 @@ vi.mock("../src/core/dictationController.js", () => ({
 vi.mock("../src/main/overlayWindow.js", () => ({
   OverlayWindowController: class {
     opensUpward = false;
+    chatOpensUpward = false;
     onPlace: (() => void) | undefined;
+    readonly updates: [string, boolean][] = [];
+    readonly heights: number[] = [];
     constructor() {
       app.overlay = this;
     }
-    update() {}
+    update(phase: { kind: string }, chatOpen = false) {
+      this.updates.push([phase.kind, chatOpen]);
+    }
+    fitChat(height: number) {
+      this.heights.push(height);
+    }
   },
 }));
 vi.mock("../src/main/tray.js", () => ({
@@ -195,7 +230,15 @@ afterEach(() => {
   app.prewarms = 0;
   app.audioCommands = [];
   app.overlay = null;
+  app.controller = null;
+  app.stored.clear();
+  app.opened = [];
 });
+
+/** Sends `command` to the main process as a window would. */
+function send(command: unknown): Promise<unknown> {
+  return Promise.resolve(app.handlers.get(channels.command)?.({}, command));
+}
 
 describe("main process wiring", () => {
   /** Launching prepares the microphone ahead of the first dictation, once, on every platform: the
@@ -309,5 +352,160 @@ describe("main process wiring", () => {
     overlay?.onPlace?.();
 
     expect(pushed).toEqual([true, false]);
+  });
+
+  /** The hotkey helper is told whenever the chat window opens or closes, so Escape closes it only
+   * while it is open; a restarted helper is told again. The overlay turns into the chat window and
+   * back. */
+  test("the hotkey helper and the overlay follow the chat window", async () => {
+    await launch("darwin");
+    const hotkey = app.helpers.get("voice-hotkey");
+    const controller = app.controller;
+    const chatRequests = () => hotkey?.requests.filter((request) => request.method === "setChatOpen").map((request) => request.params) ?? [];
+    expect(chatRequests()).toEqual([{ isOpen: false }]);
+
+    if (controller) controller.chat = {};
+    controller?.onChatChange?.(true);
+    hotkey?.onStart?.();
+    expect(app.overlay?.updates.at(-1)).toEqual(["idle", true]);
+    if (controller) controller.chat = null;
+    controller?.onChatChange?.(false);
+    hotkey?.onStart?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(chatRequests()).toEqual([{ isOpen: false }, { isOpen: true }, { isOpen: true }, { isOpen: false }, { isOpen: false }]);
+    expect(app.overlay?.updates.at(-1)).toEqual(["idle", false]);
+  });
+
+  /** `voice-hotkey` applies the requests it holds in any order (each runs in its own task): the chat
+   * window opening and closing at once still leaves it with the window closed, since it is told one
+   * change at a time. Red against sending both at once: applied newest first, the window's opening
+   * wins. */
+  test("the hotkey helper ends with the chat window's last state", async () => {
+    await launch("darwin");
+    const hotkey = app.helpers.get("voice-hotkey");
+    const controller = app.controller;
+    if (!hotkey || !controller) throw new Error("not launched");
+    hotkey.hold = true;
+    let applied: unknown = null;
+
+    controller.chat = {};
+    controller.onChatChange?.(true);
+    controller.chat = null;
+    controller.onChatChange?.(false);
+    // Answer whatever the helper holds, newest first, until nothing more comes.
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const held = hotkey.unanswered.splice(0).reverse();
+      if (held.length === 0) break;
+      for (const request of held) {
+        if (request.method === "setChatOpen") applied = request.params;
+        request.answer();
+      }
+    }
+
+    expect(applied).toEqual({ isOpen: false });
+    expect(hotkey.requests.filter((request) => request.method === "setChatOpen").map((request) => request.params)).toEqual([{ isOpen: false }, { isOpen: true }, { isOpen: false }]);
+  });
+
+  /** A change the helper fails (it exited, or timed out) holds up none after it. */
+  test("a failed chat-window change holds up none after it", async () => {
+    await launch("darwin");
+    const hotkey = app.helpers.get("voice-hotkey");
+    const controller = app.controller;
+    if (!hotkey || !controller) throw new Error("not launched");
+    hotkey.hold = true;
+    const chatRequests = () => hotkey.requests.filter((request) => request.method === "setChatOpen").map((request) => request.params);
+
+    controller.chat = {};
+    controller.onChatChange?.(true);
+    controller.chat = null;
+    controller.onChatChange?.(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    hotkey.unanswered.splice(0).forEach((request) => request.answer(new Error("exited")));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(chatRequests()).toEqual([{ isOpen: false }, { isOpen: true }, { isOpen: false }]);
+  });
+
+  /** The overlay page is given the conversation as the controller holds it, every turn, opened the way
+   * the overlay window opened it, and none once the window closes. */
+  test("the overlay page is given the conversation and the way it opened", async () => {
+    await launch("darwin");
+    const controller = app.controller;
+    const overlay = app.overlay;
+    if (!controller || !overlay) throw new Error("not launched");
+    const state = () => app.handlers.get(channels.getState)?.({}, "overlay") as { chat: unknown; chatOpensUpward: boolean };
+    const chat = {
+      turns: [
+        { id: 0, request: "When is the launch", tool: "answer", reply: "Friday" },
+        { id: 1, request: "And the party", tool: "answer", reply: "**Saturday**" },
+      ],
+      pendingRequest: "Where",
+      closesAt: null,
+    };
+
+    controller.chat = chat;
+    overlay.chatOpensUpward = true;
+    expect(state()).toMatchObject({ chat, chatOpensUpward: true });
+    overlay.chatOpensUpward = false;
+    expect(state()).toMatchObject({ chat, chatOpensUpward: false });
+    controller.chat = null;
+    expect(state().chat).toBeNull();
+  });
+
+  /** A follow-up's phases reach the overlay with the chat window open, so it stays the chat window;
+   * without one, the pill shows. */
+  test("a follow-up's phases keep the chat window", async () => {
+    await launch("darwin");
+    const controller = app.controller;
+
+    if (controller) controller.chat = {};
+    controller?.onPhaseChange?.({ kind: "arming" });
+    expect(app.overlay?.updates.at(-1)).toEqual(["arming", true]);
+    if (controller) controller.chat = null;
+    controller?.onPhaseChange?.({ kind: "listening" });
+    expect(app.overlay?.updates.at(-1)).toEqual(["listening", false]);
+  });
+
+  /** The chat window's commands reach the controller and the overlay; its links open only a web page,
+   * and only while it is open. */
+  test("the chat window's commands", async () => {
+    await launch("darwin");
+    const controller = app.controller;
+
+    await send({ type: "keepChatOpen" });
+    await send({ type: "closeChat" });
+    await send({ type: "chatHeight", height: 180 });
+    expect(await send({ type: "chatHeight", height: -1 })).toEqual({ error: expect.any(String) });
+    await send({ type: "openChatLink", url: "https://example.com/closed" });
+    if (controller) controller.chat = {};
+    await send({ type: "openChatLink", url: "https://example.com/docs" });
+    await send({ type: "openChatLink", url: "file:///Applications/Calculator.app" });
+
+    expect(controller?.calls).toEqual(["keepChatOpen", "closeChat"]);
+    expect(app.overlay?.heights).toEqual([180]);
+    expect(app.opened).toEqual(["https://example.com/docs"]);
+  });
+
+  /** An agent tool's switch is stored and shows in the Settings and welcome windows; a name that is
+   * no agent tool, or a value that is no boolean (even one that reads as on or off), is refused and
+   * changes nothing. */
+  test("an agent tool's switch", async () => {
+    await launch("darwin");
+    const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { enabledTools: string[] };
+
+    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: null });
+    for (const value of ["false", "true", 1, null]) {
+      expect(await send({ type: "setAgentToolEnabled", tool: "answer", value })).toEqual({ error: expect.any(String) });
+    }
+    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: true })).toEqual({ error: null });
+    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird", "answer"]);
+    expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: null });
+    expect(await send({ type: "setAgentToolEnabled", tool: "retired-tool", value: false })).toEqual({ error: expect.any(String) });
+
+    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+    expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
   });
 });

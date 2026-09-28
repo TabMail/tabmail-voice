@@ -153,6 +153,9 @@ export class AccountModel extends Observable {
   /** Supabase refresh tokens are single-use: concurrent refreshes would invalidate each other, so
    * every caller awaits the one in flight, and gets what it gave its own caller. */
   private refreshing: Promise<string | null> | null = null;
+  /** Called as the account changes (signed out, or another one signed in), not for a refreshed
+   * token: the dictation controller ends its conversation there. */
+  onAccountChange: (() => void) | undefined;
 
   constructor(
     private readonly client: AuthClient,
@@ -236,7 +239,9 @@ export class AccountModel extends Observable {
   }
 
   private set(session: TabMailSession | null): void {
+    const previousUser = this.current?.userId ?? null;
     this.current = session;
+    if ((session?.userId ?? null) !== previousUser) this.onAccountChange?.();
     this.changed();
   }
 }

@@ -27,7 +27,8 @@ export class Windows {
 
   constructor(private readonly state: <Name extends WindowName>(name: Name) => WindowStates[Name]) {}
 
-  /** The overlay: transparent, never focused, above everything, on every Space, click-through. */
+  /** The overlay: transparent, never focused, above everything, on every Space, click-through
+   * except while it shows the chat window, whose first click counts (its close button, a link). */
   overlay(): BrowserWindow {
     return this.window("overlay", {
       ...config.overlayCanvasSize,
@@ -38,6 +39,7 @@ export class Windows {
       resizable: false,
       movable: false,
       focusable: false,
+      acceptFirstMouse: true,
       skipTaskbar: true,
       alwaysOnTop: true,
       show: false,

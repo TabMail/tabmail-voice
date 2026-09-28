@@ -237,6 +237,39 @@ struct PushToTalkGestureTests {
         #expect(gesture.keyPressed(keyCode: escape, isRepeat: false) == nil)
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 5) == .start)
     }
+
+    /// With the chat window open and no hold, Escape closes it, kept from the app; its auto-repeat does
+    /// nothing, and every other key reaches the app.
+    @Test func escapeClosesTheOpenChatWindow() {
+        var gesture = makeGesture()
+        gesture.isChatOpen = true
+        #expect(gesture.owns(keyCode: escape))
+        #expect(!gesture.owns(keyCode: space) && !gesture.owns(keyCode: letterA))
+        #expect(gesture.keyPressed(keyCode: letterA, isRepeat: false) == nil)
+        #expect(gesture.keyPressed(keyCode: escape, isRepeat: true) == nil)
+        #expect(gesture.keyPressed(keyCode: escape, isRepeat: false) == .closeChat)
+        gesture.isChatOpen = false
+        #expect(!gesture.owns(keyCode: escape))
+        #expect(gesture.keyPressed(keyCode: escape, isRepeat: false) == nil)
+    }
+
+    /// A follow-up under way with the chat window open: Escape closes the window, which cancels the
+    /// follow-up; a hold's key-up then does nothing, and hands-free listening is over.
+    @Test func escapeDuringAFollowUpClosesTheChatWindow() {
+        var held = makeGesture()
+        held.isChatOpen = true
+        _ = held.modifierChanged(keyCode: hotkeyCode, isDown: true, at: clock.tick())
+        #expect(held.owns(keyCode: escape))
+        #expect(held.keyPressed(keyCode: escape, isRepeat: false) == .closeChat)
+        #expect(held.modifierChanged(keyCode: hotkeyCode, isDown: false, at: clock.tick()) == nil)
+
+        var handsFree = makeGesture()
+        handsFree.isChatOpen = true
+        _ = doubleTap(&handsFree)
+        #expect(handsFree.owns(keyCode: escape))
+        #expect(handsFree.keyPressed(keyCode: escape, isRepeat: false) == .closeChat)
+        #expect(!handsFree.isActive)
+    }
 }
 
 

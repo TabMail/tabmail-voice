@@ -4,10 +4,11 @@
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../src/core/account.js";
+import { chatTranscript } from "../src/core/agent/agentChat.js";
 import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
-import { AgentFailure, type AgentTool } from "../src/core/agent/tools.js";
+import { AgentFailure, type AgentTool, agentTools } from "../src/core/agent/tools.js";
 import { BackendError, CompletionsClient, TranscriptionClient } from "../src/core/backend.js";
 import * as config from "../src/core/config.js";
 import { DictationController, nothingHeardMessage, type Phase } from "../src/core/dictationController.js";
@@ -39,8 +40,12 @@ const failed = (message: string): Phase => ({ kind: "failed", message });
 const appChanged = new AgentFailure("appChanged").message;
 const microphoneFailed = failed("Couldn't start the microphone.");
 
+/** Without Answer: most agent tests are about the writing tools and Thunderbird, and Answer would
+ * make every request a choice. The chat window's tests switch it on (`withAnswer`). */
+const toolsWithoutAnswer: AgentTool[] = agentTools.filter((tool) => tool !== "answer");
+
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, emailClient: FakeThunderbird.app, hasTabMail: true };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, emailClient: FakeThunderbird.app, hasTabMail: true };
 }
 
 /** A screen with `sentinel` in its app name and text. */
@@ -257,6 +262,43 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(transcription.authorizations).toEqual(["Bearer access-1"]);
     expect(completions.requests).toHaveLength(0);
     expect(pasted).toEqual([transcript]);
+  });
+
+  /** A held dictation during which the user signs out and into another account: the transcript is
+   * pasted as heard, with no cleanup under the other account (ADR-DESK-008). */
+  test("an account switch during a held dictation pastes it as heard", async () => {
+    const account = signedIn(auth);
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(200, cleanedStream);
+    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
+    transcription.gate = async () => {
+      account.signOut();
+      await account.verify(Fixtures.email, "123456");
+    };
+    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
+
+    await holdAndRelease(controller);
+    expect(await eventually(() => pastes.length > 0)).toBe(true);
+
+    expect(completions.requests).toHaveLength(0);
+    expect(pastes).toEqual([transcript]);
+  });
+
+  /** The cleanup's token is refused and its refresh rejected, so the app signs out: the held
+   * dictation's transcript is still pasted as heard, as with every failed cleanup. */
+  test("a sign-out during a held dictation's cleanup pastes it as heard", async () => {
+    const account = signedIn(auth);
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(401, { error: "expired" });
+    auth.enqueue(400, { error: "invalid_grant" });
+    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
+
+    await holdAndRelease(controller);
+    expect(await eventually(() => pastes.length > 0)).toBe(true);
+
+    expect(account.session).toBeNull();
+    expect(completions.requests).toHaveLength(1);
+    expect(pastes).toEqual([transcript]);
   });
 
   /** A cleanup that never answers holds the paste only until the app's own cleanup timeout; then the
@@ -562,8 +604,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       context: ScreenContext | null,
       thunderbird?: FakeThunderbird,
       prepare: (controller: DictationController) => void = () => {},
+      options: { account?: AccountModel; paste?: (text: string, signal: AbortSignal) => Promise<void>; frontmostApp?: () => Promise<number | null> } = {},
     ): Promise<{ controller: DictationController; pastes: string[]; phases: Phase[] }> {
-      const { controller, pastes } = makeController({ capture: new CountingCapture(true), thunderbird });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), thunderbird, ...options });
       const phases: Phase[] = [];
       controller.onPhaseChange = (phase) => phases.push(phase);
       controller.captureContext = () => (context ? Promise.resolve(context) : null);
@@ -640,25 +683,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(cleanupVars(0)?.content).toBe("system_prompt_desktop_compose");
     });
 
-    /** The selection alone decides between Edit and Compose, as the bubbles showed it: the agent only
-     * decides whether the request goes to the email app, and its pick of the other writing tool is
-     * overruled. */
-    test.each<[string, string, AgentTool, string]>([
-      ["Ship it Friday or else.", "compose", "edit", "system_prompt_desktop_edit"],
-      ["", "edit", "compose", "system_prompt_desktop_compose"],
-    ])("the selection %j decides the writing tool over the agent's %s", async (selected, agentChoice, tool, prompt) => {
+    /** The selection alone decides between Edit and Compose, as the bubbles showed it: the other
+     * writing tool is not offered (`available_tools`), and an agent that names it anyway fails the
+     * request, pasting nothing. */
+    test.each<[string, string, AgentTool]>([
+      ["Ship it Friday or else.", "compose", "edit"],
+      ["", "edit", "compose"],
+    ])("with the selection %j the agent's %s is not offered", async (selected, agentChoice, tool) => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply(agentChoice));
-      completions.enqueue(200, reply("Could we ship on Friday?"));
 
-      const { controller, pastes, phases } = await carryOut(selectionScreen(selected), new FakeThunderbird());
+      const { controller, pastes } = await carryOut(selectionScreen(selected), new FakeThunderbird());
 
       expect(controller.tools).toEqual([tool, "thunderbird"]);
-      expect(phases).toContainEqual(running(tool));
-      expect(phases).not.toContainEqual(running(tool === "edit" ? "compose" : "edit"));
-      expect(pastes).toEqual(["Could we ship on Friday?"]);
-      expect(cleanupVars(0)?.content).toBe("system_prompt_desktop_agent");
-      expect(cleanupVars(1)?.content).toBe(prompt);
+      expect(completions.body(0).available_tools).toEqual([tool, "thunderbird"]);
+      expect(completions.requests).toHaveLength(1);
+      expect(controller.phase).toEqual(failed(new AgentFailure("noTool").message));
+      expect(pastes).toEqual([]);
     });
 
     /** Whatever goes wrong, agent mode pastes nothing: the spoken request is not text for the document. */
@@ -902,7 +943,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, emailClient: "org.example.othermail", hasTabMail: true };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, emailClient: "org.example.othermail", hasTabMail: true };
         };
         const read = controller.captureContext;
         controller.captureContext = () => {
@@ -926,6 +967,34 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(thunderbird.apps).toEqual([FakeThunderbird.app, "org.example.othermail"]);
       expect([...hosts(transcription), ...hosts(completions)].filter((host) => host === "dev.example.com")).toHaveLength(3);
       expect(reads).toBe(1);
+    });
+
+    /** The bubbles show the tools switched on at key-down, the ones the request is offered: a tool
+     * switched off during the hold stays until the next. */
+    test("the bubbles keep the tools switched on at key-down", async () => {
+      const thunderbird = new FakeThunderbird();
+      const shown: AgentTool[][] = [];
+      transcription.enqueue(200, { text: "find sam's invoice" });
+      completions.enqueue(200, reply("thunderbird"));
+      completions.enqueue(200, reply("Find the invoice Sam sent."));
+
+      await carryOut(selectionScreen(""), thunderbird, (controller) => {
+        controller.onPhaseChange = (phase) => {
+          if (phase.kind !== "listening") return;
+          shown.push(controller.tools);
+          prefs.value = { ...prefs.value, enabledTools: ["edit"] };
+          // Switching mode and back redraws the bubbles.
+          controller.toggleMode();
+          controller.toggleMode();
+          shown.push(controller.tools);
+        };
+      });
+
+      expect(shown).toEqual([
+        ["compose", "thunderbird"],
+        ["compose", "thunderbird"],
+      ]);
+      expect(thunderbird.pasted).toEqual(["Find the invoice Sam sent."]);
     });
 
     /** A hold is transcribed in the keyboard's language at its key-down, which the overlay shows from
@@ -1148,6 +1217,524 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual([]);
       expect(pastes).toEqual(["We ship on Friday.", cleaned]);
       expect(cleanupVars(1)?.content).toBe(config.cleanupPrompt);
+    });
+    describe("the chat window", () => {
+      const question = "what does this error mean";
+      const answer = "It means the function is not defined yet.";
+      /** Chats left open by a test, closed after it so no timeout outlives it. */
+      const opened: DictationController[] = [];
+
+      afterEach(() => {
+        for (const controller of opened.splice(0)) controller.closeChat();
+      });
+
+      /** Every agent tool on, as they are by default. */
+      function allToolsOn(): void {
+        prefs.value = { ...prefs.value, enabledTools: [...agentTools] };
+      }
+
+      function setTools(tools: AgentTool[]): void {
+        prefs.value = { ...prefs.value, enabledTools: tools };
+      }
+
+      /** Queues a request the agent gives `tool`, which writes `text`. */
+      function queue(spoken: string, tool: AgentTool, text: string): void {
+        transcription.enqueue(200, { text: spoken });
+        completions.enqueue(200, reply(tool));
+        completions.enqueue(200, reply(text));
+      }
+
+      /** Asks `question` with nothing selected, which the agent answers: the chat window opens. With no
+       * email app, the agent is offered Compose and Answer. */
+      async function openChat(
+        prepare: (controller: DictationController) => void = () => {},
+        thunderbird?: FakeThunderbird,
+        options: Parameters<typeof carryOut>[3] = {},
+      ): Promise<{ controller: DictationController; pastes: string[]; chatChanges: boolean[] }> {
+        allToolsOn();
+        queue(question, "answer", answer);
+        const chatChanges: boolean[] = [];
+        const { controller, pastes } = await carryOut(
+          selectionScreen(""),
+          thunderbird,
+          (controller) => {
+            controller.onChatChange = (isOpen) => chatChanges.push(isOpen);
+            prepare(controller);
+          },
+          options,
+        );
+        opened.push(controller);
+        return { controller, pastes, chatChanges };
+      }
+
+      /** A follow-up: a hold of the hotkey with the chat window open, and no Space. */
+      async function followUp(controller: DictationController): Promise<void> {
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => settled(controller))).toBe(true);
+      }
+
+      /** An answer is shown in the chat window, not pasted, and the window closes on its own unless
+       * touched. */
+      test("an answer opens the chat window", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
+
+        expect(pastes).toEqual([]);
+        expect(controller.phase).toEqual(idle);
+        expect(controller.chat?.turns).toEqual([{ id: 0, request: question, tool: "answer", reply: answer }]);
+        expect(controller.chat?.closesAt).not.toBeNull();
+        expect(chatChanges).toEqual([true]);
+        expect(completions.requests).toHaveLength(2);
+        expect(completions.body(0).available_tools).toEqual(["compose", "answer"]);
+        expect(cleanupVars(0)?.conversation).toBe("");
+        expect(cleanupVars(1)?.content).toBe("system_prompt_desktop_answer");
+        expect(cleanupVars(1)?.user_request).toBe(question);
+      });
+
+      /** With the chat window open, the hotkey asks a follow-up: always in agent mode (Space switches
+       * nothing), carrying the conversation so far, and it keeps the window open for good. */
+      test("a follow-up carries the conversation in agent mode", async () => {
+        const { controller } = await openChat();
+        queue("and how do I fix it", "answer", "Define it before the call.");
+
+        controller.handle("start");
+        expect(controller.mode).toBe("agent");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("toggleMode");
+        expect(controller.mode).toBe("agent");
+        expect(controller.chat?.closesAt).toBeNull();
+        controller.handle("finish");
+        expect(await eventually(() => controller.phase.kind === "idle" && controller.chat?.turns.length === 2)).toBe(true);
+
+        const conversation = `User: ${question}\nTabMail: ${answer}`;
+        expect(cleanupVars(2)?.conversation).toBe(conversation);
+        expect(cleanupVars(2)?.user_request).toBe("and how do I fix it");
+        expect(cleanupVars(3)?.conversation).toBe(conversation);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Define it before the call."]);
+        expect(controller.chat?.closesAt).toBeNull();
+      });
+
+      /** A follow-up another tool carries out is listed in the chat with what it did, so a later
+       * follow-up can refer to it. */
+      test("a follow-up's other tool is listed in the chat", async () => {
+        const { controller, pastes } = await openChat();
+        queue("write the fix here", "compose", "Define it first.");
+
+        await followUp(controller);
+
+        expect(pastes).toEqual(["Define it first."]);
+        expect(controller.chat?.turns.map((turn) => turn.tool)).toEqual(["answer", "compose"]);
+        expect(chatTranscript(controller.chat ?? { turns: [], pendingRequest: null, closesAt: null })).toMatch(/User: write the fix here\nTabMail \[Pasted at the cursor\]: Define it first\.$/);
+      });
+
+      /** A follow-up can hand the email app a request, which gets exactly the words the chat lists and
+       * pastes nothing in the app in front. */
+      test("a follow-up offers the email app", async () => {
+        const thunderbird = new FakeThunderbird();
+        const { controller, pastes } = await openChat(() => {}, thunderbird);
+        expect(controller.chat).not.toBeNull();
+        queue("find the invoice from last week", "thunderbird", "Find the invoice from last week.");
+
+        await followUp(controller);
+
+        expect(controller.tools).toContain("thunderbird");
+        expect(completions.requests).toHaveLength(4);
+        expect(completions.body(2).available_tools).toContain("thunderbird");
+        expect(controller.chat?.turns.map((turn) => turn.tool)).toEqual(["answer", "thunderbird"]);
+        expect(controller.chat?.turns.at(-1)?.reply).toBe("Find the invoice from last week.");
+        expect(thunderbird.pasted).toEqual(["Find the invoice from last week."]);
+        expect(pastes).toEqual([]);
+      });
+
+      /** While a follow-up is under way its words show in the chat as a pending request; once it is
+       * answered they are a turn, and no longer pending. */
+      test("a follow-up shows as pending until answered", async () => {
+        const { controller } = await openChat();
+        queue("and how do I fix it", "answer", "Define it before the call.");
+        const pending: (string | null | undefined)[] = [];
+        completions.gate = async () => {
+          pending.push(controller.chat?.pendingRequest);
+        };
+
+        await followUp(controller);
+
+        expect(pending[0]).toBe("and how do I fix it");
+        expect(controller.chat?.pendingRequest).toBeNull();
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual([question, "and how do I fix it"]);
+      });
+
+      /** A follow-up no tool can carry out fails in the pill: the chat stays open, with its turns as
+       * they were and nothing left pending. */
+      test("a failed follow-up leaves the chat as it was", async () => {
+        const { controller, pastes } = await openChat();
+        transcription.enqueue(200, { text: "make it shorter" });
+        completions.enqueue(200, reply("rewrite"));
+
+        await followUp(controller);
+
+        expect(controller.phase).toEqual(failed(new AgentFailure("noTool").message));
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual([question]);
+        expect(controller.chat?.pendingRequest).toBeNull();
+        expect(pastes).toEqual([]);
+      });
+
+      /** Closing the chat window while a follow-up's failure shows ends that too: the pill would show
+       * it where the conversation started. */
+      test("closing the chat window ends a failure showing", async () => {
+        const { controller } = await openChat();
+        transcription.enqueue(200, { text: "make it shorter" });
+        completions.enqueue(200, reply("rewrite"));
+        await followUp(controller);
+        expect(controller.phase.kind).toBe("failed");
+
+        controller.handle("closeChat");
+
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+      });
+
+      /** The timeout closing the chat window while a refused hold's failure shows ends that too. */
+      test("the timeout ends a failure showing as it closes the chat window", async () => {
+        const { controller } = await openChat((controller) => {
+          controller.chatTimeout = 300;
+        });
+        prefs.value = { ...prefs.value, hasConsented: false };
+        controller.handle("start");
+        expect(controller.phase.kind).toBe("failed");
+
+        expect(await eventually(() => controller.chat === null)).toBe(true);
+        expect(controller.phase).toEqual(idle);
+      });
+
+      /** A touch that arrives after the chat window closed (a pointer event behind the close) opens
+       * nothing. */
+      test("a touch after the chat window closed opens nothing", async () => {
+        const { controller, chatChanges } = await openChat();
+        controller.handle("closeChat");
+
+        controller.keepChatOpen();
+
+        expect(controller.chat).toBeNull();
+        expect(chatChanges).toEqual([true, false]);
+        controller.handle("start");
+        expect(controller.mode).toBe("dictation");
+        controller.handle("cancel");
+      });
+
+      /** A follow-up shows no tip: Space switches nothing in it, and it is no hold to teach a double tap
+       * for. */
+      test("a follow-up shows no tip", async () => {
+        const { controller } = await openChat((controller) => {
+          controller.tipDisplayDuration = () => 60_000;
+        });
+        controller.doubleTapTipHoldDuration = 100;
+        expect(new TipBook(tipStore).isEligible("doubleTap")).toBe(true);
+
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening" && controller.isHearing)).toBe(true);
+        expect(await throughout(500, () => controller.tip === null)).toBe(true);
+        controller.handle("cancel");
+      });
+
+      /** Untouched, the chat window closes when its timeout runs out, and the next hold dictates again. */
+      test("the chat window closes when its timeout runs out", async () => {
+        const { controller, chatChanges } = await openChat((controller) => {
+          controller.chatTimeout = 100;
+        });
+
+        expect(await eventually(() => controller.chat === null)).toBe(true);
+        expect(chatChanges).toEqual([true, false]);
+        controller.handle("start");
+        expect(controller.mode).toBe("dictation");
+        controller.handle("cancel");
+      });
+
+      /** Touched (a hover, click or scroll), the chat window no longer times out. */
+      test("touching the chat window keeps it open", async () => {
+        const { controller } = await openChat((controller) => {
+          controller.chatTimeout = 100;
+        });
+
+        controller.keepChatOpen();
+
+        expect(controller.chat?.closesAt).toBeNull();
+        expect(await throughout(400, () => controller.chat !== null)).toBe(true);
+      });
+
+      /** A closed chat's timeout never closes the next one: a chat reopened and touched stays open past
+       * the first one's deadline. */
+      test("an earlier chat's timeout never closes a later one", async () => {
+        const timeout = 1_500;
+        const { controller } = await openChat((controller) => {
+          controller.chatTimeout = timeout;
+        });
+        const firstDeadline = Date.now() + timeout;
+        controller.handle("closeChat");
+        expect(controller.chat).toBeNull();
+        queue(question, "answer", answer);
+
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => controller.chat !== null)).toBe(true);
+        controller.keepChatOpen();
+
+        // The later chat is open before the first one's deadline, and stays open past it.
+        expect(Date.now()).toBeLessThan(firstDeadline);
+        expect(await throughout(firstDeadline - Date.now() + 500, () => controller.chat !== null)).toBe(true);
+      });
+
+      /** Escape or the close button: the conversation is gone, and a follow-up under way is dropped
+       * without its reply being shown, pasted or asked about further. */
+      test("closing the chat window drops the follow-up under way", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
+        queue("and how do I fix it", "answer", "Define it before the call.");
+        completions.gate = async () => {
+          controller.handle("closeChat");
+        };
+
+        await followUp(controller);
+        // The reply still arrives after the close.
+        await sleep(300);
+
+        expect(controller.chat).toBeNull();
+        expect(chatChanges).toEqual([true, false]);
+        expect(controller.phase).toEqual(idle);
+        expect(completions.requests).toHaveLength(3);
+        expect(pastes).toEqual([]);
+      });
+
+      /** Closing the chat window while the follow-up is still heard stops the recording, and sends
+       * nothing. */
+      test("closing the chat window while listening sends nothing", async () => {
+        const { controller } = await openChat();
+
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("closeChat");
+
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+        await sleep(100);
+        expect(transcription.requests).toHaveLength(1);
+      });
+
+      /** Closed while the follow-up's answer is written: the answer never opens the window again. */
+      test("a closed chat is not reopened by its last answer", async () => {
+        const { controller } = await openChat();
+        queue("follow up", "answer", "late answer");
+        let closedAtAnswer = false;
+        completions.gate = async () => {
+          if (completions.requests.length !== 4) return;
+          closedAtAnswer = true;
+          controller.closeChat();
+        };
+
+        await followUp(controller);
+        await sleep(200);
+
+        expect(closedAtAnswer).toBe(true);
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+      });
+
+      /** Closed while the follow-up's answer waits on the app in front: the answer opens no chat. */
+      test("an answer that outlives its closed chat opens none", async () => {
+        const appInFront = deferred<number | null>();
+        let holds = 0;
+        const { controller } = await openChat(() => {}, undefined, {
+          frontmostApp: () => (++holds === 1 ? Promise.resolve(front.pid) : appInFront.promise),
+        });
+        queue("and how do I fix it", "answer", "Define it before the call.");
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => completions.requests.length === 4 && controller.phase.kind === "running")).toBe(true);
+        await sleep(100);
+
+        controller.closeChat();
+        appInFront.resolve(front.pid);
+        await sleep(200);
+
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+      });
+
+      /** A follow-up offers its tools from the moment it listens, as a hold switched to agent mode
+       * does: the bubbles need not wait for the transcript. */
+      test("a follow-up's tools are known while it listens", async () => {
+        const { controller } = await openChat(() => {}, new FakeThunderbird());
+
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+
+        expect(await eventually(() => controller.tools.length === 3)).toBe(true);
+        expect(controller.tools).toEqual(["compose", "thunderbird", "answer"]);
+        controller.handle("cancel");
+      });
+
+      /** A follow-up pasting when its window closed, and a new conversation opened, stays out of it. */
+      test("a late delivery cannot join a newer conversation", async () => {
+        const delivery = deferred<void>();
+        let pasteReached = false;
+        const { controller } = await openChat(() => {}, undefined, {
+          paste: async () => {
+            pasteReached = true;
+            await delivery.promise;
+          },
+        });
+        queue("old follow up", "compose", "old pasted words");
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => pasteReached)).toBe(true);
+        expect(controller.phase).toEqual(running("compose"));
+        controller.closeChat();
+        queue("new conversation", "answer", "new reply");
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["new conversation"]);
+
+        delivery.resolve();
+        await sleep(200);
+
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["new conversation"]);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["new reply"]);
+        expect(controller.phase).toEqual(idle);
+      });
+
+      /** Signing out ends the conversation: another account that signs in next starts afresh, and none
+       * of the first account's words go with its requests. */
+      test("signing out ends the conversation before the next account", async () => {
+        const account = signedIn(auth);
+        const { controller } = await openChat(() => {}, undefined, { account });
+
+        account.signOut();
+
+        expect(controller.chat).toBeNull();
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
+        await account.verify(Fixtures.email, "123456");
+        queue("second account question", "answer", "second account reply");
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => settled(controller) && completions.requests.length === 4)).toBe(true);
+        expect(completions.authorizations[2]).toBe("Bearer access-b");
+        expect(cleanupVars(2)?.conversation).toBe("");
+        expect(cleanupVars(3)?.conversation).toBe("");
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
+      });
+
+      /** Signed out while the answer is written: it never opens a chat window. */
+      test("signing out during an answer opens no chat", async () => {
+        const account = signedIn(auth);
+        completions.gate = async () => {
+          if (completions.requests.length === 2) account.signOut();
+        };
+
+        const { controller } = await openChat(() => {}, undefined, { account });
+        await sleep(100);
+
+        expect(completions.requests).toHaveLength(2);
+        expect(account.session).toBeNull();
+        expect(controller.chat).toBeNull();
+        expect(controller.phase).toEqual(idle);
+      });
+
+      /** A refreshed token for the same account keeps the conversation. */
+      test("a refreshed token keeps the conversation", async () => {
+        const account = signedIn(auth);
+        const { controller } = await openChat(() => {}, undefined, { account });
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
+
+        expect(await account.validToken(true)).toBe("access-2");
+
+        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual([question]);
+      });
+
+      /** With every agent tool turned off in Settings, agent mode says so, and asks the backend
+       * nothing. */
+      test("with no tool enabled agent mode says so", async () => {
+        setTools([]);
+        transcription.enqueue(200, { text: request });
+
+        const { controller, pastes } = await carryOut(selectionScreen(""));
+
+        expect(controller.phase).toEqual(failed(new AgentFailure("noToolEnabled").message));
+        expect(controller.tools).toEqual([]);
+        expect(completions.requests).toHaveLength(0);
+        expect(pastes).toEqual([]);
+      });
+
+      /** Tools switched off while the user speaks still apply to that request; the next request reads
+       * the change. */
+      test("a tool switched off after key-down applies from the next request", async () => {
+        setTools(["answer"]);
+        transcription.enqueue(200, { text: "first question" });
+        completions.enqueue(200, reply("first answer"));
+        const { controller } = makeController({ capture: new CountingCapture(true) });
+        opened.push(controller);
+        controller.captureContext = async () => selectionScreen("");
+
+        controller.handle("start");
+        controller.handle("toggleMode");
+        expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+        setTools([]);
+        controller.handle("finish");
+        expect(await eventually(() => settled(controller))).toBe(true);
+
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["first answer"]);
+        transcription.enqueue(200, { text: "next question" });
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
+        expect(controller.phase).toEqual(failed(new AgentFailure("noToolEnabled").message));
+        expect(completions.requests).toHaveLength(1);
+      });
+
+      /** A tool switched on after key-down waits for the next request. */
+      test("a tool switched on after key-down waits for the next request", async () => {
+        setTools([]);
+        transcription.enqueue(200, { text: "first request" });
+        let changed = false;
+        transcription.gate = async () => {
+          changed = true;
+          setTools(["answer"]);
+        };
+
+        const { controller } = await carryOut(selectionScreen(""));
+        opened.push(controller);
+
+        expect(changed).toBe(true);
+        expect(controller.phase).toEqual(failed(new AgentFailure("noToolEnabled").message));
+        expect(completions.requests).toHaveLength(0);
+        transcription.gate = undefined;
+        transcription.enqueue(200, { text: "next request" });
+        completions.enqueue(200, reply("next answer"));
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => controller.chat !== null)).toBe(true);
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["next answer"]);
+      });
+
+      /** The only tool switched on does its own job unasked: Answer replies in the chat window, the
+       * email app's tool sends to it; neither pastes in the app in front. */
+      test.each<AgentTool>(["answer", "thunderbird"])("the only tool on (%s) does its own job", async (tool) => {
+        setTools([tool]);
+        transcription.enqueue(200, { text: "the request" });
+        completions.enqueue(200, reply("the reply"));
+        const thunderbird = new FakeThunderbird();
+
+        const { controller, pastes } = await carryOut(selectionScreen(""), thunderbird);
+        opened.push(controller);
+
+        expect(completions.requests).toHaveLength(1);
+        expect(controller.phase).toEqual(idle);
+        expect(cleanupVars(0)?.content).toBe(tool === "answer" ? "system_prompt_desktop_answer" : "system_prompt_desktop_thunderbird");
+        expect(pastes).toEqual([]);
+        if (tool === "answer") {
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["the reply"]);
+          expect(thunderbird.events).toEqual([]);
+        } else {
+          expect(controller.chat).toBeNull();
+          expect(thunderbird.pasted).toEqual(["the reply"]);
+        }
+      });
     });
   });
 
