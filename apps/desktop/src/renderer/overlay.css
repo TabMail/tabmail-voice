@@ -212,6 +212,43 @@ body {
   cursor: pointer;
 }
 
+.chat-spinner {
+  flex: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.2);
+  border-top-color: rgba(0, 0, 0, 0.55);
+  border-radius: 50%;
+}
+
+.chat-confirmation {
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chat-confirmation-buttons {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-cancel,
+.chat-confirm {
+  border: none;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-cancel {
+  background: rgba(0, 0, 0, 0.06);
+  color: black;
+}
+
+.chat-confirm {
+  color: white;
+}
+
 .chat-status {
   display: flex;
   justify-content: center;

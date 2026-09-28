@@ -39,6 +39,8 @@ describe("IPC", () => {
       { type: "welcomeBack" },
       { type: "welcomeGoTo", index: 0 },
       { type: "openURL", url: "https://example.com" },
+      { type: "answerConfirmation", confirmed: true },
+      { type: "answerConfirmation", confirmed: false },
     ]) {
       expect(isCommand(command), command.type).toBe(true);
     }
@@ -61,6 +63,8 @@ describe("IPC", () => {
     { type: "chatHeight", height: -1 },
     { type: "chatHeight", height: Number.POSITIVE_INFINITY },
     { type: "chatHeight", height: Number.NaN },
+    { type: "answerConfirmation" },
+    { type: "answerConfirmation", confirmed: "yes" },
   ])("a malformed command is refused (%j)", (command) => {
     expect(isCommand(command)).toBe(false);
   });

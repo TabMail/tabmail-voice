@@ -3,11 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "../account.js";
-import type { CompletionsClient, CompletionsMessage } from "../backend.js";
+import { BackendError, type CompletionsClient, type CompletionsMessage, type ToolCall } from "../backend.js";
 import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
 import type { ScreenContext } from "../screenContext.js";
 import { charCount, trimWhitespace } from "../text.js";
+import type { LoopTool } from "./loopTool.js";
 import { AgentFailure, type AgentTool, isAgentTool, selection, toolImplementations } from "./tools.js";
 
 /**
@@ -74,6 +75,56 @@ export const DesktopAgent = {
     const written = toolImplementations[tool].fitted(text, context);
     log.content(`DesktopAgent: ${tool} wrote`, written);
     return written;
+  },
+
+  /** The tools the Answer prompt's model may call (`available_tools`): the backend's date tools, and
+   * those of `loopTools` that run on this computer. */
+  answerTools(loopTools: readonly LoopTool[]): string[] {
+    return [...config.answerServerTools, ...loopTools.map((tool) => tool.name)];
+  },
+
+  /** The answer to `request`, from the backend's tool loop: each round either replies, or calls
+   * tools, which `runTool` runs here (the backend runs its own); their results go back with the
+   * loop's state for the next round. The backend ends the loop at its round limit, counting the
+   * rounds the app sends back (`current_round`), as the iOS app's `BackendClient` does. */
+  async answer(
+    request: string,
+    context: ScreenContext | null,
+    conversation: string,
+    tools: readonly string[],
+    client: CompletionsClient,
+    account: AccountModel,
+    userId: string | null,
+    runTool: (call: ToolCall) => Promise<string>,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const message = DesktopAgent.toolMessage("answer", request, context, conversation);
+    let state: unknown;
+    let round = 0;
+    for (;;) {
+      // A request cancelled while a tool ran (the chat window closed as it asked) asks nothing more.
+      signal?.throwIfAborted();
+      const started = performance.now();
+      const result = await withFreshToken(account, userId, (token) => client.round(message, tools, state, token, signal));
+      log.debug(() => `DesktopAgent: ${message.content} round ${round} answered in ${elapsed(started)}`);
+      if (result.kind === "reply") {
+        const text = trimWhitespace(result.text);
+        if (text === "") throw new AgentFailure("noText");
+        log.content("DesktopAgent: answer wrote", text);
+        return text;
+      }
+      round += 1;
+      // The state is JSON the round checked is there; its history must be a list to add to.
+      const fields = result.state as Record<string, unknown>;
+      if (!Array.isArray(fields.harmony_messages)) throw new BackendError("invalidResponse");
+      const added: unknown[] = [...fields.harmony_messages];
+      for (const call of result.calls) {
+        signal?.throwIfAborted();
+        const output = await runTool(call);
+        added.push({ role: "tool", content: output, tool_call_id: call.id });
+      }
+      state = { ...fields, harmony_messages: added, current_round: round };
+    }
   },
 
   /** The agent's prompt and its variables. Every variable is sent, empty when unknown: the backend

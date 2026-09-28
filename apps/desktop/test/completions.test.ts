@@ -147,6 +147,90 @@ describe("CompletionsClient", () => {
   });
 });
 
+describe("a tool-loop round", () => {
+  const tools = ["date_to_day", "time_delta", "example_read"];
+
+  /** A tool-loop round asks with tools on, offering the tools named; the first round sends no state. */
+  test("a round offers its tools with tools on", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.reply("Friday is the 3rd."));
+
+    expect(await makeClient(stub).round(message, tools, undefined, "token-abc")).toEqual({ kind: "reply", text: "Friday is the 3rd." });
+
+    const body = stub.body(0);
+    expect(body.disable_tools).toBe(false);
+    expect(body.available_tools).toEqual(tools);
+    expect(body).not.toHaveProperty("conversation_state");
+    expect(body.messages).toEqual([{ role: "system", content: "system_prompt_example", dictation: "hello world", app_name: "Example" }]);
+    expect(stub.requests[0]?.headers.Authorization).toBe("Bearer token-abc");
+  });
+
+  /** A round that calls tools returns them and the loop's state; the next round sends that state back
+   * as it came, every field the app doesn't read kept, nulls and fractions too. */
+  test("a round returns its tool calls, and the next sends the state back", async () => {
+    const state = { ...Fixtures.loopState(), nothing: null, ratio: 0.25, nested: { list: [1, "two", null, 3.5] } };
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.toolCalls([{ id: "call_1", name: "example_read", arguments: '{"day":"friday"}' }], state));
+    stub.enqueue(200, Fixtures.reply("Done."));
+    const client = makeClient(stub);
+
+    const round = await client.round(message, tools, undefined, "t");
+    expect(round).toEqual({ kind: "toolCalls", calls: [{ id: "call_1", type: "function", function: { name: "example_read", arguments: '{"day":"friday"}' } }], state });
+    if (round.kind !== "toolCalls") return;
+
+    await client.round(message, tools, round.state, "t");
+    expect(stub.body(1).conversation_state).toEqual(state);
+    expect(stub.body(1).disable_tools).toBe(false);
+  });
+
+  /** Tool calls without the loop's state can't be continued: the request fails. */
+  test.each([undefined, null])("tool calls with the state %s fail", async (state) => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.completionsStream(JSON.stringify({ tool_calls: [{ id: "call_1", function: { name: "example_read", arguments: "{}" } }], conversation_state: state })));
+    expect((await backendError(makeClient(stub).round(message, tools, undefined, "t"))).kind).toBe("invalidResponse");
+  });
+
+  /** Tool calls the app can't read (an id, name or arguments missing or not a string) fail. */
+  test.each([
+    `{"tool_calls":{"id":"call_1"}}`,
+    `{"tool_calls":[{"function":{"name":"example_read","arguments":"{}"}}]}`,
+    `{"tool_calls":[{"id":"call_1","function":{"name":7,"arguments":"{}"}}]}`,
+    `{"tool_calls":[{"id":"call_1","function":{"name":"example_read","arguments":{}}}]}`,
+    `{"tool_calls":[{"id":"call_1"}]}`,
+    `{"tool_calls":[null]}`,
+  ])("a round calling %s fails", async (payload) => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.completionsStream(payload.replace(/}$/, `,"conversation_state":{"harmony_messages":[]}}`)));
+    expect((await backendError(makeClient(stub).round(message, tools, undefined, "t"))).kind).toBe("invalidResponse");
+  });
+
+  /** No tool calls: the reply is the round's, and without one it fails as a prompt without tools
+   * does. */
+  test.each([
+    [`{"tool_calls":[],"assistant":"Done."}`, "Done."],
+    [`{"tool_calls":null,"assistant":"Done."}`, "Done."],
+  ])("a round with %s replies", async (payload, text) => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.completionsStream(payload));
+    expect(await makeClient(stub).round(message, tools, undefined, "t")).toEqual({ kind: "reply", text });
+  });
+
+  test.each([`{}`, `{"tool_calls":[]}`])("a round of %s without a reply fails", async (payload) => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.completionsStream(payload));
+    const error = await backendError(makeClient(stub).round(message, tools, undefined, "t"));
+    expect([error.kind, error.status]).toEqual(["failed", 200]);
+  });
+
+  /** An error in `final`, even beside tool calls, fails the round. */
+  test("a round carrying an error fails", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.completionsStream(`{"error":"Tool loop limit reached.","tool_calls":[{"id":"call_1","function":{"name":"example_read","arguments":"{}"}}],"conversation_state":{}}`));
+    const error = await backendError(makeClient(stub).round(message, tools, undefined, "t"));
+    expect([error.kind, error.status]).toEqual(["failed", 200]);
+  });
+});
+
 describe("server-sent events", () => {
   test("events end at blank lines and skip comments", () => {
     const events = CompletionsClient.events(': primer\n\nevent: keepalive\n: comment inside the event\ndata: {}\n\ndata: outside an event\n\nevent: final\ndata: {"a":1}\n\n');

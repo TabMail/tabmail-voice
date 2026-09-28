@@ -24,10 +24,21 @@ export interface AgentChat {
   turns: ChatTurn[];
   /** The follow-up being carried out, shown until its turn is added. */
   pendingRequest: string | null;
-  /** When the window closes unless the user touches it (epoch milliseconds); null once they have,
-   * and it stays open until closed. */
+  /** When the window closes unless the user touches it (epoch milliseconds); null until an answer
+   * joins it, and once they have touched it. */
   closesAt: number | null;
+  /** Whether the user has touched the window (or followed up in it): it no longer times out, and
+   * stays open until closed. */
+  touched: boolean;
+  /** What a tool the answer's model called is doing, while it runs ("Checking your calendar"). */
+  activity: string | null;
+  /** What the window asks before a tool sends or creates anything, until the user confirms or
+   * declines it. */
+  confirmation: string | null;
 }
+
+/** The chat window as it opens: no turns yet, and untouched. */
+export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null };
 
 export function appendTurn(chat: AgentChat, request: string, tool: AgentTool, reply: string): AgentChat {
   return { ...chat, turns: [...chat.turns, { id: chat.turns.length, request, tool, reply }], pendingRequest: null };

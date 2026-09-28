@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 import { deferred } from "./support.js";
 import type { BrowserWindow } from "electron";
 import * as config from "../src/core/config.js";
+import type { Phase } from "../src/core/dictationController.js";
 import { chatFrame, type Rect } from "../src/core/overlayGeometry.js";
 import { OverlayWindowController } from "../src/main/overlayWindow.js";
 
@@ -136,6 +137,38 @@ describe("OverlayWindowController", () => {
 
     expect(controller.chatOpensUpward).toBe(true);
     expect(overlay.bounds().y + overlay.bounds().height).toBeLessThanOrEqual(workArea.height + config.chatShadowMargin);
+  });
+
+  /** A window a tool opened, dropped when its request fails (`DictationController.teardown`), gives
+   * way to the pill saying what failed, where the pill was and letting clicks through; one dropped
+   * when the request is cancelled leaves nothing once the pill's exit has played. */
+  test.each<[string, Phase, boolean]>([
+    ["fails", { kind: "failed", message: "Something went wrong. Try again." }, true],
+    ["is cancelled", { kind: "idle" }, false],
+  ])("a tool's window dropped as its request %s gives way to the pill", async (_, end, showsPill) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const caret: Rect = { x: 400, y: 300, width: 1, height: 16 };
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => caret);
+      controller.update({ kind: "arming" });
+      controller.update({ kind: "listening" });
+      await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+      const pill = overlay.bounds();
+      controller.update({ kind: "running", tool: "answer" });
+      controller.update({ kind: "running", tool: "answer" }, true);
+      expect(overlay.bounds().width).toBe(config.chatWidth + 2 * config.chatShadowMargin);
+
+      controller.update({ kind: "running", tool: "answer" });
+      controller.update(end);
+      vi.advanceTimersByTime(config.overlayDismissDuration);
+
+      expect(overlay.visible()).toBe(showsPill);
+      expect(overlay.ignoresMouse()).toBe(true);
+      if (showsPill) expect(overlay.bounds()).toEqual(pill);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /** A caret found after the chat window opened doesn't move it back to where the pill would be. */

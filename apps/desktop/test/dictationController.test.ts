@@ -6,7 +6,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../src/core/account.js";
-import { chatTranscript } from "../src/core/agent/agentChat.js";
+import { type AgentChat, chatTranscript, emptyChat } from "../src/core/agent/agentChat.js";
+import type { LoopTool } from "../src/core/agent/loopTool.js";
 import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
 import { AgentFailure, type AgentTool, agentTools } from "../src/core/agent/tools.js";
 import { BackendError, CompletionsClient, TranscriptionClient } from "../src/core/backend.js";
@@ -14,6 +15,7 @@ import * as config from "../src/core/config.js";
 import { DictationController, nothingHeardMessage, type Phase } from "../src/core/dictationController.js";
 import type { DictationMode } from "../src/core/hotkey.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
+import { configureLog, type LogLevel } from "../src/core/log.js";
 import { type MicrophoneStatus, PermissionsModel } from "../src/core/permissions.js";
 import type { ScreenContext } from "../src/core/screenContext.js";
 import type { DictationSettings } from "../src/core/settings.js";
@@ -106,7 +108,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void> } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void>; loopTools?: LoopTool[] } = {},
   ): { controller: DictationController; pastes: string[] } {
     const pastes: string[] = [];
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
@@ -133,6 +135,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       systemEmailApp: async () => null,
       makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", options.transcriptionTransport ?? transcription.transport),
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
+      loopTools: options.loopTools ?? [],
     });
     return { controller, pastes };
   }
@@ -604,7 +607,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       context: ScreenContext | null,
       thunderbird?: FakeThunderbird,
       prepare: (controller: DictationController) => void = () => {},
-      options: { account?: AccountModel; paste?: (text: string, signal: AbortSignal) => Promise<void>; frontmostApp?: () => Promise<number | null> } = {},
+      options: { account?: AccountModel; paste?: (text: string, signal: AbortSignal) => Promise<void>; frontmostApp?: () => Promise<number | null>; loopTools?: LoopTool[] } = {},
     ): Promise<{ controller: DictationController; pastes: string[]; phases: Phase[] }> {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), thunderbird, ...options });
       const phases: Phase[] = [];
@@ -1325,7 +1328,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         expect(pastes).toEqual(["Define it first."]);
         expect(controller.chat?.turns.map((turn) => turn.tool)).toEqual(["answer", "compose"]);
-        expect(chatTranscript(controller.chat ?? { turns: [], pendingRequest: null, closesAt: null })).toMatch(/User: write the fix here\nTabMail \[Pasted at the cursor\]: Define it first\.$/);
+        expect(chatTranscript(controller.chat ?? emptyChat)).toMatch(/User: write the fix here\nTabMail \[Pasted at the cursor\]: Define it first\.$/);
       });
 
       /** A follow-up can hand the email app a request, which gets exactly the words the chat lists and
@@ -1734,6 +1737,496 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat).toBeNull();
           expect(thunderbird.pasted).toEqual(["the reply"]);
         }
+      });
+
+      /** The tools the answer's model calls that run on this computer (ADR-DESK-023). */
+      describe("the answer's tools", () => {
+        const toolRequest = "add the launch review to my calendar";
+        const confirmationQuestion = "Add “Launch review” to your calendar on Friday at 10:00?";
+
+        /** A tool that runs on this computer, for the answer's loop: records the arguments of each run,
+         * asks `question` first when set, and returns `result` (or throws `failure`). */
+        class FakeLoopTool implements LoopTool {
+          readonly runs: Record<string, unknown>[] = [];
+          /** How many times it was asked for its question, and the arguments it was asked about. */
+          asked = 0;
+          readonly askedAbout: Record<string, unknown>[] = [];
+          question: string | null = null;
+          result = "Added.";
+          /** What its run throws: an `Error`, or (as JavaScript allows) any other value. */
+          failure: Error | string | null = null;
+          /** Runs as the tool does, to look at the app while it runs. */
+          during: () => Promise<void> = async () => {};
+
+          constructor(
+            readonly name = "example_create",
+            readonly progressLabel = "Adding it to your calendar",
+          ) {}
+
+          confirmation(args: Record<string, unknown>): string | null {
+            this.asked += 1;
+            this.askedAbout.push(args);
+            return this.question;
+          }
+
+          async run(args: Record<string, unknown>): Promise<string> {
+            this.runs.push(args);
+            await this.during();
+            if (this.failure) throw this.failure;
+            return this.result;
+          }
+        }
+
+        /** A final event calling each of `calls` (name, arguments) in turn, and the loop's state. */
+        function calling(...calls: [name: string, args: string][]): string {
+          return Fixtures.toolCalls(calls.map(([name, args], index) => ({ id: `call_${index}`, name, arguments: args })));
+        }
+
+        /** What the model was told each call of the last round did: the tool messages the `index`th
+         * request sent. */
+        function told(index: number): string[] {
+          const state = completions.body(index).conversation_state as { harmony_messages: { role: string; content: string }[] } | undefined;
+          return (state?.harmony_messages ?? []).filter((message) => message.role === "tool").map((message) => message.content);
+        }
+
+        /** Agent mode asked `toolRequest` with only Answer on (so nothing to choose), the backend
+         * answering each of `rounds` in turn, `tools` running on this computer. Returns once the
+         * controller exists; `done` settles with the request. */
+        async function ask(
+          tools: LoopTool[],
+          rounds: string[],
+          prepare: (controller: DictationController) => void = () => {},
+          options: Parameters<typeof carryOut>[3] = {},
+        ): Promise<{ controller: DictationController; done: ReturnType<typeof carryOut>; chatChanges: boolean[] }> {
+          setTools(["answer"]);
+          transcription.enqueue(200, { text: toolRequest });
+          for (const round of rounds) completions.enqueue(200, round);
+          let made: DictationController | undefined;
+          const chatChanges: boolean[] = [];
+          const done = carryOut(
+            selectionScreen(""),
+            undefined,
+            (controller) => {
+              made = controller;
+              controller.onChatChange = (isOpen) => chatChanges.push(isOpen);
+              // Answered as soon as asked, unless a test waits out the question's minimum display.
+              controller.confirmationMinimumDisplay = 0;
+              prepare(controller);
+            },
+            { ...options, loopTools: tools },
+          );
+          expect(await eventually(() => made !== undefined)).toBe(true);
+          if (made === undefined) throw new Error("no controller");
+          opened.push(made);
+          return { controller: made, done, chatChanges };
+        }
+
+        /** A tool the answer's model calls runs, with the chat window open on the request and saying
+         * what the tool is doing; its result goes back to the model, and the answer joins the chat,
+         * which then times out unless touched. The Answer prompt is offered the date tools and this
+         * computer's tools. */
+        test("an answer's tool runs with the chat window showing it", async () => {
+          const tool = new FakeLoopTool();
+          const whileRunning: (AgentChat | null)[] = [];
+          let controllerRef: DictationController | undefined;
+          tool.during = async () => {
+            whileRunning.push(controllerRef?.chat ?? null);
+          };
+
+          const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", '{"title":"Launch review","day":"friday","hour":10.5,"note":null}']), reply(answer)], (controller) => {
+            controllerRef = controller;
+            controller.chatTimeout = 300;
+          });
+          const { pastes } = await done;
+
+          expect(tool.runs).toEqual([{ title: "Launch review", day: "friday", hour: 10.5, note: null }]);
+          expect(whileRunning).toEqual([{ ...emptyChat, pendingRequest: toolRequest, activity: "Adding it to your calendar" }]);
+          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "example_create"]);
+          expect(completions.body(0).disable_tools).toBe(false);
+          expect(told(1)).toEqual(["Added."]);
+          expect(controller.chat?.turns).toEqual([{ id: 0, request: toolRequest, tool: "answer", reply: answer }]);
+          expect(controller.chat?.activity).toBeNull();
+          expect(controller.chat?.pendingRequest).toBeNull();
+          expect(controller.chat?.closesAt).not.toBeNull();
+          expect(pastes).toEqual([]);
+          expect(chatChanges).toEqual([true]);
+          expect(await eventually(() => controller.chat === null)).toBe(true);
+        });
+
+        /** Touched while a tool runs, the chat window no longer times out once the answer arrives. */
+        test("touching the chat window while a tool runs keeps it open", async () => {
+          const tool = new FakeLoopTool();
+          let controllerRef: DictationController | undefined;
+          tool.during = async () => controllerRef?.keepChatOpen();
+
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], (controller) => {
+            controllerRef = controller;
+            controller.chatTimeout = 100;
+          });
+          await done;
+
+          expect(controller.chat?.turns).toHaveLength(1);
+          expect(controller.chat?.closesAt).toBeNull();
+          expect(await throughout(400, () => controller.chat !== null)).toBe(true);
+        });
+
+        /** A tool that sends or creates asks first in the chat window, and runs only once confirmed; the
+         * hotkey starts nothing meanwhile. */
+        test("a tool that creates runs once confirmed", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", '{"title":"Launch review"}']), reply(answer)]);
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          expect(controller.chat?.pendingRequest).toBe(toolRequest);
+          expect(controller.chat?.activity).toBeNull();
+          controller.handle("start");
+          expect(controller.phase).toEqual(running("answer"));
+          await sleep(50);
+          expect(tool.runs).toEqual([]);
+          // The question is about the call the model made, the one that runs.
+          expect(tool.askedAbout).toEqual([{ title: "Launch review" }]);
+
+          controller.answerConfirmation(true);
+          await done;
+
+          expect(tool.runs).toEqual([{ title: "Launch review" }]);
+          expect(told(1)).toEqual(["Added."]);
+          expect(controller.chat?.confirmation).toBeNull();
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
+        });
+
+        /** Declined, the tool doesn't run; the model is told, and answers. */
+        test("a declined tool does not run", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", '{"title":"Launch review"}']), reply("Nothing was added.")]);
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          expect(tool.askedAbout).toEqual([{ title: "Launch review" }]);
+
+          controller.answerConfirmation(false);
+          await done;
+
+          expect(tool.runs).toEqual([]);
+          expect(told(1)).toEqual([config.loopToolDeclined]);
+          expect(controller.chat?.confirmation).toBeNull();
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Nothing was added."]);
+        });
+
+        /** An answer that comes before its question has shown for the minimum time is ignored: the
+         * second click of a double-click on one question's Confirm never confirms the next, which
+         * the user has not seen. A later answer decides it. */
+        test("a double-click confirms one question, never the next", async () => {
+          const first = Object.assign(new FakeLoopTool("example_create", "Adding it"), { question: "Add A?" });
+          const second = Object.assign(new FakeLoopTool("example_send", "Sending it"), { question: "Send B?" });
+          const { controller, done } = await ask([first, second], [calling(["example_create", "{}"], ["example_send", "{}"]), reply(answer)], (controller) => {
+            controller.confirmationMinimumDisplay = 300;
+          });
+          expect(await eventually(() => controller.chat?.confirmation === "Add A?")).toBe(true);
+          // Too soon after the question appeared: meant for none shown yet.
+          controller.answerConfirmation(true);
+          await sleep(50);
+          expect(first.runs).toEqual([]);
+
+          await sleep(300);
+          controller.answerConfirmation(true);
+          expect(await eventually(() => controller.chat?.confirmation === "Send B?")).toBe(true);
+          controller.answerConfirmation(true);
+          await sleep(50);
+          expect(second.runs).toEqual([]);
+          expect(controller.chat?.confirmation).toBe("Send B?");
+
+          await sleep(300);
+          controller.answerConfirmation(false);
+          await done;
+
+          expect(first.runs).toEqual([{}]);
+          expect(second.runs).toEqual([]);
+          expect(told(1)).toEqual(["Added.", config.loopToolDeclined]);
+        });
+
+        /** Closing the chat window declines its question at once, however recently it appeared: only
+         * the user's own answers wait out its minimum display. */
+        test("closing the chat window as soon as it asks declines the question", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"])], (controller) => {
+            controller.confirmationMinimumDisplay = 60_000;
+          });
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+          controller.closeChat();
+          await done;
+
+          expect(tool.runs).toEqual([]);
+          expect(controller.chat).toBeNull();
+          expect(controller.phase).toEqual(idle);
+        });
+
+        /** A request cancelled while a round waits on the backend stops that round's request itself,
+         * not just its reply, and asks nothing more. */
+        test("closing the chat window while a round waits stops its request", async () => {
+          const tool = new FakeLoopTool();
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], (controller) => {
+            completions.gate = async () => {
+              if (completions.requests.length === 2) controller.closeChat();
+            };
+          });
+          await done;
+          // The reply still arrives after the close.
+          await sleep(300);
+
+          expect(tool.runs).toEqual([{}]);
+          expect(completions.requests).toHaveLength(2);
+          expect(completions.requests[1]?.signal?.aborted).toBe(true);
+          expect(controller.chat).toBeNull();
+          expect(controller.phase).toEqual(idle);
+        });
+
+        /** Closing the chat window while it asks drops the request: the tool doesn't run, the round's
+         * later calls don't either, and the model is asked nothing more. Nothing is left waiting: a
+         * late confirmation runs nothing, and the next request goes as usual. */
+        test("closing the chat window while it asks drops the request", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", "{}"], ["example_create", "{}"])]);
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+          controller.closeChat();
+          await done;
+          controller.answerConfirmation(true);
+          await sleep(100);
+
+          expect(tool.runs).toEqual([]);
+          expect(tool.asked).toBe(1);
+          expect(completions.requests).toHaveLength(1);
+          expect(controller.chat).toBeNull();
+          expect(controller.phase).toEqual(idle);
+          expect(chatChanges).toEqual([true, false]);
+
+          completions.requests.length = 0;
+          completions.gate = undefined;
+          transcription.enqueue(200, { text: "what day is it" });
+          completions.enqueue(200, reply("Friday."));
+          await holdAndRelease(controller, "agent");
+          expect(await eventually(() => controller.chat?.turns.length === 1)).toBe(true);
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Friday."]);
+        });
+
+        /** Cancelled, or ended with the account, while a tool runs or asks, a first request's chat
+         * window, still empty, closes with it: the next hold dictates. */
+        test.each([
+          ["cancelled", "asks"],
+          ["cancelled", "runs"],
+          ["signed out", "asks"],
+          ["signed out", "runs"],
+        ])("%s while a tool %s, the empty chat window closes", async (how, when) => {
+          const account = signedIn(auth);
+          const tool = new FakeLoopTool();
+          if (when === "asks") tool.question = confirmationQuestion;
+          const started = deferred<void>();
+          const finish = deferred<void>();
+          tool.during = async () => {
+            started.resolve();
+            await finish.promise;
+          };
+          const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", "{}"]), reply("Never shown.")], () => {}, { account });
+          if (when === "asks") expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          else await started.promise;
+          expect(controller.chat?.turns).toEqual([]);
+
+          if (how === "cancelled") controller.handle("cancel");
+          else account.signOut();
+          finish.resolve();
+          await done;
+          await sleep(100);
+
+          expect(controller.chat).toBeNull();
+          expect(chatChanges).toEqual([true, false]);
+          expect(controller.phase).toEqual(idle);
+          expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
+          expect(completions.requests).toHaveLength(1);
+          if (how === "signed out") return;
+          controller.handle("start");
+          expect(controller.mode).toBe("dictation");
+          controller.handle("cancel");
+        });
+
+        /** Cancelled while its tool runs or asks, a follow-up leaves the chat window as it was: no
+         * question, no tool running, no request pending; a tool that asked never runs. */
+        test.each(["asks", "runs"])("a follow-up cancelled while its tool %s leaves the chat as it was", async (when) => {
+          const tool = new FakeLoopTool();
+          if (when === "asks") tool.question = confirmationQuestion;
+          const started = deferred<void>();
+          const finish = deferred<void>();
+          tool.during = async () => {
+            started.resolve();
+            await finish.promise;
+          };
+          const { controller } = await openChat(() => {}, undefined, { loopTools: [tool] });
+          transcription.enqueue(200, { text: toolRequest });
+          completions.enqueue(200, reply("answer"));
+          completions.enqueue(200, calling(["example_create", "{}"]));
+          controller.handle("start");
+          expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+          controller.handle("finish");
+          if (when === "asks") expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          else await started.promise;
+          expect(controller.chat?.pendingRequest).toBe(toolRequest);
+
+          controller.handle("cancel");
+          controller.answerConfirmation(true);
+          finish.resolve();
+          await sleep(100);
+
+          expect(controller.chat).toEqual({ ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer }], touched: true });
+          expect(controller.phase).toEqual(idle);
+          expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
+          expect(completions.requests).toHaveLength(4);
+        });
+
+        /** A tool still running for a cancelled request leaves the next request's tool shown: its end
+         * clears nothing of a newer request's. */
+        test("a cancelled request's tool leaves the next one's shown", async () => {
+          const first = new FakeLoopTool("example_create", "Adding it to your calendar");
+          const second = new FakeLoopTool("example_read", "Checking your calendar");
+          const firstStarted = deferred<void>();
+          const firstDone = deferred<void>();
+          first.during = async () => {
+            firstStarted.resolve();
+            await firstDone.promise;
+          };
+          const secondDone = deferred<void>();
+          second.during = () => secondDone.promise;
+          const { controller, done } = await ask([first, second], [calling(["example_create", "{}"])]);
+          await firstStarted.promise;
+          controller.handle("cancel");
+          await done;
+          transcription.enqueue(200, { text: "what is on today" });
+          completions.enqueue(200, calling(["example_read", "{}"]));
+          completions.enqueue(200, reply("Nothing today."));
+
+          await holdAndRelease(controller, "agent");
+          expect(await eventually(() => controller.chat?.activity === "Checking your calendar")).toBe(true);
+          firstDone.resolve();
+          await sleep(100);
+
+          expect(controller.chat?.activity).toBe("Checking your calendar");
+          secondDone.resolve();
+          expect(await eventually(() => controller.chat?.turns.length === 1)).toBe(true);
+          expect(controller.chat?.activity).toBeNull();
+        });
+
+        /** A tool this app doesn't have, or arguments that aren't a JSON object, run nothing: the model
+         * is told why, and answers. */
+        test.each([
+          ["example_missing", "{}", "Error: there is no tool named example_missing."],
+          ["example_create", "[1, 2]", "Error: the arguments were not a JSON object."],
+          ["example_create", "null", "Error: the arguments were not a JSON object."],
+          ["example_create", "not json", "Error: the arguments were not a JSON object."],
+        ])("a call of %s with %s runs nothing", async (name, args, error) => {
+          const tool = new FakeLoopTool();
+          const { controller, done } = await ask([tool], [calling([name, args]), reply(answer)]);
+          await done;
+
+          expect(tool.runs).toEqual([]);
+          expect(tool.asked).toBe(0);
+          expect(told(1)).toEqual([error]);
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer]);
+        });
+
+        /** A tool that fails tells the model why, which answers. */
+        test.each([new Error("Calendar access was denied."), "Calendar access was denied."])("a failing tool is reported to the model (%o)", async (failure) => {
+          const tool = Object.assign(new FakeLoopTool(), { failure });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply("I couldn't reach your calendar.")]);
+          await done;
+
+          expect(tool.runs).toHaveLength(1);
+          expect(told(1)).toEqual(["Error: Calendar access was denied."]);
+          expect(controller.chat?.activity).toBeNull();
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["I couldn't reach your calendar."]);
+        });
+
+        /** The answer and a tool's failure are user content: only the debug log's content entries carry
+         * them, never an error, which reaches stderr in every build, nor the debug log's other entries. */
+        test.each([false, true])("the answer and a tool's failure are logged only as content (debug build: %s)", async (isDebugBuild) => {
+          const file: [LogLevel, string][] = [];
+          const errors: string[] = [];
+          configureLog({ isDebugBuild, sinks: { file: (level, text) => file.push([level, text]), error: (text) => errors.push(text) } });
+          try {
+            const tool = Object.assign(new FakeLoopTool(), { failure: new Error("private tool failure") });
+            const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply("private answer")]);
+            await done;
+
+            expect(told(1)).toEqual(["Error: private tool failure"]);
+            expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["private answer"]);
+            expect(errors.join("\n")).toContain("example_create failed");
+            expect(errors.join("\n")).not.toContain("private");
+            expect(file.filter(([level]) => level !== "CONTENT").map(([, text]) => text).join("\n")).not.toContain("private");
+            const content = file.filter(([level]) => level === "CONTENT").map(([, text]) => text).join("\n");
+            if (isDebugBuild) expect(content).toContain("private answer");
+            else expect(file).toEqual([]);
+          } finally {
+            configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+          }
+        });
+
+        /** The answer failing after a tool opened the chat window: the empty window goes, and the pill
+         * says what failed. */
+        test("a failed answer after a tool closes the empty chat window", async () => {
+          const tool = new FakeLoopTool();
+          const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", "{}"])]);
+          completions.enqueue(500, { error: "internal_error" });
+          await done;
+
+          expect(tool.runs).toHaveLength(1);
+          expect(controller.chat).toBeNull();
+          expect(chatChanges).toEqual([true, false]);
+          expect(controller.phase).toEqual(failed(new BackendError("failed", 500).message));
+        });
+
+        /** A follow-up's tool runs in the open chat window, under the conversation so far, and the
+         * window stays open. */
+        test("a follow-up's tool runs in the open chat window", async () => {
+          const tool = new FakeLoopTool();
+          let controllerRef: DictationController | undefined;
+          const whileRunning: (AgentChat | null)[] = [];
+          tool.during = async () => {
+            whileRunning.push(controllerRef?.chat ?? null);
+          };
+          const { controller, chatChanges } = await openChat(
+            (controller) => {
+              controllerRef = controller;
+            },
+            undefined,
+            { loopTools: [tool] },
+          );
+          transcription.enqueue(200, { text: toolRequest });
+          completions.enqueue(200, reply("answer"));
+          completions.enqueue(200, calling(["example_create", "{}"]));
+          completions.enqueue(200, reply("Added it."));
+
+          await followUp(controller);
+
+          expect(whileRunning).toEqual([
+            { ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer }], pendingRequest: toolRequest, touched: true, activity: "Adding it to your calendar" },
+          ]);
+          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Added it."]);
+          expect(controller.chat?.closesAt).toBeNull();
+          expect(chatChanges).toEqual([true]);
+          expect(completions.body(3).available_tools).toEqual(["date_to_day", "time_delta", "example_create"]);
+        });
+
+        /** A chat window touched and then closed leaves the next one untouched: it times out. */
+        test("the next chat window times out after a touched one closes", async () => {
+          const { controller } = await openChat((controller) => {
+            controller.chatTimeout = 100;
+          });
+          controller.keepChatOpen();
+          controller.closeChat();
+          queue(question, "answer", answer);
+
+          await holdAndRelease(controller, "agent");
+          expect(await eventually(() => controller.chat !== null)).toBe(true);
+
+          expect(controller.chat?.closesAt).not.toBeNull();
+          expect(await eventually(() => controller.chat === null)).toBe(true);
+        });
       });
     });
   });
