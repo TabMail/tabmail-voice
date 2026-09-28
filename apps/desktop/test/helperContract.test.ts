@@ -191,7 +191,8 @@ describe("helper wire contract", () => {
 
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {
     const main = readFileSync(join(root, "src/main/main.ts"), "utf8");
-    const sent = [...main.matchAll(/hotkeyHelper\s*\.request(?:<[^>]*>)?\("(\w+)"(?:,\s*\{([^}]*)\})?/g)].map((match) => ({
+    // Directly, or through `sendHotkeyState`, which sends the hotkey's state one request at a time.
+    const sent = [...main.matchAll(/(?:hotkeyHelper\s*\.request|sendHotkeyState)(?:<[^>]*>)?\("(\w+)"(?:,\s*\{([^}]*)\})?/g)].map((match) => ({
       method: match[1] ?? "",
       params: new Set([...(match[2] ?? "").matchAll(/(\w+)\s*(?:[:,]|$)/g)].map((param) => param[1] ?? "")),
     }));

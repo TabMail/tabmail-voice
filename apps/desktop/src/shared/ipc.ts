@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AgentTool } from "../core/agent/tools.js";
+import type { AgentChat } from "../core/agent/agentChat.js";
+import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
 import type { ScreenContext } from "../core/screenContext.js";
@@ -27,6 +28,10 @@ export interface OverlayState {
   tools: AgentTool[];
   /** The email app's icon, for the Thunderbird bubble; null without one. */
   emailAppIcon: string | null;
+  /** The chat window's conversation while it is open, shown in place of the pill. */
+  chat: AgentChat | null;
+  /** The chat window opened above the caret's line: it grows upward, its bottom edge fixed. */
+  chatOpensUpward: boolean;
 }
 
 export interface EmailAppChoice {
@@ -45,6 +50,8 @@ export interface SettingsState {
   hasTabMail: boolean;
   /** Whether the default email app takes mail requests (`EmailClient.resolve`). */
   defaultEmailAppIsSupported: boolean;
+  /** Agent mode's tools switched on. */
+  enabledTools: AgentTool[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   openAtLogin: boolean;
@@ -62,6 +69,8 @@ export interface WelcomeState {
   canAdvance: boolean;
   hasConsented: boolean;
   readsScreen: boolean;
+  /** Agent mode's tools switched on. */
+  enabledTools: AgentTool[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
 }
@@ -87,6 +96,7 @@ export type Command =
   | { type: "setHotkey"; hotkey: DictationHotkey }
   | { type: "setReadsScreen"; value: boolean }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
+  | { type: "setAgentToolEnabled"; tool: AgentTool; value: boolean }
   | { type: "setOpenAtLogin"; value: boolean }
   | { type: "setDebugMode"; value: boolean }
   | { type: "setConsent"; value: boolean }
@@ -95,7 +105,13 @@ export type Command =
   | { type: "welcomeNext" }
   | { type: "welcomeBack" }
   | { type: "welcomeGoTo"; index: number }
-  | { type: "openURL"; url: string };
+  | { type: "openURL"; url: string }
+  /** The chat window: the user touched it (a hover, click or scroll), closed it, opened a reply's
+   * link, or it measured its height. */
+  | { type: "keepChatOpen" }
+  | { type: "closeChat" }
+  | { type: "openChatLink"; url: string }
+  | { type: "chatHeight"; height: number };
 
 /** A command's outcome: an error message to show, or none. */
 export interface CommandResult {
@@ -146,6 +162,8 @@ export function isCommand(value: unknown): value is Command {
     case "requestAccessibility":
     case "welcomeNext":
     case "welcomeBack":
+    case "keepChatOpen":
+    case "closeChat":
       return true;
     case "sendCode":
       return typeof command.email === "string";
@@ -163,7 +181,12 @@ export function isCommand(value: unknown): value is Command {
     case "welcomeGoTo":
       return Number.isInteger(command.index);
     case "openURL":
+    case "openChatLink":
       return typeof command.url === "string";
+    case "setAgentToolEnabled":
+      return isAgentTool(command.tool) && typeof command.value === "boolean";
+    case "chatHeight":
+      return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;
     default:
       return false;
   }

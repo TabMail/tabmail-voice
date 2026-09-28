@@ -4,14 +4,15 @@
 
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { AgentTool } from "../core/agent/tools.js";
+import { type AgentChat, type ChatTurn, formattedReply, remainingFraction } from "../core/agent/agentChat.js";
+import { type AgentTool, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import type { DictationHotkey } from "../core/hotkey.js";
 import { bubbleCentres, hintCentre, hintCentreOver, type Rect, type Size, tipGoesAbove } from "../core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../core/tips.js";
 import type { OverlayState } from "../shared/ipc.js";
 import { brandBlue, brandColour, brandGradient, grey } from "./brand.js";
-import { useWindowState } from "./bridge.js";
+import { send, useWindowState } from "./bridge.js";
 import { ExclamationIcon, SparklesIcon, ToolIcon } from "./icons.js";
 import "./overlay.css";
 
@@ -22,7 +23,7 @@ import "./overlay.css";
  * switches agent mode and a double tap dictates without holding, each fading after a moment; how
  * hands-free listening ends, up while it listens, over the pill when the overlay opened above the
  * caret's line); in agent mode the tools' bubbles sit in a row above it, and the running tool's
- * border circles.
+ * border circles. Once agent mode answers, the pill grows into the chat window (`ChatWindow`).
  */
 
 type Mode =
@@ -122,6 +123,7 @@ function Overlay() {
   }, [mode]);
 
   if (!state) return null;
+  if (state.chat) return <ChatWindow chat={state.chat} status={chatStatus(mode)} state={state} />;
   const showsTools = state.mode === "agent" && (mode.kind === "listening" || mode.kind === "transcribing" || mode.kind === "running");
   const tip = mode.kind === "listening" ? state.tip : null;
 
@@ -175,6 +177,173 @@ function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; sta
         opensUpward={state.opensUpward}
       />
     </div>
+  );
+}
+
+/** A follow-up's status at the bottom of the chat window: the pill, listening from the start. */
+function chatStatus(mode: Mode): Mode | null {
+  switch (mode.kind) {
+    case "hidden":
+      return null;
+    case "swirl":
+      return { kind: "listening" };
+    default:
+      return mode;
+  }
+}
+
+/** The chat window the pill grows into once agent mode answers (owner, 2026-09-26): each request and
+ * its reply, a follow-up's status (the pill) at the bottom, a close button, and, while untouched, a
+ * bar along the bottom edge that shrinks from right to left as its time runs out (like the iOS app's
+ * `PendingSendToast`). The pointer entering or moving in it, a click or a scroll keeps it open
+ * (`keepChatOpen`); Escape or the close button closes it. It reports its height, which the overlay
+ * window takes, so only its shadow's margin is left to catch clicks. Light in light and dark mode alike,
+ * as the pill. */
+function ChatWindow({ chat, status, state }: { chat: AgentChat; status: Mode | null; state: OverlayState }) {
+  const [boxRef, boxSize] = useSize<HTMLDivElement>();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (boxSize.height > 0) void send({ type: "chatHeight", height: boxSize.height });
+  }, [boxSize.height]);
+  // The newest turn, or the follow-up's status, in view: only when one of them changes, since every
+  // state push (a follow-up's level, many times a second) brings a new copy of the same chat, and the
+  // user may have scrolled up to read an earlier answer.
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+  }, [chat.turns.length, chat.pendingRequest, status?.kind]);
+  const touch = () => {
+    if (chat.closesAt !== null) void send({ type: "keepChatOpen" });
+  };
+  return (
+    <div className="chat-canvas" style={{ padding: config.chatShadowMargin, justifyContent: state.chatOpensUpward ? "flex-end" : "flex-start" }}>
+      <div
+        ref={boxRef}
+        className="chat"
+        onPointerEnter={touch}
+        onPointerMove={touch}
+        onPointerDown={touch}
+        onWheel={touch}
+        style={{
+          width: config.chatWidth,
+          borderRadius: config.chatCornerRadius,
+          borderWidth: config.pillBorderWidth,
+          background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+          boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
+        }}
+      >
+        <div
+          ref={scrollRef}
+          className="chat-scroll"
+          style={{ maxHeight: config.chatMaxHeight, gap: config.chatTurnSpacing, padding: config.chatPadding, paddingTop: config.chatPadding + config.chatCloseButtonSize }}
+        >
+          {chat.turns.map((turn) => (
+            <div key={turn.id} className="chat-turn" style={{ gap: config.chatTurnSpacing }}>
+              <RequestBubble text={turn.request} />
+              <Reply turn={turn} />
+            </div>
+          ))}
+          {chat.pendingRequest !== null && <RequestBubble text={chat.pendingRequest} />}
+          {status && (
+            <div className="chat-status">
+              <Pill mode={status} level={state.level} language={state.language} />
+            </div>
+          )}
+        </div>
+        {chat.closesAt !== null && <TimeoutBar closesAt={chat.closesAt} />}
+        <button
+          type="button"
+          className="chat-close"
+          aria-label="Close"
+          onClick={() => void send({ type: "closeChat" })}
+          style={{ width: config.chatCloseButtonSize, height: config.chatCloseButtonSize, top: config.chatBubblePadding, right: config.chatBubblePadding, fontSize: config.chatCaptionFontSize }}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The user's words, in a tinted bubble on the right. */
+function RequestBubble({ text }: { text: string }) {
+  return (
+    <div
+      className="chat-request"
+      style={{
+        fontSize: config.chatFontSize,
+        padding: config.chatBubblePadding,
+        borderRadius: config.chatBubbleCornerRadius,
+        maxWidth: config.chatWidth * config.chatRequestMaxWidthFraction,
+        background: brandColour(0, config.chatRequestFillOpacity),
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+/** The reply: the answer, or what another tool wrote under what it did with it. */
+function Reply({ turn }: { turn: ChatTurn }) {
+  const caption = toolImplementations[turn.tool].chatCaption;
+  return (
+    <div className="chat-reply" style={{ gap: config.chatBubblePadding / 2 }}>
+      {caption !== null && (
+        <div className="chat-caption" style={{ fontSize: config.chatCaptionFontSize, gap: config.chatBubblePadding / 2 }}>
+          <ToolIcon tool={turn.tool} size={config.chatCaptionFontSize} />
+          {caption}
+        </div>
+      )}
+      <div className="chat-text" style={{ fontSize: config.chatFontSize }}>
+        <FormattedReply reply={turn.reply} />
+      </div>
+    </div>
+  );
+}
+
+/** A reply's inline Markdown (`formattedReply`); its web links open in the browser, through the main
+ * process, which checks them again. */
+function FormattedReply({ reply }: { reply: string }) {
+  return (
+    <>
+      {formattedReply(reply).map((run, index) => {
+        let content: ReactNode = run.text;
+        if (run.code) content = <code>{content}</code>;
+        if (run.strong) content = <strong>{content}</strong>;
+        if (run.emphasis) content = <em>{content}</em>;
+        if (run.strikethrough) content = <s>{content}</s>;
+        const link = run.link;
+        if (link !== null) {
+          content = (
+            <a
+              href={link}
+              onClick={(event) => {
+                event.preventDefault();
+                void send({ type: "openChatLink", url: link });
+              }}
+            >
+              {content}
+            </a>
+          );
+        }
+        return <span key={index}>{content}</span>;
+      })}
+    </>
+  );
+}
+
+/** A thin gradient line pinned to the chat's bottom-left edge, as wide as the share of time left. */
+function TimeoutBar({ closesAt }: { closesAt: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useAnimationFrame(() => {
+    if (ref.current) ref.current.style.width = `${remainingFraction(closesAt, Date.now(), config.chatTimeout) * 100}%`;
+  });
+  return (
+    <div
+      ref={ref}
+      className="chat-timeout"
+      style={{ height: config.chatTimeoutBarHeight, width: `${remainingFraction(closesAt, Date.now(), config.chatTimeout) * 100}%`, backgroundImage: brandGradient, opacity: config.chatTimeoutBarOpacity }}
+    />
   );
 }
 

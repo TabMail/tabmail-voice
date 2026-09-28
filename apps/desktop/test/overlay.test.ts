@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
 import { type MenuState, showsDictationButton, statusLine } from "../src/core/menuModel.js";
-import { bubbleCentres, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove } from "../src/core/overlayGeometry.js";
+import { bubbleCentres, chatFrame, chatOpensUpward, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove } from "../src/core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipKeycap, tipLines, tipParts } from "../src/core/tips.js";
 
 const canvas = { width: 200, height: 60 };
@@ -163,6 +163,61 @@ describe("overlay geometry", () => {
     for (const name of allTips) {
       for (const hotkey of ["rightOption", "function"] as const) expect(tipLines(name, hotkey)).toHaveLength(config.tipLineCount);
     }
+  });
+});
+
+describe("the chat window's place", () => {
+  const margin = config.chatShadowMargin;
+
+  /** The chat itself: the overlay window's frame inside its shadow margin. */
+  function content(frame: Rect): Rect {
+    return rect(frame.x + margin, frame.y + margin, frame.width - 2 * margin, frame.height - 2 * margin);
+  }
+
+  /** Below the caret's line when there is room for the tallest window, its top edge where the pill's
+   * was; centred on the caret. */
+  test("the chat window opens below the caret", () => {
+    const caret = rect(500, 180, 1, 20);
+
+    const frame = chatFrame(caret, 120, display);
+
+    expect(chatOpensUpward(caret, display)).toBe(false);
+    expect(content(frame).y).toBe(maxY(caret) + config.overlayCaretGap);
+    expect(frame.height).toBe(120 + 2 * margin);
+    expect(frame.width).toBe(config.chatWidth + 2 * margin);
+    expect(midX(frame)).toBe(midX(caret));
+  });
+
+  /** Too near the bottom for the tallest window, it opens upward, its bottom edge just above the
+   * caret's line, so a growing conversation never moves it off the line; exactly enough room below
+   * keeps it there. */
+  test("the chat window opens above a caret near the bottom", () => {
+    const caret = rect(500, 680, 1, 20);
+
+    const frame = chatFrame(caret, 120, display);
+
+    expect(chatOpensUpward(caret, display)).toBe(true);
+    expect(maxY(content(frame))).toBe(caret.y - config.overlayCaretGap);
+    const lowest = rect(500, maxY(display) - config.chatMaxHeight - config.overlayCaretGap - 20, 1, 20);
+    expect(chatOpensUpward(lowest, display)).toBe(false);
+    expect(chatOpensUpward({ ...lowest, y: lowest.y + 1 }, display)).toBe(true);
+  });
+
+  /** A long conversation scrolls inside the window rather than growing it past its maximum height. */
+  test("the chat window is at most its maximum height", () => {
+    expect(chatFrame(rect(500, 180, 1, 20), 5_000, display).height).toBe(config.chatMaxHeight + 2 * margin);
+  });
+
+  /** A caret at a screen edge keeps the chat on screen; only its shadow margin may spill. */
+  test.each([2, 998])("the chat window stays on screen with the caret at x %d", (x) => {
+    expect(contains(display, content(chatFrame(rect(x, 180, 1, 20), 120, display)))).toBe(true);
+  });
+
+  /** With no caret the window opens at the pointer, which can be in the menu bar, above the work
+   * area: the chat still starts inside it. */
+  test("the chat window at the pointer in the menu bar stays on screen", () => {
+    const workArea = rect(0, 25, 1000, 775);
+    expect(contains(workArea, content(chatFrame(rect(500, 10, 1, 1), 120, workArea)))).toBe(true);
   });
 });
 

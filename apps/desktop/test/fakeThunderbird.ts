@@ -33,6 +33,8 @@ export class FakeThunderbird {
   onOpenChat: ((fake: FakeThunderbird) => void) | undefined;
   /** Whether the user switches away as the message is pasted. */
   loseFocusOnPaste = false;
+  /** Runs while the relay asks whether Thunderbird is running, before it answers. */
+  onRunningRead: ((fake: FakeThunderbird) => void) | undefined;
   /** Runs during the `n`th read of the focused window's title (from 1), before it answers. */
   onTitleRead: ((fake: FakeThunderbird, n: number) => void) | undefined;
   private titleReads = 0;
@@ -55,6 +57,7 @@ export class FakeThunderbird {
         },
         isRunning: async (app) => {
           this.asked(app);
+          this.onRunningRead?.(this);
           return this.running;
         },
         launch: async () => {

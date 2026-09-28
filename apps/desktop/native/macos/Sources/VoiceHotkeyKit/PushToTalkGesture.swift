@@ -37,6 +37,8 @@ public enum DictationHotkey: String, CaseIterable, Identifiable, Sendable {
 ///   (`owns(keyCode:)`); its auto-repeat switches nothing.
 /// - Pressing any other key during a hold means the user is typing (e.g. a ⌥-letter shortcut), so it
 ///   is cancelled and nothing is inserted. Hands-free, other keys reach the app and change nothing.
+/// - While the chat window is open, Escape closes it (a follow-up under way with it), and is kept from
+///   the app in front.
 ///
 /// Times are seconds on one monotonic clock.
 public struct PushToTalkGesture: Sendable {
@@ -49,6 +51,8 @@ public struct PushToTalkGesture: Sendable {
         case finish
         case cancel
         case toggleMode
+        /// Escape while the chat window is open.
+        case closeChat
     }
 
     public static let toggleKeyCode = UInt16(kVK_Space)
@@ -71,6 +75,8 @@ public struct PushToTalkGesture: Sendable {
     private var pressIsDoubleTap = false
     /// When the last tap was released, while a second press can still make it a double tap.
     private var lastTapReleasedAt: TimeInterval?
+    /// The chat window is open: Escape closes it, a follow-up under way with it.
+    public var isChatOpen = false
 
     /// The two durations are the app's (`minimumHoldDuration`, `doubleTapWindow` in its config).
     public init(hotkey: DictationHotkey, tapMaxDuration: TimeInterval, doubleTapWindow: TimeInterval) {
@@ -122,8 +128,10 @@ public struct PushToTalkGesture: Sendable {
     }
 
     /// Whether a key-down of `keyCode` belongs to the gesture, and so must not reach the app in front:
-    /// Space while a hold or hands-free listening is under way, and Escape while listening hands-free.
+    /// Space while a hold or hands-free listening is under way, Escape while listening hands-free, and
+    /// Escape while the chat window is open.
     public func owns(keyCode: UInt16) -> Bool {
+        if isChatOpen, keyCode == Self.cancelKeyCode { return true }
         if isHandsFree { return keyCode == Self.toggleKeyCode || keyCode == Self.cancelKeyCode }
         return isHolding && !holdIsOver && keyCode == Self.toggleKeyCode
     }
@@ -134,6 +142,13 @@ public struct PushToTalkGesture: Sendable {
         if hotkey == .function && keyCode == DictationHotkey.globeKeyCode { return nil }
         // Typing between two taps makes them no double tap.
         lastTapReleasedAt = nil
+        // Escape closes the chat window even during a follow-up, which closing it cancels; a hold's
+        // key-up is then swallowed.
+        if isChatOpen, keyCode == Self.cancelKeyCode {
+            isHandsFree = false
+            if isHolding { holdIsOver = true }
+            return isRepeat ? nil : .closeChat
+        }
         if isHandsFree {
             switch keyCode {
             case Self.toggleKeyCode: return isRepeat ? nil : .toggleMode

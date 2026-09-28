@@ -16,6 +16,7 @@ const signedIn: SettingsState = {
   email: "person@example.com",
   hotkey: "rightOption",
   readsScreen: true,
+  enabledTools: ["edit", "compose", "thunderbird", "answer"],
   emailClient: null,
   systemEmailApp: null,
   installedEmailApps: [],
@@ -132,7 +133,7 @@ describe("Settings page", () => {
     const own: Record<string, string[]> = {
       Account: ["Sign Out"],
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
-      "Agent mode": ["Email app"],
+      "Agent mode": ["Edit", "Compose", "Thunderbird", "Answer", "Email app"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode"],
     };
@@ -341,8 +342,27 @@ describe("Settings page", () => {
 
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(2);
+    // Screen reading, debug mode and the four agent tools.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(6);
     expect(page.commands).toEqual([]);
+  });
+
+  /** Each agent tool has a switch in Agent mode, on as the state says, which turns it on or off. */
+  test("each agent tool has a switch", async () => {
+    const shown: SettingsState = { ...signedIn, enabledTools: ["edit", "answer"] };
+    const page = await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Agent mode").click());
+
+    const labels = ["Edit", "Compose", "Thunderbird", "Answer"];
+    expect(labels.map((label) => toggle(label).checked)).toEqual([true, false, false, true]);
+    for (const label of labels) await act(async () => toggle(label).click());
+
+    expect(page.commands).toEqual([
+      { type: "setAgentToolEnabled", tool: "edit", value: false },
+      { type: "setAgentToolEnabled", tool: "compose", value: true },
+      { type: "setAgentToolEnabled", tool: "thunderbird", value: true },
+      { type: "setAgentToolEnabled", tool: "answer", value: false },
+    ]);
   });
 
   /** The notes are the Swift app's (typographic apostrophes aside) and no others: every state's
@@ -355,6 +375,10 @@ describe("Settings page", () => {
       "Your recording is sent to TabMail for transcription and isn’t stored.",
       "Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.",
       "Uses the development server and shows debug items in the menu.",
+      "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
+      "Writes new text where your cursor is: a reply, a message, a note, a command.",
+      "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
+      "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

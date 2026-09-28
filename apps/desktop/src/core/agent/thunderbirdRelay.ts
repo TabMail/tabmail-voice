@@ -94,7 +94,11 @@ export class ThunderbirdRelay {
   async send(message: string, app: string | null, signal: AbortSignal): Promise<void> {
     const path = app === null ? null : await this.system.applicationPath(app);
     if (app === null || path === null) throw new RelayFailure("notInstalled");
-    if (!(await this.system.isRunning(app))) {
+    const running = await this.system.isRunning(app);
+    // Cancelled during these reads, a newer dictation may have started: Thunderbird is neither
+    // launched nor brought to the front for this one.
+    checkCancellation(signal);
+    if (!running) {
       log.debug("ThunderbirdRelay: launching Thunderbird");
       await this.system.launch(path);
       if (!(await this.wait(this.timings.launchTimeout, () => this.system.hasWindow(app), signal))) throw new RelayFailure("didNotLaunch");

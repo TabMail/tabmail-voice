@@ -8,7 +8,8 @@ import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../src/core/config.js";
 import type { DictationTip } from "../../src/core/tips.js";
-import type { OverlayState } from "../../src/shared/ipc.js";
+import type { AgentChat } from "../../src/core/agent/agentChat.js";
+import type { Command, OverlayState } from "../../src/shared/ipc.js";
 
 /** Each React root the page creates, to unmount as the window closes. */
 const mounted = vi.hoisted(() => ({ roots: [] as { unmount(): void }[] }));
@@ -30,23 +31,30 @@ const observers = new Set<{ changed(): void }>();
 /** Sizes as the page lays them out (happy-dom lays nothing out): the pill's and the tip's. */
 const pillSize = { width: 180, height: 30 };
 const tipSize = { width: 200, height: 73 };
+const chatSize = { width: 380, height: 146 };
 
 function laidOut(element: HTMLElement): { width: number; height: number } {
   if (element.classList.contains("pill-anchor")) return pillSize;
+  if (element.classList.contains("chat")) return chatSize;
   if (element.querySelector(".tip") || element.classList.contains("tip")) return tipSize;
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, hotkey: "function", tools: [], emailAppIcon: null };
+const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, hotkey: "function", tools: [], emailAppIcon: null, chat: null, chatOpensUpward: false };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 
 /** The overlay page, mounted afresh; `show` pushes it a state as the main process does. */
-async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>; tipFrame(): { top: number; bottom: number } | null; pillFrame(): { top: number; bottom: number } }> {
+async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>; tipFrame(): { top: number; bottom: number } | null; pillFrame(): { top: number; bottom: number }; commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   let listener: ((state: OverlayState) => void) | null = null;
+  const commands: Command[] = [];
   vi.stubGlobal("voice", {
+    send: async (command: Command) => {
+      commands.push(command);
+      return { error: null };
+    },
     onState: (_name: string, next: (state: OverlayState) => void) => {
       listener = next;
       return () => {};
@@ -91,6 +99,7 @@ async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>
       }),
     tipFrame: () => frame(document.querySelector(".tip")?.closest(".centred") ?? null, tipSize.height),
     pillFrame: () => frame(document.querySelector(".pill-anchor"), pillSize.height) ?? { top: NaN, bottom: NaN },
+    commands,
   };
 }
 
@@ -243,5 +252,200 @@ describe("overlay page", () => {
     await unmount();
     expect(document.querySelector(".pill-anchor")).toBeNull();
     expect(observers.size).toBe(0);
+  });
+});
+
+describe("the chat window", () => {
+  /** An answer, then an Edit follow-up, with a third under way. */
+  function chat(closesAt: number | null): AgentChat {
+    return {
+      turns: [
+        { id: 0, request: "When do we ship", tool: "answer", reply: "We ship on **Friday**, see [the plan](https://example.com/plan)" },
+        { id: 1, request: "Say it shorter", tool: "edit", reply: "Friday" },
+      ],
+      pendingRequest: "And the launch party",
+      closesAt,
+    };
+  }
+
+  const texts = (selector: string) => [...document.querySelectorAll(selector)].map((element) => element.textContent);
+
+  /** Each request and its reply, a request under way, and a follow-up's pill below them; an Edit reply
+   * carries its caption, the answer none. The pill's own overlay is gone meanwhile. */
+  test("it shows the conversation and a follow-up's pill", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout) });
+
+    expect(texts(".chat-request")).toEqual(["When do we ship", "Say it shorter", "And the launch party"]);
+    expect(texts(".chat-text")).toEqual(["We ship on Friday, see the plan", "Friday"]);
+    expect(texts(".chat-caption")).toEqual(["Replaced the selection"]);
+    expect(document.querySelector(".chat-text strong")?.textContent).toBe("Friday");
+    expect(document.querySelector(".chat-status")).toBeNull();
+    expect(document.querySelector(".canvas")).toBeNull();
+
+    await page.show({ ...listening, chat: chat(null) });
+    expect(document.querySelector(".chat-status .pill")).not.toBeNull();
+  });
+
+  /** A reply's inline Markdown shows as it reads: code, bold, italics, struck-out text and a link,
+   * each around its own words and none of the text around them. */
+  test("a reply's inline Markdown shows as it reads", async () => {
+    const page = await overlayPage();
+    const reply = "Run `npm test`, **now**, *please*, ~~not~~ [the plan](https://example.com/plan)";
+    await page.show({ ...idle, chat: { turns: [{ id: 0, request: "What next", tool: "answer", reply }], pendingRequest: null, closesAt: null } });
+
+    expect(texts(".chat-text")).toEqual(["Run npm test, now, please, not the plan"]);
+    expect(texts(".chat-text code")).toEqual(["npm test"]);
+    expect(texts(".chat-text strong")).toEqual(["now"]);
+    expect(texts(".chat-text em")).toEqual(["please"]);
+    expect(texts(".chat-text s")).toEqual(["not"]);
+    expect([...document.querySelectorAll(".chat-text a")].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([["the plan", "https://example.com/plan"]]);
+  });
+
+  /** A follow-up warming up shows the pill, not the swirl: the chat window is where it listens. */
+  test("a follow-up warming up shows its pill", async () => {
+    const page = await overlayPage();
+    await page.show({ ...warmingUp, chat: chat(null) });
+
+    expect(document.querySelector(".chat-status .pill")).not.toBeNull();
+  });
+
+  /** Opened upward, the window sits at the bottom of its overlay, by the caret, until the overlay
+   * fits it; downward, at the top. */
+  test.each([
+    [true, "flex-end"],
+    [false, "flex-start"],
+  ])("opened upward: %s, it sits at the %s", async (chatOpensUpward, justifyContent) => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(null), chatOpensUpward });
+
+    expect(document.querySelector<HTMLElement>(".chat-canvas")?.style.justifyContent).toBe(justifyContent);
+  });
+
+  /** A new turn scrolls the conversation to it. */
+  test("it scrolls to the newest turn", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: { ...chat(null), pendingRequest: null } });
+    const scroll = document.querySelector<HTMLElement>(".chat-scroll");
+    if (!scroll) throw new Error("no .chat-scroll");
+    Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
+    scroll.scrollTop = 0;
+
+    const longer = chat(null);
+    await page.show({ ...idle, chat: { ...longer, turns: [...longer.turns, { id: 2, request: "And the launch party", tool: "answer", reply: "Saturday" }], pendingRequest: null } });
+
+    expect(scroll.scrollTop).toBe(500);
+  });
+
+  /** A state that shows nothing new (a follow-up's level, a new copy of the same conversation, as
+   * each push brings) leaves the conversation where the user scrolled it; the follow-up's status
+   * changing, or its request joining, scrolls to it. */
+  test("an update that shows nothing new leaves the scroll where the user put it", async () => {
+    const page = await overlayPage();
+    const followUp: OverlayState = { ...listening, mode: "agent", chat: { ...chat(null), pendingRequest: null } };
+    await page.show(followUp);
+    const scroll = document.querySelector<HTMLElement>(".chat-scroll");
+    if (!scroll) throw new Error("no .chat-scroll");
+    Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
+    scroll.scrollTop = 120;
+
+    await page.show({ ...followUp, level: 0.9, chat: structuredClone(followUp.chat) });
+    await page.show({ ...followUp, level: 0.2, isHearing: false, chat: structuredClone(followUp.chat) });
+    expect(scroll.scrollTop).toBe(120);
+
+    const transcribing: OverlayState = { ...followUp, phase: { kind: "transcribing" }, chat: structuredClone(followUp.chat) };
+    await page.show(transcribing);
+    expect(scroll.scrollTop).toBe(500);
+    scroll.scrollTop = 120;
+    await page.show({ ...transcribing, chat: { ...chat(null), pendingRequest: "And the launch party" } });
+    expect(scroll.scrollTop).toBe(500);
+  });
+
+  /** The timeout bar shows the time left while the window can still time out, and goes once it is
+   * touched. */
+  test("the timeout bar shows until the window is touched", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout / 2) });
+
+    const bar = document.querySelector<HTMLElement>(".chat-timeout");
+    expect(parseFloat(bar?.style.width ?? "")).toBeGreaterThan(40);
+    expect(parseFloat(bar?.style.width ?? "")).toBeLessThanOrEqual(50);
+
+    await page.show({ ...idle, chat: chat(null) });
+    expect(document.querySelector(".chat-timeout")).toBeNull();
+  });
+
+  /** The timeout bar runs down by itself, with no state pushed: full, half gone, then empty; gone once
+   * touched, it asks for no more frames. */
+  test("the timeout bar runs down with no state pushed", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      const page = await overlayPage();
+      await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout) });
+      const width = () => parseFloat(document.querySelector<HTMLElement>(".chat-timeout")?.style.width ?? "");
+
+      expect(width()).toBeCloseTo(100, 0);
+      vi.advanceTimersByTime(config.chatTimeout / 2);
+      expect(width()).toBeCloseTo(50, 0);
+      vi.advanceTimersByTime(config.chatTimeout);
+      expect(width()).toBe(0);
+
+      await page.show({ ...idle, chat: chat(null) });
+      expect(document.querySelector(".chat-timeout")).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A pointer entering or moving in the window, a click or a scroll keeps it open; once kept open
+   * nothing more is sent. */
+  test.each(["pointerover", "pointermove", "pointerdown", "wheel"])("a %s keeps it open", async (type) => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout) });
+    const box = document.querySelector(".chat-scroll");
+
+    await act(async () => {
+      box?.dispatchEvent(new Event(type, { bubbles: true }));
+    });
+    expect(page.commands.filter((command) => command.type === "keepChatOpen")).toHaveLength(1);
+
+    await page.show({ ...idle, chat: chat(null) });
+    await act(async () => {
+      box?.dispatchEvent(new Event(type, { bubbles: true }));
+    });
+    expect(page.commands.filter((command) => command.type === "keepChatOpen")).toHaveLength(1);
+  });
+
+  test("its close button closes it", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(null) });
+
+    await act(async () => document.querySelector<HTMLElement>(".chat-close")?.click());
+
+    expect(page.commands).toContainEqual({ type: "closeChat" });
+  });
+
+  /** A reply's web link opens through the main process (which checks it again), never in the overlay
+   * itself. */
+  test("a link opens through the main process", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(null) });
+    const link = document.querySelector<HTMLAnchorElement>(".chat-text a");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+
+    await act(async () => link?.dispatchEvent(click));
+
+    expect(link?.textContent).toBe("the plan");
+    expect(click.defaultPrevented).toBe(true);
+    expect(page.commands).toContainEqual({ type: "openChatLink", url: "https://example.com/plan" });
+  });
+
+  /** The window reports its laid-out height, for the overlay to fit it. */
+  test("it reports its height", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chat: chat(null) });
+
+    expect(page.commands).toContainEqual({ type: "chatHeight", height: chatSize.height });
   });
 });

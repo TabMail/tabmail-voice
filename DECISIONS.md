@@ -821,6 +821,83 @@ change easily at a single location."
   telling the overlay page which way it opened (`OverlayState.opensUpward`, pushed on each
   placement).
 
+## ADR-DESK-022: The Answer tool, the chat window, and agent tools switched on and off
+
+**Context:** Owner, 2026-09-26: agent mode gains an Answer tool whose reply is shown, not pasted, in a
+chat window that grows from the pill. With the window open, the hotkey starts a follow-up, "always in
+agent mode". Escape or the window's X closes it; untouched it closes after 30 seconds, "like iOS
+undo", with a bar showing the time left; a hover, click or scroll ends that timeout for good ("the
+30-second thing is when there's no behavior"), and a click elsewhere does not close it. The owner also
+asked that the availability of each tool be sent to the backend, "because the tool JSON definitions
+live in the backend", and that every tool be in the welcome wizard and Settings, "toggleable, on by
+default". First built in the Swift app; built here in the Electron app (ADR-DESK-032), which is the
+one that ships.
+
+**Decision:**
+- `src/core/agent/tools.ts`: `AnswerTool` (`answer`); its prompt `system_prompt_desktop_answer`
+  (backend ADR-023 amendment) replies with text that `deliver` hands to `ToolContext.showAnswer`.
+  Each tool carries a `settingsDescription` and a `chatCaption` (what it did with its text; none for
+  Answer).
+- The tools offered (`DesktopAgent.tools(context, enabled, emailAppAvailable)`): the selection's
+  writing tool (Edit or Compose), Thunderbird while an email app is available, and Answer, each only
+  while enabled. None → `AgentFailure("noToolEnabled")`, with no completions call; one → it runs,
+  with no choice call; more → the choice request lists them in `available_tools`
+  (`CompletionsClient.complete`), and a reply naming a tool not offered is `noTool`. The agent's pick
+  of the other writing tool is no longer overruled: that tool is not offered.
+- `AppSettings` keeps the tools switched OFF (`disabledAgentTools`), so every tool, and every tool
+  added later, is on until the user turns it off. `DictationSettings.enabledTools` is part of the
+  key-down snapshot (ADR-DESK-017). Settings' Agent mode section and the wizard's Features step show
+  one switch per tool, with its icon and `settingsDescription` (`setAgentToolEnabled`).
+- `src/core/agent/agentChat.ts`: `AgentChat` (in memory only, gone when the window closes; root
+  ADR-004) holds the turns: the request, the tool and its reply (an answer, or the text another tool
+  pasted or sent). A follow-up sends `chatTranscript` to every prompt as `conversation`
+  (`User: …` / `TabMail[ [caption]]: …`), so "why?" or "shorter" refers to the last reply. A
+  follow-up another tool carries out is added to the chat with its caption. `formattedReply` renders
+  inline Markdown only; a link that is not a web page's (`opensLink`) shows as plain text, as a reply
+  carries the words on screen.
+- `DictationController.chat` is the window's state (`onChatChange` on open and close). An answer
+  opens it (`closesAt` = now + `chatTimeout`); `keepChatOpen()` (a hover, click or scroll in the
+  window, or a follow-up) clears the timeout, and does nothing once it has closed; `closeChat()`
+  (Escape, X, or the timeout) drops the conversation and discards a follow-up under way, or the
+  failure a follow-up left showing. With the chat open, `start()` is a follow-up:
+  agent mode from the start, Space switches nothing, no tips.
+- `PushToTalkGesture.isChatOpen` in the `voice-hotkey` helper (the `setChatOpen` request, sent on
+  every open and close and again when the helper restarts): Escape is kept from the app and closes
+  the window (the `closeChat` action), during a follow-up too, held or hands-free, which closing it
+  cancels; a held follow-up's key-up then does nothing. The helper handles each request in its own
+  task, so two sent together can be applied in either order (found in review: an open and a close
+  together left Escape kept after the window closed); the main process sends the hotkey's state
+  (`configure`, `setChatOpen`) one request at a time, each after the last is answered, so the helper
+  ends in the state sent last. A failed request holds up none after it.
+- The conversation belongs to the account it was held under: `AccountModel.onAccountChange`
+  (sign-out, or another account signing in, not a refreshed token) ends it and any agent request
+  under way before the next account can send anything. A dictation under way goes on and is pasted
+  as heard, without the cleanup (ADR-DESK-008).
+- Nothing that finishes late writes to a newer chat: every step of a request checks its generation
+  after each await, the answer and the delivery too, and the chat window drops a caret lookup still
+  under way when it opens, so it stays where it opened.
+- `OverlayWindowController.update(phase, chatOpen)`: the overlay window shows the chat window
+  instead of the pill while the chat is open, takes the mouse only then (`setIgnoreMouseEvents`), and
+  fits the height the page measures (`chatHeight`, at most `chatMaxHeight`, then it scrolls to the
+  newest turn when a turn, the request under way or the follow-up's status changes, and not for a
+  push that shows nothing new, so an earlier answer the user scrolled up to stays put), so only
+  the shadow's margin around it catches clicks. It opens where the pill was (`chatFrame`), below the caret's line,
+  or above it when the tallest window would not fit below (`chatOpensUpward`), and stays there for
+  follow-ups. The window accepts the first click (`acceptFirstMouse`) without taking focus. The page
+  sends `keepChatOpen` on pointer enter, move, down and wheel. A link opens through the main process
+  (`openChatLink`), which checks it again and opens it only while the chat is open.
+
+**Consequences:**
+- The backend's ADR-023 amendment deploys before this build: an older backend ignores
+  `available_tools` and has no answer prompt.
+- Closing the chat while a follow-up is running cancels it before its next step: nothing more
+  reaches the app, but a Thunderbird request closed between its paste and its Return is left typed,
+  unsent, in TabMail's chat (the relay's cancellation, as before).
+- The conversation is sent in full with every follow-up (no truncation); a very long one ends in a
+  backend context-length error for that follow-up.
+- Whether hover and the first click reach the never-focused overlay window on macOS is checked by
+  hand; the tests drive the page's events and the window's calls.
+
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
 **Context:** Owner, 2026-09-27: with fn as the hotkey, a press or a double tap also switched the

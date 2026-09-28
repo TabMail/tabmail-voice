@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "./account.js";
+import { type AgentChat, appendTurn, chatTranscript } from "./agent/agentChat.js";
 import { DesktopAgent } from "./agent/desktopAgent.js";
 import { EmailClient } from "./agent/emailClient.js";
 import type { ThunderbirdRelay } from "./agent/thunderbirdRelay.js";
@@ -72,9 +73,10 @@ export const nothingHeardMessage = "Didn't catch that. Try again.";
  * Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
  * transcript with the screen context → paste. In agent mode (Space pressed during the hold) the
  * transcript is a request instead: the selection picks Edit or Compose, the agent may send it to
- * TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there. A double tap
- * of the hotkey starts a hands-free dictation instead of a hold. While the pill listens, a tip may
- * show by it (`DictationTip`).
+ * TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there; an answer
+ * opens the chat window (`chat`), where the hotkey then starts a follow-up in agent mode. A double
+ * tap of the hotkey starts a hands-free dictation instead of a hold. While the pill listens, a tip
+ * may show by it (`DictationTip`).
  */
 export class DictationController extends Observable {
   private currentPhase: Phase = { kind: "idle" };
@@ -85,8 +87,13 @@ export class DictationController extends Observable {
   private currentLanguage: string | null = null;
   private currentTip: DictationTip | null = null;
   private emailApp: EmailApp | null = null;
+  private currentChat: AgentChat | null = null;
 
   onPhaseChange: ((phase: Phase) => void) | undefined;
+  /** The chat window opened (true) or closed. */
+  onChatChange: ((isOpen: boolean) => void) | undefined;
+  /** How long the chat window stays open untouched. Settable for tests. */
+  chatTimeout = config.chatTimeout;
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
   captureContext: (() => Promise<ScreenContext | null> | null) | undefined;
@@ -132,10 +139,13 @@ export class DictationController extends Observable {
   /** Set while a double tap's second press is down: held past a tap, it is a hold, with a hold's
    * tips. */
   private secondPressTimer: Timer | null = null;
+  /** Closes the chat window when its timeout runs out. */
+  private chatCloseTimer: Timer | null = null;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
     this.dictationSettings = deps.settings();
+    deps.account.onAccountChange = () => this.accountChanged();
   }
 
   get phase(): Phase {
@@ -179,6 +189,11 @@ export class DictationController extends Observable {
     return this.currentTip;
   }
 
+  /** The chat window's conversation while it is open (an answer opens it); null when closed. */
+  get chat(): AgentChat | null {
+    return this.currentChat;
+  }
+
   /** The settings the current (or last) dictation started with. */
   get settings(): DictationSettings {
     return this.dictationSettings;
@@ -198,6 +213,8 @@ export class DictationController extends Observable {
         return this.cancel();
       case "toggleMode":
         return this.toggleMode();
+      case "closeChat":
+        return this.closeChat();
     }
   }
 
@@ -217,7 +234,8 @@ export class DictationController extends Observable {
    * tap's second press) shows at once: it carries on the first tap's recording, whose microphone is
    * already running, if that tap is still waiting for it. Released as a tap, the press leaves it
    * listening until `finish()` or `cancel()` (`listenHandsFree()`); held, it finishes on release
-   * like any hold. */
+   * like any hold. With the chat window open it is a follow-up: an agent request from the start,
+   * which keeps the window open, and shows no tips. */
   start(handsFree = false): void {
     if (this.secondTapTimer !== null) {
       if (handsFree) {
@@ -243,7 +261,9 @@ export class DictationController extends Observable {
     this.generation += 1;
     const current = this.generation;
     this.abort = new AbortController();
-    this.currentMode = "dictation";
+    const isFollowUp = this.currentChat !== null;
+    if (isFollowUp) this.keepChatOpen();
+    this.currentMode = isFollowUp ? "agent" : "dictation";
     this.emailApp = null;
     this.emailAppRead = null;
     this.screenRead = null;
@@ -263,6 +283,7 @@ export class DictationController extends Observable {
       this.changed();
     });
     this.dueTips = ["switchMode"];
+    if (isFollowUp) void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
     this.contextRead = settings.readsScreen ? (this.captureContext?.() ?? null) : null;
     const read = this.contextRead;
@@ -320,10 +341,12 @@ export class DictationController extends Observable {
     log.debug(`DictationController: ${handsFree ? "listening hands-free" : "arming"} (generation ${current})`);
   }
 
-  /** Space during the hold: switches between dictation and agent mode. */
+  /** Space during the hold: switches between dictation and agent mode; a follow-up in the chat
+   * window stays in agent mode. */
   toggleMode(): void {
     const kind = this.currentPhase.kind;
     if (kind !== "arming" && kind !== "listening") return;
+    if (this.currentChat !== null) return;
     this.currentMode = toggled(this.currentMode);
     this.deps.tips.markLearned("switchMode");
     if (this.currentTip === "switchMode") this.hideTip();
@@ -422,11 +445,16 @@ export class DictationController extends Observable {
         const email = await this.lookUpEmailApp();
         if (!isCurrent()) return;
         const client = this.deps.makeCompletionsClient(settings.backendURL);
-        const tool = await DesktopAgent.tool(transcript, context, email.path !== null, client, account, userId, signal);
+        // The tools the bubbles show: the same read, settings and email app.
+        const offered = DesktopAgent.tools(context, settings.enabledTools, email.path !== null);
+        const chat = this.currentChat;
+        const conversation = chat ? chatTranscript(chat) : "";
+        if (chat) this.setChat({ ...chat, pendingRequest: transcript });
+        const tool = await DesktopAgent.tool(transcript, offered, context, conversation, client, account, userId, signal);
         if (!isCurrent()) return;
         log.debug(`DictationController: agent chose ${tool}`);
         this.setPhase({ kind: "running", tool });
-        const text = await DesktopAgent.write(tool, transcript, context, client, account, userId, signal);
+        const text = await DesktopAgent.write(tool, transcript, context, conversation, client, account, userId, signal);
         if (!isCurrent()) return;
         const targetApp = await this.targetApp;
         await toolImplementations[tool].deliver(text, {
@@ -434,8 +462,16 @@ export class DictationController extends Observable {
           paste: (text) => this.paste(text, signal),
           isTargetAppFrontmost: async () => (await this.deps.frontmostApp().catch(() => null)) === targetApp,
           thunderbird: this.deps.thunderbird,
+          // Closed, cancelled or superseded meanwhile: the answer goes nowhere.
+          showAnswer: (answer) => {
+            if (isCurrent()) this.showInChat(transcript, tool, answer);
+          },
           signal,
         });
+        // Closed, cancelled or superseded while it delivered: the chat now open may be a newer one.
+        if (!isCurrent()) return;
+        // A follow-up's other tools are listed in the chat too, so a later follow-up can refer to them.
+        if (tool !== "answer" && this.currentChat !== null) this.showInChat(transcript, tool, text);
       }
       if (this.generation !== generation) return;
       this.teardown();
@@ -478,7 +514,7 @@ export class DictationController extends Observable {
 
   private updateTools(): void {
     this.currentTools = this.currentMode === "agent" && this.isScreenReadDone && this.emailApp !== null
-      ? DesktopAgent.tools(this.screenRead, this.emailApp.path !== null)
+      ? DesktopAgent.tools(this.screenRead, this.dictationSettings.enabledTools, this.emailApp.path !== null)
       : [];
     this.changed();
   }
@@ -586,7 +622,8 @@ export class DictationController extends Observable {
    * shows no tip over the warm-up swirl), for its display duration, or with none (the hands-free
    * tip) until the dictation stops listening. */
   private showDueTip(): void {
-    if (this.currentPhase.kind !== "listening" || !this.hearing || this.currentTip !== null) return;
+    // A follow-up's pill is in the chat window, which shows no tips.
+    if (this.currentPhase.kind !== "listening" || !this.hearing || this.currentTip !== null || this.currentChat !== null) return;
     while (this.dueTips.length > 0) {
       const next = this.dueTips.shift();
       if (next === undefined || !this.deps.tips.isEligible(next)) continue;
@@ -623,6 +660,67 @@ export class DictationController extends Observable {
     this.currentTip = null;
   }
 
+  /** Adds a turn to the chat window, opening it if it is closed: then it closes after `chatTimeout`
+   * unless the user touches it (`keepChatOpen()`). */
+  private showInChat(request: string, tool: AgentTool, reply: string): void {
+    let chat = this.currentChat;
+    if (chat === null) {
+      chat = { turns: [], pendingRequest: null, closesAt: Date.now() + this.chatTimeout };
+      this.chatCloseTimer = after(this.chatTimeout, () => {
+        this.chatCloseTimer = null;
+        log.debug("DictationController: chat window timed out");
+        this.closeChat();
+      });
+      log.debug("DictationController: chat window opened");
+    }
+    this.setChat(appendTurn(chat, request, tool, reply));
+  }
+
+  /** The user touched the chat window (a hover, click or scroll) or followed up: it no longer times
+   * out, and stays open until closed. */
+  keepChatOpen(): void {
+    const chat = this.currentChat;
+    if (chat?.closesAt == null) return;
+    cancelTimer(this.chatCloseTimer);
+    this.chatCloseTimer = null;
+    this.setChat({ ...chat, closesAt: null });
+    log.debug("DictationController: chat window kept open");
+  }
+
+  /** Escape or the window's close button: the conversation is gone, and a follow-up under way is
+   * cancelled. */
+  closeChat(): void {
+    if (this.currentChat === null) return;
+    this.endConversation();
+    log.debug("DictationController: chat window closed");
+  }
+
+  /** The conversation and any request under way end: the chat window closes. */
+  private endConversation(): void {
+    cancelTimer(this.chatCloseTimer);
+    this.chatCloseTimer = null;
+    // A failure still showing goes too: the pill it shows is where the conversation started.
+    if (this.currentPhase.kind !== "idle") this.discard();
+    this.setChat(null);
+  }
+
+  /** Signing out, or into another account, ends the conversation and any agent request under way,
+   * so neither reaches the next account; a refreshed token for the same account changes nothing. */
+  private accountChanged(): void {
+    // A dictation never reaches the chat (one is open only after an agent request, and every request
+    // while it is open is one): it goes on, pasted as heard without the other account's cleanup.
+    if (this.currentMode !== "agent") return;
+    log.debug("DictationController: account changed; conversation ended");
+    this.endConversation();
+  }
+
+  private setChat(chat: AgentChat | null): void {
+    const wasOpen = this.currentChat !== null;
+    this.currentChat = chat;
+    if (wasOpen !== (chat !== null)) this.onChatChange?.(chat !== null);
+    this.changed();
+  }
+
   private discard(): void {
     this.generation += 1;
     this.abort.abort();
@@ -646,6 +744,7 @@ export class DictationController extends Observable {
     this.releaseTailTimer = null;
     this.startedAt = null;
     this.currentLevel = 0;
+    if (this.currentChat?.pendingRequest != null) this.setChat({ ...this.currentChat, pendingRequest: null });
   }
 
   private fail(message: string): void {

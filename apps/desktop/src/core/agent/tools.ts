@@ -14,26 +14,31 @@ import type { ThunderbirdRelay } from "./thunderbirdRelay.js";
  * one the agent answers with; a tool that hands the request to another app goes through that app's
  * connector (ADR-DESK-020). Each tool is one backend prompt; its bubble shows above the pill while
  * agent mode listens, and its border circles while it runs. Edit and Compose are never offered
- * together: the selection decides which (`DesktopAgent.writingTool`).
+ * together: the selection decides which (`DesktopAgent.writingTool`). Each can be switched off in
+ * Settings and the welcome wizard; all are on by default (owner, 2026-09-26).
  */
-export type AgentTool = "edit" | "compose" | "thunderbird";
+export type AgentTool = "edit" | "compose" | "thunderbird" | "answer";
 
-export const agentTools: readonly AgentTool[] = ["edit", "compose", "thunderbird"];
+export const agentTools: readonly AgentTool[] = ["edit", "compose", "thunderbird", "answer"];
 
-export function isAgentTool(name: string): name is AgentTool {
-  return (agentTools as readonly string[]).includes(name);
+export function isAgentTool(name: unknown): name is AgentTool {
+  return typeof name === "string" && (agentTools as readonly string[]).includes(name);
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
-export type AgentFailureKind = "noTool" | "noText" | "appChanged";
+export type AgentFailureKind = "noTool" | "noText" | "appChanged" | "noToolEnabled";
+
+const failureMessages: Record<AgentFailureKind, string> = {
+  noTool: "Couldn't work out what to do. Try again.",
+  noText: "Couldn't write that. Try again.",
+  appChanged: "You switched apps, so nothing was pasted.",
+  /** Every tool this request could use is switched off in Settings. */
+  noToolEnabled: "Turn on an agent tool in Settings.",
+};
 
 export class AgentFailure extends Error {
   constructor(readonly kind: AgentFailureKind) {
-    super(
-      kind === "noTool" ? "Couldn't work out what to do. Try again."
-        : kind === "noText" ? "Couldn't write that. Try again."
-          : "You switched apps, so nothing was pasted.",
-    );
+    super(failureMessages[kind]);
     this.name = "AgentFailure";
   }
 
@@ -52,6 +57,8 @@ export interface ToolContext {
   /** Whether the app in front at key-down still is. */
   isTargetAppFrontmost(): Promise<boolean>;
   thunderbird: ThunderbirdRelay;
+  /** Shows a reply in the chat window, opening it if it is closed. */
+  showAnswer(text: string): void;
   signal: AbortSignal;
 }
 
@@ -74,6 +81,11 @@ export interface DesktopTool {
   symbolName: string;
   /** The backend prompt that writes the tool's text. */
   prompt: string;
+  /** What the tool does, under its switch in Settings and the welcome wizard. */
+  settingsDescription: string;
+  /** What the tool did with its text, shown over it in the chat window; null for Answer, whose text
+   * is the reply itself. */
+  chatCaption: string | null;
   /** The prompt's variables. Every variable is sent, empty when unknown: the backend leaves a
    * missing one in the prompt as written. */
   variables(request: string, context: ScreenContext | null): Record<string, string>;
@@ -110,6 +122,8 @@ export const EditTool = {
   displayName: "Edit",
   symbolName: "pencil",
   prompt: config.agentEditPrompt,
+  settingsDescription: "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
+  chatCaption: "Replaced the selection",
   variables: screenVariables,
 
   /** With the selection's own leading and trailing blank space, so replacing a whole line keeps its
@@ -135,6 +149,8 @@ export const ComposeTool: DesktopTool = {
   displayName: "Compose",
   symbolName: "square.and.pencil",
   prompt: config.agentComposePrompt,
+  settingsDescription: "Writes new text where your cursor is: a reply, a message, a note, a command.",
+  chatCaption: "Pasted at the cursor",
 
   /** The screen, plus the program running in a terminal, so a command comes out as that program
    * takes it. */
@@ -154,6 +170,8 @@ export const ThunderbirdTool: DesktopTool = {
   displayName: "Thunderbird",
   symbolName: "envelope",
   prompt: config.agentThunderbirdPrompt,
+  settingsDescription: "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
+  chatCaption: "Sent to TabMail in Thunderbird",
   variables: screenVariables,
   fitted: (text) => text,
 
@@ -165,8 +183,26 @@ export const ThunderbirdTool: DesktopTool = {
   },
 };
 
+/** Answers the user in the chat window the pill grows into: for requests addressed to TabMail rather
+ * than text for the app (a question, an explanation of what is on screen, a follow-up). */
+export const AnswerTool: DesktopTool = {
+  displayName: "Answer",
+  symbolName: "text.bubble",
+  prompt: config.agentAnswerPrompt,
+  settingsDescription: "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
+  chatCaption: null,
+  variables: screenVariables,
+  fitted: (text) => text,
+
+  /** Shows the reply in the chat window, whatever app is in front: it is not pasted anywhere. */
+  async deliver(text, context) {
+    context.showAnswer(text);
+  },
+};
+
 export const toolImplementations: Record<AgentTool, DesktopTool> = {
   edit: EditTool,
   compose: ComposeTool,
   thunderbird: ThunderbirdTool,
+  answer: AnswerTool,
 };

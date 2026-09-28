@@ -8,6 +8,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, ipcMain, screen, session, shell } from "electron";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
+import { opensLink } from "../core/agent/agentChat.js";
 import { EmailClient } from "../core/agent/emailClient.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
@@ -179,6 +180,8 @@ function launch(): void {
       hotkey: controller.settings.hotkey,
       tools: controller.tools,
       emailAppIcon: emailAppIcon.path === controller.emailAppPath ? emailAppIcon.dataURL : null,
+      chat: controller.chat,
+      chatOpensUpward: overlay.chatOpensUpward,
     };
   }
 
@@ -193,6 +196,7 @@ function launch(): void {
       installedEmailApps: emailApps.installed.map(({ bundleIdentifier, name }) => ({ bundleIdentifier, name })),
       hasTabMail: hasTabMail(),
       defaultEmailAppIsSupported: EmailClient.resolve(null, systemDefault?.bundleIdentifier ?? null, true) !== null,
+      enabledTools: settings.enabledTools,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       openAtLogin: app.getLoginItemSettings().openAtLogin,
@@ -212,6 +216,7 @@ function launch(): void {
       canAdvance: current.canAdvance,
       hasConsented: settings.hasConsented,
       readsScreen: settings.readsScreen,
+      enabledTools: settings.enabledTools,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
     };
@@ -283,13 +288,30 @@ function launch(): void {
 
   // MARK: Hotkey
 
+  // `voice-hotkey` handles each request in its own task, so two state changes sent together could be
+  // applied in either order (the chat window's closing before its opening, leaving Escape kept from
+  // the app in front). Each waits until the one before is answered, that is applied, so the helper
+  // ends in the state sent last.
+  let hotkeyStateSent: Promise<unknown> = Promise.resolve();
+  function sendHotkeyState<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    const sent = hotkeyStateSent.then(() => hotkeyHelper.request<T>(method, params));
+    hotkeyStateSent = sent.catch(() => undefined);
+    return sent;
+  }
+
   function configureHotkey(hotkey: DictationHotkey): void {
-    hotkeyHelper
-      .request<{ installed: boolean }>("configure", { hotkey, tapMaxDuration: config.minimumHoldDuration / 1000, doubleTapWindow: config.doubleTapWindow / 1000 })
+    sendHotkeyState<{ installed: boolean }>("configure", { hotkey, tapMaxDuration: config.minimumHoldDuration / 1000, doubleTapWindow: config.doubleTapWindow / 1000 })
       .then(({ installed }) => log.debug(`main: hotkey ${hotkey} ${installed ? "installed" : "not installed (no Accessibility grant yet)"}`))
       .catch((error: unknown) => {
         log.error(`main: couldn't configure the hotkey: ${errorName(error)}`);
       });
+  }
+
+  /** Escape closes the chat window while it is open, kept from the app in front. */
+  function setChatOpen(isOpen: boolean): void {
+    sendHotkeyState("setChatOpen", { isOpen }).catch((error: unknown) => {
+      log.error(`main: setChatOpen failed: ${errorName(error)}`);
+    });
   }
 
   function startActivator(): void {
@@ -298,7 +320,11 @@ function launch(): void {
     });
   }
 
-  hotkeyHelper.onStart = () => configureHotkey(settings.hotkey);
+  // A restarted helper knows nothing of the chat window either.
+  hotkeyHelper.onStart = () => {
+    configureHotkey(settings.hotkey);
+    setChatOpen(controller.chat !== null);
+  };
   hotkeyHelper.on("action", (message) => {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
@@ -319,7 +345,7 @@ function launch(): void {
   };
 
   controller.onPhaseChange = (phase) => {
-    overlay.update(phase);
+    overlay.update(phase, controller.chat !== null);
     tray.update();
     switch (phase.kind) {
       case "arming":
@@ -331,6 +357,10 @@ function launch(): void {
           log.error(`main: dictationEnded failed: ${errorName(error)}`);
         });
     }
+  };
+  controller.onChatChange = (isOpen) => {
+    setChatOpen(isOpen);
+    overlay.update(controller.phase, isOpen);
   };
   controller.observe(() => {
     updateEmailAppIcon();
@@ -388,6 +418,9 @@ function launch(): void {
       case "setReadsScreen":
         settings.readsScreen = command.value;
         return;
+      case "setAgentToolEnabled":
+        settings.setEnabled(command.tool, command.value);
+        return;
       case "setEmailClient":
         if (command.bundleIdentifier === null || config.thunderbirdBundleIdentifiers.includes(command.bundleIdentifier)) settings.emailClient = command.bundleIdentifier;
         return;
@@ -413,6 +446,19 @@ function launch(): void {
         return wizard?.goTo(command.index);
       case "openURL":
         if (openableURLs.includes(command.url)) await shell.openExternal(command.url);
+        return;
+      case "keepChatOpen":
+        controller.keepChatOpen();
+        return;
+      case "closeChat":
+        controller.closeChat();
+        return;
+      case "openChatLink":
+        // Only a web page, and only while the chat window is open.
+        if (controller.chat !== null && opensLink(command.url)) await shell.openExternal(command.url);
+        return;
+      case "chatHeight":
+        overlay.fitChat(command.height);
         return;
     }
   }

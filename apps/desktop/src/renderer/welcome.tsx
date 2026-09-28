@@ -4,12 +4,13 @@
 
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { agentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { WelcomeWizard } from "../core/welcomeWizard.js";
 import type { WelcomeState } from "../shared/ipc.js";
 import icon from "../../resources/icon.png";
 import { send, useWindowState } from "./bridge.js";
-import { LockShieldIcon, MicrophoneIcon, ViewfinderIcon } from "./icons.js";
+import { LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "./icons.js";
 import "./form.css";
 import "./welcome.css";
 
@@ -67,6 +68,20 @@ function Page({ state }: { state: WelcomeState }) {
             </span>
           </label>
           {state.readsScreen && !state.accessibilityTrusted && <span className="caption">Screen reading needs Accessibility access.</span>}
+          <hr />
+          <span>Agent mode (press Space while dictating) can:</span>
+          {agentTools.map((tool) => (
+            <label key={tool} className="check">
+              <input type="checkbox" checked={state.enabledTools.includes(tool)} onChange={(event) => void send({ type: "setAgentToolEnabled", tool, value: event.target.checked })} />
+              <span className="stack-text">
+                <span className="labelled-icon">
+                  <ToolIcon tool={tool} size={config.settingsToolIconSize} />
+                  {toolImplementations[tool].displayName}
+                </span>
+                <span className="caption">{toolImplementations[tool].settingsDescription}</span>
+              </span>
+            </label>
+          ))}
         </StepPage>
       );
   }

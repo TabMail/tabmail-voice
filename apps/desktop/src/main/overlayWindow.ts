@@ -6,12 +6,13 @@ import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
 import type { Phase } from "../core/dictationController.js";
 import { errorName, log } from "../core/log.js";
-import { opensUpward, overlayOrigin, type Rect } from "../core/overlayGeometry.js";
+import { chatFrame, chatOpensUpward, opensUpward, overlayOrigin, type Rect } from "../core/overlayGeometry.js";
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
  * hold is arming (the caret is looked up then, so the overlay appears there the moment the hold is
- * revealed), shown from listening on, and hidden once the exit animation has played. The window
+ * revealed), shown from listening on, and hidden once the exit animation has played. While the chat
+ * window is open the overlay shows it instead, where the pill was, and takes the mouse. The window
  * never takes focus, so the target field keeps it and receives the paste.
  */
 export class OverlayWindowController {
@@ -25,6 +26,8 @@ export class OverlayWindowController {
   /** The overlay last opened above the caret's line (`opensUpward`), which the view places its tip
    * by (`tipGoesAbove`). */
   private placedUpward = false;
+  /** Where the chat window opened, while it shows: it stays there for follow-ups. */
+  private chat: { anchor: Rect; workArea: Rect; opensUpward: boolean } | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
 
@@ -38,7 +41,20 @@ export class OverlayWindowController {
     return this.placedUpward;
   }
 
-  update(phase: Phase): void {
+  /** The chat window opened above the caret's line (`chatOpensUpward`). */
+  get chatOpensUpward(): boolean {
+    return this.chat?.opensUpward ?? false;
+  }
+
+  /** Shows the overlay for `phase`, or the chat window while it is open (`chatOpen`): a follow-up's
+   * status shows inside it, and it stays where it opened. */
+  update(phase: Phase, chatOpen = false): void {
+    if (chatOpen) {
+      this.cancelHide();
+      if (this.chat === null) this.showChat();
+      return;
+    }
+    if (this.chat !== null) this.hideChat();
     switch (phase.kind) {
       case "idle":
         this.cancelHide();
@@ -65,6 +81,35 @@ export class OverlayWindowController {
         }
         this.show();
     }
+  }
+
+  /** The chat window measured itself: the overlay takes its height, so no empty part of the window
+   * catches clicks. */
+  fitChat(height: number): void {
+    if (this.chat === null) return;
+    this.window.setBounds(rounded(chatFrame(this.chat.anchor, height, this.chat.workArea)));
+  }
+
+  /** Grows the chat window out of the pill, at the caret the answered request was spoken over. A
+   * caret lookup still under way is dropped: the window stays where it opened. */
+  private showChat(): void {
+    this.lookupGeneration += 1;
+    this.lookupPending = false;
+    this.showWhenLocated = false;
+    const anchor = this.anchor ?? this.pointer();
+    const workArea = this.workArea(anchor);
+    this.chat = { anchor, workArea, opensUpward: chatOpensUpward(anchor, workArea) };
+    this.window.setIgnoreMouseEvents(false);
+    this.window.setBounds(rounded(chatFrame(anchor, config.chatMaxHeight, workArea)));
+    this.window.showInactive();
+    this.onPlace?.();
+  }
+
+  private hideChat(): void {
+    this.chat = null;
+    this.window.setIgnoreMouseEvents(true);
+    this.window.hide();
+    this.window.setBounds({ ...this.window.getBounds(), ...config.overlayCanvasSize });
   }
 
   private show(): void {
@@ -94,18 +139,31 @@ export class OverlayWindowController {
   }
 
   private position(): void {
-    const mouse = screen.getCursorScreenPoint();
     // Without a caret (the app doesn't expose one), gather at the mouse pointer.
-    const anchor = this.anchor ?? { x: mouse.x, y: mouse.y, width: 1, height: 1 };
-    const display = screen.getDisplayNearestPoint({ x: Math.round(anchor.x + anchor.width / 2), y: Math.round(anchor.y + anchor.height / 2) });
-    const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, display.workArea);
+    const anchor = this.anchor ?? this.pointer();
+    const workArea = this.workArea(anchor);
+    const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
     this.window.setBounds({ x: Math.round(origin.x), y: Math.round(origin.y), ...config.overlayCanvasSize });
-    this.placedUpward = opensUpward(anchor, config.pillHeight, display.workArea);
+    this.placedUpward = opensUpward(anchor, config.pillHeight, workArea);
     this.onPlace?.();
+  }
+
+  private pointer(): Rect {
+    const mouse = screen.getCursorScreenPoint();
+    return { x: mouse.x, y: mouse.y, width: 1, height: 1 };
+  }
+
+  /** The work area of the display `anchor` is on. */
+  private workArea(anchor: Rect): Rect {
+    return screen.getDisplayNearestPoint({ x: Math.round(anchor.x + anchor.width / 2), y: Math.round(anchor.y + anchor.height / 2) }).workArea;
   }
 
   private cancelHide(): void {
     if (this.hideTimer !== null) clearTimeout(this.hideTimer);
     this.hideTimer = null;
   }
+}
+
+function rounded(frame: Rect): Rect {
+  return { x: Math.round(frame.x), y: Math.round(frame.y), width: Math.round(frame.width), height: Math.round(frame.height) };
 }

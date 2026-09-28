@@ -91,3 +91,25 @@ export function hintCentreOver(pill: Rect, bubbles: Rect[], size: Size): Point {
 export function tipGoesAbove(displayDuration: number | null, opensUpward: boolean): boolean {
   return opensUpward && displayDuration === null;
 }
+
+/** Whether the chat window opens above the caret's line: there is no room below it for the window at
+ * its tallest (so it never flips as it grows). */
+export function chatOpensUpward(anchor: Rect, workArea: Rect): boolean {
+  return maxY(anchor) + config.overlayCaretGap + config.chatMaxHeight > maxY(workArea);
+}
+
+/** The overlay window's frame for a chat window `contentHeight` tall (at most `chatMaxHeight`), with
+ * its shadow margin: the chat's top edge where the pill's was, just below the caret's line, or its
+ * bottom edge just above the line when it opens upward (`chatOpensUpward`); centred on the caret,
+ * the chat itself kept inside the work area. */
+export function chatFrame(anchor: Rect, contentHeight: number, workArea: Rect): Rect {
+  const margin = config.chatShadowMargin;
+  const gap = config.overlayCaretGap;
+  const width = config.chatWidth + 2 * margin;
+  const height = Math.min(contentHeight, config.chatMaxHeight) + 2 * margin;
+  let y = chatOpensUpward(anchor, workArea) ? anchor.y - gap + margin - height : maxY(anchor) + gap - margin;
+  y = Math.min(Math.max(y, workArea.y - margin), maxY(workArea) + margin - height);
+  let x = midX(anchor) - width / 2;
+  x = Math.min(Math.max(x, workArea.x - margin), maxX(workArea) + margin - width);
+  return { x, y, width, height };
+}

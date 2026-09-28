@@ -14,7 +14,7 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
-const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], emailAppIcon: null, opensUpward: false };
+const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], emailAppIcon: null, opensUpward: false, chat: null, chatOpensUpward: false };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 const overlayCanvasSize = { width: 440, height: 258 };
 const settings = {
@@ -31,13 +31,18 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
+  enabledTools: ["edit", "compose", "thunderbird", "answer"],
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"] };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
+/** `config.welcomeWindowSize`. */
+const welcomeWindowSize = { width: 560, height: 660 };
 
-const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string }[] = [
+/** A shot of `page` with `state`; `whole` names what must show whole in it (the welcome window's
+ * buttons, below everything else). */
+const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; whole?: string }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
@@ -56,8 +61,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
-  { name: "welcome-consent", page: "welcome.html", size: { width: 560, height: 500 }, state: welcome },
-  { name: "welcome-accessibility", page: "welcome.html", size: { width: 560, height: 500 }, state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
+  { name: "welcome-consent", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: welcome },
+  { name: "welcome-accessibility", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
 ];
 
 async function capture(shot: (typeof shots)[number]): Promise<void> {
@@ -74,7 +79,12 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
       additionalArguments: [`--preview-state=${encodeURIComponent(JSON.stringify(shot.state))}`],
     },
   });
-  window.webContents.on("console-message", (details) => process.stdout.write(`${shot.name}: console ${details.level}: ${details.message}\n`));
+  // A page that logs an error (React's, for a state it can't render) is no preview of it.
+  let errors = 0;
+  window.webContents.on("console-message", (details) => {
+    if (details.level === "error") errors += 1;
+    process.stdout.write(`${shot.name}: console ${details.level}: ${details.message}\n`);
+  });
   await window.loadFile(join(root, "dist/renderer", shot.page));
   if (shot.forcedColors) {
     window.webContents.debugger.attach();
@@ -83,6 +93,9 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
   if (shot.section) await window.webContents.executeJavaScript(`[...document.querySelectorAll("button.nav")].find((button) => button.textContent === ${JSON.stringify(shot.section)})?.click()`);
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));
+  const rendered = (await window.webContents.executeJavaScript(`(document.getElementById("root")?.childElementCount ?? 0) > 0`)) as boolean;
+  const whole = shot.whole === undefined || ((await window.webContents.executeJavaScript(`(() => { const box = document.querySelector(${JSON.stringify(shot.whole)})?.getBoundingClientRect(); return box !== undefined && box.top >= 0 && box.bottom <= innerHeight; })()`)) as boolean);
+  if (errors > 0 || !rendered || !whole) throw new Error(`the page ${errors > 0 ? "logged errors" : !rendered ? "rendered nothing" : `cut off ${shot.whole}`}`);
   const image = await window.webContents.capturePage();
   writeFileSync(join(output, `${shot.name}.png`), image.toPNG());
   window.close();
@@ -97,6 +110,6 @@ void app.whenReady().then(async () => {
       process.exitCode = 1;
     });
   }
-  process.stdout.write(`Saved ${shots.length} previews to ${output}\n`);
+  process.stdout.write(`${process.exitCode === 1 ? "Some previews failed; saved the others" : `Saved ${shots.length} previews`} to ${output}\n`);
   app.quit();
 });

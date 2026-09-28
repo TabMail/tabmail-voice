@@ -45,6 +45,13 @@ const toolPaths: Record<AgentTool, ReactNode> = {
       <path d="m3 7 9 6 9-6" />
     </>
   ),
+  // A speech bubble with lines of text.
+  answer: (
+    <>
+      <path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+      <path d="M8 9h8M8 12.5h5" />
+    </>
+  ),
 };
 
 export function ToolIcon({ tool, size }: { tool: AgentTool; size: number }) {

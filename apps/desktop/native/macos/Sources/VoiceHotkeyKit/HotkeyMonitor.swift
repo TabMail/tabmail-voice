@@ -29,12 +29,20 @@ public final class HotkeyMonitor {
     public var hotkey: DictationHotkey { gesture.hotkey }
     public var isInstalled: Bool { tap != nil }
 
-    /// A new hotkey or new timings. A hold or hands-free listening under way is cancelled.
+    /// A new hotkey or new timings. A hold or hands-free listening under way is cancelled; whether the
+    /// chat window is open carries over.
     public func configure(_ newGesture: PushToTalkGesture) {
         guard newGesture.hotkey != gesture.hotkey || newGesture.tapMaxDuration != gesture.tapMaxDuration
             || newGesture.doubleTapWindow != gesture.doubleTapWindow else { return }
         if gesture.isActive { onAction(.cancel) }
+        let isChatOpen = gesture.isChatOpen
         gesture = newGesture
+        gesture.isChatOpen = isChatOpen
+    }
+
+    /// The chat window opened or closed: Escape closes it while it is open.
+    public func setChatOpen(_ isOpen: Bool) {
+        gesture.isChatOpen = isOpen
     }
 
     /// The dictation ended without the hotkey (length cap, failure, the menu): stop listening hands-free.

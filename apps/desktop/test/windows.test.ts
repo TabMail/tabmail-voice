@@ -36,6 +36,12 @@ const electron = vi.hoisted(() => {
     loadFile(): Promise<void> {
       return Promise.resolve();
     }
+    ignoresMouse = false;
+    setIgnoreMouseEvents(ignore: boolean): void {
+      this.ignoresMouse = ignore;
+    }
+    setAlwaysOnTop(): void {}
+    setVisibleOnAllWorkspaces(): void {}
   }
   return { BrowserWindow: FakeBrowserWindow, app: { focus: () => {} }, nativeTheme: { shouldUseDarkColors: false } };
 });
@@ -72,6 +78,16 @@ describe("Windows", () => {
 
     electron.nativeTheme.shouldUseDarkColors = true;
     expect(settingsWindow("linux")).toMatchObject({ backgroundColor: config.settingsWindowColour.dark });
+  });
+
+  /** The overlay is never focused, so every click on it is a first click: the chat window's close
+   * button and links answer only because a first click counts. Until the chat opens it lets clicks
+   * through. */
+  test("the overlay takes a first click but is never focused", () => {
+    const overlay = new Windows(() => null as never).overlay() as unknown as { ignoresMouse: boolean };
+
+    expect(electron.BrowserWindow.made.at(-1)).toMatchObject({ focusable: false, acceptFirstMouse: true });
+    expect(overlay.ignoresMouse).toBe(true);
   });
 
   /** A dead audio page is dropped, so the next dictation's command opens a fresh one instead of
