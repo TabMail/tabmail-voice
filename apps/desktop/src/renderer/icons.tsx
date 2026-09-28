@@ -74,6 +74,14 @@ const connectorPaths: Record<Connector, ReactNode> = {
       <path d="M11 6h9.5M11 12.5h9.5M11 19h9.5" />
     </>
   ),
+  // A person in a circle.
+  contacts: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="10" r="3" />
+      <path d="M6.2 18.4a6.5 6.5 0 0 1 11.6 0" />
+    </>
+  ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {

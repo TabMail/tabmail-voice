@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 import { hotkeyActions } from "../src/core/hotkey.js";
 import { EventStoreFailure } from "../src/core/agent/calendarTools.js";
+import { ContactStoreFailure } from "../src/core/agent/contactsTools.js";
 import { type HelperClient, HelperFailure } from "../src/main/helperClient.js";
 import { decodeSamples, MacSystem } from "../src/main/macos.js";
 import type { AudioReport } from "../src/shared/ipc.js";
@@ -76,6 +77,8 @@ describe("helper wire contract", () => {
     await mac.eventStore.addEvent({ title: "Example", start: now, end: now, isAllDay: false, calendar: "", location: null, notes: null });
     await mac.eventStore.openReminders(null);
     await mac.eventStore.addReminder({ title: "Example", list: "", due: null, dueHasTime: false, notes: null });
+    await mac.contactStore.search("Example", 1);
+    await mac.contactStore.add({ firstName: "Example", lastName: "", organization: "", emails: [], phones: [] });
     const microphone = mac.microphone(() => {});
     microphone({ type: "prepare" });
     microphone({ type: "start", session: 1 });
@@ -174,6 +177,49 @@ describe("helper wire contract", () => {
     expect(cases).toEqual(["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"]);
     expect(cases.every((name) => EventStoreFailure.isKind(name))).toBe(true);
     expect(EventStoreFailure.isKind("toString")).toBe(false);
+  });
+
+  /** Contacts requests carry the search and the contact as the helper reads them and wait long
+   * enough for macOS to ask the user for access; a refusal for want of access is its message for the
+   * model, and any other failure stays as it was. */
+  test("Contacts cross the wire as they are, and a refusal is its message", async () => {
+    const calls: { method: string; params: unknown; timeout: unknown }[] = [];
+    const sam = { firstName: "Sam", lastName: "Example", organization: "Company", emails: ["sam@example.com"], phones: ["+1 555 0100"] };
+    let failure: Error | null = null;
+    const helper = {
+      request: async (method: string, params?: unknown, timeout?: unknown) => {
+        calls.push({ method, params, timeout });
+        if (failure) throw failure;
+        return method === "contactsSearch" ? { contacts: [sam] } : sam;
+      },
+    } as unknown as HelperClient;
+    const store = new MacSystem(helper).contactStore;
+
+    expect(await store.search("sam", 11)).toEqual([sam]);
+    expect(await store.add(sam)).toEqual(sam);
+
+    const timeout = config.contactStoreRequestTimeout;
+    expect(calls).toEqual([
+      { method: "contactsSearch", params: { query: "sam", limit: 11 }, timeout },
+      { method: "contactsAdd", params: sam, timeout },
+    ]);
+
+    failure = new HelperFailure("failed", "contactsSearch", "contactsNoAccess");
+    await expect(store.search("sam", 11)).rejects.toEqual(new ContactStoreFailure("contactsNoAccess"));
+    for (const other of [new HelperFailure("failed", "contactsSearch", "contactsSearch needs query and a positive limit"), new HelperFailure("timeout", "contactsSearch")]) {
+      failure = other;
+      await expect(store.search("sam", 11)).rejects.toBe(other);
+    }
+  });
+
+  /** The refusals `voice-macos` sends by name are the ones the app turns into messages. */
+  test("the helper's Contacts refusals are the ones the app knows", () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/ContactStore.swift"), "utf8");
+    const block = /enum Failure: String, Error \{([^}]*)\}/.exec(source)?.[1] ?? "";
+    const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
+
+    expect(cases).toEqual(["contactsNoAccess"]);
+    expect(cases.every((name) => ContactStoreFailure.isKind(name))).toBe(true);
   });
 
   /** The helper's drawn icon reaches the bubble's `<img>` as a PNG data URL; no icon, none. */

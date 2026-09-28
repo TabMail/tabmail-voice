@@ -29,7 +29,8 @@
       "LSUIElement": true,
       "NSMicrophoneUsageDescription": "TabMail Voice listens only while you hold the dictation key.",
       "NSCalendarsFullAccessUsageDescription": "TabMail Voice reads your calendars to answer what you ask, and adds the events you confirm.",
-      "NSRemindersFullAccessUsageDescription": "TabMail Voice reads your reminders to answer what you ask, and adds the ones you confirm."
+      "NSRemindersFullAccessUsageDescription": "TabMail Voice reads your reminders to answer what you ask, and adds the ones you confirm.",
+      "NSContactsUsageDescription": "TabMail Voice looks up people in your contacts to answer what you ask, and adds the ones you confirm."
     }
   }
 }

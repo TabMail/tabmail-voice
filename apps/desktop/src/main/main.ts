@@ -10,6 +10,7 @@ import { app, ipcMain, screen, session, shell } from "electron";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
 import { opensLink } from "../core/agent/agentChat.js";
 import { calendarTools } from "../core/agent/calendarTools.js";
+import { contactsTools } from "../core/agent/contactsTools.js";
 import { connectors } from "../core/agent/connectors.js";
 import { EmailClient } from "../core/agent/emailClient.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
@@ -137,7 +138,7 @@ function launch(): void {
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
     // apps (ADR-DESK-024), none elsewhere.
-    loopTools: process.platform === "darwin" ? calendarTools(mac.eventStore) : [],
+    loopTools: process.platform === "darwin" ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore)] : [],
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {

@@ -30,6 +30,10 @@ import VoiceHelperSupport
 ///   null; `reminderAdd {title, due, dueHasTime, notes}` → the reminder as saved in the default list.
 ///   Times are milliseconds since 1970 (`EventWire`); the first request asks macOS for access, and one
 ///   that can't be carried out fails with an `EventKitStore.Failure` name.
+/// - `contactsSearch {query, limit}` → `{contacts}`: at most `limit` contacts the query matches
+///   (`ContactMatch`), in the user's sort order; `contactsAdd {firstName, lastName, organization,
+///   emails, phones}` → the contact as saved in the default container. The first request asks macOS
+///   for access, and one without it fails with `ContactsFrameworkStore.Failure.contactsNoAccess`.
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
@@ -52,12 +56,12 @@ public enum MacService {
 
     @MainActor
     public static func register(on channel: HelperChannel) -> AnyObject {
-        register(on: channel, eventStore: EventKitStore())
+        register(on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore())
     }
 
-    /// `eventStore` is the user's calendars, or a test's stand-in.
+    /// `eventStore` and `contactStore` are the user's calendars and contacts, or a test's stand-ins.
     @MainActor
-    static func register(on channel: HelperChannel, eventStore: EventKitStore) -> AnyObject {
+    static func register(on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore) -> AnyObject {
         let activator = AccessibilityActivator()
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
@@ -181,6 +185,22 @@ public enum MacService {
             let reminder = ReminderItem(title: title, list: "", due: params["due"]?.number.map(EventWire.date), dueHasTime: dueHasTime, notes: params["notes"]?.string)
             return try await eventStore.add(reminder).json
         }
+        channel.on("contactsSearch") { params in
+            guard let query = params["query"]?.string, let limit = params["limit"]?.integer, limit > 0 else {
+                throw HelperError("contactsSearch needs query and a positive limit")
+            }
+            return ["contacts": .array(try await contactStore.search(query, limit: limit).map(\.json))]
+        }
+        channel.on("contactsAdd") { params in
+            guard let firstName = params["firstName"]?.string, let lastName = params["lastName"]?.string,
+                  let organization = params["organization"]?.string,
+                  let emails = params["emails"]?.array?.compactMap(\.string), let phones = params["phones"]?.array?.compactMap(\.string)
+            else {
+                throw HelperError("contactsAdd needs firstName, lastName, organization, emails and phones")
+            }
+            let contact = ContactCard(firstName: firstName, lastName: lastName, organization: organization, emails: emails, phones: phones)
+            return try await contactStore.add(contact).json
+        }
         channel.on("microphonePrepare") { _ in
             await microphone.prepare()
             return [:]
@@ -205,7 +225,7 @@ public enum MacService {
             await Apps.postReturn()
             return [:]
         }
-        return [activator, microphone, eventStore] as NSArray
+        return [activator, microphone, eventStore, contactStore] as NSArray
     }
 
     private static func bundleIdentifier(_ params: JSON) throws -> String {

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type CalendarEvent, type EventStore, EventStoreFailure, type ReminderItem } from "../core/agent/calendarTools.js";
+import { type ContactCard, type ContactStore, ContactStoreFailure } from "../core/agent/contactsTools.js";
 import type { FocusedElement, ThunderbirdSystem } from "../core/agent/thunderbirdRelay.js";
 import * as config from "../core/config.js";
 import type { GlobeKeySystem } from "../core/globeKeyAction.js";
@@ -129,6 +130,25 @@ export class MacSystem {
       return await this.helper.request<T>(method, params, config.eventStoreRequestTimeout);
     } catch (error) {
       if (error instanceof HelperFailure && EventStoreFailure.isKind(error.helperMessage)) throw new EventStoreFailure(error.helperMessage);
+      throw error;
+    }
+  }
+
+  /** Contacts through the Contacts framework in the helper (ADR-DESK-025), which matches the search
+   * itself, to stop at `limit` without sending the whole address book. Each request may wait on macOS
+   * asking the user for access. */
+  readonly contactStore: ContactStore = {
+    search: async (query, limit) => (await this.contactRequest<{ contacts: ContactCard[] }>("contactsSearch", { query, limit })).contacts,
+    add: async (contact) => await this.contactRequest<ContactCard>("contactsAdd", { ...contact }),
+  };
+
+  /** A Contacts request; one the helper refused for want of access fails saying where to allow it,
+   * for the model to pass on. */
+  private async contactRequest<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    try {
+      return await this.helper.request<T>(method, params, config.contactStoreRequestTimeout);
+    } catch (error) {
+      if (error instanceof HelperFailure && ContactStoreFailure.isKind(error.helperMessage)) throw new ContactStoreFailure(error.helperMessage);
       throw error;
     }
   }

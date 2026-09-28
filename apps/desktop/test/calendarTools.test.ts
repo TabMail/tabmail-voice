@@ -19,7 +19,6 @@ import {
   ReminderCreateTool,
   RemindersReadTool,
 } from "../src/core/agent/calendarTools.js";
-import { connectors } from "../src/core/agent/connectors.js";
 import { LoopToolArgumentError } from "../src/core/agent/loopTool.js";
 import * as config from "../src/core/config.js";
 import { LocalDateTime } from "../src/core/localDateTime.js";
@@ -348,7 +347,6 @@ describe("connectors", () => {
       ["reminders", "reminders_read"],
       ["reminders", "reminder_create"],
     ]);
-    expect(new Set(tools.map((tool) => tool.connector))).toEqual(new Set(connectors));
     const valid = { title: "Example", start_iso: iso(at(10)) };
     expect(tools.map((tool) => tool.confirmation(valid) !== null)).toEqual([false, true, false, true]);
   });
