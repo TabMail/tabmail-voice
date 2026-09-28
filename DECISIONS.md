@@ -1215,6 +1215,12 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
 
 ## ADR-DESK-029: Shortcuts, listed and run through the `shortcuts` command
 
+**Retired 2026-09-28, before the first release** (owner: "Let's not support shortcuts for the first
+release … I don't need shortcuts at all"). The connector, its tools (`shortcutsTools.ts`), the main
+process's `shortcuts.ts`, their tests, config and icon were deleted; the last source is in git
+history (PR #41). A stored `shortcuts` in `disabledConnectors` is a retired name and turns nothing
+off (ADR-DESK-024). What follows is the decision as it was built.
+
 **Context:** Owner, 2026-09-26: the agent can run the user's shortcuts; running one counts as doing
 something, so it is confirmed first (ADR-DESK-023). One switch, on by default, in Settings and the
 wizard (ADR-DESK-024). The backend defines `shortcuts_list {query?}` and `shortcuts_run {name}`
@@ -1521,11 +1527,12 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
   rows and a tip over the pill (`agentBubbleRowsAbove`), the pill still centred in it.
 
 **Consequences:**
-- With every tool offered at once (three) and every connector (nine) on, twelve bubbles: five over,
-  two beside, five under (or a second row over).
+- With every tool offered at once (three) and every connector (eight since Shortcuts was retired,
+  ADR-DESK-029; nine before) on, eleven bubbles: five over, two beside, four under (or a second row
+  over).
 - A pill below the caret still has its first row over the caret's line, as before; only the rows
   after it keep clear of it.
-- A thirteenth connector's bubble would start a third row: the geometry test, which places up to
+- A thirteenth bubble (two more connectors) would start a third row: the geometry test, which places up to
   every tool and connector, checks they stay inside the canvas.
 
 ## ADR-DESK-034: A bubble under the pointer grows and says what it is

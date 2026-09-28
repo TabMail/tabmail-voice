@@ -17,7 +17,6 @@ import { EmailClient } from "../core/agent/emailClient.js";
 import { type EmailOpener, emailTools, NoEmailAppFailure } from "../core/agent/emailTools.js";
 import { messagesTools } from "../core/agent/messagesTools.js";
 import { notesTools } from "../core/agent/notesTools.js";
-import { shortcutsTools } from "../core/agent/shortcutsTools.js";
 import { liveWebFetch, webTools } from "../core/agent/webTools.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
@@ -56,7 +55,6 @@ import { type EmailAppInfo, MacSystem } from "./macos.js";
 import { OverlayWindowController } from "./overlayWindow.js";
 import { macPermissions } from "./permissions.js";
 import { osascript } from "./osascript.js";
-import { shortcutsCommand } from "./shortcuts.js";
 import { nodeProfileFiles } from "./profileFiles.js";
 import { TrayMenu } from "./tray.js";
 import { Windows } from "./windows.js";
@@ -156,11 +154,11 @@ function launch(): void {
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
-    // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), shortcuts through the
-    // `shortcuts` command (ADR-DESK-029), the web (ADR-DESK-030), none elsewhere.
+    // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), the web
+    // (ADR-DESK-030), none elsewhere.
     loopTools:
       process.platform === "darwin"
-        ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...shortcutsTools(shortcutsCommand()), ...webTools(liveWebFetch, { open: (url) => shell.openExternal(url) })]
+        ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...webTools(liveWebFetch, { open: (url) => shell.openExternal(url) })]
         : [],
     keepRecording: isDebugBuild
       ? (wav) => {
