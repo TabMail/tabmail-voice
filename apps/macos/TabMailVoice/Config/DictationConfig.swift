@@ -53,9 +53,9 @@ enum DictationConfig {
     static let debugLastRecordingURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("TabMail-last-dictation.wav")
     #endif
-    /// Recording stops and is sent automatically at this length. Must stay under the backend's
-    /// upload limit (10 MiB): 5 minutes of 16 kHz 16-bit mono is ~9.6 MB.
-    static let maxRecordingDuration: Duration = .seconds(300)
+    /// Recording stops and is sent automatically at this length: the backend transcribes at most
+    /// 120 s of audio, until chunking arrives (issue #1).
+    static let maxRecordingDuration: Duration = .seconds(120)
 
     // MARK: Insertion
 

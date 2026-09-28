@@ -302,7 +302,7 @@ export class DictationController extends Observable {
       });
     }
 
-    // Past the upload cap, stop and send what was said rather than silently dropping audio.
+    // Past the length the backend transcribes, stop and send what was said rather than silently dropping audio.
     this.maxDurationTimer = after(config.maxRecordingDuration, () => {
       if (this.generation !== current) return;
       log.debug("DictationController: max duration reached; finishing");

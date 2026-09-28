@@ -66,13 +66,24 @@ struct AudioRecorderTests {
         #expect(first >= before)
     }
 
-    /// Audio past the cap is dropped (and flagged), keeping uploads under the backend limit.
+    /// Audio past the cap is dropped (and flagged), keeping recordings within what the backend transcribes.
     @Test func stopsAtTheMaximumDuration() throws {
         let recorder = AudioRecorder(maxDuration: .seconds(1))
         feed(recorder, sine(seconds: 2))
         let recording = try recorder.finish()
         #expect(recording.truncated)
         #expect(recording.pcm.count == 16_000 * MemoryLayout<Int16>.size)
+    }
+
+    /// The backend transcribes at most 120 s of audio: a dictation left running is cut there, not
+    /// sent to fail.
+    @Test func byDefaultKeepsNoMoreThanThe120SecondsTheBackendTranscribes() throws {
+        let backendMaxSeconds = 120
+        let recorder = AudioRecorder()
+        feed(recorder, sine(seconds: Double(backendMaxSeconds + 1), sampleRate: 16_000))
+        let recording = try recorder.finish()
+        #expect(recording.truncated)
+        #expect(recording.pcm.count == 16_000 * MemoryLayout<Int16>.size * backendMaxSeconds)
     }
 
     @Test func emptyRecording() throws {

@@ -43,13 +43,24 @@ describe("AudioRecorder", () => {
     expect(recorder.finish().firstChunkAt).toBe(42);
   });
 
-  /** Audio past the cap is dropped (and flagged), keeping uploads under the backend limit. */
+  /** Audio past the cap is dropped (and flagged), keeping recordings within what the backend transcribes. */
   test("stops at the maximum duration", () => {
     const recorder = new AudioRecorder(16_000, 1_000);
     feed(recorder, tone(2));
     const recording = recorder.finish();
     expect(recording.truncated).toBe(true);
     expect(recording.pcm.length).toBe(16_000 * 2);
+  });
+
+  /** The backend transcribes at most 120 s of audio: a dictation left running is cut there, not
+   * sent to fail. */
+  test("by default keeps no more than the 120 s the backend transcribes", () => {
+    const backendMaxSeconds = 120;
+    const recorder = new AudioRecorder();
+    feed(recorder, tone(backendMaxSeconds + 1));
+    const recording = recorder.finish();
+    expect(recording.truncated).toBe(true);
+    expect(recording.pcm.length).toBe(16_000 * 2 * backendMaxSeconds);
   });
 
   test("an empty recording", () => {
