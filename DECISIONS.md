@@ -953,3 +953,24 @@ labels (the app's name, the account or "Not signed in", the attention mark's "Ne
 This departs from the Swift app's look only, which the Swift app keeps until cutover. Whether the
 sidebar shows the frosted material with a clear `backgroundColor` but no `transparent` flag can
 only be seen in the running app on macOS, not in the offscreen previews.
+
+**Amendment 2026-09-27 (owner, trying the Electron build): "the startup is much slower … at least
+2–3 seconds until the thing shows up … the awesome startup that Swift app has to be carried on."**
+- Measured on the owner's Mac: the app's log gave the first audio 1.47–1.56 s after key-down (the
+  Swift app: 0.59–0.62 s). A probe of the same `getUserMedia` call gave 0.4–1.3 s to open the device,
+  up to 0.5 s to resume the context, then up to 0.45 s of digital silence before the first real
+  signal, which is when the pill replaces the swirl. Chromium opens the device afresh for each
+  dictation; nothing it offers keeps a device prepared with the microphone off. The overlay window
+  itself paints 30–50 ms after it is shown, so it is not the cause.
+- On macOS the microphone is now `voice-macos`'s, run as the Swift app runs it (`MicrophoneCapture`:
+  an `AVAudioEngine` prepared ahead with the microphone off, started per dictation, discarded after
+  it, rebuilt when the default input changes). It converts each buffer to mono float samples at
+  `recordingSampleRate` and sends them as `microphoneChunk` events (base64 of little-endian floats),
+  numbered by the app's session; `SessionAudioCapture` (formerly `WindowAudioCapture`) drives it
+  through `MacSystem.microphone`, with the same sessions, start timeout and late-report dropping.
+  The same probe through the helper: first audio 0.57–0.62 s, first real signal 0.67–0.9 s.
+- Elsewhere the hidden audio window (`getUserMedia`) stays the microphone, until the Windows and
+  Linux helpers show whether theirs should capture too.
+- The helper runs under the app's microphone grant, as its Accessibility use does; packaged, it
+  inherits the `audio-input` entitlement (`entitlementsInherit`). A restarted helper is prepared
+  again (`macHelper.onStart`).

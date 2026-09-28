@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 import type { HelperClient } from "../src/main/helperClient.js";
-import { MacSystem } from "../src/main/macos.js";
+import { decodeSamples, MacSystem } from "../src/main/macos.js";
+import type { AudioReport } from "../src/shared/ipc.js";
 
 /** The two sides of the helpers' wire: the requests the app sends and the handlers the Swift helpers
  * register (`channel.on("method")`), each with the params it reads. A method or param renamed on one
@@ -38,6 +39,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
       requests.push({ method, params });
       return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null };
     },
+    on() {},
   } as unknown as HelperClient;
   return { helper, requests };
 }
@@ -67,6 +69,10 @@ describe("helper wire contract", () => {
     await mac.thunderbird.focusedElement(app);
     await mac.thunderbird.openChat();
     await mac.thunderbird.pressReturn();
+    const microphone = mac.microphone(() => {});
+    microphone({ type: "prepare" });
+    microphone({ type: "start", session: 1 });
+    microphone({ type: "stop", session: 1 });
 
     const handlers = registered("native/macos/Sources/VoiceMacOSKit/MacService.swift");
     expect(new Set(requests.map((request) => request.method))).toEqual(new Set(handlers.keys()));
@@ -115,6 +121,57 @@ describe("helper wire contract", () => {
       { method: "appIcon", params: { path: "/Applications/Example.app", pixels: 32 } },
       { method: "appIcon", params: { path: "/Applications/Example.app", pixels: 32 } },
     ]);
+  });
+
+  /** The microphone's start carries the recording rate and waits the microphone's own start timeout;
+   * its answer, or its failure, is that session's report; each chunk event the helper sends (the
+   * names `MicrophoneCapture`'s emitter writes) becomes that session's samples, and a malformed one
+   * is dropped. */
+  test("the microphone's commands and events cross the wire as the helper sends and reads them", async () => {
+    const calls: { method: string; params: unknown; timeout: unknown }[] = [];
+    const events = new Map<string, (message: Record<string, unknown>) => void>();
+    let refuse = false;
+    const helper = {
+      request: async (method: string, params?: unknown, timeout?: unknown) => {
+        calls.push({ method, params, timeout });
+        if (refuse) throw new Error("microphone: noInputDevice");
+        return {};
+      },
+      on: (event: string, handler: (message: Record<string, unknown>) => void) => events.set(event, handler),
+    } as unknown as HelperClient;
+    const reports: AudioReport[] = [];
+    const microphone = new MacSystem(helper).microphone((report) => reports.push(report));
+
+    microphone({ type: "start", session: 3 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const samples = new Float32Array([0.25, -0.5, 1]);
+    const emitted = /channel\.emit\("(\w+)", \["session": [^,]+, "samples": /.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"));
+    const chunkEvent = events.get(emitted?.[1] ?? "");
+    chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from(samples.buffer).toString("base64") });
+    chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from([1, 2, 3]).toString("base64") });
+    chunkEvent?.({ event: emitted?.[1], session: "3", samples: Buffer.from(samples.buffer).toString("base64") });
+    refuse = true;
+    microphone({ type: "start", session: 4 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    microphone({ type: "stop", session: 4 });
+
+    expect(calls).toEqual([
+      { method: "microphoneStart", params: { session: 3, sampleRate: config.recordingSampleRate }, timeout: config.microphoneStartTimeout },
+      { method: "microphoneStart", params: { session: 4, sampleRate: config.recordingSampleRate }, timeout: config.microphoneStartTimeout },
+      { method: "microphoneStop", params: { session: 4 }, timeout: undefined },
+    ]);
+    expect(reports).toEqual([
+      { type: "started", session: 3 },
+      { type: "chunk", session: 3, samples },
+      { type: "failed", session: 4, error: "Error" },
+    ]);
+  });
+
+  test("a chunk's samples decode from base64 little-endian floats, and a torn one does not", () => {
+    const samples = new Float32Array([0, 0.125, -1]);
+    expect(decodeSamples(Buffer.from(samples.buffer).toString("base64"))).toEqual(samples);
+    expect(decodeSamples(Buffer.from([0, 0, 0]).toString("base64"))).toBeNull();
+    expect(decodeSamples(12)).toBeNull();
   });
 
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {

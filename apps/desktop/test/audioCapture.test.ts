@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { sleep } from "../src/core/timeout.js";
-import { MicrophoneFailure, WindowAudioCapture } from "../src/main/audioCapture.js";
+import { MicrophoneFailure, SessionAudioCapture } from "../src/main/audioCapture.js";
 import type { AudioCommand } from "../src/shared/ipc.js";
 
 /** One `start`: the chunks it was given and how it completed. */
@@ -15,10 +15,10 @@ function recording(): { chunks: Float32Array[]; completions: (Error | null)[]; o
 }
 
 /** The microphone through the audio window, with the window replaced by a list of what it is sent. */
-describe("WindowAudioCapture", () => {
-  function capture(startTimeout = 5_000): { microphone: WindowAudioCapture; sent: AudioCommand[] } {
+describe("SessionAudioCapture", () => {
+  function capture(startTimeout = 5_000): { microphone: SessionAudioCapture; sent: AudioCommand[] } {
     const sent: AudioCommand[] = [];
-    return { microphone: new WindowAudioCapture((command) => sent.push(command), startTimeout), sent };
+    return { microphone: new SessionAudioCapture((command) => sent.push(command), startTimeout), sent };
   }
 
   test("each start is a session the window reports on", () => {

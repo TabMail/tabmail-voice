@@ -91,7 +91,7 @@ apps/desktop/
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests
 │   ├── Sources/VoiceHelperSupport/  The line protocol (requests, replies, events, debug-gated stderr)
 │   ├── Sources/VoiceHotkeyKit/      Event tap + push-to-talk gesture (`voice-hotkey`)
-│   └── Sources/VoiceMacOSKit/       Paste/restore, screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird (`voice-macos`)
+│   └── Sources/VoiceMacOSKit/       Paste/restore, screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird, the microphone (`voice-macos`)
 ├── src/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron): the Swift app's port
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
@@ -105,13 +105,13 @@ apps/desktop/
 │   │   ├── main.ts                  Wires everything (the Swift AppDelegate): helpers, controller, windows, IPC, tray
 │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
 │   │   ├── macos.ts                 `voice-macos`'s methods, typed
-│   │   ├── audioCapture.ts          The microphone through the hidden audio window, one session per dictation
+│   │   ├── audioCapture.ts          The microphone, one session per dictation: through `voice-macos` on macOS, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── permissions.ts, keychainSessionStore.ts, fileStore.ts, logFile.ts, profileFiles.ts
 │   ├── preload/preload.ts   `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
 │   └── renderer/            One page per window: overlay (pill, waveform, swirl, tips, bubbles), settings,
-│                            welcome, audio (getUserMedia → captureWorklet), context-debug
+│                            welcome, audio (getUserMedia → captureWorklet; not used on macOS), context-debug
 └── test/                    Vitest: the core (ported Swift suites), main-process modules against a fake helper, IPC
 ```
 

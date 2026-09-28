@@ -37,7 +37,7 @@ import {
   type WindowName,
   type WindowStates,
 } from "../shared/ipc.js";
-import { WindowAudioCapture } from "./audioCapture.js";
+import { SessionAudioCapture } from "./audioCapture.js";
 import { FileStore } from "./fileStore.js";
 import { HelperClient } from "./helperClient.js";
 import { KeychainSessionStore } from "./keychainSessionStore.js";
@@ -105,7 +105,9 @@ function launch(): void {
     if (contents.isLoading()) contents.once("did-finish-load", () => contents.send(channels.audioCommand, command));
     else contents.send(channels.audioCommand, command);
   }
-  const capture = new WindowAudioCapture(sendAudio);
+  // On macOS the helper runs the microphone as the Swift app does: Chromium's `getUserMedia` opens
+  // the device afresh for each dictation, about a second slower to the first audio.
+  const capture = new SessionAudioCapture(process.platform === "darwin" ? mac.microphone((report) => capture.receive(report)) : sendAudio);
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
@@ -297,7 +299,11 @@ function launch(): void {
   hotkeyHelper.on("action", (message) => {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
-  macHelper.onStart = startActivator;
+  // A restarted helper has no microphone prepared.
+  macHelper.onStart = () => {
+    startActivator();
+    controller.prewarm();
+  };
 
   // The hotkey follows Settings, and so does the Globe key's own action: off while fn is the
   // hotkey, the user's choice back at another key and when the app quits (ADR-DESK-031).

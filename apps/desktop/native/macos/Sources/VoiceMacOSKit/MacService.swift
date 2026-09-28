@@ -24,10 +24,22 @@ import VoiceHelperSupport
 /// - `appPath {bundleIdentifier}` → `{path}`; `isRunning`, `hasWindow`, `isFrontmost` → `{value}`;
 ///   `launch {path}`, `activate {bundleIdentifier}` → `{}`; `focusedElement {bundleIdentifier}` →
 ///   `{role, windowTitle}` or null; `openTabMailChat`, `pressReturn` → `{}`.
+/// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
+/// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
+///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
+///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}`: the microphone off.
 public enum MacService {
     @MainActor
     public static func register(on channel: HelperChannel) -> AnyObject {
         let activator = AccessibilityActivator()
+        // Off the render thread: encoding and writing a chunk must never hold up the audio.
+        let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
+        let microphone = MicrophoneCapture { session, samples in
+            chunkQueue.async {
+                let data = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+                channel.emit("microphoneChunk", ["session": .number(Double(session)), "samples": .string(data.base64EncodedString())])
+            }
+        }
 
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
         channel.on("readScreen") { _ in
@@ -110,11 +122,31 @@ public enum MacService {
             await Apps.postOpenChat()
             return [:]
         }
+        channel.on("microphonePrepare") { _ in
+            await microphone.prepare()
+            return [:]
+        }
+        channel.on("microphoneStart") { params in
+            guard let session = params["session"]?.number, let sampleRate = params["sampleRate"]?.number, sampleRate > 0 else {
+                throw HelperError("microphoneStart needs session and sampleRate")
+            }
+            do {
+                try await microphone.start(session: Int(session), sampleRate: sampleRate)
+            } catch {
+                throw HelperError("microphone: \(type(of: error))")
+            }
+            return [:]
+        }
+        channel.on("microphoneStop") { params in
+            guard let session = params["session"]?.number else { throw HelperError("microphoneStop needs session") }
+            await microphone.stop(session: Int(session))
+            return [:]
+        }
         channel.on("pressReturn") { _ in
             await Apps.postReturn()
             return [:]
         }
-        return activator
+        return [activator, microphone] as NSArray
     }
 
     private static func bundleIdentifier(_ params: JSON) throws -> String {

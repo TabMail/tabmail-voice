@@ -19,18 +19,19 @@ export class MicrophoneFailure extends Error {
 }
 
 /**
- * The microphone, through the hidden audio window: `getUserMedia` into an AudioWorklet at the
- * recording rate, whose chunks come back here. Each `start` is a session; reports from an earlier
- * one are dropped. `stop` ends the session and releases the microphone (every dictation).
+ * The microphone, driven by commands to whatever runs it: the macOS helper (`MacSystem.microphone`),
+ * or elsewhere the hidden audio window (`getUserMedia` into an AudioWorklet at the recording rate).
+ * Its reports, chunks included, come back to `receive`. Each `start` is a session; reports from an
+ * earlier one are dropped. `stop` ends the session and releases the microphone (every dictation).
  */
-export class WindowAudioCapture implements AudioCapture {
+export class SessionAudioCapture implements AudioCapture {
   private session = 0;
   private onChunk: ((samples: Float32Array) => void) | null = null;
   private completion: ((error: Error | null) => void) | null = null;
   private startTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    /** Sends to the audio window, creating it if need be. */
+    /** Sends to what runs the microphone. */
     private readonly send: (command: AudioCommand) => void,
     private readonly startTimeout = config.microphoneStartTimeout,
   ) {}
