@@ -42,6 +42,22 @@ enum Apps {
         bundleIdentifiers.compactMap { id in NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).flatMap(app(at:)) }
     }
 
+    /// The icon of the app at `path` as PNG, `pixels` square. Drawn here: an icon file lookup
+    /// that rasterizes at once (Electron's `getFileIcon`) can catch the system's blank placeholder,
+    /// shown while the real icon loads.
+    @MainActor
+    static func iconPNG(_ path: String, pixels: Int) -> Data? {
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        NSWorkspace.shared.icon(forFile: path).draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
     static func app(at url: URL) -> App? {
         guard let id = Bundle(url: url)?.bundleIdentifier else { return nil }
         return App(bundleIdentifier: id, name: FileManager.default.displayName(atPath: url.path), path: url.path)

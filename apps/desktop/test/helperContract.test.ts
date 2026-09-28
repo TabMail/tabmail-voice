@@ -36,7 +36,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, systemDefault: null, installed: [] };
+      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null };
     },
   } as unknown as HelperClient;
   return { helper, requests };
@@ -53,6 +53,7 @@ describe("helper wire contract", () => {
     await mac.systemEmailApp();
     await mac.emailApps([app]);
     await mac.readScreen();
+    await mac.appIcon("/Applications/Example.app", config.agentBubbleAppIconSize);
     await mac.caretAnchor(1);
     await mac.startActivator();
     await mac.globeKey.read();
@@ -92,6 +93,27 @@ describe("helper wire contract", () => {
     expect(calls).toEqual([
       { method: "insert", params: { text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000 }, timeout: config.helperRequestTimeout + config.clipboardRestoreDelay },
       { method: "frontmostApp", params: undefined, timeout: undefined },
+    ]);
+  });
+
+  /** The helper's drawn icon reaches the bubble's `<img>` as a PNG data URL; no icon, none. */
+  test("an app's icon comes back as a PNG data URL, or null", async () => {
+    const calls: { method: string; params: unknown }[] = [];
+    let png: string | null = "iVBORw0KGgo=";
+    const helper = {
+      request: async (method: string, params?: unknown) => {
+        calls.push({ method, params });
+        return { png };
+      },
+    } as unknown as HelperClient;
+    const mac = new MacSystem(helper);
+
+    expect(await mac.appIcon("/Applications/Example.app", 32)).toBe("data:image/png;base64,iVBORw0KGgo=");
+    png = null;
+    expect(await mac.appIcon("/Applications/Example.app", 32)).toBeNull();
+    expect(calls).toEqual([
+      { method: "appIcon", params: { path: "/Applications/Example.app", pixels: 32 } },
+      { method: "appIcon", params: { path: "/Applications/Example.app", pixels: 32 } },
     ]);
   });
 

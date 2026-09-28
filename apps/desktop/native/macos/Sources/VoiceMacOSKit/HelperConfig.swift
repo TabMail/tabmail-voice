@@ -83,6 +83,8 @@ enum HelperConfig {
 
     /// Asked for the app that opens it, to find the user's default email app.
     static let mailtoURL = URL(string: "mailto:")!
+    /// Largest app icon drawn for the app (pixels square); it asks for one bubble's worth.
+    static let appIconMaxPixels: Double = 1_024
     /// Accessibility calls into Thunderbird give up after this long (seconds).
     static let thunderbirdAccessibilityTimeout: Float = 0.5
 }

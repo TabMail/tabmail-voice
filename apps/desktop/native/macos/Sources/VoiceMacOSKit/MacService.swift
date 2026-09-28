@@ -19,6 +19,8 @@ import VoiceHelperSupport
 /// - `startActivator` → `{}`: asks Gecko and Electron apps to build their accessibility tree as they
 ///   come to the front. Again after the Accessibility grant.
 /// - `emailApps {bundleIdentifiers}` → `{systemDefault, installed}`.
+/// - `appIcon {path, pixels}` → `{png}`: the app's icon, `pixels` square, as base64 PNG; null when
+///   it can't be drawn.
 /// - `appPath {bundleIdentifier}` → `{path}`; `isRunning`, `hasWindow`, `isFrontmost` → `{value}`;
 ///   `launch {path}`, `activate {bundleIdentifier}` → `{}`; `focusedElement {bundleIdentifier}` →
 ///   `{role, windowTitle}` or null; `openTabMailChat`, `pressReturn` → `{}`.
@@ -76,6 +78,13 @@ public enum MacService {
                     "installed": .array(Apps.installed(ids).map(\.json)),
                 ]
             }
+        }
+        channel.on("appIcon") { params in
+            guard let path = params["path"]?.string, let pixels = params["pixels"]?.number,
+                  pixels == pixels.rounded(), (1...HelperConfig.appIconMaxPixels).contains(pixels) else {
+                throw HelperError("appIcon needs path and a whole number of pixels")
+            }
+            return await MainActor.run { ["png": Apps.iconPNG(path, pixels: Int(pixels)).map { .string($0.base64EncodedString()) } ?? .null] }
         }
         channel.on("appPath") { params in
             let id = try bundleIdentifier(params)

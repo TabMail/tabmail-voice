@@ -86,6 +86,8 @@ function useAppear<T extends HTMLElement>(keyframes: Keyframe[], duration: numbe
   return ref;
 }
 
+const fadeKeyframes: Keyframe[] = [{ opacity: 0 }, { opacity: 1 }];
+
 const appearKeyframes: Keyframe[] = [
   { transform: `scale(${config.pillAppearScale})`, opacity: 0 },
   { transform: "scale(1)", opacity: 1 },
@@ -97,12 +99,23 @@ function Overlay() {
   // After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring how the
   // overlay appeared; the pill shrinks away meanwhile.
   const [exiting, setExiting] = useState<{ key: number; pill: Mode | null } | null>(null);
+  // The warm-up swirl fades out as what follows it appears, still circling; each new one gathers
+  // afresh.
+  const [swirl, setSwirl] = useState<{ key: number; leaving: boolean } | null>(null);
+  const swirlGone = useRef<ReturnType<typeof setTimeout>>(undefined);
   const previous = useRef<Mode>(mode);
   useLayoutEffect(() => {
     const was = previous.current;
     previous.current = mode;
     if (mode.kind === "hidden" && was.kind !== "hidden") setExiting({ key: performance.now(), pill: was.kind === "swirl" ? null : was });
     else if (mode.kind !== "hidden") setExiting(null);
+    if (mode.kind === "swirl" && was.kind !== "swirl") {
+      clearTimeout(swirlGone.current);
+      setSwirl({ key: performance.now(), leaving: false });
+    } else if (mode.kind !== "swirl" && was.kind === "swirl") {
+      setSwirl((current) => current && { ...current, leaving: true });
+      swirlGone.current = setTimeout(() => setSwirl(null), config.pillSpringResponse * 1000);
+    }
   }, [mode]);
 
   if (!state) return null;
@@ -111,9 +124,9 @@ function Overlay() {
 
   return (
     <div className="canvas" style={{ width: config.overlayCanvasSize.width, height: config.overlayCanvasSize.height }}>
-      {mode.kind === "swirl" && <GatheringSwirl dispersing={false} />}
-      {mode.kind === "hidden" && exiting && <GatheringSwirl key={exiting.key} dispersing />}
-      {mode.kind === "hidden" && exiting?.pill && <PillLayout key={exiting.key} mode={exiting.pill} state={state} tip={null} showsTools={false} exiting />}
+      {swirl && <GatheringSwirl key={`swirl-${swirl.key}`} dispersing={false} leaving={swirl.leaving} />}
+      {mode.kind === "hidden" && exiting && <GatheringSwirl key={`dispersing-${exiting.key}`} dispersing />}
+      {mode.kind === "hidden" && exiting?.pill && <PillLayout key={`exiting-${exiting.key}`} mode={exiting.pill} state={state} tip={null} showsTools={false} exiting />}
       {mode.kind !== "hidden" && mode.kind !== "swirl" && <PillLayout mode={mode} state={state} tip={tip} showsTools={showsTools} exiting={false} />}
     </div>
   );
@@ -447,10 +460,15 @@ function tooltipPath({ width, height }: Size): string {
 }
 
 /** Particles spiral inward to the anchor while the microphone warms up, then keep a tight orbit.
- * Dispersing plays it in reverse: out from the orbit, fading away. */
-function GatheringSwirl({ dispersing }: { dispersing: boolean }) {
+ * Dispersing plays it in reverse: out from the orbit, fading away. It fades in as it appears and
+ * out when `leaving`, with the pill's spring (the Swift swirl's opacity transition), so the wide
+ * ring it starts from shows faintly and it reads as the small, soft ring it gathers into. */
+function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; leaving?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const { width, height } = config.overlayCanvasSize;
+  useLayoutEffect(() => {
+    ref.current?.animate(leaving ? [...fadeKeyframes].reverse() : fadeKeyframes, { duration: config.pillSpringResponse * 1000, easing: config.pillSpringEasing, fill: leaving ? "forwards" : "backwards" });
+  }, [leaving]);
   useAnimationFrame((elapsed) => {
     const canvas = ref.current;
     const context = canvas?.getContext("2d");

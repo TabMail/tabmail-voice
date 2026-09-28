@@ -6,6 +6,7 @@
 
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import * as config from "../../src/core/config.js";
 import type { OverlayState } from "../../src/shared/ipc.js";
 
 /** Each React root the page creates, to unmount as the window closes. */
@@ -36,6 +37,8 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
 }
 
 const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "function", tools: [], emailAppIcon: null };
+const warmingUp: OverlayState = { ...listening, isHearing: false };
+const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 
 /** The overlay page, mounted afresh; `show` pushes it a state as the main process does. */
 async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>; tipFrame(): { top: number; bottom: number } | null; pillFrame(): { top: number; bottom: number } }> {
@@ -119,6 +122,64 @@ describe("overlay page", () => {
 
     expect(later.tipFrame()).toEqual(expected);
     expect(later.tipFrame()?.top).toBeGreaterThanOrEqual(later.pillFrame().bottom);
+  });
+
+  /** As the Swift swirl's opacity transition: it fades in, so its wide starting ring shows faintly,
+   * and fades out still circling while the pill appears, then goes, however many states the page is
+   * pushed meanwhile; a new hold's swirl gathers afresh. */
+  test("the warm-up swirl fades in, fades out as the pill appears, then goes", async () => {
+    const page = await overlayPage();
+    const fades: { element: Element; opacity: unknown[]; fill: unknown }[] = [];
+    const animate = vi.spyOn(HTMLElement.prototype, "animate").mockImplementation(function (this: HTMLElement, keyframes, options) {
+      if (this.classList.contains("swirl")) fades.push({ element: this, opacity: (keyframes as Keyframe[]).map((frame) => frame.opacity), fill: (options as KeyframeAnimationOptions).fill });
+      return {} as Animation;
+    });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponse * 1000 + 50));
+    try {
+      await page.show(warmingUp);
+      const swirl = document.querySelector("canvas.swirl");
+      expect(swirl).not.toBeNull();
+      expect(fades).toEqual([{ element: swirl, opacity: [0, 1], fill: "backwards" }]);
+
+      await page.show(listening);
+      await page.show({ ...listening, level: 0.2 });
+      expect(document.querySelector(".pill-anchor")).not.toBeNull();
+      expect(document.querySelector("canvas.swirl")).toBe(swirl);
+      expect(fades.at(-1)).toEqual({ element: swirl, opacity: [1, 0], fill: "forwards" });
+      await act(settle);
+      expect(document.querySelector("canvas.swirl")).toBeNull();
+
+      await page.show(warmingUp);
+      const fading = document.querySelector("canvas.swirl");
+      await page.show(listening);
+      await page.show(idle);
+      await page.show(warmingUp);
+      // A hold during the last swirl's fade gets a fresh one, gathering from its start.
+      const next = document.querySelectorAll("canvas.swirl");
+      expect(next).toHaveLength(1);
+      expect(next[0]).not.toBe(fading);
+      expect(fades.at(-1)).toEqual({ element: next[0], opacity: [0, 1], fill: "backwards" });
+      await act(settle);
+      // The earlier swirl's removal leaves the new one circling.
+      expect([...document.querySelectorAll("canvas.swirl")]).toEqual([next[0]]);
+    } finally {
+      animate.mockRestore();
+    }
+  });
+
+  /** Released while it warms up: the swirl fades out beside the dispersing one, as the Swift app's
+   * does, and both go; the next hold, heard at once, shows its pill with no swirl left behind it. */
+  test("a swirl released while it warms up goes, leaving nothing behind the next pill", async () => {
+    const page = await overlayPage();
+    await page.show(warmingUp);
+    await page.show(idle);
+    expect(document.querySelectorAll("canvas.swirl")).toHaveLength(2);
+    await act(() => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponse * 1000 + 50)));
+
+    await page.show({ ...listening, phase: { kind: "arming" } });
+    await page.show(listening);
+    expect(document.querySelector(".pill-anchor")).not.toBeNull();
+    expect(document.querySelectorAll("canvas.swirl")).toHaveLength(0);
   });
 
   /** The pill growing moves the tip with it, and a closed page observes nothing more. */
