@@ -13,6 +13,9 @@
        entitlement for both. -->
   <key>com.apple.security.personal-information.calendars</key>
   <true/>
+  <!-- Contacts, for the Answer tool (ADR-DESK-025). -->
+  <key>com.apple.security.personal-information.addressbook</key>
+  <true/>
   <!-- V8 compiles JavaScript at run time. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>

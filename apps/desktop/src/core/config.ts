@@ -106,6 +106,8 @@ export const calendarReadMaxDays = 4 * 365;
 
 /** How long an event the user gave no end or duration for lasts, as Calendar's own default. */
 export const calendarEventDefaultDuration = 60 * 60 * 1_000;
+/** The most contacts one search returns to the model; more say so, for a narrower search. */
+export const contactsSearchMaxResults = 10;
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
@@ -160,6 +162,9 @@ export const screenReadTimeout = 5_000;
 /** Longest a Calendar or Reminders request to the helper may take: the first one waits while
  * macOS asks the user for access. */
 export const eventStoreRequestTimeout = 120_000;
+/** Longest a Contacts request to the helper may take: the first one waits while macOS asks the user
+ * for access, as for Calendar. */
+export const contactStoreRequestTimeout = eventStoreRequestTimeout;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
 

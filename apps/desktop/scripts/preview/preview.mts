@@ -31,9 +31,9 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
-  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders"], enabledConnectors: ["calendar", "reminders"],
+  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts"], enabledConnectors: ["calendar", "reminders", "contacts"],
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders"], enabledConnectors: ["calendar", "reminders"] };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts"], enabledConnectors: ["calendar", "reminders", "contacts"] };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };

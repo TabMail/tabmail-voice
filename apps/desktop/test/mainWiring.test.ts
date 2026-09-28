@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { connectors } from "../src/core/agent/connectors.js";
 import type { AudioCapture } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
 import { channels } from "../src/shared/ipc.js";
@@ -24,7 +25,7 @@ const app = vi.hoisted(() => ({
   controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
-  loopTools: [] as { name: string; run(args: Record<string, unknown>): Promise<string> }[],
+  loopTools: [] as { name: string; connector: string; run(args: Record<string, unknown>): Promise<string> }[],
 }));
 
 vi.mock("electron", () => ({
@@ -136,7 +137,7 @@ vi.mock("../src/main/helperClient.js", () => ({
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
-      return { value: null, events: [] };
+      return { value: null, events: [], contacts: [] };
     }
   },
 }));
@@ -518,21 +519,25 @@ describe("main process wiring", () => {
     expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
   });
 
-  /** On macOS the Answer tool reaches Calendar and Reminders through `voice-macos`, and each has a
-   * switch, stored and shown in the Settings and welcome windows; a name that is no app is refused. */
-  test("on macOS, Calendar and Reminders and their switches", async () => {
+  /** On macOS the Answer tool reaches Calendar, Reminders and Contacts through `voice-macos`, and each
+   * has a switch, stored and shown in the Settings and welcome windows; a name that is no app is
+   * refused. */
+  test("on macOS, Calendar, Reminders and Contacts and their switches", async () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create"]);
-    await app.loopTools[0]?.run({});
-    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toContain("calendarEvents");
+    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add"]);
+    // Every app with a switch has its tools, and every tool's app a switch.
+    expect(new Set(app.loopTools.map((tool) => tool.connector))).toEqual(new Set(connectors));
+    await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({});
+    await app.loopTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" });
+    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "contactsSearch"]));
 
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
     expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
     for (const name of ["settings", "welcome"]) {
-      expect(state(name).connectors).toEqual(["calendar", "reminders"]);
-      expect(state(name).enabledConnectors).toEqual(["reminders"]);
+      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts"]);
     }
   });
 

@@ -343,7 +343,7 @@ struct EventKitStoreTests {
         fake.events = [fake.event("Launch review", start: start, hours: 1)]
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let service = MacService.register(on: channel, eventStore: store(fake))
+        let service = MacService.register(on: channel, eventStore: store(fake), contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }))
         let ms = { (date: Date) in Int(date.timeIntervalSince1970 * 1000) }
         let requests = [
             #"{"id":1,"method":"calendarEvents","params":{"start":\#(ms(start)),"end":\#(ms(start + 86_400))}}"#,

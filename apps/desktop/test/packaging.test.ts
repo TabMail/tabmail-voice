@@ -9,21 +9,21 @@ import { describe, expect, test } from "vitest";
 const root = join(__dirname, "..");
 
 /** What the packaged Mac app declares for the access `voice-macos` asks for: macOS ends a process
- * that asks for Calendar or Reminders without the app's usage string, and the hardened runtime
+ * that asks for Calendar, Reminders or Contacts without the app's usage string, and the hardened runtime
  * refuses it without the entitlement. */
 describe("the Mac app's packaging", () => {
-  test("it says why it asks for the microphone, Calendar and Reminders", () => {
+  test("it says why it asks for the microphone, Calendar, Reminders and Contacts", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { mac: { extendInfo: Record<string, unknown> } };
 
-    for (const key of ["NSMicrophoneUsageDescription", "NSCalendarsFullAccessUsageDescription", "NSRemindersFullAccessUsageDescription"]) {
+    for (const key of ["NSMicrophoneUsageDescription", "NSCalendarsFullAccessUsageDescription", "NSRemindersFullAccessUsageDescription", "NSContactsUsageDescription"]) {
       expect(builder.mac.extendInfo[key], key).toMatch(/^TabMail Voice .+\.$/);
     }
   });
 
-  test("its hardened runtime allows the microphone and Calendar and Reminders", () => {
+  test("its hardened runtime allows the microphone, Calendar and Reminders, and Contacts", () => {
     const entitlements = readFileSync(join(root, "resources/entitlements.mac.plist"), "utf8");
 
-    for (const key of ["com.apple.security.device.audio-input", "com.apple.security.personal-information.calendars"]) {
+    for (const key of ["com.apple.security.device.audio-input", "com.apple.security.personal-information.calendars", "com.apple.security.personal-information.addressbook"]) {
       expect(entitlements, key).toMatch(new RegExp(`<key>${key.replaceAll(".", "\\.")}</key>\\s*<true/>`));
     }
   });
