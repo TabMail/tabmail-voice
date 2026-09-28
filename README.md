@@ -7,42 +7,26 @@ Requires macOS 15 or later and a TabMail account.
 
 ## Build
 
-1. Create your secrets file from the template and set your Apple Developer Team ID:
-   ```sh
-   cp Secrets.xcconfig.example Secrets.xcconfig
-   ```
-   `Secrets.xcconfig` is gitignored. The comments in the template explain each value.
-2. Generate the Xcode project (requires [XcodeGen](https://github.com/yonaskolb/XcodeGen)):
-   ```sh
-   ./apps/macos/Scripts/xcodegen.sh
-   ```
-   Always use this script rather than a bare `xcodegen generate`: it reads your
-   `DEVELOPMENT_TEAM` from `Secrets.xcconfig` and passes it to XcodeGen.
-3. Open `apps/macos/TabMailVoice.xcodeproj` and run the `TabMailVoice` scheme, or run the tests:
-   ```sh
-   xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath apps/macos/DerivedData test
-   ```
-
-A debug build (what the scheme runs) keeps a detailed log at
-`~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
-every request to the TabMail backend and its reply, and what was pasted. The access token and the
-audio are never in it. Release builds keep no log file.
-
-Sign with a real team. macOS ties the Microphone and Accessibility permissions to the app's
-signature, so an ad-hoc signed build loses them on every rebuild.
-
-### The Electron app (`apps/desktop/`)
-
-The cross-platform app that will replace the Swift one (macOS first). Needs Node 24 and, on macOS,
-Xcode for the helpers:
+The app is `apps/desktop/`, one Electron app for macOS, Windows and Linux (macOS first). Its
+dictation path (microphone, hotkey, paste) runs in native helpers, built from `native/<os>`
+(macOS today; the Windows and Linux helpers are to come). It needs Node 24 and, on macOS, Xcode
+for the helpers:
 
 ```sh
 cd apps/desktop
 npx -y npm@11.19.1 install
 npm start          # builds the helpers, the main process and the windows, then runs the app
-npm test           # unit tests; also: npm run typecheck, npm run lint
+npm test           # unit tests; also: npm run typecheck, npm run lint, ./scripts/swift-errors.sh test
 npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is in the keychain)
 ```
+
+An unpackaged build (what `npm start` runs) keeps a detailed log at
+`~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
+every request to the TabMail backend and its reply, and what was pasted. The access token and the
+audio are never in it. Packaged builds keep no log file.
+
+Sign a build you keep using. macOS ties the Microphone and Accessibility permissions to the app's
+signature, so an ad-hoc signed build loses them on every rebuild.
 
 ## First run
 
@@ -60,7 +44,9 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
   go, the pill shrinks to a spinning circle while your words are transcribed, then the text is
   typed in.
   A quick tap does nothing.
-- Pressing any other key while holding cancels (so ⌥-shortcuts keep working).
+- Pressing any other key while holding cancels (so ⌥-shortcuts keep working), except Space:
+  it switches to agent mode, where what you say is a request (edit the selection, or write
+  something new), and pressing it again switches back.
 - Choose Fn/Globe instead of Right Option in Settings. While it is the hotkey, TabMail Voice sets
   System Settings › Keyboard › "Press 🌐 key to" to "Do Nothing", and puts your choice back when you
   pick another key or quit.

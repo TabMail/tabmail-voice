@@ -10,7 +10,7 @@ fall under).
 
 > ⛔ **Speech-recognition half SUPERSEDED by ADR-DESK-005 (owner 2026-09-24).** The native Swift menu-bar app stands; on-device `SpeechAnalyzer` was removed in favour of backend STT so all platforms share one engine. Kept for history.
 >
-> ⛔ **Native-Swift half being SUPERSEDED by ADR-DESK-032 (owner 2026-09-27):** one Electron app for macOS, Windows and Linux replaces the Swift app once it reaches parity. Kept for history.
+> ⛔ **Native-Swift half SUPERSEDED by ADR-DESK-032 (owner 2026-09-27):** one Electron app for macOS, Windows and Linux replaces the Swift app; `apps/macos/` was removed 2026-09-27 (ADR-DESK-032's cutover amendment). Kept for history.
 
 **Context:** Phase 1 replaces Wispr Flow for basic system-wide dictation. Options: Electron/Tauri
 (cross-platform) or native Swift; cloud STT (Groq Whisper via the backend) or on-device.
@@ -428,7 +428,7 @@ renamed `tabmail-voice` on 2026-09-26 (owner), see ADR-DESK-013.
 
 ## ADR-DESK-013: One repository for TabMail Voice on every platform, one folder per platform
 
-> ⚠️ **Amended by ADR-DESK-032 (owner 2026-09-27):** the platforms share one Electron app, `apps/desktop/`, not a native app each; `apps/macos/` is deleted at cutover.
+> ⚠️ **Amended by ADR-DESK-032 (owner 2026-09-27):** the platforms share one Electron app, `apps/desktop/`, not a native app each; `apps/macos/` was deleted at cutover (2026-09-27), with `Scripts/copy-worktree-secrets.sh` and the signing-config template.
 
 **Context:** Owner, 2026-09-25: the repository will be renamed `tabmail-voice` on GitHub, with the
 macOS app in a folder of its own so that other platforms (Windows, Linux) can follow. The layout
@@ -1009,3 +1009,15 @@ only be seen in the running app on macOS, not in the offscreen previews.
   rather than trapping the helper. Engine release has no hardware-free test: the owner declined a test-only
   engine seam in `MicrophoneCapture` (no production complication for test convenience); the release
   decision itself is `MicrophoneSessions`', which is tested.
+
+**Amendment 2026-09-27 (owner): the Swift app removed.** *"Once everything is clean … clean up the
+non‑Electron version so that we don't have dead weight being carried over."* With the Electron app's
+parity branches merged (the native microphone, the branded Settings, the overlay's swirl and icon,
+the hands-free tip and fn double tap), `apps/macos/` is deleted, together with what only the Swift
+app used: `Scripts/copy-worktree-secrets.sh` and the signing-config template (the Xcode project read
+its `DEVELOPMENT_TEAM`; the Electron app signs through electron-builder from the keychain). The
+gitignore keeps ignoring the local signing config, so a copy left in a checkout is never committed.
+The native helpers in `apps/desktop/native/` stay: the dictation path stays native. The Swift app's
+source stays in git history (the parent of this change) and in the unmerged Swift agent-tool
+branches, which remain the reference for porting agent mode. The docs describe the Electron app
+only; code comments that name the Swift app record what a port matches.
