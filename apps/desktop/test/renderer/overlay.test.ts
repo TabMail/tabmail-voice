@@ -150,12 +150,14 @@ describe("overlay page", () => {
       expect(document.querySelector("canvas.swirl")).toBeNull();
 
       await page.show(warmingUp);
+      const fading = document.querySelector("canvas.swirl");
       await page.show(listening);
       await page.show(idle);
       await page.show(warmingUp);
+      // A hold during the last swirl's fade gets a fresh one, gathering from its start.
       const next = document.querySelectorAll("canvas.swirl");
       expect(next).toHaveLength(1);
-      expect(next[0]).not.toBe(swirl);
+      expect(next[0]).not.toBe(fading);
       expect(fades.at(-1)).toEqual({ element: next[0], opacity: [0, 1], fill: "backwards" });
       await act(settle);
       // The earlier swirl's removal leaves the new one circling.
