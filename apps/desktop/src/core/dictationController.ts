@@ -99,6 +99,11 @@ export class DictationController extends Observable {
   chatTimeout = config.chatTimeout;
   /** How long the chat window's question shows before an answer to it counts. Settable for tests. */
   confirmationMinimumDisplay = config.chatConfirmationMinimumDisplay;
+  /** A double tap's second press was released as a tap, leaving the hotkey helper hands-free, but no
+   * hands-free dictation listens: the press came while the last dictation was still busy, or failed
+   * to start, or its dictation ended while the key was down. The helper must be told, or it keeps
+   * Space and Escape from the app in front until the next hotkey press. */
+  onNothingListening: (() => void) | undefined;
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
   captureContext: (() => Promise<ScreenContext | null> | null) | undefined;
@@ -702,6 +707,11 @@ export class DictationController extends Observable {
   private listenHandsFree(): void {
     cancelTimer(this.secondPressTimer);
     this.secondPressTimer = null;
+    if (this.currentPhase.kind !== "listening") {
+      log.debug(`DictationController: second press was a tap, but nothing listens hands-free (phase ${this.currentPhase.kind})`);
+      this.onNothingListening?.();
+      return;
+    }
     this.dueTips = ["handsFree"];
     this.hideTip();
     log.debug("DictationController: second press was a tap; listening without the key");

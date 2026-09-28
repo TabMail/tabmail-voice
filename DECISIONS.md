@@ -822,6 +822,16 @@ change easily at a single location."
   telling the overlay page which way it opened (`OverlayState.opensUpward`, pushed on each
   placement).
 
+**Amendment 2026-09-28 (owner: "fix the hands-free bug"):** a double tap's second press released as
+a tap made the helper hands-free even when no hands-free dictation listened. That happens when the
+press came while the last dictation was still transcribing or agent mode was writing (the
+controller ignores it), when its dictation failed to start, or when its dictation ended while the
+key was down (the menu, a lost microphone). The helper's only reset, `dictationEnded` at the end of
+a dictation, had then already come before that release, so Space and Escape stayed swallowed until the next hotkey press. Now the
+controller answers a `listenHandsFree` that finds nothing listening with `onNothingListening`, which
+sends the helper `dictationEnded` too. The helper still goes hands-free for the moment the round
+trip takes.
+
 ## ADR-DESK-022: The Answer tool, the chat window, and agent tools switched on and off
 
 **Context:** Owner, 2026-09-26: agent mode gains an Answer tool whose reply is shown, not pasted, in a

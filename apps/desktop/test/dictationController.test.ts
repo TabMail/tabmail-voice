@@ -882,6 +882,43 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("cancel");
     });
 
+    /** A double tap while agent mode is still writing starts nothing (the phase is `running`), so the
+     * second press's release finds nothing listening hands-free: the controller says so, and the
+     * agent's text is still pasted. */
+    test("a double tap while agent mode writes leaves nothing hands-free", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("We ship on Friday."));
+      const checking = deferred<void>();
+      const lastCheck = deferred<number | null>();
+      let reads = 0;
+      // The first read is key-down's; the second, the check before the paste.
+      const frontmostApp = (): Promise<number | null> => {
+        reads += 1;
+        if (reads !== 2) return Promise.resolve(front.pid);
+        checking.resolve();
+        return lastCheck.promise;
+      };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), frontmostApp });
+      controller.captureContext = async () => selectionScreen("");
+      let nothingListening = 0;
+      controller.onNothingListening = () => {
+        nothingListening += 1;
+      };
+
+      await holdAndRelease(controller, "agent");
+      await checking.promise;
+      expect(controller.phase).toEqual(running("compose"));
+      controller.handle("start");
+      controller.handle("finish");
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
+
+      expect(nothingListening).toBe(1);
+      expect(controller.phase).toEqual(running("compose"));
+      lastCheck.resolve(front.pid);
+      expect(await eventually(() => pastes.length === 1 && controller.phase.kind === "idle")).toBe(true);
+    });
+
     /** The app that counts is the one in front at key-down: a switch made while the request is still
      * being transcribed is caught too. */
     test("agent text is not pasted after a switch during the transcription", async () => {
@@ -2641,6 +2678,81 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(capture.events).toEqual(["start", "stop", "start", "stop", "start"]);
       expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
       controller.handle("cancel");
+    });
+
+    /** A double tap's second press released as a tap leaves the hotkey helper hands-free, keeping
+     * Space and Escape from the app in front: when no hands-free dictation listens by then, the
+     * controller says so, and only then. Here the press came while the last dictation was still
+     * being transcribed, so it started nothing; released before or after that dictation ends. */
+    test.each(["before", "after"] as const)("a double tap while the last dictation transcribes, released %s it ends, leaves nothing hands-free", async (release) => {
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      let answer: () => void = () => {};
+      transcription.gate = () => new Promise((resolve) => (answer = resolve));
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      let nothingListening = 0;
+      controller.onNothingListening = () => {
+        nothingListening += 1;
+      };
+
+      await holdAndRelease(controller);
+      // The upload waits on `answer`.
+      expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+      controller.handle("startHandsFree");
+      expect(controller.phase).toEqual(transcribing);
+      if (release === "after") {
+        answer();
+        expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+      }
+      controller.handle("listenHandsFree");
+      expect(nothingListening).toBe(1);
+      if (release === "before") {
+        // The dictation being transcribed goes on, and is pasted.
+        expect(controller.phase).toEqual(transcribing);
+        answer();
+        expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+      }
+      expect(pastes).toEqual([cleaned]);
+      expect(controller.tip).toBeNull();
+    });
+
+    /** A hands-free dictation that ended while its second press was still down (the menu, a lost
+     * microphone) leaves nothing listening at that press's release; one still listening is not
+     * ended by it. */
+    test("a hands-free dictation ended before its second press is released leaves nothing hands-free", async () => {
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      let nothingListening = 0;
+      controller.onNothingListening = () => {
+        nothingListening += 1;
+      };
+
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
+      expect(controller.phase).toEqual(listening);
+      expect(nothingListening).toBe(0);
+      controller.handle("cancel");
+
+      controller.handle("startHandsFree");
+      controller.handle("cancel");
+      controller.handle("listenHandsFree");
+      expect(controller.phase).toEqual(idle);
+      expect(nothingListening).toBe(1);
+      expect(controller.tip).toBeNull();
+    });
+
+    /** A double tap whose dictation cannot start (no microphone access) fails at the second press:
+     * its release finds nothing listening. */
+    test("a double tap that fails to start leaves nothing hands-free", async () => {
+      const { controller } = makeController({ microphone: "denied" });
+      let nothingListening = 0;
+      controller.onNothingListening = () => {
+        nothingListening += 1;
+      };
+
+      controller.handle("startHandsFree");
+      expect(controller.phase.kind).toBe("failed");
+      controller.handle("listenHandsFree");
+      expect(nothingListening).toBe(1);
     });
 
     /** Escape during a hands-free dictation: nothing is sent or pasted. */

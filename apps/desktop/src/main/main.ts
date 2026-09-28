@@ -368,6 +368,12 @@ function launch(): void {
     void globeKey.hotkeyIs(hotkey);
   };
 
+  // Nothing listens hands-free: the hotkey helper stops keeping Space and Escape from the app in front.
+  const endHandsFree = () => {
+    hotkeyHelper.request("dictationEnded").catch((error: unknown) => {
+      log.error(`main: dictationEnded failed: ${errorName(error)}`);
+    });
+  };
   controller.onPhaseChange = (phase) => {
     overlay.update(phase, controller.chat !== null);
     tray.update();
@@ -377,15 +383,14 @@ function launch(): void {
         return;
       default:
         // Finished, failed or cancelled without the hotkey: hands-free listening is over too.
-        hotkeyHelper.request("dictationEnded").catch((error: unknown) => {
-          log.error(`main: dictationEnded failed: ${errorName(error)}`);
-        });
+        endHandsFree();
     }
   };
   controller.onChatChange = (isOpen) => {
     setChatOpen(isOpen);
     overlay.update(controller.phase, isOpen);
   };
+  controller.onNothingListening = endHandsFree;
   controller.observe(() => {
     updateEmailAppIcon();
     windows.push("overlay");
