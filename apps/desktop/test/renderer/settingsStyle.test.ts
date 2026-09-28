@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import * as config from "../../src/core/config.js";
 
 /** `settings.css` without comments. */
 const css = readFileSync(join(import.meta.dirname, "../../src/renderer/settings.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -34,6 +35,29 @@ function declaring(text: string, declaration: RegExp): string[] {
     .flatMap((rule) => rule.selectors);
 }
 
+/** The value `rule` (a rule in `text` with exactly that one selector) gives `property`. */
+function value(text: string, selector: string, property: string): string | undefined {
+  const rule = rules(text).find((candidate) => candidate.selectors.length === 1 && candidate.selectors[0] === selector);
+  return rule?.body.match(new RegExp(`${property}:\\s*([^;]+);`))?.[1]?.trim();
+}
+
+/** WCAG's contrast ratio of `colour` (`#rrggbb` or `rgba(…)`) laid over the opaque `background`. */
+function contrast(colour: string, background: string): number {
+  const channels = (text: string): number[] => (text.startsWith("#") ? [1, 3, 5].map((start) => parseInt(text.slice(start, start + 2), 16)).concat(1) : (text.match(/[\d.]+/g) ?? []).map(Number));
+  const [br = 0, bg = 0, bb = 0] = channels(background);
+  const [r = 0, g = 0, b = 0, alpha = 1] = channels(colour);
+  const over = [r * alpha + br * (1 - alpha), g * alpha + bg * (1 - alpha), b * alpha + bb * (1 - alpha)];
+  const luminance = (rgb: number[]): number => {
+    const [lr = 0, lg = 0, lb = 0] = rgb.map((channel) => {
+      const c = channel / 255;
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+  };
+  const [lighter, darker] = [luminance(over), luminance([br, bg, bb])].sort((a, b) => b - a);
+  return ((lighter ?? 0) + 0.05) / ((darker ?? 0) + 0.05);
+}
+
 /** A selector's specificity as one comparable number: ids, then classes and pseudo-classes, then
  * elements (enough for this stylesheet's selectors). */
 function specificity(selector: string): number {
@@ -45,15 +69,47 @@ function specificity(selector: string): number {
 
 describe("Settings stylesheet", () => {
   /** White text sits only on the darkened gradient (4.5:1, `brand.test.ts`): the plain gradient only
-   * under the switch's thumb, no text. Small text isn't the faint secondary grey. */
+   * under the switch's thumb, no text. The sidebar's account line is in the text colour. */
   test("text on the brand colours keeps its contrast", () => {
     expect(declaring(css, /var\(--brand-gradient\)/)).toEqual(["input.switch:checked"]);
     expect(declaring(css, /var\(--brand-text-gradient\)/).sort()).toEqual([".settings button.default", ".sidebar button.nav.selected"]);
-    expect(css).not.toContain("--secondary");
     expect(declaring(css, /color:\s*var\(--text\)/)).toContain(".identity .identity-account");
     expect(specificity(".identity .identity-account")).toBeGreaterThan(specificity(".caption"));
-    // Chromium's own focus ring, which keeps its contrast on every background here.
-    expect(css).not.toMatch(/:focus-visible/);
+  });
+
+  /** In light mode the notes (`form.css`'s `.caption`, in `--secondary`) and "Allowed" hold small
+   * text's 4.5:1 on the window's colour and on the white cards, set on `.settings` (inside `:root`,
+   * so they hold whichever stylesheet loads last). */
+  test("notes and Allowed keep small-text contrast in light mode", () => {
+    const light = mediaBlock("(prefers-color-scheme: light)");
+    const secondary = value(light, ".settings", "--secondary");
+    const allowed = value(light, ".settings", "--allowed");
+    expect(secondary).toBeDefined();
+    expect(allowed).toBeDefined();
+    for (const background of [config.settingsWindowColour.light, "#ffffff"]) {
+      expect(contrast(secondary ?? "", background)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(allowed ?? "", background)).toBeGreaterThanOrEqual(4.5);
+    }
+    // form.css's own values, which these replace, fall short.
+    expect(contrast("rgba(0, 0, 0, 0.5)", config.settingsWindowColour.light)).toBeLessThan(4.5);
+    expect(contrast("#28a745", "#ffffff")).toBeLessThan(4.5);
+  });
+
+  /** Focus is Chromium's own ring, which keeps its contrast on every background here, except in a
+   * contrast theme, where the chosen section needs its own ring in a system colour, set off from
+   * its fill. */
+  test("focus shows on every background", () => {
+    const forced = mediaBlock("(forced-colors: active)");
+    expect(css.replace(forced, "")).not.toMatch(/:focus-visible/);
+    expect(value(forced, ".sidebar button.nav:focus-visible", "outline")).toBe("2px solid CanvasText");
+    expect(parseFloat(value(forced, ".sidebar button.nav:focus-visible", "outline-offset") ?? "0")).toBeGreaterThan(0);
+  });
+
+  /** On macOS the sidebar is the title bar (a drag region, which swallows clicks): its section
+   * buttons are taken out of it, or none could be clicked. */
+  test("the section buttons are clickable in the drag region", () => {
+    expect(declaring(css, /-webkit-app-region:\s*drag/)).toEqual([".settings.mac .sidebar"]);
+    expect(value(css, ".sidebar button.nav", "-webkit-app-region")).toBe("no-drag");
   });
 
   /** The page is clear for the frosted sidebar whichever of it and `form.css` (`html, body` in the

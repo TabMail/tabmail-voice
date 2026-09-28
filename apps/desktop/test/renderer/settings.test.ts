@@ -233,6 +233,24 @@ describe("Settings page", () => {
     expect(document.querySelector(".settings")?.classList.contains("mac")).toBe(false);
   });
 
+  /** The sidebar says who is signed in, or that no one is. */
+  test("the sidebar names the account", async () => {
+    const account = () => document.querySelector(".identity-account")?.textContent;
+    await settingsPage({ error: null }, signedIn);
+    expect(account()).toBe("person@example.com");
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, email: null });
+    expect(account()).toBe("Not signed in");
+  });
+
+  /** A screen reader announces each switch as a switch, by its label. */
+  test("the switches are announced as switches", async () => {
+    const shown = { ...signedIn, debugAllowed: true };
+    await settingsPage({ error: null }, shown, shown);
+
+    for (const label of ["Read the screen while dictating", "Open at login", "Debug mode"]) expect(toggle(label).getAttribute("role")).toBe("switch");
+  });
+
   /** Debug mode is offered, under General, only to an account allowed it. */
   test("Debug mode shows only when allowed", async () => {
     await settingsPage({ error: null }, signedIn, { ...signedIn, debugAllowed: true });
