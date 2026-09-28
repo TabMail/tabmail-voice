@@ -163,6 +163,21 @@ describe("HelperClient", () => {
     expect(file).toContain("debug fake-helper: something happened");
   });
 
+  /** A helper that can't be spawned (no `voice-macos` off macOS) still runs `onStart`, once: the
+   * app's launch-time setup (preparing the microphone) hangs off it. */
+  test("a helper that can't be spawned still runs onStart once", async () => {
+    const client = new HelperClient({ name: "fake-helper", executable: join(__dirname, "fixtures/no-such-helper"), restartDelay: 50 });
+    clients.push(client);
+    let starts = 0;
+    client.onStart = () => {
+      starts += 1;
+    };
+    client.start();
+    expect(starts).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(starts).toBe(1);
+  });
+
   /** A helper that exits fails what was asked of it, and is started again, configured afresh. */
   test("an exited helper fails its requests and is restarted", async () => {
     const client = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper], restartDelay: 50 });

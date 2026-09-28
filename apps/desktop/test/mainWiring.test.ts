@@ -111,7 +111,10 @@ vi.mock("../src/main/helperClient.js", () => ({
     on(event: string, handler: (message: Record<string, unknown>) => void) {
       this.events.set(event, handler);
     }
-    start() {}
+    // As the real client: `onStart` runs as it starts, even with no executable to spawn.
+    start() {
+      this.onStart?.();
+    }
     stop() {}
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
@@ -187,6 +190,14 @@ afterEach(() => {
 });
 
 describe("main process wiring", () => {
+  /** Launching prepares the microphone ahead of the first dictation, once, on every platform: the
+   * helper's prepared engine on macOS, the audio window's worklet elsewhere (through `onStart`,
+   * which runs even where `voice-macos` can't spawn). */
+  test.each(["darwin", "linux"] as const)("launching on %s prepares the microphone once", async (platform) => {
+    await launch(platform);
+    expect(app.prewarms).toBe(1);
+  });
+
   /** A `voice-macos` that (re)starts gets the microphone prepared again, ahead of the next
    * dictation, and the activator started. */
   test("a restarted voice-macos prepares the microphone again", async () => {
