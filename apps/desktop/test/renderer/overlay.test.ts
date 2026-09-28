@@ -127,7 +127,21 @@ describe("overlay page", () => {
     const box = document.querySelector<HTMLElement>(".tip");
     expect(box?.style.paddingBottom !== "").toBe(over);
     expect(box?.style.paddingTop !== "").toBe(!over);
-    expect(document.querySelector(".tip-shape path")?.getAttribute("transform")?.includes("scale(1 -1)") ?? false).toBe(over);
+    // Mirrored in place: moved down by its own height as it flips, so it stays inside the tip.
+    expect(document.querySelector(".tip-shape path")?.getAttribute("transform") ?? null).toBe(over ? `translate(0 ${tipSize.height}) scale(1 -1)` : null);
+  });
+
+  /** In agent mode the bubbles are above the pill too: an overlay opened upward puts the hands-free
+   * tip over them, clear of every one (owner, 2026-09-27: "above pill when opening up"). */
+  test("the hands-free tip opened upward clears agent mode's bubbles", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], tip: "handsFree", opensUpward: true });
+
+    const bubbleTops = [...document.querySelectorAll(".bubble")].map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    expect(bubbleTops).toHaveLength(2);
+    const tipFrame = page.tipFrame();
+    expect(tipFrame).not.toBeNull();
+    for (const top of bubbleTops) expect(tipFrame?.bottom).toBeLessThanOrEqual(top);
   });
 
   /** A tip that appears during a hold (the double-tap tip, 20 s in, with the Space tip learned) is
