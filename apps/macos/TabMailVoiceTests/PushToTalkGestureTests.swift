@@ -132,11 +132,11 @@ struct PushToTalkGestureTests {
         ]
     }
 
-    /// Tapped twice, the dictation goes on without the key, until the hotkey is tapped again; that
-    /// press's release does nothing.
+    /// Tapped twice, the dictation goes on without the key (said at the second tap's release), until
+    /// the hotkey is tapped again; that press's release does nothing.
     @Test func aDoubleTapListensHandsFreeUntilTheNextTap() {
         var gesture = makeGesture()
-        #expect(doubleTap(&gesture) == [.start, .finish, .startHandsFree, nil])
+        #expect(doubleTap(&gesture) == [.start, .finish, .startHandsFree, .listenHandsFree])
         #expect(gesture.isHandsFree && gesture.isActive)
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 5) == .finish)
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 5.1) == nil)

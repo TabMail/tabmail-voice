@@ -211,9 +211,13 @@ enum DictationConfig {
 
     // MARK: Overlay
 
-    /// Transparent canvas the overlay draws in; the pill sizes itself inside it. Tall enough for a tip
-    /// (and its shadow) under the listening pill, which sits vertically centred.
-    static let overlayCanvasSize = CGSize(width: 440, height: 210)
+    /// Transparent canvas the overlay draws in; the pill sizes itself inside it. The pill sits vertically
+    /// centred, with room on each side for a tip (and its shadow) past agent mode's bubbles: a tip goes
+    /// under the pill, or over the bubbles above it (`OverlayPanelController.tipGoesAbove`).
+    static let overlayCanvasSize = CGSize(
+        width: 440,
+        height: pillHeight + 2 * (agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY)
+    )
     /// Gap between the caret's line and the top of the pill.
     static let overlayCaretGap: CGFloat = 4
     /// A "caret" rect wider than this is a line or text box; the caret is its leading edge.
@@ -300,8 +304,8 @@ enum DictationConfig {
 
     /// A tip (`DictationTip`): what it says, how long it shows and how many times, all set here
     /// (owner, 2026-09-27: "the exact text and duration, or how many times we show it … at a single
-    /// location"). `lines` are the tooltip's `tipLineCount` lines; `[space]` in a line is drawn as a
-    /// keycap, and `[hotkey]` as the dictation key's. `displayDuration` nil: shown for as long as it
+    /// location"). `lines` are the tooltip's `tipLineCount` lines; any `[key]` in a line is drawn as a
+    /// keycap reading `key` (`[space]`, `[esc]`), except `[hotkey]`, the dictation key's. `displayDuration` nil: shown for as long as it
     /// applies. `maxDisplays` nil: shown every time; otherwise it shows until the user does what it
     /// teaches, or at most this many times.
     struct TipSettings: Sendable {

@@ -8,12 +8,15 @@ import SwiftUI
 /// The dictation overlay, anchored at the text cursor: a swirl gathers there while the
 /// microphone warms up, then forms a waveform pill, with the dictation's language in a small circle
 /// left of the waveform. The pill is the surface for dictation status
-/// (and, later, agent responses). While it listens, a tip may show in a tooltip under it and fade after a
-/// moment (`DictationTip`: Space switches agent mode, a double tap dictates without holding); in agent mode the tools' bubbles sit in a row above it, and the running tool's border circles. The
-/// panel never takes focus, so the target field keeps keyboard focus and receives the paste.
+/// (and, later, agent responses). While it listens, a tip may show in a tooltip under it (`DictationTip`:
+/// Space switches agent mode and a double tap dictates without holding, each fading after a moment;
+/// how hands-free listening ends, up while it listens, over the pill when the overlay opened above the
+/// caret's line); in agent mode the tools' bubbles sit in a row above it, and the running tool's border
+/// circles. The panel never takes focus, so the target field keeps keyboard focus and receives the paste.
 @MainActor
 final class OverlayPanelController {
     private let panel: NSPanel
+    private let view: NSHostingView<OverlayView>
     private var anchor: CGRect?
     private var lookupGeneration = 0
     private var lookupPending = false
@@ -38,7 +41,8 @@ final class OverlayPanelController {
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.contentView = NSHostingView(rootView: OverlayView(controller: controller))
+        view = NSHostingView(rootView: OverlayView(controller: controller))
+        panel.contentView = view
     }
 
     func update(for phase: DictationController.Phase) {
@@ -112,6 +116,7 @@ final class OverlayPanelController {
             pillHeight: DictationConfig.pillHeight,
             visibleFrame: screen.visibleFrame
         )
+        view.rootView.opensUpward = Self.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: screen.visibleFrame)
         panel.setFrame(NSRect(origin: origin, size: DictationConfig.overlayCanvasSize), display: true)
     }
 
@@ -157,16 +162,32 @@ final class OverlayPanelController {
 
     /// Centre of a tip, of `size`: a tooltip centred `tipGap` under a pill at `pill`
     /// (owner, 2026-09-26: "a tooltip that appears below the middle and disappears after a little").
-    /// It fades after its display duration, so even an overlay opened above the caret's line
-    /// covers that line only briefly.
+    /// A tip that fades after its display duration covers the caret's line only briefly, even in an
+    /// overlay opened above that line; one that stays up goes over the pill there (`tipGoesAbove`).
     nonisolated static func hintCentre(under pill: CGRect, size: CGSize) -> CGPoint {
         CGPoint(x: pill.midX, y: pill.maxY + DictationConfig.tipGap + size.height / 2)
+    }
+
+    /// Centre of a tip, of `size`, over the pill instead: a tooltip centred `tipGap` over a pill at
+    /// `pill`, or over agent mode's bubbles at `bubbles` when they show.
+    nonisolated static func hintCentre(over pill: CGRect, bubbles: [CGRect], size: CGSize) -> CGPoint {
+        let top = bubbles.map(\.minY).reduce(pill.minY, min)
+        return CGPoint(x: pill.midX, y: top - DictationConfig.tipGap - size.height / 2)
+    }
+
+    /// Whether `tip` goes over the pill: when it stays up while listening (no display duration, as the
+    /// hands-free tip) and the overlay opened above the caret's line, so it never covers that line for
+    /// the whole dictation (owner, 2026-09-27: "above pill when opening up").
+    nonisolated static func tipGoesAbove(_ tip: DictationTip, opensUpward: Bool) -> Bool {
+        opensUpward && tip.displayDuration == nil
     }
 }
 
 /// Internal for tests (`Pill`).
 struct OverlayView: View {
     let controller: DictationController
+    /// The overlay opened above the caret's line (`OverlayPanelController.opensUpward`).
+    var opensUpward = false
     /// After the pill goes away, the swirl plays in reverse (spirals out and fades), mirroring
     /// how the overlay appeared.
     @State private var dispersing = false
@@ -218,11 +239,12 @@ struct OverlayView: View {
                 GatheringSwirl()
                     .transition(.opacity)
             case .listening, .transcribing, .running, .message:
-                PillLayout {
+                let tipGoesAbove = tip.map { OverlayPanelController.tipGoesAbove($0, opensUpward: opensUpward) } ?? false
+                PillLayout(tipGoesAbove: tipGoesAbove) {
                     Pill(mode: mode, level: controller.level, language: controller.language)
                         .transition(.scale(scale: DictationConfig.pillAppearScale).combined(with: .opacity))
                     if let tip {
-                        TipTooltip(tip: tip, hotkey: controller.settings.hotkey)
+                        TipTooltip(tip: tip, hotkey: controller.settings.hotkey, pointsDown: tipGoesAbove)
                             .layoutValue(key: IsTip.self, value: true)
                             .transition(.opacity)
                     }
@@ -343,9 +365,11 @@ private struct IsTip: LayoutValueKey {
 
 /// Places the pill with its top edge where a one-line pill's would be when centred in the canvas, so
 /// taller pills grow downward, away from the caret line; agent mode's tool bubbles go in a row above
-/// it, and a tip under it (`OverlayPanelController.bubbleCentres`, `hintCentre`), following
-/// it as it grows or shrinks to a circle.
+/// it, and a tip under it, or over it all when `tipGoesAbove` (`OverlayPanelController.bubbleCentres`,
+/// `hintCentre`), following it as it grows or shrinks to a circle.
 private struct PillLayout: Layout {
+    let tipGoesAbove: Bool
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         proposal.replacingUnspecifiedDimensions()
     }
@@ -365,8 +389,14 @@ private struct PillLayout: Layout {
         for (bubble, centre) in zip(bubbles, centres) {
             bubble.place(at: centre, anchor: .center, proposal: .unspecified)
         }
+        let bubbleFrames = zip(centres, sizes).map { centre, size in
+            CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
+        }
         for hint in others where hint[IsTip.self] {
-            let centre = OverlayPanelController.hintCentre(under: frame, size: hint.sizeThatFits(.unspecified))
+            let size = hint.sizeThatFits(.unspecified)
+            let centre = tipGoesAbove
+                ? OverlayPanelController.hintCentre(over: frame, bubbles: bubbleFrames, size: size)
+                : OverlayPanelController.hintCentre(under: frame, size: size)
             hint.place(at: centre, anchor: .center, proposal: .unspecified)
         }
     }
@@ -379,6 +409,8 @@ struct TipTooltip: View {
     let tip: DictationTip
     /// The key held to dictate, which the double-tap and hands-free tips name.
     let hotkey: DictationHotkey
+    /// Its arrow points down, at a pill under it (`OverlayPanelController.tipGoesAbove`).
+    var pointsDown = false
 
     /// One piece of a tip's line: words, or the key as a keycap.
     enum Part: Equatable {
@@ -389,7 +421,7 @@ struct TipTooltip: View {
     /// The tip's lines, a few words each, so the tooltip stays not much wider than the pill (owner,
     /// 2026-09-26: "should be multi-line instead"), as `DictationConfig` writes them.
     var lines: [[Part]] {
-        tip.settings.lines.map { Self.parts(of: $0, hotkey: hotkey) }
+        tip.config.lines.map { Self.parts(of: $0, hotkey: hotkey) }
     }
 
     /// A configured line's words and keycaps: `[space]` is a keycap, `[hotkey]` the dictation key's.
@@ -421,6 +453,11 @@ struct TipTooltip: View {
         cornerRadius: DictationConfig.tipCornerRadius
     )
 
+    /// The outline, its arrow on the side the pill is.
+    private var shape: ScaledShape<TooltipShape> {
+        Self.shape.scale(x: 1, y: pointsDown ? -1 : 1)
+    }
+
     var body: some View {
         VStack(spacing: DictationConfig.tipLineSpacing) {
             ForEach(lines.indices, id: \.self) { index in
@@ -442,11 +479,11 @@ struct TipTooltip: View {
         .padding(.horizontal, DictationConfig.tipHorizontalPadding)
         .padding(.vertical, DictationConfig.tipVerticalPadding)
         .frame(height: DictationConfig.tipHeight)
-        .padding(.top, DictationConfig.tipArrowHeight)
+        .padding(pointsDown ? .bottom : .top, DictationConfig.tipArrowHeight)
         // Dark in light and dark mode alike, as macOS HUDs are.
-        .background(Color(white: DictationConfig.tipFillWhite).opacity(DictationConfig.tipFillOpacity), in: Self.shape)
+        .background(Color(white: DictationConfig.tipFillWhite).opacity(DictationConfig.tipFillOpacity), in: shape)
         .overlay {
-            Self.shape.stroke(Color.white.opacity(DictationConfig.tipBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
+            shape.stroke(Color.white.opacity(DictationConfig.tipBorderOpacity), lineWidth: DictationConfig.pillBorderWidth)
         }
         .shadow(color: .black.opacity(DictationConfig.tipShadowOpacity), radius: DictationConfig.tipShadowRadius, y: DictationConfig.tipShadowOffsetY)
         .fixedSize()

@@ -16,14 +16,17 @@ private final class SilentCapture: AudioCapturing {
 }
 
 /// A microphone that logs each start and stop, in order, and records nothing or (`hears`) a
-/// `ToneCapture`'s tone. It can fail to start after the fact, as a real one reports it.
+/// `ToneCapture`'s tone, or hears it when the test says (`hear()`). It can fail to start after the
+/// fact, as a real one reports it.
 private final class CountingCapture: AudioCapturing, @unchecked Sendable {
     enum Failure: Error { case unavailable }
     private let hears: Bool
     init(hears: Bool = false) {
         self.hears = hears
     }
-    private let state = OSAllocatedUnfairLock(initialState: (events: [String](), completion: (@Sendable ((any Error)?) -> Void)?.none))
+    private let state = OSAllocatedUnfairLock(initialState: (
+        events: [String](), completion: (@Sendable ((any Error)?) -> Void)?.none, onBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?.none
+    ))
     var events: [String] { state.withLock { $0.events } }
     var starts: Int { events.filter { $0 == "start" }.count }
     var stops: Int { events.filter { $0 == "stop" }.count }
@@ -32,11 +35,17 @@ private final class CountingCapture: AudioCapturing, @unchecked Sendable {
         state.withLock {
             $0.events.append("start")
             $0.completion = completion
+            $0.onBuffer = onBuffer
         }
         if hears { ToneCapture().start(onBuffer: onBuffer, completion: { _ in }) }
     }
     func stop() {
         state.withLock { $0.events.append("stop") }
+    }
+    /// The last start's microphone hears a tone.
+    func hear() {
+        guard let onBuffer = state.withLock({ $0.onBuffer }) else { return }
+        ToneCapture().start(onBuffer: onBuffer, completion: { _ in })
     }
     /// The last start's completion, with an error.
     func fail() {
@@ -1154,6 +1163,7 @@ struct DictationControllerTests {
         controller.tipDisplayDuration = { _ in .milliseconds(50) }
 
         controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
         #expect(controller.phase == .listening)
         #expect(!TipBook(defaults: tipDefaults).isEligible(.doubleTap))
         #expect(await throughout(.milliseconds(400)) { controller.phase == .listening && controller.tip != .doubleTap })
@@ -1166,18 +1176,85 @@ struct DictationControllerTests {
     /// and every time (owner, 2026-09-27): with no display duration, however often it has shown, a
     /// mode switch or not, and in place of the Space tip. It goes when the dictation stops listening.
     @Test func theHandsFreeTipShowsTheWholeTimeEveryTime() async {
+        #expect(DictationTip.handsFree.displayDuration == nil)
+        let longestTimedTip = DictationTip.allCases.compactMap(\.displayDuration).max() ?? .zero
         let book = TipBook(defaults: tipDefaults)
         for _ in 0..<(DictationConfig.switchModeTip.maxDisplays ?? 0) + 5 { book.recordDisplay(.handsFree) }
         let (controller, _) = makeController(capture: ToneCapture())
 
-        for _ in 0..<3 {
+        for round in 0..<3 {
             controller.handle(.startHandsFree)
+            controller.handle(.listenHandsFree)
             #expect(await eventually { controller.tip == .handsFree })
             controller.handle(.toggleMode)
-            #expect(await throughout(.milliseconds(400)) { controller.tip == .handsFree })
+            // Once, past the longest a timed tip shows.
+            let window = round == 0 ? longestTimedTip + .milliseconds(500) : .milliseconds(400)
+            #expect(await throughout(window) { controller.tip == .handsFree })
             controller.handle(.cancel)
             #expect(controller.tip == nil)
         }
+    }
+
+    /// The hands-free tip waits for the second tap's release (owner, 2026-09-27: "only once truly
+    /// hands-free"): a second press released as a tap shows it, and never the Space tip first, with
+    /// every tip fresh; one still held once a tap is over is a hold, with the hold's Space tip and no
+    /// hands-free tip. After a first tap, or as a fresh start.
+    @Test(arguments: [true, false])
+    func theHandsFreeTipShowsOnlyOnceTheSecondPressIsATap(afterATap: Bool) async {
+        let (controller, _) = makeController(capture: ToneCapture())
+        #expect(TipBook(defaults: tipDefaults).isEligible(.switchMode))
+        let secondPress = {
+            if afterATap {
+                controller.handle(.start)
+                controller.handle(.finish)
+            }
+            controller.handle(.startHandsFree)
+        }
+
+        secondPress()
+        controller.handle(.listenHandsFree)
+        #expect(await throughout(DictationConfig.minimumHoldDuration * 3) { controller.tip != .switchMode })
+        #expect(controller.tip == .handsFree)
+        controller.handle(.cancel)
+
+        secondPress()
+        #expect(await throughout(DictationConfig.minimumHoldDuration / 2) { controller.tip == nil }, "a tip while the press is down")
+        #expect(await eventually { controller.tip == .switchMode })
+        #expect(await throughout(DictationConfig.minimumHoldDuration * 3) { controller.tip != .handsFree })
+        controller.handle(.finish)
+        #expect(controller.phase == .transcribing)
+    }
+
+    /// A hands-free tip due before the microphone is first heard shows once it is, even when that is
+    /// after the time a held second press would have become a hold.
+    @Test func aHandsFreeTipDueBeforeTheMicrophoneIsHeardShowsOnceItIs() async {
+        let capture = CountingCapture()
+        let (controller, _) = makeController(capture: capture)
+
+        controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
+        #expect(await throughout(DictationConfig.minimumHoldDuration * 3) { controller.tip == nil })
+        capture.hear()
+
+        #expect(await eventually { controller.tip == .handsFree })
+        controller.handle(.cancel)
+    }
+
+    /// A Space tip already up as the second press ends as a tap (a tap as long as a tap can be) gives
+    /// way to the hands-free tip.
+    @Test func aSpaceTipUpAsTheSecondTapEndsGivesWayToTheHandsFreeTip() async {
+        let (controller, _) = makeController(capture: ToneCapture())
+        controller.tipDisplayDuration = { $0 == .switchMode ? .seconds(60) : $0.displayDuration }
+
+        controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+        #expect(await eventually { controller.tip == .switchMode })
+        controller.handle(.listenHandsFree)
+
+        #expect(controller.tip == .handsFree)
+        #expect(await throughout(.milliseconds(300)) { controller.tip == .handsFree })
+        controller.handle(.cancel)
     }
 
     /// A double tap carries on the first tap's recording: the microphone started at the first press is
@@ -1233,7 +1310,7 @@ struct DictationControllerTests {
     }
 
     /// A press while a double-tapped dictation is being transcribed leaves it alone: no new recording
-    /// starts, and its text is still pasted.
+    /// starts, no tip shows, and its text is still pasted. So does another double tap.
     @Test func aPressWhileADoubleTapIsTranscribedLeavesItAlone() async {
         transcription.enqueue(status: 200, json: ["text": transcript])
         completions.enqueue(status: 200, text: cleanedStream)
@@ -1246,8 +1323,12 @@ struct DictationControllerTests {
         controller.handle(.finish)
         #expect(controller.phase == .transcribing)
         controller.handle(.start)
+        controller.handle(.finish)
+        controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
 
         #expect(controller.phase == .transcribing)
+        #expect(controller.tip == nil)
         #expect(capture.starts == 1)
         #expect(await eventually { pastes.texts == [cleaned] && controller.phase == .idle })
     }
@@ -1299,6 +1380,7 @@ struct DictationControllerTests {
         #expect(controller.phase == .arming)
         controller.handle(.finish)
         controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
 
         #expect(await eventually { controller.tip == .handsFree })
         #expect(await throughout(.milliseconds(300)) { controller.tip == .handsFree })
@@ -1345,6 +1427,7 @@ struct DictationControllerTests {
         let (controller, pastes) = makeController(capture: ToneCapture())
 
         controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
         #expect(await eventually { controller.isHearing })
         controller.handle(.cancel)
 

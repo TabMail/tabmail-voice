@@ -134,7 +134,7 @@ struct OverlayGeometryTests {
     @Test func bubblesSitInARowAboveThePillAndTheHintUnderIt() {
         let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
         let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
-        let tips = [TipTooltip(tip: .switchMode, hotkey: .rightOption), TipTooltip(tip: .doubleTap, hotkey: .rightOption)]
+        let tips = DictationTip.allCases.map { TipTooltip(tip: $0, hotkey: .rightOption) }
         let shadow = DictationConfig.tipShadowRadius + DictationConfig.tipShadowOffsetY
         func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
             CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
@@ -160,6 +160,40 @@ struct OverlayGeometryTests {
                 if let first = frames.first, let last = frames.last {
                     #expect(abs((first.minX + last.maxX) / 2 - pill.midX) < 0.001, "row not centred over the pill (\(count))")
                 }
+            }
+        }
+    }
+
+    /// Only a tip that stays up while listening goes over the pill, and only in an overlay opened above
+    /// the caret's line: the hands-free tip (owner, 2026-09-27). Timed tips stay under the pill.
+    @Test(arguments: DictationTip.allCases, [false, true])
+    func onlyTheHandsFreeTipGoesOverThePillAndOnlyWhenOpenedUpward(tip: DictationTip, opensUpward: Bool) {
+        #expect(OverlayPanelController.tipGoesAbove(tip, opensUpward: opensUpward) == (opensUpward && tip == .handsFree))
+    }
+
+    /// A tip over the pill (top-left origin): centred over it, clear of the pill and of agent mode's
+    /// bubbles above it, overlapping neither, and inside the canvas with its shadow. For the listening
+    /// pill, each tip as drawn pointing down, with no bubbles and as many as are ever offered.
+    @Test func aTipOverThePillClearsTheBubblesAndStaysInTheCanvas() {
+        let canvas = CGRect(origin: .zero, size: DictationConfig.overlayCanvasSize)
+        let bubble = CGSize(width: DictationConfig.agentBubbleDiameter, height: DictationConfig.agentBubbleDiameter)
+        let shadow = DictationConfig.tipShadowRadius + DictationConfig.tipShadowOffsetY
+        func frame(_ centre: CGPoint, _ size: CGSize) -> CGRect {
+            CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2, width: size.width, height: size.height)
+        }
+        let size = NSHostingView(rootView: OverlayView.Pill(mode: .listening, level: 0, language: "en")).fittingSize
+        let pill = CGRect(x: canvas.midX - size.width / 2, y: (canvas.height - DictationConfig.pillHeight) / 2, width: size.width, height: size.height)
+        for tip in DictationTip.allCases {
+            let hint = NSHostingView(rootView: TipTooltip(tip: tip, hotkey: .rightOption, pointsDown: true)).fittingSize
+            for count in 0...(AgentTool.allCases.count - 1) {
+                let bubbles = OverlayPanelController.bubbleCentres(above: pill, sizes: Array(repeating: bubble, count: count)).map { frame($0, bubble) }
+                let hintFrame = frame(OverlayPanelController.hintCentre(over: pill, bubbles: bubbles, size: hint), hint)
+                #expect(hintFrame.maxY <= pill.minY, "\(tip) is not over the pill (\(count) bubbles)")
+                #expect(abs(hintFrame.midX - pill.midX) < 0.001, "\(tip) is not centred over the pill")
+                for bubbleFrame in bubbles {
+                    #expect(hintFrame.maxY <= bubbleFrame.minY, "\(tip) is not over the bubbles (\(count))")
+                }
+                #expect(canvas.contains(hintFrame.insetBy(dx: -shadow, dy: -shadow)), "\(hintFrame) over \(count) bubbles leaves the canvas")
             }
         }
     }

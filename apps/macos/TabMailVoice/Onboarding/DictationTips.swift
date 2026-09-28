@@ -4,19 +4,20 @@
 
 import Foundation
 
-/// A tip the overlay shows under the listening pill. Most behave as TipKit tips do: a tip shows until
+/// A tip the overlay shows by the listening pill (`OverlayPanelController.hintCentre`). Most behave as TipKit tips do: a tip shows until
 /// the user has done what it teaches, or has seen it `maxDisplays` times, and then never again. Its
-/// words, display duration and display count are in `DictationConfig` (`settings`).
+/// words, display duration and display count are in `DictationConfig` (`config`).
 enum DictationTip: String, CaseIterable, Sendable {
     /// Space switches between dictation and agent mode: shown as a hold starts listening.
     case switchMode
     /// A double tap of the hotkey dictates without holding it: shown once a hold passes
     /// `DictationConfig.doubleTapTipHoldDuration`.
     case doubleTap
-    /// How hands-free listening ends (tap the hotkey, or Escape): shown the whole time it listens.
+    /// How hands-free listening ends (tap the hotkey, or Escape): shown the whole time it listens, every
+    /// time. Never learned: nothing marks it so.
     case handsFree
 
-    var settings: DictationConfig.TipSettings {
+    var config: DictationConfig.TipSettings {
         switch self {
         case .switchMode: DictationConfig.switchModeTip
         case .doubleTap: DictationConfig.doubleTapTip
@@ -25,10 +26,10 @@ enum DictationTip: String, CaseIterable, Sendable {
     }
 
     /// Nil: every time.
-    var maxDisplays: Int? { settings.maxDisplays }
+    var maxDisplays: Int? { config.maxDisplays }
 
     /// Nil: for as long as it applies.
-    var displayDuration: Duration? { settings.displayDuration }
+    var displayDuration: Duration? { config.displayDuration }
 }
 
 /// Which tips have been shown how often, and which the user has learned, kept in UserDefaults.

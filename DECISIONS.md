@@ -779,17 +779,28 @@ wider than the pill itself, so it should be multi-line".
 tap <hotkey> to finish dictating or tap <esc> to cancel", shown "whole time, every time"; and "the
 exact text and duration, or how many times we show it, as a configurable variable that we can
 change easily at a single location."
-- A third tip, `handsFree`: "Tap [hotkey] to finish / dictating, or / tap [esc] to cancel". It is due
-  whenever a dictation becomes hands-free (`startHandsFree`, or a double tap latching the first
-  tap's recording) and shows for the whole hands-free listening, on every hands-free dictation: no
-  display duration and no maximum, so it is never counted out or learned. It takes the Space tip's
-  place in hands-free listening (Space still switches the mode there; the Space tip still shows on
-  holds). It goes when listening ends (finish, cancel, Escape, the length cap).
+- A third tip, `handsFree`: "Tap [hotkey] to finish / dictating, or / tap [esc] to cancel". It shows
+  for the whole hands-free listening, on every hands-free dictation: no display duration and no
+  maximum, so it is never counted out, and nothing marks it learned. It takes the Space tip's place
+  in hands-free listening (Space still switches the mode there; the Space tip still shows on holds).
+  It goes when listening ends (finish, cancel, Escape, the length cap).
+- Asked, the owner chose "only once truly hands-free": the tip is due when the double tap's second
+  press is released as a tap (`PushToTalkGesture.Action.listenHandsFree`), not at that press. While
+  the press is down no tip shows; still held once a tap is over (`minimumHoldDuration`), it is a hold
+  and gets a hold's Space tip, finishing on release. A Space tip already up as a long tap ends gives
+  way to the hands-free tip.
+- Asked, the owner chose "above pill when opening up": in an overlay opened above the caret's line,
+  a tip with no display duration (the hands-free one) goes over the pill, and over agent mode's
+  bubbles when they show, its arrow pointing down (`OverlayPanelController.tipGoesAbove`,
+  `hintCentre(over:bubbles:size:)`), so it never covers that line for a whole dictation. Timed tips
+  stay under the pill, covering the line only briefly. The canvas grew from 210 pt to room for a tip
+  and its shadow past the bubbles on each side of the centred pill (derived in `overlayCanvasSize`).
 - Each tip's words, display duration and maximum displays are one `DictationConfig.TipSettings`
-  (`switchModeTip`, `doubleTapTip`, `handsFreeTip`), replacing the four separate duration and count
-  constants. A line's `[space]`/`[esc]` is drawn as a keycap and `[hotkey]` as the dictation key's
-  (`TipTooltip.parts`); `displayDuration` nil means "while it applies", `maxDisplays` nil "every time".
-  The tooltip's layout still counts on `tipLineCount` lines, so a tip's `lines` must keep that count.
+  (`switchModeTip`, `doubleTapTip`, `handsFreeTip`; `DictationTip.config`), replacing the four separate
+  duration and count constants. Any `[key]` in a line is drawn as a keycap reading `key` (`[space]`,
+  `[esc]`), and `[hotkey]` as the dictation key's (`TipTooltip.parts`); `displayDuration` nil means
+  "while it applies", `maxDisplays` nil "every time". The tooltip's layout still counts on
+  `tipLineCount` lines, so a tip's `lines` must keep that count.
 
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 

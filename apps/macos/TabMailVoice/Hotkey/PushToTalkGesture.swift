@@ -74,6 +74,8 @@ struct PushToTalkGesture: Sendable {
         case start
         /// The second press of a double tap: a dictation that needs no hold.
         case startHandsFree
+        /// That second press was released as a tap: the dictation listens on without the key.
+        case listenHandsFree
         case finish
         case cancel
         case toggleMode
@@ -146,7 +148,7 @@ struct PushToTalkGesture: Sendable {
         if wasDoubleTap {
             guard isTap else { return .finish }
             isHandsFree = true
-            return nil
+            return .listenHandsFree
         }
         lastTapReleasedAt = isTap ? time : nil
         return .finish
