@@ -8,18 +8,18 @@ import Testing
 import Vision
 @testable import TabMailVoice
 
-/// The tips as drawn: a dark tooltip, in light and dark mode alike, with an arrow up at the pill,
-/// saying what a key does.
+/// The tips as drawn: a dark tooltip, in light and dark mode alike, with an arrow at the pill (up, or
+/// down at a pill under it), saying what a key does.
 @MainActor
 struct TipTooltipTests {
     private let scale: CGFloat = 2
-    private nonisolated static let tips: [(DictationTip, DictationHotkey)] = [(.switchMode, .rightOption), (.doubleTap, .function), (.doubleTap, .rightOption)]
+    private nonisolated static let tips = DictationTip.allCases.flatMap { tip in DictationHotkey.allCases.map { (tip, $0) } }
 
     /// Read off the drawn tip, on device, line by line: its words around the keycap. (The right ⌥
     /// keycap's symbol is not text Vision reads.)
     @Test(arguments: zip(
-        [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function)],
-        ["press space to switch between dictation and agent mode", "double-tap fn to dictate without holding"]
+        [(DictationTip.switchMode, DictationHotkey.rightOption), (.doubleTap, .function), (.handsFree, .function)],
+        ["press space to switch between dictation and agent mode", "double-tap fn to dictate without holding", "tap fn to finish dictating, or tap esc to cancel"]
     ))
     func saysWhatTheKeyDoes(tip: (DictationTip, DictationHotkey), words: String) throws {
         let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1))
@@ -80,6 +80,16 @@ struct TipTooltipTests {
         return (request.results ?? []).compactMap { $0.topCandidates(1).first }
     }
 
+    /// A configured line's `[key]` is a keycap and `[hotkey]` the dictation key's; the rest is words.
+    @Test func configuredLinesBecomeWordsAndKeycaps() {
+        #expect(TipTooltip.parts(of: "Tap [hotkey] to finish", hotkey: .function) == [.words("Tap"), .key("fn"), .words("to finish")])
+        #expect(TipTooltip.parts(of: "[space] then [hotkey]", hotkey: .rightOption) == [.key("space"), .words("then"), .key("right ⌥")])
+        #expect(TipTooltip.parts(of: "dictating, or", hotkey: .function) == [.words("dictating, or")])
+        #expect(TipTooltip(tip: .handsFree, hotkey: .function).lines == [
+            [.words("Tap"), .key("fn"), .words("to finish")], [.words("dictating, or")], [.words("tap"), .key("esc"), .words("to cancel")],
+        ])
+    }
+
     /// The double-tap tip names the key the user holds.
     @Test func theDoubleTapTipNamesTheHotkey() {
         #expect(TipTooltip(tip: .doubleTap, hotkey: .rightOption).keycap == "right ⌥")
@@ -87,47 +97,113 @@ struct TipTooltipTests {
         #expect(TipTooltip(tip: .switchMode, hotkey: .function).keycap == "space")
     }
 
-    /// The whole overlay as a listening hold draws it: the dark Space tip under the light pill.
-    @Test func showsUnderTheListeningPill() async throws {
-        let transport = StubTransport()
-        let thunderbird = FakeThunderbird()
-        thunderbird.installed = false
-        let controller = DictationController(
-            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
-            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
-            account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
-            tips: TipBook(defaults: InMemoryDefaults()),
-            inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
-            thunderbird: thunderbird.relay(),
-            capture: ToneCapture(),
-            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transport.transport) },
-            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: transport.transport) }
-        )
-        controller.start()
-        defer { controller.cancel() }
-        let deadline = ContinuousClock.now + .seconds(5)
-        while !(controller.phase == .listening && controller.isHearing), ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(10))
+    /// The whole overlay as it listens: the dark tip under the light pill, but for the hands-free tip
+    /// in an overlay opened above the caret's line, which is over it (owner, 2026-09-27: "above pill
+    /// when opening up"). A hold's Space tip stays under the pill either way.
+    @Test(arguments: [(false, false, false), (false, true, false), (true, false, false), (true, true, true)])
+    func showsByTheListeningPill(handsFree: Bool, opensUpward: Bool, over: Bool) async throws {
+        let (controller, transport) = makeController()
+        if handsFree {
+            controller.handle(.startHandsFree)
+            controller.handle(.listenHandsFree)
+        } else {
+            controller.start()
         }
-        try #require(controller.phase == .listening && controller.isHearing)
+        defer { controller.cancel() }
+        let tip: DictationTip = handsFree ? .handsFree : .switchMode
+        try #require(await eventually { controller.phase == .listening && controller.tip == tip })
 
         let size = DictationConfig.overlayCanvasSize
-        let renderer = ImageRenderer(content: OverlayView(controller: controller).frame(width: size.width, height: size.height))
+        let renderer = ImageRenderer(content: OverlayView(controller: controller, opensUpward: opensUpward).frame(width: size.width, height: size.height))
         renderer.scale = scale
         let overlay = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
-        var darkRows: [Int] = []
-        var lightRows: [Int] = []
-        for y in 0..<overlay.pixelsHigh {
-            for x in 0..<overlay.pixelsWide {
-                let (white, alpha) = pixel(overlay, CGFloat(x) / scale, CGFloat(y) / scale)
-                guard alpha > 0.8 else { continue }
-                if white < 0.3 { darkRows.append(y) } else if white > 0.8 { lightRows.append(y) }
+        #expect(try tipIsOverThePill(overlay) == over, over ? "the tip is not over the pill" : "the tip is not under the pill")
+        // Its arrow points at the pill: at the pill's centre the tip reaches nearer the pill than a
+        // little to the side.
+        let pillTop = Int((size.height - DictationConfig.pillHeight) / 2 * scale)
+        let pillBottom = pillTop + Int(DictationConfig.listeningPillHeight * scale)
+        let dark = { (x: Int) in
+            (0..<overlay.pixelsHigh).filter { y in
+                let (white, alpha) = self.pixel(overlay, CGFloat(x) / self.scale, CGFloat(y) / self.scale)
+                return alpha > 0.8 && white < 0.3 && (over ? y < pillTop : y > pillBottom)
             }
         }
-        try #require(!darkRows.isEmpty && !lightRows.isEmpty)
-        let middle = { (rows: [Int]) in Double(rows.reduce(0, +)) / Double(rows.count) }
-        #expect(controller.tip == .switchMode)
-        #expect(middle(darkRows) > middle(lightRows), "the tip is not under the pill")
+        let centre = overlay.pixelsWide / 2
+        let side = centre + Int(DictationConfig.tipArrowWidth * 2 * scale)
+        if over {
+            #expect(try #require(dark(centre).max()) > (try #require(dark(side).max())), "the arrow does not point down at the pill")
+        } else {
+            #expect(try #require(dark(centre).min()) < (try #require(dark(side).min())), "the arrow does not point up at the pill")
+        }
+        #expect(transport.requests.isEmpty)
+    }
+
+    /// The overlay tells its view which way it opened, so a tip over the pill goes there in the app,
+    /// not only in a view built so: up by a caret near the screen's bottom, down by one mid-screen; and
+    /// shown as the app shows it (with no caret, at the mouse pointer), after a placement the other way.
+    @Test func theOverlayTellsItsViewWhichWayItOpened() async throws {
+        let (controller, transport) = makeController()
+        controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
+        defer { controller.cancel() }
+        try #require(await eventually { controller.phase == .listening && controller.tip == .handsFree })
+        let overlay = OverlayPanelController(controller: controller)
+        let nearBottom = { (screen: CGRect) in CGRect(x: screen.midX, y: screen.minY + DictationConfig.pillHeight, width: 1, height: 18) }
+        let midScreen = { (screen: CGRect) in CGRect(x: screen.midX, y: screen.midY, width: 1, height: 18) }
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        for (anchor, upward) in [(nearBottom(screen), true), (midScreen(screen), false)] {
+            #expect(OverlayPanelController.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: screen) == upward)
+            overlay.place(at: anchor, in: screen)
+            #expect(overlay.view.rootView.opensUpward == upward, "at \(anchor.minY)")
+        }
+
+        let mouse = NSEvent.mouseLocation
+        let visible = try #require(NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main).visibleFrame
+        let upward = OverlayPanelController.opensUpward(anchor: CGRect(x: mouse.x, y: mouse.y, width: 1, height: 1), pillHeight: DictationConfig.pillHeight, visibleFrame: visible)
+        overlay.place(at: upward ? midScreen(visible) : nearBottom(visible), in: visible)
+        try #require(overlay.view.rootView.opensUpward != upward)
+        overlay.update(for: .listening)
+        #expect(overlay.view.window?.isVisible == true)
+        #expect(overlay.view.rootView.opensUpward == upward)
+        let size = DictationConfig.overlayCanvasSize
+        let renderer = ImageRenderer(content: overlay.view.rootView.frame(width: size.width, height: size.height))
+        renderer.scale = scale
+        #expect(try tipIsOverThePill(NSBitmapImageRep(cgImage: try #require(renderer.cgImage))) == upward)
+
+        controller.cancel()
+        overlay.update(for: .idle)
+        try await Task.sleep(for: DictationConfig.overlayDismissDuration * 2)
+        #expect(overlay.view.window?.isVisible == false)
+        #expect(transport.requests.isEmpty)
+    }
+
+    /// In agent mode, in an overlay opened above the caret's line, the hands-free tip goes over the
+    /// tools' bubbles, not onto them (ADR-DESK-021: "over agent mode's bubbles when they show").
+    @Test func theHandsFreeTipGoesOverAgentModesBubbles() async throws {
+        let (controller, transport) = makeController()
+        var context = ScreenContext(appName: "Example Notes", windowTitle: "Weekly sync")
+        context.appendCaret()
+        controller.captureContext = { [context] in Task { context } }
+        controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
+        defer { controller.cancel() }
+        controller.handle(.toggleMode)
+        try #require(await eventually { controller.phase == .listening && controller.tip == .handsFree && controller.tools == [.compose] })
+
+        let size = DictationConfig.overlayCanvasSize
+        let renderer = ImageRenderer(content: OverlayView(controller: controller, opensUpward: true).frame(width: size.width, height: size.height))
+        renderer.scale = scale
+        let overlay = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+        // A column through the tip, clear of its arrow and of the one bubble centred over the pill.
+        let x = size.width / 2 + DictationConfig.agentBubbleDiameter + DictationConfig.tipArrowWidth
+        let pillTop = (size.height - DictationConfig.pillHeight) / 2
+        let bubblesTop = pillTop - DictationConfig.agentBubbleGap - DictationConfig.agentBubbleDiameter
+        let dark = stride(from: 0, to: pillTop, by: 1 / scale).filter { y in
+            let (white, alpha) = pixel(overlay, x, y)
+            return alpha > 0.8 && white < 0.3
+        }
+        #expect(!dark.isEmpty, "no tip over the pill")
+        #expect(dark.allSatisfy { $0 < bubblesTop }, "the tip reaches \(dark.max() ?? 0), past the bubbles' top at \(bubblesTop)")
         #expect(transport.requests.isEmpty)
     }
 
@@ -144,32 +220,81 @@ struct TipTooltipTests {
         #expect(size.width < 2 * pill.width, "\(size.width) wide beside a \(pill.width) pill")
     }
 
-    @Test(arguments: tips, [ColorScheme.light, .dark])
-    func isADarkTooltipWithAnArrowUpAtThePill(tip: (DictationTip, DictationHotkey), scheme: ColorScheme) throws {
-        let hint = try render(tip, scheme)
+    /// Drawn with its arrow up (`pointsDown` false) or down: `y` is measured from the arrow's side.
+    @Test(arguments: tips.flatMap { tip in [false, true].map { (tip.0, tip.1, $0) } }, [ColorScheme.light, .dark])
+    func isADarkTooltipWithAnArrowAtThePill(tip: (DictationTip, DictationHotkey, Bool), scheme: ColorScheme) throws {
+        let pointsDown = tip.2
+        let hint = try render((tip.0, tip.1), scheme, pointsDown: pointsDown)
         let width = CGFloat(hint.pixelsWide) / scale
+        let height = CGFloat(hint.pixelsHigh) / scale
+        #expect(height == DictationConfig.tipArrowHeight + DictationConfig.tipHeight)
+        let pixel = { (x: CGFloat, y: CGFloat) in self.pixel(hint, x, pointsDown ? height - y : y) }
         let arrow = DictationConfig.tipArrowHeight
         let boxMiddle = arrow + DictationConfig.tipHeight / 2
 
-        // The box, left of the keycap, and the arrow's tip at the top centre: dark and opaque.
+        // The box, left of the keycap, and the arrow's tip at the centre of its side: dark and opaque.
         for (x, y) in [(3, boxMiddle), (width - 3, boxMiddle), (width / 2, arrow - 1)] {
-            let (white, alpha) = pixel(hint, x, y)
+            let (white, alpha) = pixel(x, y)
             #expect(white < 0.3, "not dark at \(x), \(y)")
             #expect(alpha > 0.8, "not opaque at \(x), \(y)")
         }
         // The words: light text on the dark box, in its left and right parts.
-        let left = stride(from: 10, to: width * 0.4, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
+        let left = stride(from: 10, to: width * 0.4, by: 0.5).map { pixel($0, boxMiddle).white }
         #expect((left.max() ?? 0) > 0.6, "no light text on the left")
-        let right = stride(from: width * 0.6, to: width - 8, by: 0.5).map { pixel(hint, $0, boxMiddle).white }
+        let right = stride(from: width * 0.6, to: width - 8, by: 0.5).map { pixel($0, boxMiddle).white }
         #expect((right.max() ?? 0) > 0.6, "no light text on the right")
-        // Beside the arrow, above the box: nothing drawn.
+        // Beside the arrow, past the box's edge: nothing drawn.
         for x in [width / 4, width * 3 / 4] {
-            #expect(pixel(hint, x, 1).alpha < 0.5, "drawn beside the arrow at \(x)")
+            #expect(pixel(x, 1).alpha < 0.5, "drawn beside the arrow at \(x)")
         }
     }
 
-    private func render(_ tip: (DictationTip, DictationHotkey), _ scheme: ColorScheme) throws -> NSBitmapImageRep {
-        let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1).environment(\.colorScheme, scheme))
+    /// Whether the dark tip in a rendered overlay is, on the whole, over its light pill.
+    private func tipIsOverThePill(_ overlay: NSBitmapImageRep) throws -> Bool {
+        var darkRows: [Int] = []
+        var lightRows: [Int] = []
+        for y in 0..<overlay.pixelsHigh {
+            for x in 0..<overlay.pixelsWide {
+                let (white, alpha) = pixel(overlay, CGFloat(x) / scale, CGFloat(y) / scale)
+                guard alpha > 0.8 else { continue }
+                if white < 0.3 { darkRows.append(y) } else if white > 0.8 { lightRows.append(y) }
+            }
+        }
+        try #require(!darkRows.isEmpty && !lightRows.isEmpty)
+        let middle = { (rows: [Int]) in Double(rows.reduce(0, +)) / Double(rows.count) }
+        return middle(darkRows) < middle(lightRows)
+    }
+
+    /// Polls `condition` until it holds, for up to five seconds.
+    private func eventually(_ condition: () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !condition() {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return true
+    }
+
+    private func makeController() -> (DictationController, StubTransport) {
+        let transport = StubTransport()
+        let thunderbird = FakeThunderbird()
+        thunderbird.installed = false
+        let controller = DictationController(
+            permissions: PermissionsModel(readMicrophone: { .authorized }, readAccessibility: { true }),
+            settings: { DictationSettings(hasConsented: true, hotkey: .rightOption, backendURL: URL(string: "https://api.example.com")!, readsScreen: true, emailApp: nil) },
+            account: AccountModel(client: AuthClient(transport: transport.transport), store: InMemorySessionStore(Fixtures.session())),
+            tips: TipBook(defaults: InMemoryDefaults()),
+            inserter: TextInserter(pasteboard: NSPasteboard(name: NSPasteboard.Name("ai.tabmail.voice.tests.\(UUID().uuidString)")), restoreDelay: .zero, pasteKeystroke: {}),
+            thunderbird: thunderbird.relay(),
+            capture: ToneCapture(),
+            makeTranscriptionClient: { TranscriptionClient(baseURL: $0, transport: transport.transport) },
+            makeCompletionsClient: { CompletionsClient(baseURL: $0, transport: transport.transport) }
+        )
+        return (controller, transport)
+    }
+
+    private func render(_ tip: (DictationTip, DictationHotkey), _ scheme: ColorScheme, pointsDown: Bool = false) throws -> NSBitmapImageRep {
+        let renderer = ImageRenderer(content: TipTooltip(tip: tip.0, hotkey: tip.1, pointsDown: pointsDown).environment(\.colorScheme, scheme))
         renderer.scale = scale
         return NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
     }

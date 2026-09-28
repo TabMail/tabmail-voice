@@ -4,28 +4,32 @@
 
 import Foundation
 
-/// A tip the overlay shows under the listening pill, as TipKit tips behave: it shows until the user
-/// has done what it teaches, or has seen it `maxDisplays` times, and then never again.
+/// A tip the overlay shows by the listening pill (`OverlayPanelController.hintCentre`). Most behave as TipKit tips do: a tip shows until
+/// the user has done what it teaches, or has seen it `maxDisplays` times, and then never again. Its
+/// words, display duration and display count are in `DictationConfig` (`config`).
 enum DictationTip: String, CaseIterable, Sendable {
     /// Space switches between dictation and agent mode: shown as a hold starts listening.
     case switchMode
     /// A double tap of the hotkey dictates without holding it: shown once a hold passes
     /// `DictationConfig.doubleTapTipHoldDuration`.
     case doubleTap
+    /// How hands-free listening ends (tap the hotkey, or Escape): shown the whole time it listens, every
+    /// time. Never learned: nothing marks it so.
+    case handsFree
 
-    var maxDisplays: Int {
+    var config: DictationConfig.TipSettings {
         switch self {
-        case .switchMode: DictationConfig.switchModeTipMaxDisplays
-        case .doubleTap: DictationConfig.doubleTapTipMaxDisplays
+        case .switchMode: DictationConfig.switchModeTip
+        case .doubleTap: DictationConfig.doubleTapTip
+        case .handsFree: DictationConfig.handsFreeTip
         }
     }
 
-    var displayDuration: Duration {
-        switch self {
-        case .switchMode: DictationConfig.switchModeTipDisplayDuration
-        case .doubleTap: DictationConfig.doubleTapTipDisplayDuration
-        }
-    }
+    /// Nil: every time.
+    var maxDisplays: Int? { config.maxDisplays }
+
+    /// Nil: for as long as it applies.
+    var displayDuration: Duration? { config.displayDuration }
 }
 
 /// Which tips have been shown how often, and which the user has learned, kept in UserDefaults.
@@ -39,7 +43,9 @@ final class TipBook {
 
     /// Whether `tip` may still show.
     func isEligible(_ tip: DictationTip) -> Bool {
-        !defaults.bool(forKey: Self.learnedKey(tip)) && defaults.integer(forKey: Self.displaysKey(tip)) < tip.maxDisplays
+        guard !defaults.bool(forKey: Self.learnedKey(tip)) else { return false }
+        guard let maxDisplays = tip.maxDisplays else { return true }
+        return defaults.integer(forKey: Self.displaysKey(tip)) < maxDisplays
     }
 
     func recordDisplay(_ tip: DictationTip) {
