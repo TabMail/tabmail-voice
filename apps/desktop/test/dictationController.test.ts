@@ -827,6 +827,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.mode).toBe("dictation");
     });
 
+    /** Beside the tools' bubbles, one for each app switched on at key-down whose tools this computer
+     * has (Notes switched off, Contacts with no tools here), only while Answer is offered: its loop
+     * runs their tools. A switch changed during the hold changes none of them (the settings are
+     * snapshotted at key-down). */
+    test.each([true, false])("the apps switched on show beside Answer (Answer on: %s)", async (answerOn) => {
+      const tool = (connector: Connector): LoopTool => ({ name: `${connector}_example`, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
+      prefs.value = { ...prefs.value, enabledTools: answerOn ? [...agentTools] : toolsWithoutAnswer, enabledConnectors: connectors.filter((connector) => connector !== "notes") };
+      const { controller } = makeController({ capture: new CountingCapture(true), thunderbird: new FakeThunderbird(), loopTools: [tool("web"), tool("calendar"), tool("notes"), tool("calendar")] });
+      controller.captureContext = async () => selectionScreen("");
+
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      expect(controller.connectors).toEqual([]);
+      controller.handle("toggleMode");
+      expect(await eventually(() => controller.tools.length > 0)).toBe(true);
+      prefs.value = { ...prefs.value, enabledTools: [...agentTools], enabledConnectors: [...connectors] };
+
+      expect(controller.tools.includes("answer")).toBe(answerOn);
+      expect(controller.connectors).toEqual(answerOn ? ["calendar", "web"] : []);
+      controller.handle("toggleMode");
+      expect(controller.connectors).toEqual([]);
+      controller.handle("cancel");
+    });
+
     /** The user moved to another app while the text was written: it is not pasted there. */
     test.each<[string, AgentTool]>([
       ["Ship it Friday or else.", "edit"],

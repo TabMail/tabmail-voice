@@ -8,12 +8,12 @@ import { type AgentChat, type ChatTurn, formattedReply, remainingFraction } from
 import { type AgentTool, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import type { DictationHotkey } from "../core/hotkey.js";
-import { bubbleCentres, hintCentre, hintCentreOver, type Rect, type Size, tipGoesAbove } from "../core/overlayGeometry.js";
+import { bubbleCentres, hintCentre, hintCentreOver, type Rect, type Size, tipGoesAbove, underBubbles } from "../core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../core/tips.js";
 import type { OverlayState } from "../shared/ipc.js";
 import { brandBlue, brandColour, brandGradient, grey } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
-import { ExclamationIcon, SparklesIcon, ToolIcon } from "./icons.js";
+import { ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "./icons.js";
 import "./overlay.css";
 
 /**
@@ -22,8 +22,8 @@ import "./overlay.css";
  * small circle left of the waveform. While it listens, a tip may show in a tooltip under it (Space
  * switches agent mode and a double tap dictates without holding, each fading after a moment; how
  * hands-free listening ends, up while it listens, over the pill when the overlay opened above the
- * caret's line); in agent mode the tools' bubbles sit in a row above it, and the running tool's
- * border circles. Once agent mode answers, the pill grows into the chat window (`ChatWindow`).
+ * caret's line); in agent mode a bubble for each tool and each app Answer reaches surrounds it, and
+ * the running tool's border circles. Once agent mode answers, the pill grows into the chat window (`ChatWindow`).
  */
 
 type Mode =
@@ -138,16 +138,19 @@ function Overlay() {
 }
 
 /** Places the pill with its top edge where a one-line pill's would be when centred in the canvas, so
- * taller pills grow downward, away from the caret line; agent mode's tool bubbles go in a row above
- * it, and a tip under it, or over it all when `tipGoesAbove` (`bubbleCentres`, `hintCentre`,
- * `hintCentreOver`), following it as it grows or shrinks to a circle. */
+ * taller pills grow downward, away from the caret line; agent mode's bubbles go around it, the
+ * tools' then the apps', and a tip under it and any bubbles under it, or over it all when
+ * `tipGoesAbove` (`bubbleCentres`, `hintCentre`, `hintCentreOver`), following it as it grows or
+ * shrinks to a circle. */
 function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; state: OverlayState; tip: DictationTip | null; showsTools: boolean; exiting: boolean }) {
   const [pillRef, pillSize] = useSize<HTMLDivElement>();
   const canvas = config.overlayCanvasSize;
   const pill: Rect = { x: (canvas.width - pillSize.width) / 2, y: (canvas.height - config.pillHeight) / 2, ...pillSize };
   const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
   const tools = showsTools ? state.tools : [];
-  const centres = bubbleCentres(pill, tools.map(() => bubble));
+  const connectors = showsTools ? state.connectors : [];
+  const centres = bubbleCentres(pill, [...tools, ...connectors].map(() => bubble), state.bubblesFitUnder);
+  const frames = centres.map((centre) => ({ x: centre.x - bubble.width / 2, y: centre.y - bubble.height / 2, ...bubble }));
   const running = mode.kind === "running" ? mode.tool : null;
 
   const exitRef = useRef<HTMLDivElement>(null);
@@ -165,17 +168,28 @@ function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; sta
         if (!centre) return null;
         return (
           <div key={tool} className="centred" style={{ left: centre.x, top: centre.y }}>
-            <ToolBubble tool={tool} icon={tool === "thunderbird" ? state.emailAppIcon : null} isRunning={running === tool} isDimmed={running !== null && running !== tool} />
+            <Bubble label={tool} isRunning={running === tool} isDimmed={running !== null && running !== tool}>
+              {tool === "thunderbird" && state.emailAppIcon ? (
+                <img src={state.emailAppIcon} alt="" width={config.agentBubbleAppIconSize} height={config.agentBubbleAppIconSize} />
+              ) : (
+                <ToolIcon tool={tool} size={config.agentBubbleSymbolSize} />
+              )}
+            </Bubble>
           </div>
         );
       })}
-      <TipSlot
-        tip={tip}
-        hotkey={state.hotkey}
-        pill={pill}
-        bubbles={centres.map((centre) => ({ x: centre.x - bubble.width / 2, y: centre.y - bubble.height / 2, ...bubble }))}
-        opensUpward={state.opensUpward}
-      />
+      {connectors.map((connector, index) => {
+        const centre = centres[tools.length + index];
+        if (!centre) return null;
+        return (
+          <div key={connector} className="centred" style={{ left: centre.x, top: centre.y }}>
+            <Bubble label={connector} isRunning={false} isDimmed={running !== null}>
+              <ConnectorIcon connector={connector} size={config.agentBubbleSymbolSize} />
+            </Bubble>
+          </div>
+        );
+      })}
+      <TipSlot tip={tip} hotkey={state.hotkey} pill={pill} bubbles={frames} opensUpward={state.opensUpward} />
     </div>
   );
 }
@@ -561,17 +575,18 @@ function CirclingBorder() {
   );
 }
 
-/** One of agent mode's tools above the pill: a circle with its icon, or its app's icon when it hands
- * the request to an app. While its tool runs, it springs up larger and a gradient arc circles its
- * border; the other tools fade. */
-function ToolBubble({ tool, icon, isRunning, isDimmed }: { tool: AgentTool; icon: string | null; isRunning: boolean; isDimmed: boolean }) {
+/** One of agent mode's bubbles around the pill: a circle with a tool's icon (or its app's icon when
+ * it hands the request to an app), or an app's that Answer reaches. While its tool runs, it springs
+ * up larger and a gradient arc circles its border; the other bubbles fade. An app's never runs
+ * itself: its tools' progress shows in the chat window. */
+function Bubble({ label, isRunning, isDimmed, children }: { label: string; isRunning: boolean; isDimmed: boolean; children: ReactNode }) {
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponse * 1000);
   const diameter = config.agentBubbleDiameter;
   return (
     <div ref={ref}>
       <div
         className="bubble"
-        aria-label={tool}
+        aria-label={label}
         style={{
           width: diameter,
           height: diameter,
@@ -583,7 +598,7 @@ function ToolBubble({ tool, icon, isRunning, isDimmed }: { tool: AgentTool; icon
           transition: `transform ${config.agentBubbleRunningSpringResponse}s ${config.agentBubbleRunningSpringEasing}, opacity ${config.pillSpringResponse}s ease-out`,
         }}
       >
-        {icon ? <img src={icon} alt="" width={config.agentBubbleAppIconSize} height={config.agentBubbleAppIconSize} /> : <ToolIcon tool={tool} size={config.agentBubbleSymbolSize} />}
+        {children}
         {isRunning && <CirclingBorder />}
       </div>
     </div>
@@ -600,7 +615,7 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
   const [ref, size] = useSize<HTMLDivElement>();
   if (shown === null) return null;
   const above = tipGoesAbove(tipDetails[shown].displayDuration, opensUpward);
-  const centre = above ? hintCentreOver(pill, bubbles, size) : hintCentre(pill, size);
+  const centre = above ? hintCentreOver(pill, bubbles, size) : hintCentre(underBubbles(pill, bubbles), size);
   return (
     <div
       ref={ref}

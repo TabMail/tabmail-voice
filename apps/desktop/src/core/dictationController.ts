@@ -4,6 +4,7 @@
 
 import { type AccountModel, withFreshToken } from "./account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "./agent/agentChat.js";
+import { type Connector, connectors } from "./agent/connectors.js";
 import { DesktopAgent } from "./agent/desktopAgent.js";
 import { EmailClient } from "./agent/emailClient.js";
 import { isJSONObject, type LoopTool } from "./agent/loopTool.js";
@@ -176,6 +177,13 @@ export class DictationController extends Observable {
    * Edit and Compose. */
   get tools(): AgentTool[] {
     return this.currentTools;
+  }
+
+  /** The apps agent mode shows a bubble for beside the tools': those switched on at key-down whose
+   * tools this computer has, while Answer, whose loop runs their tools, is offered; none otherwise. */
+  get connectors(): Connector[] {
+    if (!this.currentTools.includes("answer")) return [];
+    return connectors.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.loopTools.some((tool) => tool.connector === connector));
   }
 
   /** In agent mode, the email app's bundle, whose icon the Thunderbird bubble shows. */

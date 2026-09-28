@@ -40,7 +40,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, hotkey: "function", tools: [], emailAppIcon: null, chat: null, chatOpensUpward: false };
+const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, chatOpensUpward: false };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent" };
@@ -152,6 +152,61 @@ describe("overlay page", () => {
     const tipFrame = page.tipFrame();
     expect(tipFrame).not.toBeNull();
     for (const top of bubbleTops) expect(tipFrame?.bottom).toBeLessThanOrEqual(top);
+  });
+
+  /** Agent mode draws a bubble for each tool and each app Answer reaches, the tools' first; with room
+   * under the pill some go under it and a tip goes under them, without it none goes under the pill.
+   * While a tool runs every app's bubble fades, as the idle tools' do, and none of them runs. */
+  test.each([true, false])("a bubble for each tool and app, under the pill only when there is room (%s)", async (bubblesFitUnder) => {
+    const page = await overlayPage();
+    const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
+    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+    await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "switchMode" });
+
+    const bubbles = [...document.querySelectorAll<HTMLElement>(".bubble")];
+    expect(bubbles.map((bubble) => bubble.getAttribute("aria-label"))).toEqual([...tools, ...apps]);
+    // Each in its own place: no app's bubble drawn over a tool's.
+    const places = bubbles.map((bubble) => {
+      const style = (bubble.closest(".centred") as HTMLElement).style;
+      return `${style.left},${style.top}`;
+    });
+    expect(new Set(places).size).toBe(bubbles.length);
+    const tops = bubbles.map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    const pill = page.pillFrame();
+    const under = tops.filter((top) => top >= pill.bottom);
+    expect(under.length > 0).toBe(bubblesFitUnder);
+    const tipFrame = page.tipFrame();
+    for (const top of under) expect(tipFrame?.top).toBeGreaterThanOrEqual(top + config.agentBubbleDiameter);
+
+    await page.show({ ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent", tools, connectors: apps, bubblesFitUnder });
+    const opacities = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.style.opacity);
+    expect(opacities).toEqual([...tools.map((tool) => (tool === "answer" ? "1" : String(config.agentBubbleIdleOpacity))), ...apps.map(() => String(config.agentBubbleIdleOpacity))]);
+    expect(document.querySelectorAll(".bubble .spinning")).toHaveLength(1);
+  });
+
+  /** The Thunderbird bubble shows the email app's own icon once main has it, and its tool icon until
+   * then; no other bubble shows it. */
+  test("the Thunderbird bubble shows the email app's icon", async () => {
+    const page = await overlayPage();
+    const icon = "data:image/png;base64,AA==";
+    const images = () => ["compose", "thunderbird"].map((label) => document.querySelector(`.bubble[aria-label="${label}"] img`)?.getAttribute("src") ?? null);
+    const symbols = () => ["compose", "thunderbird"].map((label) => document.querySelector(`.bubble[aria-label="${label}"] svg`) !== null);
+
+    await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], emailAppIcon: icon });
+    expect(images()).toEqual([null, icon]);
+    expect(symbols()).toEqual([true, false]);
+
+    await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], emailAppIcon: null });
+    expect(images()).toEqual([null, null]);
+    expect(symbols()).toEqual([true, true]);
+  });
+
+  /** In dictation mode, and in agent mode before the tools are known, no app's bubble shows. */
+  test("no app's bubble shows in dictation mode", async () => {
+    const page = await overlayPage();
+    await page.show({ ...listening, connectors: ["calendar", "web"] });
+
+    expect(document.querySelectorAll(".bubble")).toHaveLength(0);
   });
 
   /** A tip that appears during a hold (the double-tap tip, 20 s in, with the Space tip learned) is

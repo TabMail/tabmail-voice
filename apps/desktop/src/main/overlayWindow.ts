@@ -6,7 +6,7 @@ import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
 import type { Phase } from "../core/dictationController.js";
 import { errorName, log } from "../core/log.js";
-import { chatFrame, chatOpensUpward, opensUpward, overlayOrigin, type Rect } from "../core/overlayGeometry.js";
+import { bubblesFitUnder, chatFrame, chatOpensUpward, opensUpward, overlayOrigin, type Rect } from "../core/overlayGeometry.js";
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
@@ -26,6 +26,8 @@ export class OverlayWindowController {
   /** The overlay last opened above the caret's line (`opensUpward`), which the view places its tip
    * by (`tipGoesAbove`). */
   private placedUpward = false;
+  /** A row of agent mode's bubbles fit under the pill where it was last placed (`bubblesFitUnder`). */
+  private placedBubblesFitUnder = true;
   /** Where the chat window opened, while it shows: it stays there for follow-ups. */
   private chat: { anchor: Rect; workArea: Rect; opensUpward: boolean } | null = null;
   /** The overlay was placed afresh: its view's state changed. */
@@ -39,6 +41,10 @@ export class OverlayWindowController {
 
   get opensUpward(): boolean {
     return this.placedUpward;
+  }
+
+  get bubblesFitUnder(): boolean {
+    return this.placedBubblesFitUnder;
   }
 
   /** The chat window opened above the caret's line (`chatOpensUpward`). */
@@ -145,6 +151,7 @@ export class OverlayWindowController {
     const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
     this.window.setBounds({ x: Math.round(origin.x), y: Math.round(origin.y), ...config.overlayCanvasSize });
     this.placedUpward = opensUpward(anchor, config.pillHeight, workArea);
+    this.placedBubblesFitUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
     this.onPlace?.();
   }
 

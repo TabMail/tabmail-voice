@@ -294,10 +294,17 @@ export const thinkingArcEndColour = 0.6;
 export const pillFillWhite = 0.96;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
 export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 100;
-/** Agent mode's tool bubbles in a row above the pill: icon-only circles. */
+/** Agent mode's bubbles around the pill, one per tool and connector: icon-only circles. */
 export const agentBubbleDiameter = 24;
-/** Gap between the pill and the bubbles' row, and between neighbouring bubbles. */
+/** Gap between the pill and the bubbles, and between neighbouring bubbles. */
 export const agentBubbleGap = 8;
+/** The most bubbles in a row over or under the pill (`bubbleCentres`): with every tool offered at
+ * once (three) and every connector (nine), a row over it, one bubble each side, and a row under it
+ * (or a second over it). */
+export const agentBubbleRowCapacity = 5;
+/** Rows of bubbles over the pill at most: the first, and the one that goes over it when none fits
+ * under it (`bubblesFitUnder`). */
+export const agentBubbleRowsAbove = 2;
 /** An app tool's icon (Thunderbird's) in its bubble. */
 export const agentBubbleAppIconSize = 16;
 /** A tool's symbol in its bubble. */
@@ -377,10 +384,10 @@ export const tipGap = 4;
 export const tipFootprint = tipGap + tipArrowHeight + tipHeight;
 /** Transparent canvas the overlay draws in; the pill sizes itself inside it. The pill sits
  * vertically centred, with room on each side for a tip (and its shadow) past agent mode's bubbles:
- * a tip goes under the pill, or over the bubbles above it (`tipGoesAbove`). */
+ * two rows of them and a tip over the pill (`tipGoesAbove`), or one row and a tip under it. */
 export const overlayCanvasSize = {
   width: 440,
-  height: pillHeight + 2 * (agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY),
+  height: pillHeight + 2 * (agentBubbleRowsAbove * (agentBubbleGap + agentBubbleDiameter) + tipFootprint + tipShadowRadius + tipShadowOffsetY),
 };
 /** The running tool's icon in the pill. */
 export const agentRunningSymbolSize = 12;
