@@ -9,7 +9,8 @@
 :root {
   --sidebar-tint: rgba(0, 0, 0, 0.02);
   --hover: rgba(0, 0, 0, 0.06);
-  --switch-off: rgba(120, 120, 128, 0.28);
+  /* Opaque grey: an off switch's white thumb needs 3:1 against its track (a control's state). */
+  --switch-off: #8e8e93;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 

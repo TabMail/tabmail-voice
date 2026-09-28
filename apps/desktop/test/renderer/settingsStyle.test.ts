@@ -138,6 +138,14 @@ describe("Settings stylesheet", () => {
     expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover"]);
   });
 
+  /** An off switch's white thumb stands out 3:1 from its track (a control's state, WCAG 1.4.11), on
+   * the lightest card, in light mode. */
+  test("an off switch's thumb stands out from its track", () => {
+    expect(value(css, "input.switch::before", "background")).toBe("white");
+    expect(value(css, "input.switch", "background")).toBe("var(--switch-off)");
+    expect(contrast(value(css, ":root", "--switch-off") ?? "", "#ffffff")).toBeGreaterThanOrEqual(3);
+  });
+
   /** An on switch differs from an off one by its thumb's place, not colour alone: the thumb crosses
    * the track to the far inset. */
   test("an on switch's thumb moves to the far side", () => {

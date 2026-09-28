@@ -139,12 +139,15 @@ describe("Settings page", () => {
     const shown = { ...signedIn, debugAllowed: true };
     await settingsPage({ error: null }, shown, shown);
     expect(document.querySelector("h1")?.textContent).toBe("Account");
+    expect([...document.querySelectorAll("button.nav.selected")]).toEqual([button("Account")]);
 
     for (const [section, settings] of Object.entries(own)) {
       await act(async () => button(section).click());
       expect(document.querySelector("h1")?.textContent).toBe(section);
       expect(button(section).getAttribute("aria-current")).toBe("page");
       expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+      // Highlighted, not only announced: the one `.selected` section is this one.
+      expect([...document.querySelectorAll("button.nav.selected")]).toEqual([button(section)]);
       const visible = visibleText();
       for (const setting of settings) expect(visible, `${section} shows ${setting}`).toContain(setting);
       for (const [other, theirs] of Object.entries(own)) {
