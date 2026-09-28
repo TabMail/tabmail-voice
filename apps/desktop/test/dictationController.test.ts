@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../src/core/account.js";
 import { type AgentChat, chatTranscript, emptyChat } from "../src/core/agent/agentChat.js";
+import { type Connector, connectors } from "../src/core/agent/connectors.js";
 import type { LoopTool } from "../src/core/agent/loopTool.js";
 import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
 import { AgentFailure, type AgentTool, agentTools } from "../src/core/agent/tools.js";
@@ -47,7 +48,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentTool[] = agentTools.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, emailClient: FakeThunderbird.app, hasTabMail: true };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: FakeThunderbird.app, hasTabMail: true };
 }
 
 /** A screen with `sentinel` in its app name and text. */
@@ -946,7 +947,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, emailClient: "org.example.othermail", hasTabMail: true };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: "org.example.othermail", hasTabMail: true };
         };
         const read = controller.captureContext;
         controller.captureContext = () => {
@@ -1761,6 +1762,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           constructor(
             readonly name = "example_create",
             readonly progressLabel = "Adding it to your calendar",
+            readonly connector: Connector = "calendar",
           ) {}
 
           confirmation(args: Record<string, unknown>): string | null {
@@ -1851,6 +1853,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(pastes).toEqual([]);
           expect(chatChanges).toEqual([true]);
           expect(await eventually(() => controller.chat === null)).toBe(true);
+        });
+
+        /** Only the tools of apps switched on at key-down are offered, and one of a switched-off app the
+         * model calls anyway does not run: the model is told there is no such tool. A switch changed
+         * during the request applies from the next. */
+        test("a switched-off app's tools are neither offered nor run", async () => {
+          const calendar = new FakeLoopTool("example_read", "Checking your calendar", "calendar");
+          const reminders = new FakeLoopTool("example_add", "Adding the reminder", "reminders");
+
+          const { done } = await ask([calendar, reminders], [calling(["example_add", "{}"], ["example_read", "{}"]), reply(answer)], (controller) => {
+            prefs.value = { ...prefs.value, enabledConnectors: ["calendar"] };
+            controller.onPhaseChange = (phase) => {
+              if (phase.kind === "listening") prefs.value = { ...prefs.value, enabledConnectors: ["reminders"] };
+            };
+          });
+          await done;
+
+          expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "example_read"]);
+          expect(reminders.runs).toEqual([]);
+          expect(calendar.runs).toEqual([{}]);
+          expect(told(1)).toEqual(["Error: there is no tool named example_add.", "Added."]);
         });
 
         /** Touched while a tool runs, the chat window no longer times out once the answer arrives. */

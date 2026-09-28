@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ReactNode, useId } from "react";
+import type { Connector } from "../core/agent/connectors.js";
 import type { AgentTool } from "../core/agent/tools.js";
 import { brandBlue, brandPurple } from "./brand.js";
 
@@ -56,6 +57,27 @@ const toolPaths: Record<AgentTool, ReactNode> = {
 
 export function ToolIcon({ tool, size }: { tool: AgentTool; size: number }) {
   return <GradientIcon size={size}>{toolPaths[tool]}</GradientIcon>;
+}
+
+const connectorPaths: Record<Connector, ReactNode> = {
+  // A calendar page.
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </>
+  ),
+  // A checklist.
+  reminders: (
+    <>
+      <path d="m3.5 6 1.5 1.5 3-3M3.5 12.5 5 14l3-3M3.5 19l1.5 1.5 3-3" />
+      <path d="M11 6h9.5M11 12.5h9.5M11 19h9.5" />
+    </>
+  ),
+};
+
+export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {
+  return <GradientIcon size={size}>{connectorPaths[connector]}</GradientIcon>;
 }
 
 /** Sparkles: an agent tool is at work. */

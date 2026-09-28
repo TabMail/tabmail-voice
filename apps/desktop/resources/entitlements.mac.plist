@@ -9,6 +9,10 @@
        both need Accessibility, which the App Sandbox forbids (ADR-DESK-003). -->
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!-- Calendar and Reminders, for the Answer tool (ADR-DESK-024); the hardened runtime has one
+       entitlement for both. -->
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
   <!-- V8 compiles JavaScript at run time. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>

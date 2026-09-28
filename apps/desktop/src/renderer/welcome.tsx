@@ -4,13 +4,14 @@
 
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { connectorInfo } from "../core/agent/connectors.js";
 import { agentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { WelcomeWizard } from "../core/welcomeWizard.js";
 import type { WelcomeState } from "../shared/ipc.js";
 import icon from "../../resources/icon.png";
 import { send, useWindowState } from "./bridge.js";
-import { LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "./icons.js";
+import { ConnectorIcon, LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "./icons.js";
 import "./form.css";
 import "./welcome.css";
 
@@ -79,6 +80,18 @@ function Page({ state }: { state: WelcomeState }) {
                   {toolImplementations[tool].displayName}
                 </span>
                 <span className="caption">{toolImplementations[tool].settingsDescription}</span>
+              </span>
+            </label>
+          ))}
+          {state.connectors.map((connector) => (
+            <label key={connector} className="check">
+              <input type="checkbox" checked={state.enabledConnectors.includes(connector)} onChange={(event) => void send({ type: "setConnectorEnabled", connector, value: event.target.checked })} />
+              <span className="stack-text">
+                <span className="labelled-icon">
+                  <ConnectorIcon connector={connector} size={config.settingsToolIconSize} />
+                  {connectorInfo[connector].displayName}
+                </span>
+                <span className="caption">{connectorInfo[connector].settingsDescription}</span>
               </span>
             </label>
           ))}

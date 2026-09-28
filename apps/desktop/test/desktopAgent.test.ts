@@ -221,7 +221,7 @@ describe("the answer's tool loop", () => {
 
   /** The Answer prompt is offered the backend's date tools and every tool that runs on this computer. */
   test("an answer is offered the date tools and this computer's tools", () => {
-    const tool = (name: string): LoopTool => ({ name, progressLabel: "", confirmation: () => null, run: async () => "" });
+    const tool = (name: string): LoopTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
     expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
     expect(DesktopAgent.answerTools([tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "example_read", "example_create"]);
   });

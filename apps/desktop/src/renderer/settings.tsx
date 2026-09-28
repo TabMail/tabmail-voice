@@ -5,13 +5,14 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../resources/icon.png";
+import { connectorInfo } from "../core/agent/connectors.js";
 import { agentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
-import { GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
+import { ConnectorIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
 import "./form.css";
 import "./settings.css";
 
@@ -150,6 +151,17 @@ function AgentPane({ state }: { state: SettingsState }) {
             onChange={(value) => send({ type: "setAgentToolEnabled", tool, value })}
           >
             {toolImplementations[tool].settingsDescription}
+          </Toggle>
+        ))}
+        {state.connectors.map((connector) => (
+          <Toggle
+            key={connector}
+            label={connectorInfo[connector].displayName}
+            icon={<ConnectorIcon connector={connector} size={config.settingsToolIconSize} />}
+            checked={state.enabledConnectors.includes(connector)}
+            onChange={(value) => send({ type: "setConnectorEnabled", connector, value })}
+          >
+            {connectorInfo[connector].settingsDescription}
           </Toggle>
         ))}
       </Group>

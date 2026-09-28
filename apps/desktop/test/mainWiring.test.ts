@@ -24,6 +24,7 @@ const app = vi.hoisted(() => ({
   controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
+  loopTools: [] as { name: string; run(args: Record<string, unknown>): Promise<string> }[],
 }));
 
 vi.mock("electron", () => ({
@@ -135,14 +136,15 @@ vi.mock("../src/main/helperClient.js", () => ({
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
-      return { value: null };
+      return { value: null, events: [] };
     }
   },
 }));
 vi.mock("../src/core/dictationController.js", () => ({
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void> }) {
+    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void>; loopTools: typeof app.loopTools }) {
       app.capture = dependencies.capture;
+      app.loopTools = dependencies.loopTools;
       app.paste = dependencies.paste;
       app.controller = this;
     }
@@ -236,6 +238,7 @@ afterEach(() => {
   app.controller = null;
   app.stored.clear();
   app.opened = [];
+  app.loopTools = [];
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -513,5 +516,33 @@ describe("main process wiring", () => {
 
     expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
     expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+  });
+
+  /** On macOS the Answer tool reaches Calendar and Reminders through `voice-macos`, and each has a
+   * switch, stored and shown in the Settings and welcome windows; a name that is no app is refused. */
+  test("on macOS, Calendar and Reminders and their switches", async () => {
+    await launch("darwin");
+    const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
+
+    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create"]);
+    await app.loopTools[0]?.run({});
+    expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toContain("calendarEvents");
+
+    expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
+    expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
+    for (const name of ["settings", "welcome"]) {
+      expect(state(name).connectors).toEqual(["calendar", "reminders"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders"]);
+    }
+  });
+
+  /** Elsewhere the Answer tool reaches no app on the computer, and none has a switch. */
+  test("elsewhere, no app and no switch", async () => {
+    await launch("linux");
+    const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
+
+    expect(app.loopTools).toEqual([]);
+    expect(state("settings").connectors).toEqual([]);
+    expect(state("welcome").connectors).toEqual([]);
   });
 });
