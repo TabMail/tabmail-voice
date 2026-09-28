@@ -189,15 +189,15 @@ describe("connectors", () => {
     app.setConnectorEnabled("calendar", false);
 
     expect(store.get("disabledConnectors")).toEqual(["calendar", "reminders"]);
-    expect(app.enabledConnectors).toEqual(["contacts", "files", "email", "notes", "messages"]);
+    expect(app.enabledConnectors).toEqual(["contacts", "files", "email", "notes", "messages", "shortcuts"]);
   });
 
   /** A stored name no longer an app, or a stored value of another type, is ignored rather than
    * turning anything off; a switch changed after that stores only apps. */
   test.each<[unknown, string[]]>([
-    [["calendar", "retired-app"], ["reminders", "contacts", "files", "email", "notes", "messages"]],
-    ["calendar", ["calendar", "reminders", "contacts", "files", "email", "notes", "messages"]],
-    [[7, null], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages"]],
+    [["calendar", "retired-app"], ["reminders", "contacts", "files", "email", "notes", "messages", "shortcuts"]],
+    ["calendar", ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts"]],
+    [[7, null], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts"]],
   ])("a stored %j turns off only known apps", (stored, enabled) => {
     const store = new MemoryStore({ disabledConnectors: stored });
     expect(settings(store).dictation(null).enabledConnectors).toEqual(enabled);
