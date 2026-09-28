@@ -480,7 +480,7 @@ export class DictationController extends Observable {
                 client,
                 account,
                 userId,
-                (call) => this.runLoopTool(call, loopTools, transcript, isCurrent),
+                (call) => this.runLoopTool(call, loopTools, transcript, isCurrent, signal),
                 signal,
               )
             : await DesktopAgent.write(tool, transcript, context, conversation, client, account, userId, signal);
@@ -516,7 +516,7 @@ export class DictationController extends Observable {
   /** Runs a tool the Answer prompt's model called, and returns what the model reads next: the tool's
    * result, that the user declined, or why it could not run. The chat window opens (if the request
    * was not a follow-up) to show which tool runs and, for one that sends or creates, to ask first. */
-  private async runLoopTool(call: ToolCall, loopTools: readonly LoopTool[], request: string, isCurrent: () => boolean): Promise<string> {
+  private async runLoopTool(call: ToolCall, loopTools: readonly LoopTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     const tool = loopTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
@@ -540,7 +540,7 @@ export class DictationController extends Observable {
     log.debug(`DictationController: running ${tool.name}`);
     this.updateChat({ activity: tool.progressLabel });
     try {
-      return await tool.run(args);
+      return await tool.run(args, signal);
     } catch (error) {
       log.error(`DictationController: ${tool.name} failed: ${errorName(error)}`);
       return `Error: ${error instanceof Error ? error.message : String(error)}`;

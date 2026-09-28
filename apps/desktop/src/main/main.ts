@@ -15,6 +15,8 @@ import { filesTools } from "../core/agent/filesTools.js";
 import { connectors } from "../core/agent/connectors.js";
 import { EmailClient } from "../core/agent/emailClient.js";
 import { type EmailOpener, emailTools, NoEmailAppFailure } from "../core/agent/emailTools.js";
+import { messagesTools } from "../core/agent/messagesTools.js";
+import { notesTools } from "../core/agent/notesTools.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
 import * as config from "../core/config.js";
@@ -51,6 +53,7 @@ import { LogFile } from "./logFile.js";
 import { type EmailAppInfo, MacSystem } from "./macos.js";
 import { OverlayWindowController } from "./overlayWindow.js";
 import { macPermissions } from "./permissions.js";
+import { osascript } from "./osascript.js";
 import { nodeProfileFiles } from "./profileFiles.js";
 import { TrayMenu } from "./tray.js";
 import { Windows } from "./windows.js";
@@ -150,8 +153,11 @@ function launch(): void {
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
-    // apps (ADR-DESK-024), none elsewhere.
-    loopTools: process.platform === "darwin" ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener)] : [],
+    // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), none elsewhere.
+    loopTools:
+      process.platform === "darwin"
+        ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript)]
+        : [],
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {

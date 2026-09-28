@@ -31,9 +31,9 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
-  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email"],
+  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages"],
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email"] };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages"] };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
@@ -59,6 +59,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings", page: "settings.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  // Agent mode's tool and app switches, every app on.
+  { name: "settings-agent-mode", page: "settings.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
   { name: "welcome-features", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 3, categoryIndex: 2, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },
@@ -91,7 +93,14 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
     window.webContents.debugger.attach();
     await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "forced-colors", value: "active" }] });
   }
-  if (shot.section) await window.webContents.executeJavaScript(`[...document.querySelectorAll("button.nav")].find((button) => button.textContent === ${JSON.stringify(shot.section)})?.click()`);
+  // The page renders after it loads: wait for the section's button, and fail rather than shoot the
+  // first section under another's name.
+  if (shot.section) {
+    const shown = (await window.webContents.executeJavaScript(
+      `new Promise((resolve) => { const started = Date.now(); const click = () => { const button = [...document.querySelectorAll("button.nav")].find((button) => button.textContent === ${JSON.stringify(shot.section)}); if (button) { button.click(); resolve(true); } else if (Date.now() - started > 5000) resolve(false); else setTimeout(click, 50); }; click(); })`,
+    )) as boolean;
+    if (!shown) throw new Error(`the page has no ${shot.section} section`);
+  }
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   const rendered = (await window.webContents.executeJavaScript(`(document.getElementById("root")?.childElementCount ?? 0) > 0`)) as boolean;

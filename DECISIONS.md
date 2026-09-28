@@ -1159,6 +1159,60 @@ app; built here in the Electron app (ADR-DESK-032).
 - Offered on macOS only, with the other connectors, though the mechanism is Electron's and would
   work elsewhere once the default app can be named there.
 
+## ADR-DESK-028: Notes and Messages, through AppleScript
+
+**Context:** Owner, 2026-09-26: the agent answers from Apple Notes, adds notes, and sends iMessages;
+AppleScript is acceptable where the app has no framework. Sending or creating anything is confirmed
+first (ADR-DESK-023). One switch per app, on by default, in Settings and the wizard (ADR-DESK-024).
+The backend defines `notes_search {query}`, `notes_create {title, body}` and `messages_send {to,
+text}` (`src/tools/macos/`). First built in the Swift app; built here in the Electron app
+(ADR-DESK-032).
+
+**Decision:**
+- The `notes` connector with `NotesSearchTool` (`notes_search`: notes whose title or text contains
+  the query, locked notes left out, newest first, at most `notesSearchMaxResults` in full, more
+  said) and `NotesCreateTool` (`notes_create`: a title and text, added to the default account's
+  default folder once confirmed), in `src/core/agent/notesTools.ts`. The `messages` connector with
+  `MessagesSendTool` (`messages_send`: one iMessage to one phone number or email address, once
+  confirmed; a name goes back to the model to look up with `contacts_search`), in
+  `messagesTools.ts`.
+- Neither app has a public framework, so each tool runs a fixed AppleScript through a
+  `ScriptRunner` (`appleScript.ts`, faked in tests). What the model wrote reaches the script only
+  as `argv`, never inside its source, so no text can change what a script does. The arguments
+  follow `--`, so one that looks like an option (`-e …`) is data too (MIS-068: without it, a search
+  for `-e` plus script ran that script unconfirmed).
+- The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/osascript.ts`),
+  not a `voice-macos` method. The one reason is cancellation: `LoopTool.run` now takes the
+  request's `AbortSignal`, and a cancelled request or a closed chat window ends the osascript
+  process. The helper channel can't call off a request it has taken, so a script run there would
+  keep going, a send included, until it finished or timed out. This is a system program run with
+  arguments, not native code in Node, so `apps/desktop`'s rule (OS work in a native helper, never
+  a Node addon) is kept in spirit; the scripts are plain text either way. A request already
+  cancelled starts no process: Node starts one for an aborted signal and ends it only a tick later.
+- Each script waits at most `appleScriptTimeoutSeconds` for the app to answer each command it
+  sends (`with timeout`); a whole run has no deadline (ADR-DESK-023), and cancelling ends it. A search's
+  output is capped at `appleScriptMaxOutputBytes`; past it the search fails rather than cutting a
+  note short.
+- A note's text is written as Notes' HTML (`NotesScripts.html`): the title as its heading, one line
+  per line, escaped, so what the user confirmed is what the note shows.
+- Access: macOS asks the first time the app sends Notes or Messages an Apple Event
+  (`NSAppleEventsUsageDescription`, the hardened runtime's `automation.apple-events` entitlement).
+  A refusal (-1743) fails the request with where to allow it (System Settings › Privacy & Security
+  › Automation), naming the app the script tells (`ScriptFailure.noAccess`).
+
+**Consequences:**
+- The first use of each app raises macOS's Automation prompt, and launches the app if it is not
+  running.
+- Notes' text and the message go to the model and the app only: nothing is stored (ADR-004).
+- Messages sends over iMessage only; SMS through a paired iPhone is not offered. A send cancelled
+  after Messages has taken it may still go out.
+- Unverified against a live Notes library: whether its `notes` include "Recently Deleted" ones, and
+  how long a search over a large library takes (each command bounded by `appleScriptTimeoutSeconds`,
+  the whole search only by a cancel). No test
+  sends an Apple Event to either app: the scripts are compiled against each app's dictionary
+  (`osacompile`), and the runner is tested on scripts that tell no app.
+- Offered on macOS only, with the other connectors.
+
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
 **Context:** Owner, 2026-09-27: with fn as the hotkey, a press or a double tap also switched the

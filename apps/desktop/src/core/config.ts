@@ -110,6 +110,17 @@ export const calendarEventDefaultDuration = 60 * 60 * 1_000;
 export const contactsSearchMaxResults = 10;
 /** The most items one file search returns to the model, newest first; more say so. */
 export const filesSearchMaxResults = 10;
+/** The most notes one search returns to the model, each in full, newest first; more say so. */
+export const notesSearchMaxResults = 5;
+/** Longest a Notes or Messages script waits for the app to answer one command, in seconds
+ * (AppleScript's `with timeout`): past it the request fails rather than hangs. A whole run has no
+ * deadline; the user ends it by cancelling. */
+export const appleScriptTimeoutSeconds = 60;
+/** The most a Notes or Messages script may return, in bytes: every note a search matches comes back
+ * in full, and more than this fails the search rather than cutting a note short. */
+export const appleScriptMaxOutputBytes = 64 * 1024 * 1024;
+/** The fewest digits a phone number `messages_send` sends to has. */
+export const phoneNumberMinDigits = 5;
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
