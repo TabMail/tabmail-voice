@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog } from "../src/core/log.js";
+import { CancellationError } from "../src/core/timeout.js";
 import { FileStore } from "../src/main/fileStore.js";
 import { HelperClient, HelperFailure } from "../src/main/helperClient.js";
 import { LogFile } from "../src/main/logFile.js";
@@ -187,41 +188,73 @@ describe("HelperClient", () => {
     expect(restarted.pid).not.toBe(pid);
   });
 
-  /** What a crash sets off reaches the restarted helper: a request made on the exit, or while the
-   * helper restarts, waits for it (the paste of what was said after the microphone is lost), and the
-   * restart is due before `onExit` runs, so a request made there isn't refused. */
-  test("a request made while the helper restarts is answered by the restarted helper", async () => {
+  /** What a crash sets off reaches the restarted helper: a request made for an operation (with its
+   * signal) on the exit, or while the helper restarts, waits for it (the paste of what was said after
+   * the microphone is lost), and the restart is due before `onExit` runs, so a request made there
+   * isn't refused. */
+  test("an operation's request made while the helper restarts is answered by the restarted helper", async () => {
     const client = helper({ restartDelay: 100 });
+    const { signal } = new AbortController();
     const { pid } = await client.request<{ pid: number }>("pid");
     let onExit: Promise<{ pid: number }> | undefined;
     client.onExit = () => {
-      onExit = client.request<{ pid: number }>("pid");
+      onExit = client.request<{ pid: number }>("pid", {}, undefined, signal);
     };
 
     expect((await failure(client.request("exit"))).kind).toBe("exited");
-    const during = client.request<{ pid: number }>("pid");
+    const during = client.request<{ pid: number }>("pid", {}, undefined, signal);
 
     const [first, second] = await Promise.all([onExit, during]);
     expect(first?.pid).not.toBe(pid);
     expect(second.pid).toBe(first?.pid);
   });
 
-  /** One that timed out waiting is never sent: its caller has given up, so the helper mustn't act on
-   * it; and stopping fails whatever still waits. */
-  test("a request that gives up while the helper restarts is never sent", async () => {
+  /** Any other request fails at once while the helper restarts, as when it isn't running: only an
+   * operation that can be called off waits. */
+  test("a request with no operation's signal fails at once while the helper restarts", async () => {
+    const client = helper({ restartDelay: 100 });
+    await failure(client.request("exit"));
+
+    const started = Date.now();
+    expect((await failure(client.request("echo"))).kind).toBe("exited");
+    expect(Date.now() - started).toBeLessThan(100);
+  });
+
+  /** One whose caller gave up while it waited, timed out or cancelled (a dictation cancelled after
+   * its paste was asked for), is never sent, so the helper never acts on it; one already cancelled
+   * isn't taken; and stopping fails whatever still waits. */
+  test("a request given up while the helper restarts is never sent", async () => {
     const client = helper({ restartDelay: 150 });
     const actions: unknown[] = [];
     client.on("action", (message) => actions.push(message.action));
     await failure(client.request("exit"));
 
-    expect((await failure(client.request("emit", { action: "late" }, 30))).kind).toBe("timeout");
-    await client.request("echo");
+    const operation = new AbortController();
+    expect((await failure(client.request("emit", { action: "timed out" }, 30, operation.signal))).kind).toBe("timeout");
+    const cancelled = client.request("emit", { action: "cancelled" }, undefined, operation.signal);
+    operation.abort();
+    await expect(cancelled).rejects.toBeInstanceOf(CancellationError);
+    await expect(client.request("emit", { action: "already cancelled" }, undefined, operation.signal)).rejects.toBeInstanceOf(CancellationError);
+    await client.request("echo", {}, undefined, new AbortController().signal);
     expect(actions).toEqual([]);
 
     await failure(client.request("exit"));
-    const waiting = client.request("echo");
+    const waiting = client.request("echo", {}, undefined, new AbortController().signal);
     client.stop();
     expect((await failure(waiting)).kind).toBe("exited");
+  });
+
+  /** Written to the restarted helper, a request is the helper's to carry out: cancelling it then
+   * changes nothing, and it ends as any written request does (here, unanswered, in its timeout). */
+  test("a request cancelled once written to the restarted helper is not called off", async () => {
+    const client = helper({ restartDelay: 50 });
+    await failure(client.request("exit"));
+    const operation = new AbortController();
+    const written = client.request("silent", {}, 200, operation.signal);
+    await client.request("echo", {}, undefined, new AbortController().signal);
+
+    operation.abort();
+    expect((await failure(written)).kind).toBe("timeout");
   });
 
   test("a stopped helper is not restarted and answers nothing", async () => {

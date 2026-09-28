@@ -101,7 +101,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null> } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void> } = {},
   ): { controller: DictationController; pastes: string[] } {
     const pastes: string[] = [];
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
@@ -116,9 +116,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
       settings: () => prefs.value,
       account: options.account ?? signedIn(auth),
       tips: new TipBook(tipStore),
-      paste: async (text) => {
-        pastes.push(text);
-      },
+      paste:
+        options.paste ??
+        (async (text) => {
+          pastes.push(text);
+        }),
       thunderbird: thunderbird.relay(),
       capture: options.capture ?? new CountingCapture(),
       frontmostApp: options.frontmostApp ?? (async () => front.pid),
@@ -1431,6 +1433,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.handle("cancel");
         vi.useRealTimers();
       }
+    });
+
+    /** The paste is for its dictation: cancelled before the paste reaches the system (it waits out a
+     * helper restart after the loss), the dictation calls it off, so nothing is pasted (in agent
+     * mode too); the next dictation's paste is its own. */
+    test.each(["dictation", "agent"] as const)("a %s cancelled while its paste waits calls the paste off", async (mode) => {
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
+      const signals: AbortSignal[] = [];
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        paste: (_text, signal) => {
+          signals.push(signal);
+          return new Promise(() => {});
+        },
+      });
+      if (mode === "agent") controller.captureContext = () => Promise.resolve(selectionScreen(""));
+
+      await holdAndRelease(controller, mode);
+      expect(await eventually(() => signals.length === 1)).toBe(true);
+      expect(signals[0]?.aborted).toBe(false);
+      controller.handle("cancel");
+      expect(signals[0]?.aborted).toBe(true);
+
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
+      await holdAndRelease(controller, mode);
+      expect(await eventually(() => signals.length === 2)).toBe(true);
+      expect(signals[1]?.aborted).toBe(false);
+      controller.handle("cancel");
     });
 
     /** Lost once released, during the release tail: what was heard is still transcribed and pasted,

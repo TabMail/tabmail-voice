@@ -6,6 +6,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import * as config from "../core/config.js";
 import { log } from "../core/log.js";
+import { CancellationError } from "../core/timeout.js";
 
 export type HelperFailureKind = "timeout" | "exited" | "failed";
 
@@ -59,8 +60,9 @@ export class HelperClient {
   private readonly eventHandlers = new Map<string, (message: Record<string, unknown>) => void>();
   private stopped = true;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Requests made while the helper restarts, written to it once it has. */
-  private waiting: { id: number; line: string }[] = [];
+  /** Requests made while the helper restarts, written to it once it has; `drop` stops listening for
+   * the request's cancellation. */
+  private waiting: { id: number; line: string; drop: () => void }[] = [];
   /** Runs each time the helper starts, the first time included. */
   onStart: (() => void) | undefined;
   /** Runs each time the helper exits unasked (it is then started again). */
@@ -89,11 +91,14 @@ export class HelperClient {
   }
 
   /** Asks the helper; rejects with `HelperFailure` when it answers with an error, takes longer than
-   * `timeout`, or is not running. While it restarts, the request waits for it (within `timeout`), so
-   * what a crash sets off (sending what was said, then pasting it) still reaches the helper. */
-  request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = this.options.requestTimeout ?? config.helperRequestTimeout): Promise<T> {
+   * `timeout`, or is not running. A request given its operation's `signal` waits instead while the
+   * helper restarts (within `timeout`), so what a crash sets off (sending what was said, then pasting
+   * it) still reaches the helper; if the signal aborts first it is never sent and rejects with a
+   * `CancellationError` (a cancelled dictation pastes nothing). */
+  request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = this.options.requestTimeout ?? config.helperRequestTimeout, signal?: AbortSignal): Promise<T> {
     const child = this.child;
-    if (!child && this.restartTimer === null) return Promise.reject(new HelperFailure("exited", method));
+    if (!child && (this.restartTimer === null || signal === undefined)) return Promise.reject(new HelperFailure("exited", method));
+    if (signal?.aborted) return Promise.reject(new CancellationError());
     const id = this.nextID;
     this.nextID += 1;
     return new Promise<T>((resolve, reject) => {
@@ -104,7 +109,15 @@ export class HelperClient {
       this.pending.set(id, { method, resolve: resolve as (value: unknown) => void, reject, timer });
       const line = `${JSON.stringify({ id, method, params })}\n`;
       if (child) child.stdin.write(line);
-      else this.waiting.push({ id, line });
+      else if (signal) {
+        const cancel = () => {
+          if (!this.pending.delete(id)) return;
+          clearTimeout(timer);
+          reject(new CancellationError());
+        };
+        signal.addEventListener("abort", cancel, { once: true });
+        this.waiting.push({ id, line, drop: () => signal.removeEventListener("abort", cancel) });
+      }
     });
   }
 
@@ -121,8 +134,12 @@ export class HelperClient {
     // helper isn't restarted (it would fail the same way) and its requests time out.
     child.on("error", (error) => log.error(`${name}: could not run: ${error.name}`));
     child.stdin.on("error", () => {});
-    // Those that timed out while it restarted are dropped: their callers have given up.
-    for (const { id, line } of this.waiting.splice(0)) if (this.pending.has(id)) child.stdin.write(line);
+    // Those that timed out or were cancelled while it restarted are dropped: their callers have
+    // given up. Once written, a request goes through.
+    for (const { id, line, drop } of this.waiting.splice(0)) {
+      drop();
+      if (this.pending.has(id)) child.stdin.write(line);
+    }
     child.on("exit", (code, signal) => {
       if (this.child !== child) return;
       this.child = null;

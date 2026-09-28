@@ -14,8 +14,9 @@ const app = vi.hoisted(() => ({
   listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
   credential: null as string | null,
   refusesDelete: false,
-  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown }[]; events: Map<string, (message: Record<string, unknown>) => void> }>(),
+  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void> }>(),
   capture: null as AudioCapture | null,
+  paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   prewarms: 0,
   audioCommands: [] as unknown[],
 }));
@@ -102,7 +103,7 @@ vi.mock("../src/main/helperClient.js", () => ({
   HelperClient: class {
     onStart: (() => void) | undefined;
     onExit: (() => void) | undefined;
-    readonly requests: { method: string; params: unknown }[] = [];
+    readonly requests: { method: string; params: unknown; signal?: AbortSignal }[] = [];
     readonly events = new Map<string, (message: Record<string, unknown>) => void>();
     constructor(readonly options: { name: string }) {
       app.helpers.set(options.name, this);
@@ -112,16 +113,17 @@ vi.mock("../src/main/helperClient.js", () => ({
     }
     start() {}
     stop() {}
-    async request(method: string, params?: unknown) {
-      this.requests.push({ method, params });
+    async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
+      this.requests.push({ method, params, ...(signal && { signal }) });
       return { value: null };
     }
   },
 }));
 vi.mock("../src/core/dictationController.js", () => ({
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture }) {
+    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void> }) {
       app.capture = dependencies.capture;
+      app.paste = dependencies.paste;
     }
     phase = { kind: "idle" };
     mode = "dictation";
@@ -179,6 +181,7 @@ afterEach(() => {
   app.listeners.clear();
   app.helpers.clear();
   app.capture = null;
+  app.paste = null;
   app.prewarms = 0;
   app.audioCommands = [];
 });
@@ -256,5 +259,19 @@ describe("main process wiring", () => {
     ]);
     expect(helper?.requests.filter((request) => request.method.startsWith("microphone") && request.method !== "microphonePrepare")).toEqual([]);
     expect(helper?.onExit).toBeUndefined();
+  });
+
+  /** A dictation's paste reaches `voice-macos` with the dictation's signal, so a paste waiting out a
+   * helper restart is called off when the dictation is. */
+  test("a dictation's paste carries its signal to voice-macos", async () => {
+    await launch("darwin");
+    const helper = app.helpers.get("voice-macos");
+    const { signal } = new AbortController();
+
+    await app.paste?.("Hello.", signal);
+
+    const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.signal).toBe(signal);
   });
 });

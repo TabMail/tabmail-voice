@@ -122,7 +122,7 @@ function launch(): void {
     settings: () => settings.dictation(account.email),
     account,
     tips: new TipBook(store),
-    paste: (text) => mac.paste(text),
+    paste: (text, signal) => mac.paste(text, signal),
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
     frontmostApp: () => mac.frontmostApp(),

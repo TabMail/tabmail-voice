@@ -48,8 +48,9 @@ export interface DictationDependencies {
   settings: () => DictationSettings;
   account: AccountModel;
   tips: TipBook;
-  /** Pastes into the focused field. */
-  paste: (text: string) => Promise<void>;
+  /** Pastes into the focused field, for the dictation whose `signal` it is: one cancelled before the
+   * paste reaches the system pastes nothing. */
+  paste: (text: string, signal: AbortSignal) => Promise<void>;
   thunderbird: ThunderbirdRelay;
   capture: AudioCapture;
   /** The process of the app in front, null without one. */
@@ -409,7 +410,7 @@ export class DictationController extends Observable {
         const client = this.deps.makeCompletionsClient(settings.backendURL);
         const text = await DictationCleanup.cleanUp(transcript, context, client, account, userId, config.cleanupTimeout, signal);
         if (!isCurrent()) return;
-        await this.paste(text);
+        await this.paste(text, signal);
       } else {
         const email = await this.lookUpEmailApp();
         if (!isCurrent()) return;
@@ -423,7 +424,7 @@ export class DictationController extends Observable {
         const targetApp = await this.targetApp;
         await toolImplementations[tool].deliver(text, {
           emailApp: email.app,
-          paste: this.paste,
+          paste: (text) => this.paste(text, signal),
           isTargetAppFrontmost: async () => (await this.deps.frontmostApp().catch(() => null)) === targetApp,
           thunderbird: this.deps.thunderbird,
           signal,
@@ -441,9 +442,9 @@ export class DictationController extends Observable {
   }
 
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015). */
-  private readonly paste = async (text: string): Promise<void> => {
+  private readonly paste = async (text: string, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
-    await this.deps.paste(text);
+    await this.deps.paste(text, signal);
   };
 
   /** The email app of the settings this dictation started with, asked once per dictation. */
