@@ -116,3 +116,33 @@ export function LockShieldIcon({ size }: { size: number }) {
     </PlainIcon>
   );
 }
+
+/** A person: the account. */
+export function PersonIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+    </PlainIcon>
+  );
+}
+
+/** Sparkles in outline: agent mode. */
+export function SparklesLineIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <path d="M10 3.5 11.8 8.2 16.5 10 11.8 11.8 10 16.5 8.2 11.8 3.5 10 8.2 8.2Z" />
+      <path d="M18 14 18.8 15.7 20.5 16.5 18.8 17.3 18 19 17.2 17.3 15.5 16.5 17.2 15.7Z" />
+    </PlainIcon>
+  );
+}
+
+/** A gear: general options. */
+export function GearIcon({ size }: { size: number }) {
+  return (
+    <PlainIcon size={size}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+    </PlainIcon>
+  );
+}

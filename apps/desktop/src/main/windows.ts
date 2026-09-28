@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { join } from "node:path";
-import { app, BrowserWindow, type BrowserWindowConstructorOptions } from "electron";
+import { app, BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme } from "electron";
 import * as config from "../core/config.js";
 import { log } from "../core/log.js";
 import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
@@ -64,8 +64,14 @@ export class Windows {
     return this.open.get("audio")?.webContents === contents;
   }
 
+  /** Settings: on macOS the title bar gives way to the sidebar, which shows the frosted material
+   * behind the window, as System Settings does; elsewhere the window has its own colour. */
   showSettings(): void {
-    this.present("settings", { ...config.settingsWindowSize, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
+    const look: BrowserWindowConstructorOptions =
+      process.platform === "darwin"
+        ? { titleBarStyle: "hiddenInset", vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColour.dark : config.settingsWindowColour.light };
+    this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
   }
 
   showWelcome(): void {
