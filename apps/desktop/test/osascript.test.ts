@@ -48,7 +48,7 @@ describe.runIf(process.platform === "darwin")("osascript", () => {
   });
 
   /** An argument that looks like an osascript option is data too: a search for `-e …` comes back as it
-   * was written and runs none of it (MIS-068: without `--` it ran as script). */
+   * was written and runs none of it (without `--` it ran as script). */
   test("an argument like an option is never run", async () => {
     const file = marker();
     const injected = `-eproperty p : do shell script "touch " & quoted form of "${file}"`;

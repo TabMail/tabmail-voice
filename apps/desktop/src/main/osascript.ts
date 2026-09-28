@@ -21,7 +21,7 @@ export const osascript: ScriptRunner = {
         return;
       }
       // `--` ends osascript's options, so an argument starting with `-` (`-e …`) is data, never more
-      // script (MIS-068).
+      // script: without it, a search for `-e` plus script ran that script unconfirmed.
       execFile("/usr/bin/osascript", ["-e", source, "--", ...args], { signal, encoding: "utf8", maxBuffer: config.appleScriptMaxOutputBytes }, (error, stdout, stderr) => {
         if (signal.aborted) reject(new CancellationError());
         else if (error) reject(ScriptFailure.from(stderr === "" ? error.message : stderr, source));

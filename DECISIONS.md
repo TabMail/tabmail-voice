@@ -1179,8 +1179,8 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
 - Neither app has a public framework, so each tool runs a fixed AppleScript through a
   `ScriptRunner` (`appleScript.ts`, faked in tests). What the model wrote reaches the script only
   as `argv`, never inside its source, so no text can change what a script does. The arguments
-  follow `--`, so one that looks like an option (`-e …`) is data too (MIS-068: without it, a search
-  for `-e` plus script ran that script unconfirmed).
+  follow `--`, so one that looks like an option (`-e …`) is data too (without it, a search for `-e`
+  plus script ran that script unconfirmed).
 - The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/osascript.ts`),
   not a `voice-macos` method. The one reason is cancellation: `LoopTool.run` now takes the
   request's `AbortSignal`, and a cancelled request or a closed chat window ends the osascript
@@ -1235,8 +1235,8 @@ wizard (ADR-DESK-024). The backend defines `shortcuts_list {query?}` and `shortc
   (`src/main/shortcuts.ts`), for ADR-DESK-028's reason: a cancelled request or a closed chat window
   ends the command. Whether a shortcut already running in Shortcuts stops with it is unverified (on
   the by-hand list). The name is one argument, never parsed by a shell, after
-  `--`, so a name that looks like an option is the name (MIS-068: without `--`, `shortcuts run
-  … --help` prints the help and succeeds). The output is asked for as plain text
+  `--`, so a name that looks like an option is the name (without `--`, `shortcuts run …
+  --help` prints the help and succeeds). The output is asked for as plain text
   (`--output-type public.plain-text`), capped at `shortcutsMaxOutputBytes`.
 - A run takes the name the user confirmed and runs only if a shortcut has exactly that name; any
   other name is sent back to the model to look up with `shortcuts_list`.
