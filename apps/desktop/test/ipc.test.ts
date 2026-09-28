@@ -64,7 +64,7 @@ describe("IPC", () => {
     { type: "chatHeight", height: -1 },
     { type: "chatHeight", height: Number.POSITIVE_INFINITY },
     { type: "chatHeight", height: Number.NaN },
-    { type: "setConnectorEnabled", connector: "notes", value: true },
+    { type: "setConnectorEnabled", connector: "retired-app", value: true },
     { type: "setConnectorEnabled", connector: "calendar", value: "no" },
     { type: "answerConfirmation" },
     { type: "answerConfirmation", confirmed: "yes" },

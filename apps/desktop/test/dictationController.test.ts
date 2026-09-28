@@ -1808,8 +1808,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
             return this.question;
           }
 
-          async run(args: Record<string, unknown>): Promise<string> {
+          /** The signal each run was given. */
+          readonly signals: AbortSignal[] = [];
+
+          async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
             this.runs.push(args);
+            this.signals.push(signal);
             await this.during();
             if (this.failure) throw this.failure;
             return this.result;
@@ -2138,6 +2142,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.phase).toEqual(idle);
           expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
           expect(completions.requests).toHaveLength(4);
+        });
+
+        /** A tool runs with its request's signal, which aborts when the request is cancelled or its
+         * chat window closed, so a tool that started something (a script) ends it; a request that
+         * finishes leaves it running on. */
+        test.each(["cancelled", "closed", "finished"])("a tool's signal when its request is %s", async (how) => {
+          const tool = new FakeLoopTool();
+          const started = deferred<void>();
+          const finish = deferred<void>();
+          tool.during = async () => {
+            started.resolve();
+            await finish.promise;
+          };
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          await started.promise;
+          expect(tool.signals).toHaveLength(1);
+          expect(tool.signals[0]?.aborted).toBe(false);
+
+          if (how === "cancelled") controller.handle("cancel");
+          if (how === "closed") controller.closeChat();
+          finish.resolve();
+          await done;
+
+          expect(tool.signals[0]?.aborted).toBe(how !== "finished");
         });
 
         /** A tool still running for a cancelled request leaves the next request's tool shown: its end

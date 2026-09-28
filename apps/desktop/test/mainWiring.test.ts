@@ -10,6 +10,9 @@ import type { AudioCapture } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
 import { channels } from "../src/shared/ipc.js";
 
+/** The signal a tool runs with: a request never cancelled. */
+const signal = new AbortController().signal;
+
 /** The main process as the app wires it, over stand-ins for Electron, the helpers and the
  * controller: which helper a dictation's microphone runs in, and what a restarted helper does.
  * Nothing reaches the network, the Keychain, the microphone or the desktop. */
@@ -28,7 +31,8 @@ const app = vi.hoisted(() => ({
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
-  loopTools: [] as { name: string; connector: string; run(args: Record<string, unknown>): Promise<string> }[],
+  loopTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
+  scripts: [] as { source: string; args: readonly string[] }[],
 }));
 
 vi.mock("electron", () => ({
@@ -89,6 +93,14 @@ vi.mock("../src/main/fileStore.js", () => ({
     remove(key: string) {
       app.stored.delete(key);
     }
+  },
+}));
+vi.mock("../src/main/osascript.js", () => ({
+  osascript: {
+    run: async (source: string, args: readonly string[]) => {
+      app.scripts.push({ source, args });
+      return "";
+    },
   },
 }));
 vi.mock("../src/main/logFile.js", () => ({
@@ -528,25 +540,28 @@ describe("main process wiring", () => {
   });
 
   /** On macOS the Answer tool reaches Calendar, Reminders, Contacts and Files through `voice-macos`,
-   * and the email app, and each has a switch, stored and shown in the Settings and welcome windows; a
-   * name that is no app is refused. */
-  test("on macOS, Calendar, Reminders, Contacts, Files and Email and their switches", async () => {
+   * the email app, and Notes and Messages through osascript, and each has a switch, stored and shown in
+   * the Settings and welcome windows; a name that is no app is refused. */
+  test("on macOS, Calendar, Reminders, Contacts, Files, Email, Notes and Messages and their switches", async () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose"]);
+    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.loopTools.map((tool) => tool.connector))).toEqual(new Set(connectors));
-    await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({});
-    await app.loopTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" });
-    await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" });
+    await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
+    await app.loopTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal);
+    await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal);
     expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "contactsSearch", "filesSearch"]));
+    await app.loopTools.find((tool) => tool.name === "notes_search")?.run({ query: "offsite" }, signal);
+    await app.loopTools.find((tool) => tool.name === "messages_send")?.run({ to: "sam@example.com", text: "Hi" }, signal);
+    expect(app.scripts.map((script) => script.args)).toEqual([["offsite"], ["sam@example.com", "Hi"]]);
 
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
     expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
     for (const name of ["settings", "welcome"]) {
-      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email"]);
-      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email"]);
+      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email", "notes", "messages"]);
     }
   });
 
@@ -559,8 +574,8 @@ describe("main process wiring", () => {
     macHelper?.replies.set("filesSearch", { items: [{ path: `${home}/Documents/Tax return.pdf`, name: "Tax return.pdf", kind: "PDF document", changed: null, subject: null, authors: [], isEmail: false }] });
     macHelper?.replies.set("fileOpen", { opened: true });
 
-    expect(await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" })).toContain(": ~/Documents/Tax return.pdf");
-    expect(await app.loopTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" })).toBe("Opened Tax return.pdf.");
+    expect(await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal)).toContain(": ~/Documents/Tax return.pdf");
+    expect(await app.loopTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal)).toBe("Opened Tax return.pdf.");
     expect(macHelper?.requests.find((request) => request.method === "fileOpen")?.params).toEqual({ path: `${home}/Documents/Tax return.pdf`, reveal: false });
   });
 
@@ -573,17 +588,17 @@ describe("main process wiring", () => {
     const macHelper = app.helpers.get("voice-macos");
 
     // `launch` loads the app afresh, so the failure is its own module's class: matched by name.
-    await expect(compose?.run(args)).rejects.toMatchObject({ name: "NoEmailAppFailure" });
+    await expect(compose?.run(args, signal)).rejects.toMatchObject({ name: "NoEmailAppFailure" });
     expect(app.opened).toEqual([]);
 
     macHelper?.replies.set("emailApps", { systemDefault: { bundleIdentifier: "com.example.mail", name: "Example Mail" }, installed: [] });
-    expect(await compose?.run(args)).toBe("Opened a new email to sam@example.com in Example Mail, for the user to review and send. Nothing was sent.");
+    expect(await compose?.run(args, signal)).toBe("Opened a new email to sam@example.com in Example Mail, for the user to review and send. Nothing was sent.");
     expect(app.opened).toEqual([mailtoURL({ to: ["sam@example.com"], cc: [], bcc: [], subject: "Lunch", body: "Friday?" })]);
     expect(macHelper?.requests.filter((request) => request.method === "emailApps").at(-1)?.params).toEqual({ bundleIdentifiers: [] });
 
     // An app that fails to launch fails the call, so the model never says it opened.
     app.openFailure = new Error("Failed to open URL");
-    await expect(compose?.run(args)).rejects.toThrow("Failed to open URL");
+    await expect(compose?.run(args, signal)).rejects.toThrow("Failed to open URL");
   });
 
   /** Elsewhere the Answer tool reaches no app on the computer, and none has a switch. */

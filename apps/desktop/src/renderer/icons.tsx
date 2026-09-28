@@ -99,6 +99,20 @@ const connectorPaths: Record<Connector, ReactNode> = {
       <path d="m3 10 9 6 9-6" />
     </>
   ),
+  // A notepad, bound at the top.
+  notes: (
+    <>
+      <rect x="4" y="4" width="16" height="17" rx="2" />
+      <path d="M4 8.5h16M8 2.5v3M12 2.5v3M16 2.5v3M8 12.5h8M8 16.5h5" />
+    </>
+  ),
+  // Two speech bubbles, a conversation: not the Answer tool's one.
+  messages: (
+    <>
+      <path d="M14 3H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1v3l3.5-3H14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2Z" />
+      <path d="M19 8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-3.5-3H12a2 2 0 0 1-1.7-1" />
+    </>
+  ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {

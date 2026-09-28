@@ -16,6 +16,10 @@
   <!-- Contacts, for the Answer tool (ADR-DESK-025). -->
   <key>com.apple.security.personal-information.addressbook</key>
   <true/>
+  <!-- Notes and Messages, through AppleScript, for the Answer tool (ADR-DESK-028): the hardened
+       runtime refuses the app's Apple Events to other apps without it. -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
   <!-- V8 compiles JavaScript at run time. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
