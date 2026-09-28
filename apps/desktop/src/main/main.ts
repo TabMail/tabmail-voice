@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { app, ipcMain, session, shell } from "electron";
+import { app, ipcMain, screen, session, shell } from "electron";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
 import { EmailClient } from "../core/agent/emailClient.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
@@ -256,10 +256,12 @@ function launch(): void {
     const path = controller.emailAppPath;
     if (path === null || path === emailAppIcon.path) return;
     emailAppIcon = { path, dataURL: null };
-    app.getFileIcon(path, { size: "normal" }).then(
-      (icon) => {
+    // Sharp on the densest display the overlay may show on.
+    const pixels = Math.ceil(config.agentBubbleAppIconSize * Math.max(...screen.getAllDisplays().map((display) => display.scaleFactor)));
+    mac.appIcon(path, pixels).then(
+      (dataURL) => {
         if (emailAppIcon.path !== path) return;
-        emailAppIcon = { path, dataURL: icon.toDataURL() };
+        emailAppIcon = { path, dataURL };
         windows.push("overlay");
       },
       (error: unknown) => {

@@ -36,7 +36,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, systemDefault: null, installed: [] };
+      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null };
     },
   } as unknown as HelperClient;
   return { helper, requests };
@@ -53,6 +53,7 @@ describe("helper wire contract", () => {
     await mac.systemEmailApp();
     await mac.emailApps([app]);
     await mac.readScreen();
+    await mac.appIcon("/Applications/Example.app", config.agentBubbleAppIconSize);
     await mac.caretAnchor(1);
     await mac.startActivator();
     await mac.globeKey.read();

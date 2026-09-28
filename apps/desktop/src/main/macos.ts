@@ -40,6 +40,13 @@ export class MacSystem {
     return this.helper.request("emailApps", { bundleIdentifiers });
   }
 
+  /** The icon of the app at `path`, `pixels` square, as a PNG data URL; null when it can't be drawn.
+   * The helper draws it: Electron's `app.getFileIcon` can hand back the system's blank placeholder. */
+  async appIcon(path: string, pixels: number): Promise<string | null> {
+    const { png } = await this.helper.request<{ png: string | null }>("appIcon", { path, pixels });
+    return png === null ? null : `data:image/png;base64,${png}`;
+  }
+
   /** The screen context of the app in front; null without one. */
   readScreen(): Promise<ScreenContext | null> {
     return this.helper.request<ScreenContext | null>("readScreen", {}, config.screenReadTimeout);
