@@ -27,7 +27,9 @@
     "entitlementsInherit": "resources/entitlements.mac.plist",
     "extendInfo": {
       "LSUIElement": true,
-      "NSMicrophoneUsageDescription": "TabMail Voice listens only while you hold the dictation key."
+      "NSMicrophoneUsageDescription": "TabMail Voice listens only while you hold the dictation key.",
+      "NSCalendarsFullAccessUsageDescription": "TabMail Voice reads your calendars to answer what you ask, and adds the events you confirm.",
+      "NSRemindersFullAccessUsageDescription": "TabMail Voice reads your reminders to answer what you ask, and adds the ones you confirm."
     }
   }
 }

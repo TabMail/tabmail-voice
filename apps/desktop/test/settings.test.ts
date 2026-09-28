@@ -5,6 +5,7 @@
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../src/core/account.js";
 import { agentTools } from "../src/core/agent/tools.js";
+import { connectors } from "../src/core/agent/connectors.js";
 import * as config from "../src/core/config.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
 import { AppSettings } from "../src/core/settings.js";
@@ -136,6 +137,7 @@ describe("AppSettings", () => {
     app.hotkey = "function";
     app.emailClient = "org.mozilla.thunderbirdbeta";
     app.setEnabled("answer", false);
+    app.setConnectorEnabled("calendar", false);
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -143,9 +145,65 @@ describe("AppSettings", () => {
       backendURL: config.productionBackendURL,
       readsScreen: true,
       enabledTools: [...agentTools],
+      enabledConnectors: [...connectors],
       emailClient: null,
       hasTabMail: true,
     });
+  });
+});
+
+/** The apps the Answer tool reaches, each switched on and off in Settings and the welcome wizard. */
+describe("connectors", () => {
+  /** Every app is on until the user turns it off. */
+  test("every app is on by default", () => {
+    const app = settings();
+
+    for (const connector of connectors) expect(app.isConnectorEnabled(connector)).toBe(true);
+    expect(app.dictation(null).enabledConnectors).toEqual(connectors);
+  });
+
+  /** An app turned off is left out of every dictation from then on, and stays off after a relaunch;
+   * turned back on, it is reached again. */
+  test.each(connectors)("%s turned off stays off", (connector) => {
+    const store = new MemoryStore();
+    const changes: number[] = [];
+    const app = settings(store);
+    app.observe(() => changes.push(changes.length));
+    app.setConnectorEnabled(connector, false);
+    expect(changes).toHaveLength(1);
+
+    const relaunched = settings(store);
+    expect(relaunched.isConnectorEnabled(connector)).toBe(false);
+    expect(relaunched.dictation(null).enabledConnectors).toEqual(connectors.filter((other) => other !== connector));
+
+    relaunched.setConnectorEnabled(connector, true);
+    expect(settings(store).dictation(null).enabledConnectors).toEqual(connectors);
+  });
+
+  /** Turning off two apps keeps both off; turning one off twice lists it once. */
+  test("apps turned off add up", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    app.setConnectorEnabled("reminders", false);
+    app.setConnectorEnabled("calendar", false);
+    app.setConnectorEnabled("calendar", false);
+
+    expect(store.get("disabledConnectors")).toEqual(["calendar", "reminders"]);
+    expect(app.enabledConnectors).toEqual([]);
+  });
+
+  /** A stored name no longer an app, or a stored value of another type, is ignored rather than
+   * turning anything off; a switch changed after that stores only apps. */
+  test.each<[unknown, string[]]>([
+    [["calendar", "retired-app"], ["reminders"]],
+    ["calendar", ["calendar", "reminders"]],
+    [[7, null], ["calendar", "reminders"]],
+  ])("a stored %j turns off only known apps", (stored, enabled) => {
+    const store = new MemoryStore({ disabledConnectors: stored });
+    expect(settings(store).dictation(null).enabledConnectors).toEqual(enabled);
+
+    settings(store).setConnectorEnabled("reminders", true);
+    expect(store.get("disabledConnectors")).toEqual(connectors.filter((connector) => !enabled.includes(connector)));
   });
 });
 

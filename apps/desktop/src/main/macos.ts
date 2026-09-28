@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { type CalendarEvent, type EventStore, EventStoreFailure, type ReminderItem } from "../core/agent/calendarTools.js";
 import type { FocusedElement, ThunderbirdSystem } from "../core/agent/thunderbirdRelay.js";
 import * as config from "../core/config.js";
 import type { GlobeKeySystem } from "../core/globeKeyAction.js";
@@ -9,7 +10,7 @@ import type { Rect } from "../core/overlayGeometry.js";
 import { errorName, log } from "../core/log.js";
 import type { ScreenContext } from "../core/screenContext.js";
 import type { AudioCommand, AudioReport } from "../shared/ipc.js";
-import type { HelperClient } from "./helperClient.js";
+import { HelperFailure, type HelperClient } from "./helperClient.js";
 
 /** What `voice-macos` does for the app (`MacService` in the helper), typed. */
 export class MacSystem {
@@ -95,6 +96,43 @@ export class MacSystem {
     },
   };
 
+  /** Calendar and Reminders through EventKit in the helper (ADR-DESK-024); dates cross the wire as
+   * milliseconds since 1970. Each request may wait on macOS asking the user for access. */
+  readonly eventStore: EventStore = {
+    events: async (start, end) => {
+      const { events } = await this.eventRequest<{ events: EventJSON[] }>("calendarEvents", { start: start.getTime(), end: end.getTime() });
+      return events.map(calendarEvent);
+    },
+    addEvent: async (event) =>
+      calendarEvent(
+        await this.eventRequest<EventJSON>("calendarAdd", {
+          title: event.title,
+          start: event.start.getTime(),
+          end: event.end.getTime(),
+          isAllDay: event.isAllDay,
+          location: event.location,
+          notes: event.notes,
+        }),
+      ),
+    openReminders: async (dueBefore) => {
+      const { reminders } = await this.eventRequest<{ reminders: ReminderJSON[] }>("reminders", { dueBefore: dueBefore?.getTime() ?? null });
+      return reminders.map(reminderItem);
+    },
+    addReminder: async (reminder) =>
+      reminderItem(await this.eventRequest<ReminderJSON>("reminderAdd", { title: reminder.title, due: reminder.due?.getTime() ?? null, dueHasTime: reminder.dueHasTime, notes: reminder.notes })),
+  };
+
+  /** A Calendar or Reminders request; one the helper refused for a reason the user can act on (no
+   * access, no default calendar) fails with that reason's message, for the model to pass on. */
+  private async eventRequest<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    try {
+      return await this.helper.request<T>(method, params, config.eventStoreRequestTimeout);
+    } catch (error) {
+      if (error instanceof HelperFailure && EventStoreFailure.isKind(error.helperMessage)) throw new EventStoreFailure(error.helperMessage);
+      throw error;
+    }
+  }
+
   /** The microphone, run in the helper as the Swift app runs it (prepared ahead, so a start only
    * starts the device): `SessionAudioCapture`'s commands go to the helper, and what the helper says
    * comes back to `report`. */
@@ -138,6 +176,34 @@ export function decodeSamples(value: unknown): Float32Array | null {
   if (bytes.length % Float32Array.BYTES_PER_ELEMENT !== 0) return null;
   // Its own copy: a Buffer is a view into a shared pool.
   return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
+}
+
+/** An event as the helper sends it: its times in milliseconds since 1970. */
+interface EventJSON {
+  title: string;
+  start: number;
+  end: number;
+  isAllDay: boolean;
+  calendar: string;
+  location: string | null;
+  notes: string | null;
+}
+
+function calendarEvent(json: EventJSON): CalendarEvent {
+  return { ...json, start: new Date(json.start), end: new Date(json.end) };
+}
+
+/** A reminder as the helper sends it: its due time in milliseconds since 1970. */
+interface ReminderJSON {
+  title: string;
+  list: string;
+  due: number | null;
+  dueHasTime: boolean;
+  notes: string | null;
+}
+
+function reminderItem(json: ReminderJSON): ReminderItem {
+  return { ...json, due: json.due === null ? null : new Date(json.due) };
 }
 
 export interface EmailAppInfo {

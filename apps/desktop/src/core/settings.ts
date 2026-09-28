@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { DebugAccess } from "./account.js";
+import { type Connector, connectors, isConnector } from "./agent/connectors.js";
 import { type AgentTool, agentTools, isAgentTool } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey.js";
@@ -17,6 +18,7 @@ const Key = {
   hasFinishedWelcome: "hasFinishedWelcome",
   emailClient: "emailClient",
   disabledAgentTools: "disabledAgentTools",
+  disabledConnectors: "disabledConnectors",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -30,6 +32,8 @@ export interface DictationSettings {
   readsScreen: boolean;
   /** Agent mode's tools the user has on. */
   enabledTools: AgentTool[];
+  /** The apps the Answer tool's tools may reach (`LoopTool.connector`) the user has on. */
+  enabledConnectors: Connector[];
   /** The email app chosen in Settings; null for the user's default email app. With the system's
    * default, asked as agent mode needs it, it resolves to the app mail and calendar requests go to
    * (`EmailClient.resolve`). */
@@ -133,6 +137,30 @@ export class AppSettings extends Observable {
     return agentTools.filter((tool) => this.isEnabled(tool));
   }
 
+  /** The apps the Answer tool reaches that the user switched off, stored by name so one added later
+   * starts on. */
+  private get disabledConnectors(): Connector[] {
+    const stored = this.store.get(Key.disabledConnectors);
+    return Array.isArray(stored) ? stored.filter(isConnector) : [];
+  }
+
+  /** Whether the Answer tool may reach `connector`'s app. Every one is on unless switched off (owner,
+   * 2026-09-26). */
+  isConnectorEnabled(connector: Connector): boolean {
+    return !this.disabledConnectors.includes(connector);
+  }
+
+  setConnectorEnabled(connector: Connector, enabled: boolean): void {
+    const others = this.disabledConnectors.filter((disabled) => disabled !== connector);
+    this.store.set(Key.disabledConnectors, (enabled ? others : [...others, connector]).sort());
+    this.changed();
+  }
+
+  /** The apps the Answer tool reaches that the user has on, in the registry's order. */
+  get enabledConnectors(): Connector[] {
+    return connectors.filter((connector) => this.isConnectorEnabled(connector));
+  }
+
   /** Debug mode: dictation goes to dev.tabmail.ai (the development server) instead of
    * api.tabmail.ai, and the menu shows its debug items. On only while the account signed in
    * (`email`) is one `DebugAccess` allows, so a switch left on by an allowed account does nothing
@@ -153,6 +181,7 @@ export class AppSettings extends Observable {
       backendURL: this.backendURL(email),
       readsScreen: this.readsScreen,
       enabledTools: this.enabledTools,
+      enabledConnectors: this.enabledConnectors,
       emailClient: this.emailClient,
       hasTabMail: this.hasTabMail(),
     };

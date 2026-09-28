@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { AgentChat } from "../core/agent/agentChat.js";
+import { type Connector, isConnector } from "../core/agent/connectors.js";
 import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
@@ -52,6 +53,9 @@ export interface SettingsState {
   defaultEmailAppIsSupported: boolean;
   /** Agent mode's tools switched on. */
   enabledTools: AgentTool[];
+  /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
+  connectors: Connector[];
+  enabledConnectors: Connector[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   openAtLogin: boolean;
@@ -71,6 +75,9 @@ export interface WelcomeState {
   readsScreen: boolean;
   /** Agent mode's tools switched on. */
   enabledTools: AgentTool[];
+  /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
+  connectors: Connector[];
+  enabledConnectors: Connector[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
 }
@@ -97,6 +104,7 @@ export type Command =
   | { type: "setReadsScreen"; value: boolean }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
   | { type: "setAgentToolEnabled"; tool: AgentTool; value: boolean }
+  | { type: "setConnectorEnabled"; connector: Connector; value: boolean }
   | { type: "setOpenAtLogin"; value: boolean }
   | { type: "setDebugMode"; value: boolean }
   | { type: "setConsent"; value: boolean }
@@ -188,6 +196,8 @@ export function isCommand(value: unknown): value is Command {
       return typeof command.confirmed === "boolean";
     case "setAgentToolEnabled":
       return isAgentTool(command.tool) && typeof command.value === "boolean";
+    case "setConnectorEnabled":
+      return isConnector(command.connector) && typeof command.value === "boolean";
     case "chatHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;
     default:

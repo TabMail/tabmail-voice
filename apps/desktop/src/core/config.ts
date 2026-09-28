@@ -100,6 +100,12 @@ export const agentAnswerPrompt = "system_prompt_desktop_answer";
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
 /** What the model reads for a tool call the user declined in the chat window. */
 export const loopToolDeclined = "The user declined, so nothing was done.";
+/** The longest range `calendar_read` reads at once, in days: EventKit reads at most four years of
+ * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
+export const calendarReadMaxDays = 4 * 365;
+
+/** How long an event the user gave no end or duration for lasts, as Calendar's own default. */
+export const calendarEventDefaultDuration = 60 * 60 * 1_000;
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
@@ -151,6 +157,9 @@ export const helperRequestTimeout = 3_000;
 /** Longest the helper's screen read may take: its own time budget for the Accessibility walk
  * (`HelperConfig.contextTimeBudget`, 1.5 s) and then some for a busy app's replies. */
 export const screenReadTimeout = 5_000;
+/** Longest a Calendar or Reminders request to the helper may take: the first one waits while
+ * macOS asks the user for access. */
+export const eventStoreRequestTimeout = 120_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
 

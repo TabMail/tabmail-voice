@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
 import { hotkeyActions } from "../src/core/hotkey.js";
-import type { HelperClient } from "../src/main/helperClient.js";
+import { EventStoreFailure } from "../src/core/agent/calendarTools.js";
+import { type HelperClient, HelperFailure } from "../src/main/helperClient.js";
 import { decodeSamples, MacSystem } from "../src/main/macos.js";
 import type { AudioReport } from "../src/shared/ipc.js";
 
@@ -38,7 +39,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null };
+      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null, events: [], reminders: [] };
     },
     on() {},
   } as unknown as HelperClient;
@@ -70,6 +71,11 @@ describe("helper wire contract", () => {
     await mac.thunderbird.focusedElement(app);
     await mac.thunderbird.openChat();
     await mac.thunderbird.pressReturn();
+    const now = new Date();
+    await mac.eventStore.events(now, now);
+    await mac.eventStore.addEvent({ title: "Example", start: now, end: now, isAllDay: false, calendar: "", location: null, notes: null });
+    await mac.eventStore.openReminders(null);
+    await mac.eventStore.addReminder({ title: "Example", list: "", due: null, dueHasTime: false, notes: null });
     const microphone = mac.microphone(() => {});
     microphone({ type: "prepare" });
     microphone({ type: "start", session: 1 });
@@ -79,6 +85,8 @@ describe("helper wire contract", () => {
     expect(new Set(requests.map((request) => request.method))).toEqual(new Set(handlers.keys()));
     for (const { method, params } of requests) {
       for (const param of handlers.get(method) ?? []) expect(params, `${method} without ${param}`).toHaveProperty(param);
+      // And the other way: a param the helper never reads is dropped, however the user confirmed it.
+      for (const param of Object.keys(params)) expect([...(handlers.get(method) ?? [])], `${method} ignores ${param}`).toContain(param);
     }
   });
 
@@ -101,6 +109,71 @@ describe("helper wire contract", () => {
       { method: "insert", params: { text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000 }, timeout: config.helperRequestTimeout + config.clipboardRestoreDelay },
       { method: "frontmostApp", params: undefined, timeout: undefined },
     ]);
+  });
+
+  /** Calendar and Reminders requests carry their dates as milliseconds since 1970 and wait long
+   * enough for macOS to ask the user for access; the helper's events and reminders come back with
+   * their dates; a refusal the user can act on (no access, no default calendar or list) is its
+   * message for the model, and any other failure stays as it was. */
+  test("Calendar and Reminders cross the wire in milliseconds, and a refusal is its message", async () => {
+    const calls: { method: string; params: unknown; timeout: unknown }[] = [];
+    const start = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const end = new Date(start.getTime() + 3600 * 1000);
+    const saved = { title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, calendar: "Work", location: "Room 4", notes: null };
+    const reminder = { title: "Send the deck", list: "Work", due: start.getTime(), dueHasTime: true, notes: "the short one" };
+    let failure: Error | null = null;
+    const helper = {
+      request: async (method: string, params?: unknown, timeout?: unknown) => {
+        calls.push({ method, params, timeout });
+        if (failure) throw failure;
+        if (method === "calendarEvents") return { events: [saved] };
+        if (method === "calendarAdd") return saved;
+        if (method === "reminders") return { reminders: [reminder, { ...reminder, due: null, dueHasTime: false }] };
+        return reminder;
+      },
+    } as unknown as HelperClient;
+    const store = new MacSystem(helper).eventStore;
+    const event = { title: "Launch review", start, end, isAllDay: false, calendar: "", location: "Room 4", notes: null };
+
+    expect(await store.events(start, end)).toEqual([{ ...saved, start, end }]);
+    expect(await store.addEvent(event)).toEqual({ ...saved, start, end });
+    expect(await store.openReminders(end)).toEqual([
+      { ...reminder, due: start },
+      { ...reminder, due: null, dueHasTime: false },
+    ]);
+    expect(await store.openReminders(null)).toHaveLength(2);
+    expect(await store.addReminder({ title: "Send the deck", list: "", due: start, dueHasTime: true, notes: "the short one" })).toEqual({ ...reminder, due: start });
+    await store.addReminder({ title: "Call back", list: "", due: null, dueHasTime: false, notes: null });
+
+    const timeout = config.eventStoreRequestTimeout;
+    expect(calls).toEqual([
+      { method: "calendarEvents", params: { start: start.getTime(), end: end.getTime() }, timeout },
+      { method: "calendarAdd", params: { title: "Launch review", start: start.getTime(), end: end.getTime(), isAllDay: false, location: "Room 4", notes: null }, timeout },
+      { method: "reminders", params: { dueBefore: end.getTime() }, timeout },
+      { method: "reminders", params: { dueBefore: null }, timeout },
+      { method: "reminderAdd", params: { title: "Send the deck", due: start.getTime(), dueHasTime: true, notes: "the short one" }, timeout },
+      { method: "reminderAdd", params: { title: "Call back", due: null, dueHasTime: false, notes: null }, timeout },
+    ]);
+
+    for (const kind of ["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"] as const) {
+      failure = new HelperFailure("failed", "calendarEvents", kind);
+      await expect(store.events(start, end)).rejects.toEqual(new EventStoreFailure(kind));
+    }
+    for (const other of [new HelperFailure("failed", "calendarEvents", "calendarEvents needs start and end"), new HelperFailure("timeout", "calendarEvents")]) {
+      failure = other;
+      await expect(store.events(start, end)).rejects.toBe(other);
+    }
+  });
+
+  /** The refusals `voice-macos` sends by name are the ones the app turns into messages. */
+  test("the helper's Calendar and Reminders refusals are the ones the app knows", () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/EventStore.swift"), "utf8");
+    const block = /enum Failure: String, Error \{([^}]*)\}/.exec(source)?.[1] ?? "";
+    const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
+
+    expect(cases).toEqual(["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"]);
+    expect(cases.every((name) => EventStoreFailure.isKind(name))).toBe(true);
+    expect(EventStoreFailure.isKind("toString")).toBe(false);
   });
 
   /** The helper's drawn icon reaches the bubble's `<img>` as a PNG data URL; no icon, none. */

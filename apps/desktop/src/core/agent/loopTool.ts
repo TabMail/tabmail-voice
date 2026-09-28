@@ -2,6 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { LocalDateTime } from "../localDateTime.js";
+import { trimWhitespace } from "../text.js";
+import type { Connector } from "./connectors.js";
+
 /**
  * A tool the Answer prompt's model can call that runs on this computer (a calendar read, a reminder
  * created, a file found), as the iOS app's `ToolRegistry` tools are. Its definition, the JSON the
@@ -11,6 +15,8 @@
 export interface LoopTool {
   /** The function name, as in the backend's registry. */
   readonly name: string;
+  /** The app it reaches, whose switch in Settings and the welcome wizard turns it on and off. */
+  readonly connector: Connector;
   /** What the chat window says while it runs ("Checking your calendar"). */
   readonly progressLabel: string;
   /** What the chat window asks before the tool sends or creates anything ("Add “Launch review” to
@@ -21,6 +27,50 @@ export interface LoopTool {
    * why. */
   run(args: Record<string, unknown>): Promise<string>;
 }
+
+/** Why a tool could not run with the arguments the model gave; the model reads it and can call
+ * again. */
+export class LoopToolArgumentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LoopToolArgumentError";
+  }
+
+  static missing(name: string): LoopToolArgumentError {
+    return new LoopToolArgumentError(`${name} is required.`);
+  }
+
+  static notADate(name: string): LoopToolArgumentError {
+    return new LoopToolArgumentError(`${name} is not a date and time like 2025-01-15T14:00:00, or a day like 2025-01-15.`);
+  }
+}
+
+/** The arguments of a tool call, read as the backend's tool definitions describe them. */
+export const Arguments = {
+  /** The string argument `name`, trimmed; null when absent or empty. */
+  text(args: Record<string, unknown>, name: string): string | null {
+    const value = args[name];
+    if (typeof value !== "string") return null;
+    const trimmed = trimWhitespace(value);
+    return trimmed === "" ? null : trimmed;
+  },
+
+  /** The date argument `name` (`LocalDateTime`); null when absent, throws when it is not a date. */
+  localDate(args: Record<string, unknown>, name: string): { date: Date; hasTime: boolean } | null {
+    const text = Arguments.text(args, name);
+    if (text === null) return null;
+    const parsed = LocalDateTime.parse(text);
+    if (parsed === null) throw LoopToolArgumentError.notADate(name);
+    return parsed;
+  },
+
+  /** The date argument `name` as the end of a range: a day means through the end of it. */
+  localEnd(args: Record<string, unknown>, name: string): Date | null {
+    const parsed = Arguments.localDate(args, name);
+    if (parsed === null) return null;
+    return parsed.hasTime ? parsed.date : LocalDateTime.addingDays(parsed.date, 1);
+  },
+};
 
 /** Whether `value`, parsed JSON, is an object (not an array or null). */
 export function isJSONObject(value: unknown): value is Record<string, unknown> {

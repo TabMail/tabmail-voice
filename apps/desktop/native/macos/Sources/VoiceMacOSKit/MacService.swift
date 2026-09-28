@@ -24,6 +24,12 @@ import VoiceHelperSupport
 /// - `appPath {bundleIdentifier}` → `{path}`; `isRunning`, `hasWindow`, `isFrontmost` → `{value}`;
 ///   `launch {path}`, `activate {bundleIdentifier}` → `{}`; `focusedElement {bundleIdentifier}` →
 ///   `{role, windowTitle}` or null; `openTabMailChat`, `pressReturn` → `{}`.
+/// - `calendarEvents {start, end}` → `{events}`: the events overlapping the range, oldest first;
+///   `calendarAdd {title, start, end, isAllDay, location, notes}` → the event as saved in the default
+///   calendar; `reminders {dueBefore}` → `{reminders}`: the open ones, due before `dueBefore` unless
+///   null; `reminderAdd {title, due, dueHasTime, notes}` → the reminder as saved in the default list.
+///   Times are milliseconds since 1970 (`EventWire`); the first request asks macOS for access, and one
+///   that can't be carried out fails with an `EventKitStore.Failure` name.
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
@@ -46,6 +52,12 @@ public enum MacService {
 
     @MainActor
     public static func register(on channel: HelperChannel) -> AnyObject {
+        register(on: channel, eventStore: EventKitStore())
+    }
+
+    /// `eventStore` is the user's calendars, or a test's stand-in.
+    @MainActor
+    static func register(on channel: HelperChannel, eventStore: EventKitStore) -> AnyObject {
         let activator = AccessibilityActivator()
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
@@ -145,6 +157,30 @@ public enum MacService {
             await Apps.postOpenChat()
             return [:]
         }
+        channel.on("calendarEvents") { params in
+            guard let start = params["start"]?.number, let end = params["end"]?.number else { throw HelperError("calendarEvents needs start and end") }
+            return ["events": .array(try await eventStore.events(from: EventWire.date(start), to: EventWire.date(end)).map(\.json))]
+        }
+        channel.on("calendarAdd") { params in
+            guard let title = params["title"]?.string, let start = params["start"]?.number, let end = params["end"]?.number,
+                  let isAllDay = params["isAllDay"]?.bool else {
+                throw HelperError("calendarAdd needs title, start, end and isAllDay")
+            }
+            let event = CalendarEvent(
+                title: title, start: EventWire.date(start), end: EventWire.date(end), isAllDay: isAllDay,
+                calendar: "", location: params["location"]?.string, notes: params["notes"]?.string
+            )
+            return try await eventStore.add(event).json
+        }
+        channel.on("reminders") { params in
+            let dueBefore = params["dueBefore"]?.number.map(EventWire.date)
+            return ["reminders": .array(try await eventStore.openReminders(dueBefore: dueBefore).map(\.json))]
+        }
+        channel.on("reminderAdd") { params in
+            guard let title = params["title"]?.string, let dueHasTime = params["dueHasTime"]?.bool else { throw HelperError("reminderAdd needs title and dueHasTime") }
+            let reminder = ReminderItem(title: title, list: "", due: params["due"]?.number.map(EventWire.date), dueHasTime: dueHasTime, notes: params["notes"]?.string)
+            return try await eventStore.add(reminder).json
+        }
         channel.on("microphonePrepare") { _ in
             await microphone.prepare()
             return [:]
@@ -169,7 +205,7 @@ public enum MacService {
             await Apps.postReturn()
             return [:]
         }
-        return [activator, microphone] as NSArray
+        return [activator, microphone, eventStore] as NSArray
     }
 
     private static func bundleIdentifier(_ params: JSON) throws -> String {

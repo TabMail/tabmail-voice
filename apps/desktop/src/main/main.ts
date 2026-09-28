@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { app, ipcMain, screen, session, shell } from "electron";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
 import { opensLink } from "../core/agent/agentChat.js";
+import { calendarTools } from "../core/agent/calendarTools.js";
+import { connectors } from "../core/agent/connectors.js";
 import { EmailClient } from "../core/agent/emailClient.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
@@ -52,6 +54,8 @@ import { Windows } from "./windows.js";
 
 /** Debug builds are the unpackaged app (`npm start`); a packaged build is a release. */
 const isDebugBuild = !app.isPackaged;
+/** The apps the Answer tool can reach here: the Mac's, through `voice-macos` (ADR-DESK-024). */
+const availableConnectors = process.platform === "darwin" ? [...connectors] : [];
 /** Shown for a failure without a message of its own. */
 const genericError = "Something went wrong. Try again.";
 /** The pages a window may open in the browser. */
@@ -131,9 +135,9 @@ function launch(): void {
     systemEmailApp: () => mac.systemEmailApp(),
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
-    // The tools that run on this computer, for the Answer prompt's model: none until the first
-    // connector (ADR-DESK-023).
-    loopTools: [],
+    // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
+    // apps (ADR-DESK-024), none elsewhere.
+    loopTools: process.platform === "darwin" ? calendarTools(mac.eventStore) : [],
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -200,6 +204,8 @@ function launch(): void {
       hasTabMail: hasTabMail(),
       defaultEmailAppIsSupported: EmailClient.resolve(null, systemDefault?.bundleIdentifier ?? null, true) !== null,
       enabledTools: settings.enabledTools,
+      connectors: availableConnectors,
+      enabledConnectors: settings.enabledConnectors,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       openAtLogin: app.getLoginItemSettings().openAtLogin,
@@ -220,6 +226,8 @@ function launch(): void {
       hasConsented: settings.hasConsented,
       readsScreen: settings.readsScreen,
       enabledTools: settings.enabledTools,
+      connectors: availableConnectors,
+      enabledConnectors: settings.enabledConnectors,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
     };
@@ -423,6 +431,9 @@ function launch(): void {
         return;
       case "setAgentToolEnabled":
         settings.setEnabled(command.tool, command.value);
+        return;
+      case "setConnectorEnabled":
+        settings.setConnectorEnabled(command.connector, command.value);
         return;
       case "setEmailClient":
         if (command.bundleIdentifier === null || config.thunderbirdBundleIdentifiers.includes(command.bundleIdentifier)) settings.emailClient = command.bundleIdentifier;

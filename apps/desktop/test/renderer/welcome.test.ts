@@ -18,6 +18,8 @@ const features: WelcomeState = {
   hasConsented: true,
   readsScreen: true,
   enabledTools: ["compose", "thunderbird"],
+  connectors: [],
+  enabledConnectors: [],
   microphoneGranted: true,
   accessibilityTrusted: true,
 };
@@ -69,6 +71,24 @@ describe("welcome wizard", () => {
       { type: "setAgentToolEnabled", tool: "compose", value: false },
       { type: "setAgentToolEnabled", tool: "thunderbird", value: false },
       { type: "setAgentToolEnabled", tool: "answer", value: true },
+    ]);
+  });
+
+  /** On a Mac, the Features step has a checkbox for each app the Answer tool reaches, after the
+   * tools, checked as the state says, which turns it on or off. */
+  test("the Features step has a checkbox for each app the Answer tool reaches", async () => {
+    const page = await welcomePage({ ...features, connectors: ["calendar", "reminders"], enabledConnectors: ["calendar"] });
+    const rows = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labelled-icon"));
+
+    expect(rows.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Edit", "Compose", "Thunderbird", "Answer", "Calendar", "Reminders"]);
+    expect(rows.every((label) => (label.querySelector(".caption")?.textContent ?? "") !== "")).toBe(true);
+    const boxes = rows.slice(4).map((label) => label.querySelector("input") as HTMLInputElement);
+    expect(boxes.map((box) => box.checked)).toEqual([true, false]);
+    for (const box of boxes) await act(async () => box.click());
+
+    expect(page.commands).toEqual([
+      { type: "setConnectorEnabled", connector: "calendar", value: false },
+      { type: "setConnectorEnabled", connector: "reminders", value: true },
     ]);
   });
 });

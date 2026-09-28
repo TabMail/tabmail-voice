@@ -463,17 +463,19 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
         log.debug(`DictationController: agent chose ${tool}`);
         this.setPhase({ kind: "running", tool });
+        // Only the tools of apps switched on at key-down are offered, and only those run.
+        const loopTools = this.deps.loopTools.filter((loopTool) => settings.enabledConnectors.includes(loopTool.connector));
         const text =
           tool === "answer"
             ? await DesktopAgent.answer(
                 transcript,
                 context,
                 conversation,
-                DesktopAgent.answerTools(this.deps.loopTools),
+                DesktopAgent.answerTools(loopTools),
                 client,
                 account,
                 userId,
-                (call) => this.runLoopTool(call, transcript, isCurrent),
+                (call) => this.runLoopTool(call, loopTools, transcript, isCurrent),
                 signal,
               )
             : await DesktopAgent.write(tool, transcript, context, conversation, client, account, userId, signal);
@@ -509,8 +511,8 @@ export class DictationController extends Observable {
   /** Runs a tool the Answer prompt's model called, and returns what the model reads next: the tool's
    * result, that the user declined, or why it could not run. The chat window opens (if the request
    * was not a follow-up) to show which tool runs and, for one that sends or creates, to ask first. */
-  private async runLoopTool(call: ToolCall, request: string, isCurrent: () => boolean): Promise<string> {
-    const tool = this.deps.loopTools.find((candidate) => candidate.name === call.function.name);
+  private async runLoopTool(call: ToolCall, loopTools: readonly LoopTool[], request: string, isCurrent: () => boolean): Promise<string> {
+    const tool = loopTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
       return `Error: there is no tool named ${call.function.name}.`;

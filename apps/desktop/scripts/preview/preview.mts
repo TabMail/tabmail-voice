@@ -31,9 +31,9 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
-  enabledTools: ["edit", "compose", "thunderbird", "answer"],
+  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders"], enabledConnectors: ["calendar", "reminders"],
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"] };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders"], enabledConnectors: ["calendar", "reminders"] };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
@@ -61,6 +61,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
+  { name: "welcome-features", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 3, categoryIndex: 2, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },
   { name: "welcome-consent", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: welcome },
   { name: "welcome-accessibility", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
 ];
