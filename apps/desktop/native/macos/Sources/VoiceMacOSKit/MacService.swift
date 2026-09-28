@@ -58,19 +58,20 @@ public enum MacService {
             return await Task.detached { ScreenContextReader.read(pid: pid, appName: name, bundleID: bundleID).json }.value
         }
         channel.on("caretAnchor") { params in
-            guard let pid = params["pid"]?.number else { throw HelperError("caretAnchor needs pid") }
+            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else { throw HelperError("caretAnchor needs pid") }
             return await Task.detached { () -> JSON in
-                guard let cocoa = CaretLocator.anchorRect(inApp: pid_t(pid)),
+                guard let cocoa = CaretLocator.anchorRect(inApp: pid),
                       let primaryHeight = NSScreen.screens.first?.frame.height else { return .null }
                 // The flip is its own inverse: back to Accessibility's top-left coordinates.
                 return .rect(CaretLocator.cocoaRect(fromAccessibility: cocoa, primaryScreenHeight: primaryHeight))
             }.value
         }
         channel.on("insert") { params in
-            guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number else {
+            guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,
+                  let milliseconds = Int(exactly: (delay * 1000).rounded()), milliseconds >= 0 else {
                 throw HelperError("insert needs text and restoreDelay")
             }
-            await TextInserter(restoreDelay: .milliseconds(Int(delay * 1000))).insert(text)
+            await TextInserter(restoreDelay: .milliseconds(milliseconds)).insert(text)
             return [:]
         }
         channel.on("keyboardLanguage") { _ in
@@ -80,9 +81,9 @@ public enum MacService {
             ["value": GlobeKey.live.map { .number(Double($0.read())) } ?? .null]
         }
         channel.on("globeUpdate") { params in
-            guard let value = params["value"]?.number else { throw HelperError("globeUpdate needs value") }
+            guard let value = params["value"]?.integer.flatMap({ Int32(exactly: $0) }) else { throw HelperError("globeUpdate needs value") }
             guard let globe = GlobeKey.live else { throw HelperError("TISUpdateFnUsageType unavailable") }
-            globe.update(Int32(value))
+            globe.update(value)
             return [:]
         }
         channel.on("startActivator") { _ in
@@ -134,19 +135,19 @@ public enum MacService {
             return [:]
         }
         channel.on("microphoneStart") { params in
-            guard let session = params["session"]?.number, let sampleRate = params["sampleRate"]?.number, sampleRate > 0 else {
+            guard let session = params["session"]?.integer, let sampleRate = params["sampleRate"]?.number, sampleRate > 0 else {
                 throw HelperError("microphoneStart needs session and sampleRate")
             }
             do {
-                try await microphone.start(session: Int(session), sampleRate: sampleRate)
+                try await microphone.start(session: session, sampleRate: sampleRate)
             } catch {
                 throw HelperError("microphone: \(type(of: error))")
             }
             return [:]
         }
         channel.on("microphoneStop") { params in
-            guard let session = params["session"]?.number else { throw HelperError("microphoneStop needs session") }
-            await microphone.stop(session: Int(session))
+            guard let session = params["session"]?.integer else { throw HelperError("microphoneStop needs session") }
+            await microphone.stop(session: session)
             return [:]
         }
         channel.on("pressReturn") { _ in

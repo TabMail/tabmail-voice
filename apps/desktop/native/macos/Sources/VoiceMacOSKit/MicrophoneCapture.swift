@@ -264,8 +264,9 @@ struct MicrophoneSessions {
         return true
     }
 
-    /// `session`'s start failed: nothing runs.
+    /// `session`'s start failed: nothing runs, and, as after its stop, no older session starts.
     mutating func failed(_ session: Int) {
+        lastStopped = max(lastStopped, session)
         if running == session { running = nil }
     }
 }

@@ -126,6 +126,39 @@ struct MicrophoneSessionsTests {
         let next = sessions.start(3)
         #expect(!stopped && next && sessions.running == 3)
     }
+
+    /// Start(2) failed while the app's stop(1) is still on its way: a late start(1) does not run.
+    @Test func aFailedStartKeepsOlderSessionsOff() {
+        var sessions = MicrophoneSessions()
+        let started = sessions.start(2)
+        sessions.failed(2)
+        let late = sessions.start(1)
+        #expect(started && !late && sessions.running == nil)
+    }
+}
+
+/// A request whose number is no whole number in range (a fraction, 1e100) is refused with an
+/// error, not converted: a trapping conversion would crash the helper, and with it the dictation.
+@MainActor
+struct MacServiceRequestTests {
+    @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(on: channel)
+        let requests = [
+            #"{"id":1,"method":"microphoneStop","params":{"session":1e100}}"#,
+            #"{"id":2,"method":"microphoneStart","params":{"session":1.5,"sampleRate":16000}}"#,
+            #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
+            #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
+            #"{"id":5,"method":"insert","params":{"text":"x","restoreDelay":1e300}}"#,
+        ]
+        for request in requests { await channel.handle(line: Data(request.utf8)) }
+
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == requests.count)
+        #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
+        withExtendedLifetime(service) {}
+    }
 }
 
 /// A chunk as the app reads it off the wire: its session a number, its samples base64 of

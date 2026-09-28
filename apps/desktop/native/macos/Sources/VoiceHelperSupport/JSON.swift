@@ -44,6 +44,9 @@ public enum JSON: Sendable, Equatable, Codable {
     public var string: String? { if case .string(let value) = self { value } else { nil } }
     public var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
     public var number: Double? { if case .number(let value) = self { value } else { nil } }
+    /// A number that is a whole `Int` exactly; nil for a fraction or one out of range, which a
+    /// plain `Int(_:)` conversion would trap on.
+    public var integer: Int? { number.flatMap { Int(exactly: $0) } }
     public var array: [JSON]? { if case .array(let value) = self { value } else { nil } }
 
     /// A point or size as the app sends it: `{x, y}` / `{width, height}`.
