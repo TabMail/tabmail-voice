@@ -265,11 +265,17 @@ describe("HelperClient", () => {
     const client = helper({ restartDelay: 50 });
     await failure(client.request("exit"));
     const operation = new AbortController();
-    const written = client.request("silent", {}, 200, operation.signal);
+    // Its timeout runs from the request, through the restart, so it is long enough to outlast a slow
+    // one; its failure is caught from the start, so one that comes early is reported, not unhandled.
+    let settled = false;
+    const written = failure(client.request("silent", {}, 1_000, operation.signal)).finally(() => {
+      settled = true;
+    });
     await client.request("echo", {}, undefined, new AbortController().signal);
 
+    expect(settled).toBe(false);
     operation.abort();
-    expect((await failure(written)).kind).toBe("timeout");
+    expect((await written).kind).toBe("timeout");
   });
 
   test("a stopped helper is not restarted and answers nothing", async () => {
