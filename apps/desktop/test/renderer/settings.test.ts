@@ -4,8 +4,12 @@
 
 // @vitest-environment happy-dom
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import * as config from "../../src/core/config.js";
+import { brandBlue, brandGradient, brandTextGradient } from "../../src/renderer/brand.js";
 import type { Command, CommandResult, SettingsState } from "../../src/shared/ipc.js";
 
 const signedIn: SettingsState = {
@@ -231,6 +235,34 @@ describe("Settings page", () => {
     await settingsPage({ error: null }, signedIn);
     expect(document.querySelector(".settings")).not.toBeNull();
     expect(document.querySelector(".settings")?.classList.contains("mac")).toBe(false);
+  });
+
+  /** Every colour `settings.css` reads is there: declared by a stylesheet, or set on the page by
+   * `settings.tsx` from the brand and the config (a missing gradient would leave the chosen
+   * section's white label on white). */
+  test("the page provides every colour its stylesheet reads", async () => {
+    const stylesheet = (name: string) => readFileSync(join(import.meta.dirname, "../../src/renderer", name), "utf8");
+    const settingsCSS = stylesheet("settings.css");
+    const declared = new Set([...(settingsCSS + stylesheet("form.css")).matchAll(/(--[\w-]+)\s*:/g)].map(([, name = ""]) => name));
+    const read = new Set([...settingsCSS.matchAll(/var\((--[\w-]+)\)/g)].map(([, name = ""]) => name));
+    await settingsPage({ error: null }, signedIn);
+    const page = document.querySelector<HTMLElement>(".settings");
+    if (!page) throw new Error("no page");
+    const provided: Record<string, string> = {
+      "--brand-gradient": brandGradient,
+      "--brand-text-gradient": brandTextGradient,
+      "--brand-blue": brandBlue,
+      "--window-light": config.settingsWindowColour.light,
+      "--window-dark": config.settingsWindowColour.dark,
+    };
+
+    expect(read.size).toBeGreaterThan(0);
+    for (const name of read) {
+      if (declared.has(name)) continue;
+      expect(provided[name], name).toBeDefined();
+      expect(page.style.getPropertyValue(name).trim(), name).toBe(provided[name]);
+    }
+    for (const name of Object.keys(provided)) expect(read.has(name), name).toBe(true);
   });
 
   /** The sidebar says who is signed in, or that no one is. */

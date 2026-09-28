@@ -95,8 +95,8 @@ describe("Settings stylesheet", () => {
     expect(contrast("#28a745", "#ffffff")).toBeLessThan(4.5);
   });
 
-  /** Focus is Chromium's own ring, which keeps its contrast on every background here, except in a
-   * contrast theme, where the chosen section needs its own ring in a system colour, set off from
+  /** Focus is Chromium's own ring (the browser's default indicator, in the system accent), except in
+   * a contrast theme, where the chosen section needs its own ring in a system colour, set off from
    * its fill. */
   test("focus shows on every background", () => {
     const forced = mediaBlock("(forced-colors: active)");
@@ -129,5 +129,21 @@ describe("Settings stylesheet", () => {
     expect(declaring(forced, /background:\s*SelectedItem;/)).toContain(".sidebar button.nav.selected");
     expect(declaring(forced, /background:\s*CanvasText/)).toContain(".attention");
     expect(declaring(forced, /background:\s*SelectedItemText/)).toContain(".nav.selected .attention");
+  });
+
+  /** The chosen section's label is white on its gradient, and hovering it keeps that gradient: the
+   * hover's grey goes only on the other sections, whatever the rules' order. */
+  test("the chosen section stays white on its gradient, hovered or not", () => {
+    expect(value(css, ".sidebar button.nav.selected", "color")).toBe("white");
+    expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover"]);
+  });
+
+  /** An on switch differs from an off one by its thumb's place, not colour alone: the thumb crosses
+   * the track to the far inset. */
+  test("an on switch's thumb moves to the far side", () => {
+    const px = (selector: string, property: string) => parseFloat(value(css, selector, property) ?? "NaN");
+    const travel = px("input.switch", "width") - px("input.switch::before", "width") - 2 * px("input.switch::before", "left");
+    expect(travel).toBeGreaterThan(0);
+    expect(value(css, "input.switch:checked::before", "transform")).toBe(`translateX(${travel}px)`);
   });
 });

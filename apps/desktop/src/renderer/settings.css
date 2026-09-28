@@ -110,7 +110,8 @@
   flex: 1;
 }
 
-.sidebar button.nav:hover {
+/* Not the chosen section: its white text needs its gradient under the pointer too. */
+.sidebar button.nav:not(.selected):hover {
   background: var(--hover);
 }
 

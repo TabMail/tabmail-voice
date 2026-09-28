@@ -940,7 +940,7 @@ needs the user (signed out, a permission missing), in light and dark. White text
 gradient darkened by `textShade`, so small text keeps WCAG AA's 4.5:1 along it, the account shows
 in the text colour (in the content and the sidebar), the notes and "Allowed" are darker than
 `form.css`'s in light mode (its grey and green were under 4.5:1 on the window's colour), and focus
-is Chromium's own ring (the brand blue's was under 3:1 on the light sidebar); under a Windows
+is Chromium's own ring, the browser's default indicator (the brand blue's was under 3:1 on the light sidebar); under a Windows
 contrast theme (`forced-colors`), which drops gradients, the switches are the system's checkboxes,
 the chosen section is in the system's selection colours with its own focus ring in the text colour
 (the system's took no contrast with that fill) and the attention mark in the text colour.
