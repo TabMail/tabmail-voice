@@ -2,12 +2,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AVFoundation
 import CoreGraphics
 import Foundation
 
 /// Every tunable number `voice-macos` uses on its own. The rest are the app's
 /// (`src/core/config.ts`), sent with the requests that need them.
 enum HelperConfig {
+    // MARK: Microphone
+
+    /// Frames per captured buffer, at the device's rate (≈ 85 ms at 48 kHz): the Swift app's
+    /// `audioTapBufferSize`.
+    static let microphoneTapBufferSize: AVAudioFrameCount = 4096
+
     // MARK: Insertion
 
     /// Pause between posting a keystroke's key-down and key-up events.

@@ -8,7 +8,7 @@ import "./bridge.js";
 import workletURL from "./captureWorklet.ts?worker&url";
 
 /**
- * The microphone, in the hidden audio window (`WindowAudioCapture` in the main process drives it):
+ * The microphone, in the hidden audio window (`SessionAudioCapture` in the main process drives it):
  * `getUserMedia` into an AudioWorklet in a context at the recording rate, so Chromium resamples,
  * and each chunk goes back to the main process. A session holds the microphone from `start` to
  * `stop` and no longer: it is released after every dictation.

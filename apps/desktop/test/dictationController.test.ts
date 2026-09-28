@@ -101,7 +101,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null> } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void> } = {},
   ): { controller: DictationController; pastes: string[] } {
     const pastes: string[] = [];
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
@@ -116,9 +116,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
       settings: () => prefs.value,
       account: options.account ?? signedIn(auth),
       tips: new TipBook(tipStore),
-      paste: async (text) => {
-        pastes.push(text);
-      },
+      paste:
+        options.paste ??
+        (async (text) => {
+          pastes.push(text);
+        }),
       thunderbird: thunderbird.relay(),
       capture: options.capture ?? new CountingCapture(),
       frontmostApp: options.frontmostApp ?? (async () => front.pid),
@@ -1405,6 +1407,116 @@ describe("DictationController", { timeout: 20_000 }, () => {
       await sleep(config.releaseTailDuration * 2);
       expect(transcription.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
+    });
+
+    /** The microphone lost mid-recording (its helper exited) ends the dictation as the length cap
+     * does: what it heard is transcribed and pasted (owner, 2026-09-27: "send what was said"). */
+    test("a microphone lost while listening sends what was said", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        expect(controller.phase).toEqual(listening);
+
+        capture.lose();
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        expect(capture.events.at(-1)).toBe("stop");
+        await vi.advanceTimersByTimeAsync(0);
+        expect(transcription.requests).toHaveLength(1);
+        expect(pastes).toEqual([cleaned]);
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** The paste is for its dictation: cancelled before the paste reaches the system (it waits out a
+     * helper restart after the loss), the dictation calls it off, so nothing is pasted (in agent
+     * mode too); the next dictation's paste is its own. */
+    test.each(["dictation", "agent"] as const)("a %s cancelled while its paste waits calls the paste off", async (mode) => {
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
+      const signals: AbortSignal[] = [];
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        paste: (_text, signal) => {
+          signals.push(signal);
+          return new Promise(() => {});
+        },
+      });
+      if (mode === "agent") controller.captureContext = () => Promise.resolve(selectionScreen(""));
+
+      await holdAndRelease(controller, mode);
+      expect(await eventually(() => signals.length === 1)).toBe(true);
+      expect(signals[0]?.aborted).toBe(false);
+      controller.handle("cancel");
+      expect(signals[0]?.aborted).toBe(true);
+
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
+      await holdAndRelease(controller, mode);
+      expect(await eventually(() => signals.length === 2)).toBe(true);
+      expect(signals[1]?.aborted).toBe(false);
+      controller.handle("cancel");
+    });
+
+    /** Lost once released, during the release tail: what was heard is still transcribed and pasted,
+     * not failed. */
+    test("a microphone lost after release still sends what was said", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        capture.lose();
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(transcription.requests).toHaveLength(1);
+        expect(pastes).toEqual([cleaned]);
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** Lost before the hold was deliberate there is nothing to send: it fails as the microphone
+     * does. A loss reported for an earlier dictation changes nothing. */
+    test("a microphone lost before the hold is deliberate fails, and a stale loss is ignored", async () => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("start");
+        capture.lose();
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        expect(controller.phase).toEqual(microphoneFailed);
+        expect(capture.events.at(-1)).toBe("stop");
+
+        // The first hands-free dictation's microphone, lost only once the next one listens.
+        controller.handle("startHandsFree");
+        controller.handle("cancel");
+        controller.handle("startHandsFree");
+        const listened = capture.events.length;
+        capture.lose(capture.starts - 1);
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration + config.releaseTailDuration);
+        expect(controller.phase).toEqual(listening);
+        expect(capture.events.length).toBe(listened);
+        expect(transcription.requests).toHaveLength(0);
+        expect(pastes).toEqual([]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
     });
 
     /** Hands-free listening, which no key release ends, stops at `maxRecordingDuration`: the

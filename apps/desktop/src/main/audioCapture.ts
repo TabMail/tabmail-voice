@@ -19,32 +19,36 @@ export class MicrophoneFailure extends Error {
 }
 
 /**
- * The microphone, through the hidden audio window: `getUserMedia` into an AudioWorklet at the
- * recording rate, whose chunks come back here. Each `start` is a session; reports from an earlier
- * one are dropped. `stop` ends the session and releases the microphone (every dictation).
+ * The microphone, driven by commands to whatever runs it: the macOS helper (`MacSystem.microphone`),
+ * or elsewhere the hidden audio window (`getUserMedia` into an AudioWorklet at the recording rate).
+ * Its reports, chunks included, come back to `receive`. Each `start` is a session; reports from an
+ * earlier one are dropped. `stop` ends the session and releases the microphone (every dictation).
  */
-export class WindowAudioCapture implements AudioCapture {
+export class SessionAudioCapture implements AudioCapture {
   private session = 0;
   private onChunk: ((samples: Float32Array) => void) | null = null;
   private completion: ((error: Error | null) => void) | null = null;
+  private onLost: (() => void) | null = null;
   private startTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    /** Sends to the audio window, creating it if need be. */
+    /** Sends to what runs the microphone. */
     private readonly send: (command: AudioCommand) => void,
     private readonly startTimeout = config.microphoneStartTimeout,
   ) {}
 
-  /** Loads the audio worklet with the microphone off, ahead of the first dictation. */
+  /** Does the microphone-off setup ahead of the first dictation (the helper's prepared engine, or
+   * the audio window's worklet). */
   prepare(): void {
     this.send({ type: "prepare" });
   }
 
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void): void {
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost: () => void): void {
     this.session += 1;
     const session = this.session;
     this.onChunk = onChunk;
     this.completion = completion;
+    this.onLost = onLost;
     this.startTimer = setTimeout(() => this.finishStart(session, new MicrophoneFailure("timeout")), this.startTimeout);
     this.send({ type: "start", session });
   }
@@ -53,10 +57,21 @@ export class WindowAudioCapture implements AudioCapture {
     this.clearStartTimer();
     this.onChunk = null;
     this.completion = null;
+    this.onLost = null;
     this.send({ type: "stop", session: this.session });
   }
 
-  /** A report from the audio window. */
+  /** What ran the microphone is gone (the helper exited), or it stopped by itself (a `lost`
+   * report). A session that had started is told once; one still starting fails through its start
+   * instead. */
+  lost(): void {
+    const onLost = this.onLost;
+    if (this.completion !== null || onLost === null) return;
+    this.onLost = null;
+    onLost();
+  }
+
+  /** A report from the microphone. */
   receive(report: AudioReport): void {
     if (report.session !== this.session) return;
     switch (report.type) {
@@ -66,6 +81,9 @@ export class WindowAudioCapture implements AudioCapture {
         return this.finishStart(report.session, new MicrophoneFailure(report.error));
       case "chunk":
         this.onChunk?.(report.samples);
+        return;
+      case "lost":
+        return this.completion !== null ? this.finishStart(report.session, new MicrophoneFailure("lost")) : this.lost();
     }
   }
 

@@ -37,7 +37,7 @@ import {
   type WindowName,
   type WindowStates,
 } from "../shared/ipc.js";
-import { WindowAudioCapture } from "./audioCapture.js";
+import { SessionAudioCapture } from "./audioCapture.js";
 import { FileStore } from "./fileStore.js";
 import { HelperClient } from "./helperClient.js";
 import { KeychainSessionStore } from "./keychainSessionStore.js";
@@ -105,7 +105,11 @@ function launch(): void {
     if (contents.isLoading()) contents.once("did-finish-load", () => contents.send(channels.audioCommand, command));
     else contents.send(channels.audioCommand, command);
   }
-  const capture = new WindowAudioCapture(sendAudio);
+  // On macOS the helper runs the microphone as the Swift app does: Chromium's `getUserMedia` opens
+  // the device afresh for each dictation, about a second slower to the first audio.
+  const capture = new SessionAudioCapture(process.platform === "darwin" ? mac.microphone((report) => capture.receive(report)) : sendAudio);
+  // A helper that exits takes a running microphone with it.
+  if (process.platform === "darwin") macHelper.onExit = () => capture.lost();
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
@@ -118,7 +122,7 @@ function launch(): void {
     settings: () => settings.dictation(account.email),
     account,
     tips: new TipBook(store),
-    paste: (text) => mac.paste(text),
+    paste: (text, signal) => mac.paste(text, signal),
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
     frontmostApp: () => mac.frontmostApp(),
@@ -297,7 +301,13 @@ function launch(): void {
   hotkeyHelper.on("action", (message) => {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
-  macHelper.onStart = startActivator;
+  // A restarted helper has no microphone prepared. This is also the launch's prewarm, on every
+  // platform: `start()` runs `onStart` even where `voice-macos` can't spawn, preparing the audio
+  // window there (give that its own prewarm when a native helper replaces it).
+  macHelper.onStart = () => {
+    startActivator();
+    controller.prewarm();
+  };
 
   // The hotkey follows Settings, and so does the Globe key's own action: off while fn is the
   // hotkey, the user's choice back at another key and when the app quits (ADR-DESK-031).
@@ -429,7 +439,6 @@ function launch(): void {
   macHelper.start();
   void globeKey.hotkeyIs(settings.hotkey);
   permissions.startPollingAccessibility();
-  controller.prewarm();
 
   // The welcome wizard asks for consent and the permissions; it opens until finished.
   if (!settings.hasFinishedWelcome) showWelcome();

@@ -4,16 +4,17 @@
 
 import * as config from "./config.js";
 
-/** What dictation needs from a microphone. The audio window captures it (`getUserMedia` into an
- * AudioWorklet, resampled to `config.recordingSampleRate` mono); tests substitute one that records
- * nothing. The microphone is on only between `start` and `stop` (released after every dictation). */
+/** What dictation needs from a microphone. On macOS the helper captures it (`AVAudioEngine`, as the
+ * Swift app does); elsewhere the audio window (`getUserMedia` into an AudioWorklet), both resampled to
+ * `config.recordingSampleRate` mono; tests substitute one that records nothing. The microphone is on only between `start` and `stop` (released after every dictation). */
 export interface AudioCapture {
   /** Does the slow, microphone-off part of starting ahead of the first dictation. */
   prepare(): void;
   /** Starts the microphone. `onChunk` gets each chunk of mono float samples at
    * `config.recordingSampleRate`; `completion` runs once, with the error if the microphone could
-   * not start. */
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void): void;
+   * not start; `onLost` runs if the microphone, once started, stops by itself before `stop` (the
+   * macOS helper that runs it exited). */
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost: () => void): void;
   stop(): void;
 }
 

@@ -99,14 +99,16 @@ export interface CommandResult {
   error: string | null;
 }
 
-/** What the main process tells the hidden audio window. */
+/** What the main process tells the microphone: `voice-macos` on macOS, the hidden audio window elsewhere. */
 export type AudioCommand = { type: "prepare" } | { type: "start"; session: number } | { type: "stop"; session: number };
 
-/** The audio window's reports, for one `start`'s `session`. */
+/** The microphone's reports, for one `start`'s `session`. */
 export type AudioReport =
   | { type: "started"; session: number }
   | { type: "failed"; session: number; error: string }
-  | { type: "chunk"; session: number; samples: Float32Array };
+  | { type: "chunk"; session: number; samples: Float32Array }
+  /** The microphone stopped by itself mid-session (its input's format changed). */
+  | { type: "lost"; session: number };
 
 export interface VoiceBridge {
   /** Calls `listener` with the window's state now and on every change, until the returned
@@ -176,6 +178,8 @@ export function isAudioReport(value: unknown): value is AudioReport {
       return typeof report.error === "string";
     case "chunk":
       return report.samples instanceof Float32Array;
+    case "lost":
+      return true;
     default:
       return false;
   }

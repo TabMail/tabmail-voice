@@ -53,6 +53,15 @@ struct HelperChannelTests {
         #expect(lines.all.isEmpty)
     }
 
+    /// A whole number in range reads as an `Int`; a fraction, one out of range, or no number does not.
+    @Test func anIntegerIsAWholeNumberInRange() {
+        #expect(JSON.number(7).integer == 7)
+        #expect(JSON.number(-3).integer == -3)
+        #expect(JSON.number(1.5).integer == nil)
+        #expect(JSON.number(1e100).integer == nil)
+        #expect(JSON.string("7").integer == nil)
+    }
+
     @Test func eventsCarryTheirName() {
         let (channel, lines) = channel()
         channel.emit("action", ["action": "start"])

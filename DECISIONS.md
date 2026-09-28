@@ -953,3 +953,53 @@ labels (the app's name, the account or "Not signed in", the attention mark's "Ne
 This departs from the Swift app's look only, which the Swift app keeps until cutover. Whether the
 sidebar shows the frosted material with a clear `backgroundColor` but no `transparent` flag can
 only be seen in the running app on macOS, not in the offscreen previews.
+
+**Amendment 2026-09-27 (owner, trying the Electron build): "the startup is much slower … at least
+2–3 seconds until the thing shows up … the awesome startup that Swift app has to be carried on."**
+- Measured on the owner's Mac: the app's log gave the first audio 1.47–1.56 s after key-down (the
+  Swift app: 0.59–0.62 s). A probe of the same `getUserMedia` call gave 0.4–1.3 s to open the device,
+  up to 0.5 s to resume the context, then up to 0.45 s of digital silence before the first real
+  signal, which is when the pill replaces the swirl. Chromium opens the device afresh for each
+  dictation; nothing it offers keeps a device prepared with the microphone off. The overlay window
+  itself paints 30–50 ms after it is shown, so it is not the cause.
+- On macOS the microphone is now `voice-macos`'s, run as the Swift app runs it (`MicrophoneCapture`:
+  an `AVAudioEngine` prepared ahead with the microphone off, started per dictation, discarded after
+  it, rebuilt when the default input changes). It converts each buffer to mono float samples at
+  `recordingSampleRate` and sends them as `microphoneChunk` events (base64 of little-endian floats),
+  numbered by the app's session; `SessionAudioCapture` (formerly `WindowAudioCapture`) drives it
+  through `MacSystem.microphone`, with the same sessions, start timeout and late-report dropping.
+  The same probe through the helper: first audio 0.57–0.62 s, first real signal 0.67–0.9 s.
+- Elsewhere the hidden audio window (`getUserMedia`) stays the microphone for now. The owner
+  (2026-09-27): *"it is important that the dictation part and everything as you did right now
+  remains native so that it's super fast … this needs to be done for other platforms as well"*: the
+  Windows and Linux helpers take over the microphone, hotkey and paste when those platforms are built.
+- The helper runs under the app's microphone grant, as its Accessibility use does; packaged, it
+  inherits the `audio-input` entitlement (`entitlementsInherit`). A restarted helper is prepared
+  again (`macHelper.onStart`).
+- A helper that exits mid-dictation takes the microphone with it (the Swift app has no such case: its
+  microphone is in-process). Asked, the owner chose *"send what was said"*: `macHelper.onExit` makes
+  `SessionAudioCapture.lost()` tell the started session, and the controller finishes the dictation as
+  at the length cap, transcribing what was heard; lost during the release tail, the tail's end
+  transcribes it; lost before the hold is deliberate, it fails as the microphone does. A start still pending when the helper exits fails through its request, as before. What was said
+  is then pasted through the restarted helper (agent mode's Edit and Compose first check the app in
+  front, a request that fails during a restart as "you switched apps"; after a loss their backend
+  calls outlast the restart): the paste carries its dictation's `AbortSignal`, and a
+  request with one made while the helper restarts (from `onExit` on, the restart being due first)
+  waits for it within its own timeout; one that times out, or whose dictation is cancelled, while it
+  waits is never sent (a cancelled dictation pastes nothing). Every other request fails at once
+  during a restart, as before.
+- The helper's engine stopping by itself mid-dictation (AVAudioEngine stops on a configuration
+  change: the input's sample rate or channels changed) is the same loss: `MicrophoneCapture`
+  watches each engine for `AVAudioEngineConfigurationChange` from before it starts (weakly, so the
+  notification's queue never holds the engine's last reference), stops that session
+  (`MicrophoneSessions.lost`, like a failed start) and emits `microphoneLost {session}` after the
+  chunks already queued; the app reports it as `lost`, and the controller sends what was said, as
+  above. One arriving while the start is still pending fails that start. (The Swift app does not
+  watch for this; its dictation keeps listening to a stopped engine.) The audio window's path
+  (Windows, Linux) does not report it yet.
+- `MicrophoneSessions` treats a failed start like its stop (no older session starts after it), and
+  the whole-number request params (session, pid, Globe value) are read with `JSON.integer`, the
+  restore delay rounded to whole milliseconds with `Int(exactly:)`, so a malformed number is refused
+  rather than trapping the helper. Engine release has no hardware-free test: the owner declined a test-only
+  engine seam in `MicrophoneCapture` (no production complication for test convenience); the release
+  decision itself is `MicrophoneSessions`', which is tested.

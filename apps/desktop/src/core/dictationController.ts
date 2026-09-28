@@ -48,8 +48,9 @@ export interface DictationDependencies {
   settings: () => DictationSettings;
   account: AccountModel;
   tips: TipBook;
-  /** Pastes into the focused field. */
-  paste: (text: string) => Promise<void>;
+  /** Pastes into the focused field, for the dictation whose `signal` it is: one cancelled before the
+   * paste reaches the system pastes nothing. */
+  paste: (text: string, signal: AbortSignal) => Promise<void>;
   thunderbird: ThunderbirdRelay;
   capture: AudioCapture;
   /** The process of the app in front, null without one. */
@@ -282,6 +283,7 @@ export class DictationController extends Observable {
       (error) => {
         if (error) this.microphoneFailed(error, current);
       },
+      () => this.microphoneLost(current),
     );
     if (handsFree) {
       // A double tap is deliberate: no hold to wait for.
@@ -408,7 +410,7 @@ export class DictationController extends Observable {
         const client = this.deps.makeCompletionsClient(settings.backendURL);
         const text = await DictationCleanup.cleanUp(transcript, context, client, account, userId, config.cleanupTimeout, signal);
         if (!isCurrent()) return;
-        await this.paste(text);
+        await this.paste(text, signal);
       } else {
         const email = await this.lookUpEmailApp();
         if (!isCurrent()) return;
@@ -422,7 +424,7 @@ export class DictationController extends Observable {
         const targetApp = await this.targetApp;
         await toolImplementations[tool].deliver(text, {
           emailApp: email.app,
-          paste: this.paste,
+          paste: (text) => this.paste(text, signal),
           isTargetAppFrontmost: async () => (await this.deps.frontmostApp().catch(() => null)) === targetApp,
           thunderbird: this.deps.thunderbird,
           signal,
@@ -440,9 +442,9 @@ export class DictationController extends Observable {
   }
 
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015). */
-  private readonly paste = async (text: string): Promise<void> => {
+  private readonly paste = async (text: string, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
-    await this.deps.paste(text);
+    await this.deps.paste(text, signal);
   };
 
   /** The email app of the settings this dictation started with, asked once per dictation. */
@@ -483,6 +485,18 @@ export class DictationController extends Observable {
     this.abort.abort();
     this.teardown();
     this.fail("Couldn't start the microphone.");
+  }
+
+  /** The microphone stopped by itself mid-recording (its helper exited): as at the length cap, what
+   * was said is sent (owner, 2026-09-27: "send what was said"); before the hold was deliberate there
+   * is nothing to send, so it fails as the microphone does. */
+  private microphoneLost(current: number): void {
+    if (this.generation !== current) return;
+    log.error("DictationController: microphone lost mid-recording");
+    if (this.currentPhase.kind === "listening") return this.finish();
+    // Already released (the release tail): its end transcribes what was heard.
+    if (this.currentPhase.kind !== "arming") return;
+    this.microphoneFailed(new Error("microphone lost"), current);
   }
 
   private async completeRecording(current: number): Promise<void> {
