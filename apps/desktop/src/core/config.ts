@@ -164,7 +164,14 @@ export const welcomeRailInactiveOpacity = 0.35;
 export const welcomeIconSize = 56;
 /** The icon beside each of the consent page's points, as SwiftUI draws a label's beside body text. */
 export const welcomeLabelIconSize = 16;
-export const settingsWindowSize = { width: 480, height: 620 };
+/** Settings: a sidebar of sections (frosted on macOS) beside the chosen section's cards (owner,
+ * 2026-09-27: "themed and look professional", not the bland grey; chose the branded sidebar). */
+export const settingsWindowSize = { width: 700, height: 500 };
+export const settingsSidebarWidth = 200;
+export const settingsAppIconSize = 36;
+export const settingsSectionIconSize = 16;
+/** The window's own colour where macOS's frosted material is not drawn (Windows, Linux). */
+export const settingsWindowColour = { light: "#f4f3f8", dark: "#1f1e24" };
 export const contextDebugWindowSize = { width: 720, height: 560 };
 
 // MARK: Overlay

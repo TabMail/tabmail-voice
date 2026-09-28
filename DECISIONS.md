@@ -928,3 +928,16 @@ without a word. Asked, the owner chose "sign out, show a warning": `AccountModel
 in the app first, then removes the saved sign-in; when the store refuses, its error says, in the
 app's words, that the sign-in may come back at the next launch, and Settings shows it. A refused save (sign-in or refresh) fails with the app's own
 message and leaves the account as it was, as the Swift store's throwing `save` does.
+
+**Amendment 2026-09-27 (owner): Settings in a branded sidebar.** The Electron Settings page was the
+Swift app's single grouped form on a flat grey; the owner found it "bland" and wanted it "themed and
+look professional", and chose, from three looks, the branded sidebar. Settings is now a
+System Settings-style window: a sidebar with the app icon, the account and five sections (Account,
+Dictation, Agent mode, Permissions, General), the chosen section's cards beside it. It is in the
+TabMail icon's blue → purple (`brand.ts`, as the overlay): the selected section, switches and the
+default button carry the gradient, section icons the brand blue, and a red dot marks a section that
+needs the user (signed out, a permission missing), in light and dark. On macOS the sidebar shows the
+window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
+no material, so the window has its own colour (`settingsWindowColour`). The settings and their
+wording are unchanged; this departs from the Swift app's look only, which the Swift app keeps until
+cutover.

@@ -2,25 +2,97 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type CSSProperties, type FormEvent, type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
+import icon from "../../resources/icon.png";
+import * as config from "../core/config.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
+import { brandBlue, brandGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
+import { GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon } from "./icons.js";
 import "./form.css";
+import "./settings.css";
+
+type SectionName = "account" | "dictation" | "agent" | "permissions" | "general";
+
+/** The sidebar's sections, in order, each with its title and icon. */
+const sections: { name: SectionName; title: string; icon: (size: number) => ReactNode }[] = [
+  { name: "account", title: "Account", icon: (size) => <PersonIcon size={size} /> },
+  { name: "dictation", title: "Dictation", icon: (size) => <MicrophoneIcon size={size} /> },
+  { name: "agent", title: "Agent mode", icon: (size) => <SparklesLineIcon size={size} /> },
+  { name: "permissions", title: "Permissions", icon: (size) => <LockShieldIcon size={size} /> },
+  { name: "general", title: "General", icon: (size) => <GearIcon size={size} /> },
+];
+
+/** macOS draws its traffic lights over the sidebar and the frosted material behind it. */
+const isMac = navigator.userAgent.includes("Macintosh");
+
+/** The stylesheet's colours from the brand and the config: `settings.css` reads them. */
+const colours = {
+  "--brand-gradient": brandGradient,
+  "--brand-blue": brandBlue,
+  "--window-light": config.settingsWindowColour.light,
+  "--window-dark": config.settingsWindowColour.dark,
+} as CSSProperties;
+
+/** Whether `name`'s section wants the user's attention: signed out, or a permission missing. */
+function needsAttention(name: SectionName, state: SettingsState): boolean {
+  if (name === "account") return state.email === null;
+  if (name === "permissions") return !state.microphoneGranted || !state.accessibilityTrusted;
+  return false;
+}
 
 /** Settings (`SettingsView.swift`): the account, dictation, agent mode's email app, the
- * permissions and general options. */
+ * permissions and general options, one section at a time, chosen in a sidebar (owner, 2026-09-27:
+ * "themed and look professional", the branded sidebar). */
 function Settings() {
   const state = useWindowState("settings");
+  const [shown, setShown] = useState<SectionName>("account");
   if (!state) return null;
+  const section = sections.find((candidate) => candidate.name === shown) ?? sections[0];
   return (
-    <div className="form">
-      <Section title="Account">
-        <AccountSection email={state.email} />
-      </Section>
+    <div className={isMac ? "settings mac" : "settings"} style={colours}>
+      <nav className="sidebar" style={{ width: config.settingsSidebarWidth }}>
+        <div className="identity">
+          <img src={icon} alt="" width={config.settingsAppIconSize} height={config.settingsAppIconSize} />
+          <div>
+            <div className="app-name">TabMail Voice</div>
+            <div className="caption identity-account">{state.email ?? "Not signed in"}</div>
+          </div>
+        </div>
+        {sections.map(({ name, title, icon: sectionIcon }) => (
+          <button key={name} className={name === shown ? "nav selected" : "nav"} aria-current={name === shown ? "page" : undefined} onClick={() => setShown(name)}>
+            {sectionIcon(config.settingsSectionIconSize)}
+            <span>{title}</span>
+            {needsAttention(name, state) && <span className="attention" aria-label="Needs attention" />}
+          </button>
+        ))}
+      </nav>
+      <main className="content">
+        <h1>{section?.title}</h1>
+        {shown === "account" && <AccountPane state={state} />}
+        {shown === "dictation" && <DictationPane state={state} />}
+        {shown === "agent" && <AgentPane state={state} />}
+        {shown === "permissions" && <PermissionsPane state={state} />}
+        {shown === "general" && <GeneralPane state={state} />}
+      </main>
+    </div>
+  );
+}
 
-      <Section title="Dictation">
+function AccountPane({ state }: { state: SettingsState }) {
+  return (
+    <Group caption="Your TabMail account, which dictation and agent mode run under.">
+      <AccountSection email={state.email} />
+    </Group>
+  );
+}
+
+function DictationPane({ state }: { state: SettingsState }) {
+  return (
+    <>
+      <Group caption={state.hotkey === "function" ? "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit." : undefined}>
         <div className="row">
           <span>Hold to dictate</span>
           <select
@@ -36,56 +108,62 @@ function Settings() {
             ))}
           </select>
         </div>
-        <div className="row stack">
-          {state.hotkey === "function" && (
-            <span className="caption">While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.</span>
-          )}
-          <span className="caption">Your recording is sent to TabMail for transcription and isn’t stored.</span>
-        </div>
+      </Group>
+      <Group caption="Your recording is sent to TabMail for transcription and isn’t stored.">
         <Toggle label="Read the screen while dictating" checked={state.readsScreen} onChange={(value) => send({ type: "setReadsScreen", value })}>
           Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.
         </Toggle>
-      </Section>
-
-      <Section title="Agent mode">
-        <EmailClientPicker state={state} />
-      </Section>
-
-      <Section title="Permissions">
-        <PermissionRow title="Microphone" granted={state.microphoneGranted} onRequest={() => send({ type: "requestMicrophone" })} />
-        <PermissionRow title="Accessibility (hotkey and typing)" granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
-      </Section>
-
-      <Section title="General">
-        <Toggle label="Open at login" checked={state.openAtLogin} onChange={(value) => send({ type: "setOpenAtLogin", value })} />
-        {state.debugAllowed && (
-          <Toggle label="Debug mode" checked={state.debugMode} onChange={(value) => send({ type: "setDebugMode", value })}>
-            Uses the development server and shows debug items in the menu.
-          </Toggle>
-        )}
-      </Section>
-    </div>
+      </Group>
+    </>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function AgentPane({ state }: { state: SettingsState }) {
+  return <EmailClientPicker state={state} />;
+}
+
+function PermissionsPane({ state }: { state: SettingsState }) {
   return (
-    <section>
-      <h2 className="section-title">{title}</h2>
+    <Group caption="TabMail Voice hears you only while you dictate, and types only what you dictated.">
+      <PermissionRow title="Microphone" granted={state.microphoneGranted} onRequest={() => send({ type: "requestMicrophone" })} />
+      <PermissionRow title="Accessibility (hotkey and typing)" granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
+    </Group>
+  );
+}
+
+function GeneralPane({ state }: { state: SettingsState }) {
+  return (
+    <Group>
+      <Toggle label="Open at login" checked={state.openAtLogin} onChange={(value) => send({ type: "setOpenAtLogin", value })} />
+      {state.debugAllowed && (
+        <Toggle label="Debug mode" checked={state.debugMode} onChange={(value) => send({ type: "setDebugMode", value })}>
+          Uses the development server and shows debug items in the menu.
+        </Toggle>
+      )}
+    </Group>
+  );
+}
+
+/** A card of rows, with an optional note under it. */
+function Group({ caption, children }: { caption?: string | undefined; children: ReactNode }) {
+  return (
+    <section className="card-section">
       <div className="group">{children}</div>
+      {caption && <p className="caption group-caption">{caption}</p>}
     </section>
   );
 }
 
+/** A setting that is on or off: its label, a switch at the end of the row, and what it does. */
 function Toggle({ label, checked, onChange, children }: { label: string; checked: boolean; onChange: (value: boolean) => unknown; children?: ReactNode }) {
   return (
-    <div className="row stack">
-      <label className="check">
-        <input type="checkbox" checked={checked} onChange={(event) => void onChange(event.target.checked)} />
+    <label className="row toggle">
+      <span className="toggle-text">
         <span>{label}</span>
-      </label>
-      {children && <span className="caption">{children}</span>}
-    </div>
+        {children && <span className="caption">{children}</span>}
+      </span>
+      <input type="checkbox" role="switch" className="switch" checked={checked} onChange={(event) => void onChange(event.target.checked)} />
+    </label>
   );
 }
 
@@ -107,7 +185,7 @@ function EmailClientPicker({ state }: { state: SettingsState }) {
   else if (state.emailClient === null && !state.defaultEmailAppIsSupported) caption = "Mail and calendar requests need Thunderbird with TabMail. Choose it here, or make it your default email app.";
   else caption = "Mail and calendar requests go to TabMail’s chat in this app.";
   return (
-    <>
+    <Group caption={caption}>
       <div className="row">
         <span>Email app</span>
         <select value={state.emailClient ?? defaultValue} onChange={(event) => void send({ type: "setEmailClient", bundleIdentifier: event.target.value === defaultValue ? null : event.target.value })}>
@@ -119,10 +197,7 @@ function EmailClientPicker({ state }: { state: SettingsState }) {
           ))}
         </select>
       </div>
-      <div className="row">
-        <span className="caption">{caption}</span>
-      </div>
-    </>
+    </Group>
   );
 }
 
@@ -168,7 +243,7 @@ function AccountSection({ email: signedInEmail }: { email: string | null }) {
       <>
         <div className="row">
           <span>Signed in as</span>
-          <span>{signedInEmail}</span>
+          <span className="value">{signedInEmail}</span>
         </div>
         <div className="row">
           <button onClick={() => void run(() => send({ type: "signOut" }), () => {})}>Sign Out</button>

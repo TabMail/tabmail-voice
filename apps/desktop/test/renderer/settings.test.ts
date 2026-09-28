@@ -24,9 +24,9 @@ const signedIn: SettingsState = {
   debugMode: false,
 };
 
-/** The Settings page, mounted afresh against a stand-in main process that answers each command with
- * `reply` and then pushes `after` (as the main process pushes the new state). */
-async function settingsPage(reply: CommandResult, after: SettingsState): Promise<{ commands: Command[] }> {
+/** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
+ * each command with `reply` and then pushes `after` (as the main process pushes the new state). */
+async function settingsPage(reply: CommandResult, after: SettingsState, initial = signedIn): Promise<{ commands: Command[] }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const commands: Command[] = [];
@@ -46,7 +46,7 @@ async function settingsPage(reply: CommandResult, after: SettingsState): Promise
   await act(async () => {
     await import("../../src/renderer/settings.js");
   });
-  await act(async () => listener?.(signedIn));
+  await act(async () => listener?.(initial));
   return { commands };
 }
 
@@ -80,5 +80,40 @@ describe("Settings page", () => {
 
     expect(document.querySelector(".error")).toBeNull();
     expect(button("Email Me a Code")).toBeDefined();
+  });
+
+  /** The sidebar shows one section at a time, Account first; every setting is in one of them. */
+  test("each section in the sidebar shows its own settings", async () => {
+    await settingsPage({ error: null }, signedIn);
+    const heading = () => document.querySelector("h1")?.textContent;
+    const shown: Record<string, string[]> = {};
+    for (const section of ["Account", "Dictation", "Agent mode", "Permissions", "General"]) {
+      await act(async () => button(section).click());
+      expect(heading()).toBe(section);
+      expect(button(section).getAttribute("aria-current")).toBe("page");
+      expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+      shown[section] = [...document.querySelectorAll("main .row")].map((row) => row.textContent ?? "");
+    }
+
+    const everything = Object.values(shown).flat().join("\n");
+    for (const setting of ["Sign Out", "Hold to dictate", "Read the screen while dictating", "Email app", "Microphone", "Accessibility", "Open at login"]) {
+      expect(everything).toContain(setting);
+    }
+    expect(shown.Account?.join()).toContain("Sign Out");
+    expect(shown.Dictation?.join()).not.toContain("Sign Out");
+  });
+
+  /** A section with something to do (signed out, a permission missing) is marked in the sidebar. */
+  test("the sidebar marks the sections that need the user", async () => {
+    const marked = () => [...document.querySelectorAll("button.nav")].filter((nav) => nav.querySelector(".attention")).map((nav) => nav.textContent);
+
+    await settingsPage({ error: null }, signedIn);
+    expect(marked()).toEqual([]);
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, email: null, microphoneGranted: false });
+    expect(marked()).toEqual(["Account", "Permissions"]);
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, accessibilityTrusted: false });
+    expect(marked()).toEqual(["Permissions"]);
   });
 });
