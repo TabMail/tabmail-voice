@@ -121,11 +121,6 @@ export const appleScriptTimeoutSeconds = 60;
 export const appleScriptMaxOutputBytes = 64 * 1024 * 1024;
 /** The fewest digits a phone number `messages_send` sends to has. */
 export const phoneNumberMinDigits = 5;
-/** The most shortcut names one `shortcuts_list` returns to the model; more say so. */
-export const shortcutsListMaxResults = 50;
-/** The most a `shortcuts` command may print, in bytes (every shortcut's name, or a run's text output):
- * more fails the request rather than cutting the output short. */
-export const shortcutsMaxOutputBytes = 64 * 1024 * 1024;
 /** The backend's web search, which the Web switch lists (`connectorServerTools`); while it is listed
  * the request says `web_search_enabled`, without which the backend refuses `web_read` and `web_open`. */
 export const webSearchTool = "search_web";
@@ -299,7 +294,7 @@ export const agentBubbleDiameter = 24;
 /** Gap between the pill and the bubbles, and between neighbouring bubbles. */
 export const agentBubbleGap = 8;
 /** The most bubbles in a row over or under the pill (`bubbleCentres`): with every tool offered at
- * once (three) and every connector (nine), a row over it, one bubble each side, and a row under it
+ * once (three) and every connector (eight), a row over it, one bubble each side, and a row under it
  * (or a second over it). */
 export const agentBubbleRowCapacity = 5;
 /** A bubble under the mouse pointer grows to this scale (upward from its bottom edge, as a running

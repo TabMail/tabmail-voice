@@ -9,9 +9,9 @@
  */
 import * as config from "../config.js";
 
-export type Connector = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "shortcuts" | "web";
+export type Connector = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web";
 
-export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
 
 export function isConnector(name: unknown): name is Connector {
   return typeof name === "string" && (connectors as readonly string[]).includes(name);
@@ -51,10 +51,6 @@ export const connectorInfo: Record<Connector, ConnectorInfo> = {
   messages: {
     displayName: "Messages",
     settingsDescription: "Sends iMessages you ask for once you confirm.",
-  },
-  shortcuts: {
-    displayName: "Shortcuts",
-    settingsDescription: "Runs the shortcuts you ask for once you confirm.",
   },
   web: {
     displayName: "Web",

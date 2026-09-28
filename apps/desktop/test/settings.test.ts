@@ -189,15 +189,17 @@ describe("connectors", () => {
     app.setConnectorEnabled("calendar", false);
 
     expect(store.get("disabledConnectors")).toEqual(["calendar", "reminders"]);
-    expect(app.enabledConnectors).toEqual(["contacts", "files", "email", "notes", "messages", "shortcuts", "web"]);
+    expect(app.enabledConnectors).toEqual(["contacts", "files", "email", "notes", "messages", "web"]);
   });
 
   /** A stored name no longer an app, or a stored value of another type, is ignored rather than
    * turning anything off; a switch changed after that stores only apps. */
   test.each<[unknown, string[]]>([
-    [["calendar", "retired-app"], ["reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"]],
-    ["calendar", ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"]],
-    [[7, null], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"]],
+    [["calendar", "retired-app"], ["reminders", "contacts", "files", "email", "notes", "messages", "web"]],
+    ["calendar", ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]],
+    // Shortcuts, retired before the first release: a user who switched it off turns nothing else off.
+    [["shortcuts"], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]],
+    [[7, null], ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"]],
   ])("a stored %j turns off only known apps", (stored, enabled) => {
     const store = new MemoryStore({ disabledConnectors: stored });
     expect(settings(store).dictation(null).enabledConnectors).toEqual(enabled);

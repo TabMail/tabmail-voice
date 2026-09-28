@@ -17,7 +17,7 @@ const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, chatOpensUpward: false };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
-const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
 const overlayCanvasSize = { width: 440, height: 322 };
 const settings = {
   email: null,
@@ -33,9 +33,9 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
-  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"],
+  enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"] };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };

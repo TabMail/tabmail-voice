@@ -166,7 +166,7 @@ describe("overlay geometry", () => {
         if (count === most) {
           const over = frames.filter((frame) => maxY(frame) <= pill.y).length;
           const beside = frames.filter((frame) => frame.y < maxY(pill) && maxY(frame) > pill.y).length;
-          expect([over, beside, count - over - beside], `with every bubble (${count})`).toEqual(underFits ? [5, 2, 5] : [10, 2, 0]);
+          expect([over, beside, count - over - beside], `with every bubble (${count})`).toEqual(underFits ? [5, 2, 4] : [9, 2, 0]);
         }
       }
     }

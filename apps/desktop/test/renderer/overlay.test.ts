@@ -168,7 +168,7 @@ describe("overlay page", () => {
   test.each([true, false])("a bubble for each tool and app, under the pill only when there is room (%s)", async (bubblesFitUnder) => {
     const page = await overlayPage();
     const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
-    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
     await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "switchMode" });
 
     const bubbles = [...document.querySelectorAll<HTMLElement>(".bubble")];
@@ -320,7 +320,7 @@ describe("overlay page", () => {
   test("a side bubble's tooltip stays inside the canvas", async () => {
     const page = await overlayPage();
     const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
-    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
     await page.show({ ...listening, mode: "agent", tools, connectors: apps });
     // The first two after the row of five over the pill: the left and the right one beside it.
     for (const label of ["contacts", "files"]) {
