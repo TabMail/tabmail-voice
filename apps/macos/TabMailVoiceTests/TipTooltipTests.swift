@@ -117,22 +117,7 @@ struct TipTooltipTests {
         let renderer = ImageRenderer(content: OverlayView(controller: controller, opensUpward: opensUpward).frame(width: size.width, height: size.height))
         renderer.scale = scale
         let overlay = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
-        var darkRows: [Int] = []
-        var lightRows: [Int] = []
-        for y in 0..<overlay.pixelsHigh {
-            for x in 0..<overlay.pixelsWide {
-                let (white, alpha) = pixel(overlay, CGFloat(x) / scale, CGFloat(y) / scale)
-                guard alpha > 0.8 else { continue }
-                if white < 0.3 { darkRows.append(y) } else if white > 0.8 { lightRows.append(y) }
-            }
-        }
-        try #require(!darkRows.isEmpty && !lightRows.isEmpty)
-        let middle = { (rows: [Int]) in Double(rows.reduce(0, +)) / Double(rows.count) }
-        if over {
-            #expect(middle(darkRows) < middle(lightRows), "the tip is not over the pill")
-        } else {
-            #expect(middle(darkRows) > middle(lightRows), "the tip is not under the pill")
-        }
+        #expect(try tipIsOverThePill(overlay) == over, over ? "the tip is not over the pill" : "the tip is not under the pill")
         // Its arrow points at the pill: at the pill's centre the tip reaches nearer the pill than a
         // little to the side.
         let pillTop = Int((size.height - DictationConfig.pillHeight) / 2 * scale)
@@ -154,18 +139,42 @@ struct TipTooltipTests {
     }
 
     /// The overlay tells its view which way it opened, so a tip over the pill goes there in the app,
-    /// not only in a view built so: up by a caret near the screen's bottom, down by one mid-screen.
-    @Test func theOverlayTellsItsViewWhichWayItOpened() {
-        let (controller, _) = makeController()
+    /// not only in a view built so: up by a caret near the screen's bottom, down by one mid-screen; and
+    /// shown as the app shows it (with no caret, at the mouse pointer), after a placement the other way.
+    @Test func theOverlayTellsItsViewWhichWayItOpened() async throws {
+        let (controller, transport) = makeController()
+        controller.handle(.startHandsFree)
+        controller.handle(.listenHandsFree)
+        defer { controller.cancel() }
+        try #require(await eventually { controller.phase == .listening && controller.tip == .handsFree })
         let overlay = OverlayPanelController(controller: controller)
+        let nearBottom = { (screen: CGRect) in CGRect(x: screen.midX, y: screen.minY + DictationConfig.pillHeight, width: 1, height: 18) }
+        let midScreen = { (screen: CGRect) in CGRect(x: screen.midX, y: screen.midY, width: 1, height: 18) }
         let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let nearBottom = CGRect(x: 700, y: screen.minY + DictationConfig.pillHeight, width: 1, height: 18)
-        let midScreen = CGRect(x: 700, y: screen.midY, width: 1, height: 18)
-        for (anchor, upward) in [(nearBottom, true), (midScreen, false)] {
+        for (anchor, upward) in [(nearBottom(screen), true), (midScreen(screen), false)] {
             #expect(OverlayPanelController.opensUpward(anchor: anchor, pillHeight: DictationConfig.pillHeight, visibleFrame: screen) == upward)
             overlay.place(at: anchor, in: screen)
             #expect(overlay.view.rootView.opensUpward == upward, "at \(anchor.minY)")
         }
+
+        let mouse = NSEvent.mouseLocation
+        let visible = try #require(NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main).visibleFrame
+        let upward = OverlayPanelController.opensUpward(anchor: CGRect(x: mouse.x, y: mouse.y, width: 1, height: 1), pillHeight: DictationConfig.pillHeight, visibleFrame: visible)
+        overlay.place(at: upward ? midScreen(visible) : nearBottom(visible), in: visible)
+        try #require(overlay.view.rootView.opensUpward != upward)
+        overlay.update(for: .listening)
+        #expect(overlay.view.window?.isVisible == true)
+        #expect(overlay.view.rootView.opensUpward == upward)
+        let size = DictationConfig.overlayCanvasSize
+        let renderer = ImageRenderer(content: overlay.view.rootView.frame(width: size.width, height: size.height))
+        renderer.scale = scale
+        #expect(try tipIsOverThePill(NSBitmapImageRep(cgImage: try #require(renderer.cgImage))) == upward)
+
+        controller.cancel()
+        overlay.update(for: .idle)
+        try await Task.sleep(for: DictationConfig.overlayDismissDuration * 2)
+        #expect(overlay.view.window?.isVisible == false)
+        #expect(transport.requests.isEmpty)
     }
 
     /// In agent mode, in an overlay opened above the caret's line, the hands-free tip goes over the
@@ -238,6 +247,22 @@ struct TipTooltipTests {
         for x in [width / 4, width * 3 / 4] {
             #expect(pixel(x, 1).alpha < 0.5, "drawn beside the arrow at \(x)")
         }
+    }
+
+    /// Whether the dark tip in a rendered overlay is, on the whole, over its light pill.
+    private func tipIsOverThePill(_ overlay: NSBitmapImageRep) throws -> Bool {
+        var darkRows: [Int] = []
+        var lightRows: [Int] = []
+        for y in 0..<overlay.pixelsHigh {
+            for x in 0..<overlay.pixelsWide {
+                let (white, alpha) = pixel(overlay, CGFloat(x) / scale, CGFloat(y) / scale)
+                guard alpha > 0.8 else { continue }
+                if white < 0.3 { darkRows.append(y) } else if white > 0.8 { lightRows.append(y) }
+            }
+        }
+        try #require(!darkRows.isEmpty && !lightRows.isEmpty)
+        let middle = { (rows: [Int]) in Double(rows.reduce(0, +)) / Double(rows.count) }
+        return middle(darkRows) < middle(lightRows)
     }
 
     /// Polls `condition` until it holds, for up to five seconds.

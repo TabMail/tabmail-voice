@@ -1225,6 +1225,33 @@ struct DictationControllerTests {
         #expect(controller.phase == .transcribing)
     }
 
+    /// A second press cancelled while down (a typing chord) leaves nothing for the next one: a newer
+    /// second press shows no tip until it has been down as long as a hold, even when the cancelled one
+    /// would have become a hold before that; released as a tap, it gets the hands-free tip.
+    @Test func aCancelledSecondPressLeavesNoTipForTheNextOne() async {
+        let capture = CountingCapture(hears: true)
+        let (controller, pastes) = makeController(capture: capture)
+        let hold = DictationConfig.minimumHoldDuration
+
+        controller.handle(.startHandsFree)
+        #expect(await eventually { controller.isHearing })
+        try? await Task.sleep(for: hold / 2)
+        controller.handle(.cancel)
+        #expect(controller.phase == .idle)
+        let pressed = ContinuousClock.now
+        controller.handle(.startHandsFree)
+        #expect(controller.phase == .listening)
+        // Past when the cancelled press would have become a hold, short of when this one does.
+        #expect(await throughout(hold * 3 / 4) { controller.tip == nil || pressed.duration(to: .now) >= hold },
+                "the cancelled press's Space tip while the newer one is down")
+
+        controller.handle(.listenHandsFree)
+        #expect(await eventually { controller.tip == .handsFree })
+        controller.handle(.cancel)
+        #expect(controller.tip == nil && capture.starts == 2 && capture.stops == 2)
+        #expect(transcription.requests.isEmpty && completions.requests.isEmpty && pastes.texts.isEmpty)
+    }
+
     /// A hands-free tip due before the microphone is first heard shows once it is, even when that is
     /// after the time a held second press would have become a hold.
     @Test func aHandsFreeTipDueBeforeTheMicrophoneIsHeardShowsOnceItIs() async {
