@@ -101,25 +101,32 @@ describe("Settings page", () => {
     expect(button("Email Me a Code")).toBeDefined();
   });
 
-  /** The sidebar shows one section at a time, Account first; every setting is in one of them. */
+  /** The sidebar shows one section at a time, Account first: each section shows its own settings
+   * and none of another's, and every setting is in one of them. */
   test("each section in the sidebar shows its own settings", async () => {
-    await settingsPage({ error: null }, signedIn);
-    const heading = () => document.querySelector("h1")?.textContent;
-    const shown: Record<string, string[]> = {};
-    for (const section of ["Account", "Dictation", "Agent mode", "Permissions", "General"]) {
+    const own: Record<string, string[]> = {
+      Account: ["Sign Out"],
+      Dictation: ["Hold to dictate", "Read the screen while dictating"],
+      "Agent mode": ["Email app"],
+      Permissions: ["Microphone", "Accessibility"],
+      General: ["Open at login", "Debug mode"],
+    };
+    const shown = { ...signedIn, debugAllowed: true };
+    await settingsPage({ error: null }, shown, shown);
+    expect(document.querySelector("h1")?.textContent).toBe("Account");
+
+    for (const [section, settings] of Object.entries(own)) {
       await act(async () => button(section).click());
-      expect(heading()).toBe(section);
+      expect(document.querySelector("h1")?.textContent).toBe(section);
       expect(button(section).getAttribute("aria-current")).toBe("page");
       expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-      shown[section] = [...document.querySelectorAll("main > div:not([hidden]) .row")].map((row) => row.textContent ?? "");
+      const visible = visibleText();
+      for (const setting of settings) expect(visible, `${section} shows ${setting}`).toContain(setting);
+      for (const [other, theirs] of Object.entries(own)) {
+        if (other === section) continue;
+        for (const setting of theirs) expect(visible, `${section} hides ${other}'s ${setting}`).not.toContain(setting);
+      }
     }
-
-    const everything = Object.values(shown).flat().join("\n");
-    for (const setting of ["Sign Out", "Hold to dictate", "Read the screen while dictating", "Email app", "Microphone", "Accessibility", "Open at login"]) {
-      expect(everything).toContain(setting);
-    }
-    expect(shown.Account?.join()).toContain("Sign Out");
-    expect(shown.Dictation?.join()).not.toContain("Sign Out");
   });
 
   /** A section with something to do (signed out, a permission missing) is marked in the sidebar,
