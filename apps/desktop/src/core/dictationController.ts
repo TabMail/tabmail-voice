@@ -493,6 +493,8 @@ export class DictationController extends Observable {
     if (this.generation !== current) return;
     log.error("DictationController: microphone lost mid-recording");
     if (this.currentPhase.kind === "listening") return this.finish();
+    // Already released (the release tail): its end transcribes what was heard.
+    if (this.currentPhase.kind !== "arming") return;
     this.microphoneFailed(new Error("microphone lost"), current);
   }
 

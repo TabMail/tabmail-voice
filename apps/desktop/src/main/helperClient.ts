@@ -122,11 +122,12 @@ export class HelperClient {
       this.failPending("exited");
       if (this.stopped) return;
       log.error(`${name}: exited (${signal ?? code}); restarting`);
-      this.onExit?.();
       this.restartTimer = setTimeout(() => {
         this.restartTimer = null;
         if (!this.stopped) this.launch();
       }, this.options.restartDelay ?? config.helperRestartDelay);
+      // After the restart is due, so nothing the exit sets off can keep the helper down.
+      this.onExit?.();
     });
     log.debug(`${name}: started`);
     this.onStart?.();

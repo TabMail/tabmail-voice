@@ -1433,6 +1433,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
+    /** Lost once released, during the release tail: what was heard is still transcribed and pasted,
+     * not failed. */
+    test("a microphone lost after release still sends what was said", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        capture.lose();
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(transcription.requests).toHaveLength(1);
+        expect(pastes).toEqual([cleaned]);
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
     /** Lost before the hold was deliberate there is nothing to send: it fails as the microphone
      * does. A loss reported for an earlier dictation changes nothing. */
     test("a microphone lost before the hold is deliberate fails, and a stale loss is ignored", async () => {

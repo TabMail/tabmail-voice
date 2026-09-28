@@ -979,10 +979,11 @@ only be seen in the running app on macOS, not in the offscreen previews.
 - A helper that exits mid-dictation takes the microphone with it (the Swift app has no such case: its
   microphone is in-process). Asked, the owner chose *"send what was said"*: `macHelper.onExit` makes
   `SessionAudioCapture.lost()` tell the started session, and the controller finishes the dictation as
-  at the length cap, transcribing what was heard; lost before the hold is deliberate, it fails as the
-  microphone does. A start still pending when the helper exits fails through its request, as before.
+  at the length cap, transcribing what was heard; lost during the release tail, the tail's end
+  transcribes it; lost before the hold is deliberate, it fails as the microphone does. A start still pending when the helper exits fails through its request, as before.
 - `MicrophoneSessions` treats a failed start like its stop (no older session starts after it), and
-  every numeric request param is read with `JSON.integer`, so a malformed number is refused rather
-  than trapping the helper. Engine release has no hardware-free test: the owner declined a test-only
+  the whole-number request params (session, pid, Globe value) are read with `JSON.integer`, the
+  restore delay rounded to whole milliseconds with `Int(exactly:)`, so a malformed number is refused
+  rather than trapping the helper. Engine release has no hardware-free test: the owner declined a test-only
   engine seam in `MicrophoneCapture` (no production complication for test convenience); the release
   decision itself is `MicrophoneSessions`', which is tested.
