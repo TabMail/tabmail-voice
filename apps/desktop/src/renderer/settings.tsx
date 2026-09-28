@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CSSProperties, type FormEvent, type ReactNode, useState } from "react";
+import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../resources/icon.png";
 import * as config from "../core/config.js";
@@ -171,16 +171,18 @@ function Group({ captions = [], children }: { captions?: (string | false)[]; chi
   );
 }
 
-/** A setting that is on or off: its label, a switch at the end of the row, and what it does. */
+/** A setting that is on or off: its label, a switch at the end of the row, and what it does. Only
+ * the label and the switch toggle it; its note is text to read (or select), as in the Swift app. */
 function Toggle({ label, checked, onChange, children }: { label: string; checked: boolean; onChange: (value: boolean) => unknown; children?: ReactNode }) {
+  const id = useId();
   return (
-    <label className="row toggle">
+    <div className="row toggle">
       <span className="toggle-text">
-        <span>{label}</span>
+        <label htmlFor={id}>{label}</label>
         {children && <span className="caption">{children}</span>}
       </span>
-      <input type="checkbox" role="switch" className="switch" checked={checked} onChange={(event) => void onChange(event.target.checked)} />
-    </label>
+      <input id={id} type="checkbox" role="switch" className="switch" checked={checked} onChange={(event) => void onChange(event.target.checked)} />
+    </div>
   );
 }
 

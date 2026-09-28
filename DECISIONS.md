@@ -939,5 +939,8 @@ default button carry the gradient, section icons the brand blue, and a red dot m
 needs the user (signed out, a permission missing), in light and dark. On macOS the sidebar shows the
 window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
 no material, so the window has its own colour (`settingsWindowColour`). The settings and their
-wording are unchanged; this departs from the Swift app's look only, which the Swift app keeps until
-cutover.
+wording are unchanged (a test holds the notes to the Swift app's); the sidebar adds only its own
+labels (the app's name, the account or "Not signed in", the attention mark's "Needs attention").
+This departs from the Swift app's look only, which the Swift app keeps until cutover. Whether the
+sidebar shows the frosted material with a clear `backgroundColor` but no `transparent` flag can
+only be seen in the running app on macOS, not in the offscreen previews.

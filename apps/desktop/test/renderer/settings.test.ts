@@ -56,11 +56,11 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-/** The switch of the setting labelled `label`. */
+/** The switch labelled `label`: the input its label names. */
 function toggle(label: string): HTMLInputElement {
-  const found = [...document.querySelectorAll("label.toggle")].find((row) => row.querySelector(".toggle-text > span")?.textContent === label);
-  const input = found?.querySelector("input");
-  if (!input) throw new Error(`no ${label} switch`);
+  const found = [...document.querySelectorAll("label")].find((element) => element.textContent === label);
+  const input = found && document.getElementById(found.htmlFor);
+  if (!(input instanceof HTMLInputElement)) throw new Error(`no ${label} switch`);
   return input;
 }
 
@@ -199,5 +199,38 @@ describe("Settings page", () => {
     await act(async () => button("General").click());
     await act(async () => button("Account").click());
     expect(document.querySelector(".error")?.textContent).toBe(warning);
+  });
+
+  /** A switch's note is text to read: clicking (or selecting) it changes nothing. */
+  test("clicking a switch's note sends nothing", async () => {
+    const shown = { ...signedIn, debugAllowed: true };
+    const page = await settingsPage({ error: null }, shown, shown);
+
+    for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
+
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(2);
+    expect(page.commands).toEqual([]);
+  });
+
+  /** The notes are the Swift app's (typographic apostrophes aside) and no others: every state's
+   * notes, in each email-app case, with fn the hotkey and debug mode allowed. The redesign once
+   * invented notes, one of them untrue. */
+  test("the notes are the Swift app's", async () => {
+    const notes = () => [...document.querySelectorAll("main .caption")].map((note) => note.textContent);
+    const always = [
+      "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
+      "Your recording is sent to TabMail for transcription and isn’t stored.",
+      "Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.",
+      "Uses the development server and shows debug items in the menu.",
+    ];
+    const cases: [Partial<SettingsState>, string][] = [
+      [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],
+      [{ hasTabMail: true, emailClient: null, defaultEmailAppIsSupported: false }, "Mail and calendar requests need Thunderbird with TabMail. Choose it here, or make it your default email app."],
+      [{ hasTabMail: true, emailClient: null, defaultEmailAppIsSupported: true }, "Mail and calendar requests go to TabMail’s chat in this app."],
+    ];
+    for (const [emailApp, caption] of cases) {
+      await settingsPage({ error: null }, signedIn, { ...signedIn, hotkey: "function", debugAllowed: true, ...emailApp });
+      expect(notes().sort()).toEqual([...always, caption].sort());
+    }
   });
 });
