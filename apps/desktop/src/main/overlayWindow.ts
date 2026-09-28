@@ -113,7 +113,8 @@ export class OverlayWindowController {
 
   private hideChat(): void {
     this.chat = null;
-    this.window.setIgnoreMouseEvents(true);
+    // Click-through again, the pointer's moves still reaching the page (a bubble's hover).
+    this.window.setIgnoreMouseEvents(true, { forward: true });
     this.window.hide();
     this.window.setBounds({ ...this.window.getBounds(), ...config.overlayCanvasSize });
   }

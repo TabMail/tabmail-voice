@@ -5,10 +5,11 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { type AgentChat, type ChatTurn, formattedReply, remainingFraction } from "../core/agent/agentChat.js";
+import { connectorInfo } from "../core/agent/connectors.js";
 import { type AgentTool, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import type { DictationHotkey } from "../core/hotkey.js";
-import { bubbleCentres, hintCentre, hintCentreOver, type Rect, type Size, tipGoesAbove, underBubbles } from "../core/overlayGeometry.js";
+import { bubbleCentres, bubbleTooltipCentre, grownBubble, hintCentre, hintCentreOver, type Rect, type Size, tipGoesAbove, underBubbles } from "../core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../core/tips.js";
 import type { OverlayState } from "../shared/ipc.js";
 import { brandBlue, brandColour, brandGradient, grey } from "./brand.js";
@@ -152,6 +153,37 @@ function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; sta
   const centres = bubbleCentres(pill, [...tools, ...connectors].map(() => bubble), state.bubblesFitUnder);
   const frames = centres.map((centre) => ({ x: centre.x - bubble.width / 2, y: centre.y - bubble.height / 2, ...bubble }));
   const running = mode.kind === "running" ? mode.tool : null;
+  const bubbles: { key: string; name: string; description: string; isRunning: boolean; isDimmed: boolean; icon: ReactNode }[] = [
+    ...tools.map((tool) => ({
+      key: tool,
+      name: toolImplementations[tool].displayName,
+      description: toolImplementations[tool].settingsDescription,
+      isRunning: running === tool,
+      isDimmed: running !== null && running !== tool,
+      icon:
+        tool === "thunderbird" && state.emailAppIcon ? (
+          <img src={state.emailAppIcon} alt="" width={config.agentBubbleAppIconSize} height={config.agentBubbleAppIconSize} />
+        ) : (
+          <ToolIcon tool={tool} size={config.agentBubbleSymbolSize} />
+        ),
+    })),
+    ...connectors.map((connector) => ({
+      key: connector,
+      name: connectorInfo[connector].displayName,
+      description: connectorInfo[connector].settingsDescription,
+      isRunning: false,
+      isDimmed: running !== null,
+      icon: <ConnectorIcon connector={connector} size={config.agentBubbleSymbolSize} />,
+    })),
+  ];
+  // The bubble under the pointer, by name.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const hoveredIndex = bubbles.findIndex((item) => item.key === hovered);
+  // One that goes (Space back to dictation) takes its hover with it: an unmounted bubble hears no
+  // pointer leave, and back later it is not under the pointer.
+  if (hovered !== null && hoveredIndex < 0) setHovered(null);
+  const hoveredBubble = bubbles[hoveredIndex];
+  const hoveredFrame = frames[hoveredIndex];
 
   const exitRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -163,33 +195,29 @@ function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; sta
       <div ref={pillRef} className="pill-anchor" style={{ top: pill.y }}>
         <Pill mode={mode} level={state.level} language={state.language} />
       </div>
-      {tools.map((tool, index) => {
+      {bubbles.map((item, index) => {
         const centre = centres[index];
         if (!centre) return null;
         return (
-          <div key={tool} className="centred" style={{ left: centre.x, top: centre.y }}>
-            <Bubble label={tool} isRunning={running === tool} isDimmed={running !== null && running !== tool}>
-              {tool === "thunderbird" && state.emailAppIcon ? (
-                <img src={state.emailAppIcon} alt="" width={config.agentBubbleAppIconSize} height={config.agentBubbleAppIconSize} />
-              ) : (
-                <ToolIcon tool={tool} size={config.agentBubbleSymbolSize} />
-              )}
-            </Bubble>
-          </div>
-        );
-      })}
-      {connectors.map((connector, index) => {
-        const centre = centres[tools.length + index];
-        if (!centre) return null;
-        return (
-          <div key={connector} className="centred" style={{ left: centre.x, top: centre.y }}>
-            <Bubble label={connector} isRunning={false} isDimmed={running !== null}>
-              <ConnectorIcon connector={connector} size={config.agentBubbleSymbolSize} />
+          <div key={item.key} className="centred" style={{ left: centre.x, top: centre.y }}>
+            <Bubble
+              label={item.key}
+              isRunning={item.isRunning}
+              isDimmed={item.isDimmed}
+              isHovered={hovered === item.key}
+              onHover={(isHovered) => setHovered(isHovered ? item.key : null)}
+            >
+              {item.icon}
             </Bubble>
           </div>
         );
       })}
       <TipSlot tip={tip} hotkey={state.hotkey} pill={pill} bubbles={frames} opensUpward={state.opensUpward} />
+      {hoveredBubble && hoveredFrame && (
+        // Keyed by bubble, so the next bubble's tooltip is measured afresh (hidden until then), not
+        // shown at the last one's size.
+        <BubbleTooltip key={hoveredBubble.key} name={hoveredBubble.name} description={hoveredBubble.description} bubble={grownBubble(hoveredFrame, hoveredBubble.isRunning ? config.agentBubbleRunningScale : config.agentBubbleHoverScale)} />
+      )}
     </div>
   );
 }
@@ -578,8 +606,9 @@ function CirclingBorder() {
 /** One of agent mode's bubbles around the pill: a circle with a tool's icon (or its app's icon when
  * it hands the request to an app), or an app's that Answer reaches. While its tool runs, it springs
  * up larger and a gradient arc circles its border; the other bubbles fade. An app's never runs
- * itself: its tools' progress shows in the chat window. */
-function Bubble({ label, isRunning, isDimmed, children }: { label: string; isRunning: boolean; isDimmed: boolean; children: ReactNode }) {
+ * itself: its tools' progress shows in the chat window. Under the pointer it grows too, faded or not,
+ * and its tooltip shows (`BubbleTooltip`); the window lets the click through. */
+function Bubble({ label, isRunning, isDimmed, isHovered, onHover, children }: { label: string; isRunning: boolean; isDimmed: boolean; isHovered: boolean; onHover: (isHovered: boolean) => void; children: ReactNode }) {
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponse * 1000);
   const diameter = config.agentBubbleDiameter;
   return (
@@ -587,20 +616,55 @@ function Bubble({ label, isRunning, isDimmed, children }: { label: string; isRun
       <div
         className="bubble"
         aria-label={label}
+        onPointerEnter={() => onHover(true)}
+        onPointerLeave={() => onHover(false)}
         style={{
           width: diameter,
           height: diameter,
           borderWidth: config.pillBorderWidth,
           background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
           boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
-          transform: `scale(${isRunning ? config.agentBubbleRunningScale : 1})`,
-          opacity: isDimmed ? config.agentBubbleIdleOpacity : 1,
+          transform: `scale(${isRunning ? config.agentBubbleRunningScale : isHovered ? config.agentBubbleHoverScale : 1})`,
+          opacity: isDimmed && !isHovered ? config.agentBubbleIdleOpacity : 1,
           transition: `transform ${config.agentBubbleRunningSpringResponse}s ${config.agentBubbleRunningSpringEasing}, opacity ${config.pillSpringResponse}s ease-out`,
         }}
       >
         {children}
         {isRunning && <CirclingBorder />}
       </div>
+    </div>
+  );
+}
+
+/** What the hovered bubble is: its name over what it does (its Settings description), in a dark
+ * tooltip as the tips are, over the bubble or under it when there is no room (`bubbleTooltipCentre`).
+ * The pointer passes through it, so it never takes the hover from the bubble under it. */
+function BubbleTooltip({ name, description, bubble }: { name: string; description: string; bubble: Rect }) {
+  const [ref, size] = useSize<HTMLDivElement>();
+  const centre = bubbleTooltipCentre(bubble, size, config.overlayCanvasSize);
+  return (
+    <div
+      ref={ref}
+      role="tooltip"
+      className="centred bubble-tooltip"
+      style={{
+        left: centre.x,
+        top: centre.y,
+        maxWidth: config.bubbleTooltipMaxWidth,
+        padding: config.bubbleTooltipPadding,
+        gap: config.bubbleTooltipLineSpacing,
+        borderRadius: config.tipCornerRadius,
+        background: grey(config.tipFillWhite, config.tipFillOpacity),
+        border: `${config.pillBorderWidth}px solid ${grey(1, config.tipBorderOpacity)}`,
+        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${grey(0, config.tipShadowOpacity)}`,
+        // Hidden until measured, so it never shows for a frame where it doesn't belong.
+        visibility: size.width > 0 ? "visible" : "hidden",
+      }}
+    >
+      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: grey(1, config.tipKeyTextOpacity) }}>
+        {name}
+      </span>
+      <span style={{ fontSize: config.bubbleTooltipFontSize, color: grey(1, config.tipTextOpacity) }}>{description}</span>
     </div>
   );
 }

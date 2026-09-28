@@ -35,9 +35,10 @@ function overlayWindow(): BrowserWindow {
 }
 
 /** An overlay window that keeps its bounds and whether it lets the mouse through. */
-function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; visible: () => boolean } {
+function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean } {
   let visible = false;
   let ignoresMouse = true;
+  let forwardsMouse = true;
   let bounds: Rect = { x: 0, y: 0, ...config.overlayCanvasSize };
   const window = {
     isVisible: () => visible,
@@ -51,11 +52,12 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
       bounds = rect;
     },
     getBounds: () => bounds,
-    setIgnoreMouseEvents: (ignore: boolean) => {
+    setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
       ignoresMouse = ignore;
+      forwardsMouse = options?.forward === true;
     },
   } as unknown as BrowserWindow;
-  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, visible: () => visible };
+  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible };
 }
 
 function rounded(frame: Rect): Rect {
@@ -120,7 +122,8 @@ describe("OverlayWindowController", () => {
 
   /** The overlay takes the mouse, as the chat window, grown out of the pill at the caret the request
    * was spoken over, only while the chat is open; it fits the height the chat window measures, and
-   * closed it lets every click through again, at the pill's size, hidden. */
+   * closed it lets every click through again (the pointer's moves still reaching the page, for a
+   * bubble's hover), at the pill's size, hidden. */
   test("the chat window takes the mouse only while it is open", async () => {
     const caret: Rect = { x: 400, y: 300, width: 1, height: 16 };
     const overlay = recordingWindow();
@@ -149,6 +152,7 @@ describe("OverlayWindowController", () => {
 
     controller.update({ kind: "idle" }, false);
     expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
     expect(overlay.visible()).toBe(false);
     expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
     controller.fitChat(200);
@@ -196,6 +200,7 @@ describe("OverlayWindowController", () => {
 
       expect(overlay.visible()).toBe(showsPill);
       expect(overlay.ignoresMouse()).toBe(true);
+      expect(overlay.forwardsMouse()).toBe(true);
       if (showsPill) expect(overlay.bounds()).toEqual(pill);
     } finally {
       vi.useRealTimers();

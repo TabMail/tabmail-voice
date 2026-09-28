@@ -98,6 +98,24 @@ export function bubbleCentres(pill: Rect, sizes: Size[], underFits: boolean): Po
   return centres;
 }
 
+/** Centre of the hovered bubble's tooltip, of `size`: centred over the bubble at `bubble`
+ * (`bubbleTooltipGap` clear of it), or under it when there is no room over it in a canvas of `canvas`,
+ * moved sideways to stay inside the canvas. */
+export function bubbleTooltipCentre(bubble: Rect, size: Size, canvas: Size): Point {
+  const gap = config.bubbleTooltipGap;
+  const over = bubble.y - gap - size.height >= 0;
+  const x = Math.min(Math.max(midX(bubble), size.width / 2), canvas.width - size.width / 2);
+  return { x, y: over ? bubble.y - gap - size.height / 2 : maxY(bubble) + gap + size.height / 2 };
+}
+
+/** A bubble at `bubble` grown to `scale` upward from its bottom edge, as the page draws it
+ * (`transform-origin: bottom center`). */
+export function grownBubble(bubble: Rect, scale: number): Rect {
+  const width = bubble.width * scale;
+  const height = bubble.height * scale;
+  return { x: midX(bubble) - width / 2, y: maxY(bubble) - height, width, height };
+}
+
 /** The pill with any bubbles under it: what a tip under the pill goes under (`hintCentre`). */
 export function underBubbles(pill: Rect, bubbles: Rect[]): Rect {
   const bottom = bubbles.reduce((most, bubble) => Math.max(most, maxY(bubble)), maxY(pill));
