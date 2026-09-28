@@ -268,6 +268,13 @@ describe("HelperClient", () => {
     expect((await failure(client.request("echo"))).kind).toBe("exited");
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect((await failure(client.request("echo"))).kind).toBe("exited");
+    // An operation's request waits only for a restart that is due: stopped, or never started, the
+    // helper refuses it at once too.
+    const started = Date.now();
+    expect((await failure(client.request("echo", {}, 1_000, new AbortController().signal))).kind).toBe("exited");
+    const unstarted = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper] });
+    expect((await failure(unstarted.request("echo", {}, 1_000, new AbortController().signal))).kind).toBe("exited");
+    expect(Date.now() - started).toBeLessThan(500);
     // Stopped when asked: no exit to report.
     expect(exits).toBe(0);
   });

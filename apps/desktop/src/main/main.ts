@@ -301,7 +301,9 @@ function launch(): void {
   hotkeyHelper.on("action", (message) => {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
-  // A restarted helper has no microphone prepared.
+  // A restarted helper has no microphone prepared. This is also the launch's prewarm, on every
+  // platform: `start()` runs `onStart` even where `voice-macos` can't spawn, preparing the audio
+  // window there (give that its own prewarm when a native helper replaces it).
   macHelper.onStart = () => {
     startActivator();
     controller.prewarm();

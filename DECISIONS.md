@@ -981,7 +981,9 @@ only be seen in the running app on macOS, not in the offscreen previews.
   `SessionAudioCapture.lost()` tell the started session, and the controller finishes the dictation as
   at the length cap, transcribing what was heard; lost during the release tail, the tail's end
   transcribes it; lost before the hold is deliberate, it fails as the microphone does. A start still pending when the helper exits fails through its request, as before. What was said
-  is then pasted through the restarted helper: the paste carries its dictation's `AbortSignal`, and a
+  is then pasted through the restarted helper (agent mode's Edit and Compose first check the app in
+  front, a request that fails during a restart as "you switched apps"; after a loss their backend
+  calls outlast the restart): the paste carries its dictation's `AbortSignal`, and a
   request with one made while the helper restarts (from `onExit` on, the restart being due first)
   waits for it within its own timeout; one that times out, or whose dictation is cancelled, while it
   waits is never sent (a cancelled dictation pastes nothing). Every other request fails at once
