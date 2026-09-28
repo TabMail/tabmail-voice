@@ -28,6 +28,7 @@ export class SessionAudioCapture implements AudioCapture {
   private session = 0;
   private onChunk: ((samples: Float32Array) => void) | null = null;
   private completion: ((error: Error | null) => void) | null = null;
+  private onLost: (() => void) | null = null;
   private startTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
@@ -42,11 +43,12 @@ export class SessionAudioCapture implements AudioCapture {
     this.send({ type: "prepare" });
   }
 
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void): void {
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost?: () => void): void {
     this.session += 1;
     const session = this.session;
     this.onChunk = onChunk;
     this.completion = completion;
+    this.onLost = onLost ?? null;
     this.startTimer = setTimeout(() => this.finishStart(session, new MicrophoneFailure("timeout")), this.startTimeout);
     this.send({ type: "start", session });
   }
@@ -55,7 +57,17 @@ export class SessionAudioCapture implements AudioCapture {
     this.clearStartTimer();
     this.onChunk = null;
     this.completion = null;
+    this.onLost = null;
     this.send({ type: "stop", session: this.session });
+  }
+
+  /** What ran the microphone is gone (the helper exited). A session that had started is told once;
+   * one still starting fails through its start instead. */
+  lost(): void {
+    const onLost = this.onLost;
+    if (this.completion !== null || onLost === null) return;
+    this.onLost = null;
+    onLost();
   }
 
   /** A report from the microphone. */

@@ -174,10 +174,12 @@ export function tone(seconds: number, amplitude = 0.5, sampleRate = config.recor
 }
 
 /** A microphone that logs each start and stop, in order, and records nothing or (`hears`) a tenth
- * of a second of tone as it starts. It can fail to start after the fact, as a real one reports it. */
+ * of a second of tone as it starts. It can fail to start after the fact, as a real one reports it,
+ * or be lost once started (its helper exited). */
 export class CountingCapture implements AudioCapture {
   readonly events: string[] = [];
   private completion: ((error: Error | null) => void) | undefined;
+  private readonly onLosts: ((() => void) | undefined)[] = [];
 
   constructor(private readonly hears = false) {}
 
@@ -191,9 +193,10 @@ export class CountingCapture implements AudioCapture {
 
   prepare(): void {}
 
-  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void): void {
+  start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost?: () => void): void {
     this.events.push("start");
     this.completion = completion;
+    this.onLosts.push(onLost);
     if (this.hears) onChunk(tone(0.1));
   }
 
@@ -204,5 +207,10 @@ export class CountingCapture implements AudioCapture {
   /** The last start's completion, with an error. */
   fail(): void {
     this.completion?.(new Error("unavailable"));
+  }
+
+  /** The microphone of the `start`th start (by default the last) stopped by itself. */
+  lose(start = this.onLosts.length): void {
+    this.onLosts[start - 1]?.();
   }
 }

@@ -1407,6 +1407,62 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
+    /** The microphone lost mid-recording (its helper exited) ends the dictation as the length cap
+     * does: what it heard is transcribed and pasted (owner, 2026-09-27: "send what was said"). */
+    test("a microphone lost while listening sends what was said", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        expect(controller.phase).toEqual(listening);
+
+        capture.lose();
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        expect(capture.events.at(-1)).toBe("stop");
+        await vi.advanceTimersByTimeAsync(0);
+        expect(transcription.requests).toHaveLength(1);
+        expect(pastes).toEqual([cleaned]);
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** Lost before the hold was deliberate there is nothing to send: it fails as the microphone
+     * does. A loss reported for an earlier dictation changes nothing. */
+    test("a microphone lost before the hold is deliberate fails, and a stale loss is ignored", async () => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      try {
+        controller.handle("start");
+        capture.lose();
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        expect(controller.phase).toEqual(microphoneFailed);
+        expect(capture.events.at(-1)).toBe("stop");
+
+        // The first hands-free dictation's microphone, lost only once the next one listens.
+        controller.handle("startHandsFree");
+        controller.handle("cancel");
+        controller.handle("startHandsFree");
+        const listened = capture.events.length;
+        capture.lose(capture.starts - 1);
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration + config.releaseTailDuration);
+        expect(controller.phase).toEqual(listening);
+        expect(capture.events.length).toBe(listened);
+        expect(transcription.requests).toHaveLength(0);
+        expect(pastes).toEqual([]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
     /** Hands-free listening, which no key release ends, stops at `maxRecordingDuration`: the
      * microphone is released and what it heard is pasted, and the next dictation listens afresh. */
     test("a hands-free dictation stops at the length cap and is pasted", async () => {

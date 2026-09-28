@@ -282,6 +282,7 @@ export class DictationController extends Observable {
       (error) => {
         if (error) this.microphoneFailed(error, current);
       },
+      () => this.microphoneLost(current),
     );
     if (handsFree) {
       // A double tap is deliberate: no hold to wait for.
@@ -483,6 +484,16 @@ export class DictationController extends Observable {
     this.abort.abort();
     this.teardown();
     this.fail("Couldn't start the microphone.");
+  }
+
+  /** The microphone stopped by itself mid-recording (its helper exited): as at the length cap, what
+   * was said is sent (owner, 2026-09-27: "send what was said"); before the hold was deliberate there
+   * is nothing to send, so it fails as the microphone does. */
+  private microphoneLost(current: number): void {
+    if (this.generation !== current) return;
+    log.error("DictationController: microphone lost mid-recording");
+    if (this.currentPhase.kind === "listening") return this.finish();
+    this.microphoneFailed(new Error("microphone lost"), current);
   }
 
   private async completeRecording(current: number): Promise<void> {

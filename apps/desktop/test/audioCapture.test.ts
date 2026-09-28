@@ -56,6 +56,33 @@ describe("SessionAudioCapture", () => {
     expect([second.completions, second.chunks.length]).toEqual([[null], 1]);
   });
 
+  /** What ran the microphone is gone: a session that had started is told, once; one still
+   * starting is not (its start fails instead), nor one already stopped. */
+  test("a lost microphone is reported to its started session only", () => {
+    const { microphone } = capture();
+    let losses = 0;
+    const onLost = () => {
+      losses += 1;
+    };
+    const first = recording();
+    microphone.start(first.onChunk, first.completion, onLost);
+    microphone.lost();
+    expect(losses).toBe(0);
+
+    microphone.receive({ type: "started", session: 1 });
+    microphone.lost();
+    microphone.lost();
+    expect(losses).toBe(1);
+
+    const second = recording();
+    microphone.stop();
+    microphone.start(second.onChunk, second.completion, onLost);
+    microphone.receive({ type: "started", session: 2 });
+    microphone.stop();
+    microphone.lost();
+    expect(losses).toBe(1);
+  });
+
   test("a microphone that fails to start says why, once", () => {
     const { microphone } = capture();
     const current = recording();

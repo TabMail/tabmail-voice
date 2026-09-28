@@ -61,6 +61,8 @@ export class HelperClient {
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   /** Runs each time the helper starts, the first time included. */
   onStart: (() => void) | undefined;
+  /** Runs each time the helper exits unasked (it is then started again). */
+  onExit: (() => void) | undefined;
 
   constructor(private readonly options: HelperOptions) {}
 
@@ -120,6 +122,7 @@ export class HelperClient {
       this.failPending("exited");
       if (this.stopped) return;
       log.error(`${name}: exited (${signal ?? code}); restarting`);
+      this.onExit?.();
       this.restartTimer = setTimeout(() => {
         this.restartTimer = null;
         if (!this.stopped) this.launch();

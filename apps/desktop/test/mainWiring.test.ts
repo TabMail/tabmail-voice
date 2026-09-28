@@ -14,7 +14,7 @@ const app = vi.hoisted(() => ({
   listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
   credential: null as string | null,
   refusesDelete: false,
-  helpers: new Map<string, { onStart: (() => void) | undefined; requests: { method: string; params: unknown }[]; events: Map<string, (message: Record<string, unknown>) => void> }>(),
+  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown }[]; events: Map<string, (message: Record<string, unknown>) => void> }>(),
   capture: null as AudioCapture | null,
   prewarms: 0,
 }));
@@ -100,6 +100,7 @@ vi.mock("../src/core/agent/emailClient.js", () => ({
 vi.mock("../src/main/helperClient.js", () => ({
   HelperClient: class {
     onStart: (() => void) | undefined;
+    onExit: (() => void) | undefined;
     readonly requests: { method: string; params: unknown }[] = [];
     readonly events = new Map<string, (message: Record<string, unknown>) => void>();
     constructor(readonly options: { name: string }) {
@@ -192,7 +193,8 @@ describe("main process wiring", () => {
 
   /** On macOS a dictation's microphone runs in `voice-macos`: the capture's start is its
    * `microphoneStart`, for the dictation's session at the recording rate, and its stop the
-   * matching `microphoneStop`; the helper's answer and its chunk events reach the dictation. */
+   * matching `microphoneStop`; the helper's answer and its chunk events reach the dictation, and
+   * the helper exiting under it is the dictation's microphone lost. */
   test("on macOS the capture runs in voice-macos", async () => {
     await launch("darwin");
     const helper = app.helpers.get("voice-macos");
@@ -200,16 +202,22 @@ describe("main process wiring", () => {
     expect(capture).not.toBeNull();
     const completions: (Error | null)[] = [];
     const chunks: Float32Array[] = [];
+    let losses = 0;
 
     capture?.start(
       (samples) => chunks.push(samples),
       (error) => completions.push(error),
+      () => {
+        losses += 1;
+      },
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     const samples = new Float32Array([0.25, -0.5]);
     helper?.events.get("microphoneChunk")?.({ event: "microphoneChunk", session: 1, samples: Buffer.from(samples.buffer).toString("base64") });
     expect(completions).toEqual([null]);
     expect(chunks).toEqual([samples]);
+    helper?.onExit?.();
+    expect(losses).toBe(1);
     capture?.stop();
     await new Promise((resolve) => setTimeout(resolve, 0));
 

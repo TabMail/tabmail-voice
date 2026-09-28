@@ -167,8 +167,12 @@ describe("HelperClient", () => {
     const client = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper], restartDelay: 50 });
     clients.push(client);
     let starts = 0;
+    let exits = 0;
     client.onStart = () => {
       starts += 1;
+    };
+    client.onExit = () => {
+      exits += 1;
     };
     client.start();
     const { pid } = await client.request<{ pid: number }>("pid");
@@ -178,16 +182,23 @@ describe("HelperClient", () => {
     expect((await failure(silent)).kind).toBe("exited");
     expect((await failure(exit)).kind).toBe("exited");
     expect(await eventually(() => starts === 2)).toBe(true);
+    expect(exits).toBe(1);
     const restarted = await client.request<{ pid: number }>("pid");
     expect(restarted.pid).not.toBe(pid);
   });
 
   test("a stopped helper is not restarted and answers nothing", async () => {
     const client = helper({ restartDelay: 10 });
+    let exits = 0;
+    client.onExit = () => {
+      exits += 1;
+    };
     await client.request("echo");
     client.stop();
     expect((await failure(client.request("echo"))).kind).toBe("exited");
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect((await failure(client.request("echo"))).kind).toBe("exited");
+    // Stopped when asked: no exit to report.
+    expect(exits).toBe(0);
   });
 });

@@ -969,8 +969,20 @@ only be seen in the running app on macOS, not in the offscreen previews.
   numbered by the app's session; `SessionAudioCapture` (formerly `WindowAudioCapture`) drives it
   through `MacSystem.microphone`, with the same sessions, start timeout and late-report dropping.
   The same probe through the helper: first audio 0.57–0.62 s, first real signal 0.67–0.9 s.
-- Elsewhere the hidden audio window (`getUserMedia`) stays the microphone, until the Windows and
-  Linux helpers show whether theirs should capture too.
+- Elsewhere the hidden audio window (`getUserMedia`) stays the microphone for now. The owner
+  (2026-09-27): *"it is important that the dictation part and everything as you did right now
+  remains native so that it's super fast … this needs to be done for other platforms as well"*: the
+  Windows and Linux helpers take over the microphone, hotkey and paste when those platforms are built.
 - The helper runs under the app's microphone grant, as its Accessibility use does; packaged, it
   inherits the `audio-input` entitlement (`entitlementsInherit`). A restarted helper is prepared
   again (`macHelper.onStart`).
+- A helper that exits mid-dictation takes the microphone with it (the Swift app has no such case: its
+  microphone is in-process). Asked, the owner chose *"send what was said"*: `macHelper.onExit` makes
+  `SessionAudioCapture.lost()` tell the started session, and the controller finishes the dictation as
+  at the length cap, transcribing what was heard; lost before the hold is deliberate, it fails as the
+  microphone does. A start still pending when the helper exits fails through its request, as before.
+- `MicrophoneSessions` treats a failed start like its stop (no older session starts after it), and
+  every numeric request param is read with `JSON.integer`, so a malformed number is refused rather
+  than trapping the helper. Engine release has no hardware-free test: the owner declined a test-only
+  engine seam in `MicrophoneCapture` (no production complication for test convenience); the release
+  decision itself is `MicrophoneSessions`', which is tested.

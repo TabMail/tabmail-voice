@@ -108,6 +108,8 @@ function launch(): void {
   // On macOS the helper runs the microphone as the Swift app does: Chromium's `getUserMedia` opens
   // the device afresh for each dictation, about a second slower to the first audio.
   const capture = new SessionAudioCapture(process.platform === "darwin" ? mac.microphone((report) => capture.receive(report)) : sendAudio);
+  // A helper that exits takes a running microphone with it.
+  if (process.platform === "darwin") macHelper.onExit = () => capture.lost();
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
