@@ -40,7 +40,7 @@ struct HotkeyServiceTests {
         _ = monitor.handle(.keyUp, keyCode: space, flags: [], isRepeat: false, at: 0.25)
         // The actions are sent from the main queue, after the event tap returns.
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in DispatchQueue.main.async { done.resume() } }
-        #expect(lines.all.compactMap { $0["action"]?.string } == ["start", "finish", "startHandsFree", "toggleMode"])
+        #expect(lines.all.compactMap { $0["action"]?.string } == ["start", "finish", "startHandsFree", "listenHandsFree", "toggleMode"])
 
         await channel.handle(line: Data(#"{"id":1,"method":"dictationEnded"}"#.utf8))
 

@@ -176,9 +176,6 @@ export const contextDebugWindowSize = { width: 720, height: 560 };
 
 // MARK: Overlay
 
-/** Transparent canvas the overlay draws in; the pill sizes itself inside it. Tall enough for a tip
- * (and its shadow) under the listening pill, which sits vertically centred. */
-export const overlayCanvasSize = { width: 440, height: 210 };
 /** Gap between the caret's line and the top of the pill. */
 export const overlayCaretGap = 4;
 export const overlayFontSize = 13;
@@ -250,15 +247,45 @@ export const agentBubbleGap = 8;
 export const agentBubbleAppIconSize = 16;
 /** A tool's symbol in its bubble. */
 export const agentBubbleSymbolSize = 12;
-/** A tip: a tooltip centred under the listening pill, a keycap and a few words, that fades out
- * after its display duration. */
-export const switchModeTipDisplayDuration = 2_500;
-export const doubleTapTipDisplayDuration = 4_000;
+
+// MARK: Tips
+
+/** A tip (`DictationTip`): what it says, how long it shows and how many times, all set here
+ * (owner, 2026-09-27: "the exact text and duration, or how many times we show it … at a single
+ * location"). `lines` are the tooltip's `tipLineCount` lines; any `[key]` in a line is drawn as a
+ * keycap reading `key` (`[space]`, `[esc]`), except `[hotkey]`, the dictation key's.
+ * `displayDuration` null: shown for as long as it applies. `maxDisplays` null: shown every time;
+ * otherwise it shows until the user does what it teaches, or at most this many times. */
+export interface TipSettings {
+  readonly lines: readonly string[];
+  readonly displayDuration: number | null;
+  readonly maxDisplays: number | null;
+}
+
+/** Space switches between dictation and agent mode: shown as a hold starts listening. */
+export const switchModeTip: TipSettings = {
+  lines: ["Press [space] to switch", "between dictation", "and agent mode"],
+  displayDuration: 2_500,
+  maxDisplays: 10,
+};
+/** A double tap dictates without holding: shown once a hold passes `doubleTapTipHoldDuration`. */
+export const doubleTapTip: TipSettings = {
+  lines: ["Double-tap [hotkey]", "to dictate", "without holding"],
+  displayDuration: 4_000,
+  maxDisplays: 5,
+};
+/** How hands-free listening ends: shown the whole time it listens, every time (owner, 2026-09-27). */
+export const handsFreeTip: TipSettings = {
+  lines: ["Tap [hotkey] to finish", "dictating, or", "tap [esc] to cancel"],
+  displayDuration: null,
+  maxDisplays: null,
+};
 /** A hold this long shows the double-tap tip: this user dictates at length, and need not hold. */
 export const doubleTapTipHoldDuration = 20_000;
-/** A tip shows until the user does what it teaches, or at most this many times. */
-export const switchModeTipMaxDisplays = 10;
-export const doubleTapTipMaxDisplays = 5;
+
+/** The tooltip a tip is drawn in: centred under the listening pill (or over it, `tipGoesAbove`), a
+ * few words around keycaps. Dark, as macOS HUDs are, so it reads as the system's hint rather than
+ * part of the pill. */
 export const tipFontSize = 13;
 /** A tip is `tipLineCount` centred lines of a few words, each `tipLineHeight` tall. */
 export const tipLineCount = 3;
@@ -286,13 +313,20 @@ export const tipKeyHeight = 17;
 export const tipKeyCornerRadius = 3.5;
 export const tipKeyFillOpacity = 0.14;
 export const tipKeyBorderOpacity = 0.22;
-/** The tooltip's arrow, pointing up at the pill. */
+/** The tooltip's arrow, pointing at the pill. */
 export const tipArrowWidth = 10;
 export const tipArrowHeight = 5;
-/** Gap between the pill and the tip of the hint's arrow. */
+/** Gap between the pill (or the bubbles over it) and the tip of the hint's arrow. */
 export const tipGap = 4;
-/** Room the hint takes under the pill: the gap, the arrow and the box. */
+/** Room the hint takes beside the pill: the gap, the arrow and the box. */
 export const tipFootprint = tipGap + tipArrowHeight + tipHeight;
+/** Transparent canvas the overlay draws in; the pill sizes itself inside it. The pill sits
+ * vertically centred, with room on each side for a tip (and its shadow) past agent mode's bubbles:
+ * a tip goes under the pill, or over the bubbles above it (`tipGoesAbove`). */
+export const overlayCanvasSize = {
+  width: 440,
+  height: pillHeight + 2 * (agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY),
+};
 /** The running tool's icon in the pill. */
 export const agentRunningSymbolSize = 12;
 /** A bubble whose tool is not the one running fades to this opacity. */

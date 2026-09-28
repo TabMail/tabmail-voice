@@ -74,7 +74,7 @@ export const nothingHeardMessage = "Didn't catch that. Try again.";
  * transcript is a request instead: the selection picks Edit or Compose, the agent may send it to
  * TabMail's chat in Thunderbird instead, and the tool's text is pasted, or sent there. A double tap
  * of the hotkey starts a hands-free dictation instead of a hold. While the pill listens, a tip may
- * show under it (`DictationTip`).
+ * show by it (`DictationTip`).
  */
 export class DictationController extends Observable {
   private currentPhase: Phase = { kind: "idle" };
@@ -96,7 +96,7 @@ export class DictationController extends Observable {
   /** How long a hold goes on before the double-tap tip is due, and how long a tip shows. Settable
    * for tests. */
   doubleTapTipHoldDuration = config.doubleTapTipHoldDuration;
-  tipDisplayDuration: (tip: DictationTip) => number = (tip) => tipDetails[tip].displayDuration;
+  tipDisplayDuration: (tip: DictationTip) => number | null = (tip) => tipDetails[tip].displayDuration;
 
   // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
   private generation = 0;
@@ -129,6 +129,9 @@ export class DictationController extends Observable {
   /** Set while a tap's recording waits `doubleTapWindow` for a second press, which makes it
    * hands-free. */
   private secondTapTimer: Timer | null = null;
+  /** Set while a double tap's second press is down: held past a tap, it is a hold, with a hold's
+   * tips. */
+  private secondPressTimer: Timer | null = null;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
@@ -187,6 +190,8 @@ export class DictationController extends Observable {
         return this.start();
       case "startHandsFree":
         return this.start(true);
+      case "listenHandsFree":
+        return this.listenHandsFree();
       case "finish":
         return this.finish();
       case "cancel":
@@ -208,9 +213,11 @@ export class DictationController extends Observable {
     else this.start();
   }
 
-  /** Starts a dictation; `toggleMode()` makes it an agent request. A hands-free one (a double tap)
-   * shows at once, and goes on until `finish()` or `cancel()`: it carries on the first tap's
-   * recording, whose microphone is already running, if that tap is still waiting for it. */
+  /** Starts a dictation; `toggleMode()` makes it an agent request. A hands-free one (a double
+   * tap's second press) shows at once: it carries on the first tap's recording, whose microphone is
+   * already running, if that tap is still waiting for it. Released as a tap, the press leaves it
+   * listening until `finish()` or `cancel()` (`listenHandsFree()`); held, it finishes on release
+   * like any hold. */
   start(handsFree = false): void {
     if (this.secondTapTimer !== null) {
       if (handsFree) {
@@ -289,7 +296,7 @@ export class DictationController extends Observable {
       // A double tap is deliberate: no hold to wait for.
       this.deps.tips.markLearned("doubleTap");
       this.setPhase({ kind: "listening" });
-      this.showDueTip();
+      this.awaitSecondRelease();
     } else {
       this.revealTimer = after(config.minimumHoldDuration, () => {
         if (this.generation !== current || this.currentPhase.kind !== "arming") return;
@@ -547,12 +554,37 @@ export class DictationController extends Observable {
     this.secondTapTimer = null;
     this.deps.tips.markLearned("doubleTap");
     this.setPhase({ kind: "listening" });
-    this.showDueTip();
+    this.awaitSecondRelease();
     log.debug(`DictationController: listening hands-free (generation ${this.generation})`);
   }
 
+  /** While a double tap's second press is down, no tip yet: released as a tap, the dictation shows
+   * the hands-free tip (`listenHandsFree()`); still held once a tap is over, it is a hold, and gets
+   * a hold's tips. */
+  private awaitSecondRelease(): void {
+    this.dueTips = [];
+    const current = this.generation;
+    this.secondPressTimer = after(config.minimumHoldDuration, () => {
+      if (this.generation !== current) return;
+      this.secondPressTimer = null;
+      this.dueTips = ["switchMode"];
+      this.showDueTip();
+    });
+  }
+
+  /** The second press of a double tap was a tap: the dictation listens on without the key, and
+   * shows the hands-free tip in place of any hold tip shown as the tap ended. */
+  private listenHandsFree(): void {
+    cancelTimer(this.secondPressTimer);
+    this.secondPressTimer = null;
+    this.dueTips = ["handsFree"];
+    this.hideTip();
+    log.debug("DictationController: second press was a tap; listening without the key");
+  }
+
   /** Shows the next due tip the user may still see, while the pill listens and hears (the overlay
-   * shows no tip over the warm-up swirl), for its display duration. */
+   * shows no tip over the warm-up swirl), for its display duration, or with none (the hands-free
+   * tip) until the dictation stops listening. */
   private showDueTip(): void {
     if (this.currentPhase.kind !== "listening" || !this.hearing || this.currentTip !== null) return;
     while (this.dueTips.length > 0) {
@@ -560,12 +592,14 @@ export class DictationController extends Observable {
       if (next === undefined || !this.deps.tips.isEligible(next)) continue;
       this.currentTip = next;
       this.deps.tips.recordDisplay(next);
+      this.changed();
+      const duration = this.tipDisplayDuration(next);
+      if (duration === null) return;
       const current = this.generation;
-      this.tipTimer = after(this.tipDisplayDuration(next), () => {
+      this.tipTimer = after(duration, () => {
         if (this.generation !== current || this.currentTip !== next) return;
         this.hideTip();
       });
-      this.changed();
       return;
     }
   }
@@ -580,6 +614,8 @@ export class DictationController extends Observable {
 
   private endTips(): void {
     this.dueTips = [];
+    cancelTimer(this.secondPressTimer);
+    this.secondPressTimer = null;
     cancelTimer(this.longHoldTimer);
     this.longHoldTimer = null;
     cancelTimer(this.tipTimer);

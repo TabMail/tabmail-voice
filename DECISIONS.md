@@ -815,6 +815,11 @@ change easily at a single location."
   `[esc]`), and `[hotkey]` as the dictation key's (`TipTooltip.parts`); `displayDuration` nil means
   "while it applies", `maxDisplays` nil "every time". The tooltip's layout still counts on
   `tipLineCount` lines, so a tip's `lines` must keep that count.
+- Ported to the Electron app (ADR-DESK-032) the same day: the `voice-hotkey` helper sends
+  `listenHandsFree`; `config.switchModeTip`/`doubleTapTip`/`handsFreeTip` (`TipSettings`, null for
+  nil) and `tipParts`; `tipGoesAbove`/`hintCentreOver` in `overlayGeometry.ts`, the main process
+  telling the overlay page which way it opened (`OverlayState.opensUpward`, pushed on each
+  placement).
 
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
@@ -867,6 +872,7 @@ switching the setting for the user, the owner chose the second ("option 2").
 - `PushToTalkGesture.keyPressed` ignores that key-down while fn is the hotkey
   (`DictationHotkey.globeKeyCode`); both events still reach the app. `HotkeyMonitorTests` replays
   the recorded sequence. The owner confirmed the double tap with fn on a build with this change.
+- The Electron app's `voice-hotkey` helper (ADR-DESK-032) carries the same skip and replay test.
 
 ## ADR-DESK-032: One Electron app for macOS, Windows and Linux
 

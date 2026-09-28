@@ -19,6 +19,10 @@ public enum DictationHotkey: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The Globe key's own key code, which Carbon has no name for. macOS sends a key-down and key-up
+    /// of it as fn is released from a tap (measured 2026-09-27: every tap, 0–3 ms after the release,
+    /// with the Globe action on Do Nothing).
+    public static let globeKeyCode: UInt16 = 0xB3
 }
 
 /// Pure push-to-talk recogniser: turns raw modifier/key events into start / finish / cancel / toggle.
@@ -40,6 +44,8 @@ public struct PushToTalkGesture: Sendable {
         case start
         /// The second press of a double tap: a dictation that needs no hold.
         case startHandsFree
+        /// That second press was released as a tap: the dictation listens on without the key.
+        case listenHandsFree
         case finish
         case cancel
         case toggleMode
@@ -109,7 +115,7 @@ public struct PushToTalkGesture: Sendable {
         if wasDoubleTap {
             guard isTap else { return .finish }
             isHandsFree = true
-            return nil
+            return .listenHandsFree
         }
         lastTapReleasedAt = isTap ? time : nil
         return .finish
@@ -124,6 +130,8 @@ public struct PushToTalkGesture: Sendable {
 
     /// A non-modifier key was pressed somewhere; `isRepeat` for its auto-repeat.
     public mutating func keyPressed(keyCode: UInt16, isRepeat: Bool) -> Action? {
+        // fn released from a tap comes with the Globe key's own key-down: that is the hotkey, not typing.
+        if hotkey == .function && keyCode == DictationHotkey.globeKeyCode { return nil }
         // Typing between two taps makes them no double tap.
         lastTapReleasedAt = nil
         if isHandsFree {

@@ -132,11 +132,11 @@ struct PushToTalkGestureTests {
         ]
     }
 
-    /// Tapped twice, the dictation goes on without the key, until the hotkey is tapped again; that
-    /// press's release does nothing.
+    /// Tapped twice, the dictation goes on without the key (said at the second tap's release), until
+    /// the hotkey is tapped again; that press's release does nothing.
     @Test func aDoubleTapListensHandsFreeUntilTheNextTap() {
         var gesture = makeGesture()
-        #expect(doubleTap(&gesture) == [.start, .finish, .startHandsFree, nil])
+        #expect(doubleTap(&gesture) == [.start, .finish, .startHandsFree, .listenHandsFree])
         #expect(gesture.isHandsFree && gesture.isActive)
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 5) == .finish)
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 5.1) == nil)
@@ -172,6 +172,22 @@ struct PushToTalkGestureTests {
         _ = gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 0.1)
         #expect(gesture.keyPressed(keyCode: letterA, isRepeat: false) == nil)
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 0.3) == .start)
+    }
+
+    /// With fn as the hotkey, the Globe key's own key-down (sent as each tap is released) is the
+    /// hotkey, not typing: the double tap still counts. A real key between the taps still breaks it,
+    /// and with Right Option as the hotkey the Globe key is another key like any.
+    @Test(arguments: [
+        (DictationHotkey.function, UInt16(0xB3), PushToTalkGesture.Action.startHandsFree),
+        (.function, UInt16(kVK_ANSI_A), .start),
+        (.rightOption, UInt16(0xB3), .start),
+    ])
+    func theGlobeKeysKeyDownAfterAnFnTapIsNoTyping(hotkey: DictationHotkey, between: UInt16, expected: PushToTalkGesture.Action) {
+        var gesture = makeGesture(hotkey)
+        _ = gesture.modifierChanged(keyCode: hotkey.keyCode, isDown: true, at: 0)
+        _ = gesture.modifierChanged(keyCode: hotkey.keyCode, isDown: false, at: 0.1)
+        #expect(gesture.keyPressed(keyCode: between, isRepeat: false) == nil)
+        #expect(gesture.modifierChanged(keyCode: hotkey.keyCode, isDown: true, at: 0.3) == expected)
     }
 
     /// Hands-free, Space switches the mode and Escape cancels, both kept from the app; any other key

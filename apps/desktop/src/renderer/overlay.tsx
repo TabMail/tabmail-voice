@@ -7,8 +7,8 @@ import { createRoot } from "react-dom/client";
 import type { AgentTool } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import type { DictationHotkey } from "../core/hotkey.js";
-import { bubbleCentres, hintCentre, type Rect, type Size } from "../core/overlayGeometry.js";
-import { type DictationTip, tipLines } from "../core/tips.js";
+import { bubbleCentres, hintCentre, hintCentreOver, type Rect, type Size, tipGoesAbove } from "../core/overlayGeometry.js";
+import { type DictationTip, tipDetails, tipLines } from "../core/tips.js";
 import type { OverlayState } from "../shared/ipc.js";
 import { brandBlue, brandColour, brandGradient, grey } from "./brand.js";
 import { useWindowState } from "./bridge.js";
@@ -18,8 +18,11 @@ import "./overlay.css";
 /**
  * The dictation overlay, anchored at the text cursor (`OverlayPanel.swift`): a swirl gathers there
  * while the microphone warms up, then forms a waveform pill, with the dictation's language in a
- * small circle left of the waveform. While it listens, a tip may show in a tooltip under it; in
- * agent mode the tools' bubbles sit in a row above it, and the running tool's border circles.
+ * small circle left of the waveform. While it listens, a tip may show in a tooltip under it (Space
+ * switches agent mode and a double tap dictates without holding, each fading after a moment; how
+ * hands-free listening ends, up while it listens, over the pill when the overlay opened above the
+ * caret's line); in agent mode the tools' bubbles sit in a row above it, and the running tool's
+ * border circles.
  */
 
 type Mode =
@@ -134,8 +137,8 @@ function Overlay() {
 
 /** Places the pill with its top edge where a one-line pill's would be when centred in the canvas, so
  * taller pills grow downward, away from the caret line; agent mode's tool bubbles go in a row above
- * it, and a tip under it (`bubbleCentres`, `hintCentre`), following it as it grows or shrinks to a
- * circle. */
+ * it, and a tip under it, or over it all when `tipGoesAbove` (`bubbleCentres`, `hintCentre`,
+ * `hintCentreOver`), following it as it grows or shrinks to a circle. */
 function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; state: OverlayState; tip: DictationTip | null; showsTools: boolean; exiting: boolean }) {
   const [pillRef, pillSize] = useSize<HTMLDivElement>();
   const canvas = config.overlayCanvasSize;
@@ -164,7 +167,13 @@ function PillLayout({ mode, state, tip, showsTools, exiting }: { mode: Mode; sta
           </div>
         );
       })}
-      <TipSlot tip={tip} hotkey={state.hotkey} pill={pill} />
+      <TipSlot
+        tip={tip}
+        hotkey={state.hotkey}
+        pill={pill}
+        bubbles={centres.map((centre) => ({ x: centre.x - bubble.width / 2, y: centre.y - bubble.height / 2, ...bubble }))}
+        opensUpward={state.opensUpward}
+      />
     </div>
   );
 }
@@ -367,34 +376,37 @@ function ToolBubble({ tool, icon, isRunning, isDimmed }: { tool: AgentTool; icon
   );
 }
 
-/** The tip under the pill, fading in and out; the last one stays while it fades. */
-function TipSlot({ tip, hotkey, pill }: { tip: DictationTip | null; hotkey: DictationHotkey; pill: Rect }) {
+/** The tip under the pill, or over it (`tipGoesAbove`), fading in and out; the last one stays while
+ * it fades. */
+function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTip | null; hotkey: DictationHotkey; pill: Rect; bubbles: Rect[]; opensUpward: boolean }) {
   const [shown, setShown] = useState<DictationTip | null>(tip);
   useEffect(() => {
     if (tip !== null) setShown(tip);
   }, [tip]);
   const [ref, size] = useSize<HTMLDivElement>();
   if (shown === null) return null;
-  const centre = hintCentre(pill, size);
+  const above = tipGoesAbove(tipDetails[shown].displayDuration, opensUpward);
+  const centre = above ? hintCentreOver(pill, bubbles, size) : hintCentre(pill, size);
   return (
     <div
       ref={ref}
       className="centred"
       style={{ left: centre.x, top: centre.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponse}s ease-out` }}
     >
-      <TipTooltip tip={shown} hotkey={hotkey} />
+      <TipTooltip tip={shown} hotkey={hotkey} pointsDown={above} />
     </div>
   );
 }
 
-/** A tip in a tooltip under the listening pill: a dark rounded box with an arrow up at the pill, the
- * tip's words around a keycap. */
-function TipTooltip({ tip, hotkey }: { tip: DictationTip; hotkey: DictationHotkey }) {
+/** A tip in a tooltip by the listening pill, under it or over it (`tipGoesAbove`): a dark rounded
+ * box with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. */
+function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: DictationHotkey; pointsDown: boolean }) {
   const [ref, size] = useSize<HTMLDivElement>();
   return (
-    <div ref={ref} className="tip" style={{ paddingTop: config.tipArrowHeight }}>
+    <div ref={ref} className="tip" style={pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }}>
       <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${grey(0, config.tipShadowOpacity)})` }}>
-        <path d={tooltipPath(size)} fill={grey(config.tipFillWhite, config.tipFillOpacity)} stroke={grey(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />
+        {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
+        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={grey(config.tipFillWhite, config.tipFillOpacity)} stroke={grey(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />
       </svg>
       <div
         className="tip-lines"

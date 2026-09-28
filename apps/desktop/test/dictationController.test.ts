@@ -16,7 +16,7 @@ import { MemoryStore } from "../src/core/keyValueStore.js";
 import { type MicrophoneStatus, PermissionsModel } from "../src/core/permissions.js";
 import type { ScreenContext } from "../src/core/screenContext.js";
 import type { DictationSettings } from "../src/core/settings.js";
-import { TipBook } from "../src/core/tips.js";
+import { TipBook, tipDetails } from "../src/core/tips.js";
 import { sleep } from "../src/core/timeout.js";
 import { encodeWAV } from "../src/core/wav.js";
 import { type HTTPTransport, liveTransport } from "../src/core/http.js";
@@ -1227,6 +1227,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.tipDisplayDuration = () => 50;
 
       controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
       expect(controller.phase).toEqual(listening);
       expect(new TipBook(tipStore).isEligible("doubleTap")).toBe(false);
       expect(await throughout(400, () => controller.phase.kind === "listening" && controller.tip !== "doubleTap")).toBe(true);
@@ -1289,7 +1290,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** A press while a double-tapped dictation is being transcribed leaves it alone: no new recording
-     * starts, and its text is still pasted. */
+     * starts, no tip shows, and its text is still pasted. So does another double tap. */
     test("a press while a double tap is transcribed leaves it alone", async () => {
       transcription.enqueue(200, { text: transcript });
       completions.enqueue(200, cleanedStream);
@@ -1302,8 +1303,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("finish");
       expect(controller.phase).toEqual(transcribing);
       controller.handle("start");
+      controller.handle("finish");
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
 
       expect(controller.phase).toEqual(transcribing);
+      expect(controller.tip).toBeNull();
       expect(capture.starts).toBe(1);
       expect(await eventually(() => pastes.length === 1 && pastes[0] === cleaned && controller.phase.kind === "idle")).toBe(true);
     });
@@ -1346,9 +1351,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => pastes.length === 1 && pastes[0] === cleaned && controller.phase.kind === "idle")).toBe(true);
     });
 
-    /** The Space tip shows in a double-tapped dictation even when the microphone was already heard
-     * during the first tap, before anything was shown. */
-    test("a double tap heard during the tap shows the Space tip", async () => {
+    /** The hands-free tip shows in a double-tapped dictation even when the microphone was already
+     * heard during the first tap, before anything was shown, and stays until it stops listening. (It
+     * took the Space tip's place in a double tap: owner, 2026-09-27.) */
+    test("a double tap heard during the tap shows the hands-free tip", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
 
       controller.handle("start");
@@ -1356,8 +1362,147 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(arming);
       controller.handle("finish");
       controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
 
+      expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+      expect(await throughout(300, () => controller.tip === "handsFree")).toBe(true);
+      controller.handle("finish");
+      expect(controller.tip).toBeNull();
+    });
+
+    /** Hands-free, the tip says how to end it (tap the hotkey, or Escape), the whole time it listens
+     * and every time (owner, 2026-09-27): with no display duration, however often it has shown, a
+     * mode switch or not, and in place of the Space tip. It goes when the dictation stops listening. */
+    test("the hands-free tip shows the whole time, every time", async () => {
+      expect(tipDetails.handsFree.displayDuration).toBeNull();
+      const longestTimedTip = Math.max(...Object.values(tipDetails).map((details) => details.displayDuration ?? 0));
+      const book = new TipBook(tipStore);
+      for (let index = 0; index < (config.switchModeTip.maxDisplays ?? 0) + 5; index += 1) book.recordDisplay("handsFree");
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+
+      for (let round = 0; round < 3; round += 1) {
+        controller.handle("startHandsFree");
+        controller.handle("listenHandsFree");
+        expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+        controller.handle("toggleMode");
+        // Once, past the longest a timed tip shows.
+        const window = round === 0 ? longestTimedTip + 500 : 400;
+        expect(await throughout(window, () => controller.tip === "handsFree")).toBe(true);
+        controller.handle("cancel");
+        expect(controller.tip).toBeNull();
+      }
+    });
+
+    /** The hands-free tip waits for the second tap's release (owner, 2026-09-27: "only once truly
+     * hands-free"): a second press released as a tap shows it, and never the Space tip first, with
+     * every tip fresh; one still held once a tap is over is a hold, with the hold's Space tip and no
+     * hands-free tip. After a first tap, or as a fresh start; the microphone first heard once the
+     * second press is down, so a tip already due would show at once. */
+    test.each([true, false])("the hands-free tip shows only once the second press is a tap (after a tap: %s)", async (afterATap) => {
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      expect(new TipBook(tipStore).isEligible("switchMode")).toBe(true);
+      const secondPress = () => {
+        if (afterATap) {
+          controller.handle("start");
+          controller.handle("finish");
+        }
+        controller.handle("startHandsFree");
+        capture.hear();
+      };
+
+      secondPress();
+      controller.handle("listenHandsFree");
+      expect(await throughout(config.minimumHoldDuration * 3, () => controller.tip !== "switchMode")).toBe(true);
+      expect(controller.tip).toBe("handsFree");
+      controller.handle("cancel");
+
+      secondPress();
+      expect(await throughout(config.minimumHoldDuration / 2, () => controller.tip === null)).toBe(true);
       expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      expect(await throughout(config.minimumHoldDuration * 3, () => controller.tip !== "handsFree")).toBe(true);
+      controller.handle("finish");
+      expect(controller.phase).toEqual(transcribing);
+      // Nothing is sent after this test.
+      controller.handle("cancel");
+    });
+
+    /** A second press cancelled while down (a typing chord) leaves nothing for the next one: a newer
+     * second press shows no tip until it has been down as long as a hold, even when the cancelled one
+     * would have become a hold before that; released as a tap, it gets the hands-free tip. */
+    test("a cancelled second press leaves no tip for the next one", async () => {
+      const capture = new CountingCapture(true);
+      const { controller, pastes } = makeController({ capture });
+      const hold = config.minimumHoldDuration;
+
+      controller.handle("startHandsFree");
+      expect(await eventually(() => controller.isHearing)).toBe(true);
+      await sleep(hold / 2);
+      controller.handle("cancel");
+      expect(controller.phase).toEqual(idle);
+      const pressed = performance.now();
+      controller.handle("startHandsFree");
+      expect(controller.phase).toEqual(listening);
+      // Past when the cancelled press would have become a hold, short of when this one does.
+      expect(await throughout((hold * 3) / 4, () => controller.tip === null || performance.now() - pressed >= hold)).toBe(true);
+
+      controller.handle("listenHandsFree");
+      expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+      controller.handle("cancel");
+      expect(controller.tip).toBeNull();
+      expect(capture.starts).toBe(2);
+      expect(capture.stops).toBe(2);
+      expect(transcription.requests).toHaveLength(0);
+      expect(completions.requests).toHaveLength(0);
+      expect(pastes).toEqual([]);
+    });
+
+    /** A second press ended before it has been down as long as a hold (cancelled, here) leaves no timer
+     * of its own behind to act in whatever comes next. */
+    test("a second press ended early leaves no timer behind", async () => {
+      vi.useFakeTimers();
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      try {
+        controller.handle("startHandsFree");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration / 2);
+        controller.handle("cancel");
+        expect(controller.phase).toEqual(idle);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** A hands-free tip due before the microphone is first heard shows once it is, even when that is
+     * after the time a held second press would have become a hold. */
+    test("a hands-free tip due before the microphone is heard shows once it is", async () => {
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
+      expect(await throughout(config.minimumHoldDuration * 3, () => controller.tip === null)).toBe(true);
+      capture.hear();
+
+      expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+      controller.handle("cancel");
+    });
+
+    /** A Space tip already up as the second press ends as a tap (a tap as long as a tap can be) gives
+     * way to the hands-free tip. */
+    test("a Space tip up as the second tap ends gives way to the hands-free tip", async () => {
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      controller.tipDisplayDuration = (tip) => (tip === "switchMode" ? 60_000 : tipDetails[tip].displayDuration);
+
+      controller.handle("start");
+      controller.handle("finish");
+      controller.handle("startHandsFree");
+      expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      controller.handle("listenHandsFree");
+
+      expect(controller.tip).toBe("handsFree");
+      expect(await throughout(300, () => controller.tip === "handsFree")).toBe(true);
       controller.handle("cancel");
     });
 
@@ -1400,6 +1545,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
 
       controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
       expect(await eventually(() => controller.isHearing)).toBe(true);
       controller.handle("cancel");
 
