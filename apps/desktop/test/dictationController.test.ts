@@ -1457,6 +1457,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
+    /** A second press ended before it has been down as long as a hold (cancelled, here) leaves no timer
+     * of its own behind to act in whatever comes next. */
+    test("a second press ended early leaves no timer behind", async () => {
+      vi.useFakeTimers();
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      try {
+        controller.handle("startHandsFree");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration / 2);
+        controller.handle("cancel");
+        expect(controller.phase).toEqual(idle);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
     /** A hands-free tip due before the microphone is first heard shows once it is, even when that is
      * after the time a held second press would have become a hold. */
     test("a hands-free tip due before the microphone is heard shows once it is", async () => {

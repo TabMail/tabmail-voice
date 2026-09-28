@@ -614,6 +614,8 @@ export class DictationController extends Observable {
 
   private endTips(): void {
     this.dueTips = [];
+    cancelTimer(this.secondPressTimer);
+    this.secondPressTimer = null;
     cancelTimer(this.longHoldTimer);
     this.longHoldTimer = null;
     cancelTimer(this.tipTimer);
