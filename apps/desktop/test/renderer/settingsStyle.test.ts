@@ -41,6 +41,14 @@ function value(text: string, selector: string, property: string): string | undef
   return rule?.body.match(new RegExp(`${property}:\\s*([^;]+);`))?.[1]?.trim();
 }
 
+/** `colour` (`rgba(…)` or `#rrggbb`) laid over the opaque `background`, as `#rrggbb`. */
+function opaque(colour: string, background: string): string {
+  const channels = (text: string): number[] => (text.startsWith("#") ? [1, 3, 5].map((start) => parseInt(text.slice(start, start + 2), 16)).concat(1) : (text.match(/[\d.]+/g) ?? []).map(Number));
+  const [br = 0, bg = 0, bb = 0] = channels(background);
+  const [r = 0, g = 0, b = 0, alpha = 1] = channels(colour);
+  return `#${[r * alpha + br * (1 - alpha), g * alpha + bg * (1 - alpha), b * alpha + bb * (1 - alpha)].map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
 /** WCAG's contrast ratio of `colour` (`#rrggbb` or `rgba(…)`) laid over the opaque `background`. */
 function contrast(colour: string, background: string): number {
   const channels = (text: string): number[] => (text.startsWith("#") ? [1, 3, 5].map((start) => parseInt(text.slice(start, start + 2), 16)).concat(1) : (text.match(/[\d.]+/g) ?? []).map(Number));
@@ -93,6 +101,23 @@ describe("Settings stylesheet", () => {
     // form.css's own values, which these replace, fall short.
     expect(contrast("rgba(0, 0, 0, 0.5)", config.settingsWindowColour.light)).toBeLessThan(4.5);
     expect(contrast("#28a745", "#ffffff")).toBeLessThan(4.5);
+  });
+
+  /** In dark mode the text, the notes and "Allowed" (`form.css`'s dark colours) hold small text's
+   * 4.5:1 on the window's colour and on the cards, and an off switch's white thumb stands 3:1 from
+   * its track on a card. (`form.css`'s error red, 4.2:1 on a dark card, predates this page.) */
+  test("text and an off switch stay legible in dark mode", () => {
+    const form = readFileSync(join(import.meta.dirname, "../../src/renderer/form.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const formDark = form.slice(form.indexOf("@media (prefers-color-scheme: dark)"));
+    const card = value(formDark, ":root", "--group") ?? "";
+    expect(card).toMatch(/^#/);
+    for (const name of ["--text", "--secondary", "--allowed"]) {
+      const colour = value(formDark, ":root", name);
+      expect(colour, name).toBeDefined();
+      for (const background of [config.settingsWindowColour.dark, card]) expect(contrast(colour ?? "", background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
+    }
+    const track = value(mediaBlock("(prefers-color-scheme: dark)"), ":root", "--switch-off") ?? "";
+    expect(contrast("#ffffff", opaque(track, card))).toBeGreaterThanOrEqual(3);
   });
 
   /** Focus is Chromium's own ring (the browser's default indicator, in the system accent), except in
