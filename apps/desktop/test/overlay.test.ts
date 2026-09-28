@@ -3,10 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
+import { connectors } from "../src/core/agent/connectors.js";
+import { agentTools } from "../src/core/agent/tools.js";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
 import { type MenuState, showsDictationButton, statusLine } from "../src/core/menuModel.js";
-import { bubbleCentres, chatFrame, chatOpensUpward, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove } from "../src/core/overlayGeometry.js";
+import { bubbleCentres, bubblesFitUnder, chatFrame, chatOpensUpward, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../src/core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipKeycap, tipLines, tipParts } from "../src/core/tips.js";
 
 const canvas = { width: 200, height: 60 };
@@ -19,6 +21,11 @@ function rect(x: number, y: number, width: number, height: number): Rect {
 
 function intersects(a: Rect, b: Rect): boolean {
   return a.x < maxX(b) && b.x < maxX(a) && a.y < maxY(b) && b.y < maxY(a);
+}
+
+/** How far apart two rects are: the widest gap between them along either axis (negative when they overlap). */
+function apart(a: Rect, b: Rect): number {
+  return Math.max(b.x - maxX(a), a.x - maxX(b), b.y - maxY(a), a.y - maxY(b));
 }
 
 function contains(outer: Rect, inner: Rect): boolean {
@@ -100,35 +107,87 @@ describe("overlay geometry", () => {
     }
   });
 
-  /** Agent mode's bubbles and a tip, in the overlay's canvas: the bubbles in one row centred above the
-   * pill, clear of it and of each other; the tip centred under the pill; nothing overlaps and
-   * everything, the tip's shadow included, stays inside the canvas. For the listening pill and the
-   * circle it shrinks to, with no bubbles (dictation) and as many as are ever offered. */
-  test("bubbles sit in a row above the pill and the tip under it", () => {
+  /** Agent mode's bubbles and a tip under the pill, in the overlay's canvas, for the listening pill
+   * and the circle it shrinks to, with no bubbles (dictation) up to as many as are ever offered (the
+   * tools but one, as Edit and Compose never show together, and every connector): a row centred over
+   * the pill fills first, then one bubble beside it on the left and one on the right, then rows under
+   * it, or, with no room under it, over the first row, so none covers a caret's line under a pill
+   * that opened above it. None overlaps the pill, another bubble or the tip, which goes under the pill
+   * and any bubbles under it; everything, the tip's shadow included, stays inside the canvas. With them
+   * all, five over, two beside and five under (or a second five over). Past that many (a connector
+   * yet to come) the rows keep stacking without overlapping, though the canvas has no room for them. */
+  test.each([true, false])("bubbles surround the pill and the tip goes under them (under fits: %s)", (underFits) => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
     const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
+    const capacity = config.agentBubbleRowCapacity;
+    const most = agentTools.length - 1 + connectors.length;
+    let under = 0;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
-      const tipFrame = framed(hintCentre(pill, tip), tip);
-      expect(tipFrame.y).toBeGreaterThanOrEqual(maxY(pill));
-      expect(Math.abs(midX(tipFrame) - midX(pill))).toBeLessThan(0.001);
-      expect(contains(area, rect(tipFrame.x - shadow, tipFrame.y - shadow, tipFrame.width + 2 * shadow, tipFrame.height + 2 * shadow))).toBe(true);
-      // Edit and Compose are never offered together: at most two bubbles.
-      for (let count = 0; count <= 2; count += 1) {
-        const frames = bubbleCentres(pill, Array<Size>(count).fill(bubble)).map((centre) => framed(centre, bubble));
+      for (let count = 0; count <= most + 2 * capacity; count += 1) {
+        const frames = bubbleCentres(pill, Array<Size>(count).fill(bubble), underFits).map((centre) => framed(centre, bubble));
         expect(frames).toHaveLength(count);
+        const fits = count <= most;
+        const tipFrame = framed(hintCentre(underBubbles(pill, frames), tip), tip);
+        expect(tipFrame.y).toBeGreaterThanOrEqual(maxY(pill));
+        expect(Math.abs(midX(tipFrame) - midX(pill))).toBeLessThan(0.001);
+        if (fits) expect(contains(area, rect(tipFrame.x - shadow, tipFrame.y - shadow, tipFrame.width + 2 * shadow, tipFrame.height + 2 * shadow)), `tip outside the canvas (${count})`).toBe(true);
         frames.forEach((frame, index) => {
-          expect(maxY(frame)).toBeLessThanOrEqual(pill.y);
-          expect(intersects(frame, tipFrame)).toBe(false);
-          expect(contains(area, frame)).toBe(true);
-          for (const other of frames.slice(index + 1)) expect(intersects(frame, other)).toBe(false);
+          expect(intersects(frame, pill), `bubble ${index} of ${count} overlaps the pill`).toBe(false);
+          expect(apart(frame, pill), `bubble ${index} of ${count} too near the pill`).toBeGreaterThanOrEqual(config.agentBubbleGap - 0.001);
+          expect(intersects(frame, tipFrame), `bubble ${index} of ${count} overlaps the tip`).toBe(false);
+          if (fits) expect(contains(area, frame), `bubble ${index} of ${count} outside the canvas`).toBe(true);
+          for (const other of frames.slice(index + 1)) {
+            expect(intersects(frame, other), `bubbles overlap (${count})`).toBe(false);
+            expect(apart(frame, other), `bubbles too near each other (${count})`).toBeGreaterThanOrEqual(config.agentBubbleGap - 0.001);
+          }
+          if (index < capacity) {
+            expect(maxY(frame), `bubble ${index} of ${count} is not over the pill`).toBeLessThanOrEqual(pill.y);
+          } else if (index < capacity + 2) {
+            expect(Math.abs(frame.y + frame.height / 2 - (pill.y + pill.height / 2)), `bubble ${index} of ${count} is not beside the pill`).toBeLessThan(0.001);
+            if (index === capacity) expect(maxX(frame), `bubble ${index} of ${count} is not on the left`).toBeLessThanOrEqual(pill.x);
+            else expect(frame.x, `bubble ${index} of ${count} is not on the right`).toBeGreaterThanOrEqual(maxX(pill));
+          } else if (underFits) {
+            under += 1;
+            expect(frame.y, `bubble ${index} of ${count} is not under the pill`).toBeGreaterThanOrEqual(maxY(pill));
+          } else {
+            expect(maxY(frame), `bubble ${index} of ${count} is not over the first row`).toBeLessThanOrEqual(frames[0]?.y ?? -Infinity);
+          }
         });
-        const [first] = frames;
-        const last = frames.at(-1);
-        if (first && last) expect(Math.abs((first.x + maxX(last)) / 2 - midX(pill))).toBeLessThan(0.001);
+        // The first row as it always was: centred over the pill, level.
+        const row = frames.slice(0, capacity);
+        const first = row[0];
+        const last = row.at(-1);
+        if (first && last) {
+          expect(Math.abs((first.x + maxX(last)) / 2 - midX(pill)), `row not centred over the pill (${count})`).toBeLessThan(0.001);
+          for (const frame of row) expect(frame.y).toBe(first.y);
+        }
+        if (count === most) {
+          const over = frames.filter((frame) => maxY(frame) <= pill.y).length;
+          const beside = frames.filter((frame) => frame.y < maxY(pill) && maxY(frame) > pill.y).length;
+          expect([over, beside, count - over - beside], `with every bubble (${count})`).toEqual(underFits ? [5, 2, 5] : [10, 2, 0]);
+        }
       }
     }
+    // Some went under the pill when they fit: the tip went under them.
+    expect(under > 0).toBe(underFits);
+  });
+
+  /** Bubbles go under the pill only when it sits below the caret's line with room under it for their
+   * row and the tip; a pill that opened above the line, or one with too little room under it, gets
+   * them over it. */
+  test("bubbles go under the pill only when they fit below the caret's line", () => {
+    const row = config.agentBubbleGap + config.agentBubbleDiameter;
+    const room = config.overlayCaretGap + Math.max(config.pillHeight, config.listeningPillHeight) + config.tipFootprint + row;
+    const caret = (bottom: number) => rect(500, bottom - 20, 1, 20);
+
+    expect(bubblesFitUnder(caret(400), config.pillHeight, display)).toBe(true);
+    expect(bubblesFitUnder(caret(maxY(display) - room), config.pillHeight, display)).toBe(true);
+    expect(bubblesFitUnder(caret(maxY(display) - room + 1), config.pillHeight, display)).toBe(false);
+    expect(opensUpward(caret(maxY(display) - room + 1), config.pillHeight, display)).toBe(false);
+    expect(bubblesFitUnder(caret(maxY(display) - 10), config.pillHeight, display)).toBe(false);
+    expect(opensUpward(caret(maxY(display) - 10), config.pillHeight, display)).toBe(true);
   });
 
   /** Only a tip that stays up while listening goes over the pill, and only in an overlay opened
@@ -137,17 +196,18 @@ describe("overlay geometry", () => {
     expect(tipGoesAbove(tipDetails[name].displayDuration, upward)).toBe(upward && name === "handsFree");
   });
 
-  /** A tip over the pill: centred over it, clear of the pill and of agent mode's bubbles above it,
-   * overlapping neither, and inside the canvas with its shadow. For the listening pill and the circle
-   * it shrinks to, with no bubbles and as many as are ever offered. */
+  /** A tip over the pill: centred over it, clear of the pill and of agent mode's bubbles, overlapping
+   * neither, and inside the canvas with its shadow. For the listening pill and the circle it shrinks
+   * to, with no bubbles and as many as are ever offered, in an overlay opened above the caret's line,
+   * where none fits under the pill (`bubblesFitUnder`). */
   test("a tip over the pill clears the bubbles and stays in the canvas", () => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
     const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
-      for (let count = 0; count <= 2; count += 1) {
-        const bubbles = bubbleCentres(pill, Array<Size>(count).fill(bubble)).map((centre) => framed(centre, bubble));
+      for (let count = 0; count <= agentTools.length - 1 + connectors.length; count += 1) {
+        const bubbles = bubbleCentres(pill, Array<Size>(count).fill(bubble), false).map((centre) => framed(centre, bubble));
         const tipFrame = framed(hintCentreOver(pill, bubbles, tip), tip);
         expect(maxY(tipFrame), `not over the pill (${count} bubbles)`).toBeLessThanOrEqual(pill.y);
         expect(Math.abs(midX(tipFrame) - midX(pill))).toBeLessThan(0.001);

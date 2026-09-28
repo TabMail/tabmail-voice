@@ -26,8 +26,8 @@ const app = vi.hoisted(() => ({
   paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   prewarms: 0,
   audioCommands: [] as unknown[],
-  overlay: null as { opensUpward: boolean; chatOpensUpward: boolean; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
-  controller: null as { chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
+  overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatOpensUpward: boolean; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
+  controller: null as { connectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
@@ -197,6 +197,7 @@ vi.mock("../src/core/dictationController.js", () => ({
     phase = { kind: "idle" };
     mode = "dictation";
     tools = [];
+    connectors: string[] = [];
     level = 0;
     language = null;
     tip = null;
@@ -213,6 +214,7 @@ vi.mock("../src/core/dictationController.js", () => ({
 vi.mock("../src/main/overlayWindow.js", () => ({
   OverlayWindowController: class {
     opensUpward = false;
+    bubblesFitUnder = true;
     chatOpensUpward = false;
     onPlace: (() => void) | undefined;
     readonly updates: [string, boolean][] = [];
@@ -380,20 +382,33 @@ describe("main process wiring", () => {
   });
 
   /** Placing the overlay pushes its view the direction it opened in, which the hands-free tip is
-   * placed by: over the pill only when the overlay opened upward. */
-  test("placing the overlay pushes the direction it opened in", async () => {
+   * placed by (over the pill only when the overlay opened upward), and whether agent mode's bubbles
+   * fit under the pill; the view is given the connectors' bubbles the controller shows. */
+  test("placing the overlay pushes the direction it opened in and the bubbles' room", async () => {
     await launch("darwin");
     const pushed: unknown[] = [];
-    app.listeners.set("voice:state", [(_event, name, state) => name === "overlay" && pushed.push((state as { opensUpward: boolean }).opensUpward)]);
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        const overlayState = state as { opensUpward: boolean; bubblesFitUnder: boolean; connectors: string[] };
+        if (name === "overlay") pushed.push([overlayState.opensUpward, overlayState.bubblesFitUnder, overlayState.connectors]);
+      },
+    ]);
     const overlay = app.overlay;
     expect(overlay).not.toBeNull();
+    if (app.controller) app.controller.connectors = ["calendar", "web"];
 
-    if (overlay) overlay.opensUpward = true;
+    if (overlay) [overlay.opensUpward, overlay.bubblesFitUnder] = [true, false];
     overlay?.onPlace?.();
-    if (overlay) overlay.opensUpward = false;
+    if (overlay) [overlay.opensUpward, overlay.bubblesFitUnder] = [false, true];
+    overlay?.onPlace?.();
+    if (overlay) [overlay.opensUpward, overlay.bubblesFitUnder] = [false, false];
     overlay?.onPlace?.();
 
-    expect(pushed).toEqual([true, false]);
+    expect(pushed).toEqual([
+      [true, false, ["calendar", "web"]],
+      [false, true, ["calendar", "web"]],
+      [false, false, ["calendar", "web"]],
+    ]);
   });
 
   /** The hotkey helper is told whenever the chat window opens or closes, so Escape closes it only

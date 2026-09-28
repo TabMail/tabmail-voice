@@ -14,9 +14,11 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
-const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], emailAppIcon: null, opensUpward: false, chat: null, chatOpensUpward: false };
+const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, chatOpensUpward: false };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
-const overlayCanvasSize = { width: 440, height: 258 };
+/** Every app, as `connectors`. */
+const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
+const overlayCanvasSize = { width: 440, height: 322 };
 const settings = {
   email: null,
   hotkey: "function",
@@ -53,6 +55,9 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-transcribing", { phase: { kind: "transcribing" } }],
     ["overlay-agent-listening", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-agent-running", { phase: { kind: "running", tool: "compose" }, mode: "agent", tools: ["compose", "thunderbird"] }],
+    ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "switchMode" }],
+    ["overlay-agent-apps-up", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, bubblesFitUnder: false, opensUpward: true, tip: "handsFree" }],
+    ["overlay-agent-apps-running", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),

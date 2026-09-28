@@ -25,8 +25,13 @@ export interface OverlayState {
   /** The overlay opened above the caret's line, so a tip that stays up goes over the pill
    * (`tipGoesAbove`). */
   opensUpward: boolean;
+  /** A row of agent mode's bubbles fits under the pill (`bubblesFitUnder`); else later rows go over
+   * the first. */
+  bubblesFitUnder: boolean;
   hotkey: DictationHotkey;
   tools: AgentTool[];
+  /** The apps whose bubbles show beside the tools' (`DictationController.connectors`). */
+  connectors: Connector[];
   /** The email app's icon, for the Thunderbird bubble; null without one. */
   emailAppIcon: string | null;
   /** The chat window's conversation while it is open, shown in place of the pill. */

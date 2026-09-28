@@ -87,9 +87,9 @@ finish, or Escape to cancel") shows once the second press is released as a tap a
 listening, over the pill when the overlay opened above the caret's line; it is never learned.
 
 **Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
-recording and transcription, with the tool bubbles in a row above the pill: Edit when text is selected,
+recording and transcription, with the tool bubbles around the pill (ADR-DESK-033): Edit when text is selected,
 Compose when not, plus Thunderbird when an email app is set up, and Answer; each only while switched on
-in Settings (ADR-DESK-022). The transcript is a request: `DesktopAgent.tool` picks among the tools
+in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request: `DesktopAgent.tool` picks among the tools
 offered (asking the backend's `system_prompt_desktop_agent`, with them in `available_tools`, unless
 only one is on), the phase becomes `running(tool)` (that bubble's border circles), and
 `DesktopAgent.write` has the tool's prompt write the text. Edit pastes over the selection; Compose

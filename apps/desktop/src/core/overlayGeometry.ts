@@ -56,21 +56,56 @@ function heightUnderPillTop(pillHeight: number): number {
   return Math.max(pillHeight, config.listeningPillHeight) + config.tipFootprint;
 }
 
-/** Centres of agent mode's tool bubbles, of `sizes`, above a pill at `pill`: one row, centred over
- * the pill, `agentBubbleGap` clear of it and apart (owner, 2026-09-26: "appear on top … like a list
- * on top"). */
-export function bubbleCentres(pill: Rect, sizes: Size[]): Point[] {
-  const gap = config.agentBubbleGap;
-  const rowWidth = sizes.reduce((sum, size) => sum + size.width, 0) + gap * Math.max(sizes.length - 1, 0);
-  let x = midX(pill) - rowWidth / 2;
-  return sizes.map((size) => {
-    const centre = { x: x + size.width / 2, y: pill.y - gap - size.height / 2 };
-    x += size.width + gap;
-    return centre;
-  });
+/** Whether a row of agent mode's bubbles fits under the pill, with the tip under it
+ * (`bubbleCentres`): not when the pill opened above the caret's line (`opensUpward`), where they
+ * would cover it, nor when it sits too near the bottom of the work area. */
+export function bubblesFitUnder(anchor: Rect, pillHeight: number, workArea: Rect): boolean {
+  const row = config.agentBubbleGap + config.agentBubbleDiameter;
+  return maxY(anchor) + config.overlayCaretGap + heightUnderPillTop(pillHeight) + row <= maxY(workArea);
 }
 
-/** Centre of a tip, of `size`: a tooltip centred `tipGap` under a pill at `pill` (owner,
+/** Centres of agent mode's bubbles, of `sizes`, around a pill at `pill`, `agentBubbleGap` clear of it
+ * and apart (owner, 2026-09-26: "many bubbles surround the pill"): a row of up to
+ * `agentBubbleRowCapacity` centred over the pill, then one beside it on the left and one on the
+ * right, then rows centred under it, or over the first row when they don't fit under it
+ * (`underFits`, `bubblesFitUnder`). */
+export function bubbleCentres(pill: Rect, sizes: Size[], underFits: boolean): Point[] {
+  const gap = config.agentBubbleGap;
+  const capacity = config.agentBubbleRowCapacity;
+  const centres: Point[] = [];
+  /** A row centred on the pill, its bottom edge at `edge` (above) or its top edge (under). */
+  const place = (row: Size[], edge: number, above: boolean) => {
+    const rowWidth = row.reduce((sum, size) => sum + size.width, 0) + gap * Math.max(row.length - 1, 0);
+    let x = midX(pill) - rowWidth / 2;
+    for (const size of row) {
+      centres.push({ x: x + size.width / 2, y: above ? edge - size.height / 2 : edge + size.height / 2 });
+      x += size.width + gap;
+    }
+  };
+  const height = (row: Size[]) => Math.max(0, ...row.map((size) => size.height));
+
+  const top = sizes.slice(0, capacity);
+  place(top, pill.y - gap, true);
+  const [left, right] = sizes.slice(capacity, capacity + 2);
+  if (left) centres.push({ x: pill.x - gap - left.width / 2, y: midY(pill) });
+  if (right) centres.push({ x: maxX(pill) + gap + right.width / 2, y: midY(pill) });
+  let edge = underFits ? maxY(pill) + gap : pill.y - gap - height(top) - gap;
+  for (let start = capacity + 2; start < sizes.length; start += capacity) {
+    const row = sizes.slice(start, start + capacity);
+    place(row, edge, !underFits);
+    edge += underFits ? height(row) + gap : -(height(row) + gap);
+  }
+  return centres;
+}
+
+/** The pill with any bubbles under it: what a tip under the pill goes under (`hintCentre`). */
+export function underBubbles(pill: Rect, bubbles: Rect[]): Rect {
+  const bottom = bubbles.reduce((most, bubble) => Math.max(most, maxY(bubble)), maxY(pill));
+  return { ...pill, height: bottom - pill.y };
+}
+
+/** Centre of a tip, of `size`: a tooltip centred `tipGap` under a pill at `pill` (and any bubbles
+ * under it, `underBubbles`) (owner,
  * 2026-09-26: "a tooltip that appears below the middle and disappears after a little"). A tip that
  * fades after its display duration covers the caret's line only briefly, even in an overlay opened
  * above that line; one that stays up goes over the pill there (`tipGoesAbove`). */

@@ -87,6 +87,37 @@ describe("OverlayWindowController", () => {
     expect(controller.opensUpward).toBe(false);
   });
 
+  /** Where the overlay opens decides whether agent mode's bubbles go under the pill: mid-screen they
+   * do; a caret with room under it for the pill and the tip but not a row of bubbles too keeps the pill
+   * under it and puts them over it; at the bottom the overlay opens upward and they go over it too. */
+  test("each placing tells the view whether the bubbles fit under the pill", async () => {
+    const room = config.overlayCaretGap + Math.max(config.pillHeight, config.listeningPillHeight) + config.tipFootprint;
+    const bottom = workArea.y + workArea.height;
+    const carets: Rect[] = [
+      { x: 400, y: 300, width: 1, height: 16 },
+      { x: 400, y: bottom - room - 16, width: 1, height: 16 },
+      { x: 400, y: bottom - 20, width: 1, height: 16 },
+    ];
+    let caret = carets[0] as Rect;
+    const controller = new OverlayWindowController(overlayWindow(), async () => caret);
+    const placed: [boolean, boolean][] = [];
+    controller.onPlace = () => placed.push([controller.opensUpward, controller.bubblesFitUnder]);
+
+    for (const next of carets) {
+      caret = next;
+      controller.update({ kind: "arming" });
+      controller.update({ kind: "listening" });
+      await vi.waitFor(() => expect(placed).toHaveLength(carets.indexOf(next) + 1));
+      controller.update({ kind: "idle" });
+    }
+
+    expect(placed).toEqual([
+      [false, true],
+      [false, false],
+      [true, false],
+    ]);
+  });
+
   /** The overlay takes the mouse, as the chat window, grown out of the pill at the caret the request
    * was spoken over, only while the chat is open; it fits the height the chat window measures, and
    * closed it lets every click through again, at the pill's size, hidden. */
