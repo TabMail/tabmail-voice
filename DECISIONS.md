@@ -936,7 +936,10 @@ System Settings-style window: a sidebar with the app icon, the account and five 
 Dictation, Agent mode, Permissions, General), the chosen section's cards beside it. It is in the
 TabMail icon's blue → purple (`brand.ts`, as the overlay): the selected section, switches and the
 default button carry the gradient, section icons the brand blue, and a red dot marks a section that
-needs the user (signed out, a permission missing), in light and dark. On macOS the sidebar shows the
+needs the user (signed out, a permission missing), in light and dark. White text sits on the
+gradient darkened by `textShade`, so small text keeps WCAG AA's 4.5:1 along it, and the account
+shows in the text colour; under a Windows contrast theme (`forced-colors`), which drops gradients,
+the switches are the system's checkboxes and the chosen section is outlined in its highlight. On macOS the sidebar shows the
 window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
 no material, so the window has its own colour (`settingsWindowColour`). The settings and their
 wording are unchanged (a test holds the notes to the Swift app's); the sidebar adds only its own

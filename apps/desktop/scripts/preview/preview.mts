@@ -35,7 +35,7 @@ const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
 
-const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean }[] = [
+const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
@@ -50,6 +50,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings", page: "settings.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  // As under a Windows contrast theme, on a section with switches.
+  { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "welcome-consent", page: "welcome.html", size: { width: 560, height: 500 }, state: welcome },
   { name: "welcome-accessibility", page: "welcome.html", size: { width: 560, height: 500 }, state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
 ];
@@ -70,6 +72,11 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
   });
   window.webContents.on("console-message", (details) => process.stdout.write(`${shot.name}: console ${details.level}: ${details.message}\n`));
   await window.loadFile(join(root, "dist/renderer", shot.page));
+  if (shot.forcedColors) {
+    window.webContents.debugger.attach();
+    await window.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "forced-colors", value: "active" }] });
+  }
+  if (shot.section) await window.webContents.executeJavaScript(`[...document.querySelectorAll("button.nav")].find((button) => button.textContent === ${JSON.stringify(shot.section)})?.click()`);
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   const image = await window.webContents.capturePage();

@@ -8,7 +8,7 @@ import icon from "../../resources/icon.png";
 import * as config from "../core/config.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
-import { brandBlue, brandGradient } from "./brand.js";
+import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
 import { GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon } from "./icons.js";
 import "./form.css";
@@ -31,6 +31,7 @@ const isMac = navigator.userAgent.includes("Macintosh");
 /** The stylesheet's colours from the brand and the config: `settings.css` reads them. */
 const colours = {
   "--brand-gradient": brandGradient,
+  "--brand-text-gradient": brandTextGradient,
   "--brand-blue": brandBlue,
   "--window-light": config.settingsWindowColour.light,
   "--window-dark": config.settingsWindowColour.dark,

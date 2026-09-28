@@ -3,7 +3,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /* Settings: a sidebar of sections beside the chosen section's cards, in the TabMail icon's
- * blue → purple (`--brand-*`, set from `brand.ts`), light and dark. On macOS the sidebar shows the
+ * blue → purple (`--brand-*`, set from `brand.ts`; under white text, the darker
+ * `--brand-text-gradient`), light and dark. On macOS the sidebar shows the
  * window's frosted material, so the page itself is transparent. */
 :root {
   --sidebar-tint: rgba(0, 0, 0, 0.02);
@@ -100,7 +101,7 @@ body,
 }
 
 .sidebar button.nav.selected {
-  background: var(--brand-gradient);
+  background: var(--brand-text-gradient);
   color: white;
 }
 
@@ -176,7 +177,6 @@ body,
 }
 
 .value {
-  color: var(--secondary);
   user-select: text;
 }
 
@@ -187,7 +187,7 @@ body,
 }
 
 .settings button.default {
-  background: var(--brand-gradient);
+  background: var(--brand-text-gradient);
 }
 
 .settings select:focus-visible,
@@ -230,4 +230,29 @@ input.switch:checked {
 
 input.switch:checked::before {
   transform: translateX(14px);
+}
+
+/* Windows' contrast themes drop gradients and force colours: the switch is the system's checkbox
+ * again, the chosen section is outlined in the system's highlight, and the icons take its text
+ * colour (the chosen one's white would vanish). */
+@media (forced-colors: active) {
+  input.switch {
+    width: auto;
+    height: auto;
+    appearance: auto;
+  }
+
+  input.switch::before {
+    content: none;
+  }
+
+  .sidebar button.nav.selected {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .sidebar button.nav svg,
+  .sidebar button.nav.selected svg {
+    color: CanvasText;
+  }
 }
