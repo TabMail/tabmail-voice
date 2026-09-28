@@ -18,6 +18,7 @@ import { type EmailOpener, emailTools, NoEmailAppFailure } from "../core/agent/e
 import { messagesTools } from "../core/agent/messagesTools.js";
 import { notesTools } from "../core/agent/notesTools.js";
 import { shortcutsTools } from "../core/agent/shortcutsTools.js";
+import { liveWebFetch, webTools } from "../core/agent/webTools.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
 import * as config from "../core/config.js";
@@ -156,10 +157,10 @@ function launch(): void {
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
     // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), shortcuts through the
-    // `shortcuts` command (ADR-DESK-029), none elsewhere.
+    // `shortcuts` command (ADR-DESK-029), the web (ADR-DESK-030), none elsewhere.
     loopTools:
       process.platform === "darwin"
-        ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...shortcutsTools(shortcutsCommand())]
+        ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...shortcutsTools(shortcutsCommand()), ...webTools(liveWebFetch, { open: (url) => shell.openExternal(url) })]
         : [],
     keepRecording: isDebugBuild
       ? (wav) => {

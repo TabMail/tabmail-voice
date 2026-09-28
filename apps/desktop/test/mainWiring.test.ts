@@ -555,14 +555,14 @@ describe("main process wiring", () => {
   });
 
   /** On macOS the Answer tool reaches Calendar, Reminders, Contacts and Files through `voice-macos`,
-   * the email app, Notes and Messages through osascript, and Shortcuts through the `shortcuts` command,
-   * and each has a switch, stored and shown in the Settings and welcome windows; a name that is no app
-   * is refused. */
-  test("on macOS, Calendar, Reminders, Contacts, Files, Email, Notes, Messages and Shortcuts and their switches", async () => {
+   * the email app, Notes and Messages through osascript, Shortcuts through the `shortcuts` command, and
+   * the web with pages opened in the browser, and each has a switch, stored and shown in the Settings
+   * and welcome windows; a name that is no app is refused. */
+  test("on macOS, Calendar, Reminders, Contacts, Files, Email, Notes, Messages, Shortcuts and Web and their switches", async () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send", "shortcuts_list", "shortcuts_run"]);
+    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send", "shortcuts_list", "shortcuts_run", "web_read", "web_open"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.loopTools.map((tool) => tool.connector))).toEqual(new Set(connectors));
     await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
@@ -574,12 +574,14 @@ describe("main process wiring", () => {
     expect(app.scripts.map((script) => script.args)).toEqual([["offsite"], ["sam@example.com", "Hi"]]);
     await app.loopTools.find((tool) => tool.name === "shortcuts_run")?.run({ name: "Morning" }, signal);
     expect(app.shortcuts).toEqual(["list", "run Morning"]);
+    await app.loopTools.find((tool) => tool.name === "web_open")?.run({ url: "https://example.com/page" }, signal);
+    expect(app.opened).toEqual(["https://example.com/page"]);
 
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
     expect(await send({ type: "setConnectorEnabled", connector: "retired-app", value: false })).toEqual({ error: expect.any(String) });
     for (const name of ["settings", "welcome"]) {
-      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts"]);
-      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email", "notes", "messages", "shortcuts"]);
+      expect(state(name).connectors).toEqual(["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"]);
+      expect(state(name).enabledConnectors).toEqual(["reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"]);
     }
   });
 

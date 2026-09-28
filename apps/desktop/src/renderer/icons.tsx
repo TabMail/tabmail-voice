@@ -121,6 +121,14 @@ const connectorPaths: Record<Connector, ReactNode> = {
       <path d="m3 16.5 9 4.5 9-4.5" />
     </>
   ),
+  // A globe.
+  web: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      {/* One path: a lone horizontal line has no height, and the gradient, sized to its box, paints nothing. */}
+      <path d="M3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z" />
+    </>
+  ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {

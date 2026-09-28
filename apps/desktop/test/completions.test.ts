@@ -160,9 +160,25 @@ describe("a tool-loop round", () => {
     const body = stub.body(0);
     expect(body.disable_tools).toBe(false);
     expect(body.available_tools).toEqual(tools);
+    expect(body.web_search_enabled).toBe(false);
     expect(body).not.toHaveProperty("conversation_state");
     expect(body.messages).toEqual([{ role: "system", content: "system_prompt_example", dictation: "hello world", app_name: "Example" }]);
     expect(stub.requests[0]?.headers.Authorization).toBe("Bearer token-abc");
+  });
+
+  /** A round that offers the backend's web search says web search is on, without which the backend
+   * refuses it and `web_read` and `web_open`; one that doesn't says it is off. */
+  test("a round offering web search says so", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.reply("Done."));
+    stub.enqueue(200, Fixtures.reply("Done."));
+    const client = makeClient(stub);
+
+    await client.round(message, ["date_to_day", "search_web", "web_read"], undefined, "t");
+    await client.round(message, ["date_to_day", "web_read"], undefined, "t");
+
+    expect(stub.body(0).web_search_enabled).toBe(true);
+    expect(stub.body(1).web_search_enabled).toBe(false);
   });
 
   /** A round that calls tools returns them and the loop's state; the next round sends that state back

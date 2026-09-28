@@ -8,6 +8,7 @@ import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
 import type { ScreenContext } from "../screenContext.js";
 import { charCount, trimWhitespace } from "../text.js";
+import { connectors as allConnectors, connectorServerTools } from "./connectors.js";
 import type { LoopTool } from "./loopTool.js";
 import { AgentFailure, type AgentTool, isAgentTool, selection, toolImplementations } from "./tools.js";
 
@@ -77,10 +78,12 @@ export const DesktopAgent = {
     return written;
   },
 
-  /** The tools the Answer prompt's model may call (`available_tools`): the backend's date tools, and
-   * those of `loopTools` that run on this computer. */
+  /** The tools the Answer prompt's model may call (`available_tools`): the backend's date tools, the
+   * backend tools their apps bring (web search), and `loopTools`, those of the apps switched on that
+   * run on this computer. An app with no tools here (none off macOS) brings no backend tools either. */
   answerTools(loopTools: readonly LoopTool[]): string[] {
-    return [...config.answerServerTools, ...loopTools.map((tool) => tool.name)];
+    const serverTools = allConnectors.filter((connector) => loopTools.some((tool) => tool.connector === connector)).flatMap((connector) => connectorServerTools[connector] ?? []);
+    return [...config.answerServerTools, ...serverTools, ...loopTools.map((tool) => tool.name)];
   },
 
   /** The answer to `request`, from the backend's tool loop: each round either replies, or calls

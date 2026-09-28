@@ -7,9 +7,11 @@
  * Settings and the welcome wizard, on by default (owner, 2026-09-26). The OS asks for access the
  * first time a request needs it. All are macOS apps for now: elsewhere none is offered or shown.
  */
-export type Connector = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "shortcuts";
+import * as config from "../config.js";
 
-export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts"];
+export type Connector = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "shortcuts" | "web";
+
+export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "shortcuts", "web"];
 
 export function isConnector(name: unknown): name is Connector {
   return typeof name === "string" && (connectors as readonly string[]).includes(name);
@@ -54,4 +56,14 @@ export const connectorInfo: Record<Connector, ConnectorInfo> = {
     displayName: "Shortcuts",
     settingsDescription: "Runs the shortcuts you ask for once you confirm.",
   },
+  web: {
+    displayName: "Web",
+    settingsDescription: "Searches the web, reads pages, and opens the ones you ask for in your browser.",
+  },
+};
+
+/** The backend's own tools an app brings, listed in `available_tools` beside its tools while it is on
+ * (ADR-DESK-030): the web's search runs on the server. */
+export const connectorServerTools: Partial<Record<Connector, readonly string[]>> = {
+  web: [config.webSearchTool],
 };

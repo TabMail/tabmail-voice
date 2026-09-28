@@ -175,6 +175,8 @@ export class CompletionsClient {
     const { reply, status } = await this.send(message, accessToken, signal, {
       disable_tools: false,
       available_tools: tools,
+      // The backend refuses web search, and `web_read` and `web_open`, unless this says so.
+      web_search_enabled: tools.includes(config.webSearchTool),
       ...(conversationState === undefined ? {} : { conversation_state: conversationState }),
     });
     const calls = reply.tool_calls;
