@@ -2,32 +2,30 @@
 
 The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
 
-- **Layout:** one folder per platform under `apps/` (ADR-DESK-013); the macOS app is `apps/macos/`.
-  Repository-wide files (docs, the signing-config helper, `Scripts/stt-compare/`) stay at the root.
-- **`apps/desktop/`** is the Electron app replacing the Swift one at parity (ADR-DESK-032):
-  TypeScript only; `src/core` stays free of Node and Electron; OS work goes in a native helper
-  (`native/<os>`), not a Node addon. Check it from `apps/desktop/` with `npm test`,
-  `npm run typecheck`, `npm run lint` and `./scripts/swift-errors.sh test`; a fresh worktree needs
-  `npx -y npm@11.19.1 install` first.
-- **Build and test** (from the repository root): `./apps/macos/Scripts/xcodegen.sh` after any
-  `project.yml` or file add/remove, then
-  `xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath apps/macos/DerivedData test`.
-  `Secrets.xcconfig` (gitignored, from `Secrets.xcconfig.example`) must exist at the repository
-  root, where the worktree helper installs it; add
-  `CODE_SIGN_IDENTITY=-` when its `DEVELOPMENT_TEAM` is unset. Warnings are errors
-  (`SWIFT_TREAT_WARNINGS_AS_ERRORS`); the App Intents "Metadata extraction skipped" line is the
-  only tolerated diagnostic.
-- **User content goes to the debug log file only, through `Log.content`** (ADR-DESK-015):
+- **Layout:** the app is `apps/desktop/`, one Electron app for macOS, Windows and Linux
+  (ADR-DESK-032; the Swift app it replaced was removed at cutover, and its last source is in git
+  history). Repository-wide files (docs, `Scripts/stt-compare/`) stay at the root.
+- **`apps/desktop/`:** TypeScript only; `src/core` stays free of Node and Electron; OS work goes in
+  a native helper (`native/<os>`), not a Node addon, and the dictation path (microphone, hotkey,
+  paste) stays native on every platform. Check it from `apps/desktop/` with `npm test`,
+  `npm run typecheck`, `npm run lint` and `./scripts/swift-errors.sh test` (the macOS helpers);
+  `node scripts/build-native.mts` builds the helpers. A fresh worktree needs
+  `npx -y npm@11.19.1 install` first. Warnings are errors (`eslint --max-warnings 0`, and the
+  Swift helpers build clean).
+- **Don't launch the app from a session** unless the owner asks: it reads the sign-in from the
+  Keychain, which can raise a prompt on the owner's screen. `npm run preview` renders the overlay,
+  Settings and welcome windows offscreen to check the UI.
+- **User content goes to the debug log file only, through `log.content`** (ADR-DESK-015):
   transcripts, the screen read, every backend request and its raw reply, the text pasted.
-  `Log.debug`/`Log.error` also reach the unified log, so they carry lengths, states and error types
-  only. Never log audio or an access token (`BackendLog` masks `Authorization`). Debug builds write
-  `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual test's app log.
-- **Tests never hit the network.** Inject `HTTPTransport` (`StubTransport` in `TestSupport.swift`)
-  and `InMemorySessionStore`; never the real Keychain item.
-- **Every tunable number goes in `DictationConfig`.**
-- **Release the microphone after every dictation.** `MicrophoneCapture` is per-session; never keep
-  the engine running between holds (iOS memory 086 is the cautionary tale).
+  `log.debug`/`log.error` carry lengths, states and error types only, and `log.error` reaches
+  stderr in every build. Never log audio or an access token (`BackendLog` masks `Authorization`).
+  Debug builds write `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual
+  test's app log.
+- **Tests never hit the network.** Inject `StubTransport` and `InMemorySessionStore`
+  (`test/support.ts`); never the real Keychain item.
+- **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).
+- **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-macos` is
+  per-session; never keep the engine running between holds (iOS memory 086 is the cautionary
+  tale).
 - **Tests never touch the user's clipboard or post keystrokes.** Use a uniquely named
   `NSPasteboard` and inject `pasteKeystroke` (see `TextInserterTests`).
-- The unit-test bundle is hosted in the app; `AppDelegate` skips wiring when
-  `XCTestConfigurationFilePath` is set, so tests raise no permission prompts.
