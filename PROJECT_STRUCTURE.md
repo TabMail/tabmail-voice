@@ -34,7 +34,7 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
 │   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, cleanup
-│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts; `filesTools.ts`: Files, with Spotlight; `emailTools.ts`: a prefilled new email; `notesTools.ts` and `messagesTools.ts`: Notes and Messages, through `appleScript.ts`'s `ScriptRunner`), EmailClient, ThunderbirdRelay
+│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts; `filesTools.ts`: Files, with Spotlight; `emailTools.ts`: a prefilled new email; `notesTools.ts` and `messagesTools.ts`: Notes and Messages, through `appleScript.ts`'s `ScriptRunner`; `shortcutsTools.ts`: Shortcuts, through a `ShortcutsRunner`), EmailClient, ThunderbirdRelay
 │   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
 │   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
 │   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows
@@ -44,6 +44,7 @@ apps/desktop/
 │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
 │   │   ├── macos.ts                 `voice-macos`'s methods, typed
 │   │   ├── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
+│   │   ├── shortcuts.ts             The user's shortcuts, listed and run by `/usr/bin/shortcuts` (the name after `--`, stdin closed; a cancelled request ends it)
 │   │   ├── audioCapture.ts          The microphone, one session per dictation: through `voice-macos` on macOS, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── permissions.ts, keychainSessionStore.ts, fileStore.ts, logFile.ts, profileFiles.ts

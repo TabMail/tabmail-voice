@@ -121,6 +121,11 @@ export const appleScriptTimeoutSeconds = 60;
 export const appleScriptMaxOutputBytes = 64 * 1024 * 1024;
 /** The fewest digits a phone number `messages_send` sends to has. */
 export const phoneNumberMinDigits = 5;
+/** The most shortcut names one `shortcuts_list` returns to the model; more say so. */
+export const shortcutsListMaxResults = 50;
+/** The most a `shortcuts` command may print, in bytes (every shortcut's name, or a run's text output):
+ * more fails the request rather than cutting the output short. */
+export const shortcutsMaxOutputBytes = 64 * 1024 * 1024;
 
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 

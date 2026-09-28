@@ -113,6 +113,14 @@ const connectorPaths: Record<Connector, ReactNode> = {
       <path d="M19 8a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-3.5-3H12a2 2 0 0 1-1.7-1" />
     </>
   ),
+  // Three stacked layers, as the Shortcuts app's own mark.
+  shortcuts: (
+    <>
+      <path d="m12 3 9 4.5-9 4.5-9-4.5Z" />
+      <path d="m3 12 9 4.5 9-4.5" />
+      <path d="m3 16.5 9 4.5 9-4.5" />
+    </>
+  ),
 };
 
 export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {
