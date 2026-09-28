@@ -27,5 +27,7 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-macos` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary
   tale).
+- **No internal mistake IDs (`MIS-…`) in this public repo** (owner, 2026-09-28): they point into
+  the private monorepo's log, which no reader here can open. Say the lesson in place instead.
 - **Tests never touch the user's clipboard or post keystrokes.** Use a uniquely named
   `NSPasteboard` and inject `pasteKeystroke` (see `TextInserterTests`).
