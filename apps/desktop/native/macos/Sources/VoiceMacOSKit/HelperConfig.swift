@@ -94,4 +94,10 @@ enum HelperConfig {
     static let appIconMaxPixels: Double = 1_024
     /// Accessibility calls into Thunderbird give up after this long (seconds).
     static let thunderbirdAccessibilityTimeout: Float = 0.5
+
+    // MARK: Files
+
+    /// The most items Spotlight gathers for one file search before the newest are kept: a bound on a
+    /// search as broad as one letter.
+    static let filesSearchScanLimit = 500
 }

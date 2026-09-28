@@ -82,6 +82,15 @@ const connectorPaths: Record<Connector, ReactNode> = {
       <path d="M6.2 18.4a6.5 6.5 0 0 1 11.6 0" />
     </>
   ),
+  // A page under a magnifying glass.
+  files: (
+    <>
+      <path d="M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v3" />
+      <path d="M13 3v5h5" />
+      <circle cx="16.5" cy="16.5" r="3" />
+      <path d="m18.7 18.7 2.3 2.3" />
+    </>
+  ),
   // A letter coming out of an open envelope: a new email, not Thunderbird's closed one.
   email: (
     <>
