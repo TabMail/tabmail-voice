@@ -36,7 +36,8 @@ export class SessionAudioCapture implements AudioCapture {
     private readonly startTimeout = config.microphoneStartTimeout,
   ) {}
 
-  /** Loads the audio worklet with the microphone off, ahead of the first dictation. */
+  /** Does the microphone-off setup ahead of the first dictation (the helper's prepared engine, or
+   * the audio window's worklet). */
   prepare(): void {
     this.send({ type: "prepare" });
   }
@@ -57,7 +58,7 @@ export class SessionAudioCapture implements AudioCapture {
     this.send({ type: "stop", session: this.session });
   }
 
-  /** A report from the audio window. */
+  /** A report from the microphone. */
   receive(report: AudioReport): void {
     if (report.session !== this.session) return;
     switch (report.type) {

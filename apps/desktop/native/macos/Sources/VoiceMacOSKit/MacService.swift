@@ -29,6 +29,14 @@ import VoiceHelperSupport
 ///   `{"event": "microphoneChunk", session, samples}`, `samples` being base64 of little-endian
 ///   32-bit float mono samples at `sampleRate`. `microphoneStop {session}` → `{}`: the microphone off.
 public enum MacService {
+    static let microphoneChunkEvent = "microphoneChunk"
+
+    /// A chunk event's fields: its session, and its samples as base64 of little-endian 32-bit floats.
+    static func microphoneChunk(session: Int, samples: [Float]) -> [String: JSON] {
+        let data = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+        return ["session": .number(Double(session)), "samples": .string(data.base64EncodedString())]
+    }
+
     @MainActor
     public static func register(on channel: HelperChannel) -> AnyObject {
         let activator = AccessibilityActivator()
@@ -36,8 +44,7 @@ public enum MacService {
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
         let microphone = MicrophoneCapture { session, samples in
             chunkQueue.async {
-                let data = samples.withUnsafeBufferPointer { Data(buffer: $0) }
-                channel.emit("microphoneChunk", ["session": .number(Double(session)), "samples": .string(data.base64EncodedString())])
+                channel.emit(microphoneChunkEvent, microphoneChunk(session: session, samples: samples))
             }
         }
 

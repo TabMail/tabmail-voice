@@ -99,10 +99,10 @@ export interface CommandResult {
   error: string | null;
 }
 
-/** What the main process tells the hidden audio window. */
+/** What the main process tells the microphone: `voice-macos` on macOS, the hidden audio window elsewhere. */
 export type AudioCommand = { type: "prepare" } | { type: "start"; session: number } | { type: "stop"; session: number };
 
-/** The audio window's reports, for one `start`'s `session`. */
+/** The microphone's reports, for one `start`'s `session`. */
 export type AudioReport =
   | { type: "started"; session: number }
   | { type: "failed"; session: number; error: string }

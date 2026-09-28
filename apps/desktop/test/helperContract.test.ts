@@ -124,9 +124,9 @@ describe("helper wire contract", () => {
   });
 
   /** The microphone's start carries the recording rate and waits the microphone's own start timeout;
-   * its answer, or its failure, is that session's report; each chunk event the helper sends (the
-   * names `MicrophoneCapture`'s emitter writes) becomes that session's samples, and a malformed one
-   * is dropped. */
+   * its answer, or its failure, is that session's report; each chunk event the helper sends (named
+   * as `MacService.microphoneChunkEvent`, its fields as `MicrophoneChunkEventTests` pins them)
+   * becomes that session's samples, and a malformed one is dropped. */
   test("the microphone's commands and events cross the wire as the helper sends and reads them", async () => {
     const calls: { method: string; params: unknown; timeout: unknown }[] = [];
     const events = new Map<string, (message: Record<string, unknown>) => void>();
@@ -145,7 +145,7 @@ describe("helper wire contract", () => {
     microphone({ type: "start", session: 3 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     const samples = new Float32Array([0.25, -0.5, 1]);
-    const emitted = /channel\.emit\("(\w+)", \["session": [^,]+, "samples": /.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"));
+    const emitted = /microphoneChunkEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"));
     const chunkEvent = events.get(emitted?.[1] ?? "");
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from(samples.buffer).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from([1, 2, 3]).toString("base64") });

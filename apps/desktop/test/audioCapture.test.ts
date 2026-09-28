@@ -14,7 +14,8 @@ function recording(): { chunks: Float32Array[]; completions: (Error | null)[]; o
   return { chunks, completions, onChunk: (samples) => chunks.push(samples), completion: (error) => completions.push(error) };
 }
 
-/** The microphone through the audio window, with the window replaced by a list of what it is sent. */
+/** The microphone's sessions, with the microphone (the helper or the audio window) replaced by a list
+ * of what it is sent. */
 describe("SessionAudioCapture", () => {
   function capture(startTimeout = 5_000): { microphone: SessionAudioCapture; sent: AudioCommand[] } {
     const sent: AudioCommand[] = [];

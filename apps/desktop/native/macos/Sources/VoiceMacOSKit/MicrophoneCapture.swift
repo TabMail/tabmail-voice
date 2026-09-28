@@ -13,10 +13,9 @@ import VoiceHelperSupport
 /// ≈ 1.5 s for Chromium's `getUserMedia`, which opens the device afresh each time). Each buffer is
 /// converted to mono float samples at the app's rate and handed to `onSamples`.
 ///
-/// Sessions are numbered by the app. Requests may arrive out of order (the channel handles each in
-/// its own task), so a stop only stops its own session or an older one, and a start the app has
-/// already stopped does not start. The microphone runs only between a start and its stop: the
-/// engine is discarded after every dictation, and a prepared engine never opens the device.
+/// Sessions are numbered by the app; which one runs is `MicrophoneSessions`' decision. The
+/// microphone runs only between a start and its stop: the engine is discarded after every
+/// dictation, and a prepared engine never opens the device.
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
@@ -28,20 +27,23 @@ final class MicrophoneCapture: @unchecked Sendable {
         let device: AudioDeviceID
     }
 
-    private struct Running {
+    /// The running session's state, read on the render thread.
+    struct TapState {
         let session: Int
-        let engine: AVAudioEngine
+        let sampleRate: Double
+        var converter: AVAudioConverter?
     }
 
     /// Receives each converted chunk, with its session, on the audio render thread.
     private let onSamples: @Sendable (Int, [Float]) -> Void
     private let queue = DispatchQueue(label: "ai.tabmail.voice.helper.microphone", qos: .userInitiated)
     /// The running session and its converter, read on the render thread.
-    private let tap = OSAllocatedUnfairLock<(session: Int, sampleRate: Double, converter: AVAudioConverter?)?>(uncheckedState: nil)
+    private let tap = OSAllocatedUnfairLock<TapState?>(uncheckedState: nil)
     // Queue-confined.
     private var prepared: Prepared?
-    private var running: Running?
-    private var lastStopped = 0
+    /// The running session's engine; `sessions.running` names its session.
+    private var engine: AVAudioEngine?
+    private var sessions = MicrophoneSessions()
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
 
     init(onSamples: @escaping @Sendable (Int, [Float]) -> Void) {
@@ -76,7 +78,8 @@ final class MicrophoneCapture: @unchecked Sendable {
     }
 
     /// Starts the microphone for `session`, its chunks at `sampleRate`; returns once it runs. Stops an
-    /// older session still running. A session already stopped is not started.
+    /// older session still running. A session already stopped, or older than the one running, is not
+    /// started.
     func start(session: Int, sampleRate: Double) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             queue.async {
@@ -94,8 +97,7 @@ final class MicrophoneCapture: @unchecked Sendable {
     func stop(session: Int) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             queue.async {
-                self.lastStopped = max(self.lastStopped, session)
-                if let running = self.running, running.session <= session { self.stopRunning() }
+                if self.sessions.stop(session) { self.stopEngine() }
                 self.prepareOnQueue()
                 continuation.resume()
             }
@@ -103,41 +105,46 @@ final class MicrophoneCapture: @unchecked Sendable {
     }
 
     private func startOnQueue(session: Int, sampleRate: Double) throws {
-        guard session > lastStopped else {
-            HelperLog.debug("MicrophoneCapture: session \(session) was stopped before it started")
+        guard sessions.start(session) else {
+            HelperLog.debug("MicrophoneCapture: session \(session) was stopped or superseded before it started")
             return
         }
-        if running != nil { stopRunning() }
+        stopEngine()
         let current = Self.defaultInputDevice()
-        let engine: AVAudioEngine
-        if let prepared, prepared.device == current {
-            engine = prepared.engine
-        } else {
-            engine = try makeEngine()
-        }
-        prepared = nil
-        tap.withLockUnchecked { $0 = (session, sampleRate, nil) }
         do {
-            try engine.start()
+            let engine: AVAudioEngine
+            if let prepared, prepared.device == current {
+                engine = prepared.engine
+            } else {
+                engine = try makeEngine()
+            }
+            prepared = nil
+            tap.withLockUnchecked { $0 = TapState(session: session, sampleRate: sampleRate) }
+            do {
+                try engine.start()
+            } catch {
+                tap.withLockUnchecked { $0 = nil }
+                throw error
+            }
+            self.engine = engine
         } catch {
-            tap.withLockUnchecked { $0 = nil }
+            sessions.failed(session)
             throw error
         }
-        running = Running(session: session, engine: engine)
         HelperLog.debug("MicrophoneCapture: session \(session) started")
     }
 
-    private func stopRunning() {
+    private func stopEngine() {
         tap.withLockUnchecked { $0 = nil }
-        guard let running else { return }
-        running.engine.inputNode.removeTap(onBus: 0)
-        running.engine.stop()
-        self.running = nil
-        HelperLog.debug("MicrophoneCapture: session \(running.session) stopped")
+        guard let engine else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        self.engine = nil
+        HelperLog.debug("MicrophoneCapture: engine stopped")
     }
 
     private func prepareOnQueue() {
-        guard prepared == nil, running == nil else { return }
+        guard prepared == nil, engine == nil else { return }
         do {
             let device = Self.defaultInputDevice()
             prepared = Prepared(engine: try makeEngine(), device: device)
@@ -162,18 +169,22 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Converts a captured buffer for the running session and hands it on. On the render thread.
     private func deliver(_ buffer: AVAudioPCMBuffer) {
-        let converted: (Int, [Float])? = tap.withLockUnchecked { state in
-            guard let current = state else { return nil }
-            do {
-                let (converter, samples) = try Self.convert(buffer, sampleRate: current.sampleRate, converter: current.converter)
-                state = (current.session, current.sampleRate, converter)
-                return (current.session, samples)
-            } catch {
-                HelperLog.error("MicrophoneCapture: conversion failed: \(type(of: error))")
-                return nil
-            }
-        }
+        let converted = tap.withLockUnchecked { Self.convert(buffer, for: &$0) }
         if let (session, samples) = converted { onSamples(session, samples) }
+    }
+
+    /// `buffer` converted for the session `state` names, with nothing while none runs. Keeps the
+    /// converter in `state` for the session's next buffer, which it carries on.
+    static func convert(_ buffer: AVAudioPCMBuffer, for state: inout TapState?) -> (Int, [Float])? {
+        guard let current = state else { return nil }
+        do {
+            let (converter, samples) = try convert(buffer, sampleRate: current.sampleRate, converter: current.converter)
+            state?.converter = converter
+            return (current.session, samples)
+        } catch {
+            HelperLog.error("MicrophoneCapture: conversion failed: \(type(of: error))")
+            return nil
+        }
     }
 
     /// `buffer` as mono float samples at `sampleRate`, all channels mixed down, with the converter to
@@ -226,5 +237,35 @@ final class MicrophoneCapture: @unchecked Sendable {
         var address = defaultInputAddress
         AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
         return device
+    }
+}
+
+/// Which of the app's numbered sessions the microphone runs for. The app stops each session before
+/// it starts the next, but the helper handles each request in its own task, so they can arrive in
+/// any order: a stop stops its own session or an older one, never a newer; and a start the app has
+/// already stopped, or older than the one running, does not start.
+struct MicrophoneSessions {
+    /// The session the microphone runs for.
+    private(set) var running: Int?
+    private var lastStopped = 0
+
+    /// Whether `session` starts, in place of any older one running.
+    mutating func start(_ session: Int) -> Bool {
+        guard session > lastStopped, session > (running ?? 0) else { return false }
+        running = session
+        return true
+    }
+
+    /// Whether the running session stops: `session` itself, or an older one.
+    mutating func stop(_ session: Int) -> Bool {
+        lastStopped = max(lastStopped, session)
+        guard let current = running, current <= session else { return false }
+        running = nil
+        return true
+    }
+
+    /// `session`'s start failed: nothing runs.
+    mutating func failed(_ session: Int) {
+        if running == session { running = nil }
     }
 }
