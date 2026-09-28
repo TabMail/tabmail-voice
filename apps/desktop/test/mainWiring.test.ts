@@ -19,6 +19,7 @@ const app = vi.hoisted(() => ({
   paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   prewarms: 0,
   audioCommands: [] as unknown[],
+  overlay: null as { opensUpward: boolean; onPlace: (() => void) | undefined } | null,
 }));
 
 vi.mock("electron", () => ({
@@ -134,6 +135,7 @@ vi.mock("../src/core/dictationController.js", () => ({
     level = 0;
     language = null;
     tip = null;
+    settings = { hotkey: "function" };
     emailAppPath = null;
     observe() {
       return () => {};
@@ -145,6 +147,11 @@ vi.mock("../src/core/dictationController.js", () => ({
 }));
 vi.mock("../src/main/overlayWindow.js", () => ({
   OverlayWindowController: class {
+    opensUpward = false;
+    onPlace: (() => void) | undefined;
+    constructor() {
+      app.overlay = this;
+    }
     update() {}
   },
 }));
@@ -187,6 +194,7 @@ afterEach(() => {
   app.paste = null;
   app.prewarms = 0;
   app.audioCommands = [];
+  app.overlay = null;
 });
 
 describe("main process wiring", () => {
@@ -284,5 +292,22 @@ describe("main process wiring", () => {
     const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
+  });
+
+  /** Placing the overlay pushes its view the direction it opened in, which the hands-free tip is
+   * placed by: over the pill only when the overlay opened upward. */
+  test("placing the overlay pushes the direction it opened in", async () => {
+    await launch("darwin");
+    const pushed: unknown[] = [];
+    app.listeners.set("voice:state", [(_event, name, state) => name === "overlay" && pushed.push((state as { opensUpward: boolean }).opensUpward)]);
+    const overlay = app.overlay;
+    expect(overlay).not.toBeNull();
+
+    if (overlay) overlay.opensUpward = true;
+    overlay?.onPlace?.();
+    if (overlay) overlay.opensUpward = false;
+    overlay?.onPlace?.();
+
+    expect(pushed).toEqual([true, false]);
   });
 });
