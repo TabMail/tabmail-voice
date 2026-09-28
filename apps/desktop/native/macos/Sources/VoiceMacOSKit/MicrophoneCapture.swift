@@ -127,17 +127,24 @@ final class MicrophoneCapture: @unchecked Sendable {
             }
             prepared = nil
             tap.withLockUnchecked { $0 = TapState(session: session, sampleRate: sampleRate) }
+            // Watched before it starts, so a change as it starts is not missed (handled on this queue,
+            // once the engine is `self.engine`). Weakly: the notification's queue must not hold the
+            // last reference to the engine.
+            configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self, weak engine] _ in
+                guard let self else { return }
+                self.queue.async { [weak engine] in
+                    if let engine { self.engineStoppedOnQueue(engine) }
+                }
+            }
             do {
                 try engine.start()
             } catch {
                 tap.withLockUnchecked { $0 = nil }
+                if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+                configurationObserver = nil
                 throw error
             }
             self.engine = engine
-            configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
-                guard let self else { return }
-                self.queue.async { self.engineStoppedOnQueue(engine) }
-            }
         } catch {
             sessions.failed(session)
             throw error
@@ -145,7 +152,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         HelperLog.debug("MicrophoneCapture: session \(session) started")
     }
 
-    /// `engine` stopped by itself: if it still runs a session, that session's microphone is lost.
+    /// `stopped` stopped by itself: if it still runs a session, that session's microphone is lost.
     private func engineStoppedOnQueue(_ stopped: AVAudioEngine) {
         guard stopped === engine, let session = sessions.lost() else { return }
         HelperLog.error("MicrophoneCapture: session \(session) lost: the input's configuration changed")

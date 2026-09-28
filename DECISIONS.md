@@ -990,7 +990,8 @@ only be seen in the running app on macOS, not in the offscreen previews.
   during a restart, as before.
 - The helper's engine stopping by itself mid-dictation (AVAudioEngine stops on a configuration
   change: the input's sample rate or channels changed) is the same loss: `MicrophoneCapture`
-  watches the running engine for `AVAudioEngineConfigurationChange`, stops that session
+  watches each engine for `AVAudioEngineConfigurationChange` from before it starts (weakly, so the
+  notification's queue never holds the engine's last reference), stops that session
   (`MicrophoneSessions.lost`, like a failed start) and emits `microphoneLost {session}` after the
   chunks already queued; the app reports it as `lost`, and the controller sends what was said, as
   above. One arriving while the start is still pending fails that start. (The Swift app does not
