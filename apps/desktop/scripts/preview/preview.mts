@@ -14,7 +14,9 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
-const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], emailAppIcon: null };
+const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], emailAppIcon: null, opensUpward: false };
+/** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
+const overlayCanvasSize = { width: 440, height: 258 };
 const settings = {
   email: null,
   hotkey: "function",
@@ -41,12 +43,14 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
     ["overlay-tip-switch", { phase: { kind: "listening" }, tip: "switchMode" }],
     ["overlay-tip-double-tap", { phase: { kind: "listening" }, tip: "doubleTap", language: null }],
+    ["overlay-tip-hands-free", { phase: { kind: "listening" }, tip: "handsFree" }],
+    ["overlay-tip-hands-free-up", { phase: { kind: "listening" }, tip: "handsFree", opensUpward: true, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-transcribing", { phase: { kind: "transcribing" } }],
     ["overlay-agent-listening", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-agent-running", { phase: { kind: "running", tool: "compose" }, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
-  ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: { width: 440, height: 210 }, state: { ...overlay, ...(change as object) }, transparent: true })),
+  ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),
   { name: "settings", page: "settings.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },

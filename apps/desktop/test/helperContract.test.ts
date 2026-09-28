@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
+import { hotkeyActions } from "../src/core/hotkey.js";
 import type { HelperClient } from "../src/main/helperClient.js";
 import { decodeSamples, MacSystem } from "../src/main/macos.js";
 import type { AudioReport } from "../src/shared/ipc.js";
@@ -176,6 +177,16 @@ describe("helper wire contract", () => {
     expect(decodeSamples(Buffer.from(samples.buffer).toString("base64"))).toEqual(samples);
     expect(decodeSamples(Buffer.from([0, 0, 0]).toString("base64"))).toBeNull();
     expect(decodeSamples(12)).toBeNull();
+  });
+
+  /** The gesture's actions, which voice-hotkey sends by their Swift names, are the ones the app
+   * takes (`hotkeyActions`): one missing there is dropped at the wire as unknown. */
+  test("every gesture action voice-hotkey sends is one the app takes", () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceHotkeyKit/PushToTalkGesture.swift"), "utf8");
+    const actionEnum = /enum Action[^{]*\{([^}]*)\}/.exec(source)?.[1] ?? "";
+    const cases = [...actionEnum.matchAll(/^\s*case (\w+)/gm)].map((match) => match[1]);
+    expect(cases.length).toBeGreaterThan(0);
+    expect(new Set(cases)).toEqual(new Set(hotkeyActions));
   });
 
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {
