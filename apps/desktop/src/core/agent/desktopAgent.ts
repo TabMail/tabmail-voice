@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type AccountModel, withFreshToken } from "../account.js";
-import { BackendError, type CompletionsClient, type CompletionsMessage, type ToolCall } from "../backend.js";
+import { BackendError, type CompletionsClient, type CompletionsMessage, type ServerToolEvent, type ToolCall } from "../backend.js";
 import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
 import type { ScreenContext } from "../screenContext.js";
@@ -88,8 +88,8 @@ export const DesktopAgent = {
   },
 
   /** The answer to `request`, from the backend's tool loop: each round either replies, or calls
-   * tools, which `runTool` runs here (the backend runs its own); their results go back with the
-   * loop's state for the next round. The backend ends the loop at its round limit, counting the
+   * tools, which `runTool` runs here (the backend runs its own, which `onServerTool` hears of as they
+   * start and end); their results go back with the loop's state for the next round. The backend ends the loop at its round limit, counting the
    * rounds the app sends back (`current_round`), as the iOS app's `BackendClient` does. */
   async answer(
     request: string,
@@ -101,6 +101,7 @@ export const DesktopAgent = {
     account: AccountModel,
     userId: string | null,
     runTool: (call: ToolCall) => Promise<string>,
+    onServerTool: (event: ServerToolEvent) => void,
     signal?: AbortSignal,
   ): Promise<string> {
     const message = DesktopAgent.toolMessage("answer", request, context, conversation, userName);
@@ -110,7 +111,7 @@ export const DesktopAgent = {
       // A request cancelled while a tool ran (the chat window closed as it asked) asks nothing more.
       signal?.throwIfAborted();
       const started = performance.now();
-      const result = await withFreshToken(account, userId, (token) => client.round(message, tools, state, token, signal));
+      const result = await withFreshToken(account, userId, (token) => client.round(message, tools, state, token, signal, onServerTool));
       log.debug(() => `DesktopAgent: ${message.content} round ${round} answered in ${elapsed(started)}`);
       if (result.kind === "reply") {
         const text = trimWhitespace(result.text);

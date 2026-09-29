@@ -1944,6 +1944,84 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(await eventually(() => controller.chat === null)).toBe(true);
         });
 
+        /** The bubbles' history: the tool the agent chose, then the app whose tool runs, lead it, the
+         * latest first; the app's bubble runs while its tool does, and while the backend's search runs
+         * in the answer's round (the web's), for as long as it does. None runs once the request ends. */
+        test("the tools that ran lead the bubbles, each app running while its tool does", async () => {
+          const tool = new FakeLoopTool();
+          let controllerRef: DictationController | undefined;
+          const whileRunning: [string[], string[]][] = [];
+          tool.during = async () => {
+            whileRunning.push([controllerRef?.runningConnectors ?? [], controllerRef?.recentBubbles ?? []]);
+          };
+          // Heard as the round streams in: the web's search starting and ending, the date tool
+          // (no app's) on its own.
+          const search = (event: string) => `event: ${event}\ndata: {"tool_name":"search_web","display_label":"Searching the web: launch"}\n\n`;
+          const round = search("tool_started") + 'event: tool_completed\ndata: {"tool_name":"date_to_day"}\n\n' + search("tool_completed") + reply(answer);
+          const seen: [string[], string | null][] = [];
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), round], (controller) => {
+            controllerRef = controller;
+            controller.observe(() => seen.push([controller.runningConnectors, controller.chat?.activity ?? null]));
+          });
+          await done;
+
+          expect(whileRunning).toEqual([[["calendar"], ["calendar", "answer"]]]);
+          // The web's bubble ran with the search, the chat saying what it did, and stopped with it.
+          const searching = seen.findIndex(([running]) => running.includes("web"));
+          expect(seen[searching]).toEqual([["web"], null]);
+          expect(seen.slice(searching).find(([, activity]) => activity !== null)).toEqual([["web"], "Searching the web: launch"]);
+          expect(seen.slice(searching).some(([running]) => running.length === 0)).toBe(true);
+          expect(controller.recentBubbles).toEqual(["web", "calendar", "answer"]);
+          expect(controller.runningConnectors).toEqual([]);
+        });
+
+        /** A search the backend ends mid-request stops its bubble and takes its label down then, not
+         * when the request ends: the tool the model calls next runs alone, under its own label. (The
+         * tool runs first too, to open the chat the label shows in.) */
+        test("a finished search stops running before the next tool runs", async () => {
+          const tool = new FakeLoopTool();
+          let controllerRef: DictationController | undefined;
+          const whileRunning: [string[], string | null][] = [];
+          tool.during = async () => {
+            whileRunning.push([controllerRef?.runningConnectors ?? [], controllerRef?.chat?.activity ?? null]);
+          };
+          const search = (event: string) => `event: ${event}\ndata: {"tool_name":"search_web","display_label":"Searching the web: launch"}\n\n`;
+          const seen: [string[], string | null][] = [];
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), search("tool_started") + search("tool_completed") + calling(["example_create", "{}"]), reply(answer)], (controller) => {
+            controllerRef = controller;
+            controller.observe(() => seen.push([controller.runningConnectors, controller.chat?.activity ?? null]));
+          });
+          await done;
+
+          expect(whileRunning).toEqual([
+            [["calendar"], "Adding it to your calendar"],
+            [["calendar"], "Adding it to your calendar"],
+          ]);
+          // Between the search's end and the tool's second run: nothing running, and no label.
+          const searched = seen.findIndex(([, activity]) => activity === "Searching the web: launch");
+          const adding = seen.findIndex(([running], index) => index > searched && running.includes("calendar"));
+          expect(searched).toBeGreaterThanOrEqual(0);
+          expect(seen.slice(searched, adding)).toContainEqual([[], null]);
+          expect(controller.recentBubbles).toEqual(["calendar", "web", "answer"]);
+        });
+
+        /** A request cancelled while its tool runs leaves no app running, and one that ends meanwhile
+         * doesn't touch the next request's. */
+        test("a request cancelled while its tool runs leaves no app running", async () => {
+          const tool = new FakeLoopTool();
+          const release = deferred<void>();
+          tool.during = () => release.promise;
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          expect(await eventually(() => controller.runningConnectors.includes("calendar"))).toBe(true);
+
+          controller.cancel();
+          expect(controller.runningConnectors).toEqual([]);
+          release.resolve();
+          await done;
+          expect(controller.runningConnectors).toEqual([]);
+          expect(controller.recentBubbles).toEqual(["calendar", "answer"]);
+        });
+
         /** Only the tools of apps switched on at key-down are offered, and one of a switched-off app the
          * model calls anyway does not run: the model is told there is no such tool. A switch changed
          * during the request applies from the next. */

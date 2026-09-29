@@ -4,8 +4,9 @@
 
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { connectorInfo } from "../core/agent/connectors.js";
-import { agentTools, toolImplementations } from "../core/agent/tools.js";
+import { alphabetical } from "../core/agent/bubbleOrder.js";
+import { connectorInfo, isConnector } from "../core/agent/connectors.js";
+import { offeredAgentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { WelcomeWizard } from "../core/welcomeWizard.js";
 import type { WelcomeState } from "../shared/ipc.js";
@@ -80,30 +81,31 @@ function Page({ state }: { state: WelcomeState }) {
           {state.readsScreen && !state.accessibilityTrusted && <span className="caption">Screen reading needs Accessibility access.</span>}
           <hr />
           <span>Agent mode (press Space while dictating) can:</span>
-          {agentTools.map((tool) => (
-            <label key={tool} className="check">
-              <input type="checkbox" checked={state.enabledTools.includes(tool)} onChange={(event) => void send({ type: "setAgentToolEnabled", tool, value: event.target.checked })} />
-              <span className="stack-text">
-                <span className="labelled-icon">
-                  <ToolIcon tool={tool} size={config.settingsToolIconSize} />
-                  {toolImplementations[tool].displayName}
+          {alphabetical([...offeredAgentTools, ...state.connectors]).map((key) =>
+            isConnector(key) ? (
+              <label key={key} className="check">
+                <input type="checkbox" checked={state.enabledConnectors.includes(key)} onChange={(event) => void send({ type: "setConnectorEnabled", connector: key, value: event.target.checked })} />
+                <span className="stack-text">
+                  <span className="labelled-icon">
+                    <ConnectorIcon connector={key} size={config.settingsToolIconSize} />
+                    {connectorInfo[key].displayName}
+                  </span>
+                  <span className="caption">{connectorInfo[key].settingsDescription}</span>
                 </span>
-                <span className="caption">{toolImplementations[tool].settingsDescription}</span>
-              </span>
-            </label>
-          ))}
-          {state.connectors.map((connector) => (
-            <label key={connector} className="check">
-              <input type="checkbox" checked={state.enabledConnectors.includes(connector)} onChange={(event) => void send({ type: "setConnectorEnabled", connector, value: event.target.checked })} />
-              <span className="stack-text">
-                <span className="labelled-icon">
-                  <ConnectorIcon connector={connector} size={config.settingsToolIconSize} />
-                  {connectorInfo[connector].displayName}
+              </label>
+            ) : (
+              <label key={key} className="check">
+                <input type="checkbox" checked={state.enabledTools.includes(key)} onChange={(event) => void send({ type: "setAgentToolEnabled", tool: key, value: event.target.checked })} />
+                <span className="stack-text">
+                  <span className="labelled-icon">
+                    <ToolIcon tool={key} size={config.settingsToolIconSize} />
+                    {toolImplementations[key].displayName}
+                  </span>
+                  <span className="caption">{toolImplementations[key].settingsDescription}</span>
                 </span>
-                <span className="caption">{connectorInfo[connector].settingsDescription}</span>
-              </span>
-            </label>
-          ))}
+              </label>
+            ),
+          )}
         </StepPage>
       );
   }

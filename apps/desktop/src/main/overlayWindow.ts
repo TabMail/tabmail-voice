@@ -6,14 +6,15 @@ import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
 import type { Phase } from "../core/dictationController.js";
 import { errorName, log } from "../core/log.js";
-import { bubblesFitUnder, chatFrame, chatOpensUpward, opensUpward, overlayOrigin, type Rect } from "../core/overlayGeometry.js";
+import { bubblesFitUnder, chatSide, chatWindowFrame, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/overlayGeometry.js";
+import type { ChatPlacement } from "../shared/ipc.js";
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
  * hold is arming (the caret is looked up then, so the overlay appears there the moment the hold is
  * revealed), shown from listening on, and hidden once the exit animation has played. While the chat
- * window is open the overlay shows it instead, where the pill was, and takes the mouse. The window
- * never takes focus, so the target field keeps it and receives the paste.
+ * window is open the overlay grows to show it over the pill, which stays where it was, and takes the
+ * mouse. The window never takes focus, so the target field keeps it and receives the paste.
  */
 export class OverlayWindowController {
   private anchor: Rect | null = null;
@@ -28,8 +29,10 @@ export class OverlayWindowController {
   private placedUpward = false;
   /** A row of agent mode's bubbles fit under the pill where it was last placed (`bubblesFitUnder`). */
   private placedBubblesFitUnder = true;
-  /** Where the chat window opened, while it shows: it stays there for follow-ups. */
-  private chat: { anchor: Rect; workArea: Rect; opensUpward: boolean } | null = null;
+  /** Where the chat window opened, while it shows: by the pill (its top edge's centre), which stays
+   * there for follow-ups, its bubbles under it or over it as they were, on the side of them with room
+   * (`chatSide`). */
+  private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean } | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
 
@@ -47,13 +50,16 @@ export class OverlayWindowController {
     return this.placedBubblesFitUnder;
   }
 
-  /** The chat window opened above the caret's line (`chatOpensUpward`). */
-  get chatOpensUpward(): boolean {
-    return this.chat?.opensUpward ?? false;
+  /** Where the chat window shows, while it does. */
+  get chatPlacement(): ChatPlacement | null {
+    const chat = this.chat;
+    if (chat === null) return null;
+    // In the window as placed, its origin rounded.
+    return { ...chat.side, bubblesUnder: chat.bubblesUnder, pillX: chat.pill.x - Math.round(this.chatFrame(chat.side.maxHeight).x) };
   }
 
-  /** Shows the overlay for `phase`, or the chat window while it is open (`chatOpen`): a follow-up's
-   * status shows inside it, and it stays where it opened. */
+  /** Shows the overlay for `phase`, and the chat window over its pill while it is open (`chatOpen`),
+   * where it opened: a follow-up's pill shows under it. */
   update(phase: Phase, chatOpen = false): void {
     if (chatOpen) {
       this.cancelHide();
@@ -93,22 +99,34 @@ export class OverlayWindowController {
    * catches clicks. */
   fitChat(height: number): void {
     if (this.chat === null) return;
-    this.window.setBounds(rounded(chatFrame(this.chat.anchor, height, this.chat.workArea)));
+    this.window.setBounds(rounded(this.chatFrame(height)));
   }
 
-  /** Grows the chat window out of the pill, at the caret the answered request was spoken over. A
-   * caret lookup still under way is dropped: the window stays where it opened. */
+  /** Opens the chat window over the pill, which stays where it is, at the caret the request was
+   * spoken over, or the pointer where it was then without one (`pillPosition`, as `position` placed
+   * it). A caret lookup still under way is dropped: the window stays where it opened. */
   private showChat(): void {
     this.lookupGeneration += 1;
     this.lookupPending = false;
     this.showWhenLocated = false;
     const anchor = this.anchor ?? this.pointer();
     const workArea = this.workArea(anchor);
-    this.chat = { anchor, workArea, opensUpward: chatOpensUpward(anchor, workArea) };
+    // Rounded as `position` placed the canvas, so the pill doesn't move by a fraction of a point.
+    const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
+    const pill = pillPosition(anchor, workArea);
+    const shift = { x: Math.round(origin.x) - origin.x, y: Math.round(origin.y) - origin.y };
+    const bubblesUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
+    this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder };
     this.window.setIgnoreMouseEvents(false);
-    this.window.setBounds(rounded(chatFrame(anchor, config.chatMaxHeight, workArea)));
+    this.window.setBounds(rounded(this.chatFrame(this.chat.side.maxHeight)));
     this.window.showInactive();
     this.onPlace?.();
+  }
+
+  private chatFrame(height: number): Rect {
+    const chat = this.chat;
+    if (chat === null) throw new Error("no chat window");
+    return chatWindowFrame(chat.pill, height, chat.workArea, chat.side, chat.bubblesUnder);
   }
 
   private hideChat(): void {
@@ -148,6 +166,8 @@ export class OverlayWindowController {
   private position(): void {
     // Without a caret (the app doesn't expose one), gather at the mouse pointer.
     const anchor = this.anchor ?? this.pointer();
+    // Where it was placed, for the chat window to open there even if the pointer moves meanwhile.
+    this.anchor = anchor;
     const workArea = this.workArea(anchor);
     const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
     this.window.setBounds({ x: Math.round(origin.x), y: Math.round(origin.y), ...config.overlayCanvasSize });

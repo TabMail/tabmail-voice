@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import { DesktopAgent } from "../src/core/agent/desktopAgent.js";
 import type { LoopTool } from "../src/core/agent/loopTool.js";
 import { AgentFailure, type AgentTool, agentTools, EditTool } from "../src/core/agent/tools.js";
-import { BackendError, CompletionsClient, type ToolCall } from "../src/core/backend.js";
+import { BackendError, CompletionsClient, type ServerToolEvent, type ToolCall } from "../src/core/backend.js";
 import { screen } from "./screens.js";
 import { Fixtures, signedIn, StubTransport } from "./support.js";
 
@@ -226,6 +226,33 @@ describe("DesktopAgent", () => {
  * loop's state until the model answers. Never the network. */
 describe("the answer's tool loop", () => {
   const tools = ["date_to_day", "time_delta", "example_read"];
+  const ignoreServerTools = () => {};
+
+  /** The backend's own tools are heard of as they start and end, while the round's stream arrives,
+   * each piece of it however it is cut: a piece may end mid-line, even inside a CRLF. Events without
+   * the tool's name (a backend that sends it only in dev) and those that aren't JSON are skipped. */
+  test.each([1, 7, Number.POSITIVE_INFINITY])("the backend's tools are heard of as they run (pieces of %d)", async (chunkSize) => {
+    const { completions, client, account } = setup();
+    completions.chunkSize = chunkSize;
+    const events = [
+      'event: tool_started\r\ndata: {"tool_name":"search_web","display_label":"Searching the web: example"}\r\n\r\n',
+      'event: tool_started\ndata: {"display_label":"Unnamed"}\n\n',
+      "event: tool_started\ndata: not json\n\n",
+      'event: tool_failed\ndata: {"tool_name":"date_to_day"}\n\n',
+      'event: tool_completed\ndata: {"tool_name":"search_web","display_label":"Searching the web: example","success":true}\n\n',
+    ].join("");
+    completions.enqueue(200, events + Fixtures.reply("Found it."));
+    const heard: ServerToolEvent[] = [];
+
+    const answer = await DesktopAgent.answer("search it", null, "", "", tools, client, account, Fixtures.userId, async () => "", (event) => heard.push(event));
+
+    expect(answer).toBe("Found it.");
+    expect(heard).toEqual([
+      { tool: "search_web", running: true, label: "Searching the web: example" },
+      { tool: "date_to_day", running: false, label: null },
+      { tool: "search_web", running: false, label: "Searching the web: example" },
+    ]);
+  });
 
   /** The Answer prompt is offered the backend's date tools and every tool that runs on this computer. */
   test("an answer is offered the date tools and this computer's tools", () => {
@@ -254,7 +281,7 @@ describe("the answer's tool loop", () => {
     const answer = await DesktopAgent.answer("what day is friday", null, "User: hi\nTabMail: Hello.", "", tools, client, account, Fixtures.userId, async (call) => {
       calls.push(call);
       return "";
-    });
+    }, ignoreServerTools);
 
     expect(answer).toBe("Friday is the 3rd.");
     expect(calls).toEqual([]);
@@ -280,7 +307,7 @@ describe("the answer's tool loop", () => {
     const answer = await DesktopAgent.answer("do both", null, "", "", tools, client, account, Fixtures.userId, async (call) => {
       ran.push(`${call.id} ${call.function.name} ${call.function.arguments}`);
       return `result of ${call.id}`;
-    });
+    }, ignoreServerTools);
 
     expect(answer).toBe("Both done.");
     expect(ran).toEqual(['call_a example_read {"n":1}', "call_b example_other {}", 'call_c example_read {"n":2}']);
@@ -313,7 +340,7 @@ describe("the answer's tool loop", () => {
     const answer = await DesktopAgent.answer("read it", null, "", "", tools, client, signedIn(auth), Fixtures.userId, async (toolCall) => {
       ran.push(toolCall.id);
       return "read";
-    });
+    }, ignoreServerTools);
 
     expect(answer).toBe("Done.");
     expect(ran).toEqual(afterTool ? ["call_a"] : []);
@@ -334,7 +361,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(401, { error: "invalid_token" });
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
 
-    const error = await thrown(DesktopAgent.answer("read it", null, "", "", tools, client, signedIn(auth), Fixtures.userId, async () => ""));
+    const error = await thrown(DesktopAgent.answer("read it", null, "", "", tools, client, signedIn(auth), Fixtures.userId, async () => "", ignoreServerTools));
 
     expect((error as BackendError).kind).toBe("unauthorized");
     expect(completions.requests).toHaveLength(2);
@@ -351,7 +378,7 @@ describe("the answer's tool loop", () => {
       DesktopAgent.answer("read it", null, "", "", tools, client, account, Fixtures.userId, async () => {
         ran += 1;
         return "";
-      }),
+      }, ignoreServerTools),
     );
 
     expect((error as BackendError).kind).toBe("invalidResponse");
@@ -364,7 +391,7 @@ describe("the answer's tool loop", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply(" \n"));
 
-    const error = await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => ""));
+    const error = await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools));
     expect((error as AgentFailure).kind).toBe("noText");
   });
 
@@ -374,7 +401,7 @@ describe("the answer's tool loop", () => {
     const abort = new AbortController();
     abort.abort();
 
-    await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => "", abort.signal));
+    await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools, abort.signal));
     expect(completions.requests).toHaveLength(0);
   });
 
@@ -392,7 +419,7 @@ describe("the answer's tool loop", () => {
         ran.push(call.id);
         abort.abort();
         return "";
-      }, abort.signal),
+      }, ignoreServerTools, abort.signal),
     );
 
     expect((error as Error).name).toBe("AbortError");
@@ -411,7 +438,7 @@ describe("the answer's tool loop", () => {
       DesktopAgent.answer("read it", null, "", "", tools, client, account, Fixtures.userId, async () => {
         abort.abort();
         return "";
-      }, abort.signal),
+      }, ignoreServerTools, abort.signal),
     );
 
     expect(completions.requests).toHaveLength(1);

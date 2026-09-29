@@ -5,8 +5,9 @@
 import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../resources/icon.png";
-import { connectorInfo } from "../core/agent/connectors.js";
-import { agentTools, toolImplementations } from "../core/agent/tools.js";
+import { alphabetical } from "../core/agent/bubbleOrder.js";
+import { connectorInfo, isConnector } from "../core/agent/connectors.js";
+import { offeredAgentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
@@ -146,6 +147,8 @@ function hasName(state: SettingsState): boolean {
   return (state.userName ?? "").trim() !== "";
 }
 
+/** The user's name, then a switch for each agent tool and each app Answer reaches, alphabetically
+ * (owner, 2026-09-28), as the bubbles under the pill first show. */
 function AgentPane({ state }: { state: SettingsState }) {
   return (
     <>
@@ -162,30 +165,32 @@ function AgentPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
-        {agentTools.map((tool) => (
-          <Toggle
-            key={tool}
-            label={toolImplementations[tool].displayName}
-            icon={<ToolIcon tool={tool} size={config.settingsToolIconSize} />}
-            checked={state.enabledTools.includes(tool)}
-            onChange={(value) => send({ type: "setAgentToolEnabled", tool, value })}
-          >
-            {toolImplementations[tool].settingsDescription}
-          </Toggle>
-        ))}
-        {state.connectors.map((connector) => (
-          <Toggle
-            key={connector}
-            label={connectorInfo[connector].displayName}
-            icon={<ConnectorIcon connector={connector} size={config.settingsToolIconSize} />}
-            checked={state.enabledConnectors.includes(connector)}
-            onChange={(value) => send({ type: "setConnectorEnabled", connector, value })}
-          >
-            {connectorInfo[connector].settingsDescription}
-          </Toggle>
-        ))}
+        {alphabetical([...offeredAgentTools, ...state.connectors]).map((key) =>
+          isConnector(key) ? (
+            <Toggle
+              key={key}
+              label={connectorInfo[key].displayName}
+              icon={<ConnectorIcon connector={key} size={config.settingsToolIconSize} />}
+              checked={state.enabledConnectors.includes(key)}
+              onChange={(value) => send({ type: "setConnectorEnabled", connector: key, value })}
+            >
+              {connectorInfo[key].settingsDescription}
+            </Toggle>
+          ) : (
+            <Toggle
+              key={key}
+              label={toolImplementations[key].displayName}
+              icon={<ToolIcon tool={key} size={config.settingsToolIconSize} />}
+              checked={state.enabledTools.includes(key)}
+              onChange={(value) => send({ type: "setAgentToolEnabled", tool: key, value })}
+            >
+              {toolImplementations[key].settingsDescription}
+            </Toggle>
+          ),
+        )}
       </Group>
-      <EmailClientPicker state={state} />
+      {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
+      {offeredAgentTools.includes("thunderbird") && <EmailClientPicker state={state} />}
     </>
   );
 }

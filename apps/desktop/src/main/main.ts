@@ -218,9 +218,11 @@ function launch(): void {
       hotkey: controller.settings.hotkey,
       tools: controller.tools,
       connectors: controller.connectors,
+      recentBubbles: controller.recentBubbles,
+      runningConnectors: controller.runningConnectors,
       emailAppIcon: emailAppIcon.path === controller.emailAppPath ? emailAppIcon.dataURL : null,
       chat: controller.chat,
-      chatOpensUpward: overlay.chatOpensUpward,
+      chatPlacement: overlay.chatPlacement,
     };
   }
 

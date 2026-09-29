@@ -4,6 +4,7 @@
 
 import { type AccountModel, withFreshToken } from "./account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "./agent/agentChat.js";
+import { type BubbleKey, ranNow, serverToolConnector } from "./agent/bubbleOrder.js";
 import { type Connector, connectors } from "./agent/connectors.js";
 import { DesktopAgent } from "./agent/desktopAgent.js";
 import { EmailClient } from "./agent/emailClient.js";
@@ -11,7 +12,7 @@ import { isJSONObject, type LoopTool } from "./agent/loopTool.js";
 import type { ThunderbirdRelay } from "./agent/thunderbirdRelay.js";
 import { type AgentTool, toolImplementations } from "./agent/tools.js";
 import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "./audio.js";
-import type { CompletionsClient, ToolCall, TranscriptionClient } from "./backend.js";
+import type { CompletionsClient, ServerToolEvent, ToolCall, TranscriptionClient } from "./backend.js";
 import { DictationCleanup } from "./cleanup.js";
 import * as config from "./config.js";
 import { type DictationMode, type HotkeyAction, toggled } from "./hotkey.js";
@@ -92,6 +93,10 @@ export class DictationController extends Observable {
   private currentTip: DictationTip | null = null;
   private emailApp: EmailApp | null = null;
   private currentChat: AgentChat | null = null;
+  /** The bubbles whose tools ran, the most recent first: for the app's life, never saved. */
+  private recent: BubbleKey[] = [];
+  /** The apps whose tools run now: one at a time, as the answer's tools run in turn. */
+  private runningApps = new Set<Connector>();
 
   onPhaseChange: ((phase: Phase) => void) | undefined;
   /** The chat window opened (true) or closed. */
@@ -188,6 +193,18 @@ export class DictationController extends Observable {
   get connectors(): Connector[] {
     if (!this.currentTools.includes("answer")) return [];
     return connectors.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.loopTools.some((tool) => tool.connector === connector));
+  }
+
+  /** The bubbles whose tools have run since the app started, the most recent first, which the
+   * bubbles under the pill are ordered by (`bubbleOrder`). */
+  get recentBubbles(): BubbleKey[] {
+    return this.recent;
+  }
+
+  /** The apps whose tools run now: one on this computer (`LoopTool`), or on the backend (the web's
+   * search), each while it runs. */
+  get runningConnectors(): Connector[] {
+    return [...this.runningApps];
   }
 
   /** In agent mode, the email app's bundle, whose icon the Thunderbird bubble shows. */
@@ -480,6 +497,7 @@ export class DictationController extends Observable {
         const tool = await DesktopAgent.tool(transcript, offered, context, conversation, client, account, userId, signal);
         if (!isCurrent()) return;
         log.debug(`DictationController: agent chose ${tool}`);
+        this.recent = ranNow(this.recent, tool);
         this.setPhase({ kind: "running", tool });
         // Only the tools of apps switched on at key-down are offered, and only those run.
         const loopTools = this.deps.loopTools.filter((loopTool) => settings.enabledConnectors.includes(loopTool.connector));
@@ -495,6 +513,7 @@ export class DictationController extends Observable {
                 account,
                 userId,
                 (call) => this.runLoopTool(call, loopTools, transcript, isCurrent, signal),
+                (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
             : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userId, signal);
@@ -553,14 +572,44 @@ export class DictationController extends Observable {
     }
     log.debug(`DictationController: running ${tool.name}`);
     this.updateChat({ activity: tool.progressLabel });
+    this.appStarted(tool.connector);
     try {
       return await tool.run(args, signal);
     } catch (error) {
       log.error(`DictationController: ${tool.name} failed: ${errorName(error)}`);
       return `Error: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
-      if (isCurrent()) this.updateChat({ activity: null });
+      if (isCurrent()) {
+        this.appEnded(tool.connector);
+        this.updateChat({ activity: null });
+      }
     }
+  }
+
+  /** A backend tool started or ended within the answer's round: its app's bubble (the web's, for its
+   * search) runs meanwhile, and the chat window says what it does, as for a tool here. The backend's
+   * own tools (the date tools) belong to no app, and only show in the chat. */
+  private serverToolRan(event: ServerToolEvent, isCurrent: () => boolean): void {
+    if (!isCurrent()) return;
+    log.debug(`DictationController: backend ${event.running ? "running" : "ran"} ${event.tool}`);
+    const connector = serverToolConnector(event.tool);
+    if (connector !== null) {
+      if (event.running) this.appStarted(connector);
+      else this.appEnded(connector);
+    }
+    if (event.label !== null) this.updateChat({ activity: event.running ? event.label : null });
+  }
+
+  /** One of `connector`'s tools starts: its bubble moves to the front of the history and runs. */
+  private appStarted(connector: Connector): void {
+    this.recent = ranNow(this.recent, connector);
+    this.runningApps.add(connector);
+    this.changed();
+  }
+
+  private appEnded(connector: Connector): void {
+    this.runningApps.delete(connector);
+    this.changed();
   }
 
   /** Shows `question` in the chat window, and waits for the user to confirm or decline it
@@ -896,6 +945,7 @@ export class DictationController extends Observable {
     this.releaseTailTimer = null;
     this.startedAt = null;
     this.currentLevel = 0;
+    this.runningApps.clear();
     // A tool runs only with its request pending.
     const chat = this.currentChat;
     if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });

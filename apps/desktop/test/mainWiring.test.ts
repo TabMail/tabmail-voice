@@ -29,8 +29,8 @@ const app = vi.hoisted(() => ({
   paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   prewarms: 0,
   audioCommands: [] as unknown[],
-  overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatOpensUpward: boolean; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
-  controller: null as { connectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
+  overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
+  controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
@@ -195,6 +195,8 @@ vi.mock("../src/core/dictationController.js", () => ({
     mode = "dictation";
     tools = [];
     connectors: string[] = [];
+    recentBubbles: string[] = [];
+    runningConnectors: string[] = [];
     level = 0;
     language = null;
     tip = null;
@@ -212,7 +214,7 @@ vi.mock("../src/main/overlayWindow.js", () => ({
   OverlayWindowController: class {
     opensUpward = false;
     bubblesFitUnder = true;
-    chatOpensUpward = false;
+    chatPlacement: object | null = null;
     onPlace: (() => void) | undefined;
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
@@ -493,14 +495,15 @@ describe("main process wiring", () => {
     expect(chatRequests()).toEqual([{ isOpen: false }, { isOpen: true }, { isOpen: false }]);
   });
 
-  /** The overlay page is given the conversation as the controller holds it, every turn, opened the way
-   * the overlay window opened it, and none once the window closes. */
-  test("the overlay page is given the conversation and the way it opened", async () => {
+  /** The overlay page is given the conversation as the controller holds it, every turn, placed where
+   * the overlay window placed it, and none once the window closes; and the bubbles' history and the
+   * apps running. */
+  test("the overlay page is given the conversation, where it opened and the bubbles' history", async () => {
     await launch("darwin");
     const controller = app.controller;
     const overlay = app.overlay;
     if (!controller || !overlay) throw new Error("not launched");
-    const state = () => app.handlers.get(channels.getState)?.({}, "overlay") as { chat: unknown; chatOpensUpward: boolean };
+    const state = () => app.handlers.get(channels.getState)?.({}, "overlay") as { chat: unknown; chatPlacement: unknown };
     const chat = {
       turns: [
         { id: 0, request: "When is the launch", tool: "answer", reply: "Friday" },
@@ -511,12 +514,14 @@ describe("main process wiring", () => {
     };
 
     controller.chat = chat;
-    overlay.chatOpensUpward = true;
-    expect(state()).toMatchObject({ chat, chatOpensUpward: true });
-    overlay.chatOpensUpward = false;
-    expect(state()).toMatchObject({ chat, chatOpensUpward: false });
+    controller.recentBubbles = ["web", "answer"];
+    controller.runningConnectors = ["web"];
+    const placement = { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: 206 };
+    overlay.chatPlacement = placement;
+    expect(state()).toMatchObject({ chat, chatPlacement: placement, recentBubbles: ["web", "answer"], runningConnectors: ["web"] });
     controller.chat = null;
-    expect(state().chat).toBeNull();
+    overlay.chatPlacement = null;
+    expect(state()).toMatchObject({ chat: null, chatPlacement: null });
   });
 
   /** A follow-up's phases reach the overlay with the chat window open, so it stays the chat window;
@@ -567,14 +572,14 @@ describe("main process wiring", () => {
     for (const value of ["false", "true", 1, null]) {
       expect(await send({ type: "setAgentToolEnabled", tool: "answer", value })).toEqual({ error: expect.any(String) });
     }
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+    expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
     expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: true })).toEqual({ error: null });
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird", "answer"]);
+    expect(state("settings").enabledTools).toEqual(["edit", "compose", "answer"]);
     expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: null });
     expect(await send({ type: "setAgentToolEnabled", tool: "retired-tool", value: false })).toEqual({ error: expect.any(String) });
 
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
-    expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+    expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
+    expect(state("welcome").enabledTools).toEqual(["edit", "compose"]);
   });
 
   /** On macOS the Answer tool reaches Calendar, Reminders, Contacts and Files through `voice-macos`,

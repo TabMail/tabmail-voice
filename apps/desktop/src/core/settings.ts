@@ -4,7 +4,7 @@
 
 import { DebugAccess } from "./account.js";
 import { type Connector, connectors, isConnector } from "./agent/connectors.js";
-import { type AgentTool, agentTools, isAgentTool } from "./agent/tools.js";
+import { type AgentTool, isAgentTool, offeredAgentTools } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey.js";
 import { type KeyValueStore, storedBool, storedString } from "./keyValueStore.js";
@@ -160,9 +160,9 @@ export class AppSettings extends Observable {
     this.changed();
   }
 
-  /** Agent mode's tools the user has on, in the registry's order. */
+  /** Agent mode's offered tools the user has on, in the registry's order. */
   get enabledTools(): AgentTool[] {
-    return agentTools.filter((tool) => this.isEnabled(tool));
+    return offeredAgentTools.filter((tool) => this.isEnabled(tool));
   }
 
   /** The apps the Answer tool reaches that the user switched off, stored by name so one added later

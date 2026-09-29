@@ -889,6 +889,11 @@ trip takes.
 
 ## ADR-DESK-022: The Answer tool, the chat window, and agent tools switched on and off
 
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** the chat window no longer replaces the pill or
+> opens at the caret's line (`chatFrame`, `chatOpensUpward`): it opens over the pill, which stays
+> where it was with its bubbles (under them only without room over them), and rests there as a small
+> circle between follow-ups. The status pill inside the window is gone.
+
 **Context:** Owner, 2026-09-26: agent mode gains an Answer tool whose reply is shown, not pasted, in a
 chat window that grows from the pill. With the window open, the hotkey starts a follow-up, "always in
 agent mode". Escape or the window's X closes it; untouched it closes after 30 seconds, "like iOS
@@ -1024,6 +1029,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
   offers the Answer prompt no tools, and the answer is written without them.
 - Server tools run inside a round and show no progress in the chat window (the whole stream is read,
   then parsed); a slow server tool (web search, later) would need the stream read as it arrives.
+  *(Later (ADR-DESK-036): the stream is read as it arrives, and a server tool's start and end show.)*
 - A request waiting on a confirmation holds agent mode: the hotkey starts nothing until the user
   confirms, declines or closes the window, or the question's time runs out (below).
 - Each round has the completions request timeout of its own (`completionsRequestTimeout`); a tool's
@@ -1571,6 +1577,11 @@ only; code comments that name the Swift app record what a port matches.
 
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
+> ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
+> without room), four at most, the latest to run first, replaces the rows around it
+> (`bubbleCentres`, `agentBubbleRowCapacity`, `agentBubbleRowsAbove`). An app's bubble now circles
+> while its tools run. One bubble per tool and per connector switched on stands.
+
 **Context:** Owner, 2026-09-26: "many bubbles surround the pill": the single row above the pill fills
 first, then the bubbles wrap around the pill's sides and underneath, keeping clear of the caret's
 line. Owner, 2026-09-27: each connector switched on gets its own bubble ("Connector bubbles"). First
@@ -1604,6 +1615,10 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
   every tool and connector, checks they stay inside the canvas.
 
 ## ADR-DESK-034: A bubble under the pointer grows and says what it is
+
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** bubbles grow about their centre, not up from
+> their bottom edge, to fixed sizes (`agentBubbleHoverDiameter`, `agentBubbleRunningDiameter`), from
+> a smaller size at rest.
 
 **Context:** Owner, 2026-09-28: "for the tools, when mouse hovers over them, make them sort of
 enlarged and also show tooltips on what this tool is. Sort of something that you can even inspect."
@@ -1672,3 +1687,119 @@ sort of nag to set it in the wizard and settings".
   tip in agent mode and the mark in Settings until they set one.
 - A name that matches none of the names on screen (a nickname, another spelling) helps less; the
   prompt reads "that name, or part of it".
+
+## ADR-DESK-036: The chat window opens over the pill; the bubbles are a history of what ran
+
+**Context:** Owner, 2026-09-28, reading an agent-mode answer session's log: "the answer box [should]
+appear above the … voice pill … and close the other tools"; "while the chat is running, I don't see
+the circle running and executing tools"; "we want the tools to appear below the … voice pill … only
+show like three or so, and it just fades away to the right … sort of alphabetical … the most recent
+run tool just appears on the left … shifting the other tools to the right"; the Settings tools page
+sorted alphabetically; "the answers being shown are … pretty rough … look at Thunderbird and how the
+text appears … and mimic that"; and some turns seemed "not in turn". Asked, the owner chose a small
+resting circle for the pill between follow-ups, and, for an unclear request in agent mode, "have a
+prompt to ask the user". Later the same day: a grey request bubble "looks bad"; "make the … neon glow
+very apparent for the pills … a hint that we're in agent mode, only for the pill"; the pill should
+circle while agent mode works; a bubble "slightly smaller than the pill" at rest but as large as
+before when grown; and "4 entries tops". The log showed three causes: the chooser pasted a spelled-out
+name as Compose text into the app instead of continuing the conversation; the answer asked instead of
+acting on a correction; and the web search, run on the backend inside a round, showed nothing, since
+the stream was read whole and named its tools only in development builds.
+
+**Decision:**
+- **Placement.** The pill stays where the overlay put it for the caret, or for the pointer without
+  one (`pillPosition`; the pointer's spot is kept, so the chat opens there even if it has moved). The
+  chat window opens `chatPillGap` over the pill and its bubbles (`chatStripHeight`), or under them
+  when the tallest window would not fit over them but would under them; on a screen too short for
+  either, on the side with more room, growing no taller than that room and scrolling instead
+  (`chatSide`, `ChatPlacement.maxHeight`), so all of it, a question's buttons too, stays on screen.
+  The side is decided once, so it never flips as the chat grows. The overlay window is laid out by
+  `chatWindowFrame`, keeping the edge on the pill's side fixed as it fits the chat's height, so the
+  pill never moves; its bubbles keep the side they had
+  (`ChatPlacement.bubblesUnder`). The view is told where the pill is across the window
+  (`ChatPlacement.pillX`). The window takes the mouse over all of it while the chat is open, as
+  before; the pill's layer lets the pointer through to the chat but for its bubbles.
+- **One tree.** The overlay page renders the pill in the same place in its tree with the chat window
+  open or not, so the pill and its bubbles don't remount as the chat opens. The chat appears once,
+  fading in as it rises `chatAppearRise` from the pill and scales up from `chatAppearScale` over
+  `chatAppearDuration`. Under it the pill rests as a circle with a fainter sparkle
+  (`agentRestingSymbolOpacity`) while nothing runs, listens for a follow-up without the warm-up
+  swirl, and keeps the last request's bubbles until a follow-up knows its own.
+- **The row.** Bubbles go in one row under the pill (over it without room, `bubblesFitUnder`), a
+  `agentBubbleGap` from it and `agentBubbleSpacing` apart (`bubbleRow`): the first
+  `agentBubbleRowVisibleCount` (3) centred on the pill in full, then `agentBubbleRowFadeCount` (1)
+  fading away to the right (`bubbleRowOpacity`), four at most. Their order is `bubbleOrder`: those
+  that ran, the latest first (`DictationController.recentBubbles`, `ranNow`: the tool the agent
+  chose, then the app whose tool starts), then the rest alphabetically by name (`alphabetical`). The
+  history lasts the app's run, in memory only. A bubble slides to its new place over
+  `agentBubbleMoveDuration`.
+- **Running.** A bubble circles while its tool runs, and an app's while one of its tools runs: a
+  `LoopTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
+  inside a round, one at a time as the answer's tools run in turn
+  (`DictationController.runningConnectors`, cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
+  `agentBubbleDiameter` (20) at rest, smaller than the pill, and grow about their centre to
+  `agentBubbleHoverDiameter` or `agentBubbleRunningDiameter`, as large as before; neighbours both
+  running don't touch.
+- **Agent mode's pill.** In agent mode (and under the chat window) the pill glows as neon, a tight
+  blue glow in a wide purple one (`agentPillGlow…`); dictation's pill and every bubble keep the plain
+  glow.
+- **Server tools as they run.** `HTTPRequest.onChunk` hands the completions stream to `SSEParser` as
+  it arrives (a piece may end anywhere, a CRLF split across two included), and `Completions.round`
+  reports each `tool_started`, `tool_completed` and `tool_failed` event that names its tool
+  (`ServerToolEvent`); the chat shows a named tool's label while it runs. The backend now names the
+  tool in production too, for every client (its ADR-023 amendment of 2026-09-28, deployed before this
+  build; an event without a name is skipped, so an older backend shows no progress, as before). Its
+  arguments and result stay development-only.
+- **Replies as Thunderbird shows them.** A reply is laid out in blocks (`replyBlocks`: paragraphs at
+  blank lines, each line break a line; bulleted and numbered lists, numbered from where they start,
+  an unmarked line continuing an item; `#` headings), each line's inline Markdown as before, and
+  revealed as TabMail's chat in Thunderbird reveals one: a line or list item every
+  `chatRevealStepInterval` (100 ms), each fading in over `chatRevealFadeDuration` (180 ms) as it rises
+  `chatRevealRise`, the newest kept in view unless the user scrolled up. Line height and paragraph
+  spacing are Thunderbird's (`chatLineHeight`, `chatParagraphSpacing`). The request sits on the right
+  at most `chatRequestMaxWidthFraction` of the width, as there, but in a light tint of the brand's
+  gradient with a hairline brand border rather than grey. While a request waits with nothing else
+  to show, the window says `chatThinkingLabel`.
+- **Settings** lists the tools and apps together alphabetically (`alphabetical`). The welcome
+  wizard keeps its own order.
+- **Unclear requests** (backend ADR-023 amendment, 2026-09-28): the chooser picks Answer for an
+  unclear request, a bare name, a spelling or a reply to the last answer's question, and never
+  guesses text into the app; the answer carries a reply or correction on into the request before it,
+  and asks one short question when still unclear.
+
+**Consequences:**
+- The pill never jumps as the chat opens or grows, and the caret's line stays clear of the chat, which
+  opens away from it.
+- A follow-up's pill listens in place under the chat instead of in a status pill inside it; a
+  follow-up's phase changes show nothing new in the chat, so they no longer scroll it.
+- Only four bubbles show: with more tools and apps on, the rest show once they run.
+- A server tool's progress needs the backend deployed first; the Voice app tolerates an older one.
+- The reveal starts again for a reply whose turn remounts (it doesn't while the chat stays open).
+
+
+## ADR-DESK-037: The Thunderbird tool is off until its native connector
+
+**Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test
+all the others. And then for the Thunderbird tool, we should only use it … after introducing the
+native connector, because right now it's just clunky." The tool drives TabMail's chat in
+Thunderbird from outside (ADR-DESK-014's spike: shortcut, paste, Return). The native connector is
+ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built separately.
+
+**Decision:**
+- `offeredAgentTools` (Edit, Compose, Answer) is what agent mode offers and what Settings and the
+  welcome wizard list; `agentTools` stays the registry of every tool, Thunderbird's included, so a
+  bubble or a stored switch still names a tool (`isAgentTool`). `AppSettings.enabledTools` is drawn
+  from `offeredAgentTools`, so no dictation offers Thunderbird's tool, and the agent is never told of
+  it (`available_tools`).
+- Its switch, and Settings' Email app menu (which only chooses where that tool sends), are hidden. A
+  switch the user stored for it is kept, for when it returns.
+- Its code stays (`ThunderbirdTool`, `ThunderbirdRelay`, the email app's resolution and icon), and
+  the controller's tests still run it with a tool list that offers it.
+
+**Consequences:**
+- Mail and calendar requests go to Answer, whose Calendar, Reminders, Email and other connectors
+  carry them out; the backend's agent prompt says which requests each tool takes (ADR-023
+  amendment, 2026-09-29).
+- Bringing the tool back is offering it in `offeredAgentTools`, with the native connector as its
+  delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
+  case) were taken out with it and come back from this change's history.

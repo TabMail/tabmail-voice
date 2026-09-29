@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test, vi } from "vitest";
-import { type AgentChat, appendTurn, chatTranscript, emptyChat, formattedReply, opensLink, type ReplyRun, remainingFraction } from "../src/core/agent/agentChat.js";
+import { type AgentChat, appendTurn, chatTranscript, emptyChat, formattedReply, opensLink, type ReplyRun, remainingFraction, replyBlocks, revealSteps } from "../src/core/agent/agentChat.js";
 
 const empty: AgentChat = emptyChat;
 
@@ -177,5 +177,43 @@ describe("a reply's formatting", () => {
       run(" or "),
       run("docs", { strong: true, link: "https://example.com/docs" }),
     ]);
+  });
+});
+
+/** A reply laid out as Thunderbird's chat lays one out, to reveal a line or list item at a time. */
+describe("a reply's blocks", () => {
+  test("blank lines part paragraphs, and a line break is a new line of one", () => {
+    const blocks = replyBlocks("First line\nsecond line\n\n\nNext paragraph\r\nits end\r\n");
+    expect(blocks).toEqual([
+      { kind: "paragraph", lines: ["First line", "second line"] },
+      { kind: "paragraph", lines: ["Next paragraph", "its end"] },
+    ]);
+    expect(revealSteps(blocks)).toBe(4);
+  });
+
+  /** Bulleted and numbered items make lists, numbered from where the list starts; a line under an item
+   * without a marker continues it; a change of kind starts a new list. */
+  test("lists, their start and an item's continuation", () => {
+    const blocks = replyBlocks("Options:\n- one\n* two\n  more of two\n+ three\n4. four\n5) five");
+    expect(blocks).toEqual([
+      { kind: "paragraph", lines: ["Options:"] },
+      { kind: "list", ordered: false, start: 1, items: ["one", "two\nmore of two", "three"] },
+      { kind: "list", ordered: true, start: 4, items: ["four", "five"] },
+    ]);
+    expect(revealSteps(blocks)).toBe(6);
+  });
+
+  test("a heading is its own block, a hash without a space is text", () => {
+    expect(replyBlocks("## Plan\n#launch is Friday")).toEqual([
+      { kind: "heading", text: "Plan" },
+      { kind: "paragraph", lines: ["#launch is Friday"] },
+    ]);
+  });
+
+  /** Text that only looks like a marker stays as written, and nothing is lost: every word of the
+   * reply is in its blocks. */
+  test.each(["2 * 3 = 6", "-dash first", "1.5 times", "", "   "])("%j stays as written", (reply) => {
+    const blocks = replyBlocks(reply);
+    expect(blocks).toEqual(reply.trim() === "" ? [] : [{ kind: "paragraph", lines: [reply] }]);
   });
 });

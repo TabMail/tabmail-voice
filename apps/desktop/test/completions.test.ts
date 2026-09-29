@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { BackendError, CompletionsClient, type CompletionsMessage } from "../src/core/backend.js";
+import { BackendError, CompletionsClient, type CompletionsMessage, SSEParser } from "../src/core/backend.js";
 import * as config from "../src/core/config.js";
 import { Fixtures, StubTransport } from "./support.js";
 
@@ -257,6 +257,19 @@ describe("server-sent events", () => {
   test("events also end at the next event and at the end", () => {
     const events = CompletionsClient.events("event: \tkeepalive\t\ndata: first\nevent: final\ndata: last");
     expect(events).toEqual([{ name: "keepalive", data: "first" }, { name: "final", data: "last" }]);
+  });
+
+  /** A body read as it arrives, cut in two anywhere (mid-line, between a CRLF's characters), gives the
+   * events the whole body does, each as soon as it is complete. */
+  test.each(["\n", "\r\n", "\r"])("a body cut anywhere parses as the whole does (%j)", (lineEnd) => {
+    const body = [": primer", "", "event: keepalive", "data: {}", "", "event: tool_started", "data: one", "data: two", "event: final", "data: last", ""].join(lineEnd);
+    const whole = CompletionsClient.events(body);
+    for (let cut = 0; cut <= body.length; cut += 1) {
+      const parser = new SSEParser();
+      expect([...parser.push(body.slice(0, cut)), ...parser.push(body.slice(cut)), ...parser.end()]).toEqual(whole);
+    }
+    const parser = new SSEParser();
+    expect(parser.push(body.slice(0, body.indexOf("data: last") + 1))).toEqual(whole.slice(0, 2));
   });
 
   test.each(["\n", "\r\n", "\r"])("events join data lines at every line end (%j)", (lineEnd) => {

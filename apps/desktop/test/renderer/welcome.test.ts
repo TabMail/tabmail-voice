@@ -18,7 +18,7 @@ const features: WelcomeState = {
   canAdvance: true,
   hasConsented: true,
   readsScreen: true,
-  enabledTools: ["compose", "thunderbird"],
+  enabledTools: ["compose"],
   connectors: [],
   enabledConnectors: [],
   userName: null,
@@ -98,35 +98,37 @@ describe("welcome wizard", () => {
     expect(nameField().value).toBe("");
   });
 
-  /** The Features step has a checkbox for each agent tool, with its description, ticked as the state
-   * says, which turns it on or off. */
+  /** The Features step has a checkbox for each agent tool offered, in alphabetical order, with its
+   * description, ticked as the state says, which turns it on or off. Thunderbird's has none until its
+   * native connector (ADR-DESK-037). */
   test("the Features step has a checkbox for each agent tool", async () => {
     const page = await welcomePage(features);
     const tools = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labelled-icon"));
 
-    expect(tools.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Edit", "Compose", "Thunderbird", "Answer"]);
+    expect(tools.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Answer", "Compose", "Edit"]);
     expect(tools.every((label) => (label.querySelector(".caption")?.textContent ?? "") !== "")).toBe(true);
     const boxes = tools.map((label) => label.querySelector("input") as HTMLInputElement);
-    expect(boxes.map((box) => box.checked)).toEqual([false, true, true, false]);
+    expect(boxes.map((box) => box.checked)).toEqual([false, true, false]);
     for (const box of boxes) await act(async () => box.click());
 
     expect(page.commands).toEqual([
-      { type: "setAgentToolEnabled", tool: "edit", value: true },
-      { type: "setAgentToolEnabled", tool: "compose", value: false },
-      { type: "setAgentToolEnabled", tool: "thunderbird", value: false },
       { type: "setAgentToolEnabled", tool: "answer", value: true },
+      { type: "setAgentToolEnabled", tool: "compose", value: false },
+      { type: "setAgentToolEnabled", tool: "edit", value: true },
     ]);
+    expect(document.body.textContent).not.toContain("Thunderbird");
   });
 
-  /** On a Mac, the Features step has a checkbox for each app the Answer tool reaches, after the
-   * tools, checked as the state says, which turns it on or off. */
+  /** On a Mac, the Features step has a checkbox for each app the Answer tool reaches, among the tools
+   * in alphabetical order as Settings lists them (owner, 2026-09-28), checked as the state says,
+   * which turns it on or off. */
   test("the Features step has a checkbox for each app the Answer tool reaches", async () => {
     const page = await welcomePage({ ...features, connectors: ["calendar", "reminders"], enabledConnectors: ["calendar"] });
     const rows = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labelled-icon"));
 
-    expect(rows.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Edit", "Compose", "Thunderbird", "Answer", "Calendar", "Reminders"]);
+    expect(rows.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders"]);
     expect(rows.every((label) => (label.querySelector(".caption")?.textContent ?? "") !== "")).toBe(true);
-    const boxes = rows.slice(4).map((label) => label.querySelector("input") as HTMLInputElement);
+    const boxes = [rows[1], rows[4]].map((label) => label?.querySelector("input") as HTMLInputElement);
     expect(boxes.map((box) => box.checked)).toEqual([true, false]);
     for (const box of boxes) await act(async () => box.click());
 

@@ -7,15 +7,18 @@ import { deferred } from "./support.js";
 import type { BrowserWindow } from "electron";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
-import { chatFrame, type Rect } from "../src/core/overlayGeometry.js";
+import type { Rect } from "../src/core/overlayGeometry.js";
 import { OverlayWindowController } from "../src/main/overlayWindow.js";
 
-/** One display, and the mouse pointer in its middle. */
+/** One display, and the mouse pointer in its middle; a test may move the pointer or use another
+ * display, and puts them back. */
 const workArea = { x: 0, y: 0, width: 1440, height: 900 };
+const pointerAtRest = { x: 720, y: 450 };
+const screenNow = { pointer: pointerAtRest, workArea };
 vi.mock("electron", () => ({
   screen: {
-    getCursorScreenPoint: () => ({ x: 720, y: 450 }),
-    getDisplayNearestPoint: () => ({ workArea }),
+    getCursorScreenPoint: () => screenNow.pointer,
+    getDisplayNearestPoint: () => ({ workArea: screenNow.workArea }),
   },
 }));
 
@@ -58,10 +61,6 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
     },
   } as unknown as BrowserWindow;
   return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible };
-}
-
-function rounded(frame: Rect): Rect {
-  return { x: Math.round(frame.x), y: Math.round(frame.y), width: Math.round(frame.width), height: Math.round(frame.height) };
 }
 
 describe("OverlayWindowController", () => {
@@ -120,37 +119,55 @@ describe("OverlayWindowController", () => {
     ]);
   });
 
-  /** The overlay takes the mouse, as the chat window, grown out of the pill at the caret the request
-   * was spoken over, only while the chat is open; it fits the height the chat window measures, and
-   * closed it lets every click through again (the pointer's moves still reaching the page, for a
-   * bubble's hover), at the pill's size, hidden. */
-  test("the chat window takes the mouse only while it is open", async () => {
-    const caret: Rect = { x: 400, y: 300, width: 1, height: 16 };
+  /** Where the pill is on screen, its top edge's centre, in the overlay's canvas at `bounds`, or in
+   * the chat window at `bounds` as `controller` places it (its bubbles `row` over it, or none). */
+  function pillOnScreen(bounds: Rect, controller?: OverlayWindowController): { x: number; y: number } {
+    const placement = controller?.chatPlacement;
+    if (!placement) return { x: bounds.x + bounds.width / 2, y: bounds.y + (bounds.height - config.pillHeight) / 2 };
+    const margin = config.chatShadowMargin;
+    const overBubbles = placement.bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
+    const y = placement.below ? bounds.y + margin + overBubbles : bounds.y + bounds.height - margin - config.chatStripHeight + overBubbles;
+    return { x: bounds.x + placement.pillX, y };
+  }
+
+  /** The overlay takes the mouse, as the chat window, opened over the pill at the caret the request
+   * was spoken over, only while the chat is open; the pill stays where it was as it opens and as it
+   * fits the height the chat window measures, and closed it lets every click through again (the
+   * pointer's moves still reaching the page, for a bubble's hover), at the pill's size, hidden. */
+  test("the chat window takes the mouse only while it is open, and the pill stays put", async () => {
+    const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, async () => caret);
-    const placed: boolean[] = [];
-    controller.onPlace = () => placed.push(controller.chatOpensUpward);
+    const placed: unknown[] = [];
+    controller.onPlace = () => placed.push(controller.chatPlacement);
     controller.update({ kind: "arming" });
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     expect(overlay.ignoresMouse()).toBe(true);
+    const pill = pillOnScreen(overlay.bounds());
 
     controller.update({ kind: "running", tool: "answer" }, true);
     expect(overlay.ignoresMouse()).toBe(false);
     expect(overlay.visible()).toBe(true);
-    expect(overlay.bounds()).toEqual(rounded(chatFrame(caret, config.chatMaxHeight, workArea)));
     expect(overlay.bounds().width).toBe(config.chatWidth + 2 * config.chatShadowMargin);
-    expect(placed).toEqual([false, false]);
+    expect(placed).toEqual([null, { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: expect.any(Number) as number }]);
+    expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
+    // Over the pill: the window's top well above it.
+    expect(overlay.bounds().y).toBeLessThan(pill.y - config.chatMaxHeight);
+    const opened = overlay.bounds();
     controller.fitChat(120);
-    expect(overlay.bounds()).toEqual(rounded(chatFrame(caret, 120, workArea)));
+    expect(overlay.bounds().height).toBe(opened.height - config.chatMaxHeight + 120);
+    expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
 
     // The request's end, and a follow-up, leave it open where it is.
+    const fitted = overlay.bounds();
     controller.update({ kind: "idle" }, true);
     controller.update({ kind: "arming" }, true);
-    expect(overlay.bounds()).toEqual(rounded(chatFrame(caret, 120, workArea)));
+    expect(overlay.bounds()).toEqual(fitted);
     expect(overlay.visible()).toBe(true);
 
     controller.update({ kind: "idle" }, false);
+    expect(controller.chatPlacement).toBeNull();
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
     expect(overlay.visible()).toBe(false);
@@ -159,19 +176,82 @@ describe("OverlayWindowController", () => {
     expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
   });
 
-  /** At a caret near the screen's bottom the chat window opens upward, and says so. */
-  test("near the bottom the chat window opens upward", async () => {
-    const caret: Rect = { x: 400, y: workArea.height - 40, width: 1, height: 16 };
+  /** At a caret near the screen's top there is no room over the pill: the chat window opens under it
+   * and its bubbles, the pill staying put as it grows. Near the bottom, where the bubbles went over
+   * the pill, it opens over them. Either way it stays on screen. */
+  test.each([
+    ["top", 40, { below: true, bubblesUnder: true }],
+    ["bottom", workArea.height - 40, { below: false, bubblesUnder: false }],
+  ])("near the %s the chat window keeps clear of the pill and its bubbles", async (_, y, placement) => {
+    const caret: Rect = { x: 400, y, width: 1, height: 16 };
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, async () => caret);
     controller.update({ kind: "arming" });
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+    const pill = pillOnScreen(overlay.bounds());
 
     controller.update({ kind: "running", tool: "answer" }, true);
 
-    expect(controller.chatOpensUpward).toBe(true);
-    expect(overlay.bounds().y + overlay.bounds().height).toBeLessThanOrEqual(workArea.height + config.chatShadowMargin);
+    expect(controller.chatPlacement).toMatchObject(placement);
+    for (const height of [config.chatMaxHeight, 120]) {
+      controller.fitChat(height);
+      expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
+      const margin = config.chatShadowMargin;
+      expect(overlay.bounds().y + margin).toBeGreaterThanOrEqual(workArea.y);
+      expect(overlay.bounds().y + overlay.bounds().height - margin).toBeLessThanOrEqual(workArea.height);
+    }
+  });
+
+  /** In an app with no caret the pill shows at the pointer, and the chat window opens there, over the
+   * pill, even if the pointer has moved on while the answer ran. */
+  test("without a caret the chat window opens where the pill is, not at the pointer", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    try {
+      controller.update({ kind: "arming" });
+      controller.update({ kind: "listening" });
+      await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+      const pill = pillOnScreen(overlay.bounds());
+      screenNow.pointer = { x: 300, y: 700 };
+
+      controller.update({ kind: "running", tool: "answer" }, true);
+
+      expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+  });
+
+  /** On a screen too short for the tallest chat window over or under the pill, it opens on the side
+   * with more room, no taller than that room, so all of it is on screen: its newest lines, and a
+   * question's buttons. The pill stays put. */
+  test.each([200, 260, 300])("on a short screen the chat window stays on it, at a caret at %d", async (y) => {
+    const short: Rect = { x: 0, y: 25, width: 1024, height: 540 };
+    screenNow.workArea = short;
+    try {
+      const caret: Rect = { x: 400, y, width: 1, height: 16 };
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => caret);
+      controller.update({ kind: "arming" });
+      controller.update({ kind: "listening" });
+      await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+      const pill = pillOnScreen(overlay.bounds());
+
+      controller.update({ kind: "running", tool: "answer" }, true);
+
+      const placement = controller.chatPlacement;
+      expect(placement?.maxHeight).toBeLessThan(config.chatMaxHeight);
+      for (const height of [config.chatMaxHeight, 120]) {
+        controller.fitChat(height);
+        expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
+        const margin = config.chatShadowMargin;
+        expect(overlay.bounds().y + margin, `${height}`).toBeGreaterThanOrEqual(short.y);
+        expect(overlay.bounds().y + overlay.bounds().height - margin, `${height}`).toBeLessThanOrEqual(short.y + short.height);
+      }
+    } finally {
+      screenNow.workArea = workArea;
+    }
   });
 
   /** A window a tool opened, dropped when its request fails (`DictationController.teardown`), gives
