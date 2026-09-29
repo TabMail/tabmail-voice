@@ -1975,6 +1975,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.runningConnectors).toEqual([]);
         });
 
+        /** A search the backend ends mid-request stops its bubble and takes its label down then, not
+         * when the request ends: the tool the model calls next runs alone, under its own label. (The
+         * tool runs first too, to open the chat the label shows in.) */
+        test("a finished search stops running before the next tool runs", async () => {
+          const tool = new FakeLoopTool();
+          let controllerRef: DictationController | undefined;
+          const whileRunning: [string[], string | null][] = [];
+          tool.during = async () => {
+            whileRunning.push([controllerRef?.runningConnectors ?? [], controllerRef?.chat?.activity ?? null]);
+          };
+          const search = (event: string) => `event: ${event}\ndata: {"tool_name":"search_web","display_label":"Searching the web: launch"}\n\n`;
+          const seen: [string[], string | null][] = [];
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), search("tool_started") + search("tool_completed") + calling(["example_create", "{}"]), reply(answer)], (controller) => {
+            controllerRef = controller;
+            controller.observe(() => seen.push([controller.runningConnectors, controller.chat?.activity ?? null]));
+          });
+          await done;
+
+          expect(whileRunning).toEqual([
+            [["calendar"], "Adding it to your calendar"],
+            [["calendar"], "Adding it to your calendar"],
+          ]);
+          // Between the search's end and the tool's second run: nothing running, and no label.
+          const searched = seen.findIndex(([, activity]) => activity === "Searching the web: launch");
+          const adding = seen.findIndex(([running], index) => index > searched && running.includes("calendar"));
+          expect(searched).toBeGreaterThanOrEqual(0);
+          expect(seen.slice(searched, adding)).toContainEqual([[], null]);
+          expect(controller.recentBubbles).toEqual(["calendar", "web", "answer"]);
+        });
+
         /** A request cancelled while its tool runs leaves no app running, and one that ends meanwhile
          * doesn't touch the next request's. */
         test("a request cancelled while its tool runs leaves no app running", async () => {

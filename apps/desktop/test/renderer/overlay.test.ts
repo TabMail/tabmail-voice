@@ -581,6 +581,41 @@ describe("the chat window", () => {
     }
   });
 
+  /** Each line a reply reveals keeps the newest in view, until the user scrolls up to read an earlier
+   * answer: then the lines still to come leave the conversation where the user put it. */
+  test("a revealed line keeps the newest in view unless the user scrolled up", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const page = await overlayPage();
+      const show = page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "When", tool: "answer", reply: "One\nTwo\nThree\nFour" }], pendingRequest: null } });
+      await vi.advanceTimersByTimeAsync(0);
+      await show;
+      const scroll = document.querySelector<HTMLElement>(".chat-scroll");
+      if (!scroll) throw new Error("no .chat-scroll");
+      Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
+      Object.defineProperty(scroll, "clientHeight", { configurable: true, value: 200 });
+      const step = () =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(config.chatRevealStepInterval);
+        });
+
+      scroll.scrollTop = 0;
+      await step();
+      expect(texts(".chat-text .reveal")).toEqual(["One", "Two"]);
+      expect(scroll.scrollTop).toBe(500);
+
+      scroll.scrollTop = 100;
+      act(() => {
+        scroll.dispatchEvent(new Event("scroll"));
+      });
+      await step();
+      expect(texts(".chat-text .reveal")).toEqual(["One", "Two", "Three"]);
+      expect(scroll.scrollTop).toBe(100);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   /** A reply's inline Markdown shows as it reads: code, bold, italics, struck-out text and a link,
    * each around its own words and none of the text around them. */
   test("a reply's inline Markdown shows as it reads", async () => {

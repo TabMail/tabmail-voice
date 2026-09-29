@@ -92,7 +92,6 @@ describe("liveTransport", () => {
     expect(await failure(liveTransport(post(url, { timeout: 200 })))).toBe("timeout");
   });
 
-  /** The timeout is for silence: a stream that keeps sending runs past it. */
   /** A streamed reply reaches `onChunk` a piece at a time as it arrives, before the whole body is
    * returned (the server waits to hear the first piece was heard); a character split across two
    * pieces arrives whole, and the pieces add up to the body. */
@@ -126,6 +125,7 @@ describe("liveTransport", () => {
     expect(heard.every((piece) => piece !== "" && !piece.includes("\uFFFD"))).toBe(true);
   });
 
+  /** The timeout is for silence: a stream that keeps sending runs past it. */
   test("a stream that keeps sending outlasts the timeout", async () => {
     const url = await serve(async (response) => {
       response.writeHead(200);

@@ -373,6 +373,28 @@ describe("the chat window's place", () => {
     expect(middle.maxHeight).toBeGreaterThan(config.chatMaxHeight / 2);
   });
 
+  /** With room for the tallest chat on neither side, the side with more room wins, over the pill as
+   * much as under it. */
+  test.each([true, false])("without room for the tallest chat either side, it takes the roomier (bubbles under: %s)", (bubblesUnder) => {
+    const short: Rect = { x: 0, y: 25, width: 1000, height: 540 };
+    const room = config.chatMaxHeight - 20;
+    const top = bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
+    // `room` over the pill and its bubbles, less under them; then `room` under them, less over.
+    const low = short.y + config.chatPillGap + room + top;
+    const lowSide = chatSide(low, bubblesUnder, short);
+    expect(lowSide).toEqual({ below: false, maxHeight: room });
+    const high = maxY(short) - room - config.chatPillGap - config.chatStripHeight + top;
+    const highSide = chatSide(high, bubblesUnder, short);
+    expect(highSide).toEqual({ below: true, maxHeight: room });
+    // The other side had room too, only less: each time neither side fits the tallest.
+    const under = maxY(short) - (low - top + config.chatStripHeight + config.chatPillGap);
+    const over = high - top - config.chatPillGap - short.y;
+    expect(under).toBeGreaterThan(0);
+    expect(under).toBeLessThan(room);
+    expect(over).toBeGreaterThan(0);
+    expect(over).toBeLessThan(room);
+  });
+
   /** A pill at a screen edge keeps the chat on screen; only its shadow margin may spill. */
   test.each([2, 998])("the chat window stays on screen with the pill at x %d", (x) => {
     const frame = chatWindowFrame({ x, y: 500 }, 120, display, { below: false, ...tallest }, true);

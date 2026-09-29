@@ -1747,10 +1747,9 @@ the stream was read whole and named its tools only in development builds.
   it arrives (a piece may end anywhere, a CRLF split across two included), and `Completions.round`
   reports each `tool_started`, `tool_completed` and `tool_failed` event that names its tool
   (`ServerToolEvent`); the chat shows a named tool's label while it runs. The backend now names the
-  tool in production for the desktop answer prompt only, as iOS labels a tool by its name (its
-  ADR-023 amendment of 2026-09-28, deployed before this build; an event without a name is skipped, so
-  an older backend shows no progress, as before). Its arguments and
-  result stay development-only.
+  tool in production too, for every client (its ADR-023 amendment of 2026-09-28, deployed before this
+  build; an event without a name is skipped, so an older backend shows no progress, as before). Its
+  arguments and result stay development-only.
 - **Replies as Thunderbird shows them.** A reply is laid out in blocks (`replyBlocks`: paragraphs at
   blank lines, each line break a line; bulleted and numbered lists, numbered from where they start,
   an unmarked line continuing an item; `#` headings), each line's inline Markdown as before, and
