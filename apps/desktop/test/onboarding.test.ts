@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../src/core/config.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
 import { type MicrophoneStatus, PermissionsModel, type PermissionSystem } from "../src/core/permissions.js";
-import { AppSettings } from "../src/core/settings.js";
+import { AppSettings, suggestedUserName } from "../src/core/settings.js";
 import { type DictationTip, TipBook, tipDetails } from "../src/core/tips.js";
 import { type WelcomeStep, WelcomeWizard } from "../src/core/welcomeWizard.js";
 
@@ -15,21 +15,21 @@ function settings(store = new MemoryStore()): AppSettings {
 }
 
 describe("WelcomeWizard", () => {
-  /** Consent, then the two permissions, then the features, under three rail categories; Back walks
-   * them in reverse. */
-  test("steps run consent, then permissions, then features", () => {
-    expect(WelcomeWizard.categories.map((category) => category.label)).toEqual(["Consent", "Permissions", "Features"]);
-    expect(WelcomeWizard.steps).toEqual(["consent", "microphone", "accessibility", "screenReading"]);
+  /** Consent, then the user's name, then the two permissions, then the features, under four rail
+   * categories; Back walks them in reverse. */
+  test("steps run consent, then the name, then permissions, then features", () => {
+    expect(WelcomeWizard.categories.map((category) => category.label)).toEqual(["Consent", "About You", "Permissions", "Features"]);
+    expect(WelcomeWizard.steps).toEqual(["consent", "name", "microphone", "accessibility", "screenReading"]);
 
     const app = settings();
     app.hasConsented = true;
-    const wizard = new WelcomeWizard(app);
+    const wizard = new WelcomeWizard(app, () => "");
     const categories = [wizard.categoryIndex];
     while (!wizard.isLastStep) {
       wizard.next();
       categories.push(wizard.categoryIndex);
     }
-    expect(categories).toEqual([0, 1, 1, 2]);
+    expect(categories).toEqual([0, 1, 2, 2, 3]);
 
     // Back retraces the same steps one at a time.
     const steps: WelcomeStep[] = [];
@@ -37,13 +37,13 @@ describe("WelcomeWizard", () => {
       wizard.back();
       steps.push(wizard.step);
     }
-    expect(steps).toEqual(["accessibility", "microphone", "consent"]);
+    expect(steps).toEqual(["accessibility", "microphone", "name", "consent"]);
   });
 
   /** No step after consent is reachable until the user agrees; withdrawing it blocks again. */
   test("consent comes before everything else", () => {
     const app = settings();
-    const wizard = new WelcomeWizard(app);
+    const wizard = new WelcomeWizard(app, () => "");
 
     expect(wizard.canAdvance).toBe(false);
     wizard.next();
@@ -53,7 +53,7 @@ describe("WelcomeWizard", () => {
     app.hasConsented = true;
     expect(wizard.canAdvance).toBe(true);
     wizard.next();
-    expect(wizard.step).toBe("microphone");
+    expect(wizard.step).toBe("name");
 
     wizard.back();
     app.hasConsented = false;
@@ -61,13 +61,13 @@ describe("WelcomeWizard", () => {
     expect(wizard.step).toBe("consent");
   });
 
-  /** Permissions and features never block Next: they can be granted or changed later. */
-  test("permission and feature steps can be skipped", () => {
+  /** The name, permissions and features never block Next: they can be set or changed later. */
+  test("name, permission and feature steps can be skipped", () => {
     const app = settings();
     app.hasConsented = true;
-    const wizard = new WelcomeWizard(app);
+    const wizard = new WelcomeWizard(app, () => "");
     wizard.next();
-    for (const step of ["microphone", "accessibility", "screenReading"] as const) {
+    for (const step of ["name", "microphone", "accessibility", "screenReading"] as const) {
       expect(wizard.step).toBe(step);
       expect(wizard.canAdvance).toBe(true);
       if (step !== "screenReading") wizard.next();
@@ -78,7 +78,7 @@ describe("WelcomeWizard", () => {
   test("rail bubbles only go back", () => {
     const app = settings();
     app.hasConsented = true;
-    const wizard = new WelcomeWizard(app);
+    const wizard = new WelcomeWizard(app, () => "");
     wizard.next();
     wizard.next();
     expect(wizard.index).toBe(2);
@@ -104,7 +104,7 @@ describe("WelcomeWizard", () => {
     const store = new MemoryStore();
     const app = settings(store);
     app.hasConsented = true;
-    const wizard = new WelcomeWizard(app);
+    const wizard = new WelcomeWizard(app, () => "");
     let finishes = 0;
     wizard.onFinish = () => {
       finishes += 1;
@@ -123,6 +123,64 @@ describe("WelcomeWizard", () => {
   });
 });
 
+describe("the user's name", () => {
+  /** The name step offers the computer account's name (owner, 2026-09-28): Next without editing it
+   * keeps that; a name typed, or one cleared, stays as the user left it. */
+  test("the name step keeps the offered name unless the user changed it", () => {
+    const offered = (userName: string | null): string | null => {
+      const app = settings();
+      app.hasConsented = true;
+      if (userName !== null) app.userName = userName;
+      const wizard = new WelcomeWizard(app, () => "Alex Example");
+      wizard.next();
+      expect(wizard.step).toBe("name");
+      wizard.next();
+      expect(wizard.step).toBe("microphone");
+      return app.userName;
+    };
+    expect(offered(null)).toBe("Alex Example");
+    expect(offered("Sam")).toBe("Sam");
+    expect(offered("")).toBe("");
+  });
+
+  /** Only the name step's Next stores the offered name: consent's, a later step's and Finish don't. */
+  test("no other step stores the offered name", () => {
+    const app = settings();
+    const wizard = new WelcomeWizard(app, () => "Alex Example");
+    app.hasConsented = true;
+    wizard.next();
+    expect(app.userName).toBeNull();
+    wizard.next();
+    app.userName = null;
+    while (!wizard.isLastStep) wizard.next();
+    wizard.next();
+    expect(app.hasFinishedWelcome).toBe(true);
+    expect(app.userName).toBeNull();
+  });
+
+  /** Stored as typed, kept across launches; agent mode sends it trimmed, and nothing when blank. */
+  test("the name is stored as typed and sent trimmed", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    expect(app.userName).toBeNull();
+    expect(app.dictation(null).userName).toBe("");
+    app.userName = "  Alex Example ";
+    expect(settings(store).userName).toBe("  Alex Example ");
+    expect(app.dictation(null).userName).toBe("Alex Example");
+    app.userName = "   ";
+    expect(app.dictation(null).userName).toBe("");
+    app.userName = null;
+    expect(settings(store).userName).toBeNull();
+  });
+
+  /** The full name of the computer account, else its short name. */
+  test("the offered name is the account's full name, else its short name", () => {
+    expect(suggestedUserName(" Alex Example ", "alex")).toBe("Alex Example");
+    expect(suggestedUserName("", "alex")).toBe("alex");
+    expect(suggestedUserName("  ", " alex ")).toBe("alex");
+  });
+});
+
 describe("TipBook", () => {
   test.each<DictationTip>(["switchMode", "doubleTap"])("%s shows at most its max displays", (tip) => {
     const store = new MemoryStore();
@@ -138,12 +196,13 @@ describe("TipBook", () => {
     expect(new TipBook(store).isEligible(tip)).toBe(false);
   });
 
-  /** A tip configured with no maximum shows however often it has shown. */
-  test("a tip with no maximum shows every time", () => {
-    expect(tipDetails.handsFree.maxDisplays).toBeNull();
+  /** A tip configured with no maximum shows however often it has shown: the hands-free tip, and the
+   * name tip until a name is set (owner, 2026-09-28: a nag). */
+  test.each<DictationTip>(["handsFree", "setName"])("%s has no maximum and shows every time", (tip) => {
+    expect(tipDetails[tip].maxDisplays).toBeNull();
     const tips = new TipBook(new MemoryStore());
-    for (let index = 0; index < 100; index += 1) tips.recordDisplay("handsFree");
-    expect(tips.isEligible("handsFree")).toBe(true);
+    for (let index = 0; index < 100; index += 1) tips.recordDisplay(tip);
+    expect(tips.isEligible(tip)).toBe(true);
   });
 
   test("a learned tip never shows again, and learning one leaves the other", () => {
@@ -156,7 +215,7 @@ describe("TipBook", () => {
   });
 
   test("the tips' words, limits and durations come from the config", () => {
-    expect(tipDetails).toEqual({ switchMode: config.switchModeTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip });
+    expect(tipDetails).toEqual({ switchMode: config.switchModeTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip, setName: config.setNameTip });
   });
 });
 

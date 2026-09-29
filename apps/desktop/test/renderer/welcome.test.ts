@@ -6,6 +6,7 @@
 
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import * as config from "../../src/core/config.js";
 import type { Command, WelcomeState } from "../../src/shared/ipc.js";
 
 const features: WelcomeState = {
@@ -20,15 +21,18 @@ const features: WelcomeState = {
   enabledTools: ["compose", "thunderbird"],
   connectors: [],
   enabledConnectors: [],
+  userName: null,
+  suggestedName: "",
   microphoneGranted: true,
   accessibilityTrusted: true,
   vscodeFix: "notNeeded",
 };
 
 const accessibility: WelcomeState = { ...features, step: "accessibility", index: 2 };
+const name: WelcomeState = { ...features, step: "name", index: 1 };
 
 /** The welcome wizard, mounted afresh against a stand-in main process that shows `state`. */
-async function welcomePage(state: WelcomeState): Promise<{ commands: Command[] }> {
+async function welcomePage(state: WelcomeState): Promise<{ commands: Command[]; push: (state: WelcomeState) => Promise<void> }> {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const commands: Command[] = [];
@@ -48,7 +52,7 @@ async function welcomePage(state: WelcomeState): Promise<{ commands: Command[] }
     await import("../../src/renderer/welcome.js");
   });
   await act(async () => listener?.(state));
-  return { commands };
+  return { commands, push: (next) => act(async () => listener?.(next)) };
 }
 
 afterEach(() => {
@@ -56,7 +60,44 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+/** Types `text` into `input` as the user would, so React sees the change. */
+function type(input: HTMLInputElement, text: string): void {
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set?.call(input, text);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function nameField(): HTMLInputElement {
+  const found = document.querySelector<HTMLInputElement>('input[aria-label="Your name"]');
+  if (!found) throw new Error("no name field");
+  return found;
+}
+
 describe("welcome wizard", () => {
+  /** The name step offers the computer account's name while none is stored, filling it in when it
+   * arrives after the page opens; a stored name shows as stored; what the user types is sent as typed
+   * and stays in the field. */
+  test("the name step offers the suggested name and sends what the user types", async () => {
+    const page = await welcomePage(name);
+    expect(document.querySelector("h1")?.textContent).toBe("Your Name");
+    expect(nameField().value).toBe("");
+    await page.push({ ...name, suggestedName: "Alex Example" });
+    expect(nameField().value).toBe("Alex Example");
+    expect(nameField().maxLength).toBe(config.userNameMaxLength);
+
+    await act(async () => type(nameField(), "Alex"));
+    expect(page.commands).toEqual([{ type: "setUserName", value: "Alex" }]);
+    await page.push({ ...name, userName: "Alex", suggestedName: "Alex Example" });
+    expect(nameField().value).toBe("Alex");
+    await act(async () => type(nameField(), ""));
+    expect(page.commands.at(-1)).toEqual({ type: "setUserName", value: "" });
+    expect(nameField().value).toBe("");
+
+    await welcomePage({ ...name, userName: "Sam", suggestedName: "Alex Example" });
+    expect(nameField().value).toBe("Sam");
+    await welcomePage({ ...name, userName: "", suggestedName: "Alex Example" });
+    expect(nameField().value).toBe("");
+  });
+
   /** The Features step has a checkbox for each agent tool, with its description, ticked as the state
    * says, which turns it on or off. */
   test("the Features step has a checkbox for each agent tool", async () => {

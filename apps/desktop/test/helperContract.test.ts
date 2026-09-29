@@ -41,7 +41,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
+      return { value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
     },
     on() {},
   } as unknown as HelperClient;
@@ -56,6 +56,7 @@ describe("helper wire contract", () => {
     await mac.paste("text");
     await mac.frontmostApp();
     await mac.keyboardLanguage();
+    await mac.fullUserName();
     await mac.systemEmailApp();
     await mac.emailApps([app]);
     await mac.readScreen();
@@ -115,6 +116,23 @@ describe("helper wire contract", () => {
       { method: "insert", params: { text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000 }, timeout: config.helperRequestTimeout + config.clipboardRestoreDelay },
       { method: "frontmostApp", params: undefined, timeout: undefined },
     ]);
+  });
+
+  /** The account's full name comes back as the helper answers it, empty included; a reply without one
+   * is a failure, not a name. The helper answers it under the key read here, as a string: a key
+   * renamed on one side only would offer the short name on every launch while both suites pass. */
+  test("the full user name is the helper's, and a reply without one fails", async () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8");
+    const handler = source.split('channel.on("fullUserName")')[1]?.split("channel.on(")[0] ?? "";
+    expect(handler).toMatch(/\["name": \.string\(/);
+    expect([...handler.matchAll(/"(\w+)":/g)].map((match) => match[1])).toEqual(["name"]);
+
+    let reply: unknown = { name: "Alex Example" };
+    const mac = new MacSystem({ request: async () => reply } as unknown as HelperClient);
+    expect(await mac.fullUserName()).toBe("Alex Example");
+    reply = { name: "" };
+    expect(await mac.fullUserName()).toBe("");
+    for (reply of [{}, null, { name: 1 }]) await expect(mac.fullUserName()).rejects.toMatchObject({ name: "HelperFailure", method: "fullUserName" });
   });
 
   /** Calendar and Reminders requests carry their dates as milliseconds since 1970 and wait long

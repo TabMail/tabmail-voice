@@ -15,6 +15,7 @@ import VoiceHelperSupport
 /// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
 ///   clipboard after `restoreDelay` seconds.
 /// - `keyboardLanguage` → `{code}`: the active keyboard input source's language, or null.
+/// - `fullUserName` → `{name}`: the user account's full name, empty when it has none.
 /// - `globeRead` → `{value}` (null when this macOS lacks the calls); `globeUpdate {value}` → `{}`.
 /// - `startActivator` → `{}`: asks Gecko and Electron apps to build their accessibility tree as they
 ///   come to the front. Again after the Accessibility grant.
@@ -116,6 +117,9 @@ public enum MacService {
         }
         channel.on("keyboardLanguage") { _ in
             await MainActor.run { ["code": KeyboardLanguage.current().map(JSON.string) ?? .null] }
+        }
+        channel.on("fullUserName") { _ in
+            ["name": .string(NSFullUserName())]
         }
         channel.on("globeRead") { _ in
             ["value": GlobeKey.live.map { .number(Double($0.read())) } ?? .null]

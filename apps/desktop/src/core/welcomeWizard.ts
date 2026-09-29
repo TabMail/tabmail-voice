@@ -5,7 +5,7 @@
 import { Observable } from "./observable.js";
 import type { AppSettings } from "./settings.js";
 
-export type WelcomeStep = "consent" | "microphone" | "accessibility" | "screenReading";
+export type WelcomeStep = "consent" | "name" | "microphone" | "accessibility" | "screenReading";
 
 export interface WelcomeCategory {
   label: string;
@@ -18,6 +18,7 @@ export interface WelcomeCategory {
 export class WelcomeWizard extends Observable {
   static readonly categories: readonly WelcomeCategory[] = [
     { label: "Consent", steps: ["consent"] },
+    { label: "About You", steps: ["name"] },
     { label: "Permissions", steps: ["microphone", "accessibility"] },
     { label: "Features", steps: ["screenReading"] },
   ];
@@ -27,7 +28,11 @@ export class WelcomeWizard extends Observable {
   /** Called once Finish is pressed on the last step. */
   onFinish: (() => void) | undefined;
 
-  constructor(private readonly settings: AppSettings) {
+  constructor(
+    private readonly settings: AppSettings,
+    /** The name the name step offers (`suggestedUserName`), empty until it is read. */
+    private readonly suggestedName: () => string,
+  ) {
     super();
   }
 
@@ -58,6 +63,8 @@ export class WelcomeWizard extends Observable {
 
   next(): void {
     if (!this.canAdvance) return;
+    // The name step offers the suggested name: Next without editing it keeps it.
+    if (this.step === "name" && this.settings.userName === null) this.settings.userName = this.suggestedName();
     if (this.isLastStep) {
       this.settings.hasFinishedWelcome = true;
       this.onFinish?.();

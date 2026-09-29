@@ -66,12 +66,13 @@ export const DesktopAgent = {
     request: string,
     context: ScreenContext | null,
     conversation: string,
+    userName: string,
     client: CompletionsClient,
     account: AccountModel,
     userId: string | null,
     signal?: AbortSignal,
   ): Promise<string> {
-    const text = await complete(DesktopAgent.toolMessage(tool, request, context, conversation), client, account, userId, signal);
+    const text = await complete(DesktopAgent.toolMessage(tool, request, context, conversation, userName), client, account, userId, signal);
     if (text === "") throw new AgentFailure("noText");
     const written = toolImplementations[tool].fitted(text, context);
     log.content(`DesktopAgent: ${tool} wrote`, written);
@@ -94,6 +95,7 @@ export const DesktopAgent = {
     request: string,
     context: ScreenContext | null,
     conversation: string,
+    userName: string,
     tools: readonly string[],
     client: CompletionsClient,
     account: AccountModel,
@@ -101,7 +103,7 @@ export const DesktopAgent = {
     runTool: (call: ToolCall) => Promise<string>,
     signal?: AbortSignal,
   ): Promise<string> {
-    const message = DesktopAgent.toolMessage("answer", request, context, conversation);
+    const message = DesktopAgent.toolMessage("answer", request, context, conversation, userName);
     let state: unknown;
     let round = 0;
     for (;;) {
@@ -148,10 +150,12 @@ export const DesktopAgent = {
     };
   },
 
-  /** A tool's prompt and its variables, with the chat window's `conversation`. */
-  toolMessage(tool: AgentTool, request: string, context: ScreenContext | null, conversation: string): CompletionsMessage {
+  /** A tool's prompt and its variables, with the chat window's `conversation` and the user's name
+   * (`userName`, empty when none is set), by which the backend tells the user's own messages on screen
+   * from other people's. */
+  toolMessage(tool: AgentTool, request: string, context: ScreenContext | null, conversation: string, userName: string): CompletionsMessage {
     const implementation = toolImplementations[tool];
-    return { role: "system", content: implementation.prompt, vars: { ...implementation.variables(request, context), conversation } };
+    return { role: "system", content: implementation.prompt, vars: { ...implementation.variables(request, context), conversation, user_name: userName } };
   },
 };
 

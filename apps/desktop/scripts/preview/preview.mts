@@ -34,9 +34,11 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
+  userName: "Alex Example",
+  suggestedName: "Alex Example",
   enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
 };
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
 
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
@@ -69,14 +71,17 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // Agent mode's tool and app switches, every app on.
   { name: "settings-agent-mode", page: "settings.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  // No name for agent mode: the field is empty with the account's name as placeholder, and the section is marked.
+  { name: "settings-agent-mode-no-name", page: "settings.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, userName: null } },
   // VS Code's settings hide the caret: Permissions offers to fix them.
   { name: "settings-permissions-vscode", page: "settings.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
-  { name: "welcome-features", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 3, categoryIndex: 2, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },
+  { name: "welcome-features", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 4, categoryIndex: 3, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },
   { name: "welcome-consent", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: welcome },
-  { name: "welcome-accessibility", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
-  { name: "welcome-accessibility-vscode", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 2, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true, vscodeFix: "needed" } },
+  { name: "welcome-name", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "name", index: 1, categoryIndex: 1, isFirstStep: false, canAdvance: true, hasConsented: true } },
+  { name: "welcome-accessibility", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true } },
+  { name: "welcome-accessibility-vscode", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "accessibility", index: 3, categoryIndex: 2, isFirstStep: false, canAdvance: true, hasConsented: true, vscodeFix: "needed" } },
 ];
 
 async function capture(shot: (typeof shots)[number]): Promise<void> {
