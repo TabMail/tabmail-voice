@@ -13,6 +13,7 @@ import type { SettingsState } from "../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
 import { ConnectorIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
+import { NameField } from "./nameField.js";
 import "./form.css";
 import "./settings.css";
 
@@ -39,10 +40,11 @@ const colours = {
   "--window-dark": config.settingsWindowColour.dark,
 } as CSSProperties;
 
-/** Whether `name`'s section wants the user's attention: signed out, a permission missing, or VS
- * Code's settings hiding the caret. */
+/** Whether `name`'s section wants the user's attention: signed out, no name for agent mode, a
+ * permission missing, or VS Code's settings hiding the caret. */
 function needsAttention(name: SectionName, state: SettingsState): boolean {
   if (name === "account") return state.email === null;
+  if (name === "agent") return !hasName(state);
   if (name === "permissions") return !state.microphoneGranted || !state.accessibilityTrusted || state.vscodeFix === "needed";
   return false;
 }
@@ -139,9 +141,26 @@ function DictationPane({ state }: { state: SettingsState }) {
   );
 }
 
+/** Whether a name is set for agent mode (`AppSettings.sentUserName`). */
+function hasName(state: SettingsState): boolean {
+  return (state.userName ?? "").trim() !== "";
+}
+
 function AgentPane({ state }: { state: SettingsState }) {
   return (
     <>
+      <Group
+        captions={[
+          hasName(state)
+            ? "Sent with agent mode’s requests, so it knows which messages on screen are yours. It isn’t stored."
+            : "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent with agent mode’s requests and isn’t stored.",
+        ]}
+      >
+        <div className="row">
+          <span>Your name</span>
+          <NameField initial={state.userName ?? ""} placeholder={state.suggestedName === "" ? "Your name" : state.suggestedName} />
+        </div>
+      </Group>
       <Group>
         {agentTools.map((tool) => (
           <Toggle

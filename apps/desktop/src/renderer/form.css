@@ -142,6 +142,16 @@ input[type="text"] {
   width: 100%;
 }
 
+/* A text field in a row takes the room its label leaves, and the label stays on one line. */
+.row:not(.stack) > input[type="text"] {
+  flex: 1;
+  width: auto;
+}
+
+.row:not(.stack) > span:has(+ input[type="text"]) {
+  white-space: nowrap;
+}
+
 label.check {
   display: flex;
   align-items: flex-start;

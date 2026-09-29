@@ -361,6 +361,15 @@ export const handsFreeTip: TipSettings = {
   displayDuration: null,
   maxDisplays: null,
 };
+/** No name set for agent mode: shown as agent mode is switched on, every time until one is set (owner,
+ * 2026-09-28: a neutral, inviting nag; unset is fine). */
+export const setNameTip: TipSettings = {
+  lines: ["Add your name in Settings", "so agent mode knows", "which messages are yours"],
+  displayDuration: 4_000,
+  maxDisplays: null,
+};
+/** The longest name the welcome wizard and Settings take for the user. */
+export const userNameMaxLength = 100;
 /** A hold this long shows the double-tap tip: this user dictates at length, and need not hold. */
 export const doubleTapTipHoldDuration = 20_000;
 

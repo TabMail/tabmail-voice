@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import * as config from "../src/core/config.js";
 import { channels, isAudioReport, isCommand, isWindowName } from "../src/shared/ipc.js";
 
 /** The channel names the preload script writes out, read from its source: a sandboxed preload
@@ -28,6 +29,9 @@ describe("IPC", () => {
       { type: "signOut" },
       { type: "setHotkey", hotkey: "function" },
       { type: "setReadsScreen", value: false },
+      { type: "setUserName", value: "Alex Example" },
+      { type: "setUserName", value: "" },
+      { type: "setUserName", value: "x".repeat(config.userNameMaxLength) },
       { type: "setEmailClient", bundleIdentifier: null },
       { type: "setEmailClient", bundleIdentifier: "org.mozilla.thunderbird" },
       { type: "setOpenAtLogin", value: true },
@@ -58,6 +62,9 @@ describe("IPC", () => {
     { type: "verify", email: "user@example.com" },
     { type: "setHotkey", hotkey: "leftShift" },
     { type: "setReadsScreen", value: "yes" },
+    { type: "setUserName" },
+    { type: "setUserName", value: null },
+    { type: "setUserName", value: "x".repeat(config.userNameMaxLength + 1) },
     { type: "setEmailClient" },
     { type: "setEmailClient", bundleIdentifier: 1 },
     { type: "welcomeGoTo", index: 1.5 },

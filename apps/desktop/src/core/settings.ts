@@ -19,6 +19,7 @@ const Key = {
   emailClient: "emailClient",
   disabledAgentTools: "disabledAgentTools",
   disabledConnectors: "disabledConnectors",
+  userName: "userName",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -40,6 +41,16 @@ export interface DictationSettings {
   emailClient: string | null;
   /** Whether a Thunderbird profile had TabMail's add-on as the dictation started. */
   hasTabMail: boolean;
+  /** The user's name, sent with agent mode's requests so the backend can tell the user's own messages
+   * on screen from other people's; empty when not set. */
+  userName: string;
+}
+
+/** The name the welcome wizard offers (owner, 2026-09-28: "the macOS full name or the username"): the
+ * computer account's full name, else its short name. */
+export function suggestedUserName(fullName: string, accountName: string): string {
+  const name = fullName.trim();
+  return name === "" ? accountName.trim() : name;
 }
 
 /** User preferences, persisted in the app's store. */
@@ -115,6 +126,23 @@ export class AppSettings extends Observable {
     this.changed();
   }
 
+  /** The user's name as entered in the welcome wizard or Settings; null until either stores one (the
+   * wizard then offers `suggestedUserName`), empty when the user cleared it. */
+  get userName(): string | null {
+    return storedString(this.store, Key.userName);
+  }
+
+  set userName(value: string | null) {
+    if (value === null) this.store.remove(Key.userName);
+    else this.store.set(Key.userName, value);
+    this.changed();
+  }
+
+  /** The name agent mode sends, trimmed; empty when none is set. */
+  get sentUserName(): string {
+    return (this.userName ?? "").trim();
+  }
+
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
   private get disabledAgentTools(): AgentTool[] {
     const stored = this.store.get(Key.disabledAgentTools);
@@ -184,6 +212,7 @@ export class AppSettings extends Observable {
       enabledConnectors: this.enabledConnectors,
       emailClient: this.emailClient,
       hasTabMail: this.hasTabMail(),
+      userName: this.sentUserName,
     };
   }
 

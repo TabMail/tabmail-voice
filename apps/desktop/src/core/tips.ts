@@ -13,13 +13,16 @@ import { type KeyValueStore, storedBool, storedInteger } from "./keyValueStore.j
  * - `doubleTap`: a double tap of the hotkey dictates without holding it; shown once a hold passes
  *   `config.doubleTapTipHoldDuration`.
  * - `handsFree`: how hands-free listening ends (tap the hotkey, or Escape); shown the whole time it
- *   listens, every time. Never learned: nothing marks it so. */
-export type DictationTip = "switchMode" | "doubleTap" | "handsFree";
+ *   listens, every time. Never learned: nothing marks it so.
+ * - `setName`: adding a name in Settings lets agent mode tell the user's messages from others'; shown
+ *   as agent mode is switched on while no name is set, every time. Never learned: a name set ends it. */
+export type DictationTip = "switchMode" | "doubleTap" | "handsFree" | "setName";
 
 export const tipDetails: Record<DictationTip, config.TipSettings> = {
   switchMode: config.switchModeTip,
   doubleTap: config.doubleTapTip,
   handsFree: config.handsFreeTip,
+  setName: config.setNameTip,
 };
 
 /** One piece of a tip's line: words, or a key drawn as a keycap. */

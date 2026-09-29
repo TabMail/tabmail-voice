@@ -12,6 +12,7 @@ import type { WelcomeState } from "../shared/ipc.js";
 import icon from "../../resources/icon.png";
 import { send, useWindowState } from "./bridge.js";
 import { ConnectorIcon, LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "./icons.js";
+import { NameField } from "./nameField.js";
 import "./form.css";
 import "./welcome.css";
 
@@ -43,6 +44,13 @@ function Page({ state }: { state: WelcomeState }) {
   switch (state.step) {
     case "consent":
       return <ConsentPage state={state} />;
+    case "name":
+      return (
+        <StepPage title="Your Name" text="Agent mode writes as you. With your name, it knows which messages on screen are yours, so a reply goes to the other person, not back to you.">
+          <NameField initial={state.userName ?? state.suggestedName} placeholder="Your name" />
+          <span className="caption">Sent with agent mode’s requests and not stored. You can leave it empty, and change it any time in Settings.</span>
+        </StepPage>
+      );
     case "microphone":
       return (
         <StepPage title="Microphone" text="TabMail Voice listens only while you hold the dictation key, and turns the microphone off when you let go.">

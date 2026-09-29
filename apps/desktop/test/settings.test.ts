@@ -138,6 +138,7 @@ describe("AppSettings", () => {
     app.emailClient = "org.mozilla.thunderbirdbeta";
     app.setEnabled("answer", false);
     app.setConnectorEnabled("calendar", false);
+    app.userName = "Alex Example";
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -148,6 +149,7 @@ describe("AppSettings", () => {
       enabledConnectors: [...connectors],
       emailClient: null,
       hasTabMail: true,
+      userName: "",
     });
   });
 });

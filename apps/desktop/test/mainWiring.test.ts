@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectors } from "../src/core/agent/connectors.js";
@@ -589,6 +589,21 @@ describe("main process wiring", () => {
     }
   });
 
+  /** Settings and the welcome wizard offer the computer account's name: on macOS its full name from
+   * `voice-macos`, else (here the helper gives none) its short name, as elsewhere. A name typed in
+   * either is stored as typed and shown in both. */
+  test.each(["darwin", "linux"] as const)("the offered name and the name typed, on %s", async (platform) => {
+    await launch(platform);
+    const state = (name: "settings" | "welcome") => app.handlers.get(channels.getState)?.({}, name) as { userName: string | null; suggestedName: string };
+    if (platform === "darwin") expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toContain("fullUserName");
+    else expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method) ?? []).not.toContain("fullUserName");
+    for (const name of ["settings", "welcome"] as const) expect(state(name)).toMatchObject({ userName: null, suggestedName: userInfo().username });
+
+    expect(await send({ type: "setUserName", value: " Alex Example" })).toEqual({ error: null });
+    for (const name of ["settings", "welcome"] as const) expect(state(name).userName).toBe(" Alex Example");
+    expect(app.stored.get("userName")).toBe(" Alex Example");
+  });
+
   /** Files reads the home folder as `~`: a found item's path is given to the model with it, and a
    * `~` path the model gives back opens the item there. */
   test("Files reads the home folder as ~", async () => {
@@ -651,12 +666,15 @@ describe("main process wiring", () => {
       return welcome;
     };
     const pushed: string[] = [];
-    const listen = () =>
+    // Records afresh from here: launching pushes the windows too (the name the wizard offers, once read).
+    const listen = () => {
+      pushed.length = 0;
       app.listeners.set("voice:state", [
         (_event, name, pushedState) => {
           if (name === "welcome" || name === "settings") pushed.push(`${String(name)} ${(pushedState as { vscodeFix: string }).vscodeFix}`);
         },
       ]);
+    };
 
     writeFileSync(file, hiding);
     await launch("linux");
