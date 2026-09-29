@@ -95,10 +95,11 @@ export function textAroundCaret(rendered: string): string {
 }
 
 /** Where the caret marker is on the focused field's lines, or -1: a marker elsewhere is the page's
- * own text. */
+ * own text. Lines split as the helper's Swift does: a CRLF is one character there, so the line after
+ * it carries no prefix of its own. */
 function caretIndex(rendered: string): number {
   let lineStart = 0;
-  for (const line of rendered.split("\n")) {
+  for (const line of rendered.split(/(?<!\r)\n/)) {
     const at = line.startsWith(focusedLinePrefix) ? line.indexOf(caretMarker) : -1;
     if (at !== -1) return lineStart + at;
     lineStart += line.length + 1;

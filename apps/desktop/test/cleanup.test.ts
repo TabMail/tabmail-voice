@@ -69,6 +69,15 @@ describe("the cleanup's screen text", () => {
   /** A selection counts as text after the caret, its markers kept while in reach. */
   test("keeps a selection within reach", () => {
     expect(textAroundCaret("» Note: ‸Ship it Friday.‸ Thanks")).toBe("» Note: ‸Ship it Friday.‸ Thanks");
+    const selected = `‸${"s".repeat(config.cleanupContextAfter * 2)}‸`;
+    const text = textAroundCaret(`» ${"x".repeat(1_000)}${before}${selected} Thanks`);
+    expect(text).toBe(`${before}${selected.slice(0, 1 + config.cleanupContextAfter)}`);
+  });
+
+  /** A field's CRLF is one character to the helper, which prefixes only the line it starts. */
+  test("finds the caret after a CRLF in the field", () => {
+    const crlf = "## Inbox\n» Hi Sam,\r\nThanks for the ‸ notes\n[Send]";
+    expect(textAroundCaret(crlf)).toBe(crlf);
   });
 
   /** A cut never splits a character: an emoji or accented letter at the edge is kept whole or left
