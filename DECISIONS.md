@@ -170,7 +170,9 @@ Microsoft's `jsonc-parser` (VS Code's own) so comments and layout are kept. `edi
 false was chosen over turning accessibility support back on because the user switched that off on
 purpose. VS Code applies the change without a restart; the caret is exact from the next cursor move.
 A file that doesn't parse is never offered or written. The wizard opens on first launch and from
-Welcome Guide…; nothing is changed without the button. The file is rewritten in place, not through a
+Welcome Guide…; nothing is changed without the button. Settings › Permissions offers the same fix
+(owner, 2026-09-28): a VS Code row with Fix Settings, shown only while it's needed, the section
+marked for attention meanwhile. The file is rewritten in place, not through a
 temporary file and a rename, so a settings file that is a symlink (dotfile managers) stays one; a
 crash inside that single write could shorten it. Only the default profile's `Code/User/settings.json`
 is read: VS Code profiles (`User/profiles/<id>/`), language-specific and workspace settings, VS Code

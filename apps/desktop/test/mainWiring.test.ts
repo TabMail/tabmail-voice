@@ -635,21 +635,26 @@ describe("main process wiring", () => {
     expect(state("welcome").connectors).toEqual([]);
     });
 
-  /** On macOS, VS Code settings that hide the caret are offered for fixing in the welcome wizard:
-   * the fix sets `editor.editContext` false in the file, keeping its comments, and the open wizard is
-   * shown it done. Settings that are fine, and every other platform, are never offered or written,
+  /** On macOS, VS Code settings that hide the caret are offered for fixing in the welcome wizard and
+   * Settings: the fix sets `editor.editContext` false in the file, keeping its comments, and both
+   * open windows are shown it done. Settings that are fine, and every other platform, are never offered or written,
    * and pressing the button there shows nothing new. */
-  test("the welcome wizard fixes VS Code settings that hide the caret, on macOS only", async () => {
+  test("the welcome wizard and Settings fix VS Code settings that hide the caret, on macOS only", async () => {
     app.appData = mkdtempSync(join(tmpdir(), "voice-appdata-"));
     const file = join(app.appData, "Code", "User", "settings.json");
     mkdirSync(join(app.appData, "Code", "User"), { recursive: true });
     const hiding = '{\n    // off on purpose\n    "editor.accessibilitySupport": "off"\n}\n';
-    const state = () => (app.handlers.get(channels.getState)?.({}, "welcome") as { vscodeFix: string }).vscodeFix;
+    // Settings and the welcome wizard show the same.
+    const state = () => {
+      const [welcome, settings] = ["welcome", "settings"].map((name) => (app.handlers.get(channels.getState)?.({}, name) as { vscodeFix: string }).vscodeFix);
+      expect(settings).toBe(welcome);
+      return welcome;
+    };
     const pushed: string[] = [];
     const listen = () =>
       app.listeners.set("voice:state", [
         (_event, name, pushedState) => {
-          if (name === "welcome") pushed.push((pushedState as { vscodeFix: string }).vscodeFix);
+          if (name === "welcome" || name === "settings") pushed.push(`${String(name)} ${(pushedState as { vscodeFix: string }).vscodeFix}`);
         },
       ]);
 
@@ -665,7 +670,7 @@ describe("main process wiring", () => {
     listen();
     expect(state()).toBe("needed");
     expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
-    expect(pushed).toEqual(["done"]);
+    expect(pushed).toEqual(["welcome done", "settings done"]);
     expect(readFileSync(file, "utf8")).toBe('{\n    "editor.editContext": false,\n    // off on purpose\n    "editor.accessibilitySupport": "off"\n}\n');
     expect(state()).toBe("done");
 

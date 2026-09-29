@@ -30,6 +30,7 @@ const settings = {
   defaultEmailAppIsSupported: false,
   microphoneGranted: true,
   accessibilityTrusted: false,
+  vscodeFix: "notNeeded",
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
@@ -68,6 +69,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   // Agent mode's tool and app switches, every app on.
   { name: "settings-agent-mode", page: "settings.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
+  // VS Code's settings hide the caret: Permissions offers to fix them.
+  { name: "settings-permissions-vscode", page: "settings.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
   { name: "welcome-features", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 3, categoryIndex: 2, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },

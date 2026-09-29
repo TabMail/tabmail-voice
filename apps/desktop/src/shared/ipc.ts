@@ -63,11 +63,17 @@ export interface SettingsState {
   enabledConnectors: Connector[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
+  vscodeFix: VSCodeFix;
   openAtLogin: boolean;
   /** Whether this account may switch debug mode on (`DebugAccess`). */
   debugAllowed: boolean;
   debugMode: boolean;
 }
+
+/** Whether VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
+ * welcome wizard's Accessibility step and Settings › Permissions offer to change them; "done" once
+ * one has, this session. */
+export type VSCodeFix = "notNeeded" | "needed" | "done";
 
 export interface WelcomeState {
   step: WelcomeStep;
@@ -85,9 +91,7 @@ export interface WelcomeState {
   enabledConnectors: Connector[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
-  /** VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
-   * Accessibility step offers to change them; "done" once it has. */
-  vscodeFix: "notNeeded" | "needed" | "done";
+  vscodeFix: VSCodeFix;
 }
 
 export interface ContextDebugState {

@@ -43,6 +43,7 @@ import {
   isWindowName,
   type OverlayState,
   type SettingsState,
+  type VSCodeFix,
   type WelcomeState,
   type WindowName,
   type WindowStates,
@@ -236,6 +237,7 @@ function launch(): void {
       enabledConnectors: settings.enabledConnectors,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
+      vscodeFix: vscodeFix(),
       openAtLogin: app.getLoginItemSettings().openAtLogin,
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,
@@ -263,7 +265,7 @@ function launch(): void {
   }
 
   /** Only the macOS helper finds the caret yet; it is where VS Code's settings were measured. */
-  function vscodeFix(): WelcomeState["vscodeFix"] {
+  function vscodeFix(): VSCodeFix {
     if (process.platform !== "darwin") return "notNeeded";
     if (vscodeHidesCaret(nodeProfileFiles.readText(vscodeSettingsFile))) return "needed";
     return fixedVSCode ? "done" : "notNeeded";
@@ -507,6 +509,7 @@ function launch(): void {
         fixedVSCode = true;
         log.debug("main: set editor.editContext false in VS Code's settings");
         windows.push("welcome");
+        windows.push("settings");
         return;
       }
       case "openURL":

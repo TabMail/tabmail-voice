@@ -39,10 +39,11 @@ const colours = {
   "--window-dark": config.settingsWindowColour.dark,
 } as CSSProperties;
 
-/** Whether `name`'s section wants the user's attention: signed out, or a permission missing. */
+/** Whether `name`'s section wants the user's attention: signed out, a permission missing, or VS
+ * Code's settings hiding the caret. */
 function needsAttention(name: SectionName, state: SettingsState): boolean {
   if (name === "account") return state.email === null;
-  if (name === "permissions") return !state.microphoneGranted || !state.accessibilityTrusted;
+  if (name === "permissions") return !state.microphoneGranted || !state.accessibilityTrusted || state.vscodeFix === "needed";
   return false;
 }
 
@@ -172,10 +173,24 @@ function AgentPane({ state }: { state: SettingsState }) {
 
 function PermissionsPane({ state }: { state: SettingsState }) {
   return (
-    <Group>
-      <PermissionRow title="Microphone" granted={state.microphoneGranted} onRequest={() => send({ type: "requestMicrophone" })} />
-      <PermissionRow title="Accessibility (hotkey and typing)" granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
-    </Group>
+    <>
+      <Group>
+        <PermissionRow title="Microphone" granted={state.microphoneGranted} onRequest={() => send({ type: "requestMicrophone" })} />
+        <PermissionRow title="Accessibility (hotkey and typing)" granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
+      </Group>
+      {state.vscodeFix !== "notNeeded" && (
+        <Group
+          captions={[
+            "VS Code’s accessibility support is turned off, so TabMail Voice can’t see where your cursor is on the line there. Fixing sets “editor.editContext” to false in VS Code’s settings, so VS Code uses its classic text input, from the next time you move the cursor. Nothing else changes.",
+          ]}
+        >
+          <div className="row">
+            <span>VS Code</span>
+            {state.vscodeFix === "done" ? <span className="allowed">✓ Fixed</span> : <button onClick={() => void send({ type: "fixVSCodeSettings" })}>Fix Settings</button>}
+          </div>
+        </Group>
+      )}
+    </>
   );
 }
 
