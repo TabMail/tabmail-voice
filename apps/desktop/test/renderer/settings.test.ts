@@ -26,6 +26,7 @@ const signedIn: SettingsState = {
   defaultEmailAppIsSupported: false,
   microphoneGranted: true,
   accessibilityTrusted: true,
+  vscodeFix: "notNeeded",
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
@@ -160,7 +161,8 @@ describe("Settings page", () => {
     }
   });
 
-  /** A section with something to do (signed out, a permission missing) is marked in the sidebar,
+  /** A section with something to do (signed out, a permission missing, VS Code's settings hiding the
+   * caret) is marked in the sidebar,
    * with a mark a screen reader announces (an image with a label, not a bare dot). */
   test("the sidebar marks the sections that need the user", async () => {
     const marked = () => [...document.querySelectorAll("button.nav")].filter((nav) => nav.querySelector('[role="img"][aria-label="Needs attention"]')).map((nav) => nav.textContent);
@@ -173,6 +175,33 @@ describe("Settings page", () => {
 
     await settingsPage({ error: null }, signedIn, { ...signedIn, accessibilityTrusted: false });
     expect(marked()).toEqual(["Permissions"]);
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, vscodeFix: "needed" });
+    expect(marked()).toEqual(["Permissions"]);
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, vscodeFix: "done" });
+    expect(marked()).toEqual([]);
+  });
+
+  /** When VS Code's settings hide the caret, Permissions (the section marked for it) and no other
+   * section has a VS Code row whose Fix Settings sends `fixVSCodeSettings`, and which shows them
+   * fixed once they are; otherwise it doesn't mention VS Code. */
+  test("Permissions offers to fix VS Code's settings only when they need it", async () => {
+    const page = await settingsPage({ error: null }, { ...signedIn, vscodeFix: "done" }, { ...signedIn, vscodeFix: "needed" });
+    for (const section of ["Account", "Dictation", "Agent mode", "General"]) {
+      await act(async () => button(section).click());
+      expect(visibleText()).not.toContain("VS Code");
+    }
+    await act(async () => button("Permissions").click());
+    const row = () => [...document.querySelectorAll("main > div:not([hidden]) .row")].find((candidate) => candidate.firstElementChild?.textContent === "VS Code");
+    expect(row()?.querySelector("button")?.textContent).toBe("Fix Settings");
+    await act(async () => button("Fix Settings").click());
+    expect(page.commands).toEqual([{ type: "fixVSCodeSettings" }]);
+    expect(row()?.textContent).toContain("✓ Fixed");
+    expect(row()?.querySelector("button")).toBeNull();
+
+    await settingsPage({ error: null }, signedIn);
+    expect(document.body.textContent).not.toContain("VS Code");
   });
 
   /** Each switch sends its own setting with the value it was switched to. */

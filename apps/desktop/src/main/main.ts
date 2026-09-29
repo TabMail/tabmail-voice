@@ -43,6 +43,7 @@ import {
   isWindowName,
   type OverlayState,
   type SettingsState,
+  type VSCodeFix,
   type WelcomeState,
   type WindowName,
   type WindowStates,
@@ -95,7 +96,7 @@ function launch(): void {
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
   const hasTabMail = (): boolean => EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
   const vscodeSettingsFile = join(app.getPath("appData"), ...vscodeSettingsPath);
-  /** Whether the welcome wizard changed VS Code's settings, to say so. */
+  /** Whether the welcome wizard or Settings changed VS Code's settings, to say so. */
   let fixedVSCode = false;
 
   const store = new FileStore(join(app.getPath("userData"), "settings.json"));
@@ -236,6 +237,7 @@ function launch(): void {
       enabledConnectors: settings.enabledConnectors,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
+      vscodeFix: vscodeFix(),
       openAtLogin: app.getLoginItemSettings().openAtLogin,
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,
@@ -263,7 +265,7 @@ function launch(): void {
   }
 
   /** Only the macOS helper finds the caret yet; it is where VS Code's settings were measured. */
-  function vscodeFix(): WelcomeState["vscodeFix"] {
+  function vscodeFix(): VSCodeFix {
     if (process.platform !== "darwin") return "notNeeded";
     if (vscodeHidesCaret(nodeProfileFiles.readText(vscodeSettingsFile))) return "needed";
     return fixedVSCode ? "done" : "notNeeded";
@@ -500,13 +502,14 @@ function launch(): void {
       case "welcomeGoTo":
         return wizard?.goTo(command.index);
       case "fixVSCodeSettings": {
-        // Read afresh: VS Code or the user may have changed the file since the wizard showed.
+        // Read afresh: VS Code or the user may have changed the file since the window showed it.
         const text = nodeProfileFiles.readText(vscodeSettingsFile);
         if (process.platform !== "darwin" || text === null || !vscodeHidesCaret(text)) return;
         await writeFile(vscodeSettingsFile, withClassicInput(text));
         fixedVSCode = true;
         log.debug("main: set editor.editContext false in VS Code's settings");
         windows.push("welcome");
+        windows.push("settings");
         return;
       }
       case "openURL":
