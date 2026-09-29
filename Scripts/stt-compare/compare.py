@@ -38,9 +38,10 @@ ENDPOINT = "https://openrouter.ai/api/v1/audio/transcriptions"
 # Speech-to-text models whose every OpenRouter endpoint is on the Zero Data Retention list
 # (checked 2026-09-24 via /api/v1/endpoints/zdr; re-checked live on every run, see the ZDR
 # column). Left out: models with no ZDR endpoint (OpenAI first-party gpt-*/whisper-1, Google
-# AI Studio gemini-3.5-transcribe, Meta, Alibaba qwen3-asr-flash, xAI grok-stt) and the two
-# Azure mai-transcribe models (ZDR, but their listed price has no clear unit; add them with
-# --models if you want them).
+# AI Studio gemini-3.5-transcribe, Meta, Alibaba qwen3-asr-flash, xAI grok-stt) and Azure
+# mai-transcribe-1.5 (superseded by mai-transcribe-2; add it with --models if you want it).
+# The Cost column is OpenRouter's reported usage.cost, so a listed price with no clear unit
+# (the Azure mai-transcribe models) is measured rather than assumed.
 DEFAULT_MODELS = [
     "openai/whisper-large-v3-turbo",
     "openai/whisper-large-v3",
@@ -56,6 +57,7 @@ DEFAULT_MODELS = [
     "fish-audio/transcribe-1",
     "fish-audio/transcribe-1-pro",
     "google/chirp-3",
+    "microsoft/mai-transcribe-2",
 ]
 ZDR_LIST = "https://openrouter.ai/api/v1/endpoints/zdr"
 MODEL_ENDPOINTS = "https://openrouter.ai/api/v1/models/{model}/endpoints"
