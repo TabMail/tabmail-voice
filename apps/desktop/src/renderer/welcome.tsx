@@ -12,7 +12,7 @@ import { WelcomeWizard } from "../core/welcomeWizard.js";
 import type { WelcomeState } from "../shared/ipc.js";
 import icon from "../../resources/icon.png";
 import { send, useWindowState } from "./bridge.js";
-import { ConnectorIcon, LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "./icons.js";
+import { BookIcon, ConnectorIcon, LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "./icons.js";
 import { NameField } from "./nameField.js";
 import "./form.css";
 import "./welcome.css";
@@ -135,8 +135,16 @@ function ConsentPage({ state }: { state: WelcomeState }) {
           </span>
         </li>
         <li>
+          <BookIcon size={config.welcomeLabelIconSize} />
+          <span>
+            The words in your dictionary, so they’re spelled your way. You add them in Settings, and on a Mac TabMail Voice also learns them: when you correct a
+            name or term it typed, it reads the text field for a short while to see the new spelling. That text stays on this computer. Learning is on unless you
+            switch it off in Settings.
+          </span>
+        </li>
+        <li>
           <LockShieldIcon size={config.welcomeLabelIconSize} />
-          <span>Both go to TabMail and the AI providers it uses, only to process that dictation, and aren’t stored.</span>
+          <span>All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.</span>
         </li>
       </ul>
       <label className="check">

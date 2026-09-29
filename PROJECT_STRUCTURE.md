@@ -37,6 +37,7 @@ apps/desktop/
 │   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts; `filesTools.ts`: Files, with Spotlight; `emailTools.ts`: a prefilled new email; `notesTools.ts` and `messagesTools.ts`: Notes and Messages, through `appleScript.ts`'s `ScriptRunner`; `webTools.ts`: the web, pages read through a `WebFetch` and opened in the browser), EmailClient, ThunderbirdRelay
 │   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
 │   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
+│   │   ├── dictionary.ts, corrections.ts, correctionWatch.ts, contextTerms.ts   The user's dictionary; the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
 │   │   ├── vscodeSettings.ts        VS Code settings that hide the caret, and the wizard's fix (with `jsonc-parser`)
 │   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows
 │   │   └── config.ts, log.ts, observable.ts, keyValueStore.ts, timeout.ts, text.ts, hotkey.ts, localDateTime.ts (the backend's dates in the local zone)

@@ -21,6 +21,9 @@ const signedIn: SettingsState = {
   enabledConnectors: [],
   userName: "Alex Example",
   suggestedName: "Alex Example",
+  dictionary: [],
+  learnsWords: true,
+  canLearnWords: true,
   emailClient: null,
   systemEmailApp: null,
   installedEmailApps: [],
@@ -112,6 +115,80 @@ afterEach(() => {
 });
 
 describe("Settings page", () => {
+  /** Settings › Dictionary (ADR-DESK-038). */
+  describe("the dictionary", () => {
+    const field = () => document.querySelector<HTMLInputElement>('input[aria-label="Word or name"]') as HTMLInputElement;
+    const words = (): string[] => [...document.querySelectorAll('ul[aria-label="Dictionary"] li')].map((item) => item.textContent ?? "");
+
+    async function open(initial: SettingsState): Promise<{ commands: Command[] }> {
+      const page = await settingsPage({ error: null }, initial, initial);
+      await act(async () => button("Dictionary").click());
+      return page;
+    }
+
+    test("adds the word typed, tidied, and empties the field", async () => {
+      const page = await open(signedIn);
+      expect(button("Add").disabled).toBe(true);
+
+      await act(async () => type(field(), "  Kaelthorne   Draszek "));
+      expect(button("Add").disabled).toBe(false);
+      await act(async () => button("Add").click());
+
+      expect(page.commands).toEqual([{ type: "addDictionaryWord", word: "Kaelthorne Draszek" }]);
+      expect(field().value).toBe("");
+      expect(field().maxLength).toBe(config.dictionaryWordMaxChars);
+    });
+
+    test.each(["Xy<vora", "one two three four five six seven"])("refuses %j, saying why", async (word) => {
+      const page = await open(signedIn);
+      await act(async () => type(field(), word));
+      expect(button("Add").disabled).toBe(true);
+      expect(document.querySelector(".error")?.textContent).toContain(`up to ${config.dictionaryWordMaxWords} words`);
+      await act(async () => field().form?.requestSubmit());
+      expect(page.commands).toEqual([]);
+    });
+
+    test("lists the words, the learned ones tagged, each with a remove button", async () => {
+      const page = await open({ ...signedIn, dictionary: [{ word: "Xyvora", learned: false }, { word: "TabMail", learned: true }] });
+      expect(words()).toEqual(["XyvoraRemove", "TabMail LearnedRemove"]);
+      expect(visibleText()).not.toContain("No words yet.");
+
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove TabMail"]')?.click());
+
+      expect(page.commands).toEqual([{ type: "removeDictionaryWord", word: "TabMail" }]);
+    });
+
+    /** Full: a new word is refused with the reason; one already there can still be typed (it becomes the
+     * user's own). */
+    test("a full dictionary takes no new word", async () => {
+      const dictionary = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: true }));
+      const page = await open({ ...signedIn, dictionary });
+
+      await act(async () => type(field(), "Xyvora"));
+      expect(button("Add").disabled).toBe(true);
+      expect(document.querySelector(".error")?.textContent).toContain(`holds ${config.dictionaryMaxEntries} words`);
+      await act(async () => field().form?.requestSubmit());
+      expect(page.commands).toEqual([]);
+      expect(field().value).toBe("Xyvora");
+
+      await act(async () => type(field(), "WORD3"));
+      expect(button("Add").disabled).toBe(false);
+      await act(async () => button("Add").click());
+      expect(page.commands).toEqual([{ type: "addDictionaryWord", word: "WORD3" }]);
+    });
+
+    test("the learning switch sends the choice, and shows only where corrections can be learned", async () => {
+      const page = await open(signedIn);
+      expect(toggle("Learn from my corrections").checked).toBe(true);
+      expect(visibleText()).toContain(`For ${config.correctionWatchDuration / 1000} seconds after a dictation`);
+      await act(async () => toggle("Learn from my corrections").click());
+      expect(page.commands).toEqual([{ type: "setLearnsWords", value: false }]);
+
+      await open({ ...signedIn, canLearnWords: false });
+      expect(visibleText()).not.toContain("Learn from my corrections");
+    });
+  });
+
   /** A sign-out the credential store only half did is said, not swallowed (owner, 2026-09-27). */
   test("Sign Out shows what the sign-out reply says", async () => {
     const warning = "Signed out, but your saved sign-in couldn't be removed.";
@@ -138,6 +215,7 @@ describe("Settings page", () => {
     const own: Record<string, string[]> = {
       Account: ["Sign Out"],
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
+      Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode"],
@@ -405,8 +483,8 @@ describe("Settings page", () => {
 
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
-    // Screen reading, debug mode and the three agent tools.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(5);
+    // Screen reading, learning the user's corrections, debug mode and the three agent tools.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(6);
     expect(page.commands).toEqual([]);
   });
 
@@ -466,6 +544,9 @@ describe("Settings page", () => {
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
       "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
+      "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
+      "No words yet.",
+      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. The field’s text stays on this Mac, and a password field is never read.`,
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

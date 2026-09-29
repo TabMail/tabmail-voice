@@ -72,6 +72,13 @@ export class MacSystem {
     return this.helper.request<Rect | null>("caretAnchor", { pid });
   }
 
+  /** The text of the focused field of `pid`, for learning the user's corrections (ADR-DESK-038); null
+   * for none, a password field, or one longer than `config.correctionMaxFieldLength`. */
+  async focusedFieldValue(pid: number): Promise<string | null> {
+    const reply = await this.helper.request<{ value?: unknown } | null>("focusedFieldValue", { pid, maxLength: config.correctionMaxFieldLength });
+    return typeof reply?.value === "string" ? reply.value : null;
+  }
+
   /** Asks Gecko and Electron apps to build their accessibility tree as they come to the front. */
   async startActivator(): Promise<void> {
     await this.helper.request("startActivator");

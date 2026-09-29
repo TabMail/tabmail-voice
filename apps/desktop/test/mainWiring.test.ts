@@ -27,6 +27,7 @@ const app = vi.hoisted(() => ({
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
+  corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
   prewarms: 0,
   audioCommands: [] as unknown[],
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
@@ -171,8 +172,9 @@ vi.mock("../src/main/helperClient.js", () => ({
 }));
 vi.mock("../src/core/dictationController.js", () => ({
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void>; loopTools: typeof app.loopTools }) {
+    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
+      app.corrections = dependencies.corrections;
       app.loopTools = dependencies.loopTools;
       app.paste = dependencies.paste;
       app.controller = this;
@@ -274,6 +276,7 @@ afterEach(() => {
   app.helpers.clear();
   app.capture = null;
   app.paste = null;
+  app.corrections = undefined;
   app.prewarms = 0;
   app.audioCommands = [];
   app.overlay = null;
@@ -623,6 +626,40 @@ describe("main process wiring", () => {
     expect(await send({ type: "setUserName", value: " Alex Example" })).toEqual({ error: null });
     for (const name of ["settings", "welcome"] as const) expect(state(name).userName).toBe(" Alex Example");
     expect(app.stored.get("userName")).toBe(" Alex Example");
+  });
+
+  /** Settings › Dictionary's commands change the stored dictionary and the learning switch, which the
+   * state shows; learning is offered only on macOS, where the helper reads the field (ADR-DESK-038). */
+  test.each(["darwin", "linux"] as const)("the dictionary's commands and state, on %s", async (platform) => {
+    await launch(platform);
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { dictionary: unknown; learnsWords: boolean; canLearnWords: boolean };
+    expect(state()).toMatchObject({ dictionary: [], learnsWords: true, canLearnWords: platform === "darwin" });
+
+    expect(await send({ type: "addDictionaryWord", word: " Xyvora " })).toEqual({ error: null });
+    expect(await send({ type: "addDictionaryWord", word: "TabMail" })).toEqual({ error: null });
+    expect(await send({ type: "removeDictionaryWord", word: "TabMail" })).toEqual({ error: null });
+    expect(await send({ type: "setLearnsWords", value: false })).toEqual({ error: null });
+
+    expect(state()).toMatchObject({ dictionary: [{ word: "Xyvora", learned: false }], learnsWords: false });
+    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: false }]);
+    expect(app.stored.get("learnsWords")).toBe(false);
+  });
+
+  /** On macOS the correction watch reads the field through `voice-macos` and learns into the stored
+   * dictionary; elsewhere there is none (no helper reads the field yet). */
+  test.each(["darwin", "linux"] as const)("the correction watch's wiring, on %s", async (platform) => {
+    await launch(platform);
+    if (platform !== "darwin") {
+      expect(app.corrections).toBeUndefined();
+      return;
+    }
+    // Its two dependencies, as the watch calls them.
+    const watch = app.corrections as unknown as { readField: (pid: number) => Promise<string | null>; learn: (words: string[]) => void };
+    const helper = app.helpers.get("voice-macos");
+    await watch.readField(42);
+    expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength }]);
+    watch.learn(["Xyvora"]);
+    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true }]);
   });
 
   /** On macOS the name offered is the account's full name from `voice-macos`, and Next on the

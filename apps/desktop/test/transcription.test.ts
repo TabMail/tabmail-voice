@@ -30,7 +30,7 @@ describe("TranscriptionClient", () => {
     const stub = new StubTransport();
     stub.enqueue(200, { text: "Hello there.", duration_seconds: 1.2 });
 
-    const text = await makeClient(stub).transcribe(wav, null, "token-abc");
+    const text = await makeClient(stub).transcribe(wav, null, [], "token-abc");
 
     expect(text).toBe("Hello there.");
     const request = stub.requests[0];
@@ -49,17 +49,34 @@ describe("TranscriptionClient", () => {
     stub.enqueue(200, { text: "Hello." });
     const client = makeClient(stub);
 
-    await client.transcribe(wav, "ko", "t");
-    await client.transcribe(wav, null, "t");
+    await client.transcribe(wav, "ko", [], "t");
+    await client.transcribe(wav, null, [], "t");
 
     expect(stub.body(0).language).toBe("ko");
     expect(Object.keys(stub.body(1)).sort()).toEqual(["audio", "format"]);
   });
 
-  /** The debug log's copy of the body shows the language sent, beside the audio's size. */
-  test("the logged body shows the language", () => {
-    expect(TranscriptionClient.loggedBody(12, "ko")).toContain(`"language":"ko"`);
-    expect(TranscriptionClient.loggedBody(12, null)).not.toContain("language");
+  /** The dictionary's words go as `vocabulary`, which the backend hands the speech model
+   * (ADR-DESK-038); without words, the body has no `vocabulary` at all. */
+  test("sends the dictionary's words when there are some", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, { text: "Xyvora." });
+    stub.enqueue(200, { text: "Hello." });
+    const client = makeClient(stub);
+
+    await client.transcribe(wav, "en", ["Xyvora", "Kaelthorne Draszek"], "t");
+    await client.transcribe(wav, "en", [], "t");
+
+    expect(stub.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
+    expect(Object.keys(stub.body(1)).sort()).toEqual(["audio", "format", "language"]);
+  });
+
+  /** The debug log's copy of the body shows the language and words sent, beside the audio's size. */
+  test("the logged body shows the language and the words", () => {
+    expect(TranscriptionClient.loggedBody(12, "ko", [])).toContain(`"language":"ko"`);
+    expect(TranscriptionClient.loggedBody(12, null, [])).not.toContain("language");
+    expect(TranscriptionClient.loggedBody(12, null, ["Xyvora"])).toContain(`"vocabulary":["Xyvora"]`);
+    expect(TranscriptionClient.loggedBody(12, null, [])).not.toContain("vocabulary");
   });
 
   test.each([
@@ -73,14 +90,14 @@ describe("TranscriptionClient", () => {
   ])("maps HTTP %i %s", async (status, code, kind, failedStatus) => {
     const stub = new StubTransport();
     stub.enqueue(status, { error: code });
-    const error = await backendError(makeClient(stub).transcribe(wav, null, "t"));
+    const error = await backendError(makeClient(stub).transcribe(wav, null, [], "t"));
     expect([error.kind, error.status]).toEqual([kind, failedStatus]);
   });
 
   test("rejects a response without text", async () => {
     const stub = new StubTransport();
     stub.enqueue(200, { unexpected: true });
-    expect((await backendError(makeClient(stub).transcribe(wav, null, "t"))).kind).toBe("invalidResponse");
+    expect((await backendError(makeClient(stub).transcribe(wav, null, [], "t"))).kind).toBe("invalidResponse");
   });
 
   /** A long recording in one piece: base64 in chunks matches Node's own encoder. */
@@ -101,7 +118,7 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const text = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, token));
+    const text = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token));
 
     expect(text).toBe("Retried.");
     expect(backend.authorizations).toEqual(["Bearer access-1", "Bearer access-2"]);
@@ -115,7 +132,7 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token)));
 
     expect(error.kind).toBe("subscriptionRequired");
     expect(backend.requests).toHaveLength(1);
@@ -127,7 +144,7 @@ describe("withFreshToken", () => {
     const account = signedIn(new StubTransport(), null);
     const client = makeClient(backend);
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token)));
 
     expect(error.kind).toBe("unauthorized");
     expect(backend.requests).toHaveLength(0);
@@ -151,7 +168,7 @@ describe("withFreshToken", () => {
       if (switchAccount) await account.verify(Fixtures.email, "123456");
     };
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token)));
 
     expect(error.kind).toBe("unauthorized");
     expect(backend.authorizations).toEqual(["Bearer access-1"]);

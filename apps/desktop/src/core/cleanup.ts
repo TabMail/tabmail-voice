@@ -24,6 +24,8 @@ export const DictationCleanup = {
   async cleanUp(
     transcript: string,
     context: ScreenContext | null,
+    /** The user's dictionary words, whose spellings the cleanup uses (ADR-DESK-038). */
+    dictionary: readonly string[],
     client: CompletionsClient,
     account: AccountModel,
     userId: string | null,
@@ -31,7 +33,7 @@ export const DictationCleanup = {
     /** The dictation's: aborts the request as soon as the dictation is cancelled. */
     signal?: AbortSignal,
   ): Promise<string> {
-    const message = DictationCleanup.message(transcript, context);
+    const message = DictationCleanup.message(transcript, context, dictionary);
     const started = performance.now();
     try {
       const text = trimWhitespace(
@@ -57,7 +59,7 @@ export const DictationCleanup = {
 
   /** The prompt and its variables. Anything not known is sent empty; the prompt reads an empty
    * field as unknown. */
-  message(dictation: string, context: ScreenContext | null): CompletionsMessage {
+  message(dictation: string, context: ScreenContext | null, dictionary: readonly string[]): CompletionsMessage {
     return {
       role: "system",
       content: config.cleanupPrompt,
@@ -68,6 +70,8 @@ export const DictationCleanup = {
         terminal_program: context?.terminalProgram ?? "",
         window_title: context?.windowTitle ?? "",
         screen_text: textAroundCaret(context),
+        // One word per line: a dictionary word holds no line break (`dictionaryWord`).
+        dictionary: dictionary.join("\n"),
       },
     };
   },

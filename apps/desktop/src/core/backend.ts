@@ -367,17 +367,18 @@ export class TranscriptionClient {
   ) {}
 
   /** `language`: the keyboard's at key-down, which picks the backend's model; null sends none (the
-   * default model). */
-  async transcribe(wav: Uint8Array, language: string | null, accessToken: string, signal?: AbortSignal): Promise<string> {
+   * default model). `vocabulary`: the user's dictionary words, which the speech model favours
+   * (ADR-DESK-038); none are sent when it is empty. */
+  async transcribe(wav: Uint8Array, language: string | null, vocabulary: readonly string[], accessToken: string, signal?: AbortSignal): Promise<string> {
     const request: HTTPRequest = {
       method: "POST",
       url: joinURL(this.baseURL, config.transcribePath),
       timeout: config.transcriptionRequestTimeout,
       headers: headers(accessToken, this.clientVersion),
-      body: JSON.stringify(TranscriptionClient.body(base64(wav), language)),
+      body: JSON.stringify(TranscriptionClient.body(base64(wav), language, vocabulary)),
       signal,
     };
-    log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(wav.length, language)));
+    log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(wav.length, language, vocabulary)));
     const response = await this.transport(request);
     log.content("Transcription response", () => BackendLog.response(response));
     if (response.status !== 200) throw BackendError.fromStatus(response.status, errorCode(response.body));
@@ -394,12 +395,17 @@ export class TranscriptionClient {
   }
 
   /** The request body as the log shows it: the audio's size in its place, never the audio. */
-  static loggedBody(wavBytes: number, language: string | null): string {
-    return JSON.stringify(TranscriptionClient.body(`<${wavBytes} bytes of WAV, not logged>`, language));
+  static loggedBody(wavBytes: number, language: string | null, vocabulary: readonly string[]): string {
+    return JSON.stringify(TranscriptionClient.body(`<${wavBytes} bytes of WAV, not logged>`, language, vocabulary));
   }
 
-  /** `language` is left out when null. */
-  private static body(audio: string, language: string | null): Record<string, string> {
-    return language === null ? { audio, format: "wav" } : { audio, format: "wav", language };
+  /** `language` is left out when null, `vocabulary` when empty. */
+  private static body(audio: string, language: string | null, vocabulary: readonly string[]): Record<string, unknown> {
+    return {
+      audio,
+      format: "wav",
+      ...(language === null ? {} : { language }),
+      ...(vocabulary.length === 0 ? {} : { vocabulary }),
+    };
   }
 }

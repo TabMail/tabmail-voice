@@ -21,6 +21,7 @@ import { liveWebFetch, webTools } from "../core/agent/webTools.js";
 import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
 import * as config from "../core/config.js";
+import { CorrectionWatch } from "../core/correctionWatch.js";
 import { DictationController } from "../core/dictationController.js";
 import { GlobeKeyAction } from "../core/globeKeyAction.js";
 import { type DictationHotkey, isHotkeyAction } from "../core/hotkey.js";
@@ -168,6 +169,8 @@ function launch(): void {
       process.platform === "darwin"
         ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...webTools(liveWebFetch, { open: (url) => shell.openExternal(url) })]
         : [],
+    // The user's corrections are learned where the helper reads the field: macOS (ADR-DESK-038).
+    corrections: process.platform === "darwin" ? new CorrectionWatch((pid) => mac.focusedFieldValue(pid), (words) => settings.learnWords(words)) : undefined,
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -242,6 +245,9 @@ function launch(): void {
       enabledConnectors: settings.enabledConnectors,
       userName: settings.userName,
       suggestedName,
+      dictionary: settings.dictionary,
+      learnsWords: settings.learnsWords,
+      canLearnWords: process.platform === "darwin",
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
@@ -498,6 +504,15 @@ function launch(): void {
         return;
       case "setUserName":
         settings.userName = command.value;
+        return;
+      case "addDictionaryWord":
+        settings.addWord(command.word);
+        return;
+      case "removeDictionaryWord":
+        settings.removeWord(command.word);
+        return;
+      case "setLearnsWords":
+        settings.learnsWords = command.value;
         return;
       case "setAgentToolEnabled":
         settings.setEnabled(command.tool, command.value);

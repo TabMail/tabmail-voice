@@ -9,21 +9,23 @@ import { alphabetical } from "../core/agent/bubbleOrder.js";
 import { connectorInfo, isConnector } from "../core/agent/connectors.js";
 import { offeredAgentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
+import { dictionaryWord, isSameWord } from "../core/dictionary.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
-import { ConnectorIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
+import { BookIcon, ConnectorIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
 import { NameField } from "./nameField.js";
 import "./form.css";
 import "./settings.css";
 
-type SectionName = "account" | "dictation" | "agent" | "permissions" | "general";
+type SectionName = "account" | "dictation" | "dictionary" | "agent" | "permissions" | "general";
 
 /** The sidebar's sections, in order, each with its title and icon. */
 const sections: { name: SectionName; title: string; icon: (size: number) => ReactNode }[] = [
   { name: "account", title: "Account", icon: (size) => <PersonIcon size={size} /> },
   { name: "dictation", title: "Dictation", icon: (size) => <MicrophoneIcon size={size} /> },
+  { name: "dictionary", title: "Dictionary", icon: (size) => <BookIcon size={size} /> },
   { name: "agent", title: "Agent mode", icon: (size) => <SparklesLineIcon size={size} /> },
   { name: "permissions", title: "Permissions", icon: (size) => <LockShieldIcon size={size} /> },
   { name: "general", title: "General", icon: (size) => <GearIcon size={size} /> },
@@ -86,6 +88,9 @@ function Settings() {
         <div hidden={shown !== "dictation"}>
           <DictationPane state={state} />
         </div>
+        <div hidden={shown !== "dictionary"}>
+          <DictionaryPane state={state} />
+        </div>
         <div hidden={shown !== "agent"}>
           <AgentPane state={state} />
         </div>
@@ -138,6 +143,75 @@ function DictationPane({ state }: { state: SettingsState }) {
           Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.
         </Toggle>
       </Group>
+    </>
+  );
+}
+
+/** The user's dictionary (ADR-DESK-038): a field to add a word, the words with a remove button each
+ * (a learned one tagged so), and the switch for learning from the user's corrections where it can. */
+function DictionaryPane({ state }: { state: SettingsState }) {
+  const [draft, setDraft] = useState("");
+  const word = dictionaryWord(draft);
+  const isThere = word !== null && state.dictionary.some((entry) => isSameWord(entry.word, word));
+  const isFull = state.dictionary.length >= config.dictionaryMaxEntries;
+  let problem: string | null = null;
+  if (draft.trim() !== "" && word === null) problem = `A word or name of up to ${config.dictionaryWordMaxWords} words, without < or >.`;
+  else if (isFull && !isThere) problem = `The dictionary holds ${config.dictionaryMaxEntries} words. Remove one to add another.`;
+  const add = (event: FormEvent) => {
+    event.preventDefault();
+    if (word === null || problem !== null) return;
+    void send({ type: "addDictionaryWord", word });
+    setDraft("");
+  };
+  return (
+    <>
+      <Group captions={["Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them."]}>
+        <form className="row" onSubmit={add}>
+          <input
+            type="text"
+            className="dictionary-input"
+            placeholder="Add a word or name"
+            aria-label="Word or name"
+            maxLength={config.dictionaryWordMaxChars}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button type="submit" disabled={word === null || problem !== null}>
+            Add
+          </button>
+        </form>
+        {problem && (
+          <div className="row">
+            <span className="error">{problem}</span>
+          </div>
+        )}
+        {state.dictionary.length === 0 ? (
+          <div className="row">
+            <span className="caption">No words yet.</span>
+          </div>
+        ) : (
+          <ul className="dictionary" aria-label="Dictionary">
+            {state.dictionary.map((entry) => (
+              <li key={entry.word} className="row">
+                <span>
+                  {entry.word}
+                  {entry.learned && <span className="caption learned"> Learned</span>}
+                </span>
+                <button className="link" aria-label={`Remove ${entry.word}`} onClick={() => void send({ type: "removeDictionaryWord", word: entry.word })}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Group>
+      {state.canLearnWords && (
+        <Group>
+          <Toggle label="Learn from my corrections" checked={state.learnsWords} onChange={(value) => send({ type: "setLearnsWords", value })}>
+            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. The field’s text stays on this Mac, and a password field is never read.
+          </Toggle>
+        </Group>
+      )}
     </>
   );
 }

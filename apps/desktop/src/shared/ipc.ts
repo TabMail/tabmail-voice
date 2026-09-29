@@ -9,6 +9,7 @@ import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
 import * as config from "../core/config.js";
+import type { DictionaryEntry } from "../core/dictionary.js";
 import type { ScreenContext } from "../core/screenContext.js";
 import type { DictationTip } from "../core/tips.js";
 import type { WelcomeStep } from "../core/welcomeWizard.js";
@@ -82,6 +83,11 @@ export interface SettingsState {
   userName: string | null;
   /** The computer account's name (`suggestedUserName`), shown where no name is set. */
   suggestedName: string;
+  /** The user's dictionary (ADR-DESK-038), and whether corrections are learned into it: only where
+   * the field can be read (`canLearnWords`, macOS). */
+  dictionary: DictionaryEntry[];
+  learnsWords: boolean;
+  canLearnWords: boolean;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
@@ -139,6 +145,9 @@ export type Command =
   | { type: "setHotkey"; hotkey: DictationHotkey }
   | { type: "setReadsScreen"; value: boolean }
   | { type: "setUserName"; value: string }
+  | { type: "addDictionaryWord"; word: string }
+  | { type: "removeDictionaryWord"; word: string }
+  | { type: "setLearnsWords"; value: boolean }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
   | { type: "setAgentToolEnabled"; tool: AgentTool; value: boolean }
   | { type: "setConnectorEnabled"; connector: Connector; value: boolean }
@@ -220,12 +229,16 @@ export function isCommand(value: unknown): value is Command {
     case "setHotkey":
       return isDictationHotkey(command.hotkey);
     case "setReadsScreen":
+    case "setLearnsWords":
     case "setOpenAtLogin":
     case "setDebugMode":
     case "setConsent":
       return typeof command.value === "boolean";
     case "setUserName":
       return typeof command.value === "string" && command.value.length <= config.userNameMaxLength;
+    case "addDictionaryWord":
+    case "removeDictionaryWord":
+      return typeof command.word === "string" && command.word.length <= config.dictionaryWordMaxChars;
     case "setEmailClient":
       return command.bundleIdentifier === null || typeof command.bundleIdentifier === "string";
     case "welcomeGoTo":

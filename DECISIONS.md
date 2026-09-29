@@ -1803,3 +1803,80 @@ ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built se
 - Bringing the tool back is offering it in `offeredAgentTools`, with the native connector as its
   delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
   case) were taken out with it and come back from this change's history.
+
+## ADR-DESK-038: A dictionary of the user's words, typed or learned from their corrections
+
+**Context:** Owner, 2026-09-29: dictation should learn the user's vocabulary, as other dictation apps
+do, with a dictionary the user also edits by hand, in its own Settings section. A live test the same
+day showed the speech model spells made-up names right when given them as a word list, and that a
+name in Hangul is left in Hangul, so the cleanup pass must see the words too (backend ADR-025). The
+consent step is reworded, not re-asked (owner: the app has never been released, so no one has
+consented to the old text). Later the same day, the owner: don't rely on the dictionary alone, but
+leave half of the backend's 200 words to names and uncommon words picked from the context, "a dynamic
+dictionary being constructed on the fly from the captured context", by rules on this computer, not a
+model; TabMail on iOS does the same (its ADR-IOS-086).
+
+**Decision:**
+- `AppSettings.dictionary`: entries `{word, learned}`, in the order added, kept on this computer, not
+  synced. Words are trimmed with their spaces collapsed, and must pass the backend's rules
+  (`dictionaryWord`, in the backend's units: UTF-16 code units, JS `trim`, words split on spaces): at
+  most `dictionaryWordMaxChars` characters and `dictionaryWordMaxWords` words, no control characters
+  or `<` `>`, at most `dictionaryMaxEntries` (100) words, half the backend's 200, so all of them are
+  always sent; the same word in another case is one entry, spelled as the user last typed it. A word
+  the backend would refuse is never stored, so no dictation fails on one.
+- The dictation's key-down snapshot (ADR-DESK-017) carries the words and the learning switch. Every
+  transcription sends them as `vocabulary` (none when empty), and dictation's cleanup as `dictionary`,
+  one per line. Agent mode's prompts don't take them.
+- Screen terms (`contextTerms`): the transcription's `vocabulary` also carries up to
+  `contextTermsMax` (100) names and terms from the key-down screen read (window title and rendered
+  text), after the dictionary's words, when the read is already done as the recording is sent (it
+  never waits for one) and screen reading is on. A term is a word with a capital letter inside it
+  ("TabMail", "OKR", "iOS"), or at its start where no sentence starts (a line's start or after `.`
+  `!` `?` starts one); a run of them is one term ("Kaelthorne Drake") up to `dictionaryWordMaxWords`
+  words, split by punctuation after a word or before one ("Xyvora (Brevalle Labs)", a link's `[`), a longer run (a heading) counting word by word; not an everyday word
+  (`correctionCommonWords`), a word under `correctionMinWordLength`, an address (`@`, `://`), or a
+  word `dictionaryWord` refuses; none the same as a dictionary word; the most frequent first, then
+  the earliest. The cleanup does not get them: it reads the screen itself.
+- Settings › Dictionary: a field to add a word, the words with a Remove button each, a learned one
+  tagged "Learned" (typing it makes it the user's own), and "Learn from my corrections" (on by
+  default) where the field can be read: macOS.
+- Learning (`CorrectionWatch`, `learnedCorrections`, our own implementation of the approach OpenWhispr
+  takes): after a dictation's paste, with learning on at its key-down, `voice-macos` reads the
+  focused field of the app that was in front at key-down (`focusedFieldValue`) every
+  `correctionPollInterval` for `correctionWatchDuration`. The first read holding the pasted text is the
+  field before any edit; each later change that stays for one interval is compared with it, and the
+  words the last one teaches are learned when the watch ends (the next key-down, its duration, or a
+  field it can't read), so a pause in the middle of an edit ("tabmail" on the way to "TabMail")
+  teaches nothing. A change that respells something new, or has the pasted text back as it was (an
+  undo), replaces what an earlier one taught: with what it teaches once it has stayed, with nothing
+  before, so a spelling paused on and then changed teaches nothing though the message is sent before
+  the change stays. A change that respells nothing (a field emptied by sending the message, another
+  field focused, a word half retyped) keeps the correction. The
+  changed span (common prefix and suffix) must lie within one copy of the pasted text; the words are
+  aligned (longest common subsequence), and a run of changed words is learned when it respells rather
+  than replaces: at most half the dictation's words changed, an edit distance within
+  `correctionMaxEditShare` of the longer spelling, not another form of a lowercase word (only its end
+  changed past `correctionMinStemShare` of its start: "report" → "reports", "send" → "sent"; a
+  capitalised name or a script without case is exempt), not an everyday word or one shorter than
+  `correctionMinWordLength`, and for a change of case alone, a capital inside a word or a change of
+  spacing ("tabmail", "tab mail" → "TabMail"), not one at a word's start. The next key-down stops the
+  watch first, so a dictation's own paste is never taken for a correction; an unreadable field ends it.
+- The helper never reads a password field (`kAXSecureTextFieldSubrole`) or a field longer than
+  `correctionMaxFieldLength`. The field's text stays on the computer and is never logged; the debug
+  log sees only the words learned (`log.content`).
+- The consent step lists the dictionary's words among what a dictation sends, and says learning reads
+  the field on this computer and can be switched off.
+
+**Consequences:**
+- A word removed from the dictionary can be learned again from a later correction.
+- A lowercase term the speech model gets right at its start but wrong at its end ("kubctl" for
+  "kubectl") is not learned; the user adds it by hand.
+- Windows and Linux have the dictionary but no learning until their helpers read the field.
+- No notice when a word is learned yet: the user sees it in Settings (an overlay "Learned … Undo" is a
+  follow-up), and the privacy policy's Voice Data wording is updated separately.
+- Every word is sent with every dictation: the list's cap keeps that small.
+- The screen terms leave the computer only as words picked from a screen the consent already covers
+  sending. The picking is heuristic: a capitalised ordinary word mid-sentence ("Monday") is sent too,
+  harmlessly, since the list only biases the speech model; a name only ever at a sentence's start is
+  missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
+  backend fall back to it (its ADR-025).
