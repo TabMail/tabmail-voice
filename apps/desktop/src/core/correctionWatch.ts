@@ -72,7 +72,10 @@ export class CorrectionWatch {
           log.debug("CorrectionWatch: found the pasted text in the field");
         }
       } else if (field === previous) {
-        this.pending = learnedCorrections(pasted, before, field);
+        // A field that respells nothing replaces the correction pending only with the pasted text back
+        // as it was (an undo); not once the message is sent and the field emptied, or focus moves on.
+        const words = learnedCorrections(pasted, before, field);
+        if (words.length > 0 || field.includes(pasted)) this.pending = words;
       }
       previous = field;
     }

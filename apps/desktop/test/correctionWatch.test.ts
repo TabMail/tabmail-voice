@@ -80,6 +80,26 @@ describe("CorrectionWatch", () => {
     expect(learned).toEqual(words.length === 0 ? [] : [words]);
   });
 
+  /** A correction kept is learned though the field then empties (the message sent) or shows other
+   * text (focus moved on); undone, with words added after it, it teaches nothing. */
+  test.each([
+    ["", ["Xyvora"]],
+    ["Something else entirely.", ["Xyvora"]],
+    [`${pasted} Thanks!`, []],
+  ])("after a correction settles, a field reading %j learns %j", async (after, words) => {
+    const { field, learned, watch } = setup();
+    watch.watch(pid, pasted);
+    await poll();
+    field.value = corrected;
+    await poll();
+    await poll();
+    field.value = after;
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual(words.length === 0 ? [] : [words]);
+  });
+
   /** While the user is still typing the field changes at every read: nothing is compared until it
    * holds still. */
   test("a field still changing is not compared", async () => {

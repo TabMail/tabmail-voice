@@ -1847,7 +1847,9 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   field before any edit; each later change that stays for one interval is compared with it, and the
   words the last one teaches are learned when the watch ends (the next key-down, its duration, or a
   field it can't read), so a pause in the middle of an edit ("tabmail" on the way to "TabMail")
-  teaches nothing. The
+  teaches nothing. A change that respells nothing replaces what an earlier one taught only with the
+  pasted text back as it was (an undo): a field emptied by sending the message, or another field
+  focused, keeps the correction. The
   changed span (common prefix and suffix) must lie within one copy of the pasted text; the words are
   aligned (longest common subsequence), and a run of changed words is learned when it respells rather
   than replaces: at most half the dictation's words changed, an edit distance within

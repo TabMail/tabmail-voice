@@ -81,6 +81,10 @@ describe("learnedCorrections", () => {
     expect(learnedCorrections("Meet Zivora today.", "Meet Zivora today.", "Meet Bartholomew today.")).toEqual([]);
     // "Shunade" → "Sinead": 4 edits of 7, within the share.
     expect(learnedCorrections("Ask Shunade today.", "Ask Shunade today.", "Ask Sinead today.")).toEqual(["Sinead"]);
+    // At the share exactly, 13 edits of 20, a respelling; one more, another word.
+    const [heard, at, past] = ["Abcdefghijklmnopqrst", "Àáâãäåæçèéêëìnopqrst", "Àáâãäåæçèéêëìíopqrst"];
+    expect(learnedCorrections(`Ask ${heard} today.`, `Ask ${heard} today.`, `Ask ${at} today.`)).toEqual([at]);
+    expect(learnedCorrections(`Ask ${heard} today.`, `Ask ${heard} today.`, `Ask ${past} today.`)).toEqual([]);
   });
 
   test("short and everyday words are not learned", () => {
