@@ -20,13 +20,13 @@ export const DictationCleanup = {
    * reads an empty field as unknown. */
   variables(context: ScreenContext | null, dictionary: readonly string[]): CleanupVariables {
     return {
-      app_name: context?.appName ?? "",
-      web_host: context?.host ?? "",
-      terminal_program: context?.terminalProgram ?? "",
-      window_title: context?.windowTitle ?? "",
-      screen_text: textAroundCaret(context),
+      app_name: withinLimit(context?.appName ?? ""),
+      web_host: withinLimit(context?.host ?? ""),
+      terminal_program: withinLimit(context?.terminalProgram ?? ""),
+      window_title: withinLimit(context?.windowTitle ?? ""),
+      screen_text: withinLimit(textAroundCaret(context)),
       // One word per line: a dictionary word holds no line break (`dictionaryWord`).
-      dictionary: dictionary.join("\n"),
+      dictionary: withinLimit(dictionary.join("\n")),
     };
   },
 
@@ -46,6 +46,13 @@ export const DictationCleanup = {
     return text;
   },
 };
+
+/** `value` within the backend's limit on a cleanup field (`config.cleanupFieldMaxLength`), its start
+ * kept, cut between characters. Bounds the cleanup model's input only. */
+function withinLimit(value: string): string {
+  if (value.length <= config.cleanupFieldMaxLength) return value;
+  return value.slice(0, characters.segment(value).containing(config.cleanupFieldMaxLength)?.index);
+}
 
 /** How the helper marks the caret in the rendered screen (`ScreenContext.caretMarker`), and the
  * prefix of the focused field's lines, where the caret is. */

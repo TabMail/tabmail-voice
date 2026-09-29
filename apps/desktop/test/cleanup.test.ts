@@ -31,6 +31,38 @@ describe("DictationCleanup.variables", () => {
     });
   });
 
+  /** The backend refuses the whole dictation when a cleanup field is over its limit (its ADR-027),
+   * counted in UTF-16 code units, and a window title is whatever the app or web page sets: every
+   * field is cut to the limit, its start kept, between characters. */
+  test("every field stays within the backend's limit", () => {
+    const limit = config.cleanupFieldMaxLength;
+    // An emoji is two code units: one straddling the limit is left out whole.
+    const long = `${"t".repeat(limit - 1)}😀tail`;
+    const variables = DictationCleanup.variables(
+      screen({ appName: long, host: long, terminalProgram: long, windowTitle: long, renderedText: "» ‸" }),
+      Array.from({ length: limit }, () => "w"),
+    );
+
+    expect(variables.window_title).toBe("t".repeat(limit - 1));
+    for (const [key, value] of Object.entries(variables)) expect(value.length, key).toBeLessThanOrEqual(limit);
+    expect(variables.dictionary).toHaveLength(limit);
+  });
+
+  test("a field at the limit is sent whole", () => {
+    const title = "t".repeat(config.cleanupFieldMaxLength);
+    expect(DictationCleanup.variables(screen({ windowTitle: title }), []).window_title).toBe(title);
+  });
+
+  /** The screen text is cut around the caret between characters, so a character of many code units
+   * (a letter with combining marks) can carry it past the limit. */
+  test("a screen of long characters stays within the limit", () => {
+    const heavy = `a${"\u0301".repeat(config.cleanupFieldMaxLength)}`;
+    const variables = DictationCleanup.variables(screen({ renderedText: `» ${heavy}‸` }), []);
+
+    expect(textAroundCaret(screen({ renderedText: `» ${heavy}‸` })).length).toBeGreaterThan(config.cleanupFieldMaxLength);
+    expect(variables.screen_text.length).toBeLessThanOrEqual(config.cleanupFieldMaxLength);
+  });
+
   /** Without Accessibility access there is no context: the prompt still gets every field, empty. */
   test("without context every field is empty", () => {
     expect(DictationCleanup.variables(null, [])).toEqual({

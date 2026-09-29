@@ -74,6 +74,11 @@ export const contextWait = 500;
  * still gets all of it. */
 export const cleanupContextBefore = 500;
 export const cleanupContextAfter = 200;
+/** The backend's limit on each cleanup field (its `transcription.json` `cleanup.maxFieldChars`,
+ * ADR-027), in UTF-16 code units. Over it the backend refuses the whole request, the transcription
+ * included, so every field is cut to it (`DictationCleanup.variables`): a window title is whatever
+ * the app or web page sets. */
+export const cleanupFieldMaxLength = 20_000;
 
 // MARK: Backend
 

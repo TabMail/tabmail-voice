@@ -628,9 +628,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual([transcript, cleaned, cleaned]);
     });
 
-    /** Cancelled while its screen is still being read: nothing is sent or pasted, and the next
-     * dictation is cleaned up with its own screen. */
-    test("a dictation cancelled while its screen is read is not sent", async () => {
+    /** Cancelled while its screen is still being read, during the release tail or in the upload's
+     * wait for the read after it: nothing is sent or pasted, and the next dictation is cleaned up
+     * with its own screen. */
+    test.each([
+      ["during the release tail", config.releaseTailDuration / 2],
+      ["during the upload's wait", config.releaseTailDuration + 200],
+    ])("a dictation cancelled while its screen is read is not sent (%s)", async (_, cancelAfter) => {
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const first = deferred<ScreenContext | null>();
@@ -638,7 +642,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.contextWait = 5_000;
 
       await holdAndRelease(controller);
-      await sleep(200);
+      await sleep(cancelAfter);
       controller.handle("cancel");
       first.resolve(screen("A"));
       await sleep(200);
@@ -677,7 +681,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** A screen read done after the release, within the app's own `contextWait`, still goes with the
-     * recording. */
+     * recording: to the cleanup, and its names and terms to the vocabulary. */
     test("a screen read done just after the release is sent", async () => {
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -685,11 +689,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.captureContext = () => read.promise;
 
       await holdAndRelease(controller);
-      void sleep(config.contextWait / 5).then(() => read.resolve(screen("A")));
+      // Past the release tail: during the upload's wait for the read.
+      void sleep(config.releaseTailDuration + config.contextWait / 5).then(() =>
+        read.resolve(blankScreen({ appName: "Example Notes A", windowTitle: "Launch with Brevalle Labs", renderedText: "» Ask Kaelthorne Drake ‸" })));
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(pastes).toEqual([cleaned]);
       expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
+      expect(transcription.body(0).vocabulary).toEqual(["Brevalle Labs", "Kaelthorne Drake"]);
     });
   });
 

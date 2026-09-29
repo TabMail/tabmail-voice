@@ -293,6 +293,10 @@ deadline) or absent (a backend from before this change) (`DictationCleanup.paste
   under the other account and pastes that request's cleanup (both ran under the account signed in at
   the upload, as this ADR required).
 - Agent mode's transcription sends no `cleanup` and is unchanged.
+- Every field is cut to the backend's per-field limit (`config.cleanupFieldMaxLength`, 20,000 UTF-16
+  code units, its `cleanup.maxFieldChars`), its start kept, between characters. Over the limit the
+  backend refuses the whole request, the transcription included, and a window title is whatever the
+  app or web page sets. The cut bounds the cleanup model's input only.
 
 **Amendment 2026-09-28 (later) — never no screen for want of the marker; no selection.** Owner: "we
 should not have empty screen just because we can't find the correct character"; "if we are able to
