@@ -2586,6 +2586,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tip).toBeNull();
     });
 
+    /** A tip with a display duration keeps its turn: the name tip follows it, and it shows once. */
+    test("the name tip waits for a timed tip showing", async () => {
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      new TipBook(tipStore).markLearned("switchMode");
+      controller.doubleTapTipHoldDuration = 100;
+      const doubleTapTipDuration = 400;
+      controller.tipDisplayDuration = (tip) => (tip === "doubleTap" ? doubleTapTipDuration : 60_000);
+      prefs.value = { ...prefs.value, userName: "" };
+
+      controller.handle("start");
+      expect(await eventually(() => controller.tip === "doubleTap")).toBe(true);
+      controller.handle("toggleMode");
+      expect(await throughout(doubleTapTipDuration / 2, () => controller.tip === "doubleTap")).toBe(true);
+      expect(await eventually(() => controller.tip === "setName")).toBe(true);
+      expect(await throughout(doubleTapTipDuration * 2, () => controller.tip === "setName")).toBe(true);
+      expect(tipStore.get("tip.doubleTap.displays")).toBe(1);
+      controller.handle("cancel");
+    });
+
     /** A tip shows for its display duration, and goes away with the hold. */
     test("a tip shows for its display duration and goes with the hold", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });

@@ -48,7 +48,7 @@ function Page({ state }: { state: WelcomeState }) {
       return (
         <StepPage title="Your Name" text="Agent mode writes as you. With your name, it knows which messages on screen are yours, so a reply goes to the other person, not back to you.">
           <NameField initial={state.userName ?? state.suggestedName} placeholder="Your name" />
-          <span className="caption">Sent with agent mode’s requests and not stored. You can leave it empty, and change it any time in Settings.</span>
+          <span className="caption">Sent to TabMail with agent mode’s requests, and TabMail doesn’t keep it. You can leave it empty, and change it any time in Settings.</span>
         </StepPage>
       );
     case "microphone":

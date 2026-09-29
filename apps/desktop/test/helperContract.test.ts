@@ -119,8 +119,14 @@ describe("helper wire contract", () => {
   });
 
   /** The account's full name comes back as the helper answers it, empty included; a reply without one
-   * is a failure, not a name. */
+   * is a failure, not a name. The helper answers it under the key read here, as a string: a key
+   * renamed on one side only would offer the short name on every launch while both suites pass. */
   test("the full user name is the helper's, and a reply without one fails", async () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8");
+    const handler = source.split('channel.on("fullUserName")')[1]?.split("channel.on(")[0] ?? "";
+    expect(handler).toMatch(/\["name": \.string\(/);
+    expect([...handler.matchAll(/"(\w+)":/g)].map((match) => match[1])).toEqual(["name"]);
+
     let reply: unknown = { name: "Alex Example" };
     const mac = new MacSystem({ request: async () => reply } as unknown as HelperClient);
     expect(await mac.fullUserName()).toBe("Alex Example");

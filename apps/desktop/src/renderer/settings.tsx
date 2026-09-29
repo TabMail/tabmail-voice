@@ -152,8 +152,8 @@ function AgentPane({ state }: { state: SettingsState }) {
       <Group
         captions={[
           hasName(state)
-            ? "Sent with agent mode’s requests, so it knows which messages on screen are yours. It isn’t stored."
-            : "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent with agent mode’s requests and isn’t stored.",
+            ? "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it."
+            : "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent to TabMail with agent mode’s requests, and TabMail doesn’t keep it.",
         ]}
       >
         <div className="row">

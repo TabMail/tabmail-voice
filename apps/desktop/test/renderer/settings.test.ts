@@ -195,8 +195,8 @@ describe("Settings page", () => {
    * account's name as its placeholder and a note inviting one; typing sends it as typed. */
   test("agent mode's name field shows the name and sends what the user types", async () => {
     const field = () => document.querySelector<HTMLInputElement>('input[aria-label="Your name"]') as HTMLInputElement;
-    const set = "Sent with agent mode’s requests, so it knows which messages on screen are yours. It isn’t stored.";
-    const invite = "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent with agent mode’s requests and isn’t stored.";
+    const set = "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.";
+    const invite = "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent to TabMail with agent mode’s requests, and TabMail doesn’t keep it.";
 
     await settingsPage({ error: null }, signedIn);
     await act(async () => button("Agent mode").click());
@@ -464,7 +464,7 @@ describe("Settings page", () => {
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
       "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
       "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
-      "Sent with agent mode’s requests, so it knows which messages on screen are yours. It isn’t stored.",
+      "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],
