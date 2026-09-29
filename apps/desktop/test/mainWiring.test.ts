@@ -2,7 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { homedir } from "node:os";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectors } from "../src/core/agent/connectors.js";
 import { mailtoURL } from "../src/core/agent/emailTools.js";
@@ -33,6 +35,8 @@ const app = vi.hoisted(() => ({
   openFailure: null as Error | null,
   loopTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
   scripts: [] as { source: string; args: readonly string[] }[],
+  /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
+  appData: null as string | null,
 }));
 
 vi.mock("electron", () => ({
@@ -40,7 +44,7 @@ vi.mock("electron", () => ({
     isPackaged: false,
     requestSingleInstanceLock: () => true,
     whenReady: () => Promise.resolve(),
-    getPath: () => "/nonexistent",
+    getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
     getAppPath: () => "/nonexistent",
     getVersion: () => "0.0.0",
     dock: { hide() {} },
@@ -263,6 +267,8 @@ afterEach(() => {
   app.openFailure = null;
   app.loopTools = [];
   app.scripts = [];
+  if (app.appData !== null) rmSync(app.appData, { recursive: true, force: true });
+  app.appData = null;
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -628,6 +634,39 @@ describe("main process wiring", () => {
     expect(state("settings").connectors).toEqual([]);
     expect(state("welcome").connectors).toEqual([]);
     });
+
+  /** On macOS, VS Code settings that hide the caret are offered for fixing in the welcome wizard:
+   * the fix sets `editor.editContext` false in the file, keeping its comments, and the wizard shows
+   * it done. Settings that are fine, and every other platform, are never offered or written. */
+  test("the welcome wizard fixes VS Code settings that hide the caret, on macOS only", async () => {
+    app.appData = mkdtempSync(join(tmpdir(), "voice-appdata-"));
+    const file = join(app.appData, "Code", "User", "settings.json");
+    mkdirSync(join(app.appData, "Code", "User"), { recursive: true });
+    const hiding = '{\n    // off on purpose\n    "editor.accessibilitySupport": "off"\n}\n';
+    const state = () => (app.handlers.get(channels.getState)?.({}, "welcome") as { vscodeFix: string }).vscodeFix;
+
+    writeFileSync(file, hiding);
+    await launch("linux");
+    expect(state()).toBe("notNeeded");
+    expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
+    expect(readFileSync(file, "utf8")).toBe(hiding);
+
+    await launch("darwin");
+    expect(state()).toBe("needed");
+    expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
+    expect(readFileSync(file, "utf8")).toBe('{\n    "editor.editContext": false,\n    // off on purpose\n    "editor.accessibilitySupport": "off"\n}\n');
+    expect(state()).toBe("done");
+
+    // Settings changed back by hand are offered again; settings that were always fine never are.
+    writeFileSync(file, hiding);
+    expect(state()).toBe("needed");
+    const fine = '{ "editor.accessibilitySupport": "auto" }';
+    writeFileSync(file, fine);
+    await launch("darwin");
+    expect(state()).toBe("notNeeded");
+    expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
+    expect(readFileSync(file, "utf8")).toBe(fine);
+  });
 
   /** The hotkey helper hears that nothing listens hands-free, so it stops keeping Space and Escape
    * from the app in front: when a dictation ends without the hotkey, and when a double tap's release

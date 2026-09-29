@@ -22,7 +22,10 @@ const features: WelcomeState = {
   enabledConnectors: [],
   microphoneGranted: true,
   accessibilityTrusted: true,
+  vscodeFix: "notNeeded",
 };
+
+const accessibility: WelcomeState = { ...features, step: "accessibility", index: 2 };
 
 /** The welcome wizard, mounted afresh against a stand-in main process that shows `state`. */
 async function welcomePage(state: WelcomeState): Promise<{ commands: Command[] }> {
@@ -90,5 +93,22 @@ describe("welcome wizard", () => {
       { type: "setConnectorEnabled", connector: "calendar", value: false },
       { type: "setConnectorEnabled", connector: "reminders", value: true },
     ]);
+  });
+
+  /** When VS Code's settings hide the caret, the Accessibility step says so and offers to fix them,
+   * then shows they are fixed; otherwise it doesn't mention VS Code. */
+  test("the Accessibility step offers to fix VS Code's settings only when they need it", async () => {
+    const page = await welcomePage({ ...accessibility, vscodeFix: "needed" });
+    const fix = [...document.querySelectorAll("button")].find((button) => button.textContent === "Fix VS Code’s Settings");
+    expect(fix).toBeDefined();
+    await act(async () => fix?.click());
+    expect(page.commands).toEqual([{ type: "fixVSCodeSettings" }]);
+
+    await welcomePage({ ...accessibility, vscodeFix: "done" });
+    expect(document.body.textContent).toContain("✓ Fixed");
+    expect([...document.querySelectorAll("button")].some((button) => button.textContent === "Fix VS Code’s Settings")).toBe(false);
+
+    await welcomePage(accessibility);
+    expect(document.body.textContent).not.toContain("VS Code");
   });
 });

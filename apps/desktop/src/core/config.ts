@@ -216,6 +216,9 @@ export const welcomeRailInactiveOpacity = 0.35;
 export const welcomeIconSize = 56;
 /** The icon beside each of the consent page's points, as SwiftUI draws a label's beside body text. */
 export const welcomeLabelIconSize = 16;
+/** The indent of a setting the wizard adds to a VS Code settings file with none to copy: VS
+ * Code's own. */
+export const vscodeSettingsIndent = 4;
 /** Settings: a sidebar of sections (frosted on macOS) beside the chosen section's cards (owner,
  * 2026-09-27: "themed and look professional", not the bland grey; chose the branded sidebar). */
 export const settingsWindowSize = { width: 700, height: 500 };

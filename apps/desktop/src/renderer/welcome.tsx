@@ -54,6 +54,7 @@ function Page({ state }: { state: WelcomeState }) {
         <StepPage title="Accessibility" text="Lets TabMail Voice notice the dictation key in any app and type the text where your cursor is. Screen reading uses it too.">
           <GrantRow granted={state.accessibilityTrusted} button="Allow Accessibility Access" onRequest={() => send({ type: "requestAccessibility" })} />
           {!state.accessibilityTrusted && <span className="caption">In System Settings, turn on TabMail Voice under Privacy &amp; Security › Accessibility.</span>}
+          {state.vscodeFix !== "notNeeded" && <VSCodeFix done={state.vscodeFix === "done"} />}
         </StepPage>
       );
     case "screenReading":
@@ -160,6 +161,25 @@ function GrantRow({ granted, button, onRequest }: { granted: boolean; button: st
     <div>
       <button onClick={() => void onRequest()}>{button}</button>
     </div>
+  );
+}
+
+/** VS Code with its accessibility support off hides where the cursor is on the line
+ * (`vscodeHidesCaret`); one setting in its settings file shows it again. */
+function VSCodeFix({ done }: { done: boolean }) {
+  return (
+    <>
+      <hr />
+      <span>VS Code’s accessibility support is turned off, so TabMail Voice can’t see where your cursor is on the line there.</span>
+      {done ? (
+        <span className="allowed">✓ Fixed</span>
+      ) : (
+        <div>
+          <button onClick={() => void send({ type: "fixVSCodeSettings" })}>Fix VS Code’s Settings</button>
+        </div>
+      )}
+      <span className="caption">This sets “editor.editContext” to false in VS Code’s settings, so VS Code uses its classic text input, from the next time you move the cursor. Nothing else changes.</span>
+    </>
   );
 }
 
