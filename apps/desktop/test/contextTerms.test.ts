@@ -23,6 +23,8 @@ describe("contextTerms", () => {
     expect(terms("Tomorrow works\nFriday too")).toEqual([]);
     expect(terms("Tomorrow works\u2028Friday too")).toEqual([]);
     expect(terms('It works." Friday too')).toEqual([]);
+    // A bullet or a dash is not a word: the sentence still starts after it.
+    expect(terms("- Review the launch\n• Tomorrow we ship\nDone. — Monday works")).toEqual([]);
   });
 
   /** A capital inside a word marks a term wherever it is: "TabMail", "OKR", "iOS". */
