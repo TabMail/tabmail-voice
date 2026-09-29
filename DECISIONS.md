@@ -458,7 +458,7 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
 ## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
 
 **Context:** Owner, 2026-09-25. The app built as `TabMail.app` (bundle id `ai.tabmail.desktop`). The
-Thunderbird installer's pkg (`tabmail-release-helpers/tb-mac/build-mac-installer-local.sh`) installs
+Thunderbird installer's pkg installs
 `/Applications/TabMail.app` too: the launcher that starts Thunderbird, carrying `tabmail.xpi` and
 the native-fts `fts_helper`, which `tabmail-native-fts` looks for at that path. Dragging this app into
 `/Applications` would replace the launcher and break Thunderbird's local search. "Tabby" was ruled out
@@ -1435,7 +1435,7 @@ all three platforms: "We should move to a unified one NOW (move mac to electron)
 don't reinvent the wheel. prefer ts over js." Then: "we should build our own app — our focus is
 different. we hold the release until unification. Current feature parity must be matched before …
 we're working towards using the Electron Mac app to replace the Swift one." Wayland may be tap to
-start, tap to stop. The study and the phase plan are in the gitignored `PLAN_VOICE_CROSS_PLATFORM.md`.
+start, tap to stop. The study and the phase plan are kept outside this repository.
 
 **Decision:**
 - `apps/desktop/` is one Electron app in TypeScript (strict `tsc`, eslint with zero warnings):
