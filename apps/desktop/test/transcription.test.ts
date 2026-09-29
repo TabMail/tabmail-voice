@@ -9,7 +9,7 @@ import { base64 } from "../src/core/text.js";
 import { Fixtures, signedIn, StubTransport } from "./support.js";
 
 const baseURL = "https://api.example.com";
-const wav = new TextEncoder().encode("RIFF-test-audio");
+const flac = new TextEncoder().encode("fLaC-test-audio");
 const cleanup: CleanupVariables = {
   app_name: "Example Notes",
   web_host: "",
@@ -38,7 +38,7 @@ describe("TranscriptionClient", () => {
     const stub = new StubTransport();
     stub.enqueue(200, { text: "Hello there.", duration_seconds: 1.2 });
 
-    const transcription = await makeClient(stub).transcribe(wav, null, [], "token-abc");
+    const transcription = await makeClient(stub).transcribe(flac, null, [], "token-abc");
 
     // No cleanup asked for, none returned.
     expect(transcription).toEqual({ text: "Hello there.", cleanedText: null });
@@ -48,7 +48,29 @@ describe("TranscriptionClient", () => {
     expect(request?.headers.Authorization).toBe("Bearer token-abc");
     expect(request?.headers["X-Client-Type"]).toBe("macos");
     expect(request?.headers["X-Client-Version"]).toBe("0.1.0");
-    expect(stub.body(0)).toEqual({ format: "wav", audio: Buffer.from(wav).toString("base64") });
+    expect(stub.body(0)).toEqual({ format: "flac", audio: Buffer.from(flac).toString("base64") });
+  });
+
+  /** The key-down warm-up: the sign-in's `GET /whoami`, its reply unread. */
+  test("warms up with the sign-in's whoami", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, { logged_in: true, email: "someone@example.com" });
+
+    await makeClient(stub).warmUp("token-abc");
+
+    const request = stub.requests[0];
+    expect(request?.method).toBe("GET");
+    expect(request?.url).toBe("https://api.example.com/whoami");
+    expect(request?.headers.Authorization).toBe("Bearer token-abc");
+    expect(request?.headers["X-Client-Type"]).toBe("macos");
+    expect(request?.body).toBe("");
+  });
+
+  /** A refused sign-in fails as the other requests do, so `withFreshToken` refreshes it. */
+  test("a warm-up the backend refuses fails with its error", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(401, { error: "unauthorized" });
+    expect((await backendError(makeClient(stub).warmUp("t"))).kind).toBe("unauthorized");
   });
 
   /** The language picks the backend's model; without one, the body has no `language` at all. */
@@ -58,8 +80,8 @@ describe("TranscriptionClient", () => {
     stub.enqueue(200, { text: "Hello." });
     const client = makeClient(stub);
 
-    await client.transcribe(wav, "ko", [], "t");
-    await client.transcribe(wav, null, [], "t");
+    await client.transcribe(flac, "ko", [], "t");
+    await client.transcribe(flac, null, [], "t");
 
     expect(stub.body(0).language).toBe("ko");
     expect(Object.keys(stub.body(1)).sort()).toEqual(["audio", "format"]);
@@ -73,8 +95,8 @@ describe("TranscriptionClient", () => {
     stub.enqueue(200, { text: "Hello." });
     const client = makeClient(stub);
 
-    await client.transcribe(wav, "en", ["Xyvora", "Kaelthorne Draszek"], "t");
-    await client.transcribe(wav, "en", [], "t");
+    await client.transcribe(flac, "en", ["Xyvora", "Kaelthorne Draszek"], "t");
+    await client.transcribe(flac, "en", [], "t");
 
     expect(stub.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
     expect(Object.keys(stub.body(1)).sort()).toEqual(["audio", "format", "language"]);
@@ -88,9 +110,9 @@ describe("TranscriptionClient", () => {
     stub.enqueue(200, { text: "ask jordan", cleaned_text: "", duration_seconds: 1 });
 
     const client = makeClient(stub);
-    expect(await client.transcribe(wav, null, [], "t", undefined, cleanup)).toEqual({ text: "ask jordan", cleanedText: "Ask Jordan." });
+    expect(await client.transcribe(flac, null, [], "t", undefined, cleanup)).toEqual({ text: "ask jordan", cleanedText: "Ask Jordan." });
     // A failed cleanup: empty, not null.
-    expect(await client.transcribe(wav, null, [], "t", undefined, cleanup)).toEqual({ text: "ask jordan", cleanedText: "" });
+    expect(await client.transcribe(flac, null, [], "t", undefined, cleanup)).toEqual({ text: "ask jordan", cleanedText: "" });
 
     expect(stub.body(0).cleanup).toEqual(cleanup);
     expect(Object.keys(stub.body(0)).sort()).toEqual(["audio", "cleanup", "format"]);
@@ -99,7 +121,7 @@ describe("TranscriptionClient", () => {
   test("rejects a cleaned text that is not a string", async () => {
     const stub = new StubTransport();
     stub.enqueue(200, { text: "ask jordan", cleaned_text: 7 });
-    expect((await backendError(makeClient(stub).transcribe(wav, null, [], "t", undefined, cleanup))).kind).toBe("invalidResponse");
+    expect((await backendError(makeClient(stub).transcribe(flac, null, [], "t", undefined, cleanup))).kind).toBe("invalidResponse");
   });
 
   /** The debug log's copy of the body shows the language, words and cleanup variables sent, beside
@@ -124,14 +146,14 @@ describe("TranscriptionClient", () => {
   ])("maps HTTP %i %s", async (status, code, kind, failedStatus) => {
     const stub = new StubTransport();
     stub.enqueue(status, { error: code });
-    const error = await backendError(makeClient(stub).transcribe(wav, null, [], "t"));
+    const error = await backendError(makeClient(stub).transcribe(flac, null, [], "t"));
     expect([error.kind, error.status]).toEqual([kind, failedStatus]);
   });
 
   test("rejects a response without text", async () => {
     const stub = new StubTransport();
     stub.enqueue(200, { unexpected: true });
-    expect((await backendError(makeClient(stub).transcribe(wav, null, [], "t"))).kind).toBe("invalidResponse");
+    expect((await backendError(makeClient(stub).transcribe(flac, null, [], "t"))).kind).toBe("invalidResponse");
   });
 
   /** A long recording in one piece: base64 in chunks matches Node's own encoder. */
@@ -152,7 +174,7 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const transcription = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token));
+    const transcription = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token));
 
     expect(transcription.text).toBe("Retried.");
     expect(backend.authorizations).toEqual(["Bearer access-1", "Bearer access-2"]);
@@ -166,7 +188,7 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token)));
 
     expect(error.kind).toBe("subscriptionRequired");
     expect(backend.requests).toHaveLength(1);
@@ -178,7 +200,7 @@ describe("withFreshToken", () => {
     const account = signedIn(new StubTransport(), null);
     const client = makeClient(backend);
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token)));
 
     expect(error.kind).toBe("unauthorized");
     expect(backend.requests).toHaveLength(0);
@@ -202,7 +224,7 @@ describe("withFreshToken", () => {
       if (switchAccount) await account.verify(Fixtures.email, "123456");
     };
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token)));
 
     expect(error.kind).toBe("unauthorized");
     expect(backend.authorizations).toEqual(["Bearer access-1"]);

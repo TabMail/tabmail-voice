@@ -77,7 +77,7 @@ client type.
 backend, so the same engine serves desktop, iOS and Thunderbird later.
 
 **Decision:** The app records 16 kHz mono 16-bit PCM (`AudioRecorder`), wraps it in WAV
-(`WAVEncoder`) and posts it as base64 JSON to the TabMail backend's `POST /dictation/transcribe`,
+(`WAVEncoder`; FLAC since ADR-DESK-039) and posts it as base64 JSON to the TabMail backend's `POST /dictation/transcribe`,
 which relays it to an OpenRouter speech-to-text model. Requires TabMail sign-in (email one-time
 code, same flow as iOS) and an active subscription; dictation counts toward the account's usage.
 
@@ -96,7 +96,8 @@ multilingual accuracy than Apple's on-device model.
   word isn't clipped.
 - ~~Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).~~
   Superseded 2026-09-27: auto-stops at 120 s, below.
-- A failed transcription loses that recording (no retry queue yet). Chunking long dictations
+- A failed transcription loses that recording (no retry queue yet). (Since ADR-DESK-039 a server
+  error or dropped connection is retried twice before it does.) Chunking long dictations
   (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
   issue #1 (P3).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
@@ -1909,3 +1910,52 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   harmlessly, since the list only biases the speech model; a name only ever at a sentence's start is
   missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
   backend fall back to it (its ADR-025).
+
+## ADR-DESK-039: A shorter wait between the release and the text
+
+**Context:** Owner, 2026-09-29: two to three seconds passed between letting go of the key and the
+text appearing. Measured end to end the same day (the app's log against the backend's per-request
+timeline, the Mac's clock corrected): the app itself adds nothing after the reply (the paste starts
+in the same millisecond), so the wait was the release tail (300 ms), the connection and upload
+(45–175 ms), the backend's sign-in, entitlement and quota checks (about 90 ms, but 365 ms on the
+first dictation after a pause), the transcription (250–700 ms) and the cleanup (300–470 ms). One
+dictation that day failed outright: the speech model's provider answered 429 (rate limited), the
+backend passed it on as a 502, and the recording was lost. The owner approved all four changes below,
+and asked that a server error be retried with a note on the pill, "so that the user doesn't have to
+say it again". Before the audio was compressed, the owner asked whether compressing would itself add
+time; measured first (below).
+
+**Decision:**
+- **Warm-up at key-down.** Every hold sends `GET /whoami` with the sign-in
+  (`TranscriptionClient.warmUp`, under `withFreshToken`) while the user speaks, so the transcription
+  after the release finds the connection open, the token refreshed if it was about to expire, and the
+  backend's token check and entitlement warm. Best effort: nothing waits for it, and a failure is
+  logged only.
+- **FLAC upload.** The recording is uploaded as FLAC (`format: "flac"`, which the backend already
+  accepted), lossless, at about half WAV's size. `FLACEncoder` (in `src/core`, no dependency) encodes
+  each 4,096-sample frame (256 ms) as the audio arrives, so the release leaves only the last partial
+  frame to encode. Measured before it was adopted: the whole recording takes about 1.4 ms per second
+  of audio to encode (10–18 ms for 7 s, 160 ms for 120 s), against about 90 ms of upload saved for
+  7 s and 1.5 s for 120 s on the owner's connection; encoding while recording removes even that cost.
+  The reference `flac` decoder gave back the exact samples. The debug "Play Last Recording" file
+  stays WAV.
+- **Retry on a server error.** A transcription that fails with a 5xx (the speech model behind the
+  backend rate limited, overloaded or failed) or a dropped connection is sent again after
+  `transcriptionRetryDelays` (0.5 s, then 1.5 s), the same recording and request, while the pill
+  shows "Server error, retrying…" (the `retrying` phase); after the last it fails with the server's
+  error as before. Nothing else is retried: signed out, no subscription, over quota or throttled
+  (the backend's own 429), a refused request, or a request that timed out (it already waited
+  `transcriptionRequestTimeout`). Cancelling during the wait sends nothing more. Both modes share it,
+  since agent mode's request starts with the same transcription.
+- **Release tail 150 ms** (was 300 ms), owner's choice.
+
+**Consequences:**
+- Every hold, a tap included, sends one small `GET /whoami`. For a user without an entitlement it can
+  grant the signup trial, as the transcription request it precedes would.
+- Node's `fetch` closes an idle connection after 4 s, so a dictation longer than that may upload over
+  a new connection; the backend's warmth outlasts it.
+- A retried request whose first attempt did reach the model but lost its reply (a dropped connection
+  after the backend answered) is transcribed, and counted, twice. A 5xx is never counted: the backend
+  reports usage only on success.
+- Supersedes ADR-DESK-005's "A failed transcription loses that recording (no retry queue yet)" for
+  server errors; its WAV upload is now FLAC.

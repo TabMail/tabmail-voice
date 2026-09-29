@@ -389,7 +389,7 @@ export class TranscriptionClient {
    * (ADR-DESK-038); none are sent when it is empty. `cleanup`: the cleanup's variables, for the backend
    * to clean up the transcript in the same request (ADR-DESK-008); none for no cleanup. */
   async transcribe(
-    wav: Uint8Array,
+    flac: Uint8Array,
     language: string | null,
     vocabulary: readonly string[],
     accessToken: string,
@@ -401,10 +401,10 @@ export class TranscriptionClient {
       url: joinURL(this.baseURL, config.transcribePath),
       timeout: config.transcriptionRequestTimeout,
       headers: headers(accessToken, this.clientVersion),
-      body: JSON.stringify(TranscriptionClient.body(base64(wav), language, vocabulary, cleanup)),
+      body: JSON.stringify(TranscriptionClient.body(base64(flac), language, vocabulary, cleanup)),
       signal,
     };
-    log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(wav.length, language, vocabulary, cleanup)));
+    log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(flac.length, language, vocabulary, cleanup)));
     const response = await this.transport(request);
     log.content("Transcription response", () => BackendLog.response(response));
     if (response.status !== 200) throw BackendError.fromStatus(response.status, errorCode(response.body));
@@ -422,16 +422,34 @@ export class TranscriptionClient {
     return { text: result.text, cleanedText };
   }
 
+  /** `GET /whoami` with the sign-in, its reply unread. Sent at key-down, while the user speaks, it
+   * opens the connection and has the backend verify the token and load the entitlement, so the
+   * transcription after the release finds them ready: the first dictation after a pause otherwise
+   * waited about 0.3 s longer for them. */
+  async warmUp(accessToken: string): Promise<void> {
+    const request: HTTPRequest = {
+      method: "GET",
+      url: joinURL(this.baseURL, config.warmUpPath),
+      timeout: config.warmUpRequestTimeout,
+      headers: headers(accessToken, this.clientVersion),
+      body: "",
+    };
+    log.content("Warm-up request", () => BackendLog.request(request));
+    const response = await this.transport(request);
+    log.content("Warm-up response", () => BackendLog.response(response));
+    if (response.status !== 200) throw BackendError.fromStatus(response.status, errorCode(response.body));
+  }
+
   /** The request body as the log shows it: the audio's size in its place, never the audio. */
-  static loggedBody(wavBytes: number, language: string | null, vocabulary: readonly string[], cleanup?: CleanupVariables): string {
-    return JSON.stringify(TranscriptionClient.body(`<${wavBytes} bytes of WAV, not logged>`, language, vocabulary, cleanup));
+  static loggedBody(flacBytes: number, language: string | null, vocabulary: readonly string[], cleanup?: CleanupVariables): string {
+    return JSON.stringify(TranscriptionClient.body(`<${flacBytes} bytes of FLAC, not logged>`, language, vocabulary, cleanup));
   }
 
   /** `language` is left out when null, `vocabulary` when empty, `cleanup` when undefined. */
   private static body(audio: string, language: string | null, vocabulary: readonly string[], cleanup: CleanupVariables | undefined): Record<string, unknown> {
     return {
       audio,
-      format: "wav",
+      format: "flac",
       ...(language === null ? {} : { language }),
       ...(vocabulary.length === 0 ? {} : { vocabulary }),
       ...(cleanup === undefined ? {} : { cleanup }),

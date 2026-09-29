@@ -12,11 +12,12 @@ import { isJSONObject, type LoopTool } from "./agent/loopTool.js";
 import type { ThunderbirdRelay } from "./agent/thunderbirdRelay.js";
 import { type AgentTool, toolImplementations } from "./agent/tools.js";
 import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "./audio.js";
-import type { CompletionsClient, ServerToolEvent, ToolCall, TranscriptionClient } from "./backend.js";
+import { BackendError, type CompletionsClient, type ServerToolEvent, type ToolCall, type Transcription, type TranscriptionClient } from "./backend.js";
 import { DictationCleanup } from "./cleanup.js";
 import * as config from "./config.js";
 import { contextTerms } from "./contextTerms.js";
 import { type DictationMode, type HotkeyAction, toggled } from "./hotkey.js";
+import { TransportError } from "./http.js";
 import { LevelEnvelope } from "./levelEnvelope.js";
 import { elapsed, errorName, log } from "./log.js";
 import { Observable } from "./observable.js";
@@ -25,7 +26,7 @@ import type { ScreenContext } from "./screenContext.js";
 import type { DictationSettings } from "./settings.js";
 import { charCount, trimWhitespace } from "./text.js";
 import { type DictationTip, type TipBook, tipDetails } from "./tips.js";
-import { withTimeout } from "./timeout.js";
+import { sleep, withTimeout } from "./timeout.js";
 import { encodeWAV } from "./wav.js";
 
 export type Phase =
@@ -36,6 +37,8 @@ export type Phase =
   | { kind: "arming" }
   | { kind: "listening" }
   | { kind: "transcribing" }
+  /** The transcription failed on the server's side and is being tried again (`transcribeRetrying`). */
+  | { kind: "retrying"; message: string }
   /** Agent mode: the agent chose this tool, which is writing its text. */
   | { kind: "running"; tool: AgentTool }
   | { kind: "failed"; message: string };
@@ -65,6 +68,8 @@ export interface DictationDependencies {
   /** The bundle identifier of the system's default email app. */
   systemEmailApp: () => Promise<string | null>;
   makeTranscriptionClient: (baseURL: string) => TranscriptionClient;
+  /** Warms the backend for the transcription to come (`TranscriptionClient.warmUp`). */
+  warmUp: (baseURL: string, accessToken: string) => Promise<void>;
   makeCompletionsClient: (baseURL: string) => CompletionsClient;
   /** The tools the Answer prompt's model can call that run on this computer. */
   loopTools: readonly LoopTool[];
@@ -77,6 +82,9 @@ export interface DictationDependencies {
 
 /** Shown when the recording had no words in it. Kept to one line of the pill. */
 export const nothingHeardMessage = "Didn't catch that. Try again.";
+
+/** Shown while a transcription that failed on the server's side is tried again. */
+export const retryingMessage = "Server error, retrying…";
 
 /**
  * Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
@@ -111,6 +119,8 @@ export class DictationController extends Observable {
   confirmationMinimumDisplay = config.chatConfirmationMinimumDisplay;
   /** How long the chat window's question waits for an answer. Settable for tests. */
   confirmationTimeout = config.chatConfirmationTimeout;
+  /** The waits before each retry of a transcription that failed on the server's side. Settable for tests. */
+  transcriptionRetryDelays = config.transcriptionRetryDelays;
   /** A double tap's second press was released as a tap, leaving the hotkey helper hands-free, but no
    * hands-free dictation listens: the press came while the last dictation was still busy, or failed
    * to start, or its dictation ended while the key was down. The helper must be told, or it keeps
@@ -334,6 +344,7 @@ export class DictationController extends Observable {
     this.dueTips = ["switchMode"];
     if (isFollowUp) void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
+    void this.warmUp(settings.backendURL);
     this.contextRead = settings.readsScreen ? (this.captureContext?.() ?? null) : null;
     const read = this.contextRead;
     if (read) {
@@ -463,7 +474,7 @@ export class DictationController extends Observable {
 
   /** Transcribes one recording, cleaned up in the same request, and inserts it (dictation), or
    * transcribes it and carries it out (agent mode). Public for tests. */
-  async transcribe(wav: Uint8Array, generation: number): Promise<void> {
+  async transcribe(flac: Uint8Array, generation: number): Promise<void> {
     // Every request goes under the account signed in now, even if the user switches accounts while
     // they run.
     const account = this.deps.account;
@@ -484,11 +495,11 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
       }
       const cleanup = mode === "dictation" ? DictationCleanup.variables(context, settings.dictionary) : undefined;
-      log.debug(`DictationController: uploading ${wav.length} bytes`);
+      log.debug(`DictationController: uploading ${flac.length} bytes`);
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
       const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
       const started = performance.now();
-      const transcription = await withFreshToken(account, userId, (token) => client.transcribe(wav, language, vocabulary, token, signal, cleanup));
+      const transcription = await this.transcribeRetrying(() => withFreshToken(account, userId, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)), isCurrent, signal);
       if (!isCurrent()) return;
       const transcript = trimWhitespace(transcription.text);
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)} (${charCount(transcript)} chars)`);
@@ -567,6 +578,35 @@ export class DictationController extends Observable {
       log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
       this.teardown();
       this.fail(error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again.");
+    }
+  }
+
+  /** Warms the backend at key-down (`warmUp`), under the account signed in now. Best effort: nothing
+   * waits for it, and a failure is only logged. */
+  private async warmUp(backendURL: string): Promise<void> {
+    const account = this.deps.account;
+    try {
+      await withFreshToken(account, account.session?.userId ?? null, (token) => this.deps.warmUp(backendURL, token));
+    } catch (error) {
+      log.debug(`DictationController: warm-up failed: ${errorName(error)}`);
+    }
+  }
+
+  /** Makes the transcription request, and makes it again after a server error (a 5xx: the speech
+   * model behind the backend was rate limited or failed) or a dropped connection, up to
+   * `transcriptionRetryDelays.length` more times, so the user need not say it again. The pill says so
+   * meanwhile. Any other failure (signed out, over quota, a refused request) fails at once. */
+  private async transcribeRetrying(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal): Promise<Transcription> {
+    for (let retry = 0; ; retry += 1) {
+      try {
+        return await request();
+      } catch (error) {
+        const delay = this.transcriptionRetryDelays[retry];
+        if (delay === undefined || !isServerError(error) || !isCurrent()) throw error;
+        log.debug(`DictationController: transcription failed (${errorName(error)}); retrying in ${delay}ms`);
+        this.setPhase({ kind: "retrying", message: retryingMessage });
+        await sleep(delay, signal);
+      }
     }
   }
 
@@ -739,8 +779,7 @@ export class DictationController extends Observable {
     const micDelay = recording.firstChunkAt === null ? "no audio" : `${Math.round(recording.firstChunkAt - startedAt)}ms`;
     log.debug(() => `DictationController: recorded ${recordingDuration(recording).toFixed(2)}s, peak ${recording.peakLevel.toFixed(3)}, waveform peak ${this.peakMeterLevel.toFixed(3)}, first audio after ${micDelay}`);
 
-    const wav = encodeWAV(recording.pcm, recording.sampleRate);
-    this.deps.keepRecording?.(wav);
+    this.deps.keepRecording?.(encodeWAV(recording.pcm, recording.sampleRate));
 
     // No loudness gate: on quiet built-in microphones speech sits only a few dB above the room
     // noise, so any level threshold rejects real speech. The model decides; an empty transcript is
@@ -751,7 +790,7 @@ export class DictationController extends Observable {
       this.fail(nothingHeardMessage);
       return;
     }
-    await this.transcribe(wav, current);
+    await this.transcribe(recording.flac, current);
   }
 
   private updateLevel(level: number): void {
@@ -1009,6 +1048,12 @@ type Timer = ReturnType<typeof setTimeout>;
 /** How the chat window's question ended: the user confirmed or declined it, or it went unanswered
  * for `confirmationTimeout`. */
 type ConfirmationAnswer = "confirmed" | "declined" | "unanswered";
+
+/** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. */
+function isServerError(error: unknown): boolean {
+  if (error instanceof BackendError) return error.kind === "failed" && error.status !== undefined && error.status >= 500;
+  return error instanceof TransportError && error.reason === "network";
+}
 
 function after(ms: number, action: () => void): Timer {
   return setTimeout(action, ms);

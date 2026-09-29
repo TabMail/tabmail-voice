@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { FLACEncoder } from "./flac.js";
 import * as config from "./config.js";
 
 /** What dictation needs from a microphone. On macOS the helper captures it (`AVAudioEngine`, as the
@@ -38,6 +39,8 @@ export function level(samples: Float32Array): number {
 export interface Recording {
   /** Little-endian 16-bit mono PCM samples. */
   pcm: Uint8Array;
+  /** The same samples FLAC-encoded, the upload. */
+  flac: Uint8Array;
   sampleRate: number;
   /** Loudest chunk's level on the fixed 0…1 scale. */
   peakLevel: number;
@@ -51,7 +54,7 @@ export function recordingDuration(recording: Recording): number {
   return recording.pcm.length / 2 / recording.sampleRate;
 }
 
-/** Accumulates one dictation as 16 kHz mono 16-bit PCM, ready to wrap in a WAV and upload. */
+/** Accumulates one dictation as 16 kHz mono 16-bit PCM, FLAC-encoding it as it arrives for the upload. */
 export class AudioRecorder {
   private readonly maxFrames: number;
   private readonly chunks: Int16Array[] = [];
@@ -59,6 +62,7 @@ export class AudioRecorder {
   private peakLevel = 0;
   private firstChunkAt: number | null = null;
   private truncated = false;
+  private readonly encoder: FLACEncoder;
 
   constructor(
     readonly sampleRate: number = config.recordingSampleRate,
@@ -66,6 +70,7 @@ export class AudioRecorder {
     maxDuration: number = config.maxRecordingDuration,
   ) {
     this.maxFrames = Math.floor((maxDuration / 1000) * sampleRate);
+    this.encoder = new FLACEncoder(sampleRate);
   }
 
   append(samples: Float32Array, now: number = performance.now()): void {
@@ -82,6 +87,7 @@ export class AudioRecorder {
       pcm[index] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff);
     }
     this.chunks.push(pcm);
+    this.encoder.append(pcm);
     this.frames += count;
   }
 
@@ -96,6 +102,6 @@ export class AudioRecorder {
         offset += 2;
       }
     }
-    return { pcm, sampleRate: this.sampleRate, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated };
+    return { pcm, flac: this.encoder.finish(), sampleRate: this.sampleRate, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated };
   }
 }

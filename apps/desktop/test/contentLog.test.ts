@@ -108,22 +108,39 @@ describe("content log", () => {
     expect(entries.at(-1)?.text.endsWith(`{"error":"upstream_failed"}`)).toBe(true);
   });
 
+  test("the warm-up logs its request and reply but not the token", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, { logged_in: true });
+    const client = new TranscriptionClient(baseURL, "1.0", stub.transport);
+
+    const entries = await loggedContent(async () => {
+      await client.warmUp("secret-token-123");
+    });
+
+    expect(entries.map((entry) => entry.label)).toEqual(["Warm-up request", "Warm-up response"]);
+    expect(entries[0]?.text.startsWith("GET https://api.example.com/whoami\n")).toBe(true);
+    expect(entries[0]?.text).toContain(BackendLog.maskedAuthorization);
+    expect(entries[1]?.text).toContain(`"logged_in":true`);
+    expect(stub.requests[0]?.headers.Authorization).toBe("Bearer secret-token-123");
+    expect(entries.map((entry) => entry.text).join("\n")).not.toContain("secret-token-123");
+  });
+
   test("a transcription logs the reply but neither the audio nor the token", async () => {
-    const wav = new TextEncoder().encode("RIFF-test-audio-that-must-not-be-logged");
-    const audio = Buffer.from(wav).toString("base64");
+    const flac = new TextEncoder().encode("fLaC-test-audio-that-must-not-be-logged");
+    const audio = Buffer.from(flac).toString("base64");
     const stub = new StubTransport();
     stub.enqueue(200, { text: "Hello there." });
     const client = new TranscriptionClient(baseURL, "1.0", stub.transport);
 
     const entries = await loggedContent(async () => {
-      await client.transcribe(wav, null, ["Xyvora"], "secret-token-123");
+      await client.transcribe(flac, null, ["Xyvora"], "secret-token-123");
     });
 
     expect(entries.map((entry) => entry.label)).toEqual(["Transcription request", "Transcription response"]);
     const [request, response] = entries.map((entry) => entry.text);
     expect(request?.startsWith("POST https://api.example.com/dictation/transcribe\n")).toBe(true);
-    expect(request).toContain(`<${wav.length} bytes of WAV, not logged>`);
-    expect(request).toContain(`"format":"wav"`);
+    expect(request).toContain(`<${flac.length} bytes of FLAC, not logged>`);
+    expect(request).toContain(`"format":"flac"`);
     expect(request).toContain(`"vocabulary":["Xyvora"]`);
     expect(response).toContain(`"text":"Hello there."`);
     // The stub did receive the audio: the log left it out.

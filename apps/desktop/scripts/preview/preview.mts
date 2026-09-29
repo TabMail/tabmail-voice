@@ -82,6 +82,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-agent-apps-up", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, bubblesFitUnder: false, opensUpward: true, tip: "handsFree" }],
     ["overlay-agent-apps-running", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors }],
     ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
+    ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),

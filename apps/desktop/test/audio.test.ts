@@ -7,6 +7,7 @@ import { AudioRecorder, decibels, level, recordingDuration } from "../src/core/a
 import * as config from "../src/core/config.js";
 import { LevelEnvelope } from "../src/core/levelEnvelope.js";
 import { encodeWAV, wavHeaderSize } from "../src/core/wav.js";
+import { decodeFLAC } from "./flacDecoder.js";
 import { tone } from "./support.js";
 
 function feed(recorder: AudioRecorder, samples: Float32Array, chunk = config.audioChunkFrames): void {
@@ -63,9 +64,28 @@ describe("AudioRecorder", () => {
     expect(recording.pcm.length).toBe(16_000 * 2 * backendMaxSeconds);
   });
 
+  /** The upload is FLAC, encoded while recording: it must be exactly the recorded samples. */
+  test("FLAC-encodes exactly what it records", () => {
+    const recorder = new AudioRecorder();
+    feed(recorder, tone(1.3));
+    const recording = recorder.finish();
+    const decoded = decodeFLAC(recording.flac);
+    expect(decoded.pcm).toEqual(recording.pcm);
+    expect(decoded.sampleRate).toBe(16_000);
+  });
+
+  test("the FLAC stops at the maximum duration too", () => {
+    const recorder = new AudioRecorder(16_000, 1_000);
+    feed(recorder, tone(2));
+    const recording = recorder.finish();
+    expect(decodeFLAC(recording.flac).pcm).toEqual(recording.pcm);
+    expect(recording.pcm.length).toBe(16_000 * 2);
+  });
+
   test("an empty recording", () => {
     const recording = new AudioRecorder().finish();
     expect(recording.pcm.length).toBe(0);
+    expect(decodeFLAC(recording.flac).totalSamples).toBe(0);
     expect(recording.peakLevel).toBe(0);
   });
 

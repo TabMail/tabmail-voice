@@ -18,9 +18,13 @@ export const doubleTapWindow = 400;
 
 // MARK: Audio
 
-/** Upload format: 16 kHz mono 16-bit PCM WAV — what Whisper-class models consume natively, at
- * ~32 KB per second of speech. The microphone is captured at this rate directly. */
+/** Recording format: 16 kHz mono 16-bit PCM (~32 KB per second of speech), uploaded as FLAC at about
+ * half that. The microphone is captured at this rate directly. */
 export const recordingSampleRate = 16_000;
+/** The upload's FLAC encoding (`encodeFLAC`): samples per frame, and the most Rice partitions a
+ * frame's residual is split into (2^order), as libFLAC's defaults. */
+export const flacBlockSize = 4_096;
+export const flacMaxPartitionOrder = 6;
 /** Frames per microphone chunk sent from the audio window (~85 ms at 16 kHz), the rate the level
  * envelope below is tuned for (~12 chunks a second). */
 export const audioChunkFrames = 1_365;
@@ -43,8 +47,9 @@ export const levelAttack = 0.7;
 /** …and this much when it falls, so the waveform jumps with the voice and settles gently. */
 export const levelRelease = 0.25;
 /** Recording continues this long after the key is released, so the last word isn't clipped:
- * people tend to let go while still finishing it. */
-export const releaseTailDuration = 300;
+ * people tend to let go while still finishing it. It adds to every dictation's wait: owner,
+ * 2026-09-29, 150 ms (was 300). */
+export const releaseTailDuration = 150;
 /** Debug builds only: the log file moves aside past this size, keeping one earlier file. Sized for
  * full content logging (ADR-DESK-015): a dictation logs its screen read several times. */
 export const logFileMaxBytes = 50_000_000;
@@ -86,12 +91,20 @@ export const productionBackendURL = "https://api.tabmail.ai";
 export const developmentBackendURL = "https://dev.tabmail.ai";
 export const transcribePath = "dictation/transcribe";
 export const completionsPath = "completions/chat";
+/** The key-down warm-up's request (`TranscriptionClient.warmUp`), and the longest it may take. */
+export const warmUpPath = "whoami";
+export const warmUpRequestTimeout = 10_000;
 /** Sent as `X-Client-Type` to identify this client to the backend. Usage is recorded under it, and
  * the admin panel shows it as the macOS device. */
 export const clientType = "macos";
 /** Longest the transcription request may take, the backend's cleanup included (the backend gives the
  * cleanup 1.5 s, owner 2026-09-28; backend ADR-027). */
 export const transcriptionRequestTimeout = 45_000;
+/** A transcription that failed on the server's side (a 5xx: the speech model behind the backend was
+ * rate limited or failed) or lost its connection is tried again after each of these waits, in
+ * milliseconds, before the dictation fails: owner, 2026-09-29, rather than make the user say it
+ * again. */
+export const transcriptionRetryDelays: readonly number[] = [500, 1_500];
 /** Longest pause in an agent-mode completions response stream (the backend sends keepalives while
  * the model works). */
 export const completionsRequestTimeout = 30_000;
