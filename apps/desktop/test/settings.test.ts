@@ -214,8 +214,19 @@ describe("dictionary", () => {
     expect(app.dictionary).toEqual([{ word: "Kaelthorne Draszek", learned: false }]);
   });
 
-  /** At `config.dictionaryMaxEntries`, the backend's limit: a typed word is refused, learning stops. */
-  test("holds at most the backend's number of words", () => {
+  /** Learning only words already there, or refused, changes nothing: no write, no Settings update. */
+  test("learning nothing new changes nothing", () => {
+    const app = settings();
+    app.addWord("Xyvora");
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    expect(app.learnWords(["xyvora", "Xy<vora"])).toEqual([]);
+    expect(changes).toBe(0);
+  });
+
+  /** At `config.dictionaryMaxEntries`, half the words the backend takes with a dictation (the other
+   * half are the screen's terms): a typed word is refused, learning stops. */
+  test("holds at most its half of the words sent", () => {
     const app = settings();
     const words = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `word${index}`);
     expect(app.learnWords(words)).toHaveLength(config.dictionaryMaxEntries);
@@ -225,7 +236,7 @@ describe("dictionary", () => {
     expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
     app.removeWord("word1");
     expect(app.addWord("Xyvora")).toBe("added");
-    expect(app.dictionary.at(-1)).toEqual({ word: "Xyvora", learned: false });
+    expect(app.dictionary.at(-1)).toEqual({ word: "Xyvora", learned: false });    expect(config.dictionaryMaxEntries + config.contextTermsMax).toBe(200);
   });
 
   test("removes a word by its spelling", () => {

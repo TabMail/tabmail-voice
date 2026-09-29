@@ -114,6 +114,10 @@ export const correctionMaxFieldLength = 20_000;
  * the corrected spelling is at most this share of the longer ("Zivora" → "Xyvora" is 2 of 6). */
 export const correctionMaxChangedShare = 0.5;
 export const correctionMaxEditShare = 0.65;
+/** A lowercase correction that keeps at least this share of the shorter spelling's start, changing
+ * only its end, is another form of the same word ("report" → "reports", "send" → "sent"), not
+ * learned. */
+export const correctionMinStemShare = 0.5;
 /** A corrected word shorter than this (characters) is not learned. */
 export const correctionMinWordLength = 3;
 /** Everyday English words, never learned: replacing one with another ("then" → "than") is a change

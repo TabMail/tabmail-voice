@@ -32,25 +32,52 @@ function setup(initial: string | null = pasted) {
 /** One poll, and the read it makes. */
 const poll = () => vi.advanceTimersByTimeAsync(interval);
 
-/** Learns the user's corrections of the pasted text, once each settles (ADR-DESK-038). */
+/** Learns the user's corrections of the pasted text: the one the field settles on, when the watch
+ * ends (ADR-DESK-038). */
 describe("CorrectionWatch", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  test("learns a correction once it has stayed for an interval", async () => {
+  /** A correction that has stayed for an interval is learned once the watch ends (here, the next
+   * dictation's key-down), and only once. */
+  test("learns a correction that stayed, when the watch ends", async () => {
     const { field, learned, watch } = setup();
     watch.watch(pid, pasted);
     await poll();
     field.value = corrected;
     await poll();
+    await poll();
+    await poll();
     expect(learned).toEqual([]);
-    await poll();
+    watch.stop();
     expect(learned).toEqual([["Xyvora"]]);
-    // Unchanged since: not compared again.
-    await poll();
-    await poll();
+    watch.stop();
+    await vi.advanceTimersByTimeAsync(duration);
     expect(learned).toEqual([["Xyvora"]]);
     expect(new Set(field.pids)).toEqual(new Set([pid]));
+  });
+
+  /** A pause in the middle of an edit is a settled field too; only the edit the field ends on is
+   * learned, never a spelling on the way to it, and an edit undone teaches nothing. */
+  test.each([
+    ["Sync the tab mail inbox.", ["Sync the tabmail inbox.", "Sync the TabMail inbox."], ["TabMail"]],
+    [pasted, ["Please forward the Xyvor contract today."], ["Xyvora"]],
+    [pasted, ["Please forward the Ziv contract today."], ["Xyvora"]],
+    [pasted, ["Please forward the Xyvora contract today."], []],
+  ])("only the edit the field ends on is learned: %s", async (text, steps, words) => {
+    const { field, learned, watch } = setup(text);
+    watch.watch(pid, text);
+    await poll();
+    for (const step of steps) {
+      field.value = step;
+      await poll();
+      await poll();
+    }
+    field.value = words.length === 0 ? text : text.replace(/tab mail|Zivora/, words[0]!);
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual(words.length === 0 ? [] : [words]);
   });
 
   /** While the user is still typing the field changes at every read: nothing is compared until it
@@ -67,6 +94,7 @@ describe("CorrectionWatch", () => {
     field.value = corrected;
     await poll();
     await poll();
+    watch.stop();
     expect(learned).toEqual([["Xyvora"]]);
   });
 
@@ -82,6 +110,7 @@ describe("CorrectionWatch", () => {
     field.value = corrected;
     await poll();
     await poll();
+    watch.stop();
     expect(learned).toEqual([["Xyvora"]]);
   });
 
@@ -94,6 +123,7 @@ describe("CorrectionWatch", () => {
     await poll();
     await poll();
     expect(field.reads).toBe(3);
+    watch.stop();
     expect(learned).toEqual([]);
   });
 
@@ -103,7 +133,22 @@ describe("CorrectionWatch", () => {
     await poll();
     field.value = "Something else, Xyvora.";
     await vi.advanceTimersByTimeAsync(duration);
+    watch.stop();
     expect(learned).toEqual([]);
+  });
+
+  /** At the end of its duration the watch stops reading and learns the correction the field
+   * settled on; one made after it is not learned. */
+  test("learns when its duration ends", async () => {
+    const { field, learned, watch } = setup();
+    watch.watch(pid, pasted);
+    await poll();
+    field.value = corrected;
+    await vi.advanceTimersByTimeAsync(duration - 2 * interval);
+    expect(learned).toEqual([]);
+    await poll();
+    expect(learned).toEqual([["Xyvora"]]);
+    expect(field.reads).toBe(duration / interval);
   });
 
   test("stops reading after its duration", async () => {
@@ -133,7 +178,23 @@ describe("CorrectionWatch", () => {
     field.fails = false;
     await vi.advanceTimersByTimeAsync(duration);
     expect(field.reads).toBe(reads);
+    watch.stop();
     expect(learned).toEqual([]);
+  });
+
+  /** A field it can no longer read (focus moved to a password field, say) ends the watch, learning
+   * the correction the field had settled on. */
+  test("the end of the field learns what it settled on", async () => {
+    const { field, learned, watch } = setup();
+    watch.watch(pid, pasted);
+    await poll();
+    field.value = corrected;
+    await poll();
+    await poll();
+    field.value = null;
+    expect(learned).toEqual([]);
+    await poll();
+    expect(learned).toEqual([["Xyvora"]]);
   });
 
   /** The next dictation's key-down stops the watch, so its paste is never taken for a correction. */
@@ -145,10 +206,11 @@ describe("CorrectionWatch", () => {
     field.value = corrected;
     await vi.advanceTimersByTimeAsync(duration);
     expect(field.reads).toBe(1);
+    watch.stop();
     expect(learned).toEqual([]);
   });
 
-  /** A stop while a read is on its way: its answer is dropped. */
+  /** A stop while a read is on its way: its answer is dropped, though it would have settled an edit. */
   test("a read answered after stop is dropped", async () => {
     let answer: (value: string) => void = () => {};
     const learned: string[][] = [];
@@ -156,7 +218,9 @@ describe("CorrectionWatch", () => {
     const watch = new CorrectionWatch(
       (): Promise<string> => {
         reads += 1;
-        return reads === 1 ? Promise.resolve(pasted) : new Promise((resolve) => (answer = resolve));
+        if (reads === 1) return Promise.resolve(pasted);
+        if (reads === 2) return Promise.resolve(corrected);
+        return new Promise((resolve) => (answer = resolve));
       },
       (words) => learned.push(words),
       interval,
@@ -165,25 +229,32 @@ describe("CorrectionWatch", () => {
     watch.watch(pid, pasted);
     await poll();
     await poll();
+    await poll();
     watch.stop();
     answer(corrected);
     await vi.advanceTimersByTimeAsync(duration);
-    expect(reads).toBe(2);
+    watch.stop();
+    expect(reads).toBe(3);
     expect(learned).toEqual([]);
   });
 
-  /** A new watch replaces the last: only the new one reads. */
+  /** A new watch replaces the last, learning what the last settled on: only the new one reads. */
   test("a new watch ends the last", async () => {
     const { field, learned, watch } = setup();
     watch.watch(pid, pasted);
     await poll();
-    watch.watch(7, "Meet Zivora.");
-    field.value = "Meet Zivora.";
-    await poll();
-    field.value = "Meet Xyvora.";
+    field.value = corrected;
     await poll();
     await poll();
-    expect(field.pids).toEqual([pid, 7, 7, 7]);
+    watch.watch(7, "Meet Brevale.");
     expect(learned).toEqual([["Xyvora"]]);
+    field.value = "Meet Brevale.";
+    await poll();
+    field.value = "Meet Brevalle.";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(field.pids).toEqual([pid, pid, pid, 7, 7, 7]);
+    expect(learned).toEqual([["Xyvora"], ["Brevalle"]]);
   });
 });

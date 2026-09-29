@@ -1844,22 +1844,29 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   takes): after a dictation's paste, with learning on at its key-down, `voice-macos` reads the
   focused field of the app that was in front at key-down (`focusedFieldValue`) every
   `correctionPollInterval` for `correctionWatchDuration`. The first read holding the pasted text is the
-  field before any edit; each later change that stays for one interval is compared with it. The
+  field before any edit; each later change that stays for one interval is compared with it, and the
+  words the last one teaches are learned when the watch ends (the next key-down, its duration, or a
+  field it can't read), so a pause in the middle of an edit ("tabmail" on the way to "TabMail")
+  teaches nothing. The
   changed span (common prefix and suffix) must lie within one copy of the pasted text; the words are
   aligned (longest common subsequence), and a run of changed words is learned when it respells rather
   than replaces: at most half the dictation's words changed, an edit distance within
-  `correctionMaxEditShare` of the longer spelling, not an everyday word or one shorter than
+  `correctionMaxEditShare` of the longer spelling, not another form of a lowercase word (only its end
+  changed past `correctionMinStemShare` of its start: "report" → "reports", "send" → "sent"; a
+  capitalised name or a script without case is exempt), not an everyday word or one shorter than
   `correctionMinWordLength`, and for a change of case alone, a capital inside a word or a change of
   spacing ("tabmail", "tab mail" → "TabMail"), not one at a word's start. The next key-down stops the
   watch first, so a dictation's own paste is never taken for a correction; an unreadable field ends it.
 - The helper never reads a password field (`kAXSecureTextFieldSubrole`) or a field longer than
-  `correctionMaxFieldLength`. The field's text stays on the computer; only the debug log sees it, and
-  the words learned (`log.content`).
+  `correctionMaxFieldLength`. The field's text stays on the computer and is never logged; the debug
+  log sees only the words learned (`log.content`).
 - The consent step lists the dictionary's words among what a dictation sends, and says learning reads
   the field on this computer and can be switched off.
 
 **Consequences:**
 - A word removed from the dictionary can be learned again from a later correction.
+- A lowercase term the speech model gets right at its start but wrong at its end ("kubctl" for
+  "kubectl") is not learned; the user adds it by hand.
 - Windows and Linux have the dictionary but no learning until their helpers read the field.
 - No notice when a word is learned yet: the user sees it in Settings (an overlay "Learned … Undo" is a
   follow-up), and the privacy policy's Voice Data wording is updated separately.

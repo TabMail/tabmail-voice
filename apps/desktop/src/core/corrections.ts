@@ -11,8 +11,9 @@ import { dictionaryWord, isSameWord } from "./dictionary.js";
  * `before` the edit, holding the `pasted` text, and `after` it. Only a respelling within the pasted
  * text counts: "Zivora" corrected to "Xyvora", "tab mail" to "TabMail". Nothing is learned from an
  * edit that reaches outside the pasted text, a rewrite of more than `config.correctionMaxChangedShare`
- * of its words, a replacement by a different word (`config.correctionMaxEditShare`), a short or
- * everyday word, or a change of case alone at a word's start.
+ * of its words, a replacement by a different word (`config.correctionMaxEditShare`), another form of
+ * a lowercase word (`config.correctionMinStemShare`), a short or everyday word, or a change of case
+ * alone at a word's start.
  */
 export function learnedCorrections(pasted: string, before: string, after: string): string[] {
   const edited = editedPaste(pasted, before, after);
@@ -109,7 +110,15 @@ function respelling(heard: string[], corrected: string[]): string | null {
     const isInnerCapital = corrected.some((part) => /\p{Lu}/u.test(part.slice(1)));
     return heard.length !== corrected.length || isInnerCapital ? word : null;
   }
-  return editDistance([...from], [...to]) <= Math.max([...from].length, [...to].length) * config.correctionMaxEditShare ? word : null;
+  const [fromCharacters, toCharacters] = [[...from], [...to]];
+  // A lowercase word changed at its end alone is the same word in another form ("report" → "reports",
+  // "send" → "sent", "review" → "revise"), not a name or term respelled; a capital marks a name
+  // ("Steven" → "Stephen"), and a script without case has no lowercase to go by.
+  let stem = 0;
+  while (stem < fromCharacters.length && stem < toCharacters.length && fromCharacters[stem] === toCharacters[stem]) stem += 1;
+  const shorter = Math.min(fromCharacters.length, toCharacters.length);
+  if (stem >= shorter * config.correctionMinStemShare && /\p{Ll}/u.test(word) && !/\p{Lu}/u.test(word)) return null;
+  return editDistance(fromCharacters, toCharacters) <= Math.max(fromCharacters.length, toCharacters.length) * config.correctionMaxEditShare ? word : null;
 }
 
 /** The fewest single-character insertions, deletions and substitutions that turn `a` into `b`. */

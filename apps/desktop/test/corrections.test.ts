@@ -88,6 +88,21 @@ describe("learnedCorrections", () => {
     expect(learnedCorrections("Better then ever.", "Better then ever.", "Better than ever.")).toEqual([]);
   });
 
+  /** A lowercase word changed at its end alone is another form of it, a grammar or wording fix; a
+   * capitalised name changed there, or a word in a script without case, is a respelling. */
+  test("another form of a lowercase word is not learned", () => {
+    const forms: [string, string][] = [["report", "reports"], ["call", "called"], ["meeting", "meetings"], ["review", "revise"], ["send", "sent"], ["reports", "report"], ["file", "fire"]];
+    for (const [heard, corrected] of forms) {
+      const text = `Please ${heard} it today.`;
+      expect(learnedCorrections(text, text, text.replace(heard, corrected)), `${heard} → ${corrected}`).toEqual([]);
+    }
+    expect(learnedCorrections("Ask Steven today.", "Ask Steven today.", "Ask Stephen today.")).toEqual(["Stephen"]);
+    expect(learnedCorrections("Ask brevale today.", "Ask brevale today.", "Ask Brevalle today.")).toEqual(["Brevalle"]);
+    expect(learnedCorrections("내일 김민수 회의", "내일 김민수 회의", "내일 김민서 회의")).toEqual(["김민서"]);
+    // A change within the start is a respelling, lowercase or not.
+    expect(learnedCorrections("run cubectl today", "run cubectl today", "run kubectl today")).toEqual(["kubectl"]);
+  });
+
   /** A capital at a word's start alone is a sentence's or a style's, not a spelling; one inside a word,
    * or a changed spacing, is. */
   test("a change of case is learned only inside a word", () => {
@@ -98,7 +113,7 @@ describe("learnedCorrections", () => {
   test("a word the backend would refuse is not learned", () => {
     expect(learnedCorrections("Meet Zivora today.", "Meet Zivora today.", "Meet Xyv<ora today.")).toEqual([]);
     const long = "x".repeat(config.dictionaryWordMaxChars);
-    expect(learnedCorrections(`Meet ${long}y today.`, `Meet ${long}y today.`, `Meet ${long}z today.`)).toEqual([]);
+    expect(learnedCorrections(`Meet X${long}y today.`, `Meet X${long}y today.`, `Meet X${long}z today.`)).toEqual([]);
   });
 
   test("a respelling of more words than a dictionary word holds is not learned", () => {

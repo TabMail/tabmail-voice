@@ -320,6 +320,34 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
     });
 
+    /** A paste the helper finishes after the user cancelled and pressed the key again belongs to the
+     * dictation cancelled: it is not watched, or its watch would outlive the new key-down's stop. */
+    test("a paste finished after the next key-down is not watched", async () => {
+      const { calls, corrections } = watcher();
+      const pasting = deferred<void>();
+      let pastes = 0;
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        corrections,
+        paste: () => {
+          pastes += 1;
+          return pasting.promise;
+        },
+      });
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes === 1)).toBe(true);
+
+      controller.cancel();
+      controller.handle("start");
+      pasting.resolve();
+      await sleep(50);
+
+      expect(calls).toEqual(["stop", "stop"]);
+      controller.cancel();
+    });
+
     test("without an app in front at key-down, nothing is watched", async () => {
       front.pid = null;
       const { calls, corrections } = watcher();
