@@ -36,6 +36,13 @@ export class MacSystem {
     return code;
   }
 
+  /** The user account's full name, empty when it has none. */
+  async fullUserName(): Promise<string> {
+    const reply = await this.helper.request<{ name?: unknown } | null>("fullUserName");
+    if (typeof reply?.name !== "string") throw new HelperFailure("failed", "fullUserName", "no name in the reply");
+    return reply.name;
+  }
+
   /** The bundle identifier of the default email app. */
   async systemEmailApp(): Promise<string | null> {
     const { systemDefault } = await this.helper.request<{ systemDefault: { bundleIdentifier: string } | null }>("emailApps", { bundleIdentifiers: [] });

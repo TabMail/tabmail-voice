@@ -4,7 +4,7 @@
 
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { app, ipcMain, screen, session, shell } from "electron";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
@@ -29,7 +29,7 @@ import { configureLog, errorName, log } from "../core/log.js";
 import type { MenuState } from "../core/menuModel.js";
 import { PermissionsModel } from "../core/permissions.js";
 import { ScreenContextProbe } from "../core/screenContext.js";
-import { AppSettings } from "../core/settings.js";
+import { AppSettings, suggestedUserName } from "../core/settings.js";
 import { TipBook } from "../core/tips.js";
 import { vscodeHidesCaret, vscodeSettingsPath, withClassicInput } from "../core/vscodeSettings.js";
 import { WelcomeWizard } from "../core/welcomeWizard.js";
@@ -98,6 +98,9 @@ function launch(): void {
   const vscodeSettingsFile = join(app.getPath("appData"), ...vscodeSettingsPath);
   /** Whether the welcome wizard or Settings changed VS Code's settings, to say so. */
   let fixedVSCode = false;
+  /** The name the welcome wizard offers and Settings shows where none is set, once read
+   * (`readSuggestedName`). */
+  let suggestedName = "";
 
   const store = new FileStore(join(app.getPath("userData"), "settings.json"));
   const settings = new AppSettings(store, hasTabMail);
@@ -237,6 +240,8 @@ function launch(): void {
       enabledTools: settings.enabledTools,
       connectors: availableConnectors,
       enabledConnectors: settings.enabledConnectors,
+      userName: settings.userName,
+      suggestedName,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
@@ -247,7 +252,7 @@ function launch(): void {
   }
 
   function welcomeState(): WelcomeState {
-    const current = wizard ?? new WelcomeWizard(settings);
+    const current = wizard ?? new WelcomeWizard(settings, () => suggestedName);
     return {
       step: current.step,
       index: current.index,
@@ -260,6 +265,8 @@ function launch(): void {
       enabledTools: settings.enabledTools,
       connectors: availableConnectors,
       enabledConnectors: settings.enabledConnectors,
+      userName: settings.userName,
+      suggestedName,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
@@ -289,7 +296,7 @@ function launch(): void {
   function showWelcome(): void {
     if (!windows.isOpen("welcome")) {
       stopObservingWizard?.();
-      const fresh = new WelcomeWizard(settings);
+      const fresh = new WelcomeWizard(settings, () => suggestedName);
       fresh.onFinish = () => windows.close("welcome");
       stopObservingWizard = fresh.observe(() => windows.push("welcome"));
       wizard = fresh;
@@ -329,6 +336,21 @@ function launch(): void {
         log.debug(`main: no icon for the email app: ${errorName(error)}`);
       },
     );
+  }
+
+  /** The computer account's full name (macOS's, from `voice-macos`), else its short name
+   * (`suggestedUserName`). */
+  function readSuggestedName(): void {
+    const fullName = process.platform === "darwin" ? mac.fullUserName() : Promise.resolve("");
+    void fullName
+      .catch((error: unknown) => {
+        log.error(`main: no full user name: ${errorName(error)}`);
+        return "";
+      })
+      .then((name) => {
+        suggestedName = suggestedUserName(name, userInfo().username);
+        pushSettingsWindows();
+      });
   }
 
   function pushSettingsWindows(): void {
@@ -474,6 +496,9 @@ function launch(): void {
       case "setReadsScreen":
         settings.readsScreen = command.value;
         return;
+      case "setUserName":
+        settings.userName = command.value;
+        return;
       case "setAgentToolEnabled":
         settings.setEnabled(command.tool, command.value);
         return;
@@ -558,6 +583,7 @@ function launch(): void {
 
   hotkeyHelper.start();
   macHelper.start();
+  readSuggestedName();
   void globeKey.hotkeyIs(settings.hotkey);
   permissions.startPollingAccessibility();
 

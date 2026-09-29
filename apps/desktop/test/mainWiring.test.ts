@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectors } from "../src/core/agent/connectors.js";
@@ -11,6 +11,7 @@ import { mailtoURL } from "../src/core/agent/emailTools.js";
 import type { AudioCapture } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
 import { channels } from "../src/shared/ipc.js";
+import { eventually } from "./support.js";
 
 /** The signal a tool runs with: a request never cancelled. */
 const signal = new AbortController().signal;
@@ -37,6 +38,10 @@ const app = vi.hoisted(() => ({
   scripts: [] as { source: string; args: readonly string[] }[],
   /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
   appData: null as string | null,
+  /** The full name `voice-macos` gives for the account; null for a reply without one. */
+  fullName: null as string | null,
+  /** The tray menu's actions, as the app gives them. */
+  trayActions: null as { showWelcome: () => void } | null,
 }));
 
 vi.mock("electron", () => ({
@@ -159,6 +164,7 @@ vi.mock("../src/main/helperClient.js", () => ({
     async request(method: string, params?: unknown, _timeout?: number, signal?: AbortSignal) {
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
+      if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
       return this.replies.get(method) ?? { value: null, events: [], contacts: [], items: [] };
     }
   },
@@ -225,6 +231,9 @@ vi.mock("../src/main/overlayWindow.js", () => ({
 }));
 vi.mock("../src/main/tray.js", () => ({
   TrayMenu: class {
+    constructor(_resources: string, _state: unknown, actions: { showWelcome: () => void }) {
+      app.trayActions = actions;
+    }
     update() {}
   },
 }));
@@ -240,6 +249,11 @@ vi.mock("../src/main/windows.js", () => ({
     push(name: string) {
       for (const listener of app.listeners.get("voice:state") ?? []) listener({}, name, this.state(name));
     }
+    isOpen() {
+      return false;
+    }
+    showWelcome() {}
+    close() {}
   },
 }));
 
@@ -271,6 +285,8 @@ afterEach(() => {
   app.scripts = [];
   if (app.appData !== null) rmSync(app.appData, { recursive: true, force: true });
   app.appData = null;
+  app.fullName = null;
+  app.trayActions = null;
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -594,6 +610,41 @@ describe("main process wiring", () => {
     }
   });
 
+  /** Settings and the welcome wizard offer the computer account's name: on macOS its full name from
+   * `voice-macos`, else (here the helper gives none) its short name, as elsewhere. A name typed in
+   * either is stored as typed and shown in both. */
+  test.each(["darwin", "linux"] as const)("the offered name and the name typed, on %s", async (platform) => {
+    await launch(platform);
+    const state = (name: "settings" | "welcome") => app.handlers.get(channels.getState)?.({}, name) as { userName: string | null; suggestedName: string };
+    if (platform === "darwin") expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toContain("fullUserName");
+    else expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method) ?? []).not.toContain("fullUserName");
+    for (const name of ["settings", "welcome"] as const) expect(state(name)).toMatchObject({ userName: null, suggestedName: userInfo().username });
+
+    expect(await send({ type: "setUserName", value: " Alex Example" })).toEqual({ error: null });
+    for (const name of ["settings", "welcome"] as const) expect(state(name).userName).toBe(" Alex Example");
+    expect(app.stored.get("userName")).toBe(" Alex Example");
+  });
+
+  /** On macOS the name offered is the account's full name from `voice-macos`, and Next on the
+   * wizard's name step, left as offered, stores it. */
+  test("on macOS, the wizard offers the full name, and Next stores it", async () => {
+    app.fullName = " Alex Example ";
+    await launch("darwin");
+    const state = (name: "settings" | "welcome") => app.handlers.get(channels.getState)?.({}, name) as { userName: string | null; suggestedName: string; step: string };
+    expect(await eventually(() => state("settings").suggestedName === "Alex Example")).toBe(true);
+    expect(state("welcome").suggestedName).toBe("Alex Example");
+
+    app.trayActions?.showWelcome();
+    expect(await send({ type: "setConsent", value: true })).toEqual({ error: null });
+    await send({ type: "welcomeNext" });
+    expect(state("welcome").step).toBe("name");
+    expect(app.stored.get("userName")).toBeUndefined();
+    await send({ type: "welcomeNext" });
+    expect(state("welcome").step).not.toBe("name");
+    expect(app.stored.get("userName")).toBe("Alex Example");
+    expect(state("settings").userName).toBe("Alex Example");
+  });
+
   /** Files reads the home folder as `~`: a found item's path is given to the model with it, and a
    * `~` path the model gives back opens the item there. */
   test("Files reads the home folder as ~", async () => {
@@ -656,12 +707,15 @@ describe("main process wiring", () => {
       return welcome;
     };
     const pushed: string[] = [];
-    const listen = () =>
+    // Records afresh from here: launching pushes the windows too (the name the wizard offers, once read).
+    const listen = () => {
+      pushed.length = 0;
       app.listeners.set("voice:state", [
         (_event, name, pushedState) => {
           if (name === "welcome" || name === "settings") pushed.push(`${String(name)} ${(pushedState as { vscodeFix: string }).vscodeFix}`);
         },
       ]);
+    };
 
     writeFileSync(file, hiding);
     await launch("linux");

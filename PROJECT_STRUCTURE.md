@@ -94,7 +94,7 @@ offered (asking the backend's `system_prompt_desktop_agent`, with them in `avail
 only one is on), the phase becomes `running(tool)` (that bubble moves to the front of the row under
 the pill and its border circles, as the pill's does), and `DesktopAgent.write` has the tool's prompt
 write the text. Edit pastes over the selection; Compose pastes at the caret; Thunderbird sends it to
-TabMail's chat; Answer opens a chat window over the pill, which rests there (ADR-DESK-035), and while
+TabMail's chat; Answer opens a chat window over the pill, which rests there (ADR-DESK-036), and while
 it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X or 30 untouched
 seconds close it. Answer's prompt runs the backend's tool loop (`DesktopAgent.answer`,
 ADR-DESK-023): the backend's date tools run there, and tools that run on this computer (`LoopTool`)

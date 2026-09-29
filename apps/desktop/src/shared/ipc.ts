@@ -8,6 +8,7 @@ import { type Connector, isConnector } from "../core/agent/connectors.js";
 import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
+import * as config from "../core/config.js";
 import type { ScreenContext } from "../core/screenContext.js";
 import type { DictationTip } from "../core/tips.js";
 import type { WelcomeStep } from "../core/welcomeWizard.js";
@@ -77,6 +78,10 @@ export interface SettingsState {
   /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
   connectors: Connector[];
   enabledConnectors: Connector[];
+  /** The user's name as stored (`AppSettings.userName`): null when never set. */
+  userName: string | null;
+  /** The computer account's name (`suggestedUserName`), shown where no name is set. */
+  suggestedName: string;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
@@ -105,6 +110,9 @@ export interface WelcomeState {
   /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
   connectors: Connector[];
   enabledConnectors: Connector[];
+  /** The user's name as stored: null when never set, and the name step then offers `suggestedName`. */
+  userName: string | null;
+  suggestedName: string;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
@@ -130,6 +138,7 @@ export type Command =
   | { type: "signOut" }
   | { type: "setHotkey"; hotkey: DictationHotkey }
   | { type: "setReadsScreen"; value: boolean }
+  | { type: "setUserName"; value: string }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
   | { type: "setAgentToolEnabled"; tool: AgentTool; value: boolean }
   | { type: "setConnectorEnabled"; connector: Connector; value: boolean }
@@ -215,6 +224,8 @@ export function isCommand(value: unknown): value is Command {
     case "setDebugMode":
     case "setConsent":
       return typeof command.value === "boolean";
+    case "setUserName":
+      return typeof command.value === "string" && command.value.length <= config.userNameMaxLength;
     case "setEmailClient":
       return command.bundleIdentifier === null || typeof command.bundleIdentifier === "string";
     case "welcomeGoTo":

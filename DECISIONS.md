@@ -317,7 +317,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   - a top rail of category labels, with one bubble per step;
   - Back and Next buttons, with Finish on the last step;
   - bubbles that return only to steps already reached.
-- **Steps.** Consent → Permissions (Microphone, Accessibility) → Features (screen reading).
+- **Steps.** Consent → About You (the user's name, ADR-DESK-035) → Permissions (Microphone,
+  Accessibility) → Features (screen reading).
 - **Consent step.** It says what dictation sends: the voice, and the text in the front window
   while screen reading is on. It says where that goes (TabMail and its AI providers, not stored)
   and links the Terms of Service and the Privacy Policy. Next stays disabled until the user
@@ -888,7 +889,7 @@ trip takes.
 
 ## ADR-DESK-022: The Answer tool, the chat window, and agent tools switched on and off
 
-> ⚠️ **Amended by ADR-DESK-035 (owner 2026-09-28):** the chat window no longer replaces the pill or
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** the chat window no longer replaces the pill or
 > opens at the caret's line (`chatFrame`, `chatOpensUpward`): it opens over the pill, which stays
 > where it was with its bubbles (under them only without room over them), and rests there as a small
 > circle between follow-ups. The status pill inside the window is gone.
@@ -1028,7 +1029,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
   offers the Answer prompt no tools, and the answer is written without them.
 - Server tools run inside a round and show no progress in the chat window (the whole stream is read,
   then parsed); a slow server tool (web search, later) would need the stream read as it arrives.
-  *(Later (ADR-DESK-035): the stream is read as it arrives, and a server tool's start and end show.)*
+  *(Later (ADR-DESK-036): the stream is read as it arrives, and a server tool's start and end show.)*
 - A request waiting on a confirmation holds agent mode: the hotkey starts nothing until the user
   confirms, declines or closes the window, or the question's time runs out (below).
 - Each round has the completions request timeout of its own (`completionsRequestTimeout`); a tool's
@@ -1576,7 +1577,7 @@ only; code comments that name the Swift app record what a port matches.
 
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
-> ⚠️ **Placement SUPERSEDED by ADR-DESK-035 (owner 2026-09-28):** one row under the pill (over it
+> ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
 > without room), four at most, the latest to run first, replaces the rows around it
 > (`bubbleCentres`, `agentBubbleRowCapacity`, `agentBubbleRowsAbove`). An app's bubble now circles
 > while its tools run. One bubble per tool and per connector switched on stands.
@@ -1615,7 +1616,7 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
 
 ## ADR-DESK-034: A bubble under the pointer grows and says what it is
 
-> ⚠️ **Amended by ADR-DESK-035 (owner 2026-09-28):** bubbles grow about their centre, not up from
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** bubbles grow about their centre, not up from
 > their bottom edge, to fixed sizes (`agentBubbleHoverDiameter`, `agentBubbleRunningDiameter`), from
 > a smaller size at rest.
 
@@ -1648,7 +1649,46 @@ pointer at all.
   each bubble's tooltip is measured afresh, never shown at the last one's size.
 - A tooltip can cover other bubbles, the pill or a tip while it shows; it is drawn over them.
 
-## ADR-DESK-035: The chat window opens over the pill; the bubbles are a history of what ran
+## ADR-DESK-035: Agent mode sends the user's name, set in the wizard or Settings
+
+**Context:** Owner, 2026-09-28. In a direct-message chat the user asked agent mode to relay a message
+to the other person ("tell him…"); Compose wrote the reply as the other person, greeting the user by name. The request
+carried the window title, the screen (messages under both people's names) and the request, but
+nothing said who the user is, so the backend's model could not tell the user's own messages on screen
+from the other person's. Thunderbird's compose prompt has always had the user's name. The owner:
+"send the macOS full name or the username, but a more natural way is to have it in the setup wizard",
+and, when it is not set, a tip in "a neutral, inviting way"; "if it's not set, it's fine, but it's a
+sort of nag to set it in the wizard and settings".
+
+**Decision:**
+- A stored setting, `AppSettings.userName`: null until the welcome wizard or Settings stores one,
+  empty when the user cleared it, kept as typed and sent trimmed (`sentUserName`). It is part of the
+  dictation's settings snapshot (`DictationSettings.userName`).
+- The welcome wizard has an "About You" step after consent, with a name field offering the computer
+  account's name (`suggestedUserName`): on macOS the account's full name from `voice-macos`
+  (`fullUserName`, `NSFullUserName()`), else its short name (`os.userInfo().username`), the only name
+  elsewhere. Next without editing keeps the offered name; a name typed, or one cleared, stays as the
+  user left it. Nothing else stores the offered name.
+- Settings › Agent mode has the same field, empty with the offered name as its placeholder while none
+  is set, and a note inviting one; the section is marked for attention until a name is set.
+- While no name is set, switching to agent mode shows a tip by the pill (`setName`: "Add your name in
+  Settings so agent mode knows which messages are yours"), every time, until a name is set; switching
+  back to dictation takes it away. Hands-free, it takes the hands-free tip's place for its display
+  duration, and the hands-free tip returns after it. A follow-up in the chat window shows no tips, as before.
+- Every tool's request (edit, compose, thunderbird, answer) sends `user_name`, empty when none is set
+  (the backend leaves a missing variable in the prompt as written). The choice of tool sends none. The
+  backend's prompts say text on screen under that name is the user's own, and Compose that a relayed
+  request ("tell him…") is a message from the user to that person (backend ADR-023 amendment).
+
+**Consequences:**
+- The name leaves the computer only with agent mode's requests, and the backend does not store it.
+  Dictation's cleanup does not send it.
+- A user who finished the wizard before this step (the app has not shipped) has no name set, sees the
+  tip in agent mode and the mark in Settings until they set one.
+- A name that matches none of the names on screen (a nickname, another spelling) helps less; the
+  prompt reads "that name, or part of it".
+
+## ADR-DESK-036: The chat window opens over the pill; the bubbles are a history of what ran
 
 **Context:** Owner, 2026-09-28, reading an agent-mode answer session's log: "the answer box [should]
 appear above the … voice pill … and close the other tools"; "while the chat is running, I don't see
@@ -1673,8 +1713,9 @@ the stream was read whole and named its tools only in development builds.
   when the tallest window would not fit over them but would under them; on a screen too short for
   either, on the side with more room, growing no taller than that room and scrolling instead
   (`chatSide`, `ChatPlacement.maxHeight`), so all of it, a question's buttons too, stays on screen.
-  The side is decided once, so it never flips as the chat grows. The overlay window is laid out by `chatWindowFrame`, keeping the edge on the pill's side
-  fixed as it fits the chat's height, so the pill never moves; its bubbles keep the side they had
+  The side is decided once, so it never flips as the chat grows. The overlay window is laid out by
+  `chatWindowFrame`, keeping the edge on the pill's side fixed as it fits the chat's height, so the
+  pill never moves; its bubbles keep the side they had
   (`ChatPlacement.bubblesUnder`). The view is told where the pill is across the window
   (`ChatPlacement.pillX`). The window takes the mouse over all of it while the chat is open, as
   before; the pill's layer lets the pointer through to the chat but for its bubbles.
@@ -1694,8 +1735,8 @@ the stream was read whole and named its tools only in development builds.
   `agentBubbleMoveDuration`.
 - **Running.** A bubble circles while its tool runs, and an app's while one of its tools runs: a
   `LoopTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
-  inside a round, counted so overlapping runs end together (`DictationController.runningConnectors`,
-  cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
+  inside a round, one at a time as the answer's tools run in turn
+  (`DictationController.runningConnectors`, cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
   `agentBubbleDiameter` (20) at rest, smaller than the pill, and grow about their centre to
   `agentBubbleHoverDiameter` or `agentBubbleRunningDiameter`, as large as before; neighbours both
   running don't touch.

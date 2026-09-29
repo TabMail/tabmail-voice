@@ -50,32 +50,40 @@ describe("DesktopAgent", () => {
     expect(choose.content).toBe("system_prompt_desktop_agent");
     expect(choose.vars).toEqual({ app_name: "", web_host: "", window_title: "", selected_text: "", user_request: request, conversation: "" });
 
-    const edit = DesktopAgent.toolMessage("edit", request, null, "");
+    const edit = DesktopAgent.toolMessage("edit", request, null, "", "");
     expect(edit.content).toBe("system_prompt_desktop_edit");
-    expect(Object.keys(edit.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_request", "web_host", "window_title"]);
+    expect(Object.keys(edit.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_name", "user_request", "web_host", "window_title"]);
 
-    const compose = DesktopAgent.toolMessage("compose", request, null, "");
+    const compose = DesktopAgent.toolMessage("compose", request, null, "", "");
     expect(compose.content).toBe("system_prompt_desktop_compose");
-    expect(Object.keys(compose.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "terminal_program", "user_request", "web_host", "window_title"]);
+    expect(Object.keys(compose.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "terminal_program", "user_name", "user_request", "web_host", "window_title"]);
 
-    const thunderbird = DesktopAgent.toolMessage("thunderbird", request, null, "");
+    const thunderbird = DesktopAgent.toolMessage("thunderbird", request, null, "", "");
     expect(thunderbird.content).toBe("system_prompt_desktop_thunderbird");
-    expect(Object.keys(thunderbird.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_request", "web_host", "window_title"]);
+    expect(Object.keys(thunderbird.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_name", "user_request", "web_host", "window_title"]);
 
-    const answer = DesktopAgent.toolMessage("answer", request, null, "");
+    const answer = DesktopAgent.toolMessage("answer", request, null, "", "");
     expect(answer.content).toBe("system_prompt_desktop_answer");
-    expect(Object.keys(answer.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_request", "web_host", "window_title"]);
+    expect(Object.keys(answer.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_name", "user_request", "web_host", "window_title"]);
+  });
+
+  /** The user's name goes with every tool's prompt, empty when none is set, so the backend can tell
+   * the user's own messages on screen from other people's; the choice of tool needs none. */
+  test.each(agentTools)("the user's name is sent with every tool's prompt (%s)", (tool) => {
+    expect(DesktopAgent.toolMessage(tool, request, null, "", "Alex Example").vars.user_name).toBe("Alex Example");
+    expect(DesktopAgent.toolMessage(tool, request, null, "", "").vars.user_name).toBe("");
+    expect(DesktopAgent.chooseMessage(request, null, "").vars).not.toHaveProperty("user_name");
   });
 
   /** The chat window's conversation goes with the agent's choice and every tool's prompt. */
   test.each(agentTools)("the conversation is sent with every prompt (%s)", (tool) => {
     const conversation = "User: when is the sync?\nTabMail: Thursdays at 10:00.";
     expect(DesktopAgent.chooseMessage(request, null, conversation).vars.conversation).toBe(conversation);
-    expect(DesktopAgent.toolMessage(tool, request, null, conversation).vars.conversation).toBe(conversation);
+    expect(DesktopAgent.toolMessage(tool, request, null, conversation, "").vars.conversation).toBe(conversation);
   });
 
   test("a tool is sent the screen with the selection marked", () => {
-    const message = DesktopAgent.toolMessage("compose", request, selectionScreen("Ship it Friday."), "");
+    const message = DesktopAgent.toolMessage("compose", request, selectionScreen("Ship it Friday."), "", "");
 
     expect(message.vars.app_name).toBe("Example Notes");
     expect(message.vars.web_host).toBe("notes.example.com");
@@ -179,7 +187,7 @@ describe("DesktopAgent", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply("Thursdays at 10:00."));
 
-    expect(await DesktopAgent.write("answer", "when is the sync", null, "", client, account, Fixtures.userId)).toBe("Thursdays at 10:00.");
+    expect(await DesktopAgent.write("answer", "when is the sync", null, "", "", client, account, Fixtures.userId)).toBe("Thursdays at 10:00.");
     expect(completions.message(0)?.content).toBe("system_prompt_desktop_answer");
     expect(completions.body(0)).not.toHaveProperty("available_tools");
   });
@@ -190,7 +198,7 @@ describe("DesktopAgent", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply("  Find the invoice Sam sent last week.\n"));
 
-    const message = await DesktopAgent.write("thunderbird", "find sam's invoice", selectionScreen(" Sam \n"), "", client, account, Fixtures.userId);
+    const message = await DesktopAgent.write("thunderbird", "find sam's invoice", selectionScreen(" Sam \n"), "", "", client, account, Fixtures.userId);
 
     expect(message).toBe("Find the invoice Sam sent last week.");
     expect(completions.message(0)?.content).toBe("system_prompt_desktop_thunderbird");
@@ -200,7 +208,7 @@ describe("DesktopAgent", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply("  "));
 
-    const error = await thrown(DesktopAgent.write("compose", request, null, "", client, account, Fixtures.userId));
+    const error = await thrown(DesktopAgent.write("compose", request, null, "", "", client, account, Fixtures.userId));
     expect((error as AgentFailure).kind).toBe("noText");
   });
 
@@ -208,7 +216,7 @@ describe("DesktopAgent", () => {
     const { completions, client, account } = setup();
     completions.enqueue(402, { error: "no_active_subscription" });
 
-    const error = await thrown(DesktopAgent.write("edit", request, selectionScreen("Ship it."), "", client, account, Fixtures.userId));
+    const error = await thrown(DesktopAgent.write("edit", request, selectionScreen("Ship it."), "", "", client, account, Fixtures.userId));
     expect(error).toBeInstanceOf(BackendError);
     expect((error as BackendError).kind).toBe("subscriptionRequired");
   });
@@ -236,7 +244,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, events + Fixtures.reply("Found it."));
     const heard: ServerToolEvent[] = [];
 
-    const answer = await DesktopAgent.answer("search it", null, "", tools, client, account, Fixtures.userId, async () => "", (event) => heard.push(event));
+    const answer = await DesktopAgent.answer("search it", null, "", "", tools, client, account, Fixtures.userId, async () => "", (event) => heard.push(event));
 
     expect(answer).toBe("Found it.");
     expect(heard).toEqual([
@@ -270,7 +278,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("  Friday is the 3rd.\n"));
     const calls: ToolCall[] = [];
 
-    const answer = await DesktopAgent.answer("what day is friday", null, "User: hi\nTabMail: Hello.", tools, client, account, Fixtures.userId, async (call) => {
+    const answer = await DesktopAgent.answer("what day is friday", null, "User: hi\nTabMail: Hello.", "", tools, client, account, Fixtures.userId, async (call) => {
       calls.push(call);
       return "";
     }, ignoreServerTools);
@@ -296,7 +304,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("Both done."));
     const ran: string[] = [];
 
-    const answer = await DesktopAgent.answer("do both", null, "", tools, client, account, Fixtures.userId, async (call) => {
+    const answer = await DesktopAgent.answer("do both", null, "", "", tools, client, account, Fixtures.userId, async (call) => {
       ran.push(`${call.id} ${call.function.name} ${call.function.arguments}`);
       return `result of ${call.id}`;
     }, ignoreServerTools);
@@ -329,7 +337,7 @@ describe("the answer's tool loop", () => {
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
     const ran: string[] = [];
 
-    const answer = await DesktopAgent.answer("read it", null, "", tools, client, signedIn(auth), Fixtures.userId, async (toolCall) => {
+    const answer = await DesktopAgent.answer("read it", null, "", "", tools, client, signedIn(auth), Fixtures.userId, async (toolCall) => {
       ran.push(toolCall.id);
       return "read";
     }, ignoreServerTools);
@@ -353,7 +361,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(401, { error: "invalid_token" });
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
 
-    const error = await thrown(DesktopAgent.answer("read it", null, "", tools, client, signedIn(auth), Fixtures.userId, async () => "", ignoreServerTools));
+    const error = await thrown(DesktopAgent.answer("read it", null, "", "", tools, client, signedIn(auth), Fixtures.userId, async () => "", ignoreServerTools));
 
     expect((error as BackendError).kind).toBe("unauthorized");
     expect(completions.requests).toHaveLength(2);
@@ -367,7 +375,7 @@ describe("the answer's tool loop", () => {
     let ran = 0;
 
     const error = await thrown(
-      DesktopAgent.answer("read it", null, "", tools, client, account, Fixtures.userId, async () => {
+      DesktopAgent.answer("read it", null, "", "", tools, client, account, Fixtures.userId, async () => {
         ran += 1;
         return "";
       }, ignoreServerTools),
@@ -383,7 +391,7 @@ describe("the answer's tool loop", () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply(" \n"));
 
-    const error = await thrown(DesktopAgent.answer("what now", null, "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools));
+    const error = await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools));
     expect((error as AgentFailure).kind).toBe("noText");
   });
 
@@ -393,7 +401,7 @@ describe("the answer's tool loop", () => {
     const abort = new AbortController();
     abort.abort();
 
-    await thrown(DesktopAgent.answer("what now", null, "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools, abort.signal));
+    await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools, abort.signal));
     expect(completions.requests).toHaveLength(0);
   });
 
@@ -407,7 +415,7 @@ describe("the answer's tool loop", () => {
     const ran: string[] = [];
 
     const error = await thrown(
-      DesktopAgent.answer("read it", null, "", tools, client, account, Fixtures.userId, async (call) => {
+      DesktopAgent.answer("read it", null, "", "", tools, client, account, Fixtures.userId, async (call) => {
         ran.push(call.id);
         abort.abort();
         return "";
@@ -427,7 +435,7 @@ describe("the answer's tool loop", () => {
     const abort = new AbortController();
 
     await thrown(
-      DesktopAgent.answer("read it", null, "", tools, client, account, Fixtures.userId, async () => {
+      DesktopAgent.answer("read it", null, "", "", tools, client, account, Fixtures.userId, async () => {
         abort.abort();
         return "";
       }, ignoreServerTools, abort.signal),

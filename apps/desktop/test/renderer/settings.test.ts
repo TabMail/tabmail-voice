@@ -19,6 +19,8 @@ const signedIn: SettingsState = {
   enabledTools: ["edit", "compose", "thunderbird", "answer"],
   connectors: [],
   enabledConnectors: [],
+  userName: "Alex Example",
+  suggestedName: "Alex Example",
   emailClient: null,
   systemEmailApp: null,
   installedEmailApps: [],
@@ -136,7 +138,7 @@ describe("Settings page", () => {
     const own: Record<string, string[]> = {
       Account: ["Sign Out"],
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
-      "Agent mode": ["Edit", "Compose", "Thunderbird", "Answer", "Email app"],
+      "Agent mode": ["Your name", "Edit", "Compose", "Thunderbird", "Answer", "Email app"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode"],
     };
@@ -181,6 +183,39 @@ describe("Settings page", () => {
 
     await settingsPage({ error: null }, signedIn, { ...signedIn, vscodeFix: "done" });
     expect(marked()).toEqual([]);
+
+    // No name for agent mode: never set, cleared, or blank.
+    for (const userName of [null, "", "  "]) {
+      await settingsPage({ error: null }, signedIn, { ...signedIn, userName });
+      expect(marked()).toEqual(["Agent mode"]);
+    }
+  });
+
+  /** Agent mode's name field shows the stored name, or, with none, is empty with the computer
+   * account's name as its placeholder and a note inviting one; typing sends it as typed. */
+  test("agent mode's name field shows the name and sends what the user types", async () => {
+    const field = () => document.querySelector<HTMLInputElement>('input[aria-label="Your name"]') as HTMLInputElement;
+    const set = "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.";
+    const invite = "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent to TabMail with agent mode’s requests, and TabMail doesn’t keep it.";
+
+    await settingsPage({ error: null }, signedIn);
+    await act(async () => button("Agent mode").click());
+    expect(field().value).toBe("Alex Example");
+    expect(visibleText()).toContain(set);
+    expect(visibleText()).not.toContain(invite);
+
+    const page = await settingsPage({ error: null }, { ...signedIn, userName: "Sam" }, { ...signedIn, userName: null });
+    await act(async () => button("Agent mode").click());
+    expect(field().value).toBe("");
+    expect(field().placeholder).toBe("Alex Example");
+    expect(visibleText()).toContain(invite);
+    await act(async () => type(field(), "Sam"));
+    expect(page.commands).toEqual([{ type: "setUserName", value: "Sam" }]);
+    expect(field().value).toBe("Sam");
+    expect(visibleText()).toContain(set);
+
+    await settingsPage({ error: null }, signedIn, { ...signedIn, userName: null, suggestedName: "" });
+    expect(field().placeholder).toBe("Your name");
   });
 
   /** When VS Code's settings hide the caret, Permissions (the section marked for it) and no other
@@ -430,6 +465,7 @@ describe("Settings page", () => {
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
       "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
       "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
+      "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

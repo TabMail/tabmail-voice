@@ -14,6 +14,7 @@ import type { SettingsState } from "../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
 import { ConnectorIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "./icons.js";
+import { NameField } from "./nameField.js";
 import "./form.css";
 import "./settings.css";
 
@@ -40,10 +41,11 @@ const colours = {
   "--window-dark": config.settingsWindowColour.dark,
 } as CSSProperties;
 
-/** Whether `name`'s section wants the user's attention: signed out, a permission missing, or VS
- * Code's settings hiding the caret. */
+/** Whether `name`'s section wants the user's attention: signed out, no name for agent mode, a
+ * permission missing, or VS Code's settings hiding the caret. */
 function needsAttention(name: SectionName, state: SettingsState): boolean {
   if (name === "account") return state.email === null;
+  if (name === "agent") return !hasName(state);
   if (name === "permissions") return !state.microphoneGranted || !state.accessibilityTrusted || state.vscodeFix === "needed";
   return false;
 }
@@ -140,11 +142,28 @@ function DictationPane({ state }: { state: SettingsState }) {
   );
 }
 
-/** A switch for each agent tool and each app Answer reaches, alphabetically (owner, 2026-09-28), as
- * the bubbles under the pill first show. */
+/** Whether a name is set for agent mode (`AppSettings.sentUserName`). */
+function hasName(state: SettingsState): boolean {
+  return (state.userName ?? "").trim() !== "";
+}
+
+/** The user's name, then a switch for each agent tool and each app Answer reaches, alphabetically
+ * (owner, 2026-09-28), as the bubbles under the pill first show. */
 function AgentPane({ state }: { state: SettingsState }) {
   return (
     <>
+      <Group
+        captions={[
+          hasName(state)
+            ? "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it."
+            : "Add your name so agent mode knows which messages on screen are yours, and a reply goes to the other person, not back to you. It’s sent to TabMail with agent mode’s requests, and TabMail doesn’t keep it.",
+        ]}
+      >
+        <div className="row">
+          <span>Your name</span>
+          <NameField initial={state.userName ?? ""} placeholder={state.suggestedName === "" ? "Your name" : state.suggestedName} />
+        </div>
+      </Group>
       <Group>
         {alphabetical([...agentTools, ...state.connectors]).map((key) =>
           isConnector(key) ? (

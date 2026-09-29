@@ -394,6 +394,7 @@ export class DictationController extends Observable {
     this.deps.tips.markLearned("switchMode");
     if (this.currentTip === "switchMode") this.hideTip();
     if (this.currentMode === "agent") void this.lookUpEmailApp();
+    this.updateNameTip();
     this.updateTools();
     log.debug(`DictationController: switched to ${this.currentMode}`);
   }
@@ -506,6 +507,7 @@ export class DictationController extends Observable {
                 transcript,
                 context,
                 conversation,
+                settings.userName,
                 DesktopAgent.answerTools(loopTools),
                 client,
                 account,
@@ -514,7 +516,7 @@ export class DictationController extends Observable {
                 (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
-            : await DesktopAgent.write(tool, transcript, context, conversation, client, account, userId, signal);
+            : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userId, signal);
         if (!isCurrent()) return;
         const targetApp = await this.targetApp;
         await toolImplementations[tool].deliver(text, {
@@ -783,6 +785,24 @@ export class DictationController extends Observable {
     this.dueTips = ["handsFree"];
     this.hideTip();
     log.debug("DictationController: second press was a tap; listening without the key");
+  }
+
+  /** In agent mode with no name set, the tip inviting one is next; out of it, it goes. A tip with
+   * no display duration (hands-free) would never give way, so it steps aside and returns after. */
+  private updateNameTip(): void {
+    this.dueTips = this.dueTips.filter((tip) => tip !== "setName");
+    if (this.currentMode === "agent" && this.dictationSettings.userName === "") {
+      this.dueTips.unshift("setName");
+      const shown = this.currentTip;
+      if (shown !== null && this.tipDisplayDuration(shown) === null) {
+        this.dueTips.splice(1, 0, shown);
+        this.hideTip();
+      } else {
+        this.showDueTip();
+      }
+    } else if (this.currentTip === "setName") {
+      this.hideTip();
+    }
   }
 
   /** Shows the next due tip the user may still see, while the pill listens and hears (the overlay
