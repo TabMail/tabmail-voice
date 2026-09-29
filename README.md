@@ -15,6 +15,12 @@ isn't stored.
 Requires macOS 15 or later and a TabMail account. Windows ([#61](https://github.com/TabMail/tabmail-voice/issues/61))
 and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to come.
 
+## See it in action
+
+https://github.com/user-attachments/assets/66857e8f-0757-4faa-b6e0-ad01a4a88244
+
+[Get TabMail](https://tabmail.ai)
+
 ## Build
 
 The app is `apps/desktop/`, one Electron app for macOS, Windows and Linux (macOS first). Its
