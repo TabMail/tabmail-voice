@@ -1,9 +1,19 @@
 # TabMail Voice
 
-Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: the text is typed
-into whatever you're writing in. Speech is transcribed by TabMail's servers and isn't stored.
+**Dictate your intentions.**
 
-Requires macOS 15 or later and a TabMail account.
+[![Get TabMail](https://img.shields.io/badge/Get_TabMail-tabmail.ai-6D28D9)](https://tabmail.ai)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](./LICENSE)
+![Platform: macOS 15+](https://img.shields.io/badge/platform-macOS_15+-lightgrey)
+
+Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: your words are
+cleaned up and typed into whatever you're writing in. Switch to agent mode to ask for something
+instead: edit the text you selected, write a reply from what's on screen, or answer a question
+with your calendar, contacts, files and the web. Speech is transcribed by TabMail's servers and
+isn't stored.
+
+Requires macOS 15 or later and a TabMail account. Windows ([#61](https://github.com/TabMail/tabmail-voice/issues/61))
+and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to come.
 
 ## Build
 
@@ -30,9 +40,10 @@ signature, so an ad-hoc signed build loses them on every rebuild.
 
 ## First run
 
-TabMail lives in the menu bar. It asks for:
+TabMail lives in the menu bar. A welcome window asks for your consent to send dictations to
+TabMail, your name (for agent mode), whether to read the screen, and two permissions:
 
-- **Microphone**: to hear you while you hold the key.
+- **Microphone**: to hear you while you dictate.
 - **Accessibility**: to notice the key from any app and to paste the text for you.
 
 Then sign in with your TabMail email in Settings (we email you a one-time code).
@@ -41,15 +52,31 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 
 - **Hold** the dictation key, speak, **release**. A swirl gathers at your text cursor and turns
   into a pill whose waveform follows your voice once the microphone is listening. When you let
-  go, the pill shrinks to a spinning circle while your words are transcribed, then the text is
-  typed in.
-  A quick tap does nothing.
+  go, the pill shrinks to a spinning circle while your words are transcribed and cleaned up, then
+  the text is typed in. The language badge follows the keyboard language selected when you start
+  speaking. A quick tap does nothing.
+- **Double-tap** the key to dictate without holding it. Tap it again to finish, or press Esc to
+  cancel.
 - Pressing any other key while holding cancels (so ⌥-shortcuts keep working), except Space:
-  it switches to agent mode, where what you say is a request (edit the selection, or write
-  something new), and pressing it again switches back.
+  it switches to **agent mode**, where what you say is a request, and pressing it again switches
+  back. With text selected, ask to edit it; otherwise ask it to write something new, or ask a
+  question. Agent mode can use your calendar, reminders, contacts, files, notes, messages, email and
+  the web, and it asks before it sends or creates anything. Turn each of these on or off in
+  Settings › Agent mode.
+- **Dictionary**: add names and terms in Settings › Dictionary so they're spelled your way. When
+  you correct a word after a dictation, TabMail Voice can learn the new spelling. The dictionary
+  stays on your computer.
+- **Read the screen while dictating** (Settings › Dictation) sends the text in the window in
+  front with your dictation, so names and terms come out as they appear there. It isn't stored.
 - Choose Fn/Globe instead of Right Option in Settings. While it is the hotkey, TabMail Voice sets
   System Settings › Keyboard › "Press 🌐 key to" to "Do Nothing", and puts your choice back when you
   pick another key or quit.
+
+## Privacy
+
+Your recording, the screen text and your dictionary are sent to TabMail only to process the
+dictation, and none of it is stored or used to train AI models. See the
+[Privacy Policy](https://tabmail.ai/privacy/).
 
 ## Comparing speech-to-text models
 
@@ -66,6 +93,12 @@ sudo extract only the key line, and keeps the key in memory without writing it a
 ```sh
 python3 Scripts/stt-compare/compare.py --sudo --env-file /path/to/secrets.env
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the DCO and development workflow,
+[SECURITY.md](SECURITY.md) for private vulnerability reports, and
+[TRADEMARKS.md](TRADEMARKS.md) for name and logo usage.
 
 ## Acknowledgements
 
