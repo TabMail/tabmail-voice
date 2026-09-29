@@ -67,6 +67,12 @@ export const clipboardRestoreDelay = 500;
 /** How long the cleanup waits for the screen read once the transcript is ready. The read is best
  * effort: not done by then, the cleanup runs without it (ADR-DESK-008). */
 export const contextWait = 500;
+/** The cleanup gets only the screen text around the caret, not the whole screen: this much before
+ * the caret (about a paragraph) and after it, in UTF-16 code units, rounded to whole characters.
+ * Owner, 2026-09-28: the whole screen (often 4k–13k characters) made the cleanup slow; agent mode
+ * still gets all of it. */
+export const cleanupContextBefore = 500;
+export const cleanupContextAfter = 200;
 
 // MARK: Backend
 
@@ -83,8 +89,9 @@ export const transcriptionRequestTimeout = 45_000;
 /** Longest pause in the cleanup's response stream (the backend sends keepalives while the model
  * works). */
 export const completionsRequestTimeout = 30_000;
-/** Longest the cleanup may take; past it the transcript is pasted as heard (ADR-DESK-008). */
-export const cleanupTimeout = 3_000;
+/** Longest the cleanup may take; past it the transcript is pasted as heard (ADR-DESK-008). Owner,
+ * 2026-09-28: 1.5 s at most (was 3 s), since the cleanup is a light pass. */
+export const cleanupTimeout = 1_500;
 
 // MARK: Agent mode (Space during the hold)
 

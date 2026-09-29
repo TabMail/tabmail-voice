@@ -260,6 +260,19 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
   2026-09-25: not a risk for dictation; no guard. The reply is only trimmed of surrounding blank
   space before it is pasted.
 
+**Amendment 2026-09-28 — only the text around the caret, and a 1.5 s cap.** Owner: the cleanup
+"doesn't really need to be that heavy"; "8K characters is useless ... only a brief capture text
+should go for the cleanup. The full screen content should only be available for the agent". Measured
+over 133 dictations in a debug log: release to paste took a median 1.7 s, of which the cleanup's round
+trip was a median 0.75 s (0.97 s with more than 8k characters of screen text), and one timed out at
+3 s with about 4k characters. The cleanup now gets, as `screen_text`, only the rendered screen within
+`cleanupContextBefore` (500) code units before the caret and `cleanupContextAfter` (200) after it,
+cut between characters, markers as rendered (`textAroundCaret`). The caret is the marker on the
+focused field's `» ` lines; with no field holding the caret, the cleanup gets no screen text. Agent
+mode's tools still get the whole screen. `cleanupTimeout` is 1.5 s (was 3 s); past it the transcript
+is pasted as heard, as before. The backend prompt's wording ("the window's visible text") is
+unchanged; the excerpt keeps its markers.
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the

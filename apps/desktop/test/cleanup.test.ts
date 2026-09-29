@@ -5,7 +5,8 @@
 import { describe, expect, test } from "vitest";
 import type { AccountModel } from "../src/core/account.js";
 import { CompletionsClient } from "../src/core/backend.js";
-import { DictationCleanup } from "../src/core/cleanup.js";
+import { screenVariables } from "../src/core/agent/tools.js";
+import { DictationCleanup, textAroundCaret } from "../src/core/cleanup.js";
 import * as config from "../src/core/config.js";
 import { CancellationError, sleep, TimeoutError, withTimeout } from "../src/core/timeout.js";
 import { screen } from "./screens.js";
@@ -41,6 +42,70 @@ describe("DictationCleanup.message", () => {
     expect(DictationCleanup.message("hello", null).vars).toEqual({
       dictation: "hello", app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "",
     });
+  });
+});
+
+/** The cleanup gets only the text around the caret (owner, 2026-09-28: the whole screen made it
+ * slow); agent mode still gets the whole screen. */
+describe("the cleanup's screen text", () => {
+  const before = "b".repeat(config.cleanupContextBefore);
+  const after = "a".repeat(config.cleanupContextAfter);
+  const page = `## Inbox\n${"An earlier message on screen.\n".repeat(200)}`;
+  const rendered = `${page}» Dear Alex,\n» ${before}‸${after}\n» ${"More of the draft. ".repeat(100)}\n[Send]`;
+
+  test("is the text within its reach of the caret, markers kept", () => {
+    const text = textAroundCaret(rendered);
+    expect(text).toBe(`${before}‸${after}`);
+    expect(DictationCleanup.message("hello", screen({ renderedText: rendered })).vars.screen_text).toBe(text);
+  });
+
+  /** Near the start or end of the screen it takes what there is: the text before the field too. */
+  test("reaches past the field's start and stops at the screen's ends", () => {
+    expect(textAroundCaret("## Agenda\n» Ask Jordan about the ‸")).toBe("## Agenda\n» Ask Jordan about the ‸");
+    const short = `Lunch with Sam?\n» Sure, ‸ works\n[Send]`;
+    expect(textAroundCaret(short)).toBe(short);
+  });
+
+  /** A selection counts as text after the caret, its markers kept while in reach. */
+  test("keeps a selection within reach", () => {
+    expect(textAroundCaret("» Note: ‸Ship it Friday.‸ Thanks")).toBe("» Note: ‸Ship it Friday.‸ Thanks");
+    const selected = `‸${"s".repeat(config.cleanupContextAfter * 2)}‸`;
+    const text = textAroundCaret(`» ${"x".repeat(1_000)}${before}${selected} Thanks`);
+    expect(text).toBe(`${before}${selected.slice(0, 1 + config.cleanupContextAfter)}`);
+  });
+
+  /** A field's CRLF is one character to the helper, which prefixes only the line it starts. */
+  test("finds the caret after a CRLF in the field", () => {
+    const crlf = "## Inbox\n» Hi Sam,\r\nThanks for the ‸ notes\n[Send]";
+    expect(textAroundCaret(crlf)).toBe(crlf);
+  });
+
+  /** A cut never splits a character: an emoji or accented letter at the edge is kept whole or left
+   * out whole. */
+  test("cuts between characters", () => {
+    const family = "👩‍👩‍👧";
+    const edgeBefore = `${family}${"b".repeat(config.cleanupContextBefore - 1)}`;
+    const edgeAfter = `${"a".repeat(config.cleanupContextAfter - 1)}${family}`;
+    const text = textAroundCaret(`» x${edgeBefore}‸${edgeAfter}y`);
+    expect(text.startsWith("b") || text.startsWith(family)).toBe(true);
+    expect(text.endsWith("a") || text.endsWith(family)).toBe(true);
+    expect([...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map((segment) => segment.segment)).not.toContain("\u200d");
+    expect(text).toContain("‸");
+  });
+
+  /** Only the focused field's lines hold the caret; the marker on a page line is the page's own
+   * text. No field with the caret sends nothing. */
+  test("finds the caret on the focused field only", () => {
+    expect(textAroundCaret("A page about the ‸ character\n» Hello ‸")).toBe("A page about the ‸ character\n» Hello ‸");
+    const tail = " ‸ in the page\n» Hello ";
+    expect(textAroundCaret(`${"x".repeat(1_000)}${tail}‸`)).toBe(`${"x".repeat(config.cleanupContextBefore - tail.length)}${tail}‸`);
+    expect(textAroundCaret("## Inbox\nA page with no field")).toBe("");
+    expect(textAroundCaret("A page about the ‸ character")).toBe("");
+    expect(textAroundCaret("")).toBe("");
+  });
+
+  test("leaves agent mode the whole screen", () => {
+    expect(screenVariables("summarise this", screen({ renderedText: rendered })).screen_text).toBe(rendered);
   });
 });
 
