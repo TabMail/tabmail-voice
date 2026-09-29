@@ -92,8 +92,8 @@ export const clientType = "macos";
 /** Longest the transcription request may take, the backend's cleanup included (the backend gives the
  * cleanup 1.5 s, owner 2026-09-28; backend ADR-027). */
 export const transcriptionRequestTimeout = 45_000;
-/** Longest pause in the cleanup's response stream (the backend sends keepalives while the model
- * works). */
+/** Longest pause in an agent-mode completions response stream (the backend sends keepalives while
+ * the model works). */
 export const completionsRequestTimeout = 30_000;
 
 // MARK: Dictionary (ADR-DESK-038)

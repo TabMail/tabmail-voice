@@ -119,8 +119,8 @@ export class DictationController extends Observable {
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
   captureContext: (() => Promise<ScreenContext | null> | null) | undefined;
-  /** How long the cleanup waits for that read once the transcript is ready (agent mode waits for
-   * all of it). Settable for tests. */
+  /** How long a dictation's upload waits for that read, which its cleanup variables travel with
+   * (agent mode waits for all of it, once its transcript is ready). Settable for tests. */
   contextWait = config.contextWait;
   /** How long a hold goes on before the double-tap tip is due, and how long a tip shows. Settable
    * for tests. */
@@ -928,7 +928,8 @@ export class DictationController extends Observable {
    * so neither reaches the next account; a refreshed token for the same account changes nothing. */
   private accountChanged(): void {
     // A dictation never reaches the chat (one is open only after an agent request, and every request
-    // while it is open is one): it goes on, pasted as heard without the other account's cleanup.
+    // while it is open is one): it goes on, its transcription and cleanup both from the account signed
+    // in at the upload.
     if (this.currentMode !== "agent") return;
     log.debug("DictationController: account changed; conversation ended");
     this.endConversation();
