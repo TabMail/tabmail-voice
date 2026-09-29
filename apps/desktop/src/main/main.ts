@@ -96,7 +96,7 @@ function launch(): void {
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
   const hasTabMail = (): boolean => EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
   const vscodeSettingsFile = join(app.getPath("appData"), ...vscodeSettingsPath);
-  /** Whether the welcome wizard changed VS Code's settings, to say so. */
+  /** Whether the welcome wizard or Settings changed VS Code's settings, to say so. */
   let fixedVSCode = false;
 
   const store = new FileStore(join(app.getPath("userData"), "settings.json"));
@@ -502,7 +502,7 @@ function launch(): void {
       case "welcomeGoTo":
         return wizard?.goTo(command.index);
       case "fixVSCodeSettings": {
-        // Read afresh: VS Code or the user may have changed the file since the wizard showed.
+        // Read afresh: VS Code or the user may have changed the file since the window showed it.
         const text = nodeProfileFiles.readText(vscodeSettingsFile);
         if (process.platform !== "darwin" || text === null || !vscodeHidesCaret(text)) return;
         await writeFile(vscodeSettingsFile, withClassicInput(text));

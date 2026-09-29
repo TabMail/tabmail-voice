@@ -183,12 +183,17 @@ describe("Settings page", () => {
     expect(marked()).toEqual([]);
   });
 
-  /** When VS Code's settings hide the caret, Permissions has a VS Code row whose Fix Settings sends
-   * `fixVSCodeSettings`, and which shows them fixed once they are; otherwise it doesn't mention VS
-   * Code. */
+  /** When VS Code's settings hide the caret, Permissions (the section marked for it) and no other
+   * section has a VS Code row whose Fix Settings sends `fixVSCodeSettings`, and which shows them
+   * fixed once they are; otherwise it doesn't mention VS Code. */
   test("Permissions offers to fix VS Code's settings only when they need it", async () => {
     const page = await settingsPage({ error: null }, { ...signedIn, vscodeFix: "done" }, { ...signedIn, vscodeFix: "needed" });
-    const row = () => [...document.querySelectorAll(".row")].find((candidate) => candidate.firstElementChild?.textContent === "VS Code");
+    for (const section of ["Account", "Dictation", "Agent mode", "General"]) {
+      await act(async () => button(section).click());
+      expect(visibleText()).not.toContain("VS Code");
+    }
+    await act(async () => button("Permissions").click());
+    const row = () => [...document.querySelectorAll("main > div:not([hidden]) .row")].find((candidate) => candidate.firstElementChild?.textContent === "VS Code");
     expect(row()?.querySelector("button")?.textContent).toBe("Fix Settings");
     await act(async () => button("Fix Settings").click());
     expect(page.commands).toEqual([{ type: "fixVSCodeSettings" }]);
