@@ -8,7 +8,28 @@ import { agentTools } from "../src/core/agent/tools.js";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
 import { type MenuState, showsDictationButton, statusLine } from "../src/core/menuModel.js";
-import { bubbleCentres, bubblesFitUnder, bubbleTooltipCentre, chatFrame, chatOpensUpward, grownBubble, hintCentre, hintCentreOver, maxX, maxY, midX, opensUpward, overlayOrigin, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../src/core/overlayGeometry.js";
+import {
+  bubbleRow,
+  bubbleRowOpacity,
+  bubblesFitUnder,
+  bubbleTooltipCentre,
+  chatSide,
+  chatWindowFrame,
+  grownBubble,
+  hintCentre,
+  hintCentreOver,
+  maxX,
+  maxY,
+  midX,
+  opensUpward,
+  overlayOrigin,
+  type Point,
+  pillPosition,
+  type Rect,
+  type Size,
+  tipGoesAbove,
+  underBubbles,
+} from "../src/core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipKeycap, tipLines, tipParts } from "../src/core/tips.js";
 
 const canvas = { width: 200, height: 60 };
@@ -21,11 +42,6 @@ function rect(x: number, y: number, width: number, height: number): Rect {
 
 function intersects(a: Rect, b: Rect): boolean {
   return a.x < maxX(b) && b.x < maxX(a) && a.y < maxY(b) && b.y < maxY(a);
-}
-
-/** How far apart two rects are: the widest gap between them along either axis (negative when they overlap). */
-function apart(a: Rect, b: Rect): number {
-  return Math.max(b.x - maxX(a), a.x - maxX(b), b.y - maxY(a), a.y - maxY(b));
 }
 
 function contains(outer: Rect, inner: Rect): boolean {
@@ -107,71 +123,67 @@ describe("overlay geometry", () => {
     }
   });
 
-  /** Agent mode's bubbles and a tip under the pill, in the overlay's canvas, for the listening pill
-   * and the circle it shrinks to, with no bubbles (dictation) up to as many as are ever offered (the
-   * tools but one, as Edit and Compose never show together, and every connector): a row centred over
-   * the pill fills first, then one bubble beside it on the left and one on the right, then rows under
-   * it, or, with no room under it, over the first row, so none covers a caret's line under a pill
-   * that opened above it. None overlaps the pill, another bubble or the tip, which goes under the pill
-   * and any bubbles under it; everything, the tip's shadow included, stays inside the canvas. With them
-   * all, five over, two beside and five under (or a second five over). Past that many (a connector
-   * yet to come) the rows keep stacking without overlapping, though the canvas has no room for them. */
-  test.each([true, false])("bubbles surround the pill and the tip goes under them (under fits: %s)", (underFits) => {
+  /** Agent mode's bubbles in one row under the pill (over it when they don't fit under it), for the
+   * listening pill and the circle it shrinks to, with no bubbles (dictation) up to more than ever
+   * show: the first `agentBubbleRowVisibleCount` centred on the pill, the rest going on to the right,
+   * all level, a gap apart and clear of the pill, and every one that shows inside the canvas. The tip
+   * goes under the pill and any bubbles under it, overlapping none, inside the canvas with its
+   * shadow. */
+  test.each([true, false])("bubbles go in a row under the pill and the tip under them (under fits: %s)", (underFits) => {
     const area = rect(0, 0, config.overlayCanvasSize.width, config.overlayCanvasSize.height);
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
     const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
-    const capacity = config.agentBubbleRowCapacity;
-    const most = agentTools.length - 1 + connectors.length;
-    let under = 0;
+    const visible = config.agentBubbleRowVisibleCount;
+    const showing = visible + config.agentBubbleRowFadeCount;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
-      for (let count = 0; count <= most + 2 * capacity; count += 1) {
-        const frames = bubbleCentres(pill, Array<Size>(count).fill(bubble), underFits).map((centre) => framed(centre, bubble));
+      for (let count = 0; count <= agentTools.length + connectors.length; count += 1) {
+        const frames = bubbleRow(pill, count, underFits).map((centre) => framed(centre, bubble));
         expect(frames).toHaveLength(count);
-        const fits = count <= most;
         const tipFrame = framed(hintCentre(underBubbles(pill, frames), tip), tip);
         expect(tipFrame.y).toBeGreaterThanOrEqual(maxY(pill));
         expect(Math.abs(midX(tipFrame) - midX(pill))).toBeLessThan(0.001);
-        if (fits) expect(contains(area, rect(tipFrame.x - shadow, tipFrame.y - shadow, tipFrame.width + 2 * shadow, tipFrame.height + 2 * shadow)), `tip outside the canvas (${count})`).toBe(true);
+        expect(contains(area, rect(tipFrame.x - shadow, tipFrame.y - shadow, tipFrame.width + 2 * shadow, tipFrame.height + 2 * shadow)), `tip outside the canvas (${count})`).toBe(true);
         frames.forEach((frame, index) => {
-          expect(intersects(frame, pill), `bubble ${index} of ${count} overlaps the pill`).toBe(false);
-          expect(apart(frame, pill), `bubble ${index} of ${count} too near the pill`).toBeGreaterThanOrEqual(config.agentBubbleGap - 0.001);
+          if (underFits) expect(frame.y, `bubble ${index} of ${count} is not under the pill`).toBeCloseTo(maxY(pill) + config.agentBubbleGap);
+          else expect(maxY(frame), `bubble ${index} of ${count} is not over the pill`).toBeCloseTo(pill.y - config.agentBubbleGap);
           expect(intersects(frame, tipFrame), `bubble ${index} of ${count} overlaps the tip`).toBe(false);
-          if (fits) expect(contains(area, frame), `bubble ${index} of ${count} outside the canvas`).toBe(true);
-          for (const other of frames.slice(index + 1)) {
-            expect(intersects(frame, other), `bubbles overlap (${count})`).toBe(false);
-            expect(apart(frame, other), `bubbles too near each other (${count})`).toBeGreaterThanOrEqual(config.agentBubbleGap - 0.001);
-          }
-          if (index < capacity) {
-            expect(maxY(frame), `bubble ${index} of ${count} is not over the pill`).toBeLessThanOrEqual(pill.y);
-          } else if (index < capacity + 2) {
-            expect(Math.abs(frame.y + frame.height / 2 - (pill.y + pill.height / 2)), `bubble ${index} of ${count} is not beside the pill`).toBeLessThan(0.001);
-            if (index === capacity) expect(maxX(frame), `bubble ${index} of ${count} is not on the left`).toBeLessThanOrEqual(pill.x);
-            else expect(frame.x, `bubble ${index} of ${count} is not on the right`).toBeGreaterThanOrEqual(maxX(pill));
-          } else if (underFits) {
-            under += 1;
-            expect(frame.y, `bubble ${index} of ${count} is not under the pill`).toBeGreaterThanOrEqual(maxY(pill));
-          } else {
-            expect(maxY(frame), `bubble ${index} of ${count} is not over the first row`).toBeLessThanOrEqual(frames[0]?.y ?? -Infinity);
-          }
+          if (index < showing) expect(contains(area, frame), `bubble ${index} of ${count} outside the canvas`).toBe(true);
+          const next = frames[index + 1];
+          if (next) expect(next.x - maxX(frame), `bubbles ${index} and ${index + 1} of ${count} not a gap apart`).toBeCloseTo(config.agentBubbleSpacing);
+          // Grown as it runs, still clear of the pill.
+          expect(intersects(grownBubble(frame, config.agentBubbleRunningScale), pill), `bubble ${index} of ${count} grown over the pill`).toBe(false);
         });
-        // The first row as it always was: centred over the pill, level.
-        const row = frames.slice(0, capacity);
-        const first = row[0];
-        const last = row.at(-1);
-        if (first && last) {
-          expect(Math.abs((first.x + maxX(last)) / 2 - midX(pill)), `row not centred over the pill (${count})`).toBeLessThan(0.001);
-          for (const frame of row) expect(frame.y).toBe(first.y);
-        }
-        if (count === most) {
-          const over = frames.filter((frame) => maxY(frame) <= pill.y).length;
-          const beside = frames.filter((frame) => frame.y < maxY(pill) && maxY(frame) > pill.y).length;
-          expect([over, beside, count - over - beside], `with every bubble (${count})`).toEqual(underFits ? [5, 2, 4] : [9, 2, 0]);
-        }
+        // The first few centred on the pill.
+        const first = frames[0];
+        const lastVisible = frames[Math.min(count, visible) - 1];
+        if (count >= visible && first && lastVisible) expect((first.x + maxX(lastVisible)) / 2, `row not centred on the pill (${count})`).toBeCloseTo(midX(pill));
       }
     }
-    // Some went under the pill when they fit: the tip went under them.
-    expect(under > 0).toBe(underFits);
+  });
+
+  /** Neighbouring bubbles both running (an app's tool and the answer), each grown, stay apart; at rest
+   * a bubble is smaller than the pill (owner, 2026-09-28). */
+  test("running neighbours don't touch", () => {
+    const pill = rect(100, 100, 120, config.listeningPillHeight);
+    const [first, second] = bubbleRow(pill, 2, true).map((centre) => grownBubble(framed(centre, { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter }), config.agentBubbleRunningScale));
+    if (!first || !second) throw new Error("no row");
+    expect(second.x - maxX(first)).toBeGreaterThan(0);
+    expect(config.agentBubbleDiameter).toBeLessThan(config.pillHeight);
+  });
+
+  /** The first few bubbles show in full, the next ones less and less, fading away to the right, and
+   * none after them. */
+  test("the row fades away to the right", () => {
+    const visible = config.agentBubbleRowVisibleCount;
+    const showing = visible + config.agentBubbleRowFadeCount;
+    const opacities = Array.from({ length: showing + 3 }, (_, index) => bubbleRowOpacity(index));
+    expect(opacities.slice(0, visible)).toEqual(Array<number>(visible).fill(1));
+    for (let index = visible; index < showing; index += 1) {
+      expect(opacities[index], `bubble ${index}`).toBeGreaterThan(0);
+      expect(opacities[index], `bubble ${index}`).toBeLessThan(opacities[index - 1] ?? 0);
+    }
+    expect(opacities.slice(showing)).toEqual([0, 0, 0]);
   });
 
   /** Bubbles go under the pill only when it sits below the caret's line with room under it for their
@@ -206,8 +218,8 @@ describe("overlay geometry", () => {
     const shadow = config.tipShadowRadius + config.tipShadowOffsetY;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
-      for (let count = 0; count <= agentTools.length - 1 + connectors.length; count += 1) {
-        const bubbles = bubbleCentres(pill, Array<Size>(count).fill(bubble), false).map((centre) => framed(centre, bubble));
+      for (let count = 0; count <= config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount; count += 1) {
+        const bubbles = bubbleRow(pill, count, false).map((centre) => framed(centre, bubble));
         const tipFrame = framed(hintCentreOver(pill, bubbles, tip), tip);
         expect(maxY(tipFrame), `not over the pill (${count} bubbles)`).toBeLessThanOrEqual(pill.y);
         expect(Math.abs(midX(tipFrame) - midX(pill))).toBeLessThan(0.001);
@@ -217,10 +229,10 @@ describe("overlay geometry", () => {
     }
   });
 
-  /** A bubble grows from its bottom edge, as the page scales it (`transform-origin: bottom center`):
-   * same bottom and centre, `scale` times the size. */
-  test("a grown bubble keeps its bottom edge and centre", () => {
-    expect(grownBubble(rect(100, 50, 40, 40), 1.5)).toEqual(rect(90, 30, 60, 60));
+  /** A bubble grows about its centre, as the page scales it (`transform-origin: center`): same centre,
+   * `scale` times the size. */
+  test("a grown bubble keeps its centre", () => {
+    expect(grownBubble(rect(100, 50, 40, 40), 1.5)).toEqual(rect(90, 40, 60, 60));
     expect(grownBubble(rect(100, 50, 40, 40), 1)).toEqual(rect(100, 50, 40, 40));
   });
 
@@ -233,28 +245,24 @@ describe("overlay geometry", () => {
     const bubble: Size = { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter };
     const tooltip: Size = { width: config.bubbleTooltipMaxWidth, height: 130 };
     const pill = rect(midX(area) - 60, (area.height - config.pillHeight) / 2, 120, config.listeningPillHeight);
-    const frames = bubbleCentres(pill, Array<Size>(agentTools.length - 1 + connectors.length).fill(bubble), underFits).map((centre) => framed(centre, bubble));
-    let over = 0;
-    let under = 0;
+    const frames = bubbleRow(pill, config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount, underFits).map((centre) => framed(centre, bubble));
     for (const scale of [config.agentBubbleHoverScale, config.agentBubbleRunningScale]) {
       for (const [index, frame] of frames.entries()) {
         const grown = grownBubble(frame, scale);
         const tooltipFrame = framed(bubbleTooltipCentre(grown, tooltip, config.overlayCanvasSize), tooltip);
         const roomOver = grown.y - config.bubbleTooltipGap - tooltip.height >= 0;
         if (roomOver) {
-          over += 1;
           expect(maxY(tooltipFrame), `bubble ${index} at ${scale}`).toBeCloseTo(grown.y - config.bubbleTooltipGap);
         } else {
-          under += 1;
           expect(tooltipFrame.y, `bubble ${index} at ${scale}`).toBeCloseTo(maxY(grown) + config.bubbleTooltipGap);
         }
         expect(intersects(tooltipFrame, grown), `bubble ${index} at ${scale} covered`).toBe(false);
         expect(contains(area, tooltipFrame), `bubble ${index} at ${scale}: tooltip outside the canvas`).toBe(true);
-        expect(Math.abs(midX(tooltipFrame) - midX(grown)), `bubble ${index} at ${scale} off centre`).toBeLessThan(0.001);
+        // Centred on it, unless that would leave the canvas.
+        const centre = Math.min(Math.max(midX(grown), tooltip.width / 2), area.width - tooltip.width / 2);
+        expect(Math.abs(midX(tooltipFrame) - centre), `bubble ${index} at ${scale} off centre`).toBeLessThan(0.001);
       }
     }
-    // Both were met: over a bubble with room, and under one without (a row near the canvas's top).
-    expect([over > 0, under > 0]).toEqual([true, true]);
   });
 
   /** A bubble nearer an edge of the canvas than half its tooltip's width gets the tooltip moved in to
@@ -289,56 +297,86 @@ describe("overlay geometry", () => {
 
 describe("the chat window's place", () => {
   const margin = config.chatShadowMargin;
+  const row = config.agentBubbleGap + config.agentBubbleDiameter;
+  const tallest = { maxHeight: config.chatMaxHeight };
 
-  /** The chat itself: the overlay window's frame inside its shadow margin. */
-  function content(frame: Rect): Rect {
-    return rect(frame.x + margin, frame.y + margin, frame.width - 2 * margin, frame.height - 2 * margin);
+  /** The chat itself in the overlay window's frame `frame`, `height` tall, over the pill and its
+   * bubbles or under them (`below`). */
+  function content(frame: Rect, height: number, below: boolean): Rect {
+    const y = below ? maxY(frame) - margin - height : frame.y + margin;
+    return rect(frame.x + margin, y, frame.width - 2 * margin, height);
   }
 
-  /** Below the caret's line when there is room for the tallest window, its top edge where the pill's
-   * was; centred on the caret. */
-  test("the chat window opens below the caret", () => {
-    const caret = rect(500, 180, 1, 20);
-
-    const frame = chatFrame(caret, 120, display);
-
-    expect(chatOpensUpward(caret, display)).toBe(false);
-    expect(content(frame).y).toBe(maxY(caret) + config.overlayCaretGap);
-    expect(frame.height).toBe(120 + 2 * margin);
-    expect(frame.width).toBe(config.chatWidth + 2 * margin);
-    expect(midX(frame)).toBe(midX(caret));
+  /** The pill stays where the overlay placed it for the caret: its top edge's centre. */
+  test("the pill is where the overlay put it", () => {
+    for (const caret of [rect(500, 180, 1, 20), rect(500, 780, 1, 20), rect(2, 180, 1, 20)]) {
+      const origin = overlayOrigin(caret, config.overlayCanvasSize, config.pillHeight, display);
+      expect(pillPosition(caret, display)).toEqual({ x: origin.x + config.overlayCanvasSize.width / 2, y: origin.y + (config.overlayCanvasSize.height - config.pillHeight) / 2 });
+    }
   });
 
-  /** Too near the bottom for the tallest window, it opens upward, its bottom edge just above the
-   * caret's line, so a growing conversation never moves it off the line; exactly enough room below
-   * keeps it there. */
-  test("the chat window opens above a caret near the bottom", () => {
-    const caret = rect(500, 680, 1, 20);
+  /** Over the pill and its bubbles, `chatPillGap` clear of them, as it grows; the window's bottom edge
+   * (and so the pill in it) stays put. Over the bubbles too when they go over the pill. */
+  test.each([true, false])("the chat window opens over the pill, which stays put (bubbles under: %s)", (bubblesUnder) => {
+    const pill = { x: 500, y: 500 };
+    const top = bubblesUnder ? pill.y : pill.y - row;
+    const bottoms = new Set<number>();
+    for (const height of [40, 120, config.chatMaxHeight]) {
+      const frame = chatWindowFrame(pill, height, display, { below: false, ...tallest }, bubblesUnder);
+      expect(maxY(content(frame, height, false)), `${height}`).toBe(top - config.chatPillGap);
+      expect(frame.height).toBe(2 * margin + height + config.chatPillGap + config.chatStripHeight);
+      expect(frame.width).toBe(config.chatWidth + 2 * margin);
+      expect(midX(frame)).toBe(pill.x);
+      bottoms.add(maxY(frame));
+    }
+    expect([...bottoms]).toEqual([top + config.chatStripHeight + margin]);
+  });
 
-    const frame = chatFrame(caret, 120, display);
-
-    expect(chatOpensUpward(caret, display)).toBe(true);
-    expect(maxY(content(frame))).toBe(caret.y - config.overlayCaretGap);
-    const lowest = rect(500, maxY(display) - config.chatMaxHeight - config.overlayCaretGap - 20, 1, 20);
-    expect(chatOpensUpward(lowest, display)).toBe(false);
-    expect(chatOpensUpward({ ...lowest, y: lowest.y + 1 }, display)).toBe(true);
+  /** Under the pill and its bubbles when there is no room over them for the tallest window, the
+   * window's top edge staying put as it grows; exactly enough room keeps it over them. */
+  test.each([true, false])("the chat window opens under the pill without room over it (bubbles under: %s)", (bubblesUnder) => {
+    const top = bubblesUnder ? 0 : row;
+    const lowest = display.y + config.chatPillGap + config.chatMaxHeight + top;
+    expect(chatSide(lowest, bubblesUnder, display)).toEqual({ below: false, ...tallest });
+    expect(chatSide(lowest - 1, bubblesUnder, display)).toEqual({ below: true, ...tallest });
+    const pill = { x: 500, y: 40 + top };
+    for (const height of [40, config.chatMaxHeight]) {
+      const frame = chatWindowFrame(pill, height, display, { below: true, ...tallest }, bubblesUnder);
+      expect(frame.y).toBe(40 - margin);
+      expect(content(frame, height, true).y).toBe(40 + config.chatStripHeight + config.chatPillGap);
+    }
   });
 
   /** A long conversation scrolls inside the window rather than growing it past its maximum height. */
   test("the chat window is at most its maximum height", () => {
-    expect(chatFrame(rect(500, 180, 1, 20), 5_000, display).height).toBe(config.chatMaxHeight + 2 * margin);
+    const over = { below: false, ...tallest };
+    expect(chatWindowFrame({ x: 500, y: 500 }, 5_000, display, over, true).height).toBe(chatWindowFrame({ x: 500, y: 500 }, config.chatMaxHeight, display, over, true).height);
   });
 
-  /** A caret at a screen edge keeps the chat on screen; only its shadow margin may spill. */
-  test.each([2, 998])("the chat window stays on screen with the caret at x %d", (x) => {
-    expect(contains(display, content(chatFrame(rect(x, 180, 1, 20), 120, display)))).toBe(true);
+  /** On a screen too short for the tallest chat on either side of the pill, it goes on the side with
+   * more room and grows no taller than that room, scrolling instead, so it stays on screen whole: its
+   * newest lines and a question's buttons are never off the bottom. */
+  test.each([true, false])("the chat window stays on a short screen, wherever the pill is (bubbles under: %s)", (bubblesUnder) => {
+    const short: Rect = { x: 0, y: 25, width: 1000, height: 540 };
+    const tops = new Set<boolean>();
+    for (let pillTop = short.y + 60; pillTop <= maxY(short) - 120; pillTop += 20) {
+      const side = chatSide(pillTop, bubblesUnder, short);
+      tops.add(side.below);
+      expect(side.maxHeight, `${pillTop}`).toBeLessThanOrEqual(config.chatMaxHeight);
+      const frame = chatWindowFrame({ x: 500, y: pillTop }, 5_000, short, side, bubblesUnder);
+      const chat = content(frame, side.maxHeight, side.below);
+      expect(contains(short, chat), `${pillTop}: ${JSON.stringify(chat)}`).toBe(true);
+    }
+    // Both sides are used over the sweep, and the room the pill leaves is used, not wasted.
+    expect([...tops].sort()).toEqual([false, true]);
+    const middle = chatSide(short.y + short.height / 2, bubblesUnder, short);
+    expect(middle.maxHeight).toBeGreaterThan(config.chatMaxHeight / 2);
   });
 
-  /** With no caret the window opens at the pointer, which can be in the menu bar, above the work
-   * area: the chat still starts inside it. */
-  test("the chat window at the pointer in the menu bar stays on screen", () => {
-    const workArea = rect(0, 25, 1000, 775);
-    expect(contains(workArea, content(chatFrame(rect(500, 10, 1, 1), 120, workArea)))).toBe(true);
+  /** A pill at a screen edge keeps the chat on screen; only its shadow margin may spill. */
+  test.each([2, 998])("the chat window stays on screen with the pill at x %d", (x) => {
+    const frame = chatWindowFrame({ x, y: 500 }, 120, display, { below: false, ...tallest }, true);
+    expect(contains(display, content(frame, 120, false))).toBe(true);
   });
 });
 

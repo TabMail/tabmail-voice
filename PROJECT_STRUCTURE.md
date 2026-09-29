@@ -91,11 +91,12 @@ recording and transcription, with the tool bubbles around the pill (ADR-DESK-033
 Compose when not, plus Thunderbird when an email app is set up, and Answer; each only while switched on
 in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request: `DesktopAgent.tool` picks among the tools
 offered (asking the backend's `system_prompt_desktop_agent`, with them in `available_tools`, unless
-only one is on), the phase becomes `running(tool)` (that bubble's border circles), and
-`DesktopAgent.write` has the tool's prompt write the text. Edit pastes over the selection; Compose
-pastes at the caret; Thunderbird sends it to TabMail's chat; Answer opens a chat window where the pill
-was, and while it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X
-or 30 untouched seconds close it. Answer's prompt runs the backend's tool loop (`DesktopAgent.answer`,
+only one is on), the phase becomes `running(tool)` (that bubble moves to the front of the row under
+the pill and its border circles, as the pill's does), and `DesktopAgent.write` has the tool's prompt
+write the text. Edit pastes over the selection; Compose pastes at the caret; Thunderbird sends it to
+TabMail's chat; Answer opens a chat window over the pill, which rests there (ADR-DESK-035), and while
+it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X or 30 untouched
+seconds close it. Answer's prompt runs the backend's tool loop (`DesktopAgent.answer`,
 ADR-DESK-023): the backend's date tools run there, and tools that run on this computer (`LoopTool`)
 run in the app, shown in the chat window, asking first before sending or creating. A failure shows a
 message and pastes nothing. No agent call has a deadline.

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import type { AgentChat } from "../core/agent/agentChat.js";
+import type { BubbleKey } from "../core/agent/bubbleOrder.js";
 import { type Connector, isConnector } from "../core/agent/connectors.js";
 import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictationController.js";
@@ -25,19 +26,34 @@ export interface OverlayState {
   /** The overlay opened above the caret's line, so a tip that stays up goes over the pill
    * (`tipGoesAbove`). */
   opensUpward: boolean;
-  /** A row of agent mode's bubbles fits under the pill (`bubblesFitUnder`); else later rows go over
-   * the first. */
+  /** Agent mode's row of bubbles fits under the pill (`bubblesFitUnder`); else it goes over it. */
   bubblesFitUnder: boolean;
   hotkey: DictationHotkey;
   tools: AgentTool[];
   /** The apps whose bubbles show beside the tools' (`DictationController.connectors`). */
   connectors: Connector[];
+  /** The bubbles whose tools ran, the most recent first, which the row is ordered by (`bubbleOrder`). */
+  recentBubbles: BubbleKey[];
+  /** The apps whose tools run now, whose bubbles run too. */
+  runningConnectors: Connector[];
   /** The email app's icon, for the Thunderbird bubble; null without one. */
   emailAppIcon: string | null;
-  /** The chat window's conversation while it is open, shown in place of the pill. */
+  /** The chat window's conversation while it is open, over the pill. */
   chat: AgentChat | null;
-  /** The chat window opened above the caret's line: it grows upward, its bottom edge fixed. */
-  chatOpensUpward: boolean;
+  /** Where the chat window shows while it is open (`chatWindowFrame`). */
+  chatPlacement: ChatPlacement | null;
+}
+
+export interface ChatPlacement {
+  /** Under the pill and its bubbles (`chatSide`), or over them. */
+  below: boolean;
+  /** How tall the chat grows before it scrolls: at most `chatMaxHeight`, less where the screen has less
+   * room (`chatSide`). */
+  maxHeight: number;
+  /** The bubbles are under the pill, or over it (`bubblesFitUnder`, where the pill opened). */
+  bubblesUnder: boolean;
+  /** The pill's centre, across the window. */
+  pillX: number;
 }
 
 export interface EmailAppChoice {

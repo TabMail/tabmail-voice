@@ -93,6 +93,39 @@ describe("liveTransport", () => {
   });
 
   /** The timeout is for silence: a stream that keeps sending runs past it. */
+  /** A streamed reply reaches `onChunk` a piece at a time as it arrives, before the whole body is
+   * returned (the server waits to hear the first piece was heard); a character split across two
+   * pieces arrives whole, and the pieces add up to the body. */
+  test("a streamed reply's pieces are heard as they arrive", async () => {
+    let firstHeard: () => void = () => {};
+    const heardFirst = new Promise<void>((resolve) => (firstHeard = resolve));
+    const url = await serve(async (response) => {
+      response.writeHead(200);
+      response.write("event: tool_started\n\n");
+      await Promise.race([heardFirst, sleep(2_000)]);
+      const accent = Buffer.from("é");
+      response.write(accent.subarray(0, 1));
+      await sleep(50);
+      response.write(accent.subarray(1));
+      response.end(" done");
+    });
+    const heard: string[] = [];
+
+    const response = await liveTransport({
+      ...post(url),
+      onChunk: (text) => {
+        heard.push(text);
+        firstHeard();
+      },
+    });
+
+    // Alone: the server sent nothing more until it was heard.
+    expect(heard[0]).toBe("event: tool_started\n\n");
+    expect(heard.join("")).toBe(response.body);
+    expect(response.body).toBe("event: tool_started\n\né done");
+    expect(heard.every((piece) => piece !== "" && !piece.includes("\uFFFD"))).toBe(true);
+  });
+
   test("a stream that keeps sending outlasts the timeout", async () => {
     const url = await serve(async (response) => {
       response.writeHead(200);

@@ -6,12 +6,13 @@
 
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { alphabetical } from "../../src/core/agent/bubbleOrder.js";
 import { connectorInfo } from "../../src/core/agent/connectors.js";
 import { toolImplementations } from "../../src/core/agent/tools.js";
 import * as config from "../../src/core/config.js";
 import type { DictationTip } from "../../src/core/tips.js";
 import type { AgentChat } from "../../src/core/agent/agentChat.js";
-import type { Command, OverlayState } from "../../src/shared/ipc.js";
+import type { ChatPlacement, Command, OverlayState } from "../../src/shared/ipc.js";
 
 /** Each React root the page creates, to unmount as the window closes. */
 const mounted = vi.hoisted(() => ({ roots: [] as { unmount(): void }[] }));
@@ -49,7 +50,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, chatOpensUpward: false };
+const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent" };
@@ -164,34 +165,78 @@ describe("overlay page", () => {
     for (const top of bubbleTops) expect(tipFrame?.bottom).toBeLessThanOrEqual(top);
   });
 
-  /** Agent mode draws a bubble for each tool and each app Answer reaches, the tools' first; with room
-   * under the pill some go under it and a tip goes under them, without it none goes under the pill.
-   * While a tool runs every app's bubble fades, as the idle tools' do, and none of them runs. */
-  test.each([true, false])("a bubble for each tool and app, under the pill only when there is room (%s)", async (bubblesFitUnder) => {
+  /** Agent mode draws a bubble for each tool and each app Answer reaches in one row, alphabetically
+   * until one runs: under the pill with room there, the tip under them, and over it without. The first
+   * few show in full, the next fade away to the right, and the rest don't show. While a tool runs the
+   * others fade, as they would, and only it circles. */
+  test.each([true, false])("a row of bubbles for the tools and apps, under the pill only when there is room (%s)", async (bubblesFitUnder) => {
     const page = await overlayPage();
     const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
     const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
     await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "switchMode" });
 
-    const bubbles = [...document.querySelectorAll<HTMLElement>(".bubble")];
-    expect(bubbles.map((bubble) => bubble.getAttribute("aria-label"))).toEqual([...tools, ...apps]);
-    // Each in its own place: no app's bubble drawn over a tool's.
-    const places = bubbles.map((bubble) => {
-      const style = (bubble.closest(".centred") as HTMLElement).style;
-      return `${style.left},${style.top}`;
-    });
-    expect(new Set(places).size).toBe(bubbles.length);
-    const tops = bubbles.map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    const showing = config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount;
+    const labels = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.getAttribute("aria-label"));
+    const opacities = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat(bubble.style.opacity));
+    expect(labels()).toEqual(alphabetical([...tools, ...apps]).slice(0, showing));
+    expect(labels()).toEqual(["answer", "calendar", "compose", "contacts"]);
+    const lefts = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.left));
+    expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
+    expect(opacities().slice(0, config.agentBubbleRowVisibleCount)).toEqual([1, 1, 1]);
+    expect(opacities().at(-1)).toBeGreaterThan(0);
+    expect(opacities().at(-1)).toBeLessThan(1);
+    const tops = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
     const pill = page.pillFrame();
-    const under = tops.filter((top) => top >= pill.bottom);
-    expect(under.length > 0).toBe(bubblesFitUnder);
+    for (const top of tops) {
+      if (bubblesFitUnder) expect(top).toBeGreaterThanOrEqual(pill.bottom);
+      else expect(top + config.agentBubbleDiameter).toBeLessThanOrEqual(pill.top);
+    }
     const tipFrame = page.tipFrame();
-    for (const top of under) expect(tipFrame?.top).toBeGreaterThanOrEqual(top + config.agentBubbleDiameter);
+    if (bubblesFitUnder) for (const top of tops) expect(tipFrame?.top).toBeGreaterThanOrEqual(top + config.agentBubbleDiameter);
 
-    await page.show({ ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent", tools, connectors: apps, bubblesFitUnder });
-    const opacities = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.style.opacity);
-    expect(opacities).toEqual([...tools.map((tool) => (tool === "answer" ? "1" : String(config.agentBubbleIdleOpacity))), ...apps.map(() => String(config.agentBubbleIdleOpacity))]);
+    // Compose running, having just been chosen: it moves to the front, circling, the rest fading.
+    await page.show({ ...listening, phase: { kind: "running", tool: "compose" }, mode: "agent", tools, connectors: apps, bubblesFitUnder, recentBubbles: ["compose"] });
+    expect(labels()).toEqual(["compose", "answer", "calendar", "contacts"]);
+    expect(opacities()[0]).toBe(1);
+    expect(opacities().slice(1, config.agentBubbleRowVisibleCount)).toEqual([config.agentBubbleIdleOpacity, config.agentBubbleIdleOpacity]);
     expect(document.querySelectorAll(".bubble .spinning")).toHaveLength(1);
+    expect(document.querySelector('.bubble[aria-label="compose"] .spinning')).not.toBeNull();
+  });
+
+  /** The row is a history of the tools that ran, the latest on the left: Answer's apps as their tools
+   * run too, each circling while it does, however many run at once. */
+  test("the latest tools to run lead the row, and every running app circles", async () => {
+    const page = await overlayPage();
+    const state: OverlayState = { ...running, tools: ["compose", "answer"], connectors: ["calendar", "web", "notes"] };
+    await page.show({ ...state, recentBubbles: ["web", "calendar", "answer", "notes"], runningConnectors: ["web", "calendar"] });
+
+    const labels = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.getAttribute("aria-label"));
+    expect(labels).toEqual(["web", "calendar", "answer", "notes"]);
+    const circling = [...document.querySelectorAll(".bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
+    expect(circling).toEqual(["web", "calendar", "answer"]);
+    // Neither running app fades; the idle ones do.
+    const opacity = (label: string) => parseFloat(document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`)?.style.opacity ?? "");
+    expect([opacity("web"), opacity("calendar"), opacity("notes")]).toEqual([1, 1, config.agentBubbleIdleOpacity * (1 - 1 / (config.agentBubbleRowFadeCount + 1))]);
+  });
+
+  /** In agent mode the pill glows as neon, a sign of the mode, its bubbles not; working, a gradient arc
+   * circles its border (owner, 2026-09-28). Dictating, it has the plain glow and nothing circles. */
+  test("the agent pill glows as neon, and circles while it works", async () => {
+    const page = await overlayPage();
+    const pill = () => document.querySelector<HTMLElement>(".pill");
+    await page.show(listening);
+    const plain = pill()?.style.boxShadow ?? "";
+    expect(document.querySelector(".pill .spinning")).toBeNull();
+
+    await page.show({ ...listening, mode: "agent", tools: ["compose"] });
+    const neon = pill()?.style.boxShadow ?? "";
+    expect(neon).not.toBe(plain);
+    expect(neon).toContain(`${config.agentPillGlowOuterRadius}px`);
+    expect(document.querySelector<HTMLElement>(".bubble")?.style.boxShadow).toBe(plain);
+    expect(document.querySelector(".pill .spinning")).toBeNull();
+
+    await page.show({ ...running, tools: ["answer"] });
+    expect(document.querySelector(".pill .spinning")).not.toBeNull();
   });
 
   /** The Thunderbird bubble shows the email app's own icon once main has it, and its tool icon until
@@ -230,7 +275,8 @@ describe("overlay page", () => {
     const said = () => [...(tooltip()?.children ?? [])].map((line) => line.textContent);
     // The tooltip's bottom, and the top of `label`'s bubble grown to `scale`, which it clears.
     const tooltipBottom = () => parseFloat(tooltip()?.style.top ?? "") + tooltipSize.height / 2;
-    const grownTop = (label: string, scale: number) => parseFloat(bubble(label).closest<HTMLElement>(".centred")?.style.top ?? "") + config.agentBubbleDiameter / 2 - config.agentBubbleDiameter * scale;
+    // Grown about its centre, where its `.centred` wrapper is placed.
+    const grownTop = (label: string, scale: number) => parseFloat(bubble(label).closest<HTMLElement>(".centred")?.style.top ?? "") - (config.agentBubbleDiameter * scale) / 2;
     expect(tooltip()).toBeNull();
 
     await pointer("compose", "pointerover");
@@ -317,33 +363,23 @@ describe("overlay page", () => {
     expect(document.querySelector<HTMLElement>('.bubble[aria-label="compose"]')?.style.transform).toBe("scale(1)");
   });
 
-  /** A bubble beside the pill is nearer the canvas's edge than half the widest tooltip: its tooltip
-   * moves in to stay whole. */
-  test("a side bubble's tooltip stays inside the canvas", async () => {
+  /** Under the chat window, with the pill off the window's centre, the row's last bubble is nearer the
+   * window's edge than half the widest tooltip: its tooltip moves in to stay inside the window. */
+  test("a tooltip under the chat window stays inside it", async () => {
     const page = await overlayPage();
-    const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
-    const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
-    await page.show({ ...listening, mode: "agent", tools, connectors: apps });
-    // The first two after the row of five over the pill: the left and the right one beside it.
-    for (const label of ["contacts", "files"]) {
-      const bubble = document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`) as HTMLElement;
-      await act(async () => {
-        bubble.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-      const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
-      const centre = parseFloat(tooltip?.style.left ?? "");
-      // Over this bubble, beside the pill, not over the row above it.
-      const grownTop = parseFloat((bubble.closest(".centred") as HTMLElement).style.top) + config.agentBubbleDiameter / 2 - config.agentBubbleDiameter * config.agentBubbleHoverScale;
-      expect(parseFloat(tooltip?.style.top ?? "") + tooltipSize.height / 2, label).toBeCloseTo(grownTop - config.bubbleTooltipGap);
-      expect(centre - tooltipSize.width / 2, label).toBeGreaterThanOrEqual(0);
-      expect(centre + tooltipSize.width / 2, label).toBeLessThanOrEqual(config.overlayCanvasSize.width);
-      expect(Math.abs(centre - parseFloat((bubble.closest(".centred") as HTMLElement).style.left)), label).toBeGreaterThan(1);
-      await act(async () => {
-        bubble.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: null }));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-    }
+    const tools: OverlayState["tools"] = ["compose", "answer"];
+    const apps: OverlayState["connectors"] = ["calendar", "contacts", "email", "files"];
+    const width = config.chatWidth + 2 * config.chatShadowMargin;
+    await page.show({ ...idle, mode: "agent", tools, connectors: apps, chat: { turns: [], pendingRequest: null, closesAt: null, touched: true, activity: null, confirmation: null, confirmationExpiresAt: null }, chatPlacement: { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: width / 2 + 40 } });
+    const bubble = [...document.querySelectorAll<HTMLElement>(".bubble")].at(-1) as HTMLElement;
+    await act(async () => {
+      bubble.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: null }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
+    const centre = parseFloat(tooltip?.style.left ?? "");
+    expect(centre + tooltipSize.width / 2).toBeLessThanOrEqual(width);
+    expect(Math.abs(centre - parseFloat((bubble.closest(".centred") as HTMLElement).style.left))).toBeGreaterThan(1);
   });
 
   /** In dictation mode, and in agent mode before the tools are known, no app's bubble shows. */
@@ -457,6 +493,8 @@ describe("overlay page", () => {
 });
 
 describe("the chat window", () => {
+  /** Over the pill, its bubbles under it, the pill centred. */
+  const above: ChatPlacement = { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: (config.chatWidth + 2 * config.chatShadowMargin) / 2 };
   /** An answer, then an Edit follow-up, with a third under way; untouched while it times out. */
   function chat(closesAt: number | null, touched = closesAt === null): AgentChat {
     return {
@@ -475,21 +513,72 @@ describe("the chat window", () => {
 
   const texts = (selector: string) => [...document.querySelectorAll(selector)].map((element) => element.textContent);
 
-  /** Each request and its reply, a request under way, and a follow-up's pill below them; an Edit reply
-   * carries its caption, the answer none. The pill's own overlay is gone meanwhile. */
-  test("it shows the conversation and a follow-up's pill", async () => {
+  /** Each request and its reply, a request under way with the answer still thinking, and the pill
+   * under them all, resting while nothing runs and listening for a follow-up; an Edit reply carries
+   * its caption, the answer none. */
+  test("it shows the conversation over the pill", async () => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(Date.now() + config.chatTimeout) });
 
     expect(texts(".chat-request")).toEqual(["When do we ship", "Say it shorter", "And the launch party"]);
     expect(texts(".chat-text")).toEqual(["We ship on Friday, see the plan", "Friday"]);
-    expect(texts(".chat-caption")).toEqual(["Replaced the selection"]);
+    expect(texts(".chat-caption")).toEqual(["Replaced the selection", config.chatThinkingLabel]);
     expect(document.querySelector(".chat-text strong")?.textContent).toBe("Friday");
-    expect(document.querySelector(".chat-status")).toBeNull();
-    expect(document.querySelector(".canvas")).toBeNull();
+    // The pill, resting: a circle with a fainter sparkle.
+    const pill = document.querySelector<HTMLElement>(".chat-canvas .pill");
+    expect(pill).not.toBeNull();
+    expect(document.querySelector<HTMLElement>(".chat-canvas .pill .centre-content")?.style.opacity).toBe(String(config.agentRestingSymbolOpacity));
+    expect(document.querySelector(".swirl")).toBeNull();
 
-    await page.show({ ...listening, chat: chat(null) });
-    expect(document.querySelector(".chat-status .pill")).not.toBeNull();
+    await page.show({ ...listening, chatPlacement: above, chat: chat(null) });
+    expect(document.querySelector(".chat-canvas .pill .centre-content")).toBeNull();
+    expect(document.querySelector(".chat-canvas .pill")).not.toBeNull();
+  });
+
+  /** The request as Thunderbird's chat shows one: a faint tint and hairline border, at most most of
+   * the window's width. */
+  test("a request shows as Thunderbird's chat shows one", async () => {
+    const page = await overlayPage();
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+
+    const request = document.querySelector<HTMLElement>(".chat-request");
+    expect(request?.style.maxWidth).toBe(`${config.chatWidth * config.chatRequestMaxWidthFraction}px`);
+    expect(request?.style.borderRadius).toBe(`${config.chatBubbleCornerRadius}px`);
+    expect(request?.style.border).toContain("solid");
+  });
+
+  /** A reply is revealed a line or list item at a time, `chatRevealStepInterval` apart, each fading in:
+   * its paragraphs' lines, its lists' items (numbered from where the list starts) and its headings. */
+  test("a reply is revealed a line or list item at a time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const page = await overlayPage();
+      const reply = "Two options:\nboth this week\n\n3. Friday\n4. Saturday, after\n   the launch\n\n## Then\nShip it";
+      const show = page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "When", tool: "answer", reply }], pendingRequest: null } });
+      await vi.advanceTimersByTimeAsync(0);
+      await show;
+      const revealed = () => texts(".chat-text .reveal");
+      // A step at a time, each revealed before the next is timed.
+      const step = async (count: number) => {
+        for (let index = 0; index < count; index += 1) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(config.chatRevealStepInterval);
+          });
+        }
+      };
+      expect(revealed()).toEqual(["Two options:"]);
+
+      await step(1);
+      expect(revealed()).toEqual(["Two options:", "both this week"]);
+      await step(4);
+      expect(revealed()).toEqual(["Two options:", "both this week", "Friday", "Saturday, after\nthe launch", "Then", "Ship it"]);
+      expect(document.querySelector(".chat-text ol")?.getAttribute("start")).toBe("3");
+      expect(texts(".chat-text ol li")).toEqual(["Friday", "Saturday, after\nthe launch"]);
+      expect(texts(".chat-heading")).toEqual(["Then"]);
+      expect(document.querySelector<HTMLElement>(".chat-text .reveal")?.style.animationDuration).toBe(`${config.chatRevealFadeDuration}ms`);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   /** A reply's inline Markdown shows as it reads: code, bold, italics, struck-out text and a link,
@@ -497,7 +586,7 @@ describe("the chat window", () => {
   test("a reply's inline Markdown shows as it reads", async () => {
     const page = await overlayPage();
     const reply = "Run `npm test`, **now**, *please*, ~~not~~ [the plan](https://example.com/plan)";
-    await page.show({ ...idle, chat: { ...chat(null), turns: [{ id: 0, request: "What next", tool: "answer", reply }], pendingRequest: null } });
+    await page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), turns: [{ id: 0, request: "What next", tool: "answer", reply }], pendingRequest: null } });
 
     expect(texts(".chat-text")).toEqual(["Run npm test, now, please, not the plan"]);
     expect(texts(".chat-text code")).toEqual(["npm test"]);
@@ -507,47 +596,108 @@ describe("the chat window", () => {
     expect([...document.querySelectorAll(".chat-text a")].map((link) => [link.textContent, link.getAttribute("href")])).toEqual([["the plan", "https://example.com/plan"]]);
   });
 
-  /** A follow-up warming up shows the pill, not the swirl: the chat window is where it listens. */
+  /** A follow-up warming up shows the pill, not the swirl: the pill under the chat window is where it
+   * listens. */
   test("a follow-up warming up shows its pill", async () => {
     const page = await overlayPage();
-    await page.show({ ...warmingUp, chat: chat(null) });
+    await page.show({ ...warmingUp, chatPlacement: above, chat: chat(null) });
 
-    expect(document.querySelector(".chat-status .pill")).not.toBeNull();
+    expect(document.querySelector(".chat-canvas .pill")).not.toBeNull();
+    expect(document.querySelector(".swirl")).toBeNull();
   });
 
-  /** Opened upward, the window sits at the bottom of its overlay, by the caret, until the overlay
-   * fits it; downward, at the top. */
-  test.each([
-    [true, "flex-end"],
-    [false, "flex-start"],
-  ])("opened upward: %s, it sits at the %s", async (chatOpensUpward, justifyContent) => {
+  /** Over the pill, the chat sits above the strip along the window's bottom edge the pill and its
+   * bubbles take; under them, below the strip along its top edge. The pill is where the window says. */
+  test.each<[string, ChatPlacement]>([
+    ["over", above],
+    ["under", { below: true, maxHeight: 200, bubblesUnder: true, pillX: 150 }],
+  ])("it opens %s the pill, which stays where it was", async (_, chatPlacement) => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(null), chatOpensUpward });
+    await page.show({ ...idle, mode: "agent", tools: ["compose"], chat: chat(null), chatPlacement });
 
-    expect(document.querySelector<HTMLElement>(".chat-canvas")?.style.justifyContent).toBe(justifyContent);
+    const offset = `${config.chatShadowMargin + config.chatStripHeight + config.chatPillGap}px`;
+    const box = document.querySelector<HTMLElement>(".chat");
+    const layer = document.querySelector<HTMLElement>(".chat-canvas .layer");
+    expect(chatPlacement.below ? box?.style.top : box?.style.bottom).toBe(offset);
+    expect(chatPlacement.below ? layer?.style.top : layer?.style.bottom).toBe("0px");
+    expect(parseFloat(document.querySelector<HTMLElement>(".chat-canvas .pill-anchor")?.style.left ?? "")).toBe(chatPlacement.pillX);
+    // It grows no taller than the screen leaves it room for there, then scrolls.
+    expect(document.querySelector<HTMLElement>(".chat-scroll")?.style.maxHeight).toBe(`${chatPlacement.maxHeight}px`);
+    // The last request's bubbles stay under the pill.
+    expect(document.querySelectorAll(".chat-canvas .bubble")).toHaveLength(1);
+  });
+
+  /** A follow-up clears the tools until its screen read is done: meanwhile the last request's bubbles
+   * stay under the pill, rather than vanishing and coming back. */
+  test("a follow-up keeps the last request's bubbles until it has its own", async () => {
+    const page = await overlayPage();
+    const labels = () => [...document.querySelectorAll(".chat-canvas .bubble")].map((bubble) => bubble.getAttribute("aria-label"));
+    await page.show({ ...idle, mode: "agent", tools: ["compose", "answer"], chat: chat(null), chatPlacement: above });
+    expect(labels()).toEqual(["answer", "compose"]);
+
+    await page.show({ ...warmingUp, mode: "agent", tools: [], chat: chat(null), chatPlacement: above });
+    expect(labels()).toEqual(["answer", "compose"]);
+
+    await page.show({ ...warmingUp, mode: "agent", tools: ["edit"], chat: chat(null), chatPlacement: above });
+    expect(labels()).toEqual(["edit"]);
+  });
+
+  /** In the chat as out of it, the pill circles whenever the agent works (owner, 2026-09-28: "whenever
+   * thinking is being done or whenever a tool is being run"): its rim spins while the words and the
+   * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it
+   * around the agent's sparkle, as it circles the running tools' bubbles. At rest nothing circles. */
+  test("the pill circles whenever the agent works, and so do the running tools' bubbles", async () => {
+    const page = await overlayPage();
+    const pillCircles = () => document.querySelector(".chat-canvas .pill .spinning") !== null;
+    const circling = () => [...document.querySelectorAll(".chat-canvas .bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
+    const agent = { mode: "agent" as const, tools: ["answer" as const, "compose" as const], connectors: ["web" as const, "calendar" as const], chat: chat(null), chatPlacement: above };
+
+    await page.show({ ...idle, ...agent });
+    expect(pillCircles()).toBe(false);
+    expect(circling()).toEqual([]);
+
+    await page.show({ ...listening, ...agent, phase: { kind: "transcribing" } });
+    expect(pillCircles()).toBe(true);
+    expect(circling()).toEqual([]);
+
+    await page.show({ ...running, ...agent });
+    expect(pillCircles()).toBe(true);
+    expect(document.querySelector(".chat-canvas .pill .centre-content")).not.toBeNull();
+    expect(circling()).toEqual(["answer"]);
+
+    await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningConnectors: ["web"] });
+    expect(pillCircles()).toBe(true);
+    expect(circling()).toEqual(["web", "answer"]);
+
+    await page.show({ ...running, ...agent, runningConnectors: [], chat: { ...chat(null), confirmation: "Add “Launch party” to your calendar on Friday at 18:00?" } });
+    expect(pillCircles()).toBe(true);
+
+    await page.show({ ...idle, ...agent });
+    expect(pillCircles()).toBe(false);
+    expect(circling()).toEqual([]);
   });
 
   /** A new turn scrolls the conversation to it. */
   test("it scrolls to the newest turn", async () => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: { ...chat(null), pendingRequest: null } });
+    await page.show({ ...idle, chatPlacement: above, chat: { ...chat(null), pendingRequest: null } });
     const scroll = document.querySelector<HTMLElement>(".chat-scroll");
     if (!scroll) throw new Error("no .chat-scroll");
     Object.defineProperty(scroll, "scrollHeight", { configurable: true, value: 500 });
     scroll.scrollTop = 0;
 
     const longer = chat(null);
-    await page.show({ ...idle, chat: { ...longer, turns: [...longer.turns, { id: 2, request: "And the launch party", tool: "answer", reply: "Saturday" }], pendingRequest: null } });
+    await page.show({ ...idle, chatPlacement: above, chat: { ...longer, turns: [...longer.turns, { id: 2, request: "And the launch party", tool: "answer", reply: "Saturday" }], pendingRequest: null } });
 
     expect(scroll.scrollTop).toBe(500);
   });
 
-  /** A state that shows nothing new (a follow-up's level, a new copy of the same conversation, as
-   * each push brings) leaves the conversation where the user scrolled it; the follow-up's status
-   * changing, or its request joining, scrolls to it. */
+  /** A state that shows nothing new in the window (a follow-up's level, its pill's phase, a new copy
+   * of the same conversation, as each push brings) leaves the conversation where the user scrolled
+   * it; its request joining scrolls to it. */
   test("an update that shows nothing new leaves the scroll where the user put it", async () => {
     const page = await overlayPage();
-    const followUp: OverlayState = { ...listening, mode: "agent", chat: { ...chat(null), pendingRequest: null } };
+    const followUp: OverlayState = { ...listening, chatPlacement: above, mode: "agent", chat: { ...chat(null), pendingRequest: null } };
     await page.show(followUp);
     const scroll = document.querySelector<HTMLElement>(".chat-scroll");
     if (!scroll) throw new Error("no .chat-scroll");
@@ -560,14 +710,13 @@ describe("the chat window", () => {
 
     const transcribing: OverlayState = { ...followUp, phase: { kind: "transcribing" }, chat: structuredClone(followUp.chat) };
     await page.show(transcribing);
-    expect(scroll.scrollTop).toBe(500);
-    scroll.scrollTop = 120;
+    expect(scroll.scrollTop).toBe(120);
     await page.show({ ...transcribing, chat: { ...chat(null), pendingRequest: "And the launch party" } });
     expect(scroll.scrollTop).toBe(500);
 
     // A tool's question, then its progress, joining a full window each scroll to it on its own, so its
     // buttons show; the same question pushed again doesn't.
-    const loop: OverlayState = { ...running, chat: { ...chat(null), pendingRequest: "And the launch party" } };
+    const loop: OverlayState = { ...running, chatPlacement: above, chat: { ...chat(null), pendingRequest: "And the launch party" } };
     await page.show(loop);
     const shown = async (fields: Partial<AgentChat>, level = loop.level): Promise<number> => {
       scroll.scrollTop = 120;
@@ -586,13 +735,13 @@ describe("the chat window", () => {
    * touched. */
   test("the timeout bar shows until the window is touched", async () => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout / 2) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(Date.now() + config.chatTimeout / 2) });
 
     const bar = document.querySelector<HTMLElement>(".chat-timeout");
     expect(parseFloat(bar?.style.width ?? "")).toBeGreaterThan(40);
     expect(parseFloat(bar?.style.width ?? "")).toBeLessThanOrEqual(50);
 
-    await page.show({ ...idle, chat: chat(null) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
     expect(document.querySelector(".chat-timeout")).toBeNull();
   });
 
@@ -602,7 +751,7 @@ describe("the chat window", () => {
     vi.useFakeTimers({ toFake: ["Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] });
     try {
       const page = await overlayPage();
-      await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout) });
+      await page.show({ ...idle, chatPlacement: above, chat: chat(Date.now() + config.chatTimeout) });
       const width = () => parseFloat(document.querySelector<HTMLElement>(".chat-timeout")?.style.width ?? "");
 
       expect(width()).toBeCloseTo(100, 0);
@@ -611,7 +760,7 @@ describe("the chat window", () => {
       vi.advanceTimersByTime(config.chatTimeout);
       expect(width()).toBe(0);
 
-      await page.show({ ...idle, chat: chat(null) });
+      await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
       expect(document.querySelector(".chat-timeout")).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -623,7 +772,7 @@ describe("the chat window", () => {
    * nothing more is sent. */
   test.each(["pointerover", "pointermove", "pointerdown", "wheel"])("a %s keeps it open", async (type) => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(Date.now() + config.chatTimeout) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(Date.now() + config.chatTimeout) });
     const box = document.querySelector(".chat-scroll");
 
     await act(async () => {
@@ -631,7 +780,7 @@ describe("the chat window", () => {
     });
     expect(page.commands.filter((command) => command.type === "keepChatOpen")).toHaveLength(1);
 
-    await page.show({ ...idle, chat: chat(null) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
     await act(async () => {
       box?.dispatchEvent(new Event(type, { bubbles: true }));
     });
@@ -642,10 +791,12 @@ describe("the chat window", () => {
    * and nothing else about it shows. */
   test("it shows what a tool is doing while it runs", async () => {
     const page = await overlayPage();
-    await page.show({ ...running, chat: chat(null) });
+    await page.show({ ...running, chatPlacement: above, chat: chat(null) });
+    expect(document.querySelector(".chat-activity")?.textContent).toBe(config.chatThinkingLabel);
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), pendingRequest: null } });
     expect(document.querySelector(".chat-activity")).toBeNull();
 
-    await page.show({ ...running, chat: { ...chat(null), activity: "Checking your calendar" } });
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), activity: "Checking your calendar" } });
 
     expect(document.querySelector(".chat-activity")?.textContent).toBe("Checking your calendar");
     expect(document.querySelector(".chat-activity .chat-spinner.spinning")).not.toBeNull();
@@ -659,7 +810,7 @@ describe("the chat window", () => {
     ["Confirm", ".chat-confirm", true],
   ])("its question's %s button answers it", async (title, selector, confirmed) => {
     const page = await overlayPage();
-    await page.show({ ...running, chat: { ...chat(null), confirmation: "Add “Launch party” to your calendar on Friday at 18:00?" } });
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), confirmation: "Add “Launch party” to your calendar on Friday at 18:00?" } });
 
     expect(document.querySelector(".chat-confirmation .chat-text")?.textContent).toBe("Add “Launch party” to your calendar on Friday at 18:00?");
     expect(texts(".chat-confirmation button")).toEqual(["Cancel", "Confirm"]);
@@ -677,7 +828,7 @@ describe("the chat window", () => {
     try {
       const page = await overlayPage();
       const question = "Add “Launch party” to your calendar on Friday at 18:00?";
-      await page.show({ ...running, chat: { ...chat(null), confirmation: question, confirmationExpiresAt: Date.now() + config.chatConfirmationTimeout } });
+      await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), confirmation: question, confirmationExpiresAt: Date.now() + config.chatConfirmationTimeout } });
       const bars = () => [...document.querySelectorAll<HTMLElement>(".chat-timeout")];
       const width = () => parseFloat(bars()[0]?.style.width ?? "");
 
@@ -689,7 +840,7 @@ describe("the chat window", () => {
       vi.advanceTimersByTime(config.chatConfirmationTimeout);
       expect(width()).toBe(0);
 
-      await page.show({ ...running, chat: { ...chat(null), confirmation: question } });
+      await page.show({ ...running, chatPlacement: above, chat: { ...chat(null), confirmation: question } });
       expect(bars()).toHaveLength(0);
     } finally {
       vi.useRealTimers();
@@ -700,7 +851,7 @@ describe("the chat window", () => {
    * answer arrives. */
   test("a touch while a tool runs keeps it open", async () => {
     const page = await overlayPage();
-    await page.show({ ...running, chat: { ...chat(null, false), activity: "Checking your calendar" } });
+    await page.show({ ...running, chatPlacement: above, chat: { ...chat(null, false), activity: "Checking your calendar" } });
 
     await act(async () => {
       document.querySelector(".chat-scroll")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
@@ -711,7 +862,7 @@ describe("the chat window", () => {
 
   test("its close button closes it", async () => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(null) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
 
     await act(async () => document.querySelector<HTMLElement>(".chat-close")?.click());
 
@@ -722,7 +873,7 @@ describe("the chat window", () => {
    * itself. */
   test("a link opens through the main process", async () => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(null) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
     const link = document.querySelector<HTMLAnchorElement>(".chat-text a");
     const click = new MouseEvent("click", { bubbles: true, cancelable: true });
 
@@ -736,7 +887,7 @@ describe("the chat window", () => {
   /** The window reports its laid-out height, for the overlay to fit it. */
   test("it reports its height", async () => {
     const page = await overlayPage();
-    await page.show({ ...idle, chat: chat(null) });
+    await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
 
     expect(page.commands).toContainEqual({ type: "chatHeight", height: chatSize.height });
   });

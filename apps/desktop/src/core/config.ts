@@ -251,6 +251,13 @@ export const pillMaxTextLines = 3;
 export const pillBorderWidth = 1;
 export const pillGlowOpacity = 0.35;
 export const pillGlowRadius = 8;
+/** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
+ * neon glow very apparent for the pills"): a tight bright blue glow in a wide purple one. The bubbles
+ * keep the plain glow. */
+export const agentPillGlowInnerRadius = 4;
+export const agentPillGlowInnerOpacity = 0.9;
+export const agentPillGlowOuterRadius = 16;
+export const agentPillGlowOuterOpacity = 0.75;
 /** The pill grows out of the swirl from this fraction of its size. */
 export const pillAppearScale = 0.2;
 export const pillSpringResponse = 0.25;
@@ -301,18 +308,26 @@ export const thinkingArcEndColour = 0.6;
 export const pillFillWhite = 0.96;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
 export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 100;
-/** Agent mode's bubbles around the pill, one per tool and connector: icon-only circles. */
-export const agentBubbleDiameter = 24;
-/** Gap between the pill and the bubbles, and between neighbouring bubbles. */
-export const agentBubbleGap = 8;
-/** The most bubbles in a row over or under the pill (`bubbleCentres`): with every tool offered at
- * once (three) and every connector (eight), a row over it, one bubble each side, and a row under it
- * (or a second over it). */
-export const agentBubbleRowCapacity = 5;
-/** A bubble under the mouse pointer grows to this scale (upward from its bottom edge, as a running
- * one does), and a tooltip says what it is (owner, 2026-09-28: "when mouse hovers over them, make them
- * sort of enlarged and also show tooltips on what this tool is"). */
-export const agentBubbleHoverScale = 1.3;
+/** Agent mode's bubbles in a row under the pill, one per tool and connector: icon-only circles,
+ * slightly smaller than the pill at rest (owner, 2026-09-28), grown to `agentBubbleRunningDiameter`
+ * or `agentBubbleHoverDiameter`. */
+export const agentBubbleDiameter = 20;
+/** Gap between the pill and the bubbles: clear of the pill with one grown about its centre. */
+export const agentBubbleGap = 10;
+/** Gap between neighbouring bubbles: wide enough that two running side by side, grown, don't touch. */
+export const agentBubbleSpacing = 16;
+/** The row shows this many bubbles in full, centred under the pill (`bubbleRow`), and the next
+ * `agentBubbleRowFadeCount` fading away to the right: four at most (owner, 2026-09-28: "only show like
+ * three or so, and it just fades away to the right"; "we should show 4 entries tops"). */
+export const agentBubbleRowVisibleCount = 3;
+export const agentBubbleRowFadeCount = 1;
+/** A bubble's move along the row as the one that ran moves to its front. */
+export const agentBubbleMoveDuration = 0.35;
+/** A bubble under the mouse pointer grows to this size (about its centre, as a running one does),
+ * and a tooltip says what it is (owner, 2026-09-28: "when mouse hovers over them, make them sort of
+ * enlarged and also show tooltips on what this tool is"). */
+export const agentBubbleHoverDiameter = 31;
+export const agentBubbleHoverScale = agentBubbleHoverDiameter / agentBubbleDiameter;
 /** The hovered bubble's tooltip: its name over what it does, at most this wide, `bubbleTooltipGap`
  * clear of the bubble, drawn as the tips are (`tip…`). */
 export const bubbleTooltipMaxWidth = 240;
@@ -321,13 +336,10 @@ export const bubbleTooltipPadding = 8;
 export const bubbleTooltipNameFontSize = 13;
 export const bubbleTooltipFontSize = 12;
 export const bubbleTooltipLineSpacing = 2;
-/** Rows of bubbles over the pill at most: the first, and the one that goes over it when none fits
- * under it (`bubblesFitUnder`). */
-export const agentBubbleRowsAbove = 2;
 /** An app tool's icon (Thunderbird's) in its bubble. */
-export const agentBubbleAppIconSize = 16;
+export const agentBubbleAppIconSize = 13;
 /** A tool's symbol in its bubble. */
-export const agentBubbleSymbolSize = 12;
+export const agentBubbleSymbolSize = 10;
 
 // MARK: Tips
 
@@ -401,30 +413,33 @@ export const tipArrowHeight = 5;
 export const tipGap = 4;
 /** Room the hint takes beside the pill: the gap, the arrow and the box. */
 export const tipFootprint = tipGap + tipArrowHeight + tipHeight;
-/** Transparent canvas the overlay draws in; the pill sizes itself inside it. The pill sits
- * vertically centred, with room on each side for a tip (and its shadow) past agent mode's bubbles:
- * two rows of them and a tip over the pill (`tipGoesAbove`), or one row and a tip under it. */
+/** Transparent canvas the overlay draws in; the pill sizes itself inside it. The one-line pill sits
+ * vertically centred, with room on each side for the listening pill's growth downward, agent mode's
+ * row of bubbles (under the pill or over it, `bubblesFitUnder`) and a tip (and its shadow) past it. */
 export const overlayCanvasSize = {
   width: 440,
-  height: pillHeight + 2 * (agentBubbleRowsAbove * (agentBubbleGap + agentBubbleDiameter) + tipFootprint + tipShadowRadius + tipShadowOffsetY),
+  height: pillHeight + 2 * (listeningPillHeight - pillHeight + agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY),
 };
-/** The running tool's icon in the pill. */
+/** The running tool's icon in the pill, which rests with it, fainter, under the chat window while
+ * nothing runs. */
 export const agentRunningSymbolSize = 12;
+export const agentRestingSymbolOpacity = 0.6;
 /** A bubble whose tool is not the one running fades to this opacity. */
 export const agentBubbleIdleOpacity = 0.45;
 /** The running tool's bubble: a gradient arc circling its border. */
 export const agentBubbleRimWidth = 2;
 export const agentBubbleRevolutionsPerSecond = 1;
-/** The running tool's bubble grows to this scale, upward from its bottom edge, on a bouncy spring
- * that overshoots a little ("a genie effect", so the tool in use is obvious). */
-export const agentBubbleRunningScale = 1.4;
+/** The running tool's bubble grows to this size, about its centre, on a bouncy spring that overshoots
+ * a little ("a genie effect", so the tool in use is obvious). */
+export const agentBubbleRunningDiameter = 34;
+export const agentBubbleRunningScale = agentBubbleRunningDiameter / agentBubbleDiameter;
 export const agentBubbleRunningSpringResponse = 0.35;
 /** CSS's stand-in for that spring: a bouncier overshoot than the pill's. */
 export const agentBubbleRunningSpringEasing = "cubic-bezier(0.3, 1.7, 0.5, 1)";
 /** How long an error message stays on the overlay. */
 export const overlayErrorDisplayDuration = 3_000;
 
-// MARK: Chat window (the Answer tool's replies; the pill grows into it)
+// MARK: Chat window (the Answer tool's replies, over the pill)
 
 /** Left untouched, the chat window closes after this long; a hover, click or scroll, or a follow-up,
  * keeps it open until closed (owner, 2026-09-26). */
@@ -443,15 +458,41 @@ export const chatWidth = 380;
 export const chatMaxHeight = 320;
 /** Room around the chat window in the overlay window, for its shadow. */
 export const chatShadowMargin = 16;
+/** The chat window sits this far over the pill (or under its bubbles, `chatSide`), which stays
+ * where it was (owner, 2026-09-28: the answer box "appears smoothly above in a subtle way"). */
+export const chatPillGap = 10;
+/** The pill, as tall as it gets listening, and its row of bubbles under it: what the chat window
+ * leaves room for beside it. */
+export const chatStripHeight = listeningPillHeight + agentBubbleGap + agentBubbleDiameter;
+/** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCentre`). */
+export const chatBubbleTooltipRoom = 80;
+/** The chat window appears rising this far, from this scale, fading in. */
+export const chatAppearDuration = 0.25;
+export const chatAppearRise = 8;
+export const chatAppearScale = 0.98;
 export const chatCornerRadius = 14;
 export const chatPadding = 12;
 export const chatTurnSpacing = 10;
 export const chatBubblePadding = 8;
-export const chatBubbleCornerRadius = 10;
-/** The user's words, in a tinted bubble on the right, as far as this share of the chat's width. */
-export const chatRequestMaxWidthFraction = 0.8;
-export const chatRequestFillOpacity = 0.12;
+export const chatBubbleCornerRadius = 8;
+/** The user's words, in a lightly tinted bubble with a hairline border on the right, as far as this
+ * share of the chat's width; the reply in plain text under it, as TabMail's chat in Thunderbird shows
+ * them (`chat.css`: `.user-message`, `.agent-message`). */
+export const chatRequestMaxWidthFraction = 0.72;
+export const chatRequestFillOpacity = 0.1;
+export const chatRequestBorderOpacity = 0.3;
 export const chatFontSize = 13;
+/** Line height, in ems; space between a reply's paragraphs; a list's indent, as Thunderbird's. */
+export const chatLineHeight = 1.4;
+export const chatParagraphSpacing = 6;
+export const chatListIndent = 18;
+/** A reply shows one line or list item at a time, this many milliseconds apart, each fading in as it
+ * rises this far over `chatRevealFadeDuration` (Thunderbird's `streamDelayMs` and `tm-fade-down`). */
+export const chatRevealStepInterval = 100;
+export const chatRevealFadeDuration = 180;
+export const chatRevealRise = 4;
+/** What the chat window says while the answer is worked out and no tool runs, as Thunderbird's. */
+export const chatThinkingLabel = "Thinking…";
 export const chatCaptionFontSize = 11;
 export const chatCloseButtonSize = 18;
 /** The spinner beside what a tool the answer's model called is doing, while it runs. */

@@ -396,16 +396,17 @@ describe("Settings page", () => {
     ]);
   });
 
-  /** On a Mac, each app the Answer tool reaches has a switch after the tools, on as the state says,
-   * which turns it on or off; elsewhere there are none. */
-  test("each app the Answer tool reaches has a switch", async () => {
+  /** On a Mac, each app the Answer tool reaches has a switch among the tools, all in alphabetical
+   * order (owner, 2026-09-28), on as the state says, which turns it on or off; elsewhere there are
+   * none. */
+  test("each app the Answer tool reaches has a switch, in alphabetical order with the tools", async () => {
     const shown: SettingsState = { ...signedIn, connectors: ["calendar", "reminders"], enabledConnectors: ["reminders"] };
     const page = await settingsPage({ error: null }, shown, shown);
     await act(async () => button("Agent mode").click());
 
     // The switches with an icon: the agent pane's.
     const labels = [...document.querySelectorAll(".toggle")].filter((row) => row.querySelector("svg")).map((row) => row.querySelector("label")?.textContent);
-    expect(labels).toEqual(["Edit", "Compose", "Thunderbird", "Answer", "Calendar", "Reminders"]);
+    expect(labels).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders", "Thunderbird"]);
     expect(["Calendar", "Reminders"].map((label) => toggle(label).checked)).toEqual([false, true]);
     for (const label of ["Calendar", "Reminders"]) await act(async () => toggle(label).click());
 

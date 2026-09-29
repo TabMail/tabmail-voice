@@ -14,11 +14,28 @@ import { app, BrowserWindow, nativeTheme } from "electron";
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
-const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, chatOpensUpward: false };
+const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
 const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
-const overlayCanvasSize = { width: 440, height: 322 };
+const overlayCanvasSize = { width: 440, height: 258 };
+/** The overlay window with the chat window at its tallest (`chatWindowFrame`), and where the pill is
+ * in it, over it or under it. */
+const chatWindowSize = { width: 412, height: 420 };
+const over = { below: false, maxHeight: 320, bubblesUnder: true, pillX: 206 };
+const under = { below: true, maxHeight: 320, bubblesUnder: true, pillX: 206 };
+/** A conversation: an answer laid out as Thunderbird's chat lays one out, and a follow-up under way. */
+const conversation = {
+  turns: [
+    { id: 0, request: "What's on Friday?", tool: "answer", reply: "Friday has two things:\n\n1. **Launch review** at 10:00\n2. Team lunch at 12:30, at the usual place\n\nWant me to add a reminder?" },
+  ],
+  pendingRequest: null,
+  closesAt: null,
+  touched: true,
+  activity: null,
+  confirmation: null,
+  confirmationExpiresAt: null,
+};
 const settings = {
   email: null,
   hotkey: "function",
@@ -59,11 +76,19 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "switchMode" }],
     ["overlay-agent-apps-up", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, bubblesFitUnder: false, opensUpward: true, tip: "handsFree" }],
     ["overlay-agent-apps-running", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors }],
-    // A tool's question in the chat window, a third of its 30 seconds gone.
-    ["overlay-chat-confirmation", { phase: { kind: "running", tool: "answer" }, mode: "agent", chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationExpiresAt: Date.now() + 20_000 } }],
+    ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),
+  ...[
+    // Resting between follow-ups, the last request's bubbles kept, the latest to run first.
+    ["overlay-chat-answer", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: over }],
+    ["overlay-chat-below", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: under }],
+    // The backend searching the web for a follow-up: the web's bubble circles, the chat says so.
+    ["overlay-chat-searching", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], runningConnectors: ["web"], chat: { ...conversation, pendingRequest: "Look up the usual place", activity: "Searching the web: usual lunch place" }, chatPlacement: over }],
+    // A tool's question in the chat window, a third of its 30 seconds gone.
+    ["overlay-chat-confirmation", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
+  ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: chatWindowSize, state: { ...overlay, ...(change as object) }, transparent: true })),
   { name: "settings", page: "settings.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },

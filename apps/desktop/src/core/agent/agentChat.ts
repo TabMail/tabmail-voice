@@ -88,8 +88,8 @@ type RunStyle = Omit<ReplyRun, "text">;
 
 const plain: RunStyle = { strong: false, emphasis: false, code: false, strikethrough: false, link: null };
 
-/** A reply's inline Markdown (bold, italics, code, strikethrough, links; line breaks kept, and no
- * blocks, so a list stays as written), as the answer prompt allows. A link that is not a web page's
+/** A line's inline Markdown (bold, italics, code, strikethrough, links; its blocks are
+ * `replyBlocks`'), as the answer prompt allows. A link that is not a web page's
  * shows as its text alone (`opensLink`). Text that doesn't parse shows as written. */
 export function formattedReply(reply: string): ReplyRun[] {
   const runs: ReplyRun[] = [];
@@ -99,6 +99,65 @@ export function formattedReply(reply: string): ReplyRun[] {
     else if (run.text !== "") runs.push({ ...run });
   }
   return runs;
+}
+
+/** A block of a reply, as TabMail's chat in Thunderbird lays one out (its `renderMarkdown`): a
+ * paragraph's lines, a list's items, or a heading. Each line and item is inline Markdown
+ * (`formattedReply`), and one step of the reply's reveal. */
+export type ReplyBlock = { kind: "paragraph"; lines: string[] } | { kind: "list"; ordered: boolean; start: number; items: string[] } | { kind: "heading"; text: string };
+
+const listItem = /^\s*(?:([-*+])|(\d{1,9})[.)])\s+(.*)$/;
+const heading = /^\s*#{1,6}\s+(.*)$/;
+
+/** A reply's blocks: paragraphs apart at blank lines, a line break kept as a new line of its
+ * paragraph; a list of `-`, `*` or `+` items, or of numbered ones, a line under an item without a
+ * marker continuing it; and a `#` heading. Anything else is a paragraph's text as written. */
+export function replyBlocks(reply: string): ReplyBlock[] {
+  const blocks: ReplyBlock[] = [];
+  let paragraph: string[] | null = null;
+  let list: { ordered: boolean; start: number; items: string[] } | null = null;
+  const close = () => {
+    if (paragraph) blocks.push({ kind: "paragraph", lines: paragraph });
+    if (list) blocks.push({ kind: "list", ...list });
+    paragraph = null;
+    list = null;
+  };
+  for (const line of reply.split(/\r\n|\r|\n/)) {
+    if (line.trim() === "") {
+      close();
+      continue;
+    }
+    const item = listItem.exec(line);
+    if (item) {
+      const ordered = item[1] === undefined;
+      if (!list || list.ordered !== ordered) {
+        close();
+        list = { ordered, start: ordered ? Number(item[2]) : 1, items: [] };
+      }
+      list.items.push(item[3] ?? "");
+      continue;
+    }
+    const title = heading.exec(line);
+    if (title) {
+      close();
+      blocks.push({ kind: "heading", text: title[1] ?? "" });
+      continue;
+    }
+    if (list) {
+      const last = list.items.length - 1;
+      list.items[last] = `${list.items[last] ?? ""}\n${line.trim()}`;
+      continue;
+    }
+    paragraph ??= [];
+    paragraph.push(line);
+  }
+  close();
+  return blocks;
+}
+
+/** How many steps a reply's reveal takes: one per paragraph line, list item and heading. */
+export function revealSteps(blocks: readonly ReplyBlock[]): number {
+  return blocks.reduce((sum, block) => sum + (block.kind === "paragraph" ? block.lines.length : block.kind === "list" ? block.items.length : 1), 0);
 }
 
 function sameStyle(a: RunStyle, b: RunStyle): boolean {

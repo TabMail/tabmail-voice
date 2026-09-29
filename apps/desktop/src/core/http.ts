@@ -11,6 +11,9 @@ export interface HTTPRequest {
   body: string;
   timeout: number;
   signal?: AbortSignal;
+  /** Called with each piece of the body as it arrives (a streamed reply's events), before the whole
+   * body is returned. */
+  onChunk?: (text: string) => void;
 }
 
 export interface HTTPResponse {
@@ -70,10 +73,14 @@ export const liveTransport: HTTPTransport = async (request) => {
     if (response.body) {
       for await (const chunk of response.body) {
         arm();
-        body += decoder.decode(chunk, { stream: true });
+        const text = decoder.decode(chunk, { stream: true });
+        body += text;
+        if (text !== "") request.onChunk?.(text);
       }
     }
-    body += decoder.decode();
+    const rest = decoder.decode();
+    body += rest;
+    if (rest !== "") request.onChunk?.(rest);
     const headers: Record<string, string> = {};
     response.headers.forEach((value, name) => {
       headers[name] = value;

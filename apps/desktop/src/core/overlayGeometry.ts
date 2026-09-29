@@ -64,38 +64,26 @@ export function bubblesFitUnder(anchor: Rect, pillHeight: number, workArea: Rect
   return maxY(anchor) + config.overlayCaretGap + heightUnderPillTop(pillHeight) + row <= maxY(workArea);
 }
 
-/** Centres of agent mode's bubbles, of `sizes`, around a pill at `pill`, `agentBubbleGap` clear of it
- * and apart (owner, 2026-09-26: "many bubbles surround the pill"): a row of up to
- * `agentBubbleRowCapacity` centred over the pill, then one beside it on the left and one on the
- * right, then rows centred under it, or over the first row when they don't fit under it
- * (`underFits`, `bubblesFitUnder`). */
-export function bubbleCentres(pill: Rect, sizes: Size[], underFits: boolean): Point[] {
-  const gap = config.agentBubbleGap;
-  const capacity = config.agentBubbleRowCapacity;
-  const centres: Point[] = [];
-  /** A row centred on the pill, its bottom edge at `edge` (above) or its top edge (under). */
-  const place = (row: Size[], edge: number, above: boolean) => {
-    const rowWidth = row.reduce((sum, size) => sum + size.width, 0) + gap * Math.max(row.length - 1, 0);
-    let x = midX(pill) - rowWidth / 2;
-    for (const size of row) {
-      centres.push({ x: x + size.width / 2, y: above ? edge - size.height / 2 : edge + size.height / 2 });
-      x += size.width + gap;
-    }
-  };
-  const height = (row: Size[]) => Math.max(0, ...row.map((size) => size.height));
+/** Centres of agent mode's `count` bubbles, in one row under the pill at `pill`, `agentBubbleGap`
+ * clear of it and `agentBubbleSpacing` apart (owner, 2026-09-28: "tools appear below the pill … only show like three or so,
+ * and it just fades away to the right"): the first `agentBubbleRowVisibleCount` centred under the
+ * pill, the rest going on to the right (`bubbleRowOpacity`). Over the pill instead when a row
+ * doesn't fit under it (`underFits`, `bubblesFitUnder`), so it never covers the caret's line. */
+export function bubbleRow(pill: Rect, count: number, underFits: boolean): Point[] {
+  const diameter = config.agentBubbleDiameter;
+  const step = diameter + config.agentBubbleSpacing;
+  const visibleWidth = config.agentBubbleRowVisibleCount * step - config.agentBubbleSpacing;
+  const left = midX(pill) - visibleWidth / 2 + diameter / 2;
+  const y = underFits ? maxY(pill) + config.agentBubbleGap + diameter / 2 : pill.y - config.agentBubbleGap - diameter / 2;
+  return Array.from({ length: count }, (_, index) => ({ x: left + index * step, y }));
+}
 
-  const top = sizes.slice(0, capacity);
-  place(top, pill.y - gap, true);
-  const [left, right] = sizes.slice(capacity, capacity + 2);
-  if (left) centres.push({ x: pill.x - gap - left.width / 2, y: midY(pill) });
-  if (right) centres.push({ x: maxX(pill) + gap + right.width / 2, y: midY(pill) });
-  let edge = underFits ? maxY(pill) + gap : pill.y - gap - height(top) - gap;
-  for (let start = capacity + 2; start < sizes.length; start += capacity) {
-    const row = sizes.slice(start, start + capacity);
-    place(row, edge, !underFits);
-    edge += underFits ? height(row) + gap : -(height(row) + gap);
-  }
-  return centres;
+/** How much of the row's bubble at `index` shows: all of the first `agentBubbleRowVisibleCount`, then
+ * less and less for the next `agentBubbleRowFadeCount`, which fade away to the right; none after. */
+export function bubbleRowOpacity(index: number): number {
+  const faded = index - config.agentBubbleRowVisibleCount + 1;
+  if (faded <= 0) return 1;
+  return Math.max(0, 1 - faded / (config.agentBubbleRowFadeCount + 1));
 }
 
 /** Centre of the hovered bubble's tooltip, of `size`: centred over the bubble at `bubble`
@@ -108,12 +96,12 @@ export function bubbleTooltipCentre(bubble: Rect, size: Size, canvas: Size): Poi
   return { x, y: over ? bubble.y - gap - size.height / 2 : maxY(bubble) + gap + size.height / 2 };
 }
 
-/** A bubble at `bubble` grown to `scale` upward from its bottom edge, as the page draws it
- * (`transform-origin: bottom center`). */
+/** A bubble at `bubble` grown to `scale` about its centre, as the page draws it (`transform-origin:
+ * center`), so it grows as far toward the pill as away from it, whichever side of it it is. */
 export function grownBubble(bubble: Rect, scale: number): Rect {
   const width = bubble.width * scale;
   const height = bubble.height * scale;
-  return { x: midX(bubble) - width / 2, y: maxY(bubble) - height, width, height };
+  return { x: midX(bubble) - width / 2, y: bubble.y + bubble.height / 2 - height / 2, width, height };
 }
 
 /** The pill with any bubbles under it: what a tip under the pill goes under (`hintCentre`). */
@@ -145,24 +133,48 @@ export function tipGoesAbove(displayDuration: number | null, opensUpward: boolea
   return opensUpward && displayDuration === null;
 }
 
-/** Whether the chat window opens above the caret's line: there is no room below it for the window at
- * its tallest (so it never flips as it grows). */
-export function chatOpensUpward(anchor: Rect, workArea: Rect): boolean {
-  return maxY(anchor) + config.overlayCaretGap + config.chatMaxHeight > maxY(workArea);
+/** Where the pill sits on screen for a caret at `anchor`, as `overlayOrigin` places the overlay: its
+ * centre's x, and its top edge's y. */
+export function pillPosition(anchor: Rect, workArea: Rect): Point {
+  const canvas = config.overlayCanvasSize;
+  const origin = overlayOrigin(anchor, canvas, config.pillHeight, workArea);
+  return { x: origin.x + canvas.width / 2, y: origin.y + (canvas.height - config.pillHeight) / 2 };
 }
 
-/** The overlay window's frame for a chat window `contentHeight` tall (at most `chatMaxHeight`), with
- * its shadow margin: the chat's top edge where the pill's was, just below the caret's line, or its
- * bottom edge just above the line when it opens upward (`chatOpensUpward`); centred on the caret,
- * the chat itself kept inside the work area. */
-export function chatFrame(anchor: Rect, contentHeight: number, workArea: Rect): Rect {
+/** The top edge of the pill and its bubbles (`chatStripHeight`), with the pill's top edge at
+ * `pillTop`: the bubbles' row's when they go over the pill (`bubblesUnder` false, `bubbleRow`). */
+function chatStripTop(pillTop: number, bubblesUnder: boolean): number {
+  return bubblesUnder ? pillTop : pillTop - config.agentBubbleGap - config.agentBubbleDiameter;
+}
+
+/** Where the chat window goes: over the pill and its bubbles (owner, 2026-09-28: "the answer box
+ * appear above the chat bubble"), or under them (`below`), and how tall it may grow there
+ * (`maxHeight`). Over them when there is room there for it at its tallest (`chatMaxHeight`), the pill's
+ * top edge at `pillTop`; under them when there is room there instead; otherwise on the side with more
+ * room, no taller than that room, so it stays on screen and scrolls. Decided once, as it opens, so it
+ * never flips as it grows. */
+export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect): { below: boolean; maxHeight: number } {
+  const stripTop = chatStripTop(pillTop, bubblesUnder);
+  const over = stripTop - config.chatPillGap - workArea.y;
+  const under = maxY(workArea) - (stripTop + config.chatStripHeight + config.chatPillGap);
+  const below = over < config.chatMaxHeight && under > over;
+  return { below, maxHeight: Math.min(config.chatMaxHeight, Math.floor(below ? under : over)) };
+}
+
+/** The overlay window's frame while the chat window shows, `contentHeight` tall (at most `side`'s
+ * `maxHeight`), with the pill, its top edge's centre at `pill`, where it was: the chat `chatPillGap`
+ * over the pill and its bubbles (`chatStripHeight`, the bubbles under the pill or over it,
+ * `bubblesUnder`), or under them (`side.below`, `chatSide`), with the shadow's margin around them
+ * all; centred on the pill, kept inside the work area. The window keeps the edge on the pill's side
+ * as the chat grows, so the pill never moves. */
+export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Rect, side: { below: boolean; maxHeight: number }, bubblesUnder: boolean): Rect {
   const margin = config.chatShadowMargin;
-  const gap = config.overlayCaretGap;
   const width = config.chatWidth + 2 * margin;
-  const height = Math.min(contentHeight, config.chatMaxHeight) + 2 * margin;
-  let y = chatOpensUpward(anchor, workArea) ? anchor.y - gap + margin - height : maxY(anchor) + gap - margin;
-  y = Math.min(Math.max(y, workArea.y - margin), maxY(workArea) + margin - height);
-  let x = midX(anchor) - width / 2;
+  const below = side.below;
+  const height = 2 * margin + Math.min(contentHeight, side.maxHeight) + config.chatPillGap + config.chatStripHeight;
+  const stripTop = chatStripTop(pill.y, bubblesUnder);
+  const y = below ? stripTop - margin : stripTop + config.chatStripHeight + margin - height;
+  let x = pill.x - width / 2;
   x = Math.min(Math.max(x, workArea.x - margin), maxX(workArea) + margin - width);
   return { x, y, width, height };
 }
