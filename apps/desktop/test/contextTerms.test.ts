@@ -35,6 +35,8 @@ describe("contextTerms", () => {
   test("runs of capitals are kept together", () => {
     expect(terms("From: Kaelthorne Drake")).toEqual(["Kaelthorne Drake"]);
     expect(terms("I met Kaelthorne, Drake and Xyvora.")).toEqual(["Kaelthorne", "Drake", "Xyvora"]);
+    expect(terms("Thanks Xyvora [Brevalle Labs] shipped it")).toEqual(["Xyvora", "Brevalle Labs"]);
+    expect(terms("met Xyvora (Brevalle Labs) and cc Kaelthorne \"Drake\" today")).toEqual(["Xyvora", "Brevalle Labs", "Kaelthorne", "Drake"]);
     expect(terms("see Brevalle Xyvora Labs Kaelthorne Drake Quill")).toEqual(["Brevalle Xyvora Labs Kaelthorne Drake Quill"]);
     const heading = terms("see the Quarterly Planning Review Notes Brevalle Engineering Staff");
     expect(heading).toContain("Brevalle");

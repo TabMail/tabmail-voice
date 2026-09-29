@@ -1833,7 +1833,7 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   never waits for one) and screen reading is on. A term is a word with a capital letter inside it
   ("TabMail", "OKR", "iOS"), or at its start where no sentence starts (a line's start or after `.`
   `!` `?` starts one); a run of them is one term ("Kaelthorne Drake") up to `dictionaryWordMaxWords`
-  words, a longer run (a heading) counting word by word; not an everyday word
+  words, split by punctuation after a word or before one ("Xyvora (Brevalle Labs)", a link's `[`), a longer run (a heading) counting word by word; not an everyday word
   (`correctionCommonWords`), a word under `correctionMinWordLength`, an address (`@`, `://`), or a
   word `dictionaryWord` refuses; none the same as a dictionary word; the most frequent first, then
   the earliest. The cleanup does not get them: it reads the screen itself.

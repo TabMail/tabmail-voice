@@ -39,6 +39,8 @@ export function contextTerms(text: string, excluding: readonly string[], max: nu
     let sentenceStart = true;
     for (const token of line.split(/\s+/).filter((token) => token !== "")) {
       const word = trimmed(token);
+      // Punctuation before a word ends a run too ("Xyvora (Brevalle Labs)", a link's "[").
+      if (!token.startsWith(word)) endRun();
       if (isTerm(word, token, sentenceStart)) run.push(word);
       else endRun();
       // Punctuation after a word ends a run ("Kaelthorne, Drake"); a full stop also ends the sentence.
