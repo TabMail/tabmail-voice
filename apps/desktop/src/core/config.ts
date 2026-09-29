@@ -292,9 +292,13 @@ export const pillBorderWidth = 1;
 export const pillGlowOpacity = 0.35;
 export const pillGlowRadius = 8;
 /** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
- * neon glow very apparent for the pills"): a tight bright blue glow in a wide purple one. The bubbles
- * keep the plain glow. */
+ * neon glow very apparent for the pills"): a tight bright glow in a wide one. Red-pink rather than the
+ * brand's blue and purple, so it stands apart from dictation's pill (owner, 2026-09-29: "right now it's
+ * not as apparent"; chosen from eight colours tried). The bubbles keep the plain glow. */
 export const agentPillGlowInnerRadius = 4;
+/** The glows' colours, red, green and blue (0–255). */
+export const agentPillGlowInnerColour: readonly [number, number, number] = [0xff, 0x2d, 0x55];
+export const agentPillGlowOuterColour: readonly [number, number, number] = [0xff, 0, 0x6e];
 export const agentPillGlowInnerOpacity = 0.9;
 export const agentPillGlowOuterRadius = 16;
 export const agentPillGlowOuterOpacity = 0.75;

@@ -124,7 +124,8 @@ incoming sound relative to the range coming in (`LevelEnvelope`: EMA floor and p
 fast on their outward side, slow inward), so it follows the voice on quiet and loud mics alike
 (telling speech from background is still the model's job), then a circle with a spinning rim while
 transcribing. On exit it plays in reverse (the pill shrinks into the swirl, which disperses).
-The overlay uses only the icon's blue → purple. The pill is
+The overlay uses only the icon's blue → purple (but for agent mode's red-pink pill glow, ADR-DESK-036's
+2026-09-29 amendment). The pill is
 the surface for status now and agent responses later (as on iOS).
 
 **Consequences:**
@@ -1742,7 +1743,10 @@ the stream was read whole and named its tools only in development builds.
   running don't touch.
 - **Agent mode's pill.** In agent mode (and under the chat window) the pill glows as neon, a tight
   blue glow in a wide purple one (`agentPillGlow…`); dictation's pill and every bubble keep the plain
-  glow.
+  glow. *Amended 2026-09-29:* the owner found the blue and purple neon "not as apparent" beside
+  dictation's own blue and purple glow and, from eight colours rendered side by side and then seen
+  live, chose red-pink: a tight `#FF2D55` glow in a wide `#FF006E` one (`agentPillGlowInnerColour`,
+  `agentPillGlowOuterColour`), the one colour in the overlay outside the brand's.
 - **Server tools as they run.** `HTTPRequest.onChunk` hands the completions stream to `SSEParser` as
   it arrives (a piece may end anywhere, a CRLF split across two included), and `Completions.round`
   reports each `tool_started`, `tool_completed` and `tool_failed` event that names its tool

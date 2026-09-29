@@ -13,7 +13,7 @@ import type { DictationHotkey } from "../core/hotkey.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCentre, grownBubble, hintCentre, hintCentreOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../core/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../core/tips.js";
 import type { ChatPlacement, OverlayState } from "../shared/ipc.js";
-import { brandBlue, brandColour, brandGradient, grey } from "./brand.js";
+import { brandBlue, brandColour, brandGradient, grey, rgba } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
 import { ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "./icons.js";
 import "./overlay.css";
@@ -618,9 +618,9 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
     borderWidth: config.pillBorderWidth,
     // A light pill in light and dark mode alike, in a gradient border.
     background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
-    // Neon in agent mode, a sign of the mode.
+    // Neon red-pink in agent mode, a sign of the mode.
     boxShadow: isAgent
-      ? `0 0 ${config.agentPillGlowInnerRadius}px ${brandColour(0, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${brandColour(1, config.agentPillGlowOuterOpacity)}`
+      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(config.agentPillGlowInnerColour, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(config.agentPillGlowOuterColour, config.agentPillGlowOuterOpacity)}`
       : `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
     transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponse}s ease-out`,
   };

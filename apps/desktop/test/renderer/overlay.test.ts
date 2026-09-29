@@ -10,6 +10,7 @@ import { alphabetical } from "../../src/core/agent/bubbleOrder.js";
 import { connectorInfo } from "../../src/core/agent/connectors.js";
 import { toolImplementations } from "../../src/core/agent/tools.js";
 import * as config from "../../src/core/config.js";
+import { brandColour } from "../../src/renderer/brand.js";
 import type { DictationTip } from "../../src/core/tips.js";
 import type { AgentChat } from "../../src/core/agent/agentChat.js";
 import type { ChatPlacement, Command, OverlayState } from "../../src/shared/ipc.js";
@@ -219,8 +220,9 @@ describe("overlay page", () => {
     expect([opacity("web"), opacity("calendar"), opacity("notes")]).toEqual([1, 1, config.agentBubbleIdleOpacity * (1 - 1 / (config.agentBubbleRowFadeCount + 1))]);
   });
 
-  /** In agent mode the pill glows as neon, a sign of the mode, its bubbles not; working, a gradient arc
-   * circles its border (owner, 2026-09-28). Dictating, it has the plain glow and nothing circles. */
+  /** In agent mode the pill glows as neon, a sign of the mode, in its own red-pink rather than the
+   * brand's colours (owner, 2026-09-29), its bubbles not; working, a gradient arc circles its border
+   * (owner, 2026-09-28). Dictating, it has the plain glow and nothing circles. */
   test("the agent pill glows as neon, and circles while it works", async () => {
     const page = await overlayPage();
     const pill = () => document.querySelector<HTMLElement>(".pill");
@@ -232,6 +234,11 @@ describe("overlay page", () => {
     const neon = pill()?.style.boxShadow ?? "";
     expect(neon).not.toBe(plain);
     expect(neon).toContain(`${config.agentPillGlowOuterRadius}px`);
+    expect(neon).toContain(`rgba(${config.agentPillGlowInnerColour.join(", ")}, ${config.agentPillGlowInnerOpacity})`);
+    expect(neon).toContain(`rgba(${config.agentPillGlowOuterColour.join(", ")}, ${config.agentPillGlowOuterOpacity})`);
+    // Not the brand's blue in its purple, as it was before.
+    expect(neon).not.toContain(brandColour(0, config.agentPillGlowInnerOpacity));
+    expect(neon).not.toContain(brandColour(1, config.agentPillGlowOuterOpacity));
     expect(document.querySelector<HTMLElement>(".bubble")?.style.boxShadow).toBe(plain);
     expect(document.querySelector(".pill .spinning")).toBeNull();
 
