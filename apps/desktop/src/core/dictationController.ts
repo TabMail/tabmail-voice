@@ -15,6 +15,7 @@ import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from ".
 import type { CompletionsClient, ServerToolEvent, ToolCall, TranscriptionClient } from "./backend.js";
 import { DictationCleanup } from "./cleanup.js";
 import * as config from "./config.js";
+import { contextTerms } from "./contextTerms.js";
 import { type DictationMode, type HotkeyAction, toggled } from "./hotkey.js";
 import { LevelEnvelope } from "./levelEnvelope.js";
 import { errorName, log } from "./log.js";
@@ -450,6 +451,16 @@ export class DictationController extends Observable {
     this.discard();
   }
 
+  /** The names and terms on the screen read at key-down (`contextTerms`), sent with the recording
+   * beside the dictionary's words (ADR-DESK-038): only if the read is already done, so the
+   * transcription never waits for it; none when the screen is not read. */
+  private screenTerms(dictionary: readonly string[]): string[] {
+    const screen = this.screenRead;
+    const terms = screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, dictionary, config.contextTermsMax) : [];
+    log.debug(() => `DictationController: sending ${dictionary.length} dictionary word(s) and ${terms.length} screen term(s)`);
+    return terms;
+  }
+
   /** Transcribes one recording, then cleans it up and inserts it (dictation) or carries it out
    * (agent mode). Public for tests. */
   async transcribe(wav: Uint8Array, generation: number): Promise<void> {
@@ -465,7 +476,8 @@ export class DictationController extends Observable {
     try {
       const language = await this.languageRead;
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
-      const transcript = trimWhitespace(await withFreshToken(account, userId, (token) => client.transcribe(wav, language, settings.dictionary, token, signal)));
+      const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
+      const transcript = trimWhitespace(await withFreshToken(account, userId, (token) => client.transcribe(wav, language, vocabulary, token, signal)));
       if (!isCurrent()) return;
       log.debug(() => `DictationController: transcript ready (${charCount(transcript)} chars)`);
       log.content(`Transcript (${mode})`, transcript);

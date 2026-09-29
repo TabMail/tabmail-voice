@@ -1811,18 +1811,32 @@ do, with a dictionary the user also edits by hand, in its own Settings section. 
 day showed the speech model spells made-up names right when given them as a word list, and that a
 name in Hangul is left in Hangul, so the cleanup pass must see the words too (backend ADR-025). The
 consent step is reworded, not re-asked (owner: the app has never been released, so no one has
-consented to the old text).
+consented to the old text). Later the same day, the owner: don't rely on the dictionary alone, but
+leave half of the backend's 200 words to names and uncommon words picked from the context, "a dynamic
+dictionary being constructed on the fly from the captured context", by rules on this computer, not a
+model; TabMail on iOS does the same (its ADR-IOS-086).
 
 **Decision:**
 - `AppSettings.dictionary`: entries `{word, learned}`, in the order added, kept on this computer, not
   synced. Words are trimmed with their spaces collapsed, and must pass the backend's rules
   (`dictionaryWord`, in the backend's units: UTF-16 code units, JS `trim`, words split on spaces): at
   most `dictionaryWordMaxChars` characters and `dictionaryWordMaxWords` words, no control characters
-  or `<` `>`, at most `dictionaryMaxEntries` words; the same word in another case is one entry. A word
+  or `<` `>`, at most `dictionaryMaxEntries` (100) words, half the backend's 200, so all of them are
+  always sent; the same word in another case is one entry. A word
   the backend would refuse is never stored, so no dictation fails on one.
 - The dictation's key-down snapshot (ADR-DESK-017) carries the words and the learning switch. Every
   transcription sends them as `vocabulary` (none when empty), and dictation's cleanup as `dictionary`,
   one per line. Agent mode's prompts don't take them.
+- Screen terms (`contextTerms`): the transcription's `vocabulary` also carries up to
+  `contextTermsMax` (100) names and terms from the key-down screen read (window title and rendered
+  text), after the dictionary's words, when the read is already done as the recording is sent (it
+  never waits for one) and screen reading is on. A term is a word with a capital letter inside it
+  ("TabMail", "OKR", "iOS"), or at its start where no sentence starts (a line's start or after `.`
+  `!` `?` starts one); a run of them is one term ("Kaelthorne Drake") up to `dictionaryWordMaxWords`
+  words, a longer run (a heading) counting word by word; not an everyday word
+  (`correctionCommonWords`), a word under `correctionMinWordLength`, an address (`@`, `://`), or a
+  word `dictionaryWord` refuses; none the same as a dictionary word; the most frequent first, then
+  the earliest. The cleanup does not get them: it reads the screen itself.
 - Settings › Dictionary: a field to add a word, the words with a Remove button each, a learned one
   tagged "Learned" (typing it makes it the user's own), and "Learn from my corrections" (on by
   default) where the field can be read: macOS.
@@ -1850,3 +1864,8 @@ consented to the old text).
 - No notice when a word is learned yet: the user sees it in Settings (an overlay "Learned … Undo" is a
   follow-up), and the privacy policy's Voice Data wording is updated separately.
 - Every word is sent with every dictation: the list's cap keeps that small.
+- The screen terms leave the computer only as words picked from a screen the consent already covers
+  sending. The picking is heuristic: a capitalised ordinary word mid-sentence ("Monday") is sent too,
+  harmlessly, since the list only biases the speech model; a name only ever at a sentence's start is
+  missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
+  backend fall back to it (its ADR-025).

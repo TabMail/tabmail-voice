@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "./config.js";
+import { trimmed } from "./contextTerms.js";
 import { dictionaryWord, isSameWord } from "./dictionary.js";
 
 /**
@@ -51,7 +52,7 @@ function editedPaste(pasted: string, before: string, after: string): string | nu
 function words(text: string): string[] {
   return text
     .split(/\s+/)
-    .map((word) => word.replace(/^[^\p{L}\p{N}\p{M}]+|[^\p{L}\p{N}\p{M}]+$/gu, ""))
+    .map(trimmed)
     .filter((word) => word !== "");
 }
 

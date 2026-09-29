@@ -220,6 +220,53 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(cleanupVars(0)?.dictionary).toBe("");
   });
 
+  /** The names and terms on the screen read at key-down go with the recording after the dictionary's
+   * words, none of them twice; the cleanup gets the dictionary alone (it reads the screen itself). */
+  test("sends the screen's names and terms after the dictionary", async () => {
+    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(200, cleanedStream);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    controller.captureContext = async () =>
+      blankScreen({ appName: "Example Mail", windowTitle: "Launch with Brevalle Labs", renderedText: "From: Kaelthorne Drake\nAsk Xyvora and Brevalle Labs about TabMail." });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Brevalle Labs", "Kaelthorne Drake", "TabMail"]);
+    expect(cleanupVars(0)?.dictionary).toBe("Xyvora");
+  });
+
+  /** The recording is not held for the screen read: one not done when it is sent adds no terms. */
+  test("a screen read not done yet adds no terms", async () => {
+    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(200, cleanedStream);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    const read = deferred<ScreenContext | null>();
+    controller.captureContext = () => read.promise;
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora"]);
+    read.resolve(null);
+  });
+
+  /** With screen reading off, the screen is not read, so no terms are sent from it. */
+  test("with screen reading off no terms are sent", async () => {
+    prefs.value = { ...defaultSettings(), readsScreen: false };
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(200, cleanedStream);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    controller.captureContext = async () => blankScreen({ appName: "Example Mail", windowTitle: "Brevalle Labs", renderedText: "Ask Kaelthorne Drake" });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(transcription.body(0).vocabulary).toBeUndefined();
+  });
+
   /** After a dictation's paste, the field of the app in front at key-down is watched for the user's
    * corrections (`CorrectionWatch`), with the text pasted; the next key-down stops the watch first. */
   describe("learning the user's corrections", () => {

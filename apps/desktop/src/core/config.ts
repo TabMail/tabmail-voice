@@ -95,9 +95,12 @@ export const cleanupTimeout = 1_500;
 
 // MARK: Dictionary (ADR-DESK-038)
 
-/** The dictionary's limits, the backend's for the words sent with each dictation (its ADR-025): at
- * most this many words, each at most this many characters and this many space-separated words. */
-export const dictionaryMaxEntries = 200;
+/** The words sent with each dictation: the backend takes at most 200 (its ADR-025), half for the
+ * user's dictionary, all of it sent, and half for the names and terms picked from the screen
+ * (`contextTerms`). Each word is at most this many characters and this many space-separated words,
+ * the backend's limits. */
+export const dictionaryMaxEntries = 100;
+export const contextTermsMax = 100;
 export const dictionaryWordMaxChars = 50;
 export const dictionaryWordMaxWords = 6;
 /** After a dictation's paste, the field is read this often, for this long, to learn the user's
