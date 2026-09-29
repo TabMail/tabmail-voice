@@ -31,6 +31,7 @@ import { PermissionsModel } from "../core/permissions.js";
 import { ScreenContextProbe } from "../core/screenContext.js";
 import { AppSettings } from "../core/settings.js";
 import { TipBook } from "../core/tips.js";
+import { vscodeHidesCaret, vscodeSettingsPath, withClassicInput } from "../core/vscodeSettings.js";
 import { WelcomeWizard } from "../core/welcomeWizard.js";
 import {
   type AudioCommand,
@@ -93,6 +94,9 @@ function launch(): void {
   const lastRecordingPath = join(tmpdir(), config.debugLastRecordingFileName);
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
   const hasTabMail = (): boolean => EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
+  const vscodeSettingsFile = join(app.getPath("appData"), ...vscodeSettingsPath);
+  /** Whether the welcome wizard changed VS Code's settings, to say so. */
+  let fixedVSCode = false;
 
   const store = new FileStore(join(app.getPath("userData"), "settings.json"));
   const settings = new AppSettings(store, hasTabMail);
@@ -254,7 +258,15 @@ function launch(): void {
       enabledConnectors: settings.enabledConnectors,
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
+      vscodeFix: vscodeFix(),
     };
+  }
+
+  /** Only the macOS helper finds the caret yet; it is where VS Code's settings were measured. */
+  function vscodeFix(): WelcomeState["vscodeFix"] {
+    if (process.platform !== "darwin") return "notNeeded";
+    if (vscodeHidesCaret(nodeProfileFiles.readText(vscodeSettingsFile))) return "needed";
+    return fixedVSCode ? "done" : "notNeeded";
   }
 
   function menuState(): MenuState {
@@ -487,6 +499,16 @@ function launch(): void {
         return wizard?.back();
       case "welcomeGoTo":
         return wizard?.goTo(command.index);
+      case "fixVSCodeSettings": {
+        // Read afresh: VS Code or the user may have changed the file since the wizard showed.
+        const text = nodeProfileFiles.readText(vscodeSettingsFile);
+        if (process.platform !== "darwin" || text === null || !vscodeHidesCaret(text)) return;
+        await writeFile(vscodeSettingsFile, withClassicInput(text));
+        fixedVSCode = true;
+        log.debug("main: set editor.editContext false in VS Code's settings");
+        windows.push("welcome");
+        return;
+      }
       case "openURL":
         if (openableURLs.includes(command.url)) await shell.openExternal(command.url);
         return;

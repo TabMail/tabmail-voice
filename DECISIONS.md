@@ -155,6 +155,27 @@ the surface for status now and agent responses later (as on iOS).
   ready before the user dictates. Other apps are not touched: `AXEnhancedUserInterface` has
   window-management side effects in some of them.
 
+**Amendment 2026-09-28 — VS Code with accessibility support off.** Owner: in VS Code the overlay
+opened at the start of the line, not at the cursor. Measured on VS Code 1.139 through
+`voice-macos`'s `caretAnchor`: with `"editor.accessibilitySupport": "off"`, VS Code's default
+EditContext input answers Accessibility with no text and the whole line's box, so no caret column
+exists to read (anchor at the line's start, x 3359 where the caret was at x 3533). With the setting
+at its default (`auto`, which `AXManualAccessibility` turns on) or with `"editor.editContext": false`
+(the classic input sits at the caret, 1 pt wide) the anchor is exact. Anchoring at the mouse
+pointer's x on the caret's line was tried and rejected by the owner. Users can't be expected to find
+the setting, so the welcome wizard's Accessibility step detects it (`vscodeHidesCaret` over VS Code's
+user `settings.json`, macOS only for now, where the caret is found) and offers **Fix VS Code's
+Settings**, which sets `editor.editContext` false and nothing else, parsed and edited with
+Microsoft's `jsonc-parser` (VS Code's own) so comments and layout are kept. `editor.editContext`
+false was chosen over turning accessibility support back on because the user switched that off on
+purpose. VS Code applies the change without a restart; the caret is exact from the next cursor move.
+A file that doesn't parse is never offered or written. The wizard opens on first launch and from
+Welcome Guide…; nothing is changed without the button. The file is rewritten in place, not through a
+temporary file and a rename, so a settings file that is a symlink (dotfile managers) stays one; a
+crash inside that single write could shorten it. Only the default profile's `Code/User/settings.json`
+is read: VS Code profiles (`User/profiles/<id>/`), language-specific and workspace settings, VS Code
+Insiders and other VS Code-based editors are not checked yet.
+
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
 **Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the

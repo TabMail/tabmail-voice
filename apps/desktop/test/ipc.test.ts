@@ -38,6 +38,7 @@ describe("IPC", () => {
       { type: "welcomeNext" },
       { type: "welcomeBack" },
       { type: "welcomeGoTo", index: 0 },
+      { type: "fixVSCodeSettings" },
       { type: "openURL", url: "https://example.com" },
       { type: "answerConfirmation", confirmed: true },
       { type: "setConnectorEnabled", connector: "reminders", value: false },

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "2.0.0",
+    "jsonc-parser": "3.3.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

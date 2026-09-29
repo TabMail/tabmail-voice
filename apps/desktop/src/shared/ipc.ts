@@ -85,6 +85,9 @@ export interface WelcomeState {
   enabledConnectors: Connector[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
+  /** VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
+   * Accessibility step offers to change them; "done" once it has. */
+  vscodeFix: "notNeeded" | "needed" | "done";
 }
 
 export interface ContextDebugState {
@@ -118,6 +121,7 @@ export type Command =
   | { type: "welcomeNext" }
   | { type: "welcomeBack" }
   | { type: "welcomeGoTo"; index: number }
+  | { type: "fixVSCodeSettings" }
   | { type: "openURL"; url: string }
   /** The chat window: the user touched it (a hover, click or scroll), closed it, opened a reply's
    * link, confirmed or declined its question, or it measured its height. */
@@ -176,6 +180,7 @@ export function isCommand(value: unknown): value is Command {
     case "requestAccessibility":
     case "welcomeNext":
     case "welcomeBack":
+    case "fixVSCodeSettings":
     case "keepChatOpen":
     case "closeChat":
       return true;
