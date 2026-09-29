@@ -51,6 +51,9 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
+  dictionary: [],
+  learnsWords: true,
+  canLearnWords: true,
   userName: "Alex Example",
   suggestedName: "Alex Example",
   enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
@@ -99,6 +102,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
   // No name for agent mode: the field is empty with the account's name as placeholder, and the section is marked.
   { name: "settings-agent-mode-no-name", page: "settings.html", size: settingsWindowSize, section: "Agent mode", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, userName: null } },
   // VS Code's settings hide the caret: Permissions offers to fix them.
+  // The dictionary: typed words and a learned one.
+  { name: "settings-dictionary", page: "settings.html", size: settingsWindowSize, section: "Dictionary", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, dictionary: [{ word: "Xyvora", learned: false }, { word: "Kaelthorne Drake", learned: false }, { word: "TabMail", learned: true }] } },
   { name: "settings-permissions-vscode", page: "settings.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },

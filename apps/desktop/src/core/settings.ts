@@ -6,6 +6,7 @@ import { DebugAccess } from "./account.js";
 import { type Connector, connectors, isConnector } from "./agent/connectors.js";
 import { type AgentTool, isAgentTool, offeredAgentTools } from "./agent/tools.js";
 import * as config from "./config.js";
+import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey.js";
 import { type KeyValueStore, storedBool, storedString } from "./keyValueStore.js";
 import { Observable } from "./observable.js";
@@ -20,6 +21,8 @@ const Key = {
   disabledAgentTools: "disabledAgentTools",
   disabledConnectors: "disabledConnectors",
   userName: "userName",
+  dictionary: "dictionary",
+  learnsWords: "learnsWords",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -44,7 +47,15 @@ export interface DictationSettings {
   /** The user's name, sent with agent mode's requests so the backend can tell the user's own messages
    * on screen from other people's; empty when not set. */
   userName: string;
+  /** The user's dictionary words (ADR-DESK-038), sent with the transcription and the cleanup. */
+  dictionary: string[];
+  /** Whether the dictation's paste is watched to learn the user's corrections. */
+  learnsWords: boolean;
 }
+
+/** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
+ * `config.dictionaryMaxEntries`. A word already there is `added` (and typed now, if it was learned). */
+export type AddWordResult = "added" | "invalid" | "full";
 
 /** The name the welcome wizard offers (owner, 2026-09-28: "the macOS full name or the username"): the
  * computer account's full name, else its short name. */
@@ -143,6 +154,54 @@ export class AppSettings extends Observable {
     return (this.userName ?? "").trim();
   }
 
+  /** The user's dictionary, in the order the words were added (ADR-DESK-038). */
+  get dictionary(): DictionaryEntry[] {
+    return storedDictionary(this.store.get(Key.dictionary));
+  }
+
+  /** Adds a word the user typed. One already learned becomes typed, so it shows as the user's own. */
+  addWord(raw: string): AddWordResult {
+    const word = dictionaryWord(raw);
+    if (word === null) return "invalid";
+    const entries = this.dictionary;
+    const existing = entries.findIndex((entry) => isSameWord(entry.word, word));
+    if (existing === -1 && entries.length >= config.dictionaryMaxEntries) return "full";
+    if (existing === -1) entries.push({ word, learned: false });
+    else entries[existing] = { word: entries[existing]!.word, learned: false };
+    this.writeDictionary(entries);
+    return "added";
+  }
+
+  /** Adds words learned from the user's corrections, those not already there, while there is room;
+   * returns those added. */
+  learnWords(words: readonly string[]): string[] {
+    const entries = this.dictionary;
+    const added: string[] = [];
+    for (const raw of words) {
+      const word = dictionaryWord(raw);
+      if (word === null || entries.length >= config.dictionaryMaxEntries || entries.some((entry) => isSameWord(entry.word, word))) continue;
+      entries.push({ word, learned: true });
+      added.push(word);
+    }
+    if (added.length > 0) this.writeDictionary(entries);
+    return added;
+  }
+
+  removeWord(word: string): void {
+    const entries = this.dictionary;
+    const kept = entries.filter((entry) => entry.word !== word);
+    if (kept.length !== entries.length) this.writeDictionary(kept);
+  }
+
+  /** Learn words from the user's corrections of a dictation. On unless the user switches it off. */
+  get learnsWords(): boolean {
+    return storedBool(this.store, Key.learnsWords) ?? true;
+  }
+
+  set learnsWords(value: boolean) {
+    this.write(Key.learnsWords, value);
+  }
+
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
   private get disabledAgentTools(): AgentTool[] {
     const stored = this.store.get(Key.disabledAgentTools);
@@ -213,7 +272,14 @@ export class AppSettings extends Observable {
       emailClient: this.emailClient,
       hasTabMail: this.hasTabMail(),
       userName: this.sentUserName,
+      dictionary: this.dictionary.map((entry) => entry.word),
+      learnsWords: this.learnsWords,
     };
+  }
+
+  private writeDictionary(entries: DictionaryEntry[]): void {
+    this.store.set(Key.dictionary, entries);
+    this.changed();
   }
 
   private write(key: string, value: boolean): void {

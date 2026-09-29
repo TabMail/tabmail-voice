@@ -1803,3 +1803,50 @@ ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built se
 - Bringing the tool back is offering it in `offeredAgentTools`, with the native connector as its
   delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
   case) were taken out with it and come back from this change's history.
+
+## ADR-DESK-038: A dictionary of the user's words, typed or learned from their corrections
+
+**Context:** Owner, 2026-09-29: dictation should learn the user's vocabulary, as other dictation apps
+do, with a dictionary the user also edits by hand, in its own Settings section. A live test the same
+day showed the speech model spells made-up names right when given them as a word list, and that a
+name in Hangul is left in Hangul, so the cleanup pass must see the words too (backend ADR-025). The
+consent step is reworded, not re-asked (owner: the app has never been released, so no one has
+consented to the old text).
+
+**Decision:**
+- `AppSettings.dictionary`: entries `{word, learned}`, in the order added, kept on this computer, not
+  synced. Words are trimmed with their spaces collapsed, and must pass the backend's rules
+  (`dictionaryWord`, in the backend's units: UTF-16 code units, JS `trim`, words split on spaces): at
+  most `dictionaryWordMaxChars` characters and `dictionaryWordMaxWords` words, no control characters
+  or `<` `>`, at most `dictionaryMaxEntries` words; the same word in another case is one entry. A word
+  the backend would refuse is never stored, so no dictation fails on one.
+- The dictation's key-down snapshot (ADR-DESK-017) carries the words and the learning switch. Every
+  transcription sends them as `vocabulary` (none when empty), and dictation's cleanup as `dictionary`,
+  one per line. Agent mode's prompts don't take them.
+- Settings › Dictionary: a field to add a word, the words with a Remove button each, a learned one
+  tagged "Learned" (typing it makes it the user's own), and "Learn from my corrections" (on by
+  default) where the field can be read: macOS.
+- Learning (`CorrectionWatch`, `learnedCorrections`, our own implementation of the approach OpenWhispr
+  takes): after a dictation's paste, with learning on at its key-down, `voice-macos` reads the
+  focused field of the app that was in front at key-down (`focusedFieldValue`) every
+  `correctionPollInterval` for `correctionWatchDuration`. The first read holding the pasted text is the
+  field before any edit; each later change that stays for one interval is compared with it. The
+  changed span (common prefix and suffix) must lie within one copy of the pasted text; the words are
+  aligned (longest common subsequence), and a run of changed words is learned when it respells rather
+  than replaces: at most half the dictation's words changed, an edit distance within
+  `correctionMaxEditShare` of the longer spelling, not an everyday word or one shorter than
+  `correctionMinWordLength`, and for a change of case alone, a capital inside a word or a change of
+  spacing ("tabmail", "tab mail" → "TabMail"), not one at a word's start. The next key-down stops the
+  watch first, so a dictation's own paste is never taken for a correction; an unreadable field ends it.
+- The helper never reads a password field (`kAXSecureTextFieldSubrole`) or a field longer than
+  `correctionMaxFieldLength`. The field's text stays on the computer; only the debug log sees it, and
+  the words learned (`log.content`).
+- The consent step lists the dictionary's words among what a dictation sends, and says learning reads
+  the field on this computer and can be switched off.
+
+**Consequences:**
+- A word removed from the dictionary can be learned again from a later correction.
+- Windows and Linux have the dictionary but no learning until their helpers read the field.
+- No notice when a word is learned yet: the user sees it in Settings (an overlay "Learned … Undo" is a
+  follow-up), and the privacy policy's Voice Data wording is updated separately.
+- Every word is sent with every dictation: the list's cap keeps that small.

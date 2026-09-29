@@ -93,6 +93,39 @@ export const completionsRequestTimeout = 30_000;
  * 2026-09-28: 1.5 s at most (was 3 s), since the cleanup is a light pass. */
 export const cleanupTimeout = 1_500;
 
+// MARK: Dictionary (ADR-DESK-038)
+
+/** The dictionary's limits, the backend's for the words sent with each dictation (its ADR-025): at
+ * most this many words, each at most this many characters and this many space-separated words. */
+export const dictionaryMaxEntries = 200;
+export const dictionaryWordMaxChars = 50;
+export const dictionaryWordMaxWords = 6;
+/** After a dictation's paste, the field is read this often, for this long, to learn the user's
+ * corrections to it. A correction counts once the field has not changed for one interval. */
+export const correctionPollInterval = 500;
+export const correctionWatchDuration = 30_000;
+/** A field longer than this (UTF-16 code units) is not read: a whole document, not a message. */
+export const correctionMaxFieldLength = 20_000;
+/** A correction is learned only if it changed at most this share of the dictation's words (more is a
+ * rewrite), and it respells a word rather than replacing it: the edit distance between the heard and
+ * the corrected spelling is at most this share of the longer ("Zivora" → "Xyvora" is 2 of 6). */
+export const correctionMaxChangedShare = 0.5;
+export const correctionMaxEditShare = 0.65;
+/** A corrected word shorter than this (characters) is not learned. */
+export const correctionMinWordLength = 3;
+/** Everyday English words, never learned: replacing one with another ("then" → "than") is a change
+ * of wording, not a name or term to spell. */
+export const correctionCommonWords: ReadonlySet<string> = new Set(
+  `about after again also always another any are around back because been before being best better
+  between both but came can come could day did does done down each even every few find first for from
+  get give going good got great had has have her here him his how into its just keep know last left
+  like little long look made make many may might more most much must never new next not now off okay
+  old once one only other our out over own put said same saw say see she should since some still
+  such take than that the their them then there these they thing think this those though thought
+  through too two under until upon use very want was way well went were what when where which while
+  who why will with work would yes yet you your`.split(/\s+/),
+);
+
 // MARK: Agent mode (Space during the hold)
 
 /** The backend prompt that chooses the tool for a spoken request. */

@@ -116,7 +116,7 @@ describe("content log", () => {
     const client = new TranscriptionClient(baseURL, "1.0", stub.transport);
 
     const entries = await loggedContent(async () => {
-      await client.transcribe(wav, null, "secret-token-123");
+      await client.transcribe(wav, null, ["Xyvora"], "secret-token-123");
     });
 
     expect(entries.map((entry) => entry.label)).toEqual(["Transcription request", "Transcription response"]);
@@ -124,6 +124,7 @@ describe("content log", () => {
     expect(request?.startsWith("POST https://api.example.com/dictation/transcribe\n")).toBe(true);
     expect(request).toContain(`<${wav.length} bytes of WAV, not logged>`);
     expect(request).toContain(`"format":"wav"`);
+    expect(request).toContain(`"vocabulary":["Xyvora"]`);
     expect(response).toContain(`"text":"Hello there."`);
     // The stub did receive the audio: the log left it out.
     expect(stub.requests[0]?.body).toContain(audio);
@@ -138,7 +139,7 @@ describe("content log", () => {
     const client = new TranscriptionClient(baseURL, "1.0", stub.transport);
 
     const entries = await loggedContent(async () => {
-      await client.transcribe(new TextEncoder().encode("RIFF"), null, "t").catch(() => undefined);
+      await client.transcribe(new TextEncoder().encode("RIFF"), null, [], "t").catch(() => undefined);
     });
 
     expect(entries.map((entry) => entry.label)).toEqual(["Transcription request", "Transcription response"]);

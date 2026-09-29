@@ -62,6 +62,7 @@ describe("helper wire contract", () => {
     await mac.readScreen();
     await mac.appIcon("/Applications/Example.app", config.agentBubbleAppIconSize);
     await mac.caretAnchor(1);
+    await mac.focusedFieldValue(1);
     await mac.startActivator();
     await mac.globeKey.read();
     await mac.globeKey.update(0);
@@ -395,5 +396,25 @@ describe("helper wire contract", () => {
     for (const { method, params } of sent) {
       for (const param of handlers.get(method) ?? []) expect(params, `${method} without ${param}`).toContain(param);
     }
+  });
+});
+
+/** The field's text for the correction watch (ADR-DESK-038): asked with the length cap, and read back
+ * as text or nothing. */
+describe("MacSystem.focusedFieldValue", () => {
+  function replying(reply: unknown): { mac: MacSystem; params: Record<string, unknown>[] } {
+    const params: Record<string, unknown>[] = [];
+    const helper = { request: async (_method: string, sent: Record<string, unknown> = {}) => (params.push(sent), reply), on() {} } as unknown as HelperClient;
+    return { mac: new MacSystem(helper), params };
+  }
+
+  test("asks for the app's field, capped, and returns its text", async () => {
+    const { mac, params } = replying({ value: "Meet Xyvora." });
+    expect(await mac.focusedFieldValue(42)).toBe("Meet Xyvora.");
+    expect(params).toEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength }]);
+  });
+
+  test.each([{ value: null }, {}, null, { value: 3 }])("no text in %j is none", async (reply) => {
+    expect(await replying(reply).mac.focusedFieldValue(42)).toBeNull();
   });
 });

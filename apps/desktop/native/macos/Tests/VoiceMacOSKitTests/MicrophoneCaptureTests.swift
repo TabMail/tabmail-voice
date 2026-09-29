@@ -167,6 +167,9 @@ struct MacServiceRequestTests {
             #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
             #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
             #"{"id":5,"method":"insert","params":{"text":"x","restoreDelay":1e300}}"#,
+            #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
+            #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
+            #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
         ]
         for request in requests { await channel.handle(line: Data(request.utf8)) }
 

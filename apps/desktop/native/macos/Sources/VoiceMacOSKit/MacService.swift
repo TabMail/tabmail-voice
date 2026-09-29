@@ -12,6 +12,8 @@ import VoiceHelperSupport
 /// - `frontmostApp` → `{pid, name, bundleIdentifier, path}` or null.
 /// - `readScreen` → the screen context of the app in front (`ScreenContext.json`), or null without one.
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
+/// - `focusedFieldValue {pid, maxLength}` → `{value}`: the text of the app's focused field, null for
+///   none, a password field, or one longer than `maxLength` UTF-16 code units (`FocusedField`).
 /// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
 ///   clipboard after `restoreDelay` seconds.
 /// - `keyboardLanguage` → `{code}`: the active keyboard input source's language, or null.
@@ -106,6 +108,13 @@ public enum MacService {
                 // The flip is its own inverse: back to Accessibility's top-left coordinates.
                 return .rect(CaretLocator.cocoaRect(fromAccessibility: cocoa, primaryScreenHeight: primaryHeight))
             }.value
+        }
+        channel.on("focusedFieldValue") { params in
+            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }),
+                  let maxLength = params["maxLength"]?.integer, maxLength >= 0 else {
+                throw HelperError("focusedFieldValue needs pid and maxLength")
+            }
+            return await Task.detached { ["value": FocusedField.value(inApp: pid, maxLength: maxLength).map(JSON.string) ?? .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,

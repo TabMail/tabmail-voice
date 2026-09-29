@@ -13,7 +13,7 @@ import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
 import { AgentFailure, type AgentTool, agentTools } from "../src/core/agent/tools.js";
 import { BackendError, CompletionsClient, TranscriptionClient } from "../src/core/backend.js";
 import * as config from "../src/core/config.js";
-import { DictationController, nothingHeardMessage, type Phase } from "../src/core/dictationController.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, type Phase } from "../src/core/dictationController.js";
 import type { DictationMode } from "../src/core/hotkey.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
 import { configureLog, type LogLevel } from "../src/core/log.js";
@@ -48,7 +48,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentTool[] = agentTools.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example" };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -109,7 +109,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void>; loopTools?: LoopTool[] } = {},
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void>; loopTools?: LoopTool[]; corrections?: DictationDependencies["corrections"] } = {},
   ): { controller: DictationController; pastes: string[] } {
     const pastes: string[] = [];
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
@@ -137,6 +137,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", options.transcriptionTransport ?? transcription.transport),
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
       loopTools: options.loopTools ?? [],
+      corrections: options.corrections,
     });
     return { controller, pastes };
   }
@@ -193,6 +194,103 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     expect(pasted).toEqual([transcript]);
     expect(controller.phase).toEqual(idle);
+  });
+
+  /** The dictionary's words go with the transcription, for the speech model, and with the cleanup, one
+   * per line (ADR-DESK-038). */
+  test("sends the dictionary with the transcription and the cleanup", async () => {
+    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora", "Kaelthorne Draszek"] };
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(200, cleanedStream);
+
+    const { pasted } = await dictate();
+
+    expect(pasted).toEqual([cleaned]);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
+    expect(cleanupVars(0)?.dictionary).toBe("Xyvora\nKaelthorne Draszek");
+  });
+
+  test("an empty dictionary sends no words and an empty cleanup dictionary", async () => {
+    transcription.enqueue(200, { text: transcript });
+    completions.enqueue(200, cleanedStream);
+
+    await dictate();
+
+    expect(transcription.body(0).vocabulary).toBeUndefined();
+    expect(cleanupVars(0)?.dictionary).toBe("");
+  });
+
+  /** After a dictation's paste, the field of the app in front at key-down is watched for the user's
+   * corrections (`CorrectionWatch`), with the text pasted; the next key-down stops the watch first. */
+  describe("learning the user's corrections", () => {
+    function watcher(): { calls: string[]; corrections: NonNullable<DictationDependencies["corrections"]> } {
+      const calls: string[] = [];
+      return { calls, corrections: { watch: (pid, pasted) => calls.push(`watch ${pid} ${pasted}`), stop: () => calls.push("stop") } };
+    }
+
+    async function dictateHeld(corrections: NonNullable<DictationDependencies["corrections"]>, count = 1): Promise<string[]> {
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
+      for (let index = 0; index < count; index += 1) {
+        transcription.enqueue(200, { text: transcript });
+        completions.enqueue(200, cleanedStream);
+        await holdAndRelease(controller);
+        expect(await eventually(() => pastes.length === index + 1 && settled(controller))).toBe(true);
+      }
+      return pastes;
+    }
+
+    test("watches the app pasted into, with the text pasted", async () => {
+      const { calls, corrections } = watcher();
+      expect(await dictateHeld(corrections)).toEqual([cleaned]);
+      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
+    });
+
+    test("each key-down stops the last watch before the next paste", async () => {
+      const { calls, corrections } = watcher();
+      await dictateHeld(corrections, 2);
+      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`, "stop", `watch 101 ${cleaned}`]);
+    });
+
+    test("nothing is watched with learning switched off", async () => {
+      prefs.value = { ...defaultSettings(), learnsWords: false };
+      const { calls, corrections } = watcher();
+      expect(await dictateHeld(corrections)).toEqual([cleaned]);
+      expect(calls).toEqual(["stop"]);
+    });
+
+    /** Read at key-down with the other settings: switching learning off during the hold changes
+     * nothing for this dictation. */
+    test("the learning switch is the one at key-down", async () => {
+      const { calls, corrections } = watcher();
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
+      controller.onPhaseChange = (phase) => {
+        if (phase.kind === "listening") prefs.value = { ...defaultSettings(), learnsWords: false };
+      };
+      transcription.enqueue(200, { text: transcript });
+      completions.enqueue(200, cleanedStream);
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
+    });
+
+    test("without an app in front at key-down, nothing is watched", async () => {
+      front.pid = null;
+      const { calls, corrections } = watcher();
+      expect(await dictateHeld(corrections)).toEqual([cleaned]);
+      expect(calls).toEqual(["stop"]);
+    });
+
+    /** Agent mode's text is the agent's, not a dictation to correct. */
+    test("agent mode's paste is not watched", async () => {
+      const { calls, corrections } = watcher();
+      transcription.enqueue(200, { text: "make this friendlier" });
+      completions.enqueue(200, Fixtures.reply("We ship on Friday."));
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
+      controller.captureContext = async () => selectionScreen("We ship Friday.");
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(calls).toEqual(["stop"]);
+    });
   });
 
   test("an empty transcript is neither cleaned up nor pasted", async () => {
@@ -1009,7 +1107,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example" };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false };
         };
         const read = controller.captureContext;
         controller.captureContext = () => {
@@ -1023,6 +1121,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(new Set([...hosts(transcription), ...hosts(completions)])).toEqual(new Set(["api.example.com"]));
       expect(reads).toBe(1);
       expect(cleanupVars(1)?.user_name).toBe("Alex Example");
+      expect(transcription.body(0).vocabulary).toBeUndefined();
 
       controller.onPhaseChange = undefined;
       transcription.enqueue(200, { text: "find sam's receipt" });
@@ -1035,6 +1134,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect([...hosts(transcription), ...hosts(completions)].filter((host) => host === "dev.example.com")).toHaveLength(3);
       expect(reads).toBe(1);
       expect(cleanupVars(3)?.user_name).toBe("Sam Example");
+      expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
     });
 
     /** The bubbles show the tools switched on at key-down, the ones the request is offered: a tool

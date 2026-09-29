@@ -69,6 +69,9 @@ export interface DictationDependencies {
   loopTools: readonly LoopTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
+  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`); none where the field
+   * can't be read (no helper on Windows and Linux yet). */
+  corrections?: { watch(pid: number, pasted: string): void; stop(): void };
 }
 
 /** Shown when the recording had no words in it. Kept to one line of the pill. */
@@ -299,6 +302,8 @@ export class DictationController extends Observable {
       return this.fail("Allow Accessibility access in TabMail Voice's menu so dictation can type for you.");
     }
 
+    // This dictation's paste must not be taken for the user's correction of the last one.
+    this.deps.corrections?.stop();
     cancelTimer(this.failureResetTimer);
     this.failureResetTimer = null;
     this.generation += 1;
@@ -460,7 +465,7 @@ export class DictationController extends Observable {
     try {
       const language = await this.languageRead;
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
-      const transcript = trimWhitespace(await withFreshToken(account, userId, (token) => client.transcribe(wav, language, token, signal)));
+      const transcript = trimWhitespace(await withFreshToken(account, userId, (token) => client.transcribe(wav, language, settings.dictionary, token, signal)));
       if (!isCurrent()) return;
       log.debug(() => `DictationController: transcript ready (${charCount(transcript)} chars)`);
       log.content(`Transcript (${mode})`, transcript);
@@ -482,9 +487,14 @@ export class DictationController extends Observable {
       if (!isCurrent()) return;
       if (mode === "dictation") {
         const client = this.deps.makeCompletionsClient(settings.backendURL);
-        const text = await DictationCleanup.cleanUp(transcript, context, client, account, userId, config.cleanupTimeout, signal);
+        const text = await DictationCleanup.cleanUp(transcript, context, settings.dictionary, client, account, userId, config.cleanupTimeout, signal);
         if (!isCurrent()) return;
         await this.paste(text, signal);
+        const corrections = this.deps.corrections;
+        if (settings.learnsWords && corrections) {
+          const pid = await this.targetApp;
+          if (pid !== null && isCurrent()) corrections.watch(pid, text);
+        }
       } else {
         const email = await this.lookUpEmailApp();
         if (!isCurrent()) return;

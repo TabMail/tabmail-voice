@@ -285,3 +285,19 @@ input.switch:checked::before {
     background: SelectedItemText;
   }
 }
+
+/* Settings › Dictionary: the add field fills its row, and the words are rows of the same card. */
+.dictionary-input {
+  flex: 1;
+}
+
+ul.dictionary {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--separator);
+}
+
+.learned {
+  margin-left: 6px;
+}

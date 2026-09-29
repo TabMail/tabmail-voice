@@ -23,7 +23,7 @@ describe("DictationCleanup.message", () => {
       renderedText: "## Agenda\n» Ask Jordan about the ‸",
     });
 
-    const message = DictationCleanup.message("quarterly road map", context);
+    const message = DictationCleanup.message("quarterly road map", context, ["Xyvora", "Kaelthorne Draszek"]);
 
     expect(message.role).toBe("system");
     // The backend's prompt name, spelled out: comparing with the config would pass a typo.
@@ -35,13 +35,14 @@ describe("DictationCleanup.message", () => {
       terminal_program: "example-shell",
       window_title: "Weekly sync",
       screen_text: "## Agenda\n» Ask Jordan about the ‸",
+      dictionary: "Xyvora\nKaelthorne Draszek",
     });
   });
 
   /** Without Accessibility access there is no context: the prompt still gets every field, empty. */
   test("without context every field is empty", () => {
-    expect(DictationCleanup.message("hello", null).vars).toEqual({
-      dictation: "hello", app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "",
+    expect(DictationCleanup.message("hello", null, []).vars).toEqual({
+      dictation: "hello", app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "", dictionary: "",
     });
   });
 });
@@ -59,7 +60,7 @@ describe("the cleanup's screen text", () => {
   test("is the text within its reach of the caret, markers kept", () => {
     const text = around(rendered);
     expect(text).toBe(`${before}‸${after}`);
-    expect(DictationCleanup.message("hello", screen({ renderedText: rendered })).vars.screen_text).toBe(text);
+    expect(DictationCleanup.message("hello", screen({ renderedText: rendered }), []).vars.screen_text).toBe(text);
   });
 
   /** Near the start or end of the screen it takes what there is: the text before the field too. */
@@ -215,7 +216,7 @@ describe("DictationCleanup.cleanUp", () => {
     const backend = new StubTransport();
     const auth = new StubTransport();
     const cleanUp = (account: AccountModel = signedIn(auth), timeout = config.cleanupTimeout) =>
-      DictationCleanup.cleanUp(transcript, null, new CompletionsClient("https://api.example.com", "v", backend.transport), account, Fixtures.userId, timeout);
+      DictationCleanup.cleanUp(transcript, null, [], new CompletionsClient("https://api.example.com", "v", backend.transport), account, Fixtures.userId, timeout);
     return { backend, auth, cleanUp };
   }
 

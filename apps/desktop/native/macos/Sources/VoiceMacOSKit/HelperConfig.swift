@@ -86,6 +86,11 @@ enum HelperConfig {
     /// may be slow to answer while it starts its accessibility service.
     static let accessibilityActivationTimeout: Float = 1
 
+    // MARK: Focused field
+
+    /// Per-call cap on Accessibility calls reading the focused field after a paste (seconds).
+    static let focusedFieldTimeout: Float = 0.25
+
     // MARK: Email apps
 
     /// Asked for the app that opens it, to find the user's default email app.

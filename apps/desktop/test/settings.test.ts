@@ -139,6 +139,8 @@ describe("AppSettings", () => {
     app.setEnabled("answer", false);
     app.setConnectorEnabled("calendar", false);
     app.userName = "Alex Example";
+    app.addWord("Xyvora");
+    app.learnsWords = false;
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -150,7 +152,113 @@ describe("AppSettings", () => {
       emailClient: null,
       hasTabMail: true,
       userName: "",
+      dictionary: [],
+      learnsWords: true,
     });
+    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false });
+  });
+});
+
+/** The user's dictionary (ADR-DESK-038): words typed in Settings, and words learned from the user's
+ * corrections, kept on this computer in the order added. */
+describe("dictionary", () => {
+  test("is empty, and learns words, by default", () => {
+    const app = settings();
+    expect(app.dictionary).toEqual([]);
+    expect(app.learnsWords).toBe(true);
+    expect(app.dictation(null)).toMatchObject({ dictionary: [], learnsWords: true });
+  });
+
+  test("keeps typed and learned words, in order, across a relaunch", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    expect(app.addWord("  Xyvora ")).toBe("added");
+    expect(app.learnWords(["Kaelthorne Draszek"])).toEqual(["Kaelthorne Draszek"]);
+    app.learnsWords = false;
+    expect(changes).toBe(3);
+
+    const relaunched = settings(store);
+    expect(relaunched.dictionary).toEqual([{ word: "Xyvora", learned: false }, { word: "Kaelthorne Draszek", learned: true }]);
+    expect(relaunched.learnsWords).toBe(false);
+    expect(relaunched.dictation(null).dictionary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
+  });
+
+  test("a word already there isn't added twice, whatever its case", () => {
+    const app = settings();
+    app.addWord("Xyvora");
+    expect(app.addWord("XYVORA")).toBe("added");
+    expect(app.learnWords(["xyvora", "Xyvora", "TabMail", "tabmail"])).toEqual(["TabMail"]);
+    expect(app.dictionary.map((entry) => entry.word)).toEqual(["Xyvora", "TabMail"]);
+  });
+
+  /** Typing a learned word makes it the user's own: it no longer shows as learned. */
+  test("typing a learned word keeps its spelling and makes it typed", () => {
+    const app = settings();
+    app.learnWords(["TabMail"]);
+    expect(app.addWord("tabmail")).toBe("added");
+    expect(app.dictionary).toEqual([{ word: "TabMail", learned: false }]);
+  });
+
+  test.each(["", "   ", "x".repeat(config.dictionaryWordMaxChars + 1), "one two three four five six seven", "Xy<vora", "Xy\u0007vora"])("refuses %j", (word) => {
+    const app = settings();
+    expect(app.addWord(word)).toBe("invalid");
+    expect(app.learnWords([word])).toEqual([]);
+    expect(app.dictionary).toEqual([]);
+  });
+
+  test("collapses a word's spaces", () => {
+    const app = settings();
+    app.addWord("Kaelthorne \t  Draszek");
+    expect(app.dictionary).toEqual([{ word: "Kaelthorne Draszek", learned: false }]);
+  });
+
+  /** At `config.dictionaryMaxEntries`, the backend's limit: a typed word is refused, learning stops. */
+  test("holds at most the backend's number of words", () => {
+    const app = settings();
+    const words = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `word${index}`);
+    expect(app.learnWords(words)).toHaveLength(config.dictionaryMaxEntries);
+    expect(app.addWord("Xyvora")).toBe("full");
+    expect(app.learnWords(["Xyvora"])).toEqual([]);
+    expect(app.addWord("WORD0")).toBe("added");
+    expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
+    app.removeWord("word1");
+    expect(app.addWord("Xyvora")).toBe("added");
+    expect(app.dictionary.at(-1)).toEqual({ word: "Xyvora", learned: false });
+  });
+
+  test("removes a word by its spelling", () => {
+    const app = settings();
+    app.addWord("Xyvora");
+    app.addWord("TabMail");
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    app.removeWord("xyvora");
+    expect(changes).toBe(0);
+    app.removeWord("Xyvora");
+    expect(changes).toBe(1);
+    expect(app.dictionary.map((entry) => entry.word)).toEqual(["TabMail"]);
+  });
+
+  /** The store is a file the user could edit: only valid, distinct entries are read back, at most the
+   * limit. */
+  test("reads back only valid entries", () => {
+    const stored = [
+      { word: "Xyvora", learned: false },
+      { word: "xyvora", learned: true },
+      { word: "Bad<word", learned: false },
+      { word: " Padded", learned: false },
+      { word: "TabMail" },
+      "Loose",
+      null,
+      { word: "Kaelthorne Draszek", learned: true },
+      ...Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: true })),
+    ];
+    const dictionary = settings(new MemoryStore({ dictionary: stored })).dictionary;
+    expect(dictionary.slice(0, 3)).toEqual([{ word: "Xyvora", learned: false }, { word: "Kaelthorne Draszek", learned: true }, { word: "word0", learned: true }]);
+    expect(dictionary).toHaveLength(config.dictionaryMaxEntries);
+    expect(settings(new MemoryStore({ dictionary: "Xyvora" })).dictionary).toEqual([]);
   });
 });
 

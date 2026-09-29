@@ -73,6 +73,20 @@ function nameField(): HTMLInputElement {
 }
 
 describe("welcome wizard", () => {
+  /** The consent step names everything a dictation sends, the dictionary's words included, and that
+   * learning them reads the field on this computer only (ADR-DESK-038). */
+  test("the consent step says what dictation sends", async () => {
+    await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false });
+    const sent = [...document.querySelectorAll(".sends li")].map((item) => item.textContent ?? "");
+    expect(sent).toHaveLength(4);
+    expect(sent[0]).toContain("Your voice");
+    expect(sent[1]).toContain("The text in the window in front");
+    expect(sent[2]).toContain("The words in your dictionary");
+    expect(sent[2]).toContain("That text stays on this computer.");
+    expect(sent[2]).toContain("Learning is on unless you switch it off in Settings.");
+    expect(sent[3]).toBe("All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.");
+  });
+
   /** The name step offers the computer account's name while none is stored, filling it in when it
    * arrives after the page opens; a stored name shows as stored; what the user types is sent as typed
    * and stays in the field. */
