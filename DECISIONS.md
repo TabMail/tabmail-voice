@@ -273,6 +273,24 @@ mode's tools still get the whole screen. `cleanupTimeout` is 1.5 s (was 3 s); pa
 is pasted as heard, as before. The backend prompt's wording ("the window's visible text") is
 unchanged; the excerpt keeps its markers.
 
+**Amendment 2026-09-28 (later) — never no screen for want of the marker; no selection.** Owner: "we
+should not have empty screen just because we can't find the correct character"; "if we are able to
+find the line where the character is ... including that line in the context"; and "when simply
+dictating i think that selected text should not even go through". In the owner's debug log the helper
+placed no marker in almost every terminal capture without tmux (the terminal's lines are kept as a plain
+field) and in about half the captures of one chat app (the walk hit its time budget before the field). `placeCaret` now puts one caret
+marker in the screen text, in order: the helper's marker on the `» ` lines; else on the caret's line as
+the helper read it around the caret (`textBeforeCaret` to its last line break, the selection as the
+screen still shows it, `textAfterCaret` to its first line break, trailing blanks dropped), found as
+whole `> ` field lines, the last such on screen, the selection then cut from the screen (a terminal
+without tmux renders its lines so; the caret's text inside a word, a longer line or a page line is not
+its line); else after the screen, the helper's text
+around the caret rendered as a focused field (`» ` lines). The excerpt is then cut around that marker as
+before; the screen text is empty only without a screen read. A selection is left out wherever the caret
+is placed: the dictation replaces it, so the cleanup gets the caret alone, and the reach before and after
+counts no selected text. A caret line that is also another whole field line lower on screen places
+the marker there; the owner asked for the line search.
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the
