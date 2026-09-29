@@ -274,6 +274,30 @@ mode's tools still get the whole screen. `cleanupTimeout` is 1.5 s (was 3 s); pa
 is pasted as heard, as before. The backend prompt's wording ("the window's visible text") is
 unchanged; the excerpt keeps its markers.
 
+**Amendment 2026-09-29 — the cleanup runs in the transcription request.** Owner: the cleanup
+"is always done", so the app sends "all the cleanup related information" with the recording and the
+backend "calls the transcriber and the cleanup all together on one go"; the cleanup deadline stays and
+"it should be the backend that enforces it". A dictation now makes one request,
+`POST /dictation/transcribe` with a `cleanup` block (`DictationCleanup.variables`: app name, web host,
+terminal program, window title, the text around the caret and the dictionary, one word per line), and
+gets `{ text, cleaned_text }` back (backend ADR-027). The second authorization, quota and throttle pass
+the cleanup's own request paid, and its round trip, are gone. The app pastes `cleaned_text`, or the
+transcript as heard when it is empty (the backend's cleanup failed, was refused or ran past its 1.5 s
+deadline) or absent (a backend from before this change) (`DictationCleanup.pasted`). The app's own
+`cleanupTimeout` is gone; the request's `transcriptionRequestTimeout` covers both. Consequences:
+- The screen read must be done by the upload, since its text goes with the recording: the upload
+  waits up to `contextWait` for it (it was the transcript's arrival). The read starts at key-down, so
+  it is usually done; one that is not goes out empty, as before. The recording's screen terms
+  (ADR-DESK-038) see a read done in that wait too.
+- Transcription and cleanup share one token: an account switch during the request sends nothing
+  under the other account and pastes that request's cleanup (both ran under the account signed in at
+  the upload, as this ADR required).
+- Agent mode's transcription sends no `cleanup` and is unchanged.
+- Every field is cut to the backend's per-field limit (`config.cleanupFieldMaxLength`, 20,000 UTF-16
+  code units, its `cleanup.maxFieldChars`), its start kept, between characters. Over the limit the
+  backend refuses the whole request, the transcription included, and a window title is whatever the
+  app or web page sets. The cut bounds the cleanup model's input only.
+
 **Amendment 2026-09-28 (later) — never no screen for want of the marker; no selection.** Owner: "we
 should not have empty screen just because we can't find the correct character"; "if we are able to
 find the line where the character is ... including that line in the context"; and "when simply

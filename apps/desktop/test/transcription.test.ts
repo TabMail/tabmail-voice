@@ -4,12 +4,20 @@
 
 import { describe, expect, test } from "vitest";
 import { withFreshToken } from "../src/core/account.js";
-import { BackendError, TranscriptionClient } from "../src/core/backend.js";
+import { BackendError, type CleanupVariables, TranscriptionClient } from "../src/core/backend.js";
 import { base64 } from "../src/core/text.js";
 import { Fixtures, signedIn, StubTransport } from "./support.js";
 
 const baseURL = "https://api.example.com";
 const wav = new TextEncoder().encode("RIFF-test-audio");
+const cleanup: CleanupVariables = {
+  app_name: "Example Notes",
+  web_host: "",
+  terminal_program: "",
+  window_title: "Weekly sync",
+  screen_text: "» We agreed that ‸",
+  dictionary: "Xyvora",
+};
 
 function makeClient(stub: StubTransport, version = "0.1.0"): TranscriptionClient {
   return new TranscriptionClient(baseURL, version, stub.transport);
@@ -30,9 +38,10 @@ describe("TranscriptionClient", () => {
     const stub = new StubTransport();
     stub.enqueue(200, { text: "Hello there.", duration_seconds: 1.2 });
 
-    const text = await makeClient(stub).transcribe(wav, null, [], "token-abc");
+    const transcription = await makeClient(stub).transcribe(wav, null, [], "token-abc");
 
-    expect(text).toBe("Hello there.");
+    // No cleanup asked for, none returned.
+    expect(transcription).toEqual({ text: "Hello there.", cleanedText: null });
     const request = stub.requests[0];
     expect(request?.url).toBe("https://api.example.com/dictation/transcribe");
     expect(request?.method).toBe("POST");
@@ -71,12 +80,37 @@ describe("TranscriptionClient", () => {
     expect(Object.keys(stub.body(1)).sort()).toEqual(["audio", "format", "language"]);
   });
 
-  /** The debug log's copy of the body shows the language and words sent, beside the audio's size. */
-  test("the logged body shows the language and the words", () => {
+  /** A dictation's cleanup variables go as `cleanup`, and the backend cleans up the transcript in
+   * the same request (backend ADR-027); without them, the body has no `cleanup` at all. */
+  test("sends the cleanup's variables and returns the cleaned-up text", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, { text: "ask jordan", cleaned_text: "Ask Jordan.", duration_seconds: 1 });
+    stub.enqueue(200, { text: "ask jordan", cleaned_text: "", duration_seconds: 1 });
+
+    const client = makeClient(stub);
+    expect(await client.transcribe(wav, null, [], "t", undefined, cleanup)).toEqual({ text: "ask jordan", cleanedText: "Ask Jordan." });
+    // A failed cleanup: empty, not null.
+    expect(await client.transcribe(wav, null, [], "t", undefined, cleanup)).toEqual({ text: "ask jordan", cleanedText: "" });
+
+    expect(stub.body(0).cleanup).toEqual(cleanup);
+    expect(Object.keys(stub.body(0)).sort()).toEqual(["audio", "cleanup", "format"]);
+  });
+
+  test("rejects a cleaned text that is not a string", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, { text: "ask jordan", cleaned_text: 7 });
+    expect((await backendError(makeClient(stub).transcribe(wav, null, [], "t", undefined, cleanup))).kind).toBe("invalidResponse");
+  });
+
+  /** The debug log's copy of the body shows the language, words and cleanup variables sent, beside
+   * the audio's size. */
+  test("the logged body shows the language, the words and the cleanup", () => {
     expect(TranscriptionClient.loggedBody(12, "ko", [])).toContain(`"language":"ko"`);
     expect(TranscriptionClient.loggedBody(12, null, [])).not.toContain("language");
     expect(TranscriptionClient.loggedBody(12, null, ["Xyvora"])).toContain(`"vocabulary":["Xyvora"]`);
     expect(TranscriptionClient.loggedBody(12, null, [])).not.toContain("vocabulary");
+    expect(TranscriptionClient.loggedBody(12, null, [], cleanup)).toContain(`"window_title":"Weekly sync"`);
+    expect(TranscriptionClient.loggedBody(12, null, [])).not.toContain("cleanup");
   });
 
   test.each([
@@ -118,9 +152,9 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const text = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token));
+    const transcription = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(wav, null, [], token));
 
-    expect(text).toBe("Retried.");
+    expect(transcription.text).toBe("Retried.");
     expect(backend.authorizations).toEqual(["Bearer access-1", "Bearer access-2"]);
     expect(auth.requests).toHaveLength(1);
   });

@@ -18,7 +18,7 @@ import * as config from "./config.js";
 import { contextTerms } from "./contextTerms.js";
 import { type DictationMode, type HotkeyAction, toggled } from "./hotkey.js";
 import { LevelEnvelope } from "./levelEnvelope.js";
-import { errorName, log } from "./log.js";
+import { elapsed, errorName, log } from "./log.js";
 import { Observable } from "./observable.js";
 import type { MicrophoneStatus } from "./permissions.js";
 import type { ScreenContext } from "./screenContext.js";
@@ -119,8 +119,8 @@ export class DictationController extends Observable {
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
   captureContext: (() => Promise<ScreenContext | null> | null) | undefined;
-  /** How long the cleanup waits for that read once the transcript is ready (agent mode waits for
-   * all of it). Settable for tests. */
+  /** How long a dictation's upload waits for that read, which its cleanup variables travel with
+   * (agent mode waits for all of it, once its transcript is ready). Settable for tests. */
   contextWait = config.contextWait;
   /** How long a hold goes on before the double-tap tip is due, and how long a tip shows. Settable
    * for tests. */
@@ -452,8 +452,8 @@ export class DictationController extends Observable {
   }
 
   /** The names and terms on the screen read at key-down (`contextTerms`), sent with the recording
-   * beside the dictionary's words (ADR-DESK-038): only if the read is already done, so the
-   * transcription never waits for it; none when the screen is not read. */
+   * beside the dictionary's words (ADR-DESK-038): only if the read is done by the upload (a dictation
+   * waits `contextWait` for it, agent mode not at all); none when the screen is not read. */
   private screenTerms(dictionary: readonly string[]): string[] {
     const screen = this.screenRead;
     const terms = screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, dictionary, config.contextTermsMax) : [];
@@ -461,11 +461,10 @@ export class DictationController extends Observable {
     return terms;
   }
 
-  /** Transcribes one recording, then cleans it up and inserts it (dictation) or carries it out
-   * (agent mode). Public for tests. */
+  /** Transcribes one recording, cleaned up in the same request, and inserts it (dictation), or
+   * transcribes it and carries it out (agent mode). Public for tests. */
   async transcribe(wav: Uint8Array, generation: number): Promise<void> {
-    log.debug(`DictationController: uploading ${wav.length} bytes`);
-    // Both requests go under the account signed in now, even if the user switches accounts while
+    // Every request goes under the account signed in now, even if the user switches accounts while
     // they run.
     const account = this.deps.account;
     const userId = account.session?.userId ?? null;
@@ -475,32 +474,32 @@ export class DictationController extends Observable {
     const isCurrent = () => this.generation === generation && !signal.aborted;
     try {
       const language = await this.languageRead;
+      const read = this.contextRead;
+      let context: ScreenContext | null = null;
+      if (mode === "dictation") {
+        // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008). It
+        // goes with the recording, for the backend's cleanup.
+        context = read ? await withTimeout(this.contextWait, () => read).catch(() => null) : null;
+        if (read && context === null) log.debug("DictationController: screen read not done in time; continuing without it");
+        if (!isCurrent()) return;
+      }
+      const cleanup = mode === "dictation" ? DictationCleanup.variables(context, settings.dictionary) : undefined;
+      log.debug(`DictationController: uploading ${wav.length} bytes`);
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
       const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
-      const transcript = trimWhitespace(await withFreshToken(account, userId, (token) => client.transcribe(wav, language, vocabulary, token, signal)));
+      const started = performance.now();
+      const transcription = await withFreshToken(account, userId, (token) => client.transcribe(wav, language, vocabulary, token, signal, cleanup));
       if (!isCurrent()) return;
-      log.debug(() => `DictationController: transcript ready (${charCount(transcript)} chars)`);
+      const transcript = trimWhitespace(transcription.text);
+      log.debug(() => `DictationController: transcript ready in ${elapsed(started)} (${charCount(transcript)} chars)`);
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
         this.teardown();
         this.fail(nothingHeardMessage);
         return;
       }
-      const read = this.contextRead;
-      let context: ScreenContext | null;
       if (mode === "dictation") {
-        // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008).
-        context = read ? await withTimeout(this.contextWait, () => read).catch(() => null) : null;
-        if (read && context === null) log.debug("DictationController: screen read not done in time; continuing without it");
-      } else {
-        // All of it: its selection decides between Edit and Compose, as the bubbles showed.
-        context = read ? await read : null;
-      }
-      if (!isCurrent()) return;
-      if (mode === "dictation") {
-        const client = this.deps.makeCompletionsClient(settings.backendURL);
-        const text = await DictationCleanup.cleanUp(transcript, context, settings.dictionary, client, account, userId, config.cleanupTimeout, signal);
-        if (!isCurrent()) return;
+        const text = DictationCleanup.pasted(transcript, transcription.cleanedText);
         await this.paste(text, signal);
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
@@ -508,6 +507,9 @@ export class DictationController extends Observable {
           if (pid !== null && isCurrent()) corrections.watch(pid, text);
         }
       } else {
+        // All of it: its selection decides between Edit and Compose, as the bubbles showed.
+        context = read ? await read : null;
+        if (!isCurrent()) return;
         const email = await this.lookUpEmailApp();
         if (!isCurrent()) return;
         const client = this.deps.makeCompletionsClient(settings.backendURL);
@@ -926,7 +928,8 @@ export class DictationController extends Observable {
    * so neither reaches the next account; a refreshed token for the same account changes nothing. */
   private accountChanged(): void {
     // A dictation never reaches the chat (one is open only after an agent request, and every request
-    // while it is open is one): it goes on, pasted as heard without the other account's cleanup.
+    // while it is open is one): it goes on, its transcription and cleanup both from the account signed
+    // in at the upload.
     if (this.currentMode !== "agent") return;
     log.debug("DictationController: account changed; conversation ended");
     this.endConversation();

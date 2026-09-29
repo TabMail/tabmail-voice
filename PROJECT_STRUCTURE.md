@@ -33,7 +33,7 @@ apps/desktop/
 ├── src/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
-│   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, cleanup
+│   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, the cleanup's variables and what gets pasted
 │   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts; `filesTools.ts`: Files, with Spotlight; `emailTools.ts`: a prefilled new email; `notesTools.ts` and `messagesTools.ts`: Notes and Messages, through `appleScript.ts`'s `ScriptRunner`; `webTools.ts`: the web, pages read through a `WebFetch` and opened in the browser), EmailClient, ThunderbirdRelay
 │   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
 │   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
@@ -69,11 +69,12 @@ process, which hands it to `DictationController` (`src/core/dictationController.
    until audio arrives, then the waveform pill). Releasing earlier discards everything unseen.
 2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. No audio, or an empty
    transcript, shows "Didn't catch that". Otherwise the WAV is uploaded via
-   `TranscriptionClient` (one forced-refresh retry on 401). The transcript and the screen context
-   read at key-down (`ScreenContextProbe`) go to the backend cleanup prompt via
-   `CompletionsClient` (same retry), and `voice-macos` pastes the cleaned text into the
-   frontmost app and restores the clipboard (`TextInserter`). If the cleanup fails for any reason,
-   the transcript is pasted as heard (`DictationCleanup`).
+   `TranscriptionClient` (one forced-refresh retry on 401) with the cleanup's variables: the screen
+   context read at key-down (`ScreenContextProbe`, waited for up to `contextWait`) and the
+   dictionary. The backend transcribes it and runs the cleanup prompt in the same request, under its
+   own deadline (backend ADR-027), and `voice-macos` pastes the cleaned text into the frontmost app
+   and restores the clipboard (`TextInserter`). If the cleanup failed for any reason, the transcript
+   is pasted as heard (`DictationCleanup`).
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
 

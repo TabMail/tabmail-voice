@@ -64,8 +64,9 @@ export const clipboardRestoreDelay = 500;
 
 // MARK: Screen context
 
-/** How long the cleanup waits for the screen read once the transcript is ready. The read is best
- * effort: not done by then, the cleanup runs without it (ADR-DESK-008). */
+/** How long a dictation's upload waits for the screen read, which the cleanup's variables travel with.
+ * The read is best effort: not done by then, the cleanup runs without it (ADR-DESK-008). The read
+ * started at key-down, so it is usually done. */
 export const contextWait = 500;
 /** The cleanup gets only the screen text around the caret, not the whole screen: this much before
  * the caret (about a paragraph) and after it, in UTF-16 code units, rounded to whole characters.
@@ -73,6 +74,11 @@ export const contextWait = 500;
  * still gets all of it. */
 export const cleanupContextBefore = 500;
 export const cleanupContextAfter = 200;
+/** The backend's limit on each cleanup field (its `transcription.json` `cleanup.maxFieldChars`,
+ * ADR-027), in UTF-16 code units. Over it the backend refuses the whole request, the transcription
+ * included, so every field is cut to it (`DictationCleanup.variables`): a window title is whatever
+ * the app or web page sets. */
+export const cleanupFieldMaxLength = 20_000;
 
 // MARK: Backend
 
@@ -80,18 +86,15 @@ export const productionBackendURL = "https://api.tabmail.ai";
 export const developmentBackendURL = "https://dev.tabmail.ai";
 export const transcribePath = "dictation/transcribe";
 export const completionsPath = "completions/chat";
-/** The backend prompt that fixes recognition errors in a transcript using the screen context. */
-export const cleanupPrompt = "system_prompt_dictate_cleanup";
 /** Sent as `X-Client-Type` to identify this client to the backend. Usage is recorded under it, and
  * the admin panel shows it as the macOS device. */
 export const clientType = "macos";
+/** Longest the transcription request may take, the backend's cleanup included (the backend gives the
+ * cleanup 1.5 s, owner 2026-09-28; backend ADR-027). */
 export const transcriptionRequestTimeout = 45_000;
-/** Longest pause in the cleanup's response stream (the backend sends keepalives while the model
- * works). */
+/** Longest pause in an agent-mode completions response stream (the backend sends keepalives while
+ * the model works). */
 export const completionsRequestTimeout = 30_000;
-/** Longest the cleanup may take; past it the transcript is pasted as heard (ADR-DESK-008). Owner,
- * 2026-09-28: 1.5 s at most (was 3 s), since the cleanup is a light pass. */
-export const cleanupTimeout = 1_500;
 
 // MARK: Dictionary (ADR-DESK-038)
 
