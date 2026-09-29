@@ -67,6 +67,13 @@ sudo extract only the key line, and keeps the key in memory without writing it a
 python3 Scripts/stt-compare/compare.py --sudo --env-file /path/to/secrets.env
 ```
 
+## Acknowledgements
+
+TabMail Voice follows patterns from [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT),
+an open-source dictation app: one Electron app for macOS, Windows and Linux, and the approach of
+its correction learner, which the dictionary's learning from the user's corrections is modelled on.
+It is our own app and code, not a fork of OpenWhispr.
+
 ## License
 
 MPL 2.0. See `LICENSE`.

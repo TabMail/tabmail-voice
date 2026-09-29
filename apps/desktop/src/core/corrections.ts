@@ -14,6 +14,13 @@ import { dictionaryWord, isSameWord } from "./dictionary.js";
  * of its words, a replacement by a different word (`config.correctionMaxEditShare`), another form of
  * a lowercase word (`config.correctionMinStemShare`), a short or everyday word, or a change of case
  * alone at a word's start.
+ *
+ * The approach is OpenWhispr's `correctionLearner` (MIT, https://github.com/OpenWhispr/openwhispr):
+ * a word-level longest common subsequence between what was pasted and what the user kept, and its
+ * limits for a rewrite (half the words), a replaced word (an edit distance of 0.65 of its length) and
+ * a short word (3 characters). This is our own implementation, not its code: the edit is located
+ * from the field before and after it, a run of words can be learned as one term, and a change of
+ * case or a word's other form is treated differently.
  */
 export function learnedCorrections(pasted: string, before: string, after: string): string[] {
   const edited = editedPaste(pasted, before, after);

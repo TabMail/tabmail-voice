@@ -1844,8 +1844,9 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
 - Settings › Dictionary: a field to add a word, the words with a Remove button each, a learned one
   tagged "Learned" (typing it makes it the user's own), and "Learn from my corrections" (on by
   default) where the field can be read: macOS.
-- Learning (`CorrectionWatch`, `learnedCorrections`, our own implementation of the approach OpenWhispr
-  takes): after a dictation's paste, with learning on at its key-down, `voice-macos` reads the
+- Learning (`CorrectionWatch`, `learnedCorrections`, our own implementation of the approach of
+  OpenWhispr's `correctionLearner` (MIT, https://github.com/OpenWhispr/openwhispr), credited in
+  `corrections.ts` and the README; no code copied): after a dictation's paste, with learning on at its key-down, `voice-macos` reads the
   focused field of the app that was in front at key-down (`focusedFieldValue`) every
   `correctionPollInterval` for `correctionWatchDuration`. The first read holding the pasted text is the
   field before any edit; each later change that stays for one interval is compared with it, and the
