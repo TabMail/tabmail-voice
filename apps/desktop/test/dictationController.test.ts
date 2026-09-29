@@ -51,9 +51,9 @@ function defaultSettings(): DictationSettings {
   return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectors], emailClient: FakeThunderbird.app, hasTabMail: true };
 }
 
-/** A screen with `sentinel` in its app name and text. */
+/** A screen with `sentinel` in its app name and in the focused field, before the caret. */
 function screen(sentinel: string): ScreenContext {
-  return blankScreen({ appName: `Example Notes ${sentinel}`, windowTitle: "Weekly sync", renderedText: `Agenda ${sentinel}` });
+  return blankScreen({ appName: `Example Notes ${sentinel}`, windowTitle: "Weekly sync", renderedText: `» Agenda ${sentinel} ‸` });
 }
 
 /** A screen whose focused field has `selected` selected. */
@@ -318,9 +318,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(completions.requests).toHaveLength(1);
     expect(pasted).toEqual([transcript]);
     expect(controller.phase).toEqual(idle);
-    // The owner's cap on how long a cleanup may hold the paste is 3 seconds. It is written out here
-    // rather than read from the config, so raising the setting past it fails.
-    const ownersCap = 3_000;
+    // The owner's cap on how long a cleanup may hold the paste is 1.5 seconds (2026-09-28; it was 3).
+    // It is written out here rather than read from the config, so raising the setting past it fails.
+    const ownersCap = 1_500;
     expect(config.cleanupTimeout).toBeLessThanOrEqual(ownersCap);
     // Slack for a loaded runner, far below the wait a stalled stream would otherwise cause.
     expect(performance.now() - started).toBeLessThan(ownersCap + 5_000);
@@ -331,7 +331,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   test("a cleanup that answers within its timeout is pasted", async () => {
     transcription.enqueue(200, { text: transcript });
     completions.enqueue(200, cleanedStream);
-    completions.gate = () => sleep(config.contextWait + 500);
+    completions.gate = () => sleep(config.contextWait + 200);
 
     const { pasted, controller } = await dictate();
 
