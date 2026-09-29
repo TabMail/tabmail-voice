@@ -636,24 +636,36 @@ describe("main process wiring", () => {
     });
 
   /** On macOS, VS Code settings that hide the caret are offered for fixing in the welcome wizard:
-   * the fix sets `editor.editContext` false in the file, keeping its comments, and the wizard shows
-   * it done. Settings that are fine, and every other platform, are never offered or written. */
+   * the fix sets `editor.editContext` false in the file, keeping its comments, and the open wizard is
+   * shown it done. Settings that are fine, and every other platform, are never offered or written,
+   * and pressing the button there shows nothing new. */
   test("the welcome wizard fixes VS Code settings that hide the caret, on macOS only", async () => {
     app.appData = mkdtempSync(join(tmpdir(), "voice-appdata-"));
     const file = join(app.appData, "Code", "User", "settings.json");
     mkdirSync(join(app.appData, "Code", "User"), { recursive: true });
     const hiding = '{\n    // off on purpose\n    "editor.accessibilitySupport": "off"\n}\n';
     const state = () => (app.handlers.get(channels.getState)?.({}, "welcome") as { vscodeFix: string }).vscodeFix;
+    const pushed: string[] = [];
+    const listen = () =>
+      app.listeners.set("voice:state", [
+        (_event, name, pushedState) => {
+          if (name === "welcome") pushed.push((pushedState as { vscodeFix: string }).vscodeFix);
+        },
+      ]);
 
     writeFileSync(file, hiding);
     await launch("linux");
+    listen();
     expect(state()).toBe("notNeeded");
     expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
     expect(readFileSync(file, "utf8")).toBe(hiding);
+    expect(pushed).toEqual([]);
 
     await launch("darwin");
+    listen();
     expect(state()).toBe("needed");
     expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
+    expect(pushed).toEqual(["done"]);
     expect(readFileSync(file, "utf8")).toBe('{\n    "editor.editContext": false,\n    // off on purpose\n    "editor.accessibilitySupport": "off"\n}\n');
     expect(state()).toBe("done");
 
@@ -663,9 +675,12 @@ describe("main process wiring", () => {
     const fine = '{ "editor.accessibilitySupport": "auto" }';
     writeFileSync(file, fine);
     await launch("darwin");
+    pushed.length = 0;
+    listen();
     expect(state()).toBe("notNeeded");
     expect(await send({ type: "fixVSCodeSettings" })).toEqual({ error: null });
     expect(readFileSync(file, "utf8")).toBe(fine);
+    expect(pushed).toEqual([]);
   });
 
   /** The hotkey helper hears that nothing listens hands-free, so it stops keeping Space and Escape

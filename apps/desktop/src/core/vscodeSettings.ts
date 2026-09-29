@@ -21,9 +21,10 @@ export function vscodeHidesCaret(text: string | null): boolean {
   return settings !== null && settings["editor.accessibilitySupport"] === "off" && settings["editor.editContext"] !== false;
 }
 
-/** `text` with `editor.editContext` set false: comments, layout and every other setting kept. A new
- * setting goes first, indented like the file's others; after the last, VS Code's own parser would
- * move a comment ending that line onto the new one. */
+/** `text` with `editor.editContext` set false: comments and every other setting kept. A new setting
+ * goes first, indented like the file's others; after the last, VS Code's own parser would move a
+ * comment ending that line onto the new one (a comment after the opening brace moves instead, which
+ * is rarer). */
 export function withClassicInput(text: string): string {
   const indent = /^([ \t]+)"/m.exec(text)?.[1];
   const insertSpaces = indent === undefined || !indent.startsWith("\t");
