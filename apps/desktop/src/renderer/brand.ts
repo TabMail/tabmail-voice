@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-/** The overlay uses only the TabMail icon's colours: blue → purple. */
+/** The overlay uses the TabMail icon's colours, blue → purple, but for agent mode's red-pink glow
+ * (`agentPillGlow…Colour`). */
 const blue = [0, 0x91, 0xff] as const;
 const purple = [0x7b, 0, 0xff] as const;
 
@@ -21,6 +22,11 @@ export const brandGradient = `linear-gradient(to right, ${brandBlue}, ${brandPur
  * text the 4.5:1 contrast WCAG AA asks for. */
 export const textShade = 0.2;
 export const brandTextGradient = `linear-gradient(to right, ${brandColour(0, 1, textShade)}, ${brandColour(1, 1, textShade)})`;
+
+/** `colour` (red, green and blue, 0–255) at `alpha`. */
+export function rgba(colour: readonly [number, number, number], alpha = 1): string {
+  return `rgba(${colour.join(", ")}, ${alpha})`;
+}
 
 /** A grey of `white` (0 black … 1 white), at `alpha`. */
 export function grey(white: number, alpha = 1): string {
