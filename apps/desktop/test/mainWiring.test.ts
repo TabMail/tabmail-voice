@@ -572,14 +572,14 @@ describe("main process wiring", () => {
     for (const value of ["false", "true", 1, null]) {
       expect(await send({ type: "setAgentToolEnabled", tool: "answer", value })).toEqual({ error: expect.any(String) });
     }
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+    expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
     expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: true })).toEqual({ error: null });
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird", "answer"]);
+    expect(state("settings").enabledTools).toEqual(["edit", "compose", "answer"]);
     expect(await send({ type: "setAgentToolEnabled", tool: "answer", value: false })).toEqual({ error: null });
     expect(await send({ type: "setAgentToolEnabled", tool: "retired-tool", value: false })).toEqual({ error: expect.any(String) });
 
-    expect(state("settings").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
-    expect(state("welcome").enabledTools).toEqual(["edit", "compose", "thunderbird"]);
+    expect(state("settings").enabledTools).toEqual(["edit", "compose"]);
+    expect(state("welcome").enabledTools).toEqual(["edit", "compose"]);
   });
 
   /** On macOS the Answer tool reaches Calendar, Reminders, Contacts and Files through `voice-macos`,

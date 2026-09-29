@@ -88,7 +88,8 @@ listening, over the pill when the overlay opened above the caret's line; it is n
 
 **Agent mode** (Space pressed during the hold, again to switch back; ADR-DESK-011): the same
 recording and transcription, with the tool bubbles around the pill (ADR-DESK-033): Edit when text is selected,
-Compose when not, plus Thunderbird when an email app is set up, and Answer; each only while switched on
+Compose when not, and Answer (Thunderbird's tool, for when an email app is set up, is off until its
+native connector: ADR-DESK-037); each only while switched on
 in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request: `DesktopAgent.tool` picks among the tools
 offered (asking the backend's `system_prompt_desktop_agent`, with them in `available_tools`, unless
 only one is on), the phase becomes `running(tool)` (that bubble moves to the front of the row under

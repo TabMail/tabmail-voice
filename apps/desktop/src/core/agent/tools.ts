@@ -14,12 +14,18 @@ import type { ThunderbirdRelay } from "./thunderbirdRelay.js";
  * one the agent answers with; a tool that hands the request to another app goes through that app's
  * connector (ADR-DESK-020). Each tool is one backend prompt; its bubble shows above the pill while
  * agent mode listens, and its border circles while it runs. Edit and Compose are never offered
- * together: the selection decides which (`DesktopAgent.writingTool`). Each can be switched off in
- * Settings and the welcome wizard; all are on by default (owner, 2026-09-26).
+ * together: the selection decides which (`DesktopAgent.writingTool`). Each offered one (`offeredAgentTools`)
+ * can be switched off in Settings and the welcome wizard; all are on by default (owner, 2026-09-26).
  */
 export type AgentTool = "edit" | "compose" | "thunderbird" | "answer";
 
 export const agentTools: readonly AgentTool[] = ["edit", "compose", "thunderbird", "answer"];
+
+/** The tools agent mode offers, and Settings and the welcome wizard list. Thunderbird's is left out
+ * until the native connector to TabMail's add-on replaces its chat relay (owner, 2026-09-29: "right
+ * now it's just clunky"), so the other tools can be tried without it; its code stays for that
+ * connector (ADR-DESK-037). Offering it here again brings it back everywhere. */
+export const offeredAgentTools: readonly AgentTool[] = agentTools.filter((tool) => tool !== "thunderbird");
 
 export function isAgentTool(name: unknown): name is AgentTool {
   return typeof name === "string" && (agentTools as readonly string[]).includes(name);

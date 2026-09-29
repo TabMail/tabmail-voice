@@ -138,7 +138,7 @@ describe("Settings page", () => {
     const own: Record<string, string[]> = {
       Account: ["Sign Out"],
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
-      "Agent mode": ["Your name", "Edit", "Compose", "Thunderbird", "Answer", "Email app"],
+      "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode"],
     };
@@ -255,8 +255,9 @@ describe("Settings page", () => {
     ]);
   });
 
-  /** Every other control sends its own command: each menu its choice (the email app's Default as
-   * none), each Allow… its own permission's request, and Sign In the email and the code typed. */
+  /** Every other control sends its own command: each menu its choice, each Allow… its own
+   * permission's request, and Sign In the email and the code typed. (The email app's menu, hidden
+   * with the Thunderbird tool, sent its choice, Default as none: ADR-DESK-037.) */
   test("each menu, Allow… and Sign In sends its command", async () => {
     const shown: SettingsState = {
       ...signedIn,
@@ -269,8 +270,6 @@ describe("Settings page", () => {
     const page = await settingsPage({ error: null }, shown, shown);
 
     await act(async () => pick(menu("Hold to dictate"), "function"));
-    await act(async () => pick(menu("Email app"), "com.example.mail"));
-    await act(async () => pick(menu("Email app"), ""));
     await act(async () => allow("Accessibility (hotkey and typing)").click());
     await act(async () => allow("Microphone").click());
     const email = document.querySelector<HTMLInputElement>('input[type="email"]');
@@ -284,8 +283,6 @@ describe("Settings page", () => {
 
     expect(page.commands).toEqual([
       { type: "setHotkey", hotkey: "function" },
-      { type: "setEmailClient", bundleIdentifier: "com.example.mail" },
-      { type: "setEmailClient", bundleIdentifier: null },
       { type: "requestAccessibility" },
       { type: "requestMicrophone" },
       { type: "sendCode", email: "person@example.com" },
@@ -408,27 +405,30 @@ describe("Settings page", () => {
 
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
-    // Screen reading, debug mode and the four agent tools.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(6);
+    // Screen reading, debug mode and the three agent tools.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(5);
     expect(page.commands).toEqual([]);
   });
 
-  /** Each agent tool has a switch in Agent mode, on as the state says, which turns it on or off. */
+  /** Each agent tool offered has a switch in Agent mode, on as the state says, which turns it on or
+   * off. Thunderbird's has none, nor has the email app it sends to, until its native connector
+   * (ADR-DESK-037). */
   test("each agent tool has a switch", async () => {
     const shown: SettingsState = { ...signedIn, enabledTools: ["edit", "answer"] };
     const page = await settingsPage({ error: null }, shown, shown);
     await act(async () => button("Agent mode").click());
 
-    const labels = ["Edit", "Compose", "Thunderbird", "Answer"];
-    expect(labels.map((label) => toggle(label).checked)).toEqual([true, false, false, true]);
+    const labels = ["Edit", "Compose", "Answer"];
+    expect(labels.map((label) => toggle(label).checked)).toEqual([true, false, true]);
     for (const label of labels) await act(async () => toggle(label).click());
 
     expect(page.commands).toEqual([
       { type: "setAgentToolEnabled", tool: "edit", value: false },
       { type: "setAgentToolEnabled", tool: "compose", value: true },
-      { type: "setAgentToolEnabled", tool: "thunderbird", value: true },
       { type: "setAgentToolEnabled", tool: "answer", value: false },
     ]);
+    expect(document.body.textContent).not.toContain("Thunderbird");
+    expect(document.body.textContent).not.toContain("Email app");
   });
 
   /** On a Mac, each app the Answer tool reaches has a switch among the tools, all in alphabetical
@@ -441,7 +441,7 @@ describe("Settings page", () => {
 
     // The switches with an icon: the agent pane's.
     const labels = [...document.querySelectorAll(".toggle")].filter((row) => row.querySelector("svg")).map((row) => row.querySelector("label")?.textContent);
-    expect(labels).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders", "Thunderbird"]);
+    expect(labels).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders"]);
     expect(["Calendar", "Reminders"].map((label) => toggle(label).checked)).toEqual([false, true]);
     for (const label of ["Calendar", "Reminders"]) await act(async () => toggle(label).click());
 
@@ -453,7 +453,8 @@ describe("Settings page", () => {
 
   /** The notes are the Swift app's (typographic apostrophes aside) and no others: every state's
    * notes, in each email-app case, with fn the hotkey and debug mode allowed. The redesign once
-   * invented notes, one of them untrue. */
+   * invented notes, one of them untrue. With the Thunderbird tool not offered (ADR-DESK-037), neither
+   * its note nor the email app's shows, in any case. */
   test("the notes are the Swift app's", async () => {
     const notes = () => [...document.querySelectorAll("main .caption")].map((note) => note.textContent);
     const always = [
@@ -463,7 +464,6 @@ describe("Settings page", () => {
       "Uses the development server and shows debug items in the menu.",
       "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
       "Writes new text where your cursor is: a reply, a message, a note, a command.",
-      "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
       "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
     ];
@@ -472,9 +472,9 @@ describe("Settings page", () => {
       [{ hasTabMail: true, emailClient: null, defaultEmailAppIsSupported: false }, "Mail and calendar requests need Thunderbird with TabMail. Choose it here, or make it your default email app."],
       [{ hasTabMail: true, emailClient: null, defaultEmailAppIsSupported: true }, "Mail and calendar requests go to TabMail’s chat in this app."],
     ];
-    for (const [emailApp, caption] of cases) {
+    for (const [emailApp] of cases) {
       await settingsPage({ error: null }, signedIn, { ...signedIn, hotkey: "function", debugAllowed: true, ...emailApp });
-      expect(notes().sort()).toEqual([...always, caption].sort());
+      expect(notes().sort()).toEqual([...always].sort());
     }
   });
 });

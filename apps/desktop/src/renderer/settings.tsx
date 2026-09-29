@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import icon from "../../resources/icon.png";
 import { alphabetical } from "../core/agent/bubbleOrder.js";
 import { connectorInfo, isConnector } from "../core/agent/connectors.js";
-import { agentTools, toolImplementations } from "../core/agent/tools.js";
+import { offeredAgentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
 import type { SettingsState } from "../shared/ipc.js";
@@ -165,7 +165,7 @@ function AgentPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
-        {alphabetical([...agentTools, ...state.connectors]).map((key) =>
+        {alphabetical([...offeredAgentTools, ...state.connectors]).map((key) =>
           isConnector(key) ? (
             <Toggle
               key={key}
@@ -189,7 +189,8 @@ function AgentPane({ state }: { state: SettingsState }) {
           ),
         )}
       </Group>
-      <EmailClientPicker state={state} />
+      {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
+      {offeredAgentTools.includes("thunderbird") && <EmailClientPicker state={state} />}
     </>
   );
 }

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../src/core/account.js";
-import { agentTools } from "../src/core/agent/tools.js";
+import { agentTools, offeredAgentTools } from "../src/core/agent/tools.js";
 import { connectors } from "../src/core/agent/connectors.js";
 import * as config from "../src/core/config.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
@@ -145,7 +145,7 @@ describe("AppSettings", () => {
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,
       readsScreen: true,
-      enabledTools: [...agentTools],
+      enabledTools: [...offeredAgentTools],
       enabledConnectors: [...connectors],
       emailClient: null,
       hasTabMail: true,
@@ -218,12 +218,28 @@ describe("agent tools", () => {
     const app = settings();
 
     for (const tool of agentTools) expect(app.isEnabled(tool)).toBe(true);
-    expect(app.dictation(null).enabledTools).toEqual(agentTools);
+    expect(app.dictation(null).enabledTools).toEqual(["edit", "compose", "answer"]);
+  });
+
+  /** Thunderbird's tool is offered to no dictation until its native connector (ADR-DESK-037), on or
+   * off; a switch stored for it is kept for then, whatever other switches change meanwhile. */
+  test("Thunderbird's tool is not offered, and its stored switch is kept", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    expect(offeredAgentTools).not.toContain("thunderbird");
+    expect(app.enabledTools).not.toContain("thunderbird");
+
+    app.setEnabled("thunderbird", false);
+    app.setEnabled("answer", false);
+    app.setEnabled("answer", true);
+    expect(store.get("disabledAgentTools")).toEqual(["thunderbird"]);
+    expect(settings(store).isEnabled("thunderbird")).toBe(false);
+    expect(settings(store).dictation(null).enabledTools).toEqual(["edit", "compose", "answer"]);
   });
 
   /** A tool turned off is left out of every dictation from then on, and stays off after a relaunch;
    * turned back on, it is offered again. */
-  test.each(agentTools)("%s turned off stays off", (tool) => {
+  test.each(offeredAgentTools)("%s turned off stays off", (tool) => {
     const store = new MemoryStore();
     const changes: number[] = [];
     const app = settings(store);
@@ -233,10 +249,10 @@ describe("agent tools", () => {
 
     const relaunched = settings(store);
     expect(relaunched.isEnabled(tool)).toBe(false);
-    expect(relaunched.dictation(null).enabledTools).toEqual(agentTools.filter((other) => other !== tool));
+    expect(relaunched.dictation(null).enabledTools).toEqual(offeredAgentTools.filter((other) => other !== tool));
 
     relaunched.setEnabled(tool, true);
-    expect(settings(store).dictation(null).enabledTools).toEqual(agentTools);
+    expect(settings(store).dictation(null).enabledTools).toEqual(offeredAgentTools);
   });
 
   /** Turning off two tools keeps both off; turning one off twice lists it once. */
@@ -254,9 +270,9 @@ describe("agent tools", () => {
   /** A stored name no longer an agent tool, or a stored value of another type, is ignored rather
    * than turning anything off. */
   test.each<[unknown, string[]]>([
-    [["answer", "retired-tool"], ["edit", "compose", "thunderbird"]],
-    ["answer", ["edit", "compose", "thunderbird", "answer"]],
-    [[7, null], ["edit", "compose", "thunderbird", "answer"]],
+    [["answer", "retired-tool"], ["edit", "compose"]],
+    ["answer", ["edit", "compose", "answer"]],
+    [[7, null], ["edit", "compose", "answer"]],
   ])("a stored %j turns off only known tools", (stored, enabled) => {
     expect(settings(new MemoryStore({ disabledAgentTools: stored })).dictation(null).enabledTools).toEqual(enabled);
   });
