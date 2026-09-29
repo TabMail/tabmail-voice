@@ -3,18 +3,15 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import type { AccountModel } from "../src/core/account.js";
-import { CompletionsClient } from "../src/core/backend.js";
 import { screenVariables } from "../src/core/agent/tools.js";
 import { DictationCleanup, textAroundCaret } from "../src/core/cleanup.js";
 import * as config from "../src/core/config.js";
 import type { ScreenContext } from "../src/core/screenContext.js";
 import { CancellationError, sleep, TimeoutError, withTimeout } from "../src/core/timeout.js";
 import { screen } from "./screens.js";
-import { eventually, Fixtures, signedIn, StubTransport } from "./support.js";
 
-describe("DictationCleanup.message", () => {
-  test("sends the dictation with where it goes and what is on screen", () => {
+describe("DictationCleanup.variables", () => {
+  test("sends where the dictation goes, what is on screen and the dictionary", () => {
     const context = screen({
       appName: "Example Notes",
       host: "notes.example.com",
@@ -23,13 +20,8 @@ describe("DictationCleanup.message", () => {
       renderedText: "## Agenda\n» Ask Jordan about the ‸",
     });
 
-    const message = DictationCleanup.message("quarterly road map", context, ["Xyvora", "Kaelthorne Draszek"]);
-
-    expect(message.role).toBe("system");
-    // The backend's prompt name, spelled out: comparing with the config would pass a typo.
-    expect(message.content).toBe("system_prompt_dictate_cleanup");
-    expect(message.vars).toEqual({
-      dictation: "quarterly road map",
+    // The backend's cleanup prompt variables, all but the transcript (the backend's).
+    expect(DictationCleanup.variables(context, ["Xyvora", "Kaelthorne Draszek"])).toEqual({
       app_name: "Example Notes",
       web_host: "notes.example.com",
       terminal_program: "example-shell",
@@ -41,8 +33,8 @@ describe("DictationCleanup.message", () => {
 
   /** Without Accessibility access there is no context: the prompt still gets every field, empty. */
   test("without context every field is empty", () => {
-    expect(DictationCleanup.message("hello", null, []).vars).toEqual({
-      dictation: "hello", app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "", dictionary: "",
+    expect(DictationCleanup.variables(null, [])).toEqual({
+      app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "", dictionary: "",
     });
   });
 });
@@ -60,7 +52,7 @@ describe("the cleanup's screen text", () => {
   test("is the text within its reach of the caret, markers kept", () => {
     const text = around(rendered);
     expect(text).toBe(`${before}‸${after}`);
-    expect(DictationCleanup.message("hello", screen({ renderedText: rendered }), []).vars.screen_text).toBe(text);
+    expect(DictationCleanup.variables(screen({ renderedText: rendered }), []).screen_text).toBe(text);
   });
 
   /** Near the start or end of the screen it takes what there is: the text before the field too. */
@@ -208,144 +200,28 @@ describe("withTimeout", () => {
   });
 });
 
-/** What gets pasted: the cleaned-up text, or the transcript as heard whenever the cleanup fails. */
-describe("DictationCleanup.cleanUp", () => {
+/** What gets pasted: the backend's cleanup, or the transcript as heard whenever the cleanup failed. */
+describe("DictationCleanup.pasted", () => {
   const transcript = "ask jordan about the road map";
 
-  function setup() {
-    const backend = new StubTransport();
-    const auth = new StubTransport();
-    const cleanUp = (account: AccountModel = signedIn(auth), timeout = config.cleanupTimeout) =>
-      DictationCleanup.cleanUp(transcript, null, [], new CompletionsClient("https://api.example.com", "v", backend.transport), account, Fixtures.userId, timeout);
-    return { backend, auth, cleanUp };
-  }
-
-  test("pastes the cleaned-up text", async () => {
-    const { backend, cleanUp } = setup();
-    backend.enqueue(200, Fixtures.completionsStream(`{"assistant":" Ask Jordan about the roadmap.\\n"}`));
-
-    expect(await cleanUp()).toBe("Ask Jordan about the roadmap.");
-    expect(backend.requests).toHaveLength(1);
-    expect(backend.message(0)?.dictation).toBe(transcript);
+  test("pastes the cleaned-up text, trimmed", () => {
+    expect(DictationCleanup.pasted(transcript, " Ask Jordan about the roadmap.\n")).toBe("Ask Jordan about the roadmap.");
   });
 
-  /** Only an empty reply is a malfunction; even one character can be the whole dictation. */
-  test("a single-character reply is still used", async () => {
-    const { backend, cleanUp } = setup();
-    backend.enqueue(200, Fixtures.reply("é"));
-    expect(await cleanUp()).toBe("é");
+  /** Only an empty cleanup is a failure; even one character can be the whole dictation. */
+  test("a single-character cleanup is still used", () => {
+    expect(DictationCleanup.pasted(transcript, "é")).toBe("é");
   });
 
-  /** A cleanup still running at its timeout is abandoned: the transcript is pasted as heard,
-   * without waiting for the reply, and the request is cancelled. */
-  test("a cleanup past its timeout pastes the transcript as heard", async () => {
-    const { backend, cleanUp } = setup();
-    backend.enqueue(200, Fixtures.reply("Ask Jordan about the roadmap."));
-    let cancelled = false;
-    backend.gate = async (request) => {
-      await sleep(5_000, request.signal).catch(() => {
-        cancelled = true;
-      });
-    };
-    const started = performance.now();
-
-    expect(await cleanUp(undefined, 200)).toBe(transcript);
-    expect(performance.now() - started).toBeLessThan(2_000);
-    expect(backend.requests).toHaveLength(1);
-    expect(await eventually(() => cancelled)).toBe(true);
+  /** The backend answers an empty `cleaned_text` when the cleanup failed or ran past its deadline. */
+  test("an empty or blank cleanup pastes the transcript as heard", () => {
+    expect(DictationCleanup.pasted(transcript, "")).toBe(transcript);
+    expect(DictationCleanup.pasted(transcript, " \n ")).toBe(transcript);
   });
 
-  test("a cleanup within its timeout pastes the cleaned-up text", async () => {
-    const { backend, cleanUp } = setup();
-    backend.enqueue(200, Fixtures.reply("Ask Jordan about the roadmap."));
-    backend.gate = () => sleep(100);
-
-    expect(await cleanUp(undefined, 2_000)).toBe("Ask Jordan about the roadmap.");
-  });
-
-  test.each([
-    [500, `{"error":"internal_error"}`],
-    [402, `{"error":"no_active_subscription"}`],
-    [429, `{"error":"rate_limited"}`],
-    [200, ': primer\n\nevent: keepalive\ndata: {}\n\nevent: error\ndata: {"error":"internal_error"}\n\n'],
-    [200, Fixtures.completionsStream(`{"error":"Requested prompt is not available for this client platform."}`)],
-    [200, Fixtures.completionsStream(`{"assistant":" \\n"}`)],
-    [200, ": primer\n\nevent: keepalive\ndata: {}\n\n"],
-  ])("a failed cleanup (HTTP %i) pastes the transcript as heard", async (status, body) => {
-    const { backend, cleanUp } = setup();
-    backend.enqueue(status, body);
-
-    expect(await cleanUp()).toBe(transcript);
-    expect(backend.requests).toHaveLength(1);
-  });
-
-  test("an unreachable backend pastes the transcript as heard", async () => {
-    const { backend, cleanUp } = setup();
-    // Nothing queued: the transport fails, as it does offline.
-    expect(await cleanUp()).toBe(transcript);
-    expect(backend.requests).toHaveLength(1);
-  });
-
-  test("signed out pastes the transcript without calling the backend", async () => {
-    const { backend, cleanUp } = setup();
-    expect(await cleanUp(signedIn(new StubTransport(), null))).toBe(transcript);
-    expect(backend.requests).toHaveLength(0);
-  });
-
-  test("an expired token is refreshed once and the cleanup retried", async () => {
-    const { backend, auth, cleanUp } = setup();
-    backend.enqueue(401, { error: "invalid_token" });
-    backend.enqueue(200, Fixtures.reply("Ask Jordan about the roadmap."));
-    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
-
-    expect(await cleanUp()).toBe("Ask Jordan about the roadmap.");
-    expect(backend.authorizations).toEqual(["Bearer access-1", "Bearer access-2"]);
-    expect(auth.requests).toHaveLength(1);
-  });
-
-  test("a token rejected again after the refresh pastes the transcript as heard", async () => {
-    const { backend, auth, cleanUp } = setup();
-    backend.enqueue(401, { error: "invalid_token" });
-    backend.enqueue(401, { error: "invalid_token" });
-    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
-
-    expect(await cleanUp()).toBe(transcript);
-    expect(backend.authorizations).toEqual(["Bearer access-1", "Bearer access-2"]);
-    expect(auth.requests).toHaveLength(1);
-  });
-
-  test("a rejected refresh pastes the transcript as heard", async () => {
-    const { backend, auth, cleanUp } = setup();
-    backend.enqueue(401, { error: "invalid_token" });
-    auth.enqueue(400, { error: "invalid_grant" });
-
-    expect(await cleanUp()).toBe(transcript);
-    expect(backend.requests).toHaveLength(1);
-  });
-
-  /** The user signed out and into another account after the dictation was transcribed. */
-  test("a dictation is not cleaned up under another account", async () => {
-    const { backend, cleanUp } = setup();
-    expect(await cleanUp(signedIn(new StubTransport(), Fixtures.session({ access: "access-b", userId: "user-2" })))).toBe(transcript);
-    expect(backend.requests).toHaveLength(0);
-  });
-
-  /** The switch happens while the first request is in flight: the retry must not go out under the
-   * other account's token. */
-  test("a switch during the request stops the retry", async () => {
-    const { backend, auth, cleanUp } = setup();
-    const account = signedIn(auth);
-    backend.enqueue(401, { error: "invalid_token" });
-    backend.enqueue(200, Fixtures.reply("Ask Jordan about the roadmap."));
-    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
-    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b2", refresh: "refresh-b2", userId: "user-2" }));
-    backend.gate = async () => {
-      account.signOut();
-      await account.verify(Fixtures.email, "123456").catch(() => undefined);
-    };
-
-    expect(await cleanUp(account)).toBe(transcript);
-    expect(backend.authorizations).toEqual(["Bearer access-1"]);
-    expect(account.session?.userId).toBe("user-2");
+  /** A backend that returned no cleanup at all (one from before the cleanup moved into the
+   * transcription request). */
+  test("no cleanup returned pastes the transcript as heard", () => {
+    expect(DictationCleanup.pasted(transcript, null)).toBe(transcript);
   });
 });

@@ -32,6 +32,8 @@ const transcript = "ask jordan about the road map";
 const cleaned = "Ask Jordan about the roadmap.";
 const request = "make this friendlier";
 const cleanedStream = Fixtures.reply(cleaned);
+/** A dictation's transcription, cleaned up by the backend in the same request (backend ADR-027). */
+const cleanedReply = { text: transcript, cleaned_text: cleaned };
 const reply = Fixtures.reply;
 
 const idle: Phase = { kind: "idle" };
@@ -158,8 +160,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
     controller.handle("finish");
   }
 
-  /** The variables of the `index`th completions request. */
+  /** The cleanup variables of the `index`th transcription request. */
   function cleanupVars(index: number): Record<string, unknown> | undefined {
+    return transcription.body(index).cleanup as Record<string, unknown> | undefined;
+  }
+
+  /** The variables of the `index`th completions request. */
+  function completionsVars(index: number): Record<string, unknown> | undefined {
     return completions.message(index);
   }
 
@@ -172,36 +179,41 @@ describe("DictationController", { timeout: 20_000 }, () => {
     return transcription.requests.map((_, index) => (transcription.body(index).language as string | undefined) ?? null);
   }
 
+  /** One request: the recording with the cleanup's variables, and the backend's cleanup back with the
+   * transcript (backend ADR-027). */
   test("pastes the cleaned-up transcript", async () => {
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
 
     const { pasted, controller } = await dictate();
 
     expect(pasted).toEqual([cleaned]);
     expect(controller.phase).toEqual(idle);
-    expect(completions.requests).toHaveLength(1);
-    expect(cleanupVars(0)?.dictation).toBe(transcript);
+    expect(transcription.requests).toHaveLength(1);
+    expect(cleanupVars(0)).toEqual({ app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "", dictionary: "" });
+    expect(completions.requests).toHaveLength(0);
     expect(transcription.authorizations).toEqual(["Bearer access-1"]);
-    expect(completions.authorizations).toEqual(["Bearer access-1"]);
   });
 
-  test("pastes the transcript as heard when the cleanup fails", async () => {
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(500, { error: "internal_error" });
+  /** The backend answers an empty cleanup when it failed or ran past its deadline; a backend from
+   * before the cleanup moved into the transcription request answers none. */
+  test.each([
+    ["failed", { text: transcript, cleaned_text: "" }],
+    ["not returned", { text: transcript }],
+  ])("pastes the transcript as heard when the cleanup is %s", async (_name, body) => {
+    transcription.enqueue(200, body);
 
     const { pasted, controller } = await dictate();
 
     expect(pasted).toEqual([transcript]);
     expect(controller.phase).toEqual(idle);
+    expect(completions.requests).toHaveLength(0);
   });
 
   /** The dictionary's words go with the transcription, for the speech model, and with the cleanup, one
    * per line (ADR-DESK-038). */
   test("sends the dictionary with the transcription and the cleanup", async () => {
     prefs.value = { ...defaultSettings(), dictionary: ["Xyvora", "Kaelthorne Draszek"] };
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
 
     const { pasted } = await dictate();
 
@@ -211,8 +223,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   });
 
   test("an empty dictionary sends no words and an empty cleanup dictionary", async () => {
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
 
     await dictate();
 
@@ -224,8 +235,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
    * words, none of them twice; the cleanup gets the dictionary alone (it reads the screen itself). */
   test("sends the screen's names and terms after the dictionary", async () => {
     prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     controller.captureContext = async () =>
       blankScreen({ appName: "Example Mail", windowTitle: "Launch with Brevalle Labs", renderedText: "From: Kaelthorne Drake\nAsk Xyvora and Brevalle Labs about TabMail." });
@@ -237,11 +247,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(cleanupVars(0)?.dictionary).toBe("Xyvora");
   });
 
-  /** The recording is not held for the screen read: one not done when it is sent adds no terms. */
+  /** The recording waits at most `contextWait` for the screen read: one not done by then adds no terms. */
   test("a screen read not done yet adds no terms", async () => {
     prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     const read = deferred<ScreenContext | null>();
     controller.captureContext = () => read.promise;
@@ -256,8 +265,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** With screen reading off, the screen is not read, so no terms are sent from it. */
   test("with screen reading off no terms are sent", async () => {
     prefs.value = { ...defaultSettings(), readsScreen: false };
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     controller.captureContext = async () => blankScreen({ appName: "Example Mail", windowTitle: "Brevalle Labs", renderedText: "Ask Kaelthorne Drake" });
 
@@ -278,8 +286,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     async function dictateHeld(corrections: NonNullable<DictationDependencies["corrections"]>, count = 1): Promise<string[]> {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
       for (let index = 0; index < count; index += 1) {
-        transcription.enqueue(200, { text: transcript });
-        completions.enqueue(200, cleanedStream);
+        transcription.enqueue(200, cleanedReply);
         await holdAndRelease(controller);
         expect(await eventually(() => pastes.length === index + 1 && settled(controller))).toBe(true);
       }
@@ -313,8 +320,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.onPhaseChange = (phase) => {
         if (phase.kind === "listening") prefs.value = { ...defaultSettings(), learnsWords: false };
       };
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       await holdAndRelease(controller);
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
@@ -334,8 +340,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           return pasting.promise;
         },
       });
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       await holdAndRelease(controller);
       expect(await eventually(() => pastes === 1)).toBe(true);
 
@@ -393,14 +398,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(controller.phase).toEqual(failed(message));
   });
 
-  /** Cancelled while the cleanup runs (another key pressed while the hotkey is held): the request is
-   * cancelled right away, not at the cleanup's timeout, and its result is not pasted. */
-  test("a dictation cancelled during the cleanup pastes nothing", async () => {
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+  /** Cancelled while the request runs, the cleanup with it (another key pressed while the hotkey is
+   * held): the request is cancelled right away and its result is not pasted. */
+  test("a dictation cancelled during its request pastes nothing", async () => {
+    transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
     let cancelledAfter: number | null = null;
-    completions.gate = async (asked) => {
+    transcription.gate = async (asked) => {
       const started = performance.now();
       controller.handle("cancel");
       try {
@@ -414,103 +418,32 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     expect(await eventually(() => cancelledAfter !== null)).toBe(true);
     await sleep(50);
-    expect(completions.requests).toHaveLength(1);
+    expect(transcription.requests).toHaveLength(1);
     expect(pastes).toEqual([]);
     expect(controller.phase).toEqual(idle);
-    // Well inside `cleanupTimeout`, whose timer would cancel it anyway.
     expect(cancelledAfter ?? 60_000).toBeLessThan(1_000);
   });
 
-  /** The user signed out and into another account while the transcription ran: the transcript is not
-   * sent to the cleanup under that account, and is pasted as heard. */
-  test("an account switch during the transcription skips the cleanup", async () => {
+  /** The user signed out and into another account while the request ran: the transcription and its
+   * cleanup ran together under the account signed in at the upload, so the cleaned text is that
+   * account's, and nothing goes out under the other one (ADR-DESK-008). */
+  test("an account switch during the request sends nothing under the other account", async () => {
     const account = signedIn(auth);
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
+    transcription.enqueue(200, cleanedReply);
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
     transcription.gate = async () => {
       account.signOut();
       await account.verify(Fixtures.email, "123456");
     };
+    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
 
-    const { pasted } = await dictate(account);
+    await holdAndRelease(controller);
+    expect(await eventually(() => pastes.length > 0)).toBe(true);
 
     expect(account.session?.userId).toBe("user-2");
     expect(transcription.authorizations).toEqual(["Bearer access-1"]);
     expect(completions.requests).toHaveLength(0);
-    expect(pasted).toEqual([transcript]);
-  });
-
-  /** A held dictation during which the user signs out and into another account: the transcript is
-   * pasted as heard, with no cleanup under the other account (ADR-DESK-008). */
-  test("an account switch during a held dictation pastes it as heard", async () => {
-    const account = signedIn(auth);
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
-    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
-    transcription.gate = async () => {
-      account.signOut();
-      await account.verify(Fixtures.email, "123456");
-    };
-    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
-
-    await holdAndRelease(controller);
-    expect(await eventually(() => pastes.length > 0)).toBe(true);
-
-    expect(completions.requests).toHaveLength(0);
-    expect(pastes).toEqual([transcript]);
-  });
-
-  /** The cleanup's token is refused and its refresh rejected, so the app signs out: the held
-   * dictation's transcript is still pasted as heard, as with every failed cleanup. */
-  test("a sign-out during a held dictation's cleanup pastes it as heard", async () => {
-    const account = signedIn(auth);
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(401, { error: "expired" });
-    auth.enqueue(400, { error: "invalid_grant" });
-    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
-
-    await holdAndRelease(controller);
-    expect(await eventually(() => pastes.length > 0)).toBe(true);
-
-    expect(account.session).toBeNull();
-    expect(completions.requests).toHaveLength(1);
-    expect(pastes).toEqual([transcript]);
-  });
-
-  /** A cleanup that never answers holds the paste only until the app's own cleanup timeout; then the
-   * transcript is pasted as heard. */
-  test("a cleanup that never answers pastes the transcript at its timeout", async () => {
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
-    completions.gate = (asked) => sleep(60_000, asked.signal).catch(() => {});
-    const started = performance.now();
-
-    const { pasted, controller } = await dictate();
-
-    expect(completions.requests).toHaveLength(1);
-    expect(pasted).toEqual([transcript]);
-    expect(controller.phase).toEqual(idle);
-    // The owner's cap on how long a cleanup may hold the paste is 1.5 seconds (2026-09-28; it was 3).
-    // It is written out here rather than read from the config, so raising the setting past it fails.
-    const ownersCap = 1_500;
-    expect(config.cleanupTimeout).toBeLessThanOrEqual(ownersCap);
-    // Slack for a loaded runner, far below the wait a stalled stream would otherwise cause.
-    expect(performance.now() - started).toBeLessThan(ownersCap + 5_000);
-  });
-
-  /** A cleanup slower than the screen-read wait but within the app's own cleanup timeout is pasted:
-   * the controller gives the cleanup that timeout, not a shorter one. */
-  test("a cleanup that answers within its timeout is pasted", async () => {
-    transcription.enqueue(200, { text: transcript });
-    completions.enqueue(200, cleanedStream);
-    completions.gate = () => sleep(config.contextWait + 200);
-
-    const { pasted, controller } = await dictate();
-
-    expect(completions.requests).toHaveLength(1);
-    expect(pasted).toEqual([cleaned]);
-    expect(controller.phase).toEqual(idle);
+    expect(pastes).toEqual([cleaned]);
   });
 
   describe("key-down to paste", () => {
@@ -652,11 +585,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
-    /** The screen is read at key-down; a read done within `contextWait` of the transcript is sent with
-     * it to the cleanup. */
+    /** The screen is read at key-down; the upload waits up to `contextWait` for it and sends it with the
+     * recording, for the backend's cleanup. */
     test("cleans up with the screen read at key-down", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const read = deferred<ScreenContext | null>();
       const readStarted: { phase: Phase; transcriptions: number }[] = [];
@@ -667,27 +599,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.contextWait = 30_000;
 
       await holdAndRelease(controller);
-      expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
-      // Read once, at key-down: before the overlay is revealed and before anything is transcribed.
+      // Read once, at key-down: before the overlay is revealed and before anything is sent.
       expect(readStarted).toEqual([{ phase: arming, transcriptions: 0 }]);
       // Longer than the default wait: using the default instead of the override loses this screen.
       await sleep(config.contextWait * 2);
-      expect(completions.requests).toHaveLength(0);
+      expect(transcription.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
       read.resolve(screen("A"));
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(pastes).toEqual([cleaned]);
-      expect(cleanupVars(0)?.dictation).toBe(transcript);
+      expect(transcription.requests).toHaveLength(1);
       expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
       expect(cleanupVars(0)?.screen_text).toContain("Agenda A");
+      expect(completions.requests).toHaveLength(0);
     });
 
     /** The debug log file gets what was heard, what the cleanup made of it and what was pasted
      * (ADR-DESK-015), after the backend clients' own entries. */
     test("a dictation logs its transcript, cleaned text and paste", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
 
       const entries = steps(await loggedContent(async () => {
         await dictate();
@@ -697,24 +628,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual([transcript, cleaned, cleaned]);
     });
 
-    /** Cancelled while its screen is still being read: nothing is sent to the cleanup or pasted, and the
-     * next dictation is cleaned up with its own screen. */
-    test("a dictation cancelled while its screen is read is not cleaned up", async () => {
-      transcription.enqueue(200, { text: "first dictation" });
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+    /** Cancelled while its screen is still being read: nothing is sent or pasted, and the next
+     * dictation is cleaned up with its own screen. */
+    test("a dictation cancelled while its screen is read is not sent", async () => {
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const first = deferred<ScreenContext | null>();
       controller.captureContext = () => first.promise;
       controller.contextWait = 5_000;
 
       await holdAndRelease(controller);
-      expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
       await sleep(200);
       controller.handle("cancel");
       first.resolve(screen("A"));
       await sleep(200);
-      expect(completions.requests).toHaveLength(0);
+      expect(transcription.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
       expect(controller.phase).toEqual(idle);
 
@@ -723,53 +651,44 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(pastes).toEqual([cleaned]);
-      expect(completions.requests).toHaveLength(1);
-      expect(cleanupVars(0)?.dictation).toBe(transcript);
+      expect(transcription.requests).toHaveLength(1);
       expect(cleanupVars(0)?.app_name).toBe("Example Notes B");
     });
 
-    /** The screen read is best effort: not done within the app's own `contextWait` of the transcript,
-     * the dictation is cleaned up without it rather than waiting. */
+    /** The screen read is best effort: not done within the app's own `contextWait`, the recording goes
+     * without it rather than waiting. */
     test("a screen read not done in time is left out", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const read = deferred<ScreenContext | null>();
       controller.captureContext = () => read.promise;
 
       await holdAndRelease(controller);
+      const released = performance.now();
       expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
-      const transcribed = performance.now();
+      // Slack for a loaded runner, far below a wait that would hold the dictation for a slow app.
+      expect(performance.now() - released).toBeLessThan(config.releaseTailDuration + config.contextWait + 3_000);
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
-      // Slack for a loaded runner, far below a wait that would hold the paste for a slow app.
-      expect(performance.now() - transcribed).toBeLessThan(config.contextWait + 3_000);
       expect(pastes).toEqual([cleaned]);
-      expect(completions.requests).toHaveLength(1);
-      expect(cleanupVars(0)?.dictation).toBe(transcript);
       expect(cleanupVars(0)?.app_name).toBe("");
       expect(cleanupVars(0)?.screen_text).toBe("");
       read.resolve(null);
     });
 
-    /** A screen read done shortly after the transcript, within the app's own `contextWait`, is still
-     * sent with it to the cleanup. */
-    test("a screen read done just after the transcript is sent", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+    /** A screen read done after the release, within the app's own `contextWait`, still goes with the
+     * recording. */
+    test("a screen read done just after the release is sent", async () => {
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const read = deferred<ScreenContext | null>();
       controller.captureContext = () => read.promise;
-      // Released a fifth of the wait after the transcription is asked for; it answers at once.
-      transcription.gate = async () => {
-        void sleep(config.contextWait / 5).then(() => read.resolve(screen("A")));
-      };
 
       await holdAndRelease(controller);
+      void sleep(config.contextWait / 5).then(() => read.resolve(screen("A")));
 
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(pastes).toEqual([cleaned]);
-      expect(completions.requests).toHaveLength(1);
       expect(cleanupVars(0)?.app_name).toBe("Example Notes A");
     });
   });
@@ -808,9 +727,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual(["edit"]);
       expect(phases).toContainEqual(running("edit"));
       expect(completions.requests).toHaveLength(1);
-      expect(cleanupVars(0)?.content).toBe("system_prompt_desktop_edit");
-      expect(cleanupVars(0)?.user_request).toBe(request);
-      expect(cleanupVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_edit");
+      expect(completionsVars(0)?.user_request).toBe(request);
+      expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
     });
 
     /** Agent mode logs the request, the text its tool wrote (fitted to the selection) and the paste. */
@@ -857,7 +776,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual(["write that we ship on Friday", "We ship on Friday.", "We ship on Friday."]);
       expect(controller.tools).toEqual(["compose"]);
       expect(phases).toContainEqual(running("compose"));
-      expect(cleanupVars(0)?.content).toBe("system_prompt_desktop_compose");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_compose");
     });
 
     /** The selection alone decides between Edit and Compose, as the bubbles showed it: the other
@@ -917,8 +836,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
       expect(controller.phase).toEqual(idle);
       expect(phases).toContainEqual(running("thunderbird"));
-      expect(cleanupVars(1)?.content).toBe("system_prompt_desktop_thunderbird");
-      expect(cleanupVars(1)?.user_request).toBe("find sam's invoice from last week");
+      expect(completionsVars(1)?.content).toBe("system_prompt_desktop_thunderbird");
+      expect(completionsVars(1)?.user_request).toBe("find sam's invoice from last week");
     });
 
     /** Without Thunderbird its bubble isn't shown and the agent isn't asked: the request is written
@@ -935,7 +854,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.emailAppPath).toBeNull();
       expect(controller.phase).toEqual(idle);
       expect(completions.requests).toHaveLength(1);
-      expect(cleanupVars(0)?.content).toBe("system_prompt_desktop_compose");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_compose");
       expect(thunderbird.events).toEqual([]);
       expect(pastes).toEqual(["Sam's invoice"]);
     });
@@ -974,7 +893,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(controller.tools).toEqual(["edit"]);
       expect(pastes).toEqual(["Could we ship on Friday?"]);
-      expect(cleanupVars(0)?.selected_text).toBe("Ship it Friday or else.");
+      expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.");
     });
 
     /** Space switches the mode only while the key is held: back and forth, with the tools following. */
@@ -1195,7 +1114,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(thunderbird.apps).toEqual([FakeThunderbird.app]);
       expect(new Set([...hosts(transcription), ...hosts(completions)])).toEqual(new Set(["api.example.com"]));
       expect(reads).toBe(1);
-      expect(cleanupVars(1)?.user_name).toBe("Alex Example");
+      expect(completionsVars(1)?.user_name).toBe("Alex Example");
       expect(transcription.body(0).vocabulary).toBeUndefined();
 
       controller.onPhaseChange = undefined;
@@ -1208,7 +1127,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(thunderbird.apps).toEqual([FakeThunderbird.app, "org.example.othermail"]);
       expect([...hosts(transcription), ...hosts(completions)].filter((host) => host === "dev.example.com")).toHaveLength(3);
       expect(reads).toBe(1);
-      expect(cleanupVars(3)?.user_name).toBe("Sam Example");
+      expect(completionsVars(3)?.user_name).toBe("Sam Example");
       expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
     });
 
@@ -1253,10 +1172,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
         keyboard.atReveal.push(controller.language);
         keyboard.language = keyboard.language === "ko" ? "en" : "ko";
       };
-      for (const [, written] of [["first words", "First words."], ["second words", "Second words."], ["third words", "Third words."]]) {
-        completions.enqueue(200, reply(written ?? ""));
+      for (const [words, written] of [["first words", "First words."], ["second words", "Second words."], ["third words", "Third words."]] as const) {
+        // A dictation's cleanup comes back with its transcription; agent mode's text from its tool.
+        if (mode === "dictation") {
+          transcription.enqueue(200, { text: words, cleaned_text: written });
+        } else {
+          transcription.enqueue(200, { text: words });
+          completions.enqueue(200, reply(written));
+        }
       }
-      for (const words of ["first words", "second words", "third words"]) transcription.enqueue(200, { text: words });
       transcription.gate = async () => {
         keyboard.language = "ja";
       };
@@ -1280,15 +1204,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(keyboard.atReveal).toEqual(["ko", "ja", null]);
       expect(controller.language).toBeNull();
       expect(transcriptionLanguages()).toEqual(["ko", "ja", null]);
-      expect(Object.keys(transcription.body(2)).sort()).toEqual(["audio", "format"]);
+      expect(Object.keys(transcription.body(2)).sort()).toEqual(mode === "dictation" ? ["audio", "cleanup", "format"] : ["audio", "format"]);
       expect(pastes).toEqual(["First words.", "Second words.", "Third words."]);
     });
 
-    /** Both requests of one ordinary dictation use its key-down server; the next hold uses the new one. */
+    /** An ordinary dictation's request uses its key-down server; the next hold uses the new one. */
     test("an ordinary dictation keeps its server until the next hold", async () => {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       transcription.gate = async () => {
         prefs.value = { ...prefs.value, backendURL: "https://dev.example.com" };
       };
@@ -1297,18 +1220,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
       expect(pastes).toEqual([cleaned]);
       expect(hosts(transcription)).toEqual(["api.example.com"]);
-      expect(hosts(completions)).toEqual(["api.example.com"]);
-      expect(cleanupVars(0)?.dictation).toBe(transcript);
 
       transcription.gate = undefined;
-      transcription.enqueue(200, { text: "next dictated words" });
-      completions.enqueue(200, reply("Next dictated words."));
+      transcription.enqueue(200, { text: "next dictated words", cleaned_text: "Next dictated words." });
       await holdAndRelease(controller);
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 2)).toBe(true);
       expect(pastes).toEqual([cleaned, "Next dictated words."]);
       expect(hosts(transcription)).toEqual(["api.example.com", "dev.example.com"]);
-      expect(hosts(completions)).toEqual(["api.example.com", "dev.example.com"]);
-      expect(cleanupVars(1)?.dictation).toBe("next dictated words");
+      // The cleanup is in the transcription request: no request of its own, to either server.
+      expect(completions.requests).toHaveLength(0);
     });
 
     /** Space offers the email app Settings named at key-down, not the one it names by the time Space is
@@ -1396,8 +1316,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** Space switches nothing once the hold is over: not while transcribing, nor after a failure. */
     test("Space switches nothing after the hold", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       transcription.enqueue(200, { text: "  " });
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), thunderbird: new FakeThunderbird() });
       controller.captureContext = async () => selectionScreen("");
@@ -1411,7 +1330,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
       expect(seen).toEqual([{ phase: transcribing, mode: "dictation" }]);
       expect(pastes).toEqual([cleaned]);
-      expect(cleanupVars(0)?.content).toBe(config.cleanupPrompt);
+      // Still a dictation: cleaned up in the transcription request, no agent request.
+      expect(cleanupVars(0)).toBeDefined();
+      expect(completions.requests).toHaveLength(0);
 
       transcription.gate = undefined;
       await holdAndRelease(controller);
@@ -1449,8 +1370,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("a hold after agent mode dictates again", async () => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply("We ship on Friday."));
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = await carryOut(null);
 
       await holdAndRelease(controller);
@@ -1459,7 +1379,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.mode).toBe("dictation");
       expect(controller.tools).toEqual([]);
       expect(pastes).toEqual(["We ship on Friday.", cleaned]);
-      expect(cleanupVars(1)?.content).toBe(config.cleanupPrompt);
+      // Agent mode's transcription asks for no cleanup; the dictation after it does.
+      expect(cleanupVars(0)).toBeUndefined();
+      expect(cleanupVars(1)).toBeDefined();
+      expect(completions.requests).toHaveLength(1);
     });
     describe("the chat window", () => {
       const question = "what does this error mean";
@@ -1530,12 +1453,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(chatChanges).toEqual([true]);
         expect(completions.requests).toHaveLength(2);
         expect(completions.body(0).available_tools).toEqual(["compose", "answer"]);
-        expect(cleanupVars(0)?.conversation).toBe("");
-        expect(cleanupVars(1)?.content).toBe("system_prompt_desktop_answer");
-        expect(cleanupVars(1)?.user_request).toBe(question);
+        expect(completionsVars(0)?.conversation).toBe("");
+        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_answer");
+        expect(completionsVars(1)?.user_request).toBe(question);
         // The user's name goes with the tool's request, not with the choice of tool.
-        expect(cleanupVars(0)?.user_name).toBeUndefined();
-        expect(cleanupVars(1)?.user_name).toBe("Alex Example");
+        expect(completionsVars(0)?.user_name).toBeUndefined();
+        expect(completionsVars(1)?.user_name).toBe("Alex Example");
       });
 
       /** The answer goes with the name set at key-down: a name changed while the hold runs applies
@@ -1546,14 +1469,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
             if (phase.kind === "listening") prefs.value = { ...prefs.value, userName: "Sam Example" };
           };
         });
-        expect(cleanupVars(1)?.content).toBe("system_prompt_desktop_answer");
-        expect(cleanupVars(1)?.user_name).toBe("Alex Example");
+        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_answer");
+        expect(completionsVars(1)?.user_name).toBe("Alex Example");
 
         controller.onPhaseChange = undefined;
         queue("and how do I fix it", "answer", "Define it before the call.");
         await followUp(controller);
-        expect(cleanupVars(3)?.content).toBe("system_prompt_desktop_answer");
-        expect(cleanupVars(3)?.user_name).toBe("Sam Example");
+        expect(completionsVars(3)?.content).toBe("system_prompt_desktop_answer");
+        expect(completionsVars(3)?.user_name).toBe("Sam Example");
       });
 
       /** With the chat window open, the hotkey asks a follow-up: always in agent mode (Space switches
@@ -1572,9 +1495,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(await eventually(() => controller.phase.kind === "idle" && controller.chat?.turns.length === 2)).toBe(true);
 
         const conversation = `User: ${question}\nTabMail: ${answer}`;
-        expect(cleanupVars(2)?.conversation).toBe(conversation);
-        expect(cleanupVars(2)?.user_request).toBe("and how do I fix it");
-        expect(cleanupVars(3)?.conversation).toBe(conversation);
+        expect(completionsVars(2)?.conversation).toBe(conversation);
+        expect(completionsVars(2)?.user_request).toBe("and how do I fix it");
+        expect(completionsVars(3)?.conversation).toBe(conversation);
         expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Define it before the call."]);
         expect(controller.chat?.closesAt).toBeNull();
       });
@@ -1881,8 +1804,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
         await holdAndRelease(controller, "agent");
         expect(await eventually(() => settled(controller) && completions.requests.length === 4)).toBe(true);
         expect(completions.authorizations[2]).toBe("Bearer access-b");
-        expect(cleanupVars(2)?.conversation).toBe("");
-        expect(cleanupVars(3)?.conversation).toBe("");
+        expect(completionsVars(2)?.conversation).toBe("");
+        expect(completionsVars(3)?.conversation).toBe("");
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
       });
 
@@ -1989,7 +1912,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         expect(completions.requests).toHaveLength(1);
         expect(controller.phase).toEqual(idle);
-        expect(cleanupVars(0)?.content).toBe(tool === "answer" ? "system_prompt_desktop_answer" : "system_prompt_desktop_thunderbird");
+        expect(completionsVars(0)?.content).toBe(tool === "answer" ? "system_prompt_desktop_answer" : "system_prompt_desktop_thunderbird");
         expect(pastes).toEqual([]);
         if (tool === "answer") {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["the reply"]);
@@ -2907,8 +2830,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** A double tap listens at once, with no hold to wait for, until the hotkey is tapped again: then
      * it is transcribed, cleaned up and pasted like a hold. The double-tap tip is learned. */
     test("a hands-free dictation listens at once until finished", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.doubleTapTipHoldDuration = 100;
       controller.tipDisplayDuration = () => 50;
@@ -2979,8 +2901,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** A press while a double-tapped dictation is being transcribed leaves it alone: no new recording
      * starts, no tip shows, and its text is still pasted. So does another double tap. */
     test("a press while a double tap is transcribed leaves it alone", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const capture = new CountingCapture(true);
       const { controller, pastes } = makeController({ capture });
 
@@ -3025,8 +2946,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** A double-tapped dictation, tapped again, is transcribed, cleaned up and pasted like a hold. */
     test("a double-tapped dictation is pasted when tapped again", async () => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
 
       controller.handle("start");
@@ -3232,8 +3152,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * controller says so, and only then. Here the press came while the last dictation was still
      * being transcribed, so it started nothing; released before or after that dictation ends. */
     test.each(["before", "after"] as const)("a double tap while the last dictation transcribes, released %s it ends, leaves nothing hands-free", async (release) => {
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       let answer: () => void = () => {};
       transcription.gate = () => new Promise((resolve) => (answer = resolve));
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -3321,8 +3240,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * does: what it heard is transcribed and pasted (owner, 2026-09-27: "send what was said"). */
     test("a microphone lost while listening sends what was said", async () => {
       vi.useFakeTimers();
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const capture = new CountingCapture(true);
       const { controller, pastes } = makeController({ capture });
       try {
@@ -3377,8 +3295,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * not failed. */
     test("a microphone lost after release still sends what was said", async () => {
       vi.useFakeTimers();
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const capture = new CountingCapture(true);
       const { controller, pastes } = makeController({ capture });
       try {
@@ -3431,8 +3348,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * microphone is released and what it heard is pasted, and the next dictation listens afresh. */
     test("a hands-free dictation stops at the length cap and is pasted", async () => {
       vi.useFakeTimers();
-      transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, cleanedStream);
+      transcription.enqueue(200, cleanedReply);
       const capture = new CountingCapture(true);
       const { controller, pastes } = makeController({ capture });
       try {

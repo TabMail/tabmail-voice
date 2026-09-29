@@ -358,6 +358,24 @@ export class SSEParser {
   }
 }
 
+/** The variables of the backend's cleanup prompt other than the transcript, which the backend fills in
+ * (backend ADR-027). */
+export interface CleanupVariables {
+  app_name: string;
+  web_host: string;
+  terminal_program: string;
+  window_title: string;
+  screen_text: string;
+  dictionary: string;
+}
+
+/** A recording's transcript and, when the request asked for it, the backend's cleanup of it: empty
+ * when the cleanup failed or ran out of time, null when not asked for or not returned. */
+export interface Transcription {
+  text: string;
+  cleanedText: string | null;
+}
+
 /** Calls the TabMail backend's `POST /dictation/transcribe` (OpenRouter STT behind it). */
 export class TranscriptionClient {
   constructor(
@@ -368,17 +386,25 @@ export class TranscriptionClient {
 
   /** `language`: the keyboard's at key-down, which picks the backend's model; null sends none (the
    * default model). `vocabulary`: the user's dictionary words, which the speech model favours
-   * (ADR-DESK-038); none are sent when it is empty. */
-  async transcribe(wav: Uint8Array, language: string | null, vocabulary: readonly string[], accessToken: string, signal?: AbortSignal): Promise<string> {
+   * (ADR-DESK-038); none are sent when it is empty. `cleanup`: the cleanup's variables, for the backend
+   * to clean up the transcript in the same request (ADR-DESK-008); none for no cleanup. */
+  async transcribe(
+    wav: Uint8Array,
+    language: string | null,
+    vocabulary: readonly string[],
+    accessToken: string,
+    signal?: AbortSignal,
+    cleanup?: CleanupVariables,
+  ): Promise<Transcription> {
     const request: HTTPRequest = {
       method: "POST",
       url: joinURL(this.baseURL, config.transcribePath),
       timeout: config.transcriptionRequestTimeout,
       headers: headers(accessToken, this.clientVersion),
-      body: JSON.stringify(TranscriptionClient.body(base64(wav), language, vocabulary)),
+      body: JSON.stringify(TranscriptionClient.body(base64(wav), language, vocabulary, cleanup)),
       signal,
     };
-    log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(wav.length, language, vocabulary)));
+    log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(wav.length, language, vocabulary, cleanup)));
     const response = await this.transport(request);
     log.content("Transcription response", () => BackendLog.response(response));
     if (response.status !== 200) throw BackendError.fromStatus(response.status, errorCode(response.body));
@@ -391,21 +417,24 @@ export class TranscriptionClient {
     if (!result || typeof result !== "object" || !("text" in result) || typeof result.text !== "string") {
       throw new BackendError("invalidResponse");
     }
-    return result.text;
+    const cleanedText = "cleaned_text" in result ? result.cleaned_text : null;
+    if (cleanedText !== null && typeof cleanedText !== "string") throw new BackendError("invalidResponse");
+    return { text: result.text, cleanedText };
   }
 
   /** The request body as the log shows it: the audio's size in its place, never the audio. */
-  static loggedBody(wavBytes: number, language: string | null, vocabulary: readonly string[]): string {
-    return JSON.stringify(TranscriptionClient.body(`<${wavBytes} bytes of WAV, not logged>`, language, vocabulary));
+  static loggedBody(wavBytes: number, language: string | null, vocabulary: readonly string[], cleanup?: CleanupVariables): string {
+    return JSON.stringify(TranscriptionClient.body(`<${wavBytes} bytes of WAV, not logged>`, language, vocabulary, cleanup));
   }
 
-  /** `language` is left out when null, `vocabulary` when empty. */
-  private static body(audio: string, language: string | null, vocabulary: readonly string[]): Record<string, unknown> {
+  /** `language` is left out when null, `vocabulary` when empty, `cleanup` when undefined. */
+  private static body(audio: string, language: string | null, vocabulary: readonly string[], cleanup: CleanupVariables | undefined): Record<string, unknown> {
     return {
       audio,
       format: "wav",
       ...(language === null ? {} : { language }),
       ...(vocabulary.length === 0 ? {} : { vocabulary }),
+      ...(cleanup === undefined ? {} : { cleanup }),
     };
   }
 }
