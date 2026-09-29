@@ -317,7 +317,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   - a top rail of category labels, with one bubble per step;
   - Back and Next buttons, with Finish on the last step;
   - bubbles that return only to steps already reached.
-- **Steps.** Consent → Permissions (Microphone, Accessibility) → Features (screen reading).
+- **Steps.** Consent → About You (the user's name, ADR-DESK-035) → Permissions (Microphone,
+  Accessibility) → Features (screen reading).
 - **Consent step.** It says what dictation sends: the voice, and the text in the front window
   while screen reading is on. It says where that goes (TabMail and its AI providers, not stored)
   and links the Terms of Service and the Privacy Policy. Next stays disabled until the user
@@ -1635,8 +1636,8 @@ pointer at all.
 
 ## ADR-DESK-035: Agent mode sends the user's name, set in the wizard or Settings
 
-**Context:** Owner, 2026-09-28. In a direct-message chat the user asked agent mode to "tell him I
-signed the form"; Compose wrote the reply as the other person, greeting the user by name. The request
+**Context:** Owner, 2026-09-28. In a direct-message chat the user asked agent mode to relay a message
+to the other person ("tell him…"); Compose wrote the reply as the other person, greeting the user by name. The request
 carried the window title, the screen (messages under both people's names) and the request, but
 nothing said who the user is, so the backend's model could not tell the user's own messages on screen
 from the other person's. Thunderbird's compose prompt has always had the user's name. The owner:
@@ -1657,7 +1658,8 @@ sort of nag to set it in the wizard and settings".
   is set, and a note inviting one; the section is marked for attention until a name is set.
 - While no name is set, switching to agent mode shows a tip by the pill (`setName`: "Add your name in
   Settings so agent mode knows which messages are yours"), every time, until a name is set; switching
-  back to dictation takes it away. A follow-up in the chat window shows no tips, as before.
+  back to dictation takes it away. Hands-free, it takes the hands-free tip's place for its display
+  duration, and the hands-free tip returns after it. A follow-up in the chat window shows no tips, as before.
 - Every tool's request (edit, compose, thunderbird, answer) sends `user_name`, empty when none is set
   (the backend leaves a missing variable in the prompt as written). The choice of tool sends none. The
   backend's prompts say text on screen under that name is the user's own, and Compose that a relayed

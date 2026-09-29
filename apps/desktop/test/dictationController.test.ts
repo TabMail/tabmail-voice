@@ -1363,6 +1363,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(cleanupVars(1)?.user_name).toBe("Alex Example");
       });
 
+      /** The answer goes with the name set at key-down: a name changed while the hold runs applies
+       * from the next request, here the follow-up. */
+      test("an answer carries the name set at key-down", async () => {
+        const { controller } = await openChat((controller) => {
+          controller.onPhaseChange = (phase) => {
+            if (phase.kind === "listening") prefs.value = { ...prefs.value, userName: "Sam Example" };
+          };
+        });
+        expect(cleanupVars(1)?.content).toBe("system_prompt_desktop_answer");
+        expect(cleanupVars(1)?.user_name).toBe("Alex Example");
+
+        controller.onPhaseChange = undefined;
+        queue("and how do I fix it", "answer", "Define it before the call.");
+        await followUp(controller);
+        expect(cleanupVars(3)?.content).toBe("system_prompt_desktop_answer");
+        expect(cleanupVars(3)?.user_name).toBe("Sam Example");
+      });
+
       /** With the chat window open, the hotkey asks a follow-up: always in agent mode (Space switches
        * nothing), carrying the conversation so far, and it keeps the window open for good. */
       test("a follow-up carries the conversation in agent mode", async () => {
@@ -2512,6 +2530,60 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "listening" && controller.isHearing)).toBe(true);
       expect(await throughout(300, () => controller.tip === null)).toBe(true);
       controller.handle("cancel");
+    });
+
+    /** The name tip goes by the name set at key-down: set or cleared while the hold runs, it changes
+     * the tip from the next hold. */
+    test("the name tip goes by the name set at key-down", async () => {
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      controller.tipDisplayDuration = () => 60_000;
+      new TipBook(tipStore).markLearned("switchMode");
+
+      async function switchDuringHold(nameMidHold: string): Promise<void> {
+        controller.handle("start");
+        expect(await eventually(() => controller.phase.kind === "listening" && controller.isHearing)).toBe(true);
+        prefs.value = { ...prefs.value, userName: nameMidHold };
+        controller.handle("toggleMode");
+      }
+
+      prefs.value = { ...prefs.value, userName: "" };
+      await switchDuringHold("Alex Example");
+      expect(await eventually(() => controller.tip === "setName")).toBe(true);
+      controller.handle("cancel");
+
+      await switchDuringHold("");
+      expect(await throughout(300, () => controller.tip === null)).toBe(true);
+      controller.handle("cancel");
+
+      await switchDuringHold("");
+      expect(await eventually(() => controller.tip === "setName")).toBe(true);
+      controller.handle("cancel");
+    });
+
+    /** Hands-free, the name tip takes the hands-free tip's place for its display duration, and the
+     * hands-free tip returns after it, or as soon as the dictation switches back. */
+    test("hands-free, the name tip shows in turn with the hands-free tip", async () => {
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      const nameTipDuration = 300;
+      controller.tipDisplayDuration = (tip) => (tip === "setName" ? nameTipDuration : tipDetails[tip].displayDuration);
+      prefs.value = { ...prefs.value, userName: "" };
+
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
+      expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+      controller.handle("toggleMode");
+      expect(controller.tip).toBe("setName");
+      expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+      expect(await throughout(nameTipDuration * 2, () => controller.tip === "handsFree")).toBe(true);
+
+      controller.handle("toggleMode");
+      expect(controller.tip).toBe("handsFree");
+      controller.handle("toggleMode");
+      expect(controller.tip).toBe("setName");
+      controller.handle("toggleMode");
+      expect(controller.tip).toBe("handsFree");
+      controller.handle("cancel");
+      expect(controller.tip).toBeNull();
     });
 
     /** A tip shows for its display duration, and goes away with the hold. */

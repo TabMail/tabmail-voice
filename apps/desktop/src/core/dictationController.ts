@@ -738,12 +738,19 @@ export class DictationController extends Observable {
     log.debug("DictationController: second press was a tap; listening without the key");
   }
 
-  /** In agent mode with no name set, the tip inviting one is due; out of it, it goes. */
+  /** In agent mode with no name set, the tip inviting one is next; out of it, it goes. A tip with
+   * no display duration (hands-free) would never give way, so it steps aside and returns after. */
   private updateNameTip(): void {
     this.dueTips = this.dueTips.filter((tip) => tip !== "setName");
     if (this.currentMode === "agent" && this.dictationSettings.userName === "") {
-      this.dueTips.push("setName");
-      this.showDueTip();
+      this.dueTips.unshift("setName");
+      const shown = this.currentTip;
+      if (shown !== null && this.tipDisplayDuration(shown) === null) {
+        this.dueTips.splice(1, 0, shown);
+        this.hideTip();
+      } else {
+        this.showDueTip();
+      }
     } else if (this.currentTip === "setName") {
       this.hideTip();
     }
