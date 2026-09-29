@@ -124,7 +124,8 @@ incoming sound relative to the range coming in (`LevelEnvelope`: EMA floor and p
 fast on their outward side, slow inward), so it follows the voice on quiet and loud mics alike
 (telling speech from background is still the model's job), then a circle with a spinning rim while
 transcribing. On exit it plays in reverse (the pill shrinks into the swirl, which disperses).
-The overlay uses only the icon's blue → purple. The pill is
+The overlay uses only the icon's blue → purple (but for agent mode's red-pink pill glow, ADR-DESK-036's
+2026-09-29 amendment). The pill is
 the surface for status now and agent responses later (as on iOS).
 
 **Consequences:**
