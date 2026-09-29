@@ -90,6 +90,8 @@ describe("learnedCorrections", () => {
   test("short and everyday words are not learned", () => {
     expect(learnedCorrections("Ask Al today.", "Ask Al today.", "Ask Ai today.")).toEqual([]);
     expect(learnedCorrections("Better then ever.", "Better then ever.", "Better than ever.")).toEqual([]);
+    // Capitalised, so not taken for another form of a lowercase word: only its being everyday refuses it.
+    expect(learnedCorrections("Wood you send it?", "Wood you send it?", "Would you send it?")).toEqual([]);
   });
 
   /** A lowercase word changed at its end alone is another form of it, a grammar or wording fix; a

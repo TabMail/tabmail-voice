@@ -100,6 +100,44 @@ describe("CorrectionWatch", () => {
     expect(learned).toEqual(words.length === 0 ? [] : [words]);
   });
 
+  /** A spelling paused on, then changed or undone and sent before that change stayed, teaches nothing:
+   * only a spelling the field held at the end of the edit is learned. */
+  test.each([
+    ["Please forward the Xyvor contract today.", corrected],
+    [corrected, pasted],
+  ])("paused on %j, then changed and sent at once, teaches nothing", async (paused, last) => {
+    const { field, learned, watch } = setup();
+    watch.watch(pid, pasted);
+    await poll();
+    field.value = paused;
+    await poll();
+    await poll();
+    field.value = last;
+    await poll();
+    field.value = "";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([]);
+  });
+
+  /** Text typed after a correction, read before it stays, keeps the correction. */
+  test("a correction then words added and sent at once is learned", async () => {
+    const { field, learned, watch } = setup();
+    watch.watch(pid, pasted);
+    await poll();
+    field.value = corrected;
+    await poll();
+    await poll();
+    field.value = `${corrected} Thanks`;
+    await poll();
+    field.value = "";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([["Xyvora"]]);
+  });
+
   /** While the user is still typing the field changes at every read: nothing is compared until it
    * holds still. */
   test("a field still changing is not compared", async () => {

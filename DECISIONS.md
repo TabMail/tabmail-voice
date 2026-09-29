@@ -1822,7 +1822,7 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   (`dictionaryWord`, in the backend's units: UTF-16 code units, JS `trim`, words split on spaces): at
   most `dictionaryWordMaxChars` characters and `dictionaryWordMaxWords` words, no control characters
   or `<` `>`, at most `dictionaryMaxEntries` (100) words, half the backend's 200, so all of them are
-  always sent; the same word in another case is one entry. A word
+  always sent; the same word in another case is one entry, spelled as the user last typed it. A word
   the backend would refuse is never stored, so no dictation fails on one.
 - The dictation's key-down snapshot (ADR-DESK-017) carries the words and the learning switch. Every
   transcription sends them as `vocabulary` (none when empty), and dictation's cleanup as `dictionary`,
@@ -1847,9 +1847,11 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   field before any edit; each later change that stays for one interval is compared with it, and the
   words the last one teaches are learned when the watch ends (the next key-down, its duration, or a
   field it can't read), so a pause in the middle of an edit ("tabmail" on the way to "TabMail")
-  teaches nothing. A change that respells nothing replaces what an earlier one taught only with the
-  pasted text back as it was (an undo): a field emptied by sending the message, or another field
-  focused, keeps the correction. The
+  teaches nothing. A change that respells something new, or has the pasted text back as it was (an
+  undo), replaces what an earlier one taught: with what it teaches once it has stayed, with nothing
+  before, so a spelling paused on and then changed teaches nothing though the message is sent before
+  the change stays. A change that respells nothing (a field emptied by sending the message, another
+  field focused, a word half retyped) keeps the correction. The
   changed span (common prefix and suffix) must lie within one copy of the pasted text; the words are
   aligned (longest common subsequence), and a run of changed words is learned when it respells rather
   than replaces: at most half the dictation's words changed, an edit distance within

@@ -54,7 +54,7 @@ export interface DictationSettings {
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
- * `config.dictionaryMaxEntries`. A word already there is `added` (and typed now, if it was learned). */
+ * `config.dictionaryMaxEntries`. A word already there is `added`, spelled as typed now (and typed, if it was learned). */
 export type AddWordResult = "added" | "invalid" | "full";
 
 /** The name the welcome wizard offers (owner, 2026-09-28: "the macOS full name or the username"): the
@@ -159,7 +159,8 @@ export class AppSettings extends Observable {
     return storedDictionary(this.store.get(Key.dictionary));
   }
 
-  /** Adds a word the user typed. One already learned becomes typed, so it shows as the user's own. */
+  /** Adds a word the user typed. One already there takes the spelling typed, the user's latest; one
+   * learned becomes typed, so it shows as the user's own. */
   addWord(raw: string): AddWordResult {
     const word = dictionaryWord(raw);
     if (word === null) return "invalid";
@@ -167,7 +168,7 @@ export class AppSettings extends Observable {
     const existing = entries.findIndex((entry) => isSameWord(entry.word, word));
     if (existing === -1 && entries.length >= config.dictionaryMaxEntries) return "full";
     if (existing === -1) entries.push({ word, learned: false });
-    else entries[existing] = { word: entries[existing]!.word, learned: false };
+    else entries[existing] = { word, learned: false };
     this.writeDictionary(entries);
     return "added";
   }

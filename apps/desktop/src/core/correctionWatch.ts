@@ -12,14 +12,15 @@ import { sleep } from "./timeout.js";
  * (ADR-DESK-038). Every `interval` for `duration`, it reads the field of the app pasted into: the first
  * read holding the pasted text is the field before any edit; after that, each change that stays for
  * one interval is compared with it (`learnedCorrections`), and the words the last one teaches are
- * learned when the watch ends, not before: a pause in the middle of an edit ("tabmail" on the way to
- * "TabMail", "Xyvor" on the way to "Xyvora") teaches nothing. One watch at a time: a new one, or
+ * learned when the watch ends, not before, unless a later change teaches otherwise: a pause in the
+ * middle of an edit ("tabmail" on the way to "TabMail", "Xyvor" on the way to "Xyvora") teaches
+ * nothing, though the field is sent before its last spelling stays. One watch at a time: a new one, or
  * `stop` (the next dictation's key-down), ends the last; so do a field it can't read and the end of
  * `duration`. The field's text stays on this computer; only the words learned reach the debug log.
  */
 export class CorrectionWatch {
   private generation = 0;
-  /** What the current watch's last settled edit teaches. */
+  /** What the current watch's last settled edit teaches, while no later one teaches otherwise. */
   private pending: string[] = [];
 
   constructor(
@@ -71,11 +72,16 @@ export class CorrectionWatch {
           before = field;
           log.debug("CorrectionWatch: found the pasted text in the field");
         }
-      } else if (field === previous) {
-        // A field that respells nothing replaces the correction pending only with the pasted text back
-        // as it was (an undo); not once the message is sent and the field emptied, or focus moves on.
+      } else {
+        // A read that respells something new, or has the pasted text back as it was (an undo), replaces
+        // the correction pending: with what it teaches once the field has held since the last read, with
+        // nothing while it is still changing, so a spelling paused on and then changed is never learned.
+        // A read that respells nothing (the message sent and the field emptied, focus moved on, a word
+        // half retyped) leaves it.
         const words = learnedCorrections(pasted, before, field);
-        if (words.length > 0 || field.includes(pasted)) this.pending = words;
+        if ((words.length > 0 || field.includes(pasted)) && words.join("\n") !== this.pending.join("\n")) {
+          this.pending = field === previous ? words : [];
+        }
       }
       previous = field;
     }

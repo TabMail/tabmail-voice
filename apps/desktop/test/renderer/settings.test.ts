@@ -167,6 +167,9 @@ describe("Settings page", () => {
       await act(async () => type(field(), "Xyvora"));
       expect(button("Add").disabled).toBe(true);
       expect(document.querySelector(".error")?.textContent).toContain(`holds ${config.dictionaryMaxEntries} words`);
+      await act(async () => field().form?.requestSubmit());
+      expect(page.commands).toEqual([]);
+      expect(field().value).toBe("Xyvora");
 
       await act(async () => type(field(), "WORD3"));
       expect(button("Add").disabled).toBe(false);
