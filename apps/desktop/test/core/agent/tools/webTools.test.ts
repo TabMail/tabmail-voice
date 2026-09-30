@@ -5,8 +5,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { LoopToolArgumentError } from "../../../../src/core/agent/tools/loopTool.js";
-import { liveWebFetch, type WebFetch, WebOpenTool, WebPageReader, WebReadFailure, WebReadTool, type WebResponse, webTools, webURL } from "../../../../src/core/agent/tools/webTools.js";
+import { ToolArgumentError } from "../../../../src/core/agent/tools/connectorTool.js";
+import { liveWebFetch, type WebFetch, WebOpenTool, WebPageReader, WebReadError, WebReadTool, type WebResponse, webTools, webURL } from "../../../../src/core/agent/tools/webTools.js";
 import * as config from "../../../../src/core/config.js";
 import { CancellationError } from "../../../../src/core/util/timeout.js";
 
@@ -65,11 +65,11 @@ describe("a web URL", () => {
   /** Only a complete http or https URL: another scheme could open an app (a `shortcuts:` link runs a
    * shortcut), a `file:` one a local file. */
   test.each(["shortcuts://run-shortcut?name=Example", "file:///etc/hosts", "javascript:alert(1)", "mailto:sam@example.com", "ftp://example.com/", "example.com/page", "/page", "https://"])("%j is not one", (text) => {
-    expect(() => webURL({ url: text })).toThrow(new LoopToolArgumentError(`url must be a complete http:// or https:// URL, not "${text}".`));
+    expect(() => webURL({ url: text })).toThrow(new ToolArgumentError(`url must be a complete http:// or https:// URL, not "${text}".`));
   });
 
   test.each([{}, { url: " " }, { url: 7 }])("%j has none", (args) => {
-    expect(() => webURL(args)).toThrow(LoopToolArgumentError.missing("url"));
+    expect(() => webURL(args)).toThrow(ToolArgumentError.missing("url"));
   });
 });
 
@@ -98,7 +98,7 @@ describe("web_read", () => {
     web.page("https://example.com/robots.txt", "User-agent: *\nDisallow: /private/");
     web.page("https://example.com/private/page", "Secret.");
 
-    await expect(reader.read(new URL("https://example.com/private/page"), signal)).rejects.toEqual(new WebReadFailure("Access to this URL is disallowed by the site's robots.txt"));
+    await expect(reader.read(new URL("https://example.com/private/page"), signal)).rejects.toEqual(new WebReadError("Access to this URL is disallowed by the site's robots.txt"));
     expect(web.requests.map((request) => request.url)).toEqual(["https://example.com/robots.txt"]);
   });
 
@@ -135,7 +135,7 @@ describe("web_read", () => {
   test("a page that can't be fetched says why", async () => {
     web.pages.set("https://example.com/page", new Error("timed out after 30 seconds"));
 
-    await expect(reader.read(new URL("https://example.com/page"), signal)).rejects.toEqual(new WebReadFailure("Failed to fetch URL: timed out after 30 seconds"));
+    await expect(reader.read(new URL("https://example.com/page"), signal)).rejects.toEqual(new WebReadError("Failed to fetch URL: timed out after 30 seconds"));
   });
 
   test.each<[Partial<WebResponse>, string]>([
@@ -145,7 +145,7 @@ describe("web_read", () => {
   ])("a page answering %j fails", async (response, message) => {
     web.pages.set("https://example.com/page", { contentType: "text/html", body: encoder.encode("<p>x</p>"), ...response });
 
-    await expect(reader.read(new URL("https://example.com/page"), signal)).rejects.toEqual(new WebReadFailure(message));
+    await expect(reader.read(new URL("https://example.com/page"), signal)).rejects.toEqual(new WebReadError(message));
   });
 
   /** An HTML page is its text; XHTML too. */
@@ -311,7 +311,7 @@ describe("web_open", () => {
     const opened: string[] = [];
     const tool = new WebOpenTool({ open: async (url) => void opened.push(url) });
 
-    await expect(tool.run(args)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(opened).toEqual([]);
   });
 });

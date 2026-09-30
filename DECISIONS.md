@@ -793,7 +793,7 @@ protocol-and-registry design with generic connectors.
 **Decision:**
 - `Agent/AgentTool.swift` holds the registry: the `AgentTool` enum (raw value = the name the agent
   answers with; `Hashable`, so the phase and the bubbles keep using it) maps each case to its
-  implementation, a `DesktopTool`. The protocol gives a tool its display name, symbol, backend prompt,
+  implementation, a `AgentTool`. The protocol gives a tool its display name, symbol, backend prompt,
   prompt variables (default: `screenVariables`, the request and the key-down screen read), the fitting
   of the written text (default: as written) and `deliver(_:in:)`. `ToolContext` is what a tool
   delivers with: the dictation's settings snapshot (ADR-DESK-017), the inserter, whether the key-down
@@ -959,7 +959,7 @@ one that ships.
   Answer).
 - The tools offered (`DesktopAgent.tools(context, enabled, emailAppAvailable)`): the selection's
   writing tool (Edit or Compose), Thunderbird while an email app is available, and Answer, each only
-  while enabled. None → `AgentFailure("noToolEnabled")`, with no completions call; one → it runs,
+  while enabled. None → `AgentError("noToolEnabled")`, with no completions call; one → it runs,
   with no choice call; more → the choice request lists them in `available_tools`
   (`CompletionsClient.complete`), and a reply naming a tool not offered is `noTool`. The agent's pick
   of the other writing tool is no longer overruled: that tool is not offered.
@@ -1032,7 +1032,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
 - The Answer prompt is a loop (`DesktopAgent.answer`); Edit, Compose and Thunderbird stay one call
   each, and the choice stays one call. Each round (`CompletionsClient.round`) sends tools on
   (`disable_tools: false`), `available_tools` = the backend's date tools
-  (`config.answerServerTools`) plus every `LoopTool`'s name (`DesktopAgent.answerTools`), and, after
+  (`config.answerServerTools`) plus every `ConnectorTool`'s name (`DesktopAgent.answerTools`), and, after
   the first round, the loop's `conversation_state`. A round either replies (the answer) or returns
   `tool_calls` (each an `id`, a function `name` and its `arguments` as a JSON string; anything else
   is `invalidResponse`) and the state.
@@ -1043,9 +1043,9 @@ Electron app (ADR-DESK-032), which is the one that ships.
   State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
   `AbortSignal` is checked before each round and each call: a request cancelled while a tool ran
   runs no later call and sends no further round.
-- `LoopTool` (`src/core/agent/tools/loopTool.ts`): a tool that runs on this computer: its backend function
+- `ConnectorTool` (`src/core/agent/tools/connectorTool.ts`): a tool that runs on this computer: its backend function
   `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
-  a read), and `run(args)`. The controller takes them as `DictationDependencies.loopTools`, which the
+  a read), and `run(args)`. The controller takes them as `DictationDependencies.connectorTools`, which the
   main process builds (a tool reaches the OS through a native helper); the list is empty until the
   first connector (a later PR). The backend's server tools (the date tools) run on the backend.
 - `DictationController.runLoopTool`: a call to a tool the app doesn't have, or with arguments that
@@ -1107,7 +1107,7 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
 
 **Decision:**
 - A connector is an app the tools reach (`src/core/agent/connectors/connectors.ts`: `Connector`, its display
-  name and description), and each `LoopTool` names its `connector`. Settings stores the switched-off
+  name and description), and each `ConnectorTool` names its `connector`. Settings stores the switched-off
   names (`disabledConnectors`, so a new connector starts on and a retired name is ignored); the
   enabled ones are in the key-down snapshot (`DictationSettings.enabledConnectors`, ADR-DESK-017),
   and a request lists in `available_tools`, and runs, only the tools of the connectors on then. The
@@ -1120,7 +1120,7 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
   added. A day as an event's start is an all-day event; with no end, an event lasts
   `config.calendarEventDefaultDuration` (an hour); a day as an end means through that day, and an
   all-day event over several days reads as its first to its last day. Bad or missing arguments
-  throw `LoopToolArgumentError`, which the model reads (ADR-DESK-023).
+  throw `ToolArgumentError`, which the model reads (ADR-DESK-023).
 - The backend's dates are parsed in the local zone in core (`LocalDateTime`), and cross the wire as
   milliseconds since 1970, so the helper does no date parsing; a reminder due on a day carries
   `dueHasTime: false` and is stored with no time. A reminder's due date is stored as Gregorian
@@ -1140,7 +1140,7 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
   since the prompt is attributed to the app. A refusal (a request for access that fails counts as
   one), or no default calendar or list, goes back by
   name (`calendarNoAccess`, `remindersNoAccess`, `noDefaultCalendar`, `noDefaultList`) and becomes an
-  `EventStoreFailure` whose message names where to grant access (System Settings › Privacy &
+  `EventStoreError` whose message names where to grant access (System Settings › Privacy &
   Security › Calendars or Reminders); the model reads it and tells the user.
 - A call waits `config.eventStoreRequestTimeout` (two minutes), long enough for the user to answer
   the permission prompt.
@@ -1174,7 +1174,7 @@ built in the Swift app; built here in the Electron app (ADR-DESK-032).
   and every field added is shown (ADR-DESK-024). It goes to the default container.
 - Access is asked on first use (`CNContactStore.requestAccess`); without it (a request that fails
   counts as a refusal) the helper refuses with `contactsNoAccess`, which becomes a
-  `ContactStoreFailure` naming System Settings › Privacy & Security › Contacts. A call waits `config.contactStoreRequestTimeout`, as long as Calendar's, for
+  `ContactStoreError` naming System Settings › Privacy & Security › Contacts. A call waits `config.contactStoreRequestTimeout`, as long as Calendar's, for
   the prompt. The framework's calls block, so the helper runs them off its main thread.
 - The packaged app carries `NSContactsUsageDescription`; the hardened runtime gets
   `com.apple.security.personal-information.addressbook`.
@@ -1197,7 +1197,7 @@ app; built here in the Electron app (ADR-DESK-032).
 - The `files` connector with `FilesSearchTool` (`files_search`) and `FileOpenTool` (`file_open`)
   (`src/core/agent/tools/filesTools.ts`) over a `FileStore`: on macOS `MacSystem.fileStore`, whose
   `filesSearch` and `fileOpen` requests `voice-macos` carries out (`FileSearch.swift`). A failure
-  comes back by name (`Files.Failure`, `FileStoreFailure`), so a file's name in the system's error
+  comes back by name (`Files.Failure`, `FileStoreError`), so a file's name in the system's error
   never reaches a log.
 - `SpotlightQuery` (in the helper) builds the query: every word in the display name, the text
   content (word prefix), or an email's subject, senders or sender addresses, ignoring case and
@@ -1265,7 +1265,7 @@ app; built here in the Electron app (ADR-DESK-032).
   rather than failing the call.
 - The main process asks `voice-macos` for the default email app (`emailApps`, which Settings
   already uses), names it in the result, and opens the URL with `shell.openExternal`. With none,
-  the tool fails with `NoEmailAppFailure`, whose message the model passes on.
+  the tool fails with `NoEmailAppError`, whose message the model passes on.
 - Nothing is sent, so nothing is asked first. At least one recipient, a subject and a body are
   required, and every recipient must be one address (`isAddress`); a name goes back to the model
   to look up with `contacts_search`.
@@ -1304,7 +1304,7 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
   follow `--`, so one that looks like an option (`-e …`) is data too (without it, a search for `-e`
   plus script ran that script unconfirmed).
 - The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/native/osascript.ts`),
-  not a `voice-macos` method. The one reason is cancellation: `LoopTool.run` now takes the
+  not a `voice-macos` method. The one reason is cancellation: `ConnectorTool.run` now takes the
   request's `AbortSignal`, and a cancelled request or a closed chat window ends the osascript
   process. The helper channel can't call off a request it has taken, so a script run there would
   keep going, a send included, until it finished or timed out. This is a system program run with
@@ -1320,7 +1320,7 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
 - Access: macOS asks the first time the app sends Notes or Messages an Apple Event
   (`NSAppleEventsUsageDescription`, the hardened runtime's `automation.apple-events` entitlement).
   A refusal (-1743) fails the request with where to allow it (System Settings › Privacy & Security
-  › Automation), naming the app the script tells (`ScriptFailure.noAccess`).
+  › Automation), naming the app the script tells (`ScriptError.noAccess`).
 
 **Consequences:**
 - The first use of each app raises macOS's Automation prompt, and launches the app if it is not
@@ -1770,7 +1770,7 @@ the stream was read whole and named its tools only in development builds.
 - **One tree.** The overlay page renders the pill in the same place in its tree with the chat window
   open or not, so the pill and its bubbles don't remount as the chat opens. The chat appears once,
   fading in as it rises `chatAppearRise` from the pill and scales up from `chatAppearScale` over
-  `chatAppearDuration`. Under it the pill rests as a circle with a fainter sparkle
+  `chatAppearDurationSeconds`. Under it the pill rests as a circle with a fainter sparkle
   (`agentRestingSymbolOpacity`) while nothing runs, listens for a follow-up without the warm-up
   swirl, and keeps the last request's bubbles until a follow-up knows its own.
 - **The row.** Bubbles go in one row under the pill (over it without room, `bubblesFitUnder`), a
@@ -1780,9 +1780,9 @@ the stream was read whole and named its tools only in development builds.
   that ran, the latest first (`DictationController.recentBubbles`, `ranNow`: the tool the agent
   chose, then the app whose tool starts), then the rest alphabetically by name (`alphabetical`). The
   history lasts the app's run, in memory only. A bubble slides to its new place over
-  `agentBubbleMoveDuration`.
+  `agentBubbleMoveDurationSeconds`.
 - **Running.** A bubble circles while its tool runs, and an app's while one of its tools runs: a
-  `LoopTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
+  `ConnectorTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
   inside a round, one at a time as the answer's tools run in turn
   (`DictationController.runningConnectors`, cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
   `agentBubbleDiameter` (20) at rest, smaller than the pill, and grow about their centre to
@@ -1842,10 +1842,10 @@ Thunderbird from outside (ADR-DESK-014's spike: shortcut, paste, Return). The na
 ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built separately.
 
 **Decision:**
-- `offeredAgentTools` (Edit, Compose, Answer) is what agent mode offers and what Settings and the
+- `offeredAgentToolIds` (Edit, Compose, Answer) is what agent mode offers and what Settings and the
   welcome wizard list; `agentTools` stays the registry of every tool, Thunderbird's included, so a
-  bubble or a stored switch still names a tool (`isAgentTool`). `AppSettings.enabledTools` is drawn
-  from `offeredAgentTools`, so no dictation offers Thunderbird's tool, and the agent is never told of
+  bubble or a stored switch still names a tool (`isAgentToolId`). `AppSettings.enabledTools` is drawn
+  from `offeredAgentToolIds`, so no dictation offers Thunderbird's tool, and the agent is never told of
   it (`available_tools`).
 - Its switch, and Settings' Email app menu (which only chooses where that tool sends), are hidden. A
   switch the user stored for it is kept, for when it returns.
@@ -1856,7 +1856,7 @@ ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built se
 - Mail and calendar requests go to Answer, whose Calendar, Reminders, Email and other connectors
   carry them out; the backend's agent prompt says which requests each tool takes (ADR-023
   amendment, 2026-09-29).
-- Bringing the tool back is offering it in `offeredAgentTools`, with the native connector as its
+- Bringing the tool back is offering it in `offeredAgentToolIds`, with the native connector as its
   delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
   case) were taken out with it and come back from this change's history.
 
@@ -2221,7 +2221,7 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
   the bubbles' order (`bubbleOrder.ts`) and agent mode's own tools, Edit, Compose, Thunderbird and
   Answer (`agentTools.ts`, formerly `tools.ts`); then
   - `tools/`: the tools Answer's model calls that run on this computer, one file per connector
-    (`calendarTools.ts` … `webTools.ts`), with their contract, `loopTool.ts`. **A new tool goes here**,
+    (`calendarTools.ts` … `webTools.ts`), with their contract, `connectorTool.ts`. **A new tool goes here**,
     in its connector's file.
   - `connectors/`: the apps agent mode reaches, and how: the connectors, each a switch
     (`connectors.ts`); the AppleScript runner Notes and Messages go through (`appleScript.ts`); and
@@ -2252,8 +2252,28 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
 - `test/` mirrors `src/`: a module's test is in the same folder under `test/` as the module under
   `src/` (the renderer's by page), shared stubs in `test/support/`, the fake helper in
   `test/fixtures/`, and the package's checks (`packaging.test.ts`) at the top.
-- File and symbol names are unchanged but for `tools.ts`; only import paths, the pages' script
-  paths, `Package.swift`'s target names and the paths tests read from disk changed.
+- Names follow the TypeScript conventions (owner, 2026-09-30: "make things more standard"), renamed
+  with the language service so only real references changed:
+  - Error classes end in `Error`, as JavaScript's own do: `AgentFailure` → `AgentError`, likewise
+    `ContactStore…`, `EventStore…`, `FileStore…`, `Helper…`, `Microphone…`, `NoEmailApp…`,
+    `Relay…`, `Script…` and `WebRead…` (their `…Kind` types too), `NotPasted` → `NotPastedError`,
+    `LoopToolArgumentError` → `ToolArgumentError`. The kinds, the helper's wire codes, are unchanged.
+  - A list of names is `…Id`, the object it names takes the plain noun: `AgentTool` (the names:
+    edit, compose, thunderbird, answer) → `AgentToolId`, `agentTools` → `agentToolIds`,
+    `offeredAgentTools` → `offeredAgentToolIds`, `isAgentTool` → `isAgentToolId`; the tool itself,
+    `DesktopTool` → `AgentTool`, and `toolImplementations` → `agentTools`. `Connector` →
+    `ConnectorId`, `connectors` → `connectorIds`, `isConnector` → `isConnectorId`.
+  - `LoopTool` → `ConnectorTool` (`tools/connectorTool.ts`): a tool a connector brings, not the
+    backend's loop it runs in; `loopTools` → `connectorTools`, `config.loopToolDeclined` and
+    `loopToolUnanswered` → `connectorToolDeclined` and `connectorToolUnanswered`.
+  - The main process's preferences file, `FileStore` → `JSONFileStore` (`storage/jsonFileStore.ts`),
+    as the Files tools' `FileStore` is the Spotlight one.
+  - `config.ts` keeps its rule, durations in milliseconds unless the name says otherwise; the four that
+    were seconds without saying so say it: `pillSpringResponseSeconds`,
+    `agentBubbleRunningSpringResponseSeconds`, `agentBubbleMoveDurationSeconds`,
+    `chatAppearDurationSeconds`.
+- Beyond the moves, only import paths, the pages' script paths, `Package.swift`'s target names, the
+  paths tests read from disk and the names above changed.
 
 **Consequences:**
 - A branch open before this change rebases with git's rename detection; a file it adds under an old

@@ -2,15 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type Connector, connectorInfo, connectorServerTools, connectors } from "./connectors/connectors.js";
-import { type AgentTool, isAgentTool, toolImplementations } from "./agentTools.js";
+import { type ConnectorId, connectorInfo, connectorServerTools, connectorIds } from "./connectors/connectors.js";
+import { type AgentToolId, isAgentToolId, agentTools } from "./agentTools.js";
 
 /** One of agent mode's bubbles under the pill: a tool's, or an app's that Answer reaches. */
-export type BubbleKey = AgentTool | Connector;
+export type BubbleKey = AgentToolId | ConnectorId;
 
 /** The bubble's name, as Settings shows it. */
 export function bubbleName(key: BubbleKey): string {
-  return isAgentTool(key) ? toolImplementations[key].displayName : connectorInfo[key].displayName;
+  return isAgentToolId(key) ? agentTools[key].displayName : connectorInfo[key].displayName;
 }
 
 /** `keys` in alphabetical order of their names (owner, 2026-09-28: "sort of alphabetical"), as Settings
@@ -35,6 +35,6 @@ export function ranNow(recent: readonly BubbleKey[], key: BubbleKey): BubbleKey[
 
 /** The app whose backend tool `tool` is (`connectorServerTools`): the web's search. Null for the
  * backend's own tools, which belong to no app (the date tools). */
-export function serverToolConnector(tool: string): Connector | null {
-  return connectors.find((connector) => connectorServerTools[connector]?.includes(tool) ?? false) ?? null;
+export function serverToolConnector(tool: string): ConnectorId | null {
+  return connectorIds.find((connector) => connectorServerTools[connector]?.includes(tool) ?? false) ?? null;
 }

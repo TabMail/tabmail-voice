@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type AgentTool, toolImplementations } from "./agentTools.js";
+import { type AgentToolId, agentTools } from "./agentTools.js";
 
 /** One request in the chat window and what came of it. */
 export interface ChatTurn {
@@ -10,7 +10,7 @@ export interface ChatTurn {
   /** What the user said. */
   request: string;
   /** The tool that carried it out. */
-  tool: AgentTool;
+  tool: AgentToolId;
   /** The answer, or the text the tool pasted or sent. */
   reply: string;
 }
@@ -42,7 +42,7 @@ export interface AgentChat {
 /** The chat window as it opens: no turns yet, and untouched. */
 export const emptyChat: AgentChat = { turns: [], pendingRequest: null, closesAt: null, touched: false, activity: null, confirmation: null, confirmationExpiresAt: null };
 
-export function appendTurn(chat: AgentChat, request: string, tool: AgentTool, reply: string): AgentChat {
+export function appendTurn(chat: AgentChat, request: string, tool: AgentToolId, reply: string): AgentChat {
   return { ...chat, turns: [...chat.turns, { id: chat.turns.length, request, tool, reply }], pendingRequest: null };
 }
 
@@ -51,7 +51,7 @@ export function appendTurn(chat: AgentChat, request: string, tool: AgentTool, re
 export function chatTranscript(chat: AgentChat): string {
   return chat.turns
     .map((turn) => {
-      const caption = toolImplementations[turn.tool].chatCaption;
+      const caption = agentTools[turn.tool].chatCaption;
       return `User: ${turn.request}\nTabMail${caption === null ? "" : ` [${caption}]`}: ${turn.reply}`;
     })
     .join("\n");

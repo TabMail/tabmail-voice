@@ -13,9 +13,9 @@ import { opensLink } from "../core/agent/agentChat.js";
 import { calendarTools } from "../core/agent/tools/calendarTools.js";
 import { contactsTools } from "../core/agent/tools/contactsTools.js";
 import { filesTools } from "../core/agent/tools/filesTools.js";
-import { connectors } from "../core/agent/connectors/connectors.js";
+import { connectorIds } from "../core/agent/connectors/connectors.js";
 import { EmailClient } from "../core/agent/connectors/thunderbird/emailClient.js";
-import { type EmailOpener, emailTools, NoEmailAppFailure } from "../core/agent/tools/emailTools.js";
+import { type EmailOpener, emailTools, NoEmailAppError } from "../core/agent/tools/emailTools.js";
 import { messagesTools } from "../core/agent/tools/messagesTools.js";
 import { notesTools } from "../core/agent/tools/notesTools.js";
 import { liveWebFetch, webTools } from "../core/agent/tools/webTools.js";
@@ -53,7 +53,7 @@ import {
   type WindowStates,
 } from "../shared/ipc.js";
 import { SessionAudioCapture } from "./audioCapture.js";
-import { FileStore } from "./storage/fileStore.js";
+import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
 import { KeychainSessionStore } from "./storage/keychainSessionStore.js";
 import { LogFile } from "./storage/logFile.js";
@@ -69,7 +69,7 @@ import { Windows } from "./windows.js";
 /** Debug builds are the unpackaged app (`npm start`); a packaged build is a release. */
 const isDebugBuild = !app.isPackaged;
 /** The apps the Answer tool can reach here: the Mac's, through `voice-macos` (ADR-DESK-024). */
-const availableConnectors = process.platform === "darwin" ? [...connectors] : [];
+const availableConnectors = process.platform === "darwin" ? [...connectorIds] : [];
 /** Shown for a failure without a message of its own. */
 const genericError = "Something went wrong. Try again.";
 /** The pages a window may open in the browser. */
@@ -107,7 +107,7 @@ function launch(): void {
    * (`readSuggestedName`). */
   let suggestedName = "";
 
-  const store = new FileStore(join(app.getPath("userData"), "settings.json"));
+  const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
   const settings = new AppSettings(store, hasTabMail);
   const permissions = new PermissionsModel(macPermissions);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
@@ -140,7 +140,7 @@ function launch(): void {
   const emailOpener: EmailOpener = {
     open: async (url) => {
       const { systemDefault } = await mac.emailApps([]);
-      if (!systemDefault) throw new NoEmailAppFailure();
+      if (!systemDefault) throw new NoEmailAppError();
       await shell.openExternal(url);
       return systemDefault.name;
     },
@@ -172,7 +172,7 @@ function launch(): void {
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
     // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), the web
     // (ADR-DESK-030), none elsewhere.
-    loopTools:
+    connectorTools:
       process.platform === "darwin"
         ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...webTools(liveWebFetch, { open: (url) => shell.openExternal(url) })]
         : [],

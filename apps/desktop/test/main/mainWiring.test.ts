@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { connectors } from "../../src/core/agent/connectors/connectors.js";
+import { connectorIds } from "../../src/core/agent/connectors/connectors.js";
 import { mailtoURL } from "../../src/core/agent/tools/emailTools.js";
 import type { AudioCapture } from "../../src/core/audio/audio.js";
 import * as config from "../../src/core/config.js";
@@ -48,7 +48,7 @@ const app = vi.hoisted(() => ({
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
-  loopTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
+  connectorTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
   scripts: [] as { source: string; args: readonly string[] }[],
   /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
   appData: null as string | null,
@@ -171,8 +171,8 @@ vi.mock("../../src/core/backend/http.js", () => ({
     throw new Error("no network in tests");
   },
 }));
-vi.mock("../../src/main/storage/fileStore.js", () => ({
-  FileStore: class {
+vi.mock("../../src/main/storage/jsonFileStore.js", () => ({
+  JSONFileStore: class {
     get(key: string) {
       return key === "hasFinishedWelcome" ? true : app.stored.get(key);
     }
@@ -252,11 +252,11 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
 vi.mock("../../src/core/dictation/dictationController.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/dictationController.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal) => Promise<void>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
-      app.loopTools = dependencies.loopTools;
+      app.connectorTools = dependencies.connectorTools;
       app.paste = dependencies.paste;
       app.copy = dependencies.copy;
       app.controller = this;
@@ -388,7 +388,7 @@ afterEach(() => {
   app.stored.clear();
   app.opened = [];
   app.openFailure = null;
-  app.loopTools = [];
+  app.connectorTools = [];
   app.scripts = [];
   if (app.appData !== null) rmSync(app.appData, { recursive: true, force: true });
   app.appData = null;
@@ -813,17 +813,17 @@ describe("main process wiring", () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.loopTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
     // Every app with a switch has its tools, and every tool's app a switch.
-    expect(new Set(app.loopTools.map((tool) => tool.connector))).toEqual(new Set(connectors));
-    await app.loopTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
-    await app.loopTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal);
-    await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal);
+    expect(new Set(app.connectorTools.map((tool) => tool.connector))).toEqual(new Set(connectorIds));
+    await app.connectorTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
+    await app.connectorTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal);
     expect(app.helpers.get("voice-macos")?.requests.map((request) => request.method)).toEqual(expect.arrayContaining(["calendarEvents", "contactsSearch", "filesSearch"]));
-    await app.loopTools.find((tool) => tool.name === "notes_search")?.run({ query: "offsite" }, signal);
-    await app.loopTools.find((tool) => tool.name === "messages_send")?.run({ to: "sam@example.com", text: "Hi" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "notes_search")?.run({ query: "offsite" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "messages_send")?.run({ to: "sam@example.com", text: "Hi" }, signal);
     expect(app.scripts.map((script) => script.args)).toEqual([["offsite"], ["sam@example.com", "Hi"]]);
-    await app.loopTools.find((tool) => tool.name === "web_open")?.run({ url: "https://example.com/page" }, signal);
+    await app.connectorTools.find((tool) => tool.name === "web_open")?.run({ url: "https://example.com/page" }, signal);
     expect(app.opened).toEqual(["https://example.com/page"]);
 
     expect(await send({ type: "setConnectorEnabled", connector: "calendar", value: false })).toEqual({ error: null });
@@ -947,8 +947,8 @@ describe("main process wiring", () => {
     macHelper?.replies.set("filesSearch", { items: [{ path: `${home}/Documents/Tax return.pdf`, name: "Tax return.pdf", kind: "PDF document", changed: null, subject: null, authors: [], isEmail: false }] });
     macHelper?.replies.set("fileOpen", { opened: true });
 
-    expect(await app.loopTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal)).toContain(": ~/Documents/Tax return.pdf");
-    expect(await app.loopTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal)).toBe("Opened Tax return.pdf.");
+    expect(await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal)).toContain(": ~/Documents/Tax return.pdf");
+    expect(await app.connectorTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal)).toBe("Opened Tax return.pdf.");
     expect(macHelper?.requests.find((request) => request.method === "fileOpen")?.params).toEqual({ path: `${home}/Documents/Tax return.pdf`, reveal: false });
   });
 
@@ -956,12 +956,12 @@ describe("main process wiring", () => {
    * tool says so and opens nothing. */
   test("a draft opens in the default email app", async () => {
     await launch("darwin");
-    const compose = app.loopTools.find((tool) => tool.name === "email_compose");
+    const compose = app.connectorTools.find((tool) => tool.name === "email_compose");
     const args = { to: ["sam@example.com"], subject: "Lunch", body: "Friday?" };
     const macHelper = app.helpers.get("voice-macos");
 
     // `launch` loads the app afresh, so the failure is its own module's class: matched by name.
-    await expect(compose?.run(args, signal)).rejects.toMatchObject({ name: "NoEmailAppFailure" });
+    await expect(compose?.run(args, signal)).rejects.toMatchObject({ name: "NoEmailAppError" });
     expect(app.opened).toEqual([]);
 
     macHelper?.replies.set("emailApps", { systemDefault: { bundleIdentifier: "com.example.mail", name: "Example Mail" }, installed: [] });
@@ -979,7 +979,7 @@ describe("main process wiring", () => {
     await launch("linux");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
 
-    expect(app.loopTools).toEqual([]);
+    expect(app.connectorTools).toEqual([]);
     expect(state("settings").connectors).toEqual([]);
     expect(state("welcome").connectors).toEqual([]);
     });

@@ -4,8 +4,8 @@
 
 import type { AgentChat } from "../core/agent/agentChat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
-import { type Connector, isConnector } from "../core/agent/connectors/connectors.js";
-import { type AgentTool, isAgentTool } from "../core/agent/agentTools.js";
+import { type ConnectorId, isConnectorId } from "../core/agent/connectors/connectors.js";
+import { type AgentToolId, isAgentToolId } from "../core/agent/agentTools.js";
 import type { Phase } from "../core/dictation/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/hotkey.js";
 import * as config from "../core/config.js";
@@ -33,13 +33,13 @@ export interface OverlayState {
   /** Agent mode's row of bubbles fits under the pill (`bubblesFitUnder`); else it goes over it. */
   bubblesFitUnder: boolean;
   hotkey: DictationHotkey;
-  tools: AgentTool[];
+  tools: AgentToolId[];
   /** The apps whose bubbles show beside the tools' (`DictationController.connectors`). */
-  connectors: Connector[];
+  connectors: ConnectorId[];
   /** The bubbles whose tools ran, the most recent first, which the row is ordered by (`bubbleOrder`). */
   recentBubbles: BubbleKey[];
   /** The apps whose tools run now, whose bubbles run too. */
-  runningConnectors: Connector[];
+  runningConnectors: ConnectorId[];
   /** The email app's icon, for the Thunderbird bubble; null without one. */
   emailAppIcon: string | null;
   /** The chat window's conversation while it is open, over the pill. */
@@ -77,10 +77,10 @@ export interface SettingsState {
   /** Whether the default email app takes mail requests (`EmailClient.resolve`). */
   defaultEmailAppIsSupported: boolean;
   /** Agent mode's tools switched on. */
-  enabledTools: AgentTool[];
+  enabledTools: AgentToolId[];
   /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
-  connectors: Connector[];
-  enabledConnectors: Connector[];
+  connectors: ConnectorId[];
+  enabledConnectors: ConnectorId[];
   /** The user's name as stored (`AppSettings.userName`): null when never set. */
   userName: string | null;
   /** The computer account's name (`suggestedUserName`), shown where no name is set. */
@@ -119,10 +119,10 @@ export interface WelcomeState {
   hasConsented: boolean;
   readsScreen: boolean;
   /** Agent mode's tools switched on. */
-  enabledTools: AgentTool[];
+  enabledTools: AgentToolId[];
   /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
-  connectors: Connector[];
-  enabledConnectors: Connector[];
+  connectors: ConnectorId[];
+  enabledConnectors: ConnectorId[];
   /** The user's name as stored: null when never set, and the name step then offers `suggestedName`. */
   userName: string | null;
   suggestedName: string;
@@ -162,8 +162,8 @@ export type Command =
   | { type: "removeDictionaryWord"; word: string }
   | { type: "setLearnsWords"; value: boolean }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
-  | { type: "setAgentToolEnabled"; tool: AgentTool; value: boolean }
-  | { type: "setConnectorEnabled"; connector: Connector; value: boolean }
+  | { type: "setAgentToolEnabled"; tool: AgentToolId; value: boolean }
+  | { type: "setConnectorEnabled"; connector: ConnectorId; value: boolean }
   | { type: "setOpenAtLogin"; value: boolean }
   | { type: "setDebugMode"; value: boolean }
   | { type: "setConsent"; value: boolean }
@@ -273,9 +273,9 @@ export function isCommand(value: unknown): value is Command {
     case "answerConfirmation":
       return typeof command.confirmed === "boolean";
     case "setAgentToolEnabled":
-      return isAgentTool(command.tool) && typeof command.value === "boolean";
+      return isAgentToolId(command.tool) && typeof command.value === "boolean";
     case "setConnectorEnabled":
-      return isConnector(command.connector) && typeof command.value === "boolean";
+      return isConnectorId(command.connector) && typeof command.value === "boolean";
     case "chatHeight":
     case "historyHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, test, vi } from "vitest";
-import { ScriptFailure } from "../../../src/core/agent/connectors/appleScript.js";
+import { ScriptError } from "../../../src/core/agent/connectors/appleScript.js";
 import { MessagesScripts } from "../../../src/core/agent/tools/messagesTools.js";
 import { NotesScripts } from "../../../src/core/agent/tools/notesTools.js";
 import { sleep } from "../../../src/core/util/timeout.js";
@@ -104,14 +104,14 @@ describe.runIf(process.platform === "darwin")("osascript", () => {
   test("a refused app says where to allow it", async () => {
     const source = '-- tell application "Example"\nerror "Not authorized to send Apple events to Example." number -1743';
 
-    await expect(osascript.run(source, [], running())).rejects.toEqual(ScriptFailure.noAccess("Example"));
+    await expect(osascript.run(source, [], running())).rejects.toEqual(ScriptError.noAccess("Example"));
   });
 
   /** Any other error comes back as osascript reported it, for the model to read. */
   test("another error is reported", async () => {
     const failure = osascript.run('error "Example failure"', [], running());
 
-    await expect(failure).rejects.toBeInstanceOf(ScriptFailure);
+    await expect(failure).rejects.toBeInstanceOf(ScriptError);
     // osascript's own line, not Node's `Command failed: …` around it.
     await expect(failure).rejects.toThrow(/^\d+:\d+: execution error: Example failure \(-2700\)$/);
   });
@@ -121,7 +121,7 @@ describe.runIf(process.platform === "darwin")("osascript", () => {
   test("output past the cap fails", async () => {
     const failure = osascript.run('on run argv\n  set out to ""\n  repeat 2048 times\n    set out to out & "x"\n  end repeat\n  return out\nend run', [], running());
 
-    await expect(failure).rejects.toMatchObject({ name: "ScriptFailure", message: expect.stringMatching(/maxBuffer/) });
+    await expect(failure).rejects.toMatchObject({ name: "ScriptError", message: expect.stringMatching(/maxBuffer/) });
   });
 
   /** Each script compiles against its app's dictionary, which runs nothing and sends no event. */

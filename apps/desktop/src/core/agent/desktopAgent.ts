@@ -8,9 +8,9 @@ import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
 import type { ScreenContext } from "../dictation/screenContext.js";
 import { charCount, trimWhitespace } from "../util/text.js";
-import { connectors as allConnectors, connectorServerTools } from "./connectors/connectors.js";
-import type { LoopTool } from "./tools/loopTool.js";
-import { AgentFailure, type AgentTool, isAgentTool, selection, toolImplementations } from "./agentTools.js";
+import { connectorIds as allConnectors, connectorServerTools } from "./connectors/connectors.js";
+import type { ConnectorTool } from "./tools/connectorTool.js";
+import { AgentError, type AgentToolId, isAgentToolId, selection, agentTools } from "./agentTools.js";
 
 /**
  * Agent mode on the backend: the tool for the spoken request is chosen (`tool`), then has the
@@ -24,13 +24,13 @@ export const DesktopAgent = {
    * (`enabled`): Edit when text is selected, Compose when not (never the other: its paste would land
    * on the selection or the caret wrongly), Thunderbird when an email app is set up for it, and
    * Answer. */
-  tools(context: ScreenContext | null, enabled: readonly AgentTool[], emailAppAvailable: boolean): AgentTool[] {
-    const candidates: AgentTool[] = [DesktopAgent.writingTool(context), "thunderbird", "answer"];
+  tools(context: ScreenContext | null, enabled: readonly AgentToolId[], emailAppAvailable: boolean): AgentToolId[] {
+    const candidates: AgentToolId[] = [DesktopAgent.writingTool(context), "thunderbird", "answer"];
     return candidates.filter((tool) => enabled.includes(tool) && (tool !== "thunderbird" || emailAppAvailable));
   },
 
   /** Edit when text is selected, Compose when not. */
-  writingTool(context: ScreenContext | null): AgentTool {
+  writingTool(context: ScreenContext | null): AgentToolId {
     return selection(context) === "" ? "compose" : "edit";
   },
 
@@ -39,21 +39,21 @@ export const DesktopAgent = {
    * picks. */
   async tool(
     request: string,
-    offered: readonly AgentTool[],
+    offered: readonly AgentToolId[],
     context: ScreenContext | null,
     conversation: string,
     client: CompletionsClient,
     account: AccountModel,
     userId: string | null,
     signal?: AbortSignal,
-  ): Promise<AgentTool> {
+  ): Promise<AgentToolId> {
     const [first] = offered;
-    if (first === undefined) throw new AgentFailure("noToolEnabled");
+    if (first === undefined) throw new AgentError("noToolEnabled");
     if (offered.length === 1) return first;
     const reply = await complete(DesktopAgent.chooseMessage(request, context, conversation), client, account, userId, signal, offered);
-    if (!isAgentTool(reply) || !offered.includes(reply)) {
+    if (!isAgentToolId(reply) || !offered.includes(reply)) {
       log.error(`DesktopAgent: reply named no offered tool (${charCount(reply)} chars)`);
-      throw new AgentFailure("noTool");
+      throw new AgentError("noTool");
     }
     return reply;
   },
@@ -62,7 +62,7 @@ export const DesktopAgent = {
    * with the selection's own leading and trailing blank space, so replacing a whole line keeps its
    * line break. */
   async write(
-    tool: AgentTool,
+    tool: AgentToolId,
     request: string,
     context: ScreenContext | null,
     conversation: string,
@@ -73,18 +73,18 @@ export const DesktopAgent = {
     signal?: AbortSignal,
   ): Promise<string> {
     const text = await complete(DesktopAgent.toolMessage(tool, request, context, conversation, userName), client, account, userId, signal);
-    if (text === "") throw new AgentFailure("noText");
-    const written = toolImplementations[tool].fitted(text, context);
+    if (text === "") throw new AgentError("noText");
+    const written = agentTools[tool].fitted(text, context);
     log.content(`DesktopAgent: ${tool} wrote`, written);
     return written;
   },
 
   /** The tools the Answer prompt's model may call (`available_tools`): the backend's date tools, the
-   * backend tools their apps bring (web search), and `loopTools`, those of the apps switched on that
+   * backend tools their apps bring (web search), and `connectorTools`, those of the apps switched on that
    * run on this computer. An app with no tools here (none off macOS) brings no backend tools either. */
-  answerTools(loopTools: readonly LoopTool[]): string[] {
-    const serverTools = allConnectors.filter((connector) => loopTools.some((tool) => tool.connector === connector)).flatMap((connector) => connectorServerTools[connector] ?? []);
-    return [...config.answerServerTools, ...serverTools, ...loopTools.map((tool) => tool.name)];
+  answerTools(connectorTools: readonly ConnectorTool[]): string[] {
+    const serverTools = allConnectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector)).flatMap((connector) => connectorServerTools[connector] ?? []);
+    return [...config.answerServerTools, ...serverTools, ...connectorTools.map((tool) => tool.name)];
   },
 
   /** The answer to `request`, from the backend's tool loop: each round either replies, or calls
@@ -115,7 +115,7 @@ export const DesktopAgent = {
       log.debug(() => `DesktopAgent: ${message.content} round ${round} answered in ${elapsed(started)}`);
       if (result.kind === "reply") {
         const text = trimWhitespace(result.text);
-        if (text === "") throw new AgentFailure("noText");
+        if (text === "") throw new AgentError("noText");
         log.content("DesktopAgent: answer wrote", text);
         return text;
       }
@@ -154,8 +154,8 @@ export const DesktopAgent = {
   /** A tool's prompt and its variables, with the chat window's `conversation` and the user's name
    * (`userName`, empty when none is set), by which the backend tells the user's own messages on screen
    * from other people's. */
-  toolMessage(tool: AgentTool, request: string, context: ScreenContext | null, conversation: string, userName: string): CompletionsMessage {
-    const implementation = toolImplementations[tool];
+  toolMessage(tool: AgentToolId, request: string, context: ScreenContext | null, conversation: string, userName: string): CompletionsMessage {
+    const implementation = agentTools[tool];
     return { role: "system", content: implementation.prompt, vars: { ...implementation.variables(request, context), conversation, user_name: userName } };
   },
 };
@@ -167,7 +167,7 @@ async function complete(
   userId: string | null,
   signal: AbortSignal | undefined,
   /** The agent tools the backend may offer this request, for the agent's choice. */
-  availableTools?: readonly AgentTool[],
+  availableTools?: readonly AgentToolId[],
 ): Promise<string> {
   const started = performance.now();
   const reply = await withFreshToken(account, userId, (token) => client.complete(message, token, signal, availableTools));

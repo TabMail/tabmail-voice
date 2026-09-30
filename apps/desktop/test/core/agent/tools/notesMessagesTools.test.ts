@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { type ScriptRunner, ScriptFailure } from "../../../../src/core/agent/connectors/appleScript.js";
-import { LoopToolArgumentError } from "../../../../src/core/agent/tools/loopTool.js";
+import { type ScriptRunner, ScriptError } from "../../../../src/core/agent/connectors/appleScript.js";
+import { ToolArgumentError } from "../../../../src/core/agent/tools/connectorTool.js";
 import { isHandle, MessagesScripts, MessagesSendTool, messagesTools } from "../../../../src/core/agent/tools/messagesTools.js";
 import { NotesCreateTool, NotesScripts, NotesSearchTool, notesTools } from "../../../../src/core/agent/tools/notesTools.js";
 import * as config from "../../../../src/core/config.js";
@@ -134,13 +134,13 @@ describe("notes_search", () => {
   });
 
   test("a search without a query runs nothing", async () => {
-    await expect(new NotesSearchTool(runner).run({ query: " " }, signal)).rejects.toEqual(LoopToolArgumentError.missing("query"));
+    await expect(new NotesSearchTool(runner).run({ query: " " }, signal)).rejects.toEqual(ToolArgumentError.missing("query"));
     expect(runner.runs).toEqual([]);
   });
 
   /** Notes' refusal reaches the model as it was thrown, so the user hears where to allow it. */
   test("a refusal is passed on", async () => {
-    runner.failure = ScriptFailure.noAccess("Notes");
+    runner.failure = ScriptError.noAccess("Notes");
 
     await expect(new NotesSearchTool(runner).run({ query: "offsite" }, signal)).rejects.toThrow("TabMail Voice can't use Notes. Allow it in System Settings › Privacy & Security › Automation.");
   });
@@ -167,7 +167,7 @@ describe("notes_create", () => {
     const tool = new NotesCreateTool(runner);
 
     expect(tool.confirmation(args)).toBeNull();
-    await expect(tool.run(args, signal)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args, signal)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(runner.runs).toEqual([]);
   });
 });
@@ -207,19 +207,19 @@ describe("messages_send", () => {
     const tool = new MessagesSendTool(runner);
 
     expect(tool.confirmation(args)).toBeNull();
-    await expect(tool.run(args, signal)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args, signal)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(runner.runs).toEqual([]);
   });
 
   test("a name is sent back to look up", async () => {
     await expect(new MessagesSendTool(runner).run({ to: "Sam", text: "Hi" }, signal)).rejects.toEqual(
-      new LoopToolArgumentError('to takes a phone number or email address, not "Sam": find it with contacts_search, or ask the user.'),
+      new ToolArgumentError('to takes a phone number or email address, not "Sam": find it with contacts_search, or ask the user.'),
     );
   });
 
   /** A script's failure fails the send, so the model never says it was sent. */
   test("a failed send is not reported as sent", async () => {
-    runner.failure = ScriptFailure.failed("execution error: Messages got an error (-1728)");
+    runner.failure = ScriptError.failed("execution error: Messages got an error (-1728)");
 
     await expect(new MessagesSendTool(runner).run({ to: "sam@example.com", text: "Hi" }, signal)).rejects.toThrow("Messages got an error");
   });
@@ -233,7 +233,7 @@ describe("a script's failure", () => {
     ["execution error: Not authorized (-1743)\n", "return 1", "execution error: Not authorized (-1743)", null],
     ["  execution error: Example failure (-2700)\n", 'tell application "Notes"', "execution error: Example failure (-2700)", null],
   ])("%j", (errors, source, message, deniedApp) => {
-    const failure = ScriptFailure.from(errors, source);
+    const failure = ScriptError.from(errors, source);
 
     expect(failure.message).toBe(message);
     expect(failure.deniedApp).toBe(deniedApp);

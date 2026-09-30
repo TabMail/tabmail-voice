@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { sleep } from "../../src/core/util/timeout.js";
-import { MicrophoneFailure, SessionAudioCapture } from "../../src/main/audioCapture.js";
+import { MicrophoneError, SessionAudioCapture } from "../../src/main/audioCapture.js";
 import type { AudioCommand } from "../../src/shared/ipc.js";
 
 /** One `start`: the chunks it was given and how it completed. */
@@ -108,7 +108,7 @@ describe("SessionAudioCapture", () => {
     microphone.receive({ type: "started", session: 2 });
     expect(losses).toBe(1);
     expect(second.completions).toHaveLength(1);
-    expect((second.completions[0] as MicrophoneFailure).description).toBe("MicrophoneFailure(lost)");
+    expect((second.completions[0] as MicrophoneError).description).toBe("MicrophoneError(lost)");
 
     const third = recording();
     microphone.start(third.onChunk, third.completion, onLost);
@@ -127,7 +127,7 @@ describe("SessionAudioCapture", () => {
     microphone.receive({ type: "started", session: 1 });
 
     expect(current.completions).toHaveLength(1);
-    expect((current.completions[0] as MicrophoneFailure).description).toBe("MicrophoneFailure(NotAllowedError)");
+    expect((current.completions[0] as MicrophoneError).description).toBe("MicrophoneError(NotAllowedError)");
   });
 
   /** A window that never answers fails the start at its timeout, and a start reported after that is
@@ -141,7 +141,7 @@ describe("SessionAudioCapture", () => {
     microphone.receive({ type: "started", session: 1 });
 
     expect(current.completions).toHaveLength(1);
-    expect((current.completions[0] as MicrophoneFailure).description).toBe("MicrophoneFailure(timeout)");
+    expect((current.completions[0] as MicrophoneError).description).toBe("MicrophoneError(timeout)");
   });
 
   /** Started again before the earlier start was reported: the earlier session's timeout doesn't fail

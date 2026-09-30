@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { execFile } from "node:child_process";
-import { type ScriptRunner, ScriptFailure } from "../../core/agent/connectors/appleScript.js";
+import { type ScriptRunner, ScriptError } from "../../core/agent/connectors/appleScript.js";
 import * as config from "../../core/config.js";
 import { CancellationError } from "../../core/util/timeout.js";
 
@@ -24,7 +24,7 @@ export const osascript: ScriptRunner = {
       // script: without it, a search for `-e` plus script ran that script unconfirmed.
       execFile("/usr/bin/osascript", ["-e", source, "--", ...args], { signal, encoding: "utf8", maxBuffer: config.appleScriptMaxOutputBytes }, (error, stdout, stderr) => {
         if (signal.aborted) reject(new CancellationError());
-        else if (error) reject(ScriptFailure.from(stderr === "" ? error.message : stderr, source));
+        else if (error) reject(ScriptError.from(stderr === "" ? error.message : stderr, source));
         // osascript ends what the script returns with a line break.
         else resolve(stdout.endsWith("\n") ? stdout.slice(0, -1) : stdout);
       });

@@ -74,8 +74,8 @@ vi.mock("../../../src/core/backend/http.js", () => ({
     throw new Error("no network in tests");
   },
 }));
-vi.mock("../../../src/main/storage/fileStore.js", () => ({
-  FileStore: class {
+vi.mock("../../../src/main/storage/jsonFileStore.js", () => ({
+  JSONFileStore: class {
     get(key: string) {
       return key === "hasFinishedWelcome" ? true : undefined;
     }

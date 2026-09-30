@@ -48,7 +48,7 @@ apps/desktop/
 │   │   │   ├── agentTools.ts            Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
 │   │   │   ├── agentChat.ts, bubbleOrder.ts   The chat window's conversation; the bubbles' order
 │   │   │   ├── tools/                   The tools Answer's model calls that run on this computer (a new tool goes here)
-│   │   │   │   ├── loopTool.ts              `LoopTool`, the contract, and `Arguments`
+│   │   │   │   ├── connectorTool.ts              `ConnectorTool`, the contract, and `Arguments`
 │   │   │   │   └── calendarTools.ts (Calendar and Reminders), contactsTools.ts, filesTools.ts (Spotlight), emailTools.ts (a prefilled new email), notesTools.ts, messagesTools.ts, webTools.ts (pages read through a `WebFetch`, opened in the browser)
 │   │   │   └── connectors/              The apps those tools reach, and how (a new connector goes here)
 │   │   │       ├── connectors.ts            The connectors, each a switch: names, icons, their backend tools
@@ -72,7 +72,7 @@ apps/desktop/
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
 │   │   │   ├── macos.ts                 `voice-macos`'s methods, typed
 │   │   │   └── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
-│   │   └── storage/                 keychainSessionStore.ts (the sign-in), fileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
+│   │   └── storage/                 keychainSessionStore.ts (the sign-in), jsonFileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
 │   ├── preload/preload.ts   `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
 │   └── renderer/            One page per window: `<page>.html` (what Vite builds and the window loads) and `<page>/` (its code and style)
@@ -131,7 +131,7 @@ write the text. Edit pastes over the selection; Compose pastes at the caret; Thu
 TabMail's chat; Answer opens a chat window over the pill, which rests there (ADR-DESK-036), and while
 it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X or 30 untouched
 seconds close it. Answer's prompt runs the backend's tool loop (`DesktopAgent.answer`,
-ADR-DESK-023): the backend's date tools run there, and tools that run on this computer (`LoopTool`)
+ADR-DESK-023): the backend's date tools run there, and tools that run on this computer (`ConnectorTool`)
 run in the app, shown in the chat window, asking first before sending or creating. A failure shows a
 message and pastes nothing. No agent call has a deadline.
 

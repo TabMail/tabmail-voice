@@ -4,7 +4,7 @@
 
 import * as config from "../../config.js";
 import { CancellationError } from "../../util/timeout.js";
-import { Arguments, type LoopTool, LoopToolArgumentError } from "./loopTool.js";
+import { Arguments, type ConnectorTool, ToolArgumentError } from "./connectorTool.js";
 
 /** A web page's response as `web_read` reads it: at most `webReadMaxBytes` of its body. */
 export interface WebResponse {
@@ -54,7 +54,7 @@ export const liveWebFetch: WebFetch = async (url, headers, timeout, signal) => {
  * could open an app (a `shortcuts:` link runs a shortcut), which a web tool must never do. */
 export function webURL(args: Record<string, unknown>): URL {
   const text = Arguments.text(args, "url");
-  if (text === null) throw LoopToolArgumentError.missing("url");
+  if (text === null) throw ToolArgumentError.missing("url");
   let url: URL;
   try {
     url = new URL(text);
@@ -65,15 +65,15 @@ export function webURL(args: Record<string, unknown>): URL {
   return url;
 }
 
-function notAWebURL(text: string): LoopToolArgumentError {
-  return new LoopToolArgumentError(`url must be a complete http:// or https:// URL, not "${text}".`);
+function notAWebURL(text: string): ToolArgumentError {
+  return new ToolArgumentError(`url must be a complete http:// or https:// URL, not "${text}".`);
 }
 
 /** Why a page wasn't read, which the model reads. */
-export class WebReadFailure extends Error {
+export class WebReadError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "WebReadFailure";
+    this.name = "WebReadError";
   }
 }
 
@@ -87,15 +87,15 @@ export class WebPageReader {
   constructor(private readonly fetch: WebFetch) {}
 
   async read(url: URL, signal: AbortSignal): Promise<string> {
-    if (!(await this.robotsAllow(url, signal))) throw new WebReadFailure("Access to this URL is disallowed by the site's robots.txt");
+    if (!(await this.robotsAllow(url, signal))) throw new WebReadError("Access to this URL is disallowed by the site's robots.txt");
     let response: WebResponse;
     try {
       response = await this.fetch(url.href, { "User-Agent": config.webUserAgent }, config.webReadTimeoutMs, signal);
     } catch (error) {
       if (error instanceof CancellationError) throw error;
-      throw new WebReadFailure(`Failed to fetch URL: ${error instanceof Error ? error.message : String(error)}`);
+      throw new WebReadError(`Failed to fetch URL: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (response.status !== 200) throw new WebReadFailure(`HTTP error: ${response.status} ${response.statusText}`.trimEnd());
+    if (response.status !== 200) throw new WebReadError(`HTTP error: ${response.status} ${response.statusText}`.trimEnd());
     const contentType = response.contentType ?? "text/plain";
     // The model's context, not storage: a page longer than this is cut, as on Thunderbird and iOS.
     const content = decoded(response.body, contentType).slice(0, config.webReadMaxCharacters);
@@ -213,14 +213,14 @@ function decoded(body: Uint8Array, contentType: string): string {
 }
 
 /** The Web connector's tools; its web search runs on the backend (`connectorServerTools`). */
-export function webTools(fetch: WebFetch, opener: WebOpener): LoopTool[] {
+export function webTools(fetch: WebFetch, opener: WebOpener): ConnectorTool[] {
   return [new WebReadTool(new WebPageReader(fetch)), new WebOpenTool(opener)];
 }
 
 /** Reads a web page's text (`web_read`), as the Thunderbird add-on and the iOS app do; a URL from what
  * the user said or a search result, which the backend checked before handing the call over. Reading
  * is neither sending nor creating, so nothing is asked first. */
-export class WebReadTool implements LoopTool {
+export class WebReadTool implements ConnectorTool {
   readonly name = "web_read";
   readonly connector = "web";
   readonly progressLabel = "Reading the page";
@@ -244,7 +244,7 @@ export interface WebOpener {
 /** Opens a web page in the user's browser (`web_open`); a URL from what the user said or a search
  * result, which the backend checked before handing the call over. Opening is neither sending nor
  * creating, so nothing is asked first. */
-export class WebOpenTool implements LoopTool {
+export class WebOpenTool implements ConnectorTool {
   readonly name = "web_open";
   readonly connector = "web";
   readonly progressLabel = "Opening the page";

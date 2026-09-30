@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ReactNode, useId } from "react";
-import type { Connector } from "../../core/agent/connectors/connectors.js";
-import type { AgentTool } from "../../core/agent/agentTools.js";
+import type { ConnectorId } from "../../core/agent/connectors/connectors.js";
+import type { AgentToolId } from "../../core/agent/agentTools.js";
 import { brandBlue, brandPurple } from "./brand.js";
 
 /** An id usable in an SVG `url(#…)` reference. */
@@ -29,7 +29,7 @@ function GradientIcon({ size, children, filled = false }: { size: number; childr
   );
 }
 
-const toolPaths: Record<AgentTool, ReactNode> = {
+const toolPaths: Record<AgentToolId, ReactNode> = {
   // A pencil.
   edit: <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
   // A square and a pencil.
@@ -55,11 +55,11 @@ const toolPaths: Record<AgentTool, ReactNode> = {
   ),
 };
 
-export function ToolIcon({ tool, size }: { tool: AgentTool; size: number }) {
+export function ToolIcon({ tool, size }: { tool: AgentToolId; size: number }) {
   return <GradientIcon size={size}>{toolPaths[tool]}</GradientIcon>;
 }
 
-const connectorPaths: Record<Connector, ReactNode> = {
+const connectorPaths: Record<ConnectorId, ReactNode> = {
   // A calendar page.
   calendar: (
     <>
@@ -123,7 +123,7 @@ const connectorPaths: Record<Connector, ReactNode> = {
   ),
 };
 
-export function ConnectorIcon({ connector, size }: { connector: Connector; size: number }) {
+export function ConnectorIcon({ connector, size }: { connector: ConnectorId; size: number }) {
   return <GradientIcon size={size}>{connectorPaths[connector]}</GradientIcon>;
 }
 

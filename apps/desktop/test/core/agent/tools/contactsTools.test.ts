@@ -8,11 +8,11 @@ import {
   ContactsAddTool,
   ContactsSearchTool,
   type ContactStore,
-  ContactStoreFailure,
+  ContactStoreError,
   contactsTools,
   describeContact,
 } from "../../../../src/core/agent/tools/contactsTools.js";
-import { LoopToolArgumentError } from "../../../../src/core/agent/tools/loopTool.js";
+import { ToolArgumentError } from "../../../../src/core/agent/tools/connectorTool.js";
 import * as config from "../../../../src/core/config.js";
 
 /** Contacts as the Answer prompt's tools, against a fake store: what the model searches for, what the
@@ -93,20 +93,20 @@ describe("contacts_search", () => {
   test.each<Record<string, unknown>>([{}, { query: "  " }, { query: 7 }])("%j is not searched", async (args) => {
     const tool = new ContactsSearchTool(store);
 
-    await expect(tool.run(args)).rejects.toEqual(LoopToolArgumentError.missing("query"));
+    await expect(tool.run(args)).rejects.toEqual(ToolArgumentError.missing("query"));
     expect(store.searches).toEqual([]);
   });
 
   /** Without access to Contacts, the tool fails saying where to allow it, which the model tells the
    * user. */
   test("no access says where to allow it", async () => {
-    store.failure = new ContactStoreFailure("contactsNoAccess");
+    store.failure = new ContactStoreError("contactsNoAccess");
     const tool = new ContactsSearchTool(store);
 
     await expect(tool.run({ query: "Sam" })).rejects.toBe(store.failure);
     expect(store.failure.message).toContain("System Settings › Privacy & Security › Contacts");
-    expect(ContactStoreFailure.isKind("contactsNoAccess")).toBe(true);
-    expect(ContactStoreFailure.isKind("toString")).toBe(false);
+    expect(ContactStoreError.isKind("contactsNoAccess")).toBe(true);
+    expect(ContactStoreError.isKind("toString")).toBe(false);
   });
 
   /** A contact with no name is its company, and one with neither says so; a company that is its name
@@ -149,7 +149,7 @@ describe("contacts_add", () => {
     const tool = new ContactsAddTool(store);
 
     expect(tool.confirmation(args)).toBeNull();
-    await expect(tool.run(args)).rejects.toEqual(new LoopToolArgumentError("Give at least a name, a company or an email address."));
+    await expect(tool.run(args)).rejects.toEqual(new ToolArgumentError("Give at least a name, a company or an email address."));
     expect(store.added).toEqual([]);
   });
 });

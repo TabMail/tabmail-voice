@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { type FileQuery, type FileStore, FileOpenTool, FilesSearchTool, FileStoreFailure, filesTools, type FoundItem } from "../../../../src/core/agent/tools/filesTools.js";
-import { LoopToolArgumentError } from "../../../../src/core/agent/tools/loopTool.js";
+import { type FileQuery, type FileStore, FileOpenTool, FilesSearchTool, FileStoreError, filesTools, type FoundItem } from "../../../../src/core/agent/tools/filesTools.js";
+import { ToolArgumentError } from "../../../../src/core/agent/tools/connectorTool.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 
@@ -116,7 +116,7 @@ describe("files_search", () => {
     async (args) => {
       const tool = new FilesSearchTool(store, home);
 
-      await expect(tool.run(args)).rejects.toBeInstanceOf(LoopToolArgumentError);
+      await expect(tool.run(args)).rejects.toBeInstanceOf(ToolArgumentError);
       expect(store.queries).toEqual([]);
     },
   );
@@ -157,17 +157,17 @@ describe("file_open", () => {
   test.each<Record<string, unknown>>([{}, { path: " " }, { path: "Documents/Tax return.pdf" }, { path: "~example/Documents/Tax return.pdf" }, { path: 7 }])("%j opens nothing", async (args) => {
     const tool = new FileOpenTool(store, home);
 
-    await expect(tool.run(args)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(store.opened).toEqual([]);
   });
 
   /** An item that can't be opened fails the call, which the model tells the user. */
   test("a failed open is reported", async () => {
-    store.failure = new FileStoreFailure("openFailed");
+    store.failure = new FileStoreError("openFailed");
     const tool = new FileOpenTool(store, home);
 
     await expect(tool.run({ path: "~/Documents/Gone.pdf" })).rejects.toThrow("The item could not be opened or shown. It may have been moved or deleted, or no app opens it.");
-    expect(new FileStoreFailure("searchFailed").message).toBe("Spotlight could not run the search.");
+    expect(new FileStoreError("searchFailed").message).toBe("Spotlight could not run the search.");
   });
 });
 

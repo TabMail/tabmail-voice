@@ -5,12 +5,12 @@
 import { type AccountModel, withFreshToken } from "../backend/account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "../agent/agentChat.js";
 import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
-import { type Connector, connectors } from "../agent/connectors/connectors.js";
+import { type ConnectorId, connectorIds } from "../agent/connectors/connectors.js";
 import { DesktopAgent } from "../agent/desktopAgent.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
-import { isJSONObject, type LoopTool } from "../agent/tools/loopTool.js";
+import { isJSONObject, type ConnectorTool } from "../agent/tools/connectorTool.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/thunderbirdRelay.js";
-import { type AgentTool, toolImplementations } from "../agent/agentTools.js";
+import { type AgentToolId, agentTools } from "../agent/agentTools.js";
 import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "../audio/audio.js";
 import { BackendError, type CompletionsClient, type ServerToolEvent, type ToolCall, type Transcription, type TranscriptionClient } from "../backend/backend.js";
 import { DictationCleanup } from "./cleanup.js";
@@ -41,7 +41,7 @@ export type Phase =
   /** The transcription failed on the server's side and is being tried again (`transcribeRetrying`). */
   | { kind: "retrying"; message: string }
   /** Agent mode: the agent chose this tool, which is writing its text. */
-  | { kind: "running"; tool: AgentTool }
+  | { kind: "running"; tool: AgentToolId }
   | { kind: "failed"; message: string }
   /** The user went to another app before the paste: the text is on the clipboard and in the paste
    * history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
@@ -51,10 +51,10 @@ export type Phase =
 export const notPastedMessage = "Switched apps: copied to clipboard and history";
 
 /** A text copied instead of pasted: the dictation ends with its message (`copied`). */
-class NotPasted extends Error {
+class NotPastedError extends Error {
   constructor() {
     super(notPastedMessage);
-    this.name = "NotPasted";
+    this.name = "NotPastedError";
   }
 }
 
@@ -91,7 +91,7 @@ export interface DictationDependencies {
   warmUp: (baseURL: string, accessToken: string) => Promise<void>;
   makeCompletionsClient: (baseURL: string) => CompletionsClient;
   /** The tools the Answer prompt's model can call that run on this computer. */
-  loopTools: readonly LoopTool[];
+  connectorTools: readonly ConnectorTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
   /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`); none where the field
@@ -120,7 +120,7 @@ const gatewayTimeout = 504;
 export class DictationController extends Observable {
   private currentPhase: Phase = { kind: "idle" };
   private currentMode: DictationMode = "dictation";
-  private currentTools: AgentTool[] = [];
+  private currentTools: AgentToolId[] = [];
   private currentLevel = 0;
   private hearing = false;
   private currentLanguage: string | null = null;
@@ -130,7 +130,7 @@ export class DictationController extends Observable {
   /** The bubbles whose tools ran, the most recent first: for the app's life, never saved. */
   private recent: BubbleKey[] = [];
   /** The apps whose tools run now: one at a time, as the answer's tools run in turn. */
-  private runningApps = new Set<Connector>();
+  private runningApps = new Set<ConnectorId>();
 
   onPhaseChange: ((phase: Phase) => void) | undefined;
   /** The chat window opened (true) or closed. */
@@ -223,15 +223,15 @@ export class DictationController extends Observable {
   /** The tools agent mode offers this time (`DesktopAgent.tools`). Empty in dictation mode, and
    * until the screen read at key-down and the email app are known: the selection decides between
    * Edit and Compose. */
-  get tools(): AgentTool[] {
+  get tools(): AgentToolId[] {
     return this.currentTools;
   }
 
   /** The apps agent mode shows a bubble for beside the tools': those switched on at key-down whose
    * tools this computer has, while Answer, whose loop runs their tools, is offered; none otherwise. */
-  get connectors(): Connector[] {
+  get connectors(): ConnectorId[] {
     if (!this.currentTools.includes("answer")) return [];
-    return connectors.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.loopTools.some((tool) => tool.connector === connector));
+    return connectorIds.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.connectorTools.some((tool) => tool.connector === connector));
   }
 
   /** The bubbles whose tools have run since the app started, the most recent first, which the
@@ -240,9 +240,9 @@ export class DictationController extends Observable {
     return this.recent;
   }
 
-  /** The apps whose tools run now: one on this computer (`LoopTool`), or on the backend (the web's
+  /** The apps whose tools run now: one on this computer (`ConnectorTool`), or on the backend (the web's
    * search), each while it runs. */
-  get runningConnectors(): Connector[] {
+  get runningConnectors(): ConnectorId[] {
     return [...this.runningApps];
   }
 
@@ -562,7 +562,7 @@ export class DictationController extends Observable {
         this.recent = ranNow(this.recent, tool);
         this.setPhase({ kind: "running", tool });
         // Only the tools of apps switched on at key-down are offered, and only those run.
-        const loopTools = this.deps.loopTools.filter((loopTool) => settings.enabledConnectors.includes(loopTool.connector));
+        const connectorTools = this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector));
         const text =
           tool === "answer"
             ? await DesktopAgent.answer(
@@ -570,17 +570,17 @@ export class DictationController extends Observable {
                 context,
                 conversation,
                 settings.userName,
-                DesktopAgent.answerTools(loopTools),
+                DesktopAgent.answerTools(connectorTools),
                 client,
                 account,
                 userId,
-                (call) => this.runLoopTool(call, loopTools, transcript, isCurrent, signal),
+                (call) => this.runConnectorTool(call, connectorTools, transcript, isCurrent, signal),
                 (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
             : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userId, signal);
         if (!isCurrent()) return;
-        await toolImplementations[tool].deliver(text, {
+        await agentTools[tool].deliver(text, {
           emailApp: email.app,
           paste: (text) => this.paste(text, targetApp, signal),
           thunderbird: this.deps.thunderbird,
@@ -601,7 +601,7 @@ export class DictationController extends Observable {
     } catch (error) {
       if (!isCurrent()) return;
       this.teardown();
-      if (error instanceof NotPasted) {
+      if (error instanceof NotPastedError) {
         this.showMessage({ kind: "copied", message: error.message });
         return;
       }
@@ -645,8 +645,8 @@ export class DictationController extends Observable {
   /** Runs a tool the Answer prompt's model called, and returns what the model reads next: the tool's
    * result, that the user declined, or why it could not run. The chat window opens (if the request
    * was not a follow-up) to show which tool runs and, for one that sends or creates, to ask first. */
-  private async runLoopTool(call: ToolCall, loopTools: readonly LoopTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
-    const tool = loopTools.find((candidate) => candidate.name === call.function.name);
+  private async runConnectorTool(call: ToolCall, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+    const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
       return `Error: there is no tool named ${call.function.name}.`;
@@ -663,7 +663,7 @@ export class DictationController extends Observable {
       const answer = await this.confirm(question);
       if (answer !== "confirmed") {
         log.debug(`DictationController: ${tool.name} ${answer}`);
-        return answer === "declined" ? config.loopToolDeclined : config.loopToolUnanswered;
+        return answer === "declined" ? config.connectorToolDeclined : config.connectorToolUnanswered;
       }
     }
     log.debug(`DictationController: running ${tool.name}`);
@@ -697,13 +697,13 @@ export class DictationController extends Observable {
   }
 
   /** One of `connector`'s tools starts: its bubble moves to the front of the history and runs. */
-  private appStarted(connector: Connector): void {
+  private appStarted(connector: ConnectorId): void {
     this.recent = ranNow(this.recent, connector);
     this.runningApps.add(connector);
     this.changed();
   }
 
-  private appEnded(connector: Connector): void {
+  private appEnded(connector: ConnectorId): void {
     this.runningApps.delete(connector);
     this.changed();
   }
@@ -747,7 +747,7 @@ export class DictationController extends Observable {
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015), and keeps
    * the text in the paste history, pasted or not. Only into `targetApp`, the app in front at
    * key-down: when the user has gone to another app (`focusChanged`), the text goes on the clipboard
-   * instead, and the dictation ends saying so (`NotPasted`, ADR-DESK-042). */
+   * instead, and the dictation ends saying so (`NotPastedError`, ADR-DESK-042). */
   private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
     const changed = await this.focusChanged(targetApp);
@@ -758,7 +758,7 @@ export class DictationController extends Observable {
     if (changed) {
       log.debug("DictationController: another app is in front; copied instead");
       this.deps.copy(text);
-      throw new NotPasted();
+      throw new NotPastedError();
     }
     await this.deps.paste(text, signal);
   };
@@ -974,7 +974,7 @@ export class DictationController extends Observable {
 
   /** Adds a turn to the chat window, opening it if it is closed: then, unless the user has touched
    * it, it closes after `chatTimeout` (`keepChatOpen()`). */
-  private showInChat(request: string, tool: AgentTool, reply: string): void {
+  private showInChat(request: string, tool: AgentToolId, reply: string): void {
     const chat = appendTurn(this.currentChat ?? this.newChat(), request, tool, reply);
     // Only the first answer finds it untouched: a follow-up touches it.
     if (chat.touched) return this.setChat(chat);

@@ -14,29 +14,29 @@ export interface ScriptRunner {
 
 /** Why a script failed: macOS refused to let the app control another (-1743), or what osascript
  * reported. The model reads the message, and tells the user. */
-export class ScriptFailure extends Error {
+export class ScriptError extends Error {
   private constructor(
     message: string,
     /** The app the user has not let TabMail Voice control; null for any other failure. */
     readonly deniedApp: string | null,
   ) {
     super(message);
-    this.name = "ScriptFailure";
+    this.name = "ScriptError";
   }
 
-  static noAccess(app: string): ScriptFailure {
-    return new ScriptFailure(`TabMail Voice can't use ${app}. Allow it in System Settings › Privacy & Security › Automation.`, app);
+  static noAccess(app: string): ScriptError {
+    return new ScriptError(`TabMail Voice can't use ${app}. Allow it in System Settings › Privacy & Security › Automation.`, app);
   }
 
-  static failed(message: string): ScriptFailure {
-    return new ScriptFailure(message, null);
+  static failed(message: string): ScriptError {
+    return new ScriptError(message, null);
   }
 
   /** The failure osascript reported in `errors` for `source`: no access when macOS refused the Apple
    * Event to the app the script tells (-1743), else its message. */
-  static from(errors: string, source: string): ScriptFailure {
+  static from(errors: string, source: string): ScriptError {
     const app = /tell application "([^"]+)"/.exec(source)?.[1];
-    if (errors.includes("(-1743)") && app !== undefined) return ScriptFailure.noAccess(app);
-    return ScriptFailure.failed(errors.trim());
+    if (errors.includes("(-1743)") && app !== undefined) return ScriptError.noAccess(app);
+    return ScriptError.failed(errors.trim());
   }
 }

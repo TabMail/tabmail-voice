@@ -4,7 +4,7 @@
 
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { trimWhitespace } from "../../util/text.js";
-import type { Connector } from "../connectors/connectors.js";
+import type { ConnectorId } from "../connectors/connectors.js";
 
 /**
  * A tool the Answer prompt's model can call that runs on this computer (a calendar read, a reminder
@@ -12,11 +12,11 @@ import type { Connector } from "../connectors/connectors.js";
  * model sees, lives in the backend's tool registry for this client under the same `name`; the app
  * lists the names it can run in each Answer request's `available_tools` (ADR-DESK-023).
  */
-export interface LoopTool {
+export interface ConnectorTool {
   /** The function name, as in the backend's registry. */
   readonly name: string;
   /** The app it reaches, whose switch in Settings and the welcome wizard turns it on and off. */
-  readonly connector: Connector;
+  readonly connector: ConnectorId;
   /** What the chat window says while it runs ("Checking your calendar"). */
   readonly progressLabel: string;
   /** What the chat window asks before the tool sends or creates anything ("Add “Launch review” to
@@ -31,18 +31,18 @@ export interface LoopTool {
 
 /** Why a tool could not run with the arguments the model gave; the model reads it and can call
  * again. */
-export class LoopToolArgumentError extends Error {
+export class ToolArgumentError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "LoopToolArgumentError";
+    this.name = "ToolArgumentError";
   }
 
-  static missing(name: string): LoopToolArgumentError {
-    return new LoopToolArgumentError(`${name} is required.`);
+  static missing(name: string): ToolArgumentError {
+    return new ToolArgumentError(`${name} is required.`);
   }
 
-  static notADate(name: string): LoopToolArgumentError {
-    return new LoopToolArgumentError(`${name} is not a date and time like 2025-01-15T14:00:00, or a day like 2025-01-15.`);
+  static notADate(name: string): ToolArgumentError {
+    return new ToolArgumentError(`${name} is not a date and time like 2025-01-15T14:00:00, or a day like 2025-01-15.`);
   }
 }
 
@@ -61,7 +61,7 @@ export const Arguments = {
     const text = Arguments.text(args, name);
     if (text === null) return null;
     const parsed = LocalDateTime.parse(text);
-    if (parsed === null) throw LoopToolArgumentError.notADate(name);
+    if (parsed === null) throw ToolArgumentError.notADate(name);
     return parsed;
   },
 

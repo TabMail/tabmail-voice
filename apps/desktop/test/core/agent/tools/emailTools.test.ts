@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { connectors } from "../../../../src/core/agent/connectors/connectors.js";
-import { type EmailOpener, EmailComposeTool, emailTools, isAddress, mailtoURL, NoEmailAppFailure } from "../../../../src/core/agent/tools/emailTools.js";
-import { LoopToolArgumentError } from "../../../../src/core/agent/tools/loopTool.js";
+import { connectorIds } from "../../../../src/core/agent/connectors/connectors.js";
+import { type EmailOpener, EmailComposeTool, emailTools, isAddress, mailtoURL, NoEmailAppError } from "../../../../src/core/agent/tools/emailTools.js";
+import { ToolArgumentError } from "../../../../src/core/agent/tools/connectorTool.js";
 
 /** Email as the Answer prompt's tool: a new email filled in, as a `mailto:` URL, opened in the user's
  * email app and never sent (from the Swift `EmailToolsTests`). */
@@ -139,7 +139,7 @@ describe("email_compose", () => {
   ])("%j opens nothing", async (args) => {
     const tool = new EmailComposeTool(opener);
 
-    await expect(tool.run(args)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(opener.opened).toEqual([]);
   });
 
@@ -152,7 +152,7 @@ describe("email_compose", () => {
 
   /** With no email app to open it, the tool says so, which the model tells the user. */
   test("no email app says so", async () => {
-    opener.failure = new NoEmailAppFailure();
+    opener.failure = new NoEmailAppError();
     const tool = new EmailComposeTool(opener);
 
     await expect(tool.run({ to: ["sam@example.com"], subject: "Friday", body: "Hi" })).rejects.toThrow("No email app is set up on this computer to open a new email.");
@@ -163,6 +163,6 @@ describe("email_compose", () => {
     const tools = emailTools(opener);
 
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([["email", "email_compose"]]);
-    expect(connectors).toContain("email");
+    expect(connectorIds).toContain("email");
   });
 });

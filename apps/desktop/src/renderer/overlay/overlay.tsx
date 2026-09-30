@@ -6,8 +6,8 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEf
 import { createRoot } from "react-dom/client";
 import { type AgentChat, type ChatTurn, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/agentChat.js";
 import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnector } from "../../core/agent/connectors/connectors.js";
-import { type AgentTool, toolImplementations } from "../../core/agent/agentTools.js";
+import { connectorInfo, isConnectorId } from "../../core/agent/connectors/connectors.js";
+import { type AgentToolId, agentTools } from "../../core/agent/agentTools.js";
 import * as config from "../../core/config.js";
 import type { DictationHotkey } from "../../core/hotkey/hotkey.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCentre, grownBubble, hintCentre, hintCentreOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
@@ -35,7 +35,7 @@ type Mode =
   | { kind: "swirl" }
   | { kind: "listening" }
   | { kind: "transcribing" }
-  | { kind: "running"; tool: AgentTool }
+  | { kind: "running"; tool: AgentToolId }
   | { kind: "message"; text: string }
   /** The text went on the clipboard instead of being pasted: the note beside a clipboard. */
   | { kind: "copied"; text: string }
@@ -65,7 +65,7 @@ function modeOf(state: OverlayState): Mode {
   }
 }
 
-const springTransition = (properties: string[]): string => properties.map((property) => `${property} ${config.pillSpringResponse}s ${config.pillSpringEasing}`).join(", ");
+const springTransition = (properties: string[]): string => properties.map((property) => `${property} ${config.pillSpringResponseSeconds}s ${config.pillSpringEasing}`).join(", ");
 
 /** The element's laid-out size, following it as it changes. A callback ref, so an element mounted
  * after its component (a tip that appears during a hold) is measured too. */
@@ -132,7 +132,7 @@ function Overlay() {
       setSwirl({ key: performance.now(), leaving: false });
     } else if (mode.kind !== "swirl" && was.kind === "swirl") {
       setSwirl((current) => current && { ...current, leaving: true });
-      swirlGone.current = setTimeout(() => setSwirl(null), config.pillSpringResponse * 1000);
+      swirlGone.current = setTimeout(() => setSwirl(null), config.pillSpringResponseSeconds * 1000);
     }
   }, [mode]);
 
@@ -233,17 +233,17 @@ function PillLayout({
   if (keepsBubbles && shown.length === 0) shown = kept.current;
   else kept.current = shown;
   const running = mode.kind === "running" ? mode.tool : null;
-  const isRunning = (key: BubbleKey) => key === running || (isConnector(key) && state.runningConnectors.includes(key));
+  const isRunning = (key: BubbleKey) => key === running || (isConnectorId(key) && state.runningConnectors.includes(key));
   const anyRunning = running !== null || state.runningConnectors.length > 0;
   const bubbles: BubbleItem[] = bubbleOrder(shown, state.recentBubbles)
     .map((key, index) => ({
       key,
       name: bubbleName(key),
-      description: isConnector(key) ? connectorInfo[key].settingsDescription : toolImplementations[key].settingsDescription,
+      description: isConnectorId(key) ? connectorInfo[key].settingsDescription : agentTools[key].settingsDescription,
       isRunning: isRunning(key),
       isDimmed: anyRunning && !isRunning(key),
       opacity: bubbleRowOpacity(index),
-      icon: isConnector(key) ? (
+      icon: isConnectorId(key) ? (
         <ConnectorIcon connector={key} size={config.agentBubbleSymbolSize} />
       ) : key === "thunderbird" && state.emailAppIcon ? (
         <img src={state.emailAppIcon} alt="" width={config.agentBubbleAppIconSize} height={config.agentBubbleAppIconSize} />
@@ -265,7 +265,7 @@ function PillLayout({
 
   const exitRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (exiting) exitRef.current?.animate([...appearKeyframes].reverse(), { duration: config.pillSpringResponse * 1000, easing: "ease-in", fill: "forwards" });
+    if (exiting) exitRef.current?.animate([...appearKeyframes].reverse(), { duration: config.pillSpringResponseSeconds * 1000, easing: "ease-in", fill: "forwards" });
   }, [exiting]);
 
   return (
@@ -276,7 +276,7 @@ function PillLayout({
       {bubbles.map((item, index) => {
         const centre = centres[index];
         if (!centre) return null;
-        const move = `${config.agentBubbleMoveDuration}s ${config.pillSpringEasing}`;
+        const move = `${config.agentBubbleMoveDurationSeconds}s ${config.pillSpringEasing}`;
         return (
           // Keyed by bubble, so one that moves along the row as another runs slides there.
           <div key={item.key} className="centred" style={{ left: centre.x, top: centre.y, transition: `left ${move}, top ${move}` }}>
@@ -339,7 +339,7 @@ function ChatBox({ chat, below, maxHeight }: { chat: AgentChat; below: boolean; 
         { opacity: 0, transform: `translateY(${rise}px) scale(${config.chatAppearScale})` },
         { opacity: 1, transform: "none" },
       ],
-      { duration: config.chatAppearDuration * 1000, easing: "ease-out", fill: "backwards" },
+      { duration: config.chatAppearDurationSeconds * 1000, easing: "ease-out", fill: "backwards" },
     );
   }, []);
   useEffect(() => {
@@ -483,7 +483,7 @@ function RequestBubble({ text }: { text: string }) {
 
 /** The reply: the answer, or what another tool wrote under what it did with it. */
 function Reply({ turn, onReveal }: { turn: ChatTurn; onReveal: () => void }) {
-  const caption = toolImplementations[turn.tool].chatCaption;
+  const caption = agentTools[turn.tool].chatCaption;
   return (
     <div className="chat-reply" style={{ gap: config.chatBubblePadding / 2 }}>
       {caption !== null && (
@@ -614,7 +614,7 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
 function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; language: string | null; isAgent: boolean }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
   const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "copied" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
-  const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponse * 1000);
+  const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
     paddingLeft: leadingPadding,
@@ -630,7 +630,7 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
     boxShadow: isAgent
       ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(config.agentPillGlowInnerColour, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(config.agentPillGlowOuterColour, config.agentPillGlowOuterOpacity)}`
       : `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
-    transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponse}s ease-out`,
+    transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponseSeconds}s ease-out`,
   };
 
   // A circle is `pillHeight` across, its border inside, as SwiftUI's `strokeBorder` draws it.
@@ -644,7 +644,7 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
     case "running":
     case "resting":
       content = (
-        <div className="centre-content" style={{ width: circleContent, height: circleContent, opacity: mode.kind === "resting" ? config.agentRestingSymbolOpacity : 1, transition: `opacity ${config.pillSpringResponse}s ease-out` }}>
+        <div className="centre-content" style={{ width: circleContent, height: circleContent, opacity: mode.kind === "resting" ? config.agentRestingSymbolOpacity : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out` }}>
           <SparklesIcon size={config.agentRunningSymbolSize} />
         </div>
       );
@@ -816,7 +816,7 @@ function Bubble({
   onHover: (isHovered: boolean) => void;
   children: ReactNode;
 }) {
-  const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponse * 1000);
+  const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
   const diameter = config.agentBubbleDiameter;
   return (
     <div ref={ref}>
@@ -833,7 +833,7 @@ function Bubble({
           boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
           transform: `scale(${isRunning ? config.agentBubbleRunningScale : isHovered ? config.agentBubbleHoverScale : 1})`,
           opacity: isHovered ? 1 : opacity * (isDimmed ? config.agentBubbleIdleOpacity : 1),
-          transition: `transform ${config.agentBubbleRunningSpringResponse}s ${config.agentBubbleRunningSpringEasing}, opacity ${config.pillSpringResponse}s ease-out`,
+          transition: `transform ${config.agentBubbleRunningSpringResponseSeconds}s ${config.agentBubbleRunningSpringEasing}, opacity ${config.pillSpringResponseSeconds}s ease-out`,
         }}
       >
         {children}
@@ -892,7 +892,7 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
     <div
       ref={ref}
       className="centred"
-      style={{ left: centre.x, top: centre.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponse}s ease-out`, visibility: size.width > 0 ? "visible" : "hidden" }}
+      style={{ left: centre.x, top: centre.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out`, visibility: size.width > 0 ? "visible" : "hidden" }}
     >
       <TipTooltip tip={shown} hotkey={hotkey} pointsDown={above} />
     </div>
@@ -982,7 +982,7 @@ function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; 
   const ref = useRef<HTMLCanvasElement>(null);
   const { width, height } = config.overlayCanvasSize;
   useLayoutEffect(() => {
-    ref.current?.animate(leaving ? [...fadeKeyframes].reverse() : fadeKeyframes, { duration: config.pillSpringResponse * 1000, easing: config.pillSpringEasing, fill: leaving ? "forwards" : "backwards" });
+    ref.current?.animate(leaving ? [...fadeKeyframes].reverse() : fadeKeyframes, { duration: config.pillSpringResponseSeconds * 1000, easing: config.pillSpringEasing, fill: leaving ? "forwards" : "backwards" });
   }, [leaving]);
   useAnimationFrame((elapsed) => {
     const canvas = ref.current;

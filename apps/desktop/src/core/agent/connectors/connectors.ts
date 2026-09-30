@@ -3,18 +3,18 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 /**
- * The apps on this computer the Answer prompt's tools reach (`LoopTool.connector`), each a switch in
+ * The apps on this computer the Answer prompt's tools reach (`ConnectorTool.connector`), each a switch in
  * Settings and the welcome wizard, on by default (owner, 2026-09-26). The OS asks for access the
  * first time a request needs it. All are macOS apps for now: elsewhere none is offered or shown.
  */
 import * as config from "../../config.js";
 
-export type Connector = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web";
+export type ConnectorId = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web";
 
-export const connectors: readonly Connector[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
+export const connectorIds: readonly ConnectorId[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
 
-export function isConnector(name: unknown): name is Connector {
-  return typeof name === "string" && (connectors as readonly string[]).includes(name);
+export function isConnectorId(name: unknown): name is ConnectorId {
+  return typeof name === "string" && (connectorIds as readonly string[]).includes(name);
 }
 
 export interface ConnectorInfo {
@@ -23,7 +23,7 @@ export interface ConnectorInfo {
   settingsDescription: string;
 }
 
-export const connectorInfo: Record<Connector, ConnectorInfo> = {
+export const connectorInfo: Record<ConnectorId, ConnectorInfo> = {
   calendar: {
     displayName: "Calendar",
     settingsDescription: "Answers from your calendars, and adds events you ask for once you confirm.",
@@ -60,6 +60,6 @@ export const connectorInfo: Record<Connector, ConnectorInfo> = {
 
 /** The backend's own tools an app brings, listed in `available_tools` beside its tools while it is on
  * (ADR-DESK-030): the web's search runs on the server. */
-export const connectorServerTools: Partial<Record<Connector, readonly string[]>> = {
+export const connectorServerTools: Partial<Record<ConnectorId, readonly string[]>> = {
   web: [config.webSearchTool],
 };

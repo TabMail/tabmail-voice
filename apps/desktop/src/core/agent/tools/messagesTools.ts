@@ -5,7 +5,7 @@
 import * as config from "../../config.js";
 import type { ScriptRunner } from "../connectors/appleScript.js";
 import { isAddress } from "./emailTools.js";
-import { Arguments, type LoopTool, LoopToolArgumentError } from "./loopTool.js";
+import { Arguments, type ConnectorTool, ToolArgumentError } from "./connectorTool.js";
 
 /** The AppleScript behind `messages_send` (ADR-DESK-028), which takes its values as arguments
  * (`ScriptRunner`). */
@@ -30,13 +30,13 @@ export function isHandle(text: string): boolean {
 }
 
 /** The Messages connector's tool. */
-export function messagesTools(runner: ScriptRunner): LoopTool[] {
+export function messagesTools(runner: ScriptRunner): ConnectorTool[] {
   return [new MessagesSendTool(runner)];
 }
 
 /** Sends an iMessage from Messages (`messages_send`), once the user confirms the recipient and text
  * the chat window shows: the question and the message come from the same draft. */
-export class MessagesSendTool implements LoopTool {
+export class MessagesSendTool implements ConnectorTool {
   readonly name = "messages_send";
   readonly connector = "messages";
   readonly progressLabel = "Sending the message";
@@ -64,10 +64,10 @@ export class MessagesSendTool implements LoopTool {
    * and the text. */
   static draft(args: Record<string, unknown>): { to: string; text: string } {
     const to = Arguments.text(args, "to");
-    if (to === null) throw LoopToolArgumentError.missing("to");
-    if (!isHandle(to)) throw new LoopToolArgumentError(`to takes a phone number or email address, not "${to}": find it with contacts_search, or ask the user.`);
+    if (to === null) throw ToolArgumentError.missing("to");
+    if (!isHandle(to)) throw new ToolArgumentError(`to takes a phone number or email address, not "${to}": find it with contacts_search, or ask the user.`);
     const text = Arguments.text(args, "text");
-    if (text === null) throw LoopToolArgumentError.missing("text");
+    if (text === null) throw ToolArgumentError.missing("text");
     return { to, text };
   }
 }

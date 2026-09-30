@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CalendarEvent, type EventStore, EventStoreFailure, type ReminderItem } from "../../core/agent/tools/calendarTools.js";
-import { type ContactCard, type ContactStore, ContactStoreFailure } from "../../core/agent/tools/contactsTools.js";
-import { type FileStore, FileStoreFailure, type FoundItem } from "../../core/agent/tools/filesTools.js";
+import { type CalendarEvent, type EventStore, EventStoreError, type ReminderItem } from "../../core/agent/tools/calendarTools.js";
+import { type ContactCard, type ContactStore, ContactStoreError } from "../../core/agent/tools/contactsTools.js";
+import { type FileStore, FileStoreError, type FoundItem } from "../../core/agent/tools/filesTools.js";
 import type { FocusedElement, ThunderbirdSystem } from "../../core/agent/connectors/thunderbird/thunderbirdRelay.js";
 import * as config from "../../core/config.js";
 import type { GlobeKeySystem } from "../../core/hotkey/globeKeyAction.js";
@@ -12,7 +12,7 @@ import type { Rect } from "../../core/ui/overlayGeometry.js";
 import { errorName, log } from "../../core/log.js";
 import type { ScreenContext } from "../../core/dictation/screenContext.js";
 import type { AudioCommand, AudioReport } from "../../shared/ipc.js";
-import { HelperFailure, type HelperClient } from "./helperClient.js";
+import { HelperError, type HelperClient } from "./helperClient.js";
 
 /** What `voice-macos` does for the app (`MacService` in the helper), typed. */
 export class MacSystem {
@@ -39,7 +39,7 @@ export class MacSystem {
   /** The user account's full name, empty when it has none. */
   async fullUserName(): Promise<string> {
     const reply = await this.helper.request<{ name?: unknown } | null>("fullUserName");
-    if (typeof reply?.name !== "string") throw new HelperFailure("failed", "fullUserName", "no name in the reply");
+    if (typeof reply?.name !== "string") throw new HelperError("failed", "fullUserName", "no name in the reply");
     return reply.name;
   }
 
@@ -144,7 +144,7 @@ export class MacSystem {
     try {
       return await this.helper.request<T>(method, params, config.eventStoreRequestTimeout);
     } catch (error) {
-      if (error instanceof HelperFailure && EventStoreFailure.isKind(error.helperMessage)) throw new EventStoreFailure(error.helperMessage);
+      if (error instanceof HelperError && EventStoreError.isKind(error.helperMessage)) throw new EventStoreError(error.helperMessage);
       throw error;
     }
   }
@@ -163,7 +163,7 @@ export class MacSystem {
     try {
       return await this.helper.request<T>(method, params, config.contactStoreRequestTimeout);
     } catch (error) {
-      if (error instanceof HelperFailure && ContactStoreFailure.isKind(error.helperMessage)) throw new ContactStoreFailure(error.helperMessage);
+      if (error instanceof HelperError && ContactStoreError.isKind(error.helperMessage)) throw new ContactStoreError(error.helperMessage);
       throw error;
     }
   }
@@ -189,7 +189,7 @@ export class MacSystem {
     try {
       return await this.helper.request<T>(method, params, config.fileStoreRequestTimeout);
     } catch (error) {
-      if (error instanceof HelperFailure && FileStoreFailure.isKind(error.helperMessage)) throw new FileStoreFailure(error.helperMessage);
+      if (error instanceof HelperError && FileStoreError.isKind(error.helperMessage)) throw new FileStoreError(error.helperMessage);
       throw error;
     }
   }

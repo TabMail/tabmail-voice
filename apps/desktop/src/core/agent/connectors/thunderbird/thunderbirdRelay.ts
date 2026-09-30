@@ -35,10 +35,10 @@ export interface FocusedElement {
   windowTitle: string | null;
 }
 
-export type RelayFailureKind = "notInstalled" | "didNotLaunch" | "notFrontmost" | "chatNotFocused";
+export type RelayErrorKind = "notInstalled" | "didNotLaunch" | "notFrontmost" | "chatNotFocused";
 
-export class RelayFailure extends Error {
-  constructor(readonly kind: RelayFailureKind) {
+export class RelayError extends Error {
+  constructor(readonly kind: RelayErrorKind) {
     super(
       kind === "notInstalled" ? "Mail and calendar requests need Thunderbird with TabMail."
         : kind === "didNotLaunch" ? "Thunderbird didn't open. Try again."
@@ -46,11 +46,11 @@ export class RelayFailure extends Error {
             // The chat window did not open, or lost focus before the message was in.
             : "Couldn't open TabMail's chat in Thunderbird.",
     );
-    this.name = "RelayFailure";
+    this.name = "RelayError";
   }
 
   get description(): string {
-    return `RelayFailure.${this.kind}`;
+    return `RelayError.${this.kind}`;
   }
 }
 
@@ -89,11 +89,11 @@ export class ThunderbirdRelay {
   }
 
   /** Types `message` into TabMail's chat in the email app `app` (a bundle identifier, from the
-   * dictation's settings) and sends it. Throws `RelayFailure`, or `CancellationError` once `signal`
+   * dictation's settings) and sends it. Throws `RelayError`, or `CancellationError` once `signal`
    * aborts; either way nothing is pasted outside that app's chat window. */
   async send(message: string, app: string | null, signal: AbortSignal): Promise<void> {
     const path = app === null ? null : await this.system.applicationPath(app);
-    if (app === null || path === null) throw new RelayFailure("notInstalled");
+    if (app === null || path === null) throw new RelayError("notInstalled");
     const running = await this.system.isRunning(app);
     // Cancelled during these reads, a newer dictation may have started: Thunderbird is neither
     // launched nor brought to the front for this one.
@@ -101,28 +101,28 @@ export class ThunderbirdRelay {
     if (!running) {
       log.debug("ThunderbirdRelay: launching Thunderbird");
       await this.system.launch(path);
-      if (!(await this.wait(this.timings.launchTimeout, () => this.system.hasWindow(app), signal))) throw new RelayFailure("didNotLaunch");
+      if (!(await this.wait(this.timings.launchTimeout, () => this.system.hasWindow(app), signal))) throw new RelayError("didNotLaunch");
       // The add-on registers its shortcut only once its background page has loaded.
       await sleep(this.timings.addonSettle, signal);
     }
     await this.system.activate(app);
-    if (!(await this.wait(this.timings.activateTimeout, () => this.system.isFrontmost(app), signal))) throw new RelayFailure("notFrontmost");
+    if (!(await this.wait(this.timings.activateTimeout, () => this.system.isFrontmost(app), signal))) throw new RelayError("notFrontmost");
     if (!(await this.isChatFocused(app))) {
       // The shortcut goes to whatever app is in front, and the user may have switched, or
       // cancelled, during the focus read.
-      if (!(await this.system.isFrontmost(app))) throw new RelayFailure("notFrontmost");
+      if (!(await this.system.isFrontmost(app))) throw new RelayError("notFrontmost");
       checkCancellation(signal);
       log.debug("ThunderbirdRelay: opening the chat");
       await this.system.openChat();
-      if (!(await this.wait(this.timings.chatTimeout, () => this.isChatFocused(app), signal))) throw new RelayFailure("chatNotFocused");
+      if (!(await this.wait(this.timings.chatTimeout, () => this.isChatFocused(app), signal))) throw new RelayError("chatNotFocused");
       log.debug("ThunderbirdRelay: the chat is ready");
     }
     // The user may have moved on, or cancelled, while this waited: paste and send only into the
     // chat, and only for a request still wanted.
-    if (!(await this.isChatFocused(app))) throw new RelayFailure("chatNotFocused");
+    if (!(await this.isChatFocused(app))) throw new RelayError("chatNotFocused");
     checkCancellation(signal);
     await this.system.paste(message);
-    if (!(await this.isChatFocused(app))) throw new RelayFailure("chatNotFocused");
+    if (!(await this.isChatFocused(app))) throw new RelayError("chatNotFocused");
     checkCancellation(signal);
     await this.system.pressReturn();
     log.debug(() => `ThunderbirdRelay: sent ${charCount(message)} chars`);

@@ -14,12 +14,12 @@ import {
   CalendarReadTool,
   calendarTools,
   type EventStore,
-  EventStoreFailure,
+  EventStoreError,
   type ReminderItem,
   ReminderCreateTool,
   RemindersReadTool,
 } from "../../../../src/core/agent/tools/calendarTools.js";
-import { LoopToolArgumentError } from "../../../../src/core/agent/tools/loopTool.js";
+import { ToolArgumentError } from "../../../../src/core/agent/tools/connectorTool.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 
@@ -168,7 +168,7 @@ describe("calendar_read", () => {
   ])("%j is reported", async (args, message) => {
     const tool = new CalendarReadTool(store, () => new Date());
 
-    await expect(tool.run(args)).rejects.toEqual(new LoopToolArgumentError(message));
+    await expect(tool.run(args)).rejects.toEqual(new ToolArgumentError(message));
     expect(store.readRanges).toEqual([]);
   });
 
@@ -179,7 +179,7 @@ describe("calendar_read", () => {
     const longest = at(0, 0, config.calendarReadMaxDays);
 
     await expect(tool.run({ from_date: iso(day, false), to_date: iso(at(0, 1, config.calendarReadMaxDays)) })).rejects.toEqual(
-      new LoopToolArgumentError(`A calendar is read at most ${config.calendarReadMaxDays} days at a time: read a longer range in parts.`),
+      new ToolArgumentError(`A calendar is read at most ${config.calendarReadMaxDays} days at a time: read a longer range in parts.`),
     );
     expect(store.readRanges).toEqual([]);
 
@@ -190,14 +190,14 @@ describe("calendar_read", () => {
   /** Without access to Calendar, the tool fails saying where to allow it, which the model tells the
    * user. */
   test("no access says where to allow it", async () => {
-    store.failure = new EventStoreFailure("calendarNoAccess");
+    store.failure = new EventStoreError("calendarNoAccess");
     const tool = new CalendarReadTool(store, () => new Date());
 
     await expect(tool.run({})).rejects.toBe(store.failure);
-    expect(new EventStoreFailure("calendarNoAccess").message).toContain("System Settings › Privacy & Security › Calendars");
-    expect(new EventStoreFailure("remindersNoAccess").message).toContain("System Settings › Privacy & Security › Reminders");
-    expect(new EventStoreFailure("noDefaultCalendar").message).toContain("Calendar's settings");
-    expect(new EventStoreFailure("noDefaultList").message).toContain("Reminders' settings");
+    expect(new EventStoreError("calendarNoAccess").message).toContain("System Settings › Privacy & Security › Calendars");
+    expect(new EventStoreError("remindersNoAccess").message).toContain("System Settings › Privacy & Security › Reminders");
+    expect(new EventStoreError("noDefaultCalendar").message).toContain("Calendar's settings");
+    expect(new EventStoreError("noDefaultList").message).toContain("Reminders' settings");
   });
 });
 
@@ -252,7 +252,7 @@ describe("calendar_event_create", () => {
     const tool = new CalendarEventCreateTool(store);
 
     expect(tool.confirmation(args)).toBeNull();
-    await expect(tool.run(args)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(store.added).toEqual([]);
   });
 });
@@ -289,7 +289,7 @@ describe("reminders_read", () => {
     expect(await tool.run({})).toBe("No open reminders.");
     expect(await tool.run({ due_before: iso(at(12)) })).toBe(`No open reminders due before ${describeDate(at(12))}.`);
     expect(store.dueBefore).toEqual([null, at(12)]);
-    await expect(tool.run({ due_before: "soon" })).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run({ due_before: "soon" })).rejects.toBeInstanceOf(ToolArgumentError);
   });
 });
 
@@ -331,7 +331,7 @@ describe("reminder_create", () => {
     const tool = new ReminderCreateTool(store);
 
     expect(tool.confirmation(args)).toBeNull();
-    await expect(tool.run(args)).rejects.toBeInstanceOf(LoopToolArgumentError);
+    await expect(tool.run(args)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(store.addedReminders).toEqual([]);
   });
 });

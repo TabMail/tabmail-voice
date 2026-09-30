@@ -8,7 +8,7 @@ import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
 import { connectorInfo } from "../../../src/core/agent/connectors/connectors.js";
-import { toolImplementations } from "../../../src/core/agent/agentTools.js";
+import { agentTools } from "../../../src/core/agent/agentTools.js";
 import * as config from "../../../src/core/config.js";
 import { brandColour } from "../../../src/renderer/shared/brand.js";
 import type { DictationTip } from "../../../src/core/onboarding/tips.js";
@@ -319,7 +319,7 @@ describe("overlay page", () => {
 
     await pointer("compose", "pointerover");
     expect([bubble("compose").style.transform, bubble("answer").style.transform]).toEqual([`scale(${config.agentBubbleHoverScale})`, "scale(1)"]);
-    expect(said()).toEqual([toolImplementations.compose.displayName, toolImplementations.compose.settingsDescription]);
+    expect(said()).toEqual([agentTools.compose.displayName, agentTools.compose.settingsDescription]);
     expect(tooltip()?.style.visibility).toBe("visible");
     // Over the bubble as it has grown, clear of it.
     expect(tooltipBottom()).toBeCloseTo(grownTop("compose", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
@@ -352,7 +352,7 @@ describe("overlay page", () => {
     await pointer("calendar", "pointerout");
     await pointer("answer", "pointerover");
     expect(bubble("answer").style.transform).toBe(`scale(${config.agentBubbleRunningScale})`);
-    expect(said()[0]).toBe(toolImplementations.answer.displayName);
+    expect(said()[0]).toBe(agentTools.answer.displayName);
     expect(tooltipBottom()).toBeCloseTo(grownTop("answer", config.agentBubbleRunningScale) - config.bubbleTooltipGap);
     expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("answer"));
   });
@@ -377,7 +377,7 @@ describe("overlay page", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     const next = document.querySelector<HTMLElement>('[role="tooltip"]');
-    expect(next?.firstElementChild?.textContent).toBe(toolImplementations.answer.displayName);
+    expect(next?.firstElementChild?.textContent).toBe(agentTools.answer.displayName);
     expect(next === first).toBe(false);
     expect(next?.style.visibility).toBe("hidden");
   });
@@ -484,7 +484,7 @@ describe("overlay page", () => {
       if (this.classList.contains("swirl")) fades.push({ element: this, opacity: (keyframes as Keyframe[]).map((frame) => frame.opacity), fill: (options as KeyframeAnimationOptions).fill });
       return {} as Animation;
     });
-    const settle = () => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponse * 1000 + 50));
+    const settle = () => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponseSeconds * 1000 + 50));
     try {
       await page.show(warmingUp);
       const swirl = document.querySelector("canvas.swirl");
@@ -524,7 +524,7 @@ describe("overlay page", () => {
     await page.show(warmingUp);
     await page.show(idle);
     expect(document.querySelectorAll("canvas.swirl")).toHaveLength(2);
-    await act(() => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponse * 1000 + 50)));
+    await act(() => new Promise((resolve) => setTimeout(resolve, config.pillSpringResponseSeconds * 1000 + 50)));
 
     await page.show({ ...listening, phase: { kind: "arming" } });
     await page.show(listening);

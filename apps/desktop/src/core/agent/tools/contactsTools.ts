@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../../config.js";
-import { Arguments, type LoopTool, LoopToolArgumentError } from "./loopTool.js";
+import { Arguments, type ConnectorTool, ToolArgumentError } from "./connectorTool.js";
 
 /** A person in the user's contacts, as the contacts tools read and add them. */
 export interface ContactCard {
@@ -32,31 +32,31 @@ export interface ContactStore {
 }
 
 /** Why Contacts could not be used: the model reads the message, and tells the user. */
-export type ContactStoreFailureKind = "contactsNoAccess";
+export type ContactStoreErrorKind = "contactsNoAccess";
 
-const contactStoreFailureMessages: Record<ContactStoreFailureKind, string> = {
+const contactStoreFailureMessages: Record<ContactStoreErrorKind, string> = {
   contactsNoAccess: "TabMail Voice can't use Contacts. Allow it in System Settings › Privacy & Security › Contacts.",
 };
 
-export class ContactStoreFailure extends Error {
-  constructor(readonly kind: ContactStoreFailureKind) {
+export class ContactStoreError extends Error {
+  constructor(readonly kind: ContactStoreErrorKind) {
     super(contactStoreFailureMessages[kind]);
-    this.name = "ContactStoreFailure";
+    this.name = "ContactStoreError";
   }
 
-  static isKind(value: unknown): value is ContactStoreFailureKind {
+  static isKind(value: unknown): value is ContactStoreErrorKind {
     return typeof value === "string" && Object.hasOwn(contactStoreFailureMessages, value);
   }
 }
 
 /** The Contacts connector's tools. */
-export function contactsTools(store: ContactStore): LoopTool[] {
+export function contactsTools(store: ContactStore): ConnectorTool[] {
   return [new ContactsSearchTool(store), new ContactsAddTool(store)];
 }
 
 /** Finds people in the user's contacts (`contacts_search`), for "what's Sam's email" or before
  * writing to someone the user names. */
-export class ContactsSearchTool implements LoopTool {
+export class ContactsSearchTool implements ConnectorTool {
   readonly name = "contacts_search";
   readonly connector = "contacts";
   readonly progressLabel = "Looking in your contacts";
@@ -71,7 +71,7 @@ export class ContactsSearchTool implements LoopTool {
    * company is cut short and says so. */
   async run(args: Record<string, unknown>): Promise<string> {
     const query = Arguments.text(args, "query");
-    if (query === null) throw LoopToolArgumentError.missing("query");
+    if (query === null) throw ToolArgumentError.missing("query");
     const limit = config.contactsSearchMaxResults;
     // One more than shown, to know whether there are more.
     const matches = await this.store.search(query, limit + 1);
@@ -94,7 +94,7 @@ export function describeContact(contact: ContactCard): string {
 
 /** Adds a person to the user's contacts (`contacts_add`), once they confirm what the chat window
  * shows: the question and the contact come from the same `draft`. */
-export class ContactsAddTool implements LoopTool {
+export class ContactsAddTool implements ConnectorTool {
   readonly name = "contacts_add";
   readonly connector = "contacts";
   readonly progressLabel = "Adding the contact";
@@ -134,7 +134,7 @@ export class ContactsAddTool implements LoopTool {
       emails: email === null ? [] : [email],
       phones: phone === null ? [] : [phone],
     };
-    if (displayName(contact) === "" && contact.emails.length === 0) throw new LoopToolArgumentError("Give at least a name, a company or an email address.");
+    if (displayName(contact) === "" && contact.emails.length === 0) throw new ToolArgumentError("Give at least a name, a company or an email address.");
     return contact;
   }
 }

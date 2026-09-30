@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { Arguments, type LoopTool, LoopToolArgumentError } from "./loopTool.js";
+import { Arguments, type ConnectorTool, ToolArgumentError } from "./connectorTool.js";
 
 /** A new email for the user to review and send in their email app (`email_compose`). */
 export interface EmailDraft {
@@ -16,15 +16,15 @@ export interface EmailDraft {
 /** Opens a draft in the user's email app (ADR-DESK-027). */
 export interface EmailOpener {
   /** Opens `url` (a `mailto:` URL) and returns the name of the app that opened it; throws
-   * `NoEmailAppFailure` when no app opens `mailto:` links. */
+   * `NoEmailAppError` when no app opens `mailto:` links. */
   open(url: string): Promise<string>;
 }
 
 /** No app on this computer opens `mailto:` links: the model reads the message, and tells the user. */
-export class NoEmailAppFailure extends Error {
+export class NoEmailAppError extends Error {
   constructor() {
     super("No email app is set up on this computer to open a new email.");
-    this.name = "NoEmailAppFailure";
+    this.name = "NoEmailAppError";
   }
 }
 
@@ -70,14 +70,14 @@ function crlf(text: string): string {
 }
 
 /** The Email connector's tool. */
-export function emailTools(opener: EmailOpener): LoopTool[] {
+export function emailTools(opener: EmailOpener): ConnectorTool[] {
   return [new EmailComposeTool(opener)];
 }
 
 /** Opens a new email, filled in, in the user's email app (`email_compose`), for them to review and
  * send. Nothing is sent, so nothing is asked first (owner, 2026-09-26: mail without TabMail is
  * prefill only). */
-export class EmailComposeTool implements LoopTool {
+export class EmailComposeTool implements ConnectorTool {
   readonly name = "email_compose";
   readonly connector = "email";
   readonly progressLabel = "Writing the email";
@@ -98,11 +98,11 @@ export class EmailComposeTool implements LoopTool {
    * and a body (kept as written, its line breaks and indents included). */
   static draft(args: Record<string, unknown>): EmailDraft {
     const to = addresses(args, "to");
-    if (to.length === 0) throw LoopToolArgumentError.missing("to");
+    if (to.length === 0) throw ToolArgumentError.missing("to");
     const subject = Arguments.text(args, "subject");
-    if (subject === null) throw LoopToolArgumentError.missing("subject");
+    if (subject === null) throw ToolArgumentError.missing("subject");
     const body = args.body;
-    if (typeof body !== "string" || Arguments.text(args, "body") === null) throw LoopToolArgumentError.missing("body");
+    if (typeof body !== "string" || Arguments.text(args, "body") === null) throw ToolArgumentError.missing("body");
     return { to, cc: addresses(args, "cc"), bcc: addresses(args, "bcc"), subject, body };
   }
 }
@@ -113,6 +113,6 @@ function addresses(args: Record<string, unknown>, name: string): string[] {
   const list = args[name];
   const values = (Array.isArray(list) ? list : []).flatMap((value) => (typeof value === "string" ? [value.trim()] : [])).filter((value) => value !== "");
   const other = values.find((value) => !isAddress(value));
-  if (other !== undefined) throw new LoopToolArgumentError(`${name} takes email addresses, not "${other}": find the address with contacts_search, or ask the user.`);
+  if (other !== undefined) throw new ToolArgumentError(`${name} takes email addresses, not "${other}": find the address with contacts_search, or ask the user.`);
   return values;
 }

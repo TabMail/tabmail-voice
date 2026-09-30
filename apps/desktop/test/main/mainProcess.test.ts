@@ -8,8 +8,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog } from "../../src/core/log.js";
 import { CancellationError } from "../../src/core/util/timeout.js";
-import { FileStore } from "../../src/main/storage/fileStore.js";
-import { HelperClient, HelperFailure } from "../../src/main/native/helperClient.js";
+import { JSONFileStore } from "../../src/main/storage/jsonFileStore.js";
+import { HelperClient, HelperError } from "../../src/main/native/helperClient.js";
 import { LogFile } from "../../src/main/storage/logFile.js";
 import { eventually } from "../support/support.js";
 
@@ -75,13 +75,13 @@ describe("LogFile", () => {
 describe("FileStore", () => {
   test("values are kept across launches", () => {
     const path = join(scratch(), "Preferences/settings.json");
-    const store = new FileStore(path);
+    const store = new JSONFileStore(path);
     store.set("dictationHotkey", "function");
     store.set("tip.agentAndHistory.displays", 3);
     store.set("gone", true);
     store.remove("gone");
 
-    const relaunched = new FileStore(path);
+    const relaunched = new JSONFileStore(path);
     expect(relaunched.get("dictationHotkey")).toBe("function");
     expect(relaunched.get("tip.agentAndHistory.displays")).toBe(3);
     expect(relaunched.get("gone")).toBeUndefined();
@@ -93,11 +93,11 @@ describe("FileStore", () => {
     const errors: string[] = [];
     configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
 
-    const store = new FileStore(path);
+    const store = new JSONFileStore(path);
     expect(store.snapshot()).toEqual({});
     expect(errors).toEqual(["FileStore: unreadable preferences file; starting empty"]);
     store.set("readsScreen", false);
-    expect(new FileStore(path).get("readsScreen")).toBe(false);
+    expect(new JSONFileStore(path).get("readsScreen")).toBe(false);
   });
 });
 
@@ -116,11 +116,11 @@ describe("HelperClient", () => {
     return client;
   }
 
-  async function failure(promise: Promise<unknown>): Promise<HelperFailure> {
+  async function failure(promise: Promise<unknown>): Promise<HelperError> {
     try {
       await promise;
     } catch (error) {
-      if (error instanceof HelperFailure) return error;
+      if (error instanceof HelperError) return error;
       throw error;
     }
     throw new Error("resolved");
@@ -135,7 +135,7 @@ describe("HelperClient", () => {
   test("a helper's error is a failure naming it, for the log", async () => {
     const error = await failure(helper().request("fail"));
     expect(error.kind).toBe("failed");
-    expect(error.description).toBe("HelperFailure.failed(fail: fail needs nothing)");
+    expect(error.description).toBe("HelperError.failed(fail: fail needs nothing)");
   });
 
   test("a request that gets no answer times out", async () => {

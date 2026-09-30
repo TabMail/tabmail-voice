@@ -6,8 +6,8 @@ import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } f
 import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnector } from "../../core/agent/connectors/connectors.js";
-import { offeredAgentTools, toolImplementations } from "../../core/agent/agentTools.js";
+import { connectorInfo, isConnectorId } from "../../core/agent/connectors/connectors.js";
+import { offeredAgentToolIds, agentTools } from "../../core/agent/agentTools.js";
 import * as config from "../../core/config.js";
 import { dictionaryWord, isSameWord } from "../../core/dictionary/dictionary.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../../core/hotkey/hotkey.js";
@@ -240,8 +240,8 @@ function AgentPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
-        {alphabetical([...offeredAgentTools, ...state.connectors]).map((key) =>
-          isConnector(key) ? (
+        {alphabetical([...offeredAgentToolIds, ...state.connectors]).map((key) =>
+          isConnectorId(key) ? (
             <Toggle
               key={key}
               label={connectorInfo[key].displayName}
@@ -254,18 +254,18 @@ function AgentPane({ state }: { state: SettingsState }) {
           ) : (
             <Toggle
               key={key}
-              label={toolImplementations[key].displayName}
+              label={agentTools[key].displayName}
               icon={<ToolIcon tool={key} size={config.settingsToolIconSize} />}
               checked={state.enabledTools.includes(key)}
               onChange={(value) => send({ type: "setAgentToolEnabled", tool: key, value })}
             >
-              {toolImplementations[key].settingsDescription}
+              {agentTools[key].settingsDescription}
             </Toggle>
           ),
         )}
       </Group>
       {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
-      {offeredAgentTools.includes("thunderbird") && <EmailClientPicker state={state} />}
+      {offeredAgentToolIds.includes("thunderbird") && <EmailClientPicker state={state} />}
     </>
   );
 }

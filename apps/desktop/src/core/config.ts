@@ -184,9 +184,9 @@ export const agentAnswerPrompt = "system_prompt_desktop_answer";
  * run on the server, read nothing of the user's, and answer "what day is next Friday" right. */
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
 /** What the model reads for a tool call the user declined in the chat window. */
-export const loopToolDeclined = "The user declined, so nothing was done.";
+export const connectorToolDeclined = "The user declined, so nothing was done.";
 /** What the model reads when the user left a tool's question unanswered (`chatConfirmationTimeout`). */
-export const loopToolUnanswered = "The user didn't confirm in time, so nothing was done.";
+export const connectorToolUnanswered = "The user didn't confirm in time, so nothing was done.";
 /** The longest range `calendar_read` reads at once, in days: EventKit reads at most four years of
  * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
 export const calendarReadMaxDays = 4 * 365;
@@ -349,7 +349,7 @@ export const agentPillGlowOuterRadius = 16;
 export const agentPillGlowOuterOpacity = 0.75;
 /** The pill grows out of the swirl from this fraction of its size. */
 export const pillAppearScale = 0.2;
-export const pillSpringResponse = 0.25;
+export const pillSpringResponseSeconds = 0.25;
 /** CSS's stand-in for that spring: a little overshoot. */
 export const pillSpringEasing = "cubic-bezier(0.3, 1.25, 0.5, 1)";
 /** Warm-up swirl: particles spiral from `swirlStartRadius` to `swirlOrbitRadius`. */
@@ -411,7 +411,7 @@ export const agentBubbleSpacing = 16;
 export const agentBubbleRowVisibleCount = 3;
 export const agentBubbleRowFadeCount = 1;
 /** A bubble's move along the row as the one that ran moves to its front. */
-export const agentBubbleMoveDuration = 0.35;
+export const agentBubbleMoveDurationSeconds = 0.35;
 /** A bubble under the mouse pointer grows to this size (about its centre, as a running one does),
  * and a tooltip says what it is (owner, 2026-09-28: "when mouse hovers over them, make them sort of
  * enlarged and also show tooltips on what this tool is"). */
@@ -538,7 +538,7 @@ export const agentBubbleRevolutionsPerSecond = 1;
  * a little ("a genie effect", so the tool in use is obvious). */
 export const agentBubbleRunningDiameter = 34;
 export const agentBubbleRunningScale = agentBubbleRunningDiameter / agentBubbleDiameter;
-export const agentBubbleRunningSpringResponse = 0.35;
+export const agentBubbleRunningSpringResponseSeconds = 0.35;
 /** CSS's stand-in for that spring: a bouncier overshoot than the pill's. */
 export const agentBubbleRunningSpringEasing = "cubic-bezier(0.3, 1.7, 0.5, 1)";
 /** How long an error message stays on the overlay. */
@@ -572,7 +572,7 @@ export const chatStripHeight = listeningPillHeight + agentBubbleGap + agentBubbl
 /** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCentre`). */
 export const chatBubbleTooltipRoom = 80;
 /** The chat window appears rising this far, from this scale, fading in. */
-export const chatAppearDuration = 0.25;
+export const chatAppearDurationSeconds = 0.25;
 export const chatAppearRise = 8;
 export const chatAppearScale = 0.98;
 export const chatCornerRadius = 14;

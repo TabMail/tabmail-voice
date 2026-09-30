@@ -4,7 +4,7 @@
 
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
-import { Arguments, type LoopTool, LoopToolArgumentError } from "./loopTool.js";
+import { Arguments, type ConnectorTool, ToolArgumentError } from "./connectorTool.js";
 
 /** The kinds of item the backend's `files_search` offers. */
 export const fileKinds = ["any", "document", "pdf", "image", "presentation", "spreadsheet", "folder", "email"] as const;
@@ -42,32 +42,32 @@ export interface FileStore {
 }
 
 /** Why a search or an open failed: the model reads the message, and tells the user. */
-export type FileStoreFailureKind = "searchFailed" | "openFailed";
+export type FileStoreErrorKind = "searchFailed" | "openFailed";
 
-const fileStoreFailureMessages: Record<FileStoreFailureKind, string> = {
+const fileStoreFailureMessages: Record<FileStoreErrorKind, string> = {
   searchFailed: "Spotlight could not run the search.",
   openFailed: "The item could not be opened or shown. It may have been moved or deleted, or no app opens it.",
 };
 
-export class FileStoreFailure extends Error {
-  constructor(readonly kind: FileStoreFailureKind) {
+export class FileStoreError extends Error {
+  constructor(readonly kind: FileStoreErrorKind) {
     super(fileStoreFailureMessages[kind]);
-    this.name = "FileStoreFailure";
+    this.name = "FileStoreError";
   }
 
-  static isKind(value: unknown): value is FileStoreFailureKind {
+  static isKind(value: unknown): value is FileStoreErrorKind {
     return typeof value === "string" && Object.hasOwn(fileStoreFailureMessages, value);
   }
 }
 
 /** The Files connector's tools; `home` is the user's home folder, which the model reads as `~`. */
-export function filesTools(store: FileStore, home: string): LoopTool[] {
+export function filesTools(store: FileStore, home: string): ConnectorTool[] {
   return [new FilesSearchTool(store, home), new FileOpenTool(store, home)];
 }
 
 /** Finds files, and Apple Mail messages Spotlight has indexed, in the user's home folder
  * (`files_search`), for "find the PDF Sam sent last week". */
-export class FilesSearchTool implements LoopTool {
+export class FilesSearchTool implements ConnectorTool {
   readonly name = "files_search";
   readonly connector = "files";
   readonly progressLabel = "Searching your files";
@@ -98,9 +98,9 @@ export class FilesSearchTool implements LoopTool {
    * for `changed_before` reading through its end. */
   static query(args: Record<string, unknown>): FileQuery {
     const text = Arguments.text(args, "query");
-    if (text === null) throw LoopToolArgumentError.missing("query");
+    if (text === null) throw ToolArgumentError.missing("query");
     const kind = Arguments.text(args, "kind") ?? "any";
-    if (!isFileKind(kind)) throw new LoopToolArgumentError(`kind must be one of: ${fileKinds.join(", ")}.`);
+    if (!isFileKind(kind)) throw new ToolArgumentError(`kind must be one of: ${fileKinds.join(", ")}.`);
     return { words: text.split(/\s+/u), kind, changedAfter: Arguments.localDate(args, "changed_after")?.date ?? null, changedBefore: Arguments.localEnd(args, "changed_before") };
   }
 
@@ -125,7 +125,7 @@ function abbreviated(path: string, home: string): string {
 
 /** Opens what `files_search` found in its usual app, or shows it in the Finder (`file_open`). Opening
  * neither sends nor creates, so nothing is asked first; an app or a script is only ever shown. */
-export class FileOpenTool implements LoopTool {
+export class FileOpenTool implements ConnectorTool {
   readonly name = "file_open";
   readonly connector = "files";
   readonly progressLabel = "Opening it";
@@ -141,9 +141,9 @@ export class FileOpenTool implements LoopTool {
 
   async run(args: Record<string, unknown>): Promise<string> {
     const given = Arguments.text(args, "path");
-    if (given === null) throw LoopToolArgumentError.missing("path");
+    if (given === null) throw ToolArgumentError.missing("path");
     const path = given === "~" || given.startsWith("~/") ? `${this.home}${given.slice(1)}` : given;
-    if (!path.startsWith("/")) throw new LoopToolArgumentError("path must be a path files_search returned.");
+    if (!path.startsWith("/")) throw new ToolArgumentError("path must be a path files_search returned.");
     const name = path.split("/").filter((part) => part !== "").at(-1) ?? path;
     const reveal = args.reveal === true;
     const opened = await this.store.open(path, reveal);

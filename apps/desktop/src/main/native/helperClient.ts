@@ -8,23 +8,23 @@ import * as config from "../../core/config.js";
 import { log } from "../../core/log.js";
 import { CancellationError } from "../../core/util/timeout.js";
 
-export type HelperFailureKind = "timeout" | "exited" | "failed";
+export type HelperErrorKind = "timeout" | "exited" | "failed";
 
 /** A helper request that got no result: it timed out, the helper exited first, or the helper
  * answered with an error. The helper's error message is not shown: it is for the log. */
-export class HelperFailure extends Error {
+export class HelperError extends Error {
   constructor(
-    readonly kind: HelperFailureKind,
+    readonly kind: HelperErrorKind,
     readonly method: string,
     /** For `failed`: the helper's message, which names the problem, never user content. */
     readonly helperMessage?: string,
   ) {
     super("Something went wrong. Try again.");
-    this.name = "HelperFailure";
+    this.name = "HelperError";
   }
 
   get description(): string {
-    return `HelperFailure.${this.kind}(${this.method}${this.helperMessage ? `: ${this.helperMessage}` : ""})`;
+    return `HelperError.${this.kind}(${this.method}${this.helperMessage ? `: ${this.helperMessage}` : ""})`;
   }
 }
 
@@ -88,21 +88,21 @@ export class HelperClient {
     this.eventHandlers.set(event, handler);
   }
 
-  /** Asks the helper; rejects with `HelperFailure` when it answers with an error, takes longer than
+  /** Asks the helper; rejects with `HelperError` when it answers with an error, takes longer than
    * `timeout`, or is not running. A request given its operation's `signal` waits instead while the
    * helper restarts (within `timeout`), so what a crash sets off (sending what was said, then pasting
    * it) still reaches the helper; if the signal aborts first it is never sent and rejects with a
    * `CancellationError` (a cancelled dictation pastes nothing). */
   request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = this.options.requestTimeout ?? config.helperRequestTimeout, signal?: AbortSignal): Promise<T> {
     const child = this.child;
-    if (!child && (this.restartTimer === null || signal === undefined)) return Promise.reject(new HelperFailure("exited", method));
+    if (!child && (this.restartTimer === null || signal === undefined)) return Promise.reject(new HelperError("exited", method));
     if (signal?.aborted) return Promise.reject(new CancellationError());
     const id = this.nextID;
     this.nextID += 1;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new HelperFailure("timeout", method));
+        reject(new HelperError("timeout", method));
       }, timeout);
       this.pending.set(id, { method, resolve: resolve as (value: unknown) => void, reject, timer });
       const line = `${JSON.stringify({ id, method, params })}\n`;
@@ -175,15 +175,15 @@ export class HelperClient {
     this.pending.delete(message.id);
     clearTimeout(pending.timer);
     const error = message.error as { message?: unknown } | undefined;
-    if (error) pending.reject(new HelperFailure("failed", pending.method, typeof error.message === "string" ? error.message : undefined));
+    if (error) pending.reject(new HelperError("failed", pending.method, typeof error.message === "string" ? error.message : undefined));
     else pending.resolve(message.result ?? null);
   }
 
-  private failPending(kind: HelperFailureKind): void {
+  private failPending(kind: HelperErrorKind): void {
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
       this.pending.delete(id);
-      pending.reject(new HelperFailure(kind, pending.method));
+      pending.reject(new HelperError(kind, pending.method));
     }
   }
 }

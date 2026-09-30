@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { RelayFailure, type RelayFailureKind, ThunderbirdRelay } from "../../../../../src/core/agent/connectors/thunderbird/thunderbirdRelay.js";
+import { RelayError, type RelayErrorKind, ThunderbirdRelay } from "../../../../../src/core/agent/connectors/thunderbird/thunderbirdRelay.js";
 import { CancellationError } from "../../../../../src/core/util/timeout.js";
 import { FakeThunderbird } from "../../../../support/fakeThunderbird.js";
 
@@ -13,11 +13,11 @@ function send(thunderbird: FakeThunderbird, app: string | null = FakeThunderbird
   return thunderbird.relay().send(message, app, signal);
 }
 
-async function failure(promise: Promise<unknown>): Promise<RelayFailureKind | "cancelled" | undefined> {
+async function failure(promise: Promise<unknown>): Promise<RelayErrorKind | "cancelled" | undefined> {
   try {
     await promise;
   } catch (error) {
-    if (error instanceof RelayFailure) return error.kind;
+    if (error instanceof RelayError) return error.kind;
     if (error instanceof CancellationError) return "cancelled";
     throw error;
   }

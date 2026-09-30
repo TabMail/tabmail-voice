@@ -7,10 +7,10 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { hotkeyActions } from "../../../src/core/hotkey/hotkey.js";
-import { EventStoreFailure } from "../../../src/core/agent/tools/calendarTools.js";
-import { ContactStoreFailure } from "../../../src/core/agent/tools/contactsTools.js";
-import { FileStoreFailure } from "../../../src/core/agent/tools/filesTools.js";
-import { type HelperClient, HelperFailure } from "../../../src/main/native/helperClient.js";
+import { EventStoreError } from "../../../src/core/agent/tools/calendarTools.js";
+import { ContactStoreError } from "../../../src/core/agent/tools/contactsTools.js";
+import { FileStoreError } from "../../../src/core/agent/tools/filesTools.js";
+import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
 import { decodeSamples, MacSystem } from "../../../src/main/native/macos.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
 
@@ -133,7 +133,7 @@ describe("helper wire contract", () => {
     expect(await mac.fullUserName()).toBe("Alex Example");
     reply = { name: "" };
     expect(await mac.fullUserName()).toBe("");
-    for (reply of [{}, null, { name: 1 }]) await expect(mac.fullUserName()).rejects.toMatchObject({ name: "HelperFailure", method: "fullUserName" });
+    for (reply of [{}, null, { name: 1 }]) await expect(mac.fullUserName()).rejects.toMatchObject({ name: "HelperError", method: "fullUserName" });
   });
 
   /** Calendar and Reminders requests carry their dates as milliseconds since 1970 and wait long
@@ -181,10 +181,10 @@ describe("helper wire contract", () => {
     ]);
 
     for (const kind of ["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"] as const) {
-      failure = new HelperFailure("failed", "calendarEvents", kind);
-      await expect(store.events(start, end)).rejects.toEqual(new EventStoreFailure(kind));
+      failure = new HelperError("failed", "calendarEvents", kind);
+      await expect(store.events(start, end)).rejects.toEqual(new EventStoreError(kind));
     }
-    for (const other of [new HelperFailure("failed", "calendarEvents", "calendarEvents needs start and end"), new HelperFailure("timeout", "calendarEvents")]) {
+    for (const other of [new HelperError("failed", "calendarEvents", "calendarEvents needs start and end"), new HelperError("timeout", "calendarEvents")]) {
       failure = other;
       await expect(store.events(start, end)).rejects.toBe(other);
     }
@@ -197,8 +197,8 @@ describe("helper wire contract", () => {
     const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
 
     expect(cases).toEqual(["calendarNoAccess", "remindersNoAccess", "noDefaultCalendar", "noDefaultList"]);
-    expect(cases.every((name) => EventStoreFailure.isKind(name))).toBe(true);
-    expect(EventStoreFailure.isKind("toString")).toBe(false);
+    expect(cases.every((name) => EventStoreError.isKind(name))).toBe(true);
+    expect(EventStoreError.isKind("toString")).toBe(false);
   });
 
   /** Contacts requests carry the search and the contact as the helper reads them and wait long
@@ -226,9 +226,9 @@ describe("helper wire contract", () => {
       { method: "contactsAdd", params: sam, timeout },
     ]);
 
-    failure = new HelperFailure("failed", "contactsSearch", "contactsNoAccess");
-    await expect(store.search("sam", 11)).rejects.toEqual(new ContactStoreFailure("contactsNoAccess"));
-    for (const other of [new HelperFailure("failed", "contactsSearch", "contactsSearch needs query and a positive limit"), new HelperFailure("timeout", "contactsSearch")]) {
+    failure = new HelperError("failed", "contactsSearch", "contactsNoAccess");
+    await expect(store.search("sam", 11)).rejects.toEqual(new ContactStoreError("contactsNoAccess"));
+    for (const other of [new HelperError("failed", "contactsSearch", "contactsSearch needs query and a positive limit"), new HelperError("timeout", "contactsSearch")]) {
       failure = other;
       await expect(store.search("sam", 11)).rejects.toBe(other);
     }
@@ -241,7 +241,7 @@ describe("helper wire contract", () => {
     const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
 
     expect(cases).toEqual(["contactsNoAccess"]);
-    expect(cases.every((name) => ContactStoreFailure.isKind(name))).toBe(true);
+    expect(cases.every((name) => ContactStoreError.isKind(name))).toBe(true);
   });
 
   /** Files requests carry the search and the item as the helper reads them, times in milliseconds,
@@ -277,10 +277,10 @@ describe("helper wire contract", () => {
     ]);
 
     for (const kind of ["searchFailed", "openFailed"] as const) {
-      failure = new HelperFailure("failed", "fileOpen", kind);
-      await expect(store.open(item.path, false)).rejects.toEqual(new FileStoreFailure(kind));
+      failure = new HelperError("failed", "fileOpen", kind);
+      await expect(store.open(item.path, false)).rejects.toEqual(new FileStoreError(kind));
     }
-    for (const other of [new HelperFailure("failed", "fileOpen", "fileOpen needs an absolute path and reveal"), new HelperFailure("timeout", "fileOpen")]) {
+    for (const other of [new HelperError("failed", "fileOpen", "fileOpen needs an absolute path and reveal"), new HelperError("timeout", "fileOpen")]) {
       failure = other;
       await expect(store.open(item.path, false)).rejects.toBe(other);
     }
@@ -293,8 +293,8 @@ describe("helper wire contract", () => {
     const cases = [...block.matchAll(/case (\w+)/g)].map((match) => match[1]);
 
     expect(cases).toEqual(["searchFailed", "openFailed"]);
-    expect(cases.every((name) => FileStoreFailure.isKind(name))).toBe(true);
-    expect(FileStoreFailure.isKind("toString")).toBe(false);
+    expect(cases.every((name) => FileStoreError.isKind(name))).toBe(true);
+    expect(FileStoreError.isKind("toString")).toBe(false);
   });
 
   /** The helper's drawn icon reaches the bubble's `<img>` as a PNG data URL; no icon, none. */

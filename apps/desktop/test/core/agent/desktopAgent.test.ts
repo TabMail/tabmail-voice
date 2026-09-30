@@ -4,14 +4,14 @@
 
 import { describe, expect, test } from "vitest";
 import { DesktopAgent } from "../../../src/core/agent/desktopAgent.js";
-import type { LoopTool } from "../../../src/core/agent/tools/loopTool.js";
-import { AgentFailure, type AgentTool, agentTools, EditTool } from "../../../src/core/agent/agentTools.js";
+import type { ConnectorTool } from "../../../src/core/agent/tools/connectorTool.js";
+import { AgentError, type AgentToolId, agentToolIds, EditTool } from "../../../src/core/agent/agentTools.js";
 import { BackendError, CompletionsClient, type ServerToolEvent, type ToolCall } from "../../../src/core/backend/backend.js";
 import { screen } from "../../support/screens.js";
 import { Fixtures, signedIn, StubTransport } from "../../support/support.js";
 
 const request = "make this friendlier";
-const all = agentTools;
+const all = agentToolIds;
 
 function selectionScreen(selected: string) {
   return screen({
@@ -69,14 +69,14 @@ describe("DesktopAgent", () => {
 
   /** The user's name goes with every tool's prompt, empty when none is set, so the backend can tell
    * the user's own messages on screen from other people's; the choice of tool needs none. */
-  test.each(agentTools)("the user's name is sent with every tool's prompt (%s)", (tool) => {
+  test.each(agentToolIds)("the user's name is sent with every tool's prompt (%s)", (tool) => {
     expect(DesktopAgent.toolMessage(tool, request, null, "", "Alex Example").vars.user_name).toBe("Alex Example");
     expect(DesktopAgent.toolMessage(tool, request, null, "", "").vars.user_name).toBe("");
     expect(DesktopAgent.chooseMessage(request, null, "").vars).not.toHaveProperty("user_name");
   });
 
   /** The chat window's conversation goes with the agent's choice and every tool's prompt. */
-  test.each(agentTools)("the conversation is sent with every prompt (%s)", (tool) => {
+  test.each(agentToolIds)("the conversation is sent with every prompt (%s)", (tool) => {
     const conversation = "User: when is the sync?\nTabMail: Thursdays at 10:00.";
     expect(DesktopAgent.chooseMessage(request, null, conversation).vars.conversation).toBe(conversation);
     expect(DesktopAgent.toolMessage(tool, request, null, conversation, "").vars.conversation).toBe(conversation);
@@ -124,7 +124,7 @@ describe("DesktopAgent", () => {
 
   /** A tool switched off in Settings is never offered; the other writing tool does not stand in for
    * it, since its text would land on the selection (or the caret) wrongly. */
-  test.each<[string, AgentTool[], AgentTool[]]>([
+  test.each<[string, AgentToolId[], AgentToolId[]]>([
     ["Ship it.", ["compose", "thunderbird", "answer"], ["thunderbird", "answer"]],
     ["", ["edit", "thunderbird", "answer"], ["thunderbird", "answer"]],
     ["", ["compose", "answer"], ["compose", "answer"]],
@@ -147,14 +147,14 @@ describe("DesktopAgent", () => {
     const { completions, client, account } = setup();
 
     const error = await thrown(DesktopAgent.tool(request, [], null, "", client, account, Fixtures.userId));
-    expect((error as AgentFailure).kind).toBe("noToolEnabled");
-    expect((error as AgentFailure).message).toBe("Turn on an agent tool in Settings.");
+    expect((error as AgentError).kind).toBe("noToolEnabled");
+    expect((error as AgentError).message).toBe("Turn on an agent tool in Settings.");
     expect(completions.requests).toHaveLength(0);
   });
 
   /** The agent chooses among the offered tools, and the backend is told which they are
    * (`available_tools`), with the conversation. */
-  test.each<[string, AgentTool]>([
+  test.each<[string, AgentToolId]>([
     ["thunderbird", "thunderbird"],
     ["edit", "edit"],
     ["answer", "answer"],
@@ -178,7 +178,7 @@ describe("DesktopAgent", () => {
     completions.enqueue(200, Fixtures.reply(reply));
 
     const error = await thrown(DesktopAgent.tool(request, ["edit", "answer"], selectionScreen("Ship it."), "", client, account, Fixtures.userId));
-    expect((error as AgentFailure).kind).toBe("noTool");
+    expect((error as AgentError).kind).toBe("noTool");
   });
 
   /** Only the agent's choice tells the backend which tools there are: a tool's own prompt writes its
@@ -209,7 +209,7 @@ describe("DesktopAgent", () => {
     completions.enqueue(200, Fixtures.reply("  "));
 
     const error = await thrown(DesktopAgent.write("compose", request, null, "", "", client, account, Fixtures.userId));
-    expect((error as AgentFailure).kind).toBe("noText");
+    expect((error as AgentError).kind).toBe("noText");
   });
 
   test("a backend error is reported as itself", async () => {
@@ -256,7 +256,7 @@ describe("the answer's tool loop", () => {
 
   /** The Answer prompt is offered the backend's date tools and every tool that runs on this computer. */
   test("an answer is offered the date tools and this computer's tools", () => {
-    const tool = (name: string): LoopTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
+    const tool = (name: string): ConnectorTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
     expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
     expect(DesktopAgent.answerTools([tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "example_read", "example_create"]);
   });
@@ -265,7 +265,7 @@ describe("the answer's tool loop", () => {
    * the date tools, once however many of its tools there are; one with none of its tools offered
    * (switched off, or none on this computer), or an app with no backend tools, brings nothing. */
   test("an app switched on brings its backend tools", () => {
-    const tool = (name: string, connector: LoopTool["connector"]): LoopTool => ({ name, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
+    const tool = (name: string, connector: ConnectorTool["connector"]): ConnectorTool => ({ name, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
     expect(DesktopAgent.answerTools([tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "example_read", "web_read", "web_open"]);
     expect(DesktopAgent.answerTools([tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "example_read", "example_note"]);
     expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
@@ -392,7 +392,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, Fixtures.reply(" \n"));
 
     const error = await thrown(DesktopAgent.answer("what now", null, "", "", tools, client, account, Fixtures.userId, async () => "", ignoreServerTools));
-    expect((error as AgentFailure).kind).toBe("noText");
+    expect((error as AgentError).kind).toBe("noText");
   });
 
   /** Cancelled before it starts, the answer asks nothing. */
