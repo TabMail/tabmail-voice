@@ -3,12 +3,30 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { AudioRecorder, decibels, level, recordingDuration } from "../src/core/audio.js";
+import { AudioRecorder, decibels, level, normalizePeak, recordingDuration } from "../src/core/audio.js";
 import * as config from "../src/core/config.js";
 import { LevelEnvelope } from "../src/core/levelEnvelope.js";
 import { encodeWAV, wavHeaderSize } from "../src/core/wav.js";
 import { decodeFLAC } from "./flacDecoder.js";
 import { tone } from "./support.js";
+
+/** The 16-bit samples of little-endian PCM. */
+function samplesOf(pcm: Uint8Array): number[] {
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  return Array.from({ length: pcm.length / 2 }, (_, index) => view.getInt16(index * 2, true));
+}
+
+function peakOf(pcm: Uint8Array): number {
+  return Math.max(...samplesOf(pcm).map(Math.abs));
+}
+
+/** Float samples as the recorder converts them to 16-bit. */
+function asRecorded(samples: Float32Array): number[] {
+  return Array.from(samples, (sample) => Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7fff) || 0); // no −0
+}
+
+/** The loudest sample `normalizePeak` aims for: −3 dBFS. */
+const targetPeak = Math.round(0x7fff * 10 ** (config.normalizedPeakDecibels / 20));
 
 function feed(recorder: AudioRecorder, samples: Float32Array, chunk = config.audioChunkFrames): void {
   for (let offset = 0; offset < samples.length; offset += chunk) recorder.append(samples.subarray(offset, offset + chunk));
@@ -64,7 +82,7 @@ describe("AudioRecorder", () => {
     expect(recording.pcm.length).toBe(16_000 * 2 * backendMaxSeconds);
   });
 
-  /** The upload is FLAC, encoded while recording: it must be exactly the recorded samples. */
+  /** The upload is FLAC: it must be exactly the recording's samples. */
   test("FLAC-encodes exactly what it records", () => {
     const recorder = new AudioRecorder();
     feed(recorder, tone(1.3));
@@ -87,6 +105,59 @@ describe("AudioRecorder", () => {
     expect(recording.pcm.length).toBe(0);
     expect(decodeFLAC(recording.flac).totalSamples).toBe(0);
     expect(recording.peakLevel).toBe(0);
+  });
+
+  /** Quiet microphones: the upload's loudest sample sits at −3 dBFS whatever the microphone gave,
+   * the whole recording scaled by one gain so its shape is unchanged. */
+  test("uploads a quiet recording peak-normalised to −3 dBFS", () => {
+    const quiet = tone(1, 0.05); // −26 dBFS
+    const recorder = new AudioRecorder();
+    feed(recorder, quiet);
+    const recording = recorder.finish();
+
+    expect(peakOf(decodeFLAC(recording.flac).pcm)).toBe(targetPeak);
+    expect(decodeFLAC(recording.flac).pcm).toEqual(recording.pcm);
+    expect(20 * Math.log10(recording.gain)).toBeCloseTo(-3 + 26, 0);
+    const raw = asRecorded(quiet);
+    samplesOf(recording.pcm).forEach((sample, index) => expect(Math.abs(sample - (raw[index] ?? 0) * recording.gain)).toBeLessThanOrEqual(0.5));
+  });
+
+  /** Near-silence is raised by at most 30 dB, not into full-scale noise. */
+  test("boosts by at most the maximum gain", () => {
+    const recorder = new AudioRecorder();
+    feed(recorder, tone(1, 0.001)); // −60 dBFS
+    const recording = recorder.finish();
+
+    expect(20 * Math.log10(recording.gain)).toBeCloseTo(config.maxNormalizationGainDecibels, 6);
+    expect(peakOf(recording.pcm)).toBeLessThan(targetPeak / 10);
+    expect(decodeFLAC(recording.flac).pcm).toEqual(recording.pcm);
+  });
+
+  /** A recording already louder than −3 dBFS goes up as recorded: never cut. */
+  test("leaves a loud recording as recorded", () => {
+    const loud = tone(0.5, 0.9);
+    const recorder = new AudioRecorder();
+    feed(recorder, loud);
+    const recording = recorder.finish();
+
+    expect(recording.gain).toBe(1);
+    expect(samplesOf(recording.pcm)).toEqual(asRecorded(loud));
+  });
+
+  test("leaves digital silence silent", () => {
+    const recorder = new AudioRecorder();
+    recorder.append(new Float32Array(1_000));
+    const recording = recorder.finish();
+    expect(recording.gain).toBe(1);
+    expect(samplesOf(recording.pcm).every((sample) => sample === 0)).toBe(true);
+  });
+
+  /** Negative and positive samples scale alike (the loudest may be either sign). */
+  test("normalizePeak scales both signs by one gain", () => {
+    const samples = new Int16Array([0, 1_000, -2_000, 500]);
+    const gain = normalizePeak(samples);
+    expect(gain).toBeCloseTo(targetPeak / 2_000, 2);
+    expect(Array.from(samples)).toEqual([0, Math.round(1_000 * gain), -targetPeak, Math.round(500 * gain)]);
   });
 
   test("keeps the loudest chunk's level", () => {

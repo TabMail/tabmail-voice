@@ -4,10 +4,9 @@
 
 import * as config from "./config.js";
 
-/** Encodes 16-bit mono samples as FLAC (RFC 9639) while they are recorded: lossless, about half the
- * size of WAV for speech, so the upload is shorter. Each full frame is encoded as soon as its samples
- * are in, so `finish` has only the last, partial frame left (about a millisecond's work, where the
- * whole recording takes about 1.4 ms per second of audio). Each frame's subframe is the smallest of
+/** Encodes 16-bit mono samples as FLAC (RFC 9639): lossless, about half the size of WAV for speech,
+ * so the upload is shorter. Each full frame is encoded as soon as its samples are appended; the whole
+ * recording takes about 1.4 ms per second of audio. Each frame's subframe is the smallest of
  * constant (digital silence), verbatim and the fixed predictors of order 0–4 with Rice-coded
  * residuals. */
 export class FLACEncoder {

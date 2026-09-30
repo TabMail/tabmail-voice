@@ -21,13 +21,23 @@ export const doubleTapWindow = 400;
 /** Recording format: 16 kHz mono 16-bit PCM (~32 KB per second of speech), uploaded as FLAC at about
  * half that. The microphone is captured at this rate directly. */
 export const recordingSampleRate = 16_000;
-/** The upload's FLAC encoding (`encodeFLAC`): samples per frame, and the most Rice partitions a
+/** The upload's FLAC encoding (`FLACEncoder`): samples per frame, and the most Rice partitions a
  * frame's residual is split into (2^order), as libFLAC's defaults. */
 export const flacBlockSize = 4_096;
 export const flacMaxPartitionOrder = 6;
 /** Frames per microphone chunk sent from the audio window (~85 ms at 16 kHz), the rate the level
  * envelope below is tuned for (~12 chunks a second). */
 export const audioChunkFrames = 1_365;
+/** Before upload the recording is scaled so its loudest sample sits this far below full scale (peak
+ * normalisation, `normalizePeak`), leaving headroom so nothing clips. Quiet microphones deliver
+ * speech peaking 20–30 dB below full scale. Measured 2026-09-29 (`Scripts/stt-compare`, 10
+ * recordings peaking at −22 to −29 dBFS, 3 runs each): at −3 dBFS the backend's model
+ * (MAI-Transcribe-2) made 9.5 % word errors against 11.0 % unscaled, and a Whisper Large V3 host
+ * that dropped most of the quiet speech (79 %) came down to 19 %. */
+export const normalizedPeakDecibels = -3;
+/** The most `normalizePeak` boosts (dB), so a recording of near-silence isn't raised into loud
+ * noise. The quietest measured recording needed +26 dB. It never cuts a louder recording. */
+export const maxNormalizationGainDecibels = 30;
 /** Fixed loudness → 0…1 scale for the recording's peak-level diagnostics. */
 export const levelQuietDecibels = -50;
 export const levelLoudDecibels = -30;
