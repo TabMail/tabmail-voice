@@ -877,7 +877,8 @@ function BubbleTooltip({ name, description, bubble, canvas }: { name: string; de
 }
 
 /** The tip under the pill, or over it (`tipGoesAbove`), fading in and out; the last one stays while
- * it fades. */
+ * it fades. Hidden until measured: it is placed by its size, so unmeasured it would show for a frame
+ * away from the pill. */
 function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTip | null; hotkey: DictationHotkey; pill: Rect; bubbles: Rect[]; opensUpward: boolean }) {
   const [shown, setShown] = useState<DictationTip | null>(tip);
   useEffect(() => {
@@ -891,7 +892,7 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
     <div
       ref={ref}
       className="centred"
-      style={{ left: centre.x, top: centre.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponse}s ease-out` }}
+      style={{ left: centre.x, top: centre.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponse}s ease-out`, visibility: size.width > 0 ? "visible" : "hidden" }}
     >
       <TipTooltip tip={shown} hotkey={hotkey} pointsDown={above} />
     </div>
@@ -899,12 +900,13 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
 }
 
 /** A tip in a tooltip by the listening pill, under it or over it (`tipGoesAbove`): a dark rounded
- * box with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. */
+ * box with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. Hidden until
+ * measured, as its outline is drawn to its size: never its words for a frame without their box. */
 function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: DictationHotkey; pointsDown: boolean }) {
   const [ref, size] = useSize<HTMLDivElement>();
   const lines = tipLines(tip, hotkey);
   return (
-    <div ref={ref} className="tip" style={pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }}>
+    <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
       <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${grey(0, config.tipShadowOpacity)})` }}>
         {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
         <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={grey(config.tipFillWhite, config.tipFillOpacity)} stroke={grey(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />

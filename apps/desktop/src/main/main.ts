@@ -29,7 +29,7 @@ import { type DictationHotkey, isHotkeyAction } from "../core/hotkey.js";
 import { liveTransport } from "../core/http.js";
 import { configureLog, errorName, log } from "../core/log.js";
 import type { MenuState } from "../core/menuModel.js";
-import { historyWindowOrigin, type Point, type Rect } from "../core/overlayGeometry.js";
+import { historyWindowFrame, type Point, type Rect } from "../core/overlayGeometry.js";
 import { PasteHistory } from "../core/pasteHistory.js";
 import { PermissionsModel } from "../core/permissions.js";
 import { ScreenContextProbe } from "../core/screenContext.js";
@@ -159,8 +159,7 @@ function launch(): void {
     settings: () => settings.dictation(account.email),
     account,
     tips: new TipBook(store),
-    captureTarget: (session) => mac.captureTarget(session),
-    paste: (text, session, signal) => mac.paste(text, session, signal),
+    paste: (text, signal) => mac.paste(text, signal),
     copy: (text) => copyText(text),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
@@ -377,23 +376,24 @@ function launch(): void {
     );
   }
 
-  /** Where the paste history opened: by the mouse pointer then, on its display. */
-  let historyPlace: { pointer: Point; workArea: Rect } | null = null;
+  /** Where the paste history opened: by the pill of the hold that asked for it. */
+  let historyPlace: { pill: Point; workArea: Rect; bubblesUnder: boolean } | null = null;
+  /** The height its list last measured: an open one moved keeps it, never flashing another. */
+  let historyHeight: number = config.pasteHistoryMaxHeight;
 
-  /** The paste history (ADR-DESK-043), by the mouse pointer, at its tallest until its list measures
-   * itself (`historyHeight`). */
+  /** The paste history (ADR-DESK-043), where the chat window opens (`historyWindowFrame`), shown once
+   * its list has measured itself (`historyHeight`, `Windows.fitHistory`). */
   function showHistory(): void {
-    const pointer = screen.getCursorScreenPoint();
-    historyPlace = { pointer, workArea: screen.getDisplayNearestPoint(pointer).workArea };
-    windows.showHistory(historyBounds(config.pasteHistoryMaxHeight), () => windows.close("history"));
-    // An open window was just made its tallest: its page measures its list again.
+    historyPlace = overlay.pillPlace;
+    windows.showHistory(historyBounds(historyHeight), () => windows.close("history"));
+    // Its page measures its list again, which may have changed.
     windows.push("history");
   }
 
   function historyBounds(height: number): Rect {
     const size = { width: config.pasteHistoryWindowWidth, height: Math.round(Math.min(height, config.pasteHistoryMaxHeight)) };
-    const origin = historyPlace ? historyWindowOrigin(historyPlace.pointer, size, historyPlace.workArea) : { x: 0, y: 0 };
-    return { x: Math.round(origin.x), y: Math.round(origin.y), ...size };
+    const frame = historyPlace ? historyWindowFrame(historyPlace.pill, size, historyPlace.workArea, historyPlace.bubblesUnder) : { x: 0, y: 0, ...size };
+    return { x: Math.round(frame.x), y: Math.round(frame.y), width: frame.width, height: Math.round(frame.height) };
   }
 
   /** Puts `text` on the clipboard (a promise since Electron 44), logging a write that fails. */
@@ -678,7 +678,8 @@ function launch(): void {
         closeHistory();
         return;
       case "historyHeight":
-        windows.setBounds("history", historyBounds(command.height));
+        historyHeight = command.height;
+        windows.fitHistory(historyBounds(command.height));
         return;
     }
   }
