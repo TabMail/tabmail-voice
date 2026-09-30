@@ -397,6 +397,7 @@ afterEach(() => {
   app.trayState = null;
   app.packaged = false;
   app.version = "0.0.0";
+  app.credential = null;
   app.autoUpdater = null;
   app.squirrel = null;
   app.trayUpdates = 0;
@@ -846,6 +847,34 @@ describe("main process wiring", () => {
     expect(await send({ type: "setUserName", value: " Alex Example" })).toEqual({ error: null });
     for (const name of ["settings", "welcome"] as const) expect(state(name).userName).toBe(" Alex Example");
     expect(app.stored.get("userName")).toBe(" Alex Example");
+  });
+
+  /** A packaged build writes the debug log while debug mode is on for an account allowed it: on at
+   * launch when stored on, off when switched off, off once the account signs out, and off for an
+   * account not allowed it. */
+  test("a packaged build logs while debug mode is on", async () => {
+    const signIn = (email: string) => {
+      app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email } });
+    };
+    app.packaged = true;
+    Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
+    app.stored.set("debugMode", true);
+    signIn("tester@tabmail.ai");
+    await launch("darwin");
+    const { isDebugLogging } = await import("../src/core/log.js");
+    expect(isDebugLogging()).toBe(true);
+
+    expect(await send({ type: "setDebugMode", value: false })).toEqual({ error: null });
+    expect(isDebugLogging()).toBe(false);
+    expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
+    expect(isDebugLogging()).toBe(true);
+    // Signed out, the switch left on logs nothing: no account is allowed it.
+    expect(await send({ type: "signOut" })).toEqual({ error: null });
+    expect(isDebugLogging()).toBe(false);
+
+    signIn("tester@example.com");
+    await launch("darwin");
+    expect((await import("../src/core/log.js")).isDebugLogging()).toBe(false);
   });
 
   /** Settings › General shows the app's own version. */

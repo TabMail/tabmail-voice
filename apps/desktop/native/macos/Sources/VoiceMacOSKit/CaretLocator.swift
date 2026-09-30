@@ -26,7 +26,7 @@ enum CaretLocator {
         }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, HelperConfig.caretLookupTimeout)
-        HelperLog.debug("CaretLocator: app \(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "?"), focused role \(attribute(element, kAXRoleAttribute) as? String ?? "?")")
+        HelperLog.debug("CaretLocator: app \(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "?")")
         let screens = NSScreen.screens.map(\.frame)
         guard let primaryHeight = screens.first?.height else { return nil }
 

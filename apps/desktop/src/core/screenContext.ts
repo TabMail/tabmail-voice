@@ -27,11 +27,11 @@ export interface ScreenContext {
 }
 
 /** Reads the screen context of the frontmost app when a dictation starts, in the background while
- * the user speaks; the dictation's cleanup uses it if it is done in time. Debug builds keep the
- * latest capture in memory for the debug window. Logs sizes and timings; the text goes to the debug
+ * the user speaks; the dictation's cleanup uses it if it is done in time. While debug logging is on
+ * (`isDebugLogging`) the latest capture is kept in memory for the debug window. Logs sizes and timings; the text goes to the debug
  * log file only (ADR-DESK-015). */
 export class ScreenContextProbe {
-  /** Debug builds only: the latest capture, for the debug window. */
+  /** While debug logging is on: the latest capture, for the debug window (debug builds). */
   lastContext: ScreenContext | null = null;
   private generation = 0;
 

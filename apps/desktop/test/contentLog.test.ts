@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from "vitest";
 import { BackendLog, CompletionsClient, type CompletionsMessage, TranscriptionClient } from "../src/core/backend.js";
-import { block, configureLog, log, type LogLevel } from "../src/core/log.js";
+import { block, configureLog, isDebugLogging, log, type LogLevel, setDebugMode } from "../src/core/log.js";
 import { type ScreenContext, ScreenContextProbe } from "../src/core/screenContext.js";
 import { charCount } from "../src/core/text.js";
 import { Fixtures, loggedContent, StubTransport } from "./support.js";
@@ -35,7 +35,7 @@ afterEach(() => configureLog({ isDebugBuild: false, sinks: { error: () => {} } }
  * in full, never an access token or audio. */
 describe("content log", () => {
   /** The whole point: in a debug build an entry reaches the log file, as a named block. */
-  test("content is written to the log file in debug builds only", () => {
+  test("content is written to the log file in debug builds, and not in a packaged build with debug mode off", () => {
     const lines: [LogLevel, string][] = [];
     const sinks = { file: (level: LogLevel, text: string) => lines.push([level, text]), error: () => {} };
 
@@ -46,6 +46,33 @@ describe("content log", () => {
     log.content("Transcript (dictation)", "line one\nline two");
 
     expect(lines).toEqual([["CONTENT", "Transcript (dictation) (17 chars) >>>\nline one\nline two\n<<< Transcript (dictation)"]]);
+  });
+
+  /** A packaged build writes the whole debug log (debug lines, content, errors) while debug mode is
+   * on, and nothing while it is off; a new configuration starts with it off. */
+  test("a packaged build logs while debug mode is on", () => {
+    const lines: [LogLevel, string][] = [];
+    const sinks = { file: (level: LogLevel, text: string) => lines.push([level, text]), error: () => {} };
+    configureLog({ isDebugBuild: false, sinks });
+
+    log.debug("off");
+    setDebugMode(true);
+    expect(isDebugLogging()).toBe(true);
+    log.debug("on");
+    log.content("Transcript (dictation)", "said");
+    log.error("failed");
+    setDebugMode(false);
+    expect(isDebugLogging()).toBe(false);
+    log.debug("off again");
+    setDebugMode(true);
+    configureLog({ isDebugBuild: false, sinks });
+    log.debug("reconfigured");
+
+    expect(lines).toEqual([
+      ["debug", "on"],
+      ["CONTENT", "Transcript (dictation) (4 chars) >>>\nsaid\n<<< Transcript (dictation)"],
+      ["ERROR", "failed"],
+    ]);
   });
 
   /** Errors reach production observability in every build, and the file only in debug builds. */

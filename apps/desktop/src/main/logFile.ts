@@ -7,7 +7,8 @@ import { dirname, extname } from "node:path";
 import type { LogLevel } from "../core/log.js";
 
 /**
- * Debug builds keep their log in a file, so a session can be read after the fact: on macOS
+ * Debug builds, and a packaged build while debug mode is on (`isDebugLogging`), keep their log in a
+ * file, so a session can be read after the fact: on macOS
  * `~/Library/Logs/TabMail Voice/TabMail Voice.log`. Past `maxBytes` it becomes `TabMail Voice.1.log`
  * and a new one starts. Lines are written in order, off the caller's path.
  */

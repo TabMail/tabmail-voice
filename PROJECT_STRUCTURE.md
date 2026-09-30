@@ -27,7 +27,7 @@ apps/desktop/
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests
-│   ├── Sources/VoiceHelperSupport/  The line protocol (requests, replies, events, debug-gated stderr)
+│   ├── Sources/VoiceHelperSupport/  The line protocol (requests, replies, events, stderr log lines)
 │   ├── Sources/VoiceHotkeyKit/      Event tap + push-to-talk gesture (`voice-hotkey`)
 │   └── Sources/VoiceMacOSKit/       Paste/restore, screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird, the microphone, Calendar and Reminders (`EventStore.swift`), Contacts (`ContactStore.swift`), Spotlight search and opening files (`FileSearch.swift`) (`voice-macos`)
 ├── src/

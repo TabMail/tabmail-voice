@@ -655,6 +655,12 @@ Never logged: audio (the transcription request shows its size in its place) and 
   controller's paths in `DictationControllerTests`), which pins that the token and the audio stay
   out; the task-local `LogFile.destination` lets a test read an entry back from a file of its own.
 - Builds from source are debug builds, so they keep this log too (README).
+- *Amended 2026-09-30 (owner): a packaged (release) build writes the same log, content included,
+  while debug mode is on, so a problem in the release build can be read back. Debug mode is offered
+  only to the accounts `DebugAccess` allows, so no other user's build writes it. The log follows the
+  switch and the account signed in as they change (`setDebugMode` in `core/log.ts`). The helpers now
+  always send their `debug` lines and the app keeps them only while it logs. Keeping the last
+  recording (audio) stays debug builds only.*
 
 ## ADR-DESK-016: Lay the screen read out as the screen shows it
 
@@ -1489,8 +1495,8 @@ start, tap to stop. The study and the phase plan are kept outside this repositor
   its tests were ported with it.
 - What needs the OS is a **native helper executable** per role, spawned by the main process and
   spoken to over stdin/stdout, one JSON object a line (`{id, method, params}` → `{id, result}` or
-  `{id, error}`; events as `{event, …}`; stderr lines `debug …`/`error …`, the debug ones only
-  with `TABMAIL_VOICE_DEBUG=1`). A helper exits when its stdin closes and is restarted after
+  `{id, error}`; events as `{event, …}`; stderr lines `debug …`/`error …`, the debug ones kept only
+  while the app writes its debug log). A helper exits when its stdin closes and is restarted after
   `helperRestartDelay` if it dies (`HelperClient`). On macOS the helpers are the Swift app's own code
   as a SwiftPM package (`native/macos`): `voice-hotkey` owns the keyboard event tap (it must decide
   within the tap whether Space or Escape is kept from the app, so the gesture runs there) and
