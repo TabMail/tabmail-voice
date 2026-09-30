@@ -34,12 +34,16 @@ function overlayWindow(): BrowserWindow {
       visible = false;
     },
     setBounds() {},
+    setOpacity() {},
   } as unknown as BrowserWindow;
 }
 
 /** An overlay window that keeps its bounds and whether it lets the mouse through. */
-function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean } {
+function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[] } {
   let visible = false;
+  let opacity = 1;
+  /** Every frame the window took while it showed at full opacity. */
+  const opaqueFrames: Rect[] = [];
   let ignoresMouse = true;
   let forwardsMouse = true;
   let bounds: Rect = { x: 0, y: 0, ...config.overlayCanvasSize };
@@ -53,6 +57,11 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
     },
     setBounds: (rect: Rect) => {
       bounds = rect;
+      if (opacity === 1) opaqueFrames.push(rect);
+    },
+    setOpacity: (value: number) => {
+      if (value === 1 && opacity !== 1) opaqueFrames.push(bounds);
+      opacity = value;
     },
     getBounds: () => bounds,
     setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
@@ -60,7 +69,7 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
       forwardsMouse = options?.forward === true;
     },
   } as unknown as BrowserWindow;
-  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible };
+  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames };
 }
 
 describe("OverlayWindowController", () => {
@@ -129,6 +138,72 @@ describe("OverlayWindowController", () => {
     const y = placement.below ? bounds.y + margin + overBubbles : bounds.y + bounds.height - margin - config.chatStripHeight + overBubbles;
     return { x: bounds.x + placement.pillX, y };
   }
+
+  /** Opening the chat window moves and grows the overlay before its page has laid the chat out: it
+   * stays transparent until the page has measured the chat, so the pill never shows a frame away from
+   * where it is (red-verified); closed before that, it is not left transparent. */
+  test("the chat window shows only once measured", async () => {
+    const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => caret);
+    const placed: unknown[] = [];
+    controller.onPlace = () => placed.push(controller.chatPlacement);
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(placed).toHaveLength(1));
+    const canvas = overlay.bounds();
+
+    controller.update({ kind: "running", tool: "answer" }, true);
+    expect(overlay.opacity()).toBe(0);
+    expect(overlay.opaqueFrames().filter((frame) => frame.width !== canvas.width)).toEqual([]);
+    controller.fitChat(120);
+    expect(overlay.opacity()).toBe(1);
+    const fitted = overlay.bounds();
+    controller.fitChat(160);
+    expect(overlay.opaqueFrames().filter((frame) => frame.width !== canvas.width)).toEqual([fitted, overlay.bounds()]);
+
+    controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    controller.update({ kind: "running", tool: "answer" }, true);
+    expect(overlay.opacity()).toBe(0);
+    controller.update({ kind: "idle" }, false);
+    expect(overlay.opacity()).toBe(1);
+  });
+
+  /** Where the pill of the hold under way is, for the paste history to open by (ADR-DESK-043): at
+   * the caret, as placed; the pointer's once the hold is over, or before its caret is found. */
+  test("the pill's place is the caret's while a hold shows, else the pointer's", async () => {
+    const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => caret);
+    const placed: unknown[] = [];
+    controller.onPlace = () => placed.push(controller.chatPlacement);
+    const atPointer = controller.pillPlace;
+    expect(atPointer.workArea).toEqual(workArea);
+
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(placed).toHaveLength(1));
+    const pill = pillOnScreen(overlay.bounds());
+    const place = controller.pillPlace;
+    // The window's origin is rounded: within a point.
+    expect(Math.abs(place.pill.x - pill.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(place.pill.y - pill.y)).toBeLessThanOrEqual(1);
+    expect(place.pill).not.toEqual(atPointer.pill);
+    expect(place.bubblesUnder).toBe(true);
+
+    controller.update({ kind: "idle" });
+    expect(controller.pillPlace).toEqual(atPointer);
+
+    // By the bottom of the screen a row of bubbles has no room under the pill: they go over it, and
+    // the place says so, for the paste history to open where the chat would (red-verified).
+    caret.y = workArea.y + workArea.height - 20;
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(placed).toHaveLength(2));
+    expect(controller.pillPlace.bubblesUnder).toBe(false);
+  });
 
   /** The overlay takes the mouse, as the chat window, opened over the pill at the caret the request
    * was spoken over, only while the chat is open; the pill stays where it was as it opens and as it

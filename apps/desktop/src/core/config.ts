@@ -80,7 +80,7 @@ export const clipboardRestoreDelay = 500;
  * copied when they could not paste, the newest first, at most this many. In memory only, for the
  * app's life: no user content is saved. */
 export const pasteHistoryLimit = 20;
-/** The paste history window, opened at the mouse pointer: this wide, as tall as its entries up to
+/** The paste history window, opened where the chat window does (by the pill): this wide, as tall as its entries up to
  * `pasteHistoryMaxHeight`, then it scrolls; each entry shows at most `pasteHistoryEntryLines` lines
  * (the whole text is copied). */
 export const pasteHistoryWindowWidth = 380;
@@ -88,8 +88,6 @@ export const pasteHistoryMaxHeight = 440;
 export const pasteHistoryEntryLines = 3;
 /** The window's padding and title, over its list: the list scrolls within the rest. */
 export const pasteHistoryChromeHeight = 44;
-/** Clear of the mouse pointer, the window's corner. */
-export const pasteHistoryPointerGap = 8;
 
 // MARK: Screen context
 

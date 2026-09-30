@@ -29,7 +29,7 @@ apps/desktop/
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests
 │   ├── Sources/VoiceHelperSupport/  The line protocol (requests, replies, events, stderr log lines)
 │   ├── Sources/VoiceHotkeyKit/      Event tap + push-to-talk gesture (`voice-hotkey`)
-│   └── Sources/VoiceMacOSKit/       Paste/restore (at the field and caret kept at key-down, `InsertionTarget.swift`), screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird, the microphone, Calendar and Reminders (`EventStore.swift`), Contacts (`ContactStore.swift`), Spotlight search and opening files (`FileSearch.swift`) (`voice-macos`)
+│   └── Sources/VoiceMacOSKit/       Paste/restore, screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird, the microphone, Calendar and Reminders (`EventStore.swift`), Contacts (`ContactStore.swift`), Spotlight search and opening files (`FileSearch.swift`) (`voice-macos`)
 ├── src/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
 │   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
@@ -66,8 +66,8 @@ process, which hands it to `DictationController` (`src/core/dictationController.
 1. **start** (key-down; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
    The microphone starts (`SessionAudioCapture` → `voice-macos`'s `MicrophoneCapture`, its engine
    prepared ahead) and streams samples into `AudioRecorder`; `voice-macos` finds the caret; the
-   keyboard's language is read once, for the overlay's badge and the transcription request; `voice-macos`
-   keeps the app in front, its focused field and caret (`captureTarget`, ADR-DESK-042). After
+   keyboard's language is read once, for the overlay's badge and the transcription request; the app in
+   front is kept (`targetApp`), the only app the text may be pasted into (ADR-DESK-042). After
    `minimumHoldDuration` the phase becomes `listening` and the overlay appears at the caret (swirl
    until audio arrives, then the waveform pill). Releasing earlier discards everything unseen.
 2. **finish**: the mic keeps recording `releaseTailDuration`, then stops. No audio, or an empty
@@ -75,10 +75,10 @@ process, which hands it to `DictationController` (`src/core/dictationController.
    `TranscriptionClient` (one forced-refresh retry on 401) with the cleanup's variables: the screen
    context read at key-down (`ScreenContextProbe`, waited for up to `contextWait`) and the
    dictionary. The backend transcribes it and runs the cleanup prompt in the same request, under its
-   own deadline (backend ADR-027), and `voice-macos` puts the kept field and caret back and pastes the
-   cleaned text there, restoring the clipboard (`TextInserter`); with another app in front, or a caret
-   that won't go back, it pastes nothing and the text is left on the clipboard, with a note at the
-   mouse pointer (phase `copied`). Either way the text joins the paste history. If the cleanup failed for any reason, the transcript
+   own deadline (backend ADR-027), and `voice-macos` pastes the cleaned text into the focused field,
+   restoring the clipboard (`TextInserter`); with another app in front than at key-down
+   (`focusChanged`), nothing is pasted and the text is left on the clipboard, with a note at the mouse
+   pointer (phase `copied`). Either way the text joins the paste history. If the cleanup failed for any reason, the transcript
    is pasted as heard (`DictationCleanup`).
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
@@ -88,7 +88,7 @@ A `generation` counter makes callbacks from a superseded dictation no-ops.
 **Hands-free** (a tap, then a press within `doubleTapWindow`; ADR-DESK-021): the overlay shows at
 once and the dictation goes on without the key until the hotkey is tapped again (finish) or Escape
 (cancel); Space still switches the mode. A third press within `doubleTapWindow` (a triple tap)
-opens the paste history by the mouse pointer instead (ADR-DESK-043). **Tips** (`DictationTip`, under the listening pill): the Space
+opens the paste history instead, where the chat window opens, by the pill (ADR-DESK-043). **Tips** (`DictationTip`, under the listening pill): the Space
 tip as a hold starts listening, the double-tap tip once a hold passes 20 s; each shows until learned
 or shown its maximum number of times (`TipBook`, kept in the settings file). The hands-free tip ("tap the hotkey to
 finish, or Escape to cancel") shows once the second press is released as a tap and stays up while

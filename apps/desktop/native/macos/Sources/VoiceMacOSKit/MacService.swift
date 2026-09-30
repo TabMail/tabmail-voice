@@ -14,12 +14,8 @@ import VoiceHelperSupport
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
 /// - `focusedFieldValue {pid, maxLength}` → `{value}`: the text of the app's focused field, null for
 ///   none, a password field, or one longer than `maxLength` UTF-16 code units (`FocusedField`).
-/// - `captureTarget {session}` → `{}`: keeps the frontmost app's focused field and its caret for the
-///   dictation `session` (`InsertionTarget`), replacing any older session's.
-/// - `insert {text, restoreDelay, session?}` → `{outcome}`: pastes `text` into the focused field, then
-///   restores the clipboard after `restoreDelay` seconds; `outcome` is `pasted`. With `session`, first
-///   puts back that dictation's field and caret, and pastes nothing if it can't: `outcome` is then
-///   `appChanged` or `caretMoved` (ADR-DESK-042).
+/// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
+///   clipboard after `restoreDelay` seconds.
 /// - `keyboardLanguage` → `{code}`: the active keyboard input source's language, or null.
 /// - `fullUserName` → `{name}`: the user account's full name, empty when it has none.
 /// - `globeRead` → `{value}` (null when this macOS lacks the calls); `globeUpdate {value}` → `{}`.
@@ -54,8 +50,6 @@ import VoiceHelperSupport
 public enum MacService {
     static let microphoneChunkEvent = "microphoneChunk"
     static let microphoneLostEvent = "microphoneLost"
-    /// `insert`'s outcome when it pasted.
-    static let pastedOutcome = "pasted"
 
     /// A chunk event's fields: its session, and its samples as base64 of little-endian 32-bit floats.
     static func microphoneChunk(session: Int, samples: [Float]) -> [String: JSON] {
@@ -74,17 +68,13 @@ public enum MacService {
     }
 
     /// `eventStore` and `contactStore` are the user's calendars and contacts, `fileSearch` Spotlight
-    /// and `fileOpener` the Finder, `restore` puts a dictation's field and caret back and `paste`
-    /// pastes (text, clipboard restore delay), or a test's stand-ins.
+    /// and `fileOpener` the Finder, or a test's stand-ins.
     @MainActor
     static func register(
         on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore,
-        fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace,
-        restore: @escaping @Sendable (InsertionTargets, Int) async -> InsertionOutcome = restoreTarget,
-        paste: @escaping @Sendable (String, Duration) async -> Void = { text, delay in await TextInserter(restoreDelay: delay).insert(text) }
+        fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace
     ) -> AnyObject {
         let activator = AccessibilityActivator()
-        let targets = InsertionTargets()
         // Off the render thread: encoding and writing a chunk must never hold up the audio.
         let chunkQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChunks", qos: .userInitiated)
         let microphone = MicrophoneCapture(
@@ -126,31 +116,13 @@ public enum MacService {
             }
             return await Task.detached { ["value": FocusedField.value(inApp: pid, maxLength: maxLength).map(JSON.string) ?? .null] }.value
         }
-        channel.on("captureTarget") { params in
-            guard let session = params["session"]?.integer else { throw HelperError("captureTarget needs session") }
-            guard let pid = await MainActor.run(body: { NSWorkspace.shared.frontmostApplication?.processIdentifier }) else {
-                return [:]
-            }
-            // Blocking Accessibility calls: off the main thread.
-            let captured = await Task.detached {
-                InsertionTargets.Captured(target: .capture(inApp: pid, access: AXTextFieldAccess()))
-            }.value
-            await MainActor.run { targets.keep(captured, session: session) }
-            HelperLog.debug("captureTarget: app \(pid), field \(captured.target.element != nil), caret \(captured.target.selection != nil)")
-            return [:]
-        }
         channel.on("insert") { params in
             guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,
                   let milliseconds = Int(exactly: (delay * 1000).rounded()), milliseconds >= 0 else {
                 throw HelperError("insert needs text and restoreDelay")
             }
-            if params["session"] != nil {
-                guard let session = params["session"]?.integer else { throw HelperError("insert needs a whole-number session") }
-                let outcome = await restore(targets, session)
-                guard outcome == .inPlace else { return ["outcome": .string(outcome.rawValue)] }
-            }
-            await paste(text, .milliseconds(milliseconds))
-            return ["outcome": .string(pastedOutcome)]
+            await TextInserter(restoreDelay: .milliseconds(milliseconds)).insert(text)
+            return [:]
         }
         channel.on("keyboardLanguage") { _ in
             await MainActor.run { ["code": KeyboardLanguage.current().map(JSON.string) ?? .null] }
@@ -294,19 +266,6 @@ public enum MacService {
             return [:]
         }
         return [activator, microphone, eventStore, contactStore] as NSArray
-    }
-
-    /// Puts back the field and caret captured for `session`, with the app in front now.
-    static func restoreTarget(_ targets: InsertionTargets, session: Int) async -> InsertionOutcome {
-        let (captured, frontmost) = await MainActor.run {
-            (targets.target(session: session), NSWorkspace.shared.frontmostApplication?.processIdentifier)
-        }
-        guard let captured else {
-            HelperLog.debug("insert: no target captured for session \(session)")
-            return .caretMoved
-        }
-        // Blocking Accessibility calls: off the main thread.
-        return await Task.detached { captured.target.restore(frontmost: frontmost, access: AXTextFieldAccess()) }.value
     }
 
     private static func bundleIdentifier(_ params: JSON) throws -> String {

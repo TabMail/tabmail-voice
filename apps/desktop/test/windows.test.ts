@@ -32,6 +32,9 @@ const electron = vi.hoisted(() => {
     focus(): void {
       this.calls.push("focus");
     }
+    isVisible(): boolean {
+      return this.calls.includes("show");
+    }
     show(): void {
       this.calls.push("show");
     }
@@ -84,9 +87,10 @@ function settingsWindow(platform: NodeJS.Platform): Record<string, unknown> | un
 
 describe("Windows", () => {
   /** The paste history (ADR-DESK-043): a frameless panel over every other window, shown with the
-   * focus (the list takes clicks and Escape), closed by the caller when it loses it; a second triple
-   * tap moves the open one to the new place and focuses it, rather than opening another. */
-  test("the paste history opens focused where asked, and a second opening moves it", () => {
+   * focus (the list takes clicks and Escape) only once its list has measured itself, at that height,
+   * never first at another; closed by the caller when it loses it; a second triple tap moves the open
+   * one to the new place and focuses it, rather than opening another. */
+  test("the paste history shows focused once measured, and a second opening moves it", () => {
     const windows = new Windows(() => null as never);
     let blurs = 0;
     const first = { x: 10, y: 20, width: config.pasteHistoryWindowWidth, height: 200 };
@@ -96,7 +100,11 @@ describe("Windows", () => {
     if (!window) throw new Error("no window");
     expect(window.calls).toEqual([]);
     window.emit("ready-to-show");
-    expect(window.calls).toEqual(["show"]);
+    expect(window.calls).toEqual([]);
+    expect(electron.app.focuses).toEqual([]);
+    const measured = { ...first, height: 120 };
+    windows.fitHistory(measured);
+    expect(window.calls).toEqual([measured, "show"]);
     expect(electron.app.focuses).toEqual([{ steal: true }]);
     window.emit("blur");
     expect(blurs).toBe(1);
@@ -104,11 +112,13 @@ describe("Windows", () => {
     const second = { ...first, x: 300 };
     windows.showHistory(second, () => (blurs += 1));
     expect(electron.BrowserWindow.made).toHaveLength(1);
-    expect(window.calls.slice(1)).toEqual([second, "focus"]);
+    expect(window.calls.slice(2)).toEqual([second, "focus"]);
     expect(electron.app.focuses).toHaveLength(2);
 
-    windows.setBounds("history", { ...second, height: 120 });
-    expect(window.calls.at(-1)).toEqual({ ...second, height: 120 });
+    // Measured again while shown: resized, not shown again.
+    windows.fitHistory({ ...second, height: 90 });
+    expect(window.calls.slice(4)).toEqual([{ ...second, height: 90 }]);
+    expect(electron.app.focuses).toHaveLength(2);
   });
 
   /** On macOS the sidebar shows the frosted material through a clear window, under inset traffic

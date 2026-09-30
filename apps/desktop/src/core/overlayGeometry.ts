@@ -149,16 +149,16 @@ function chatStripTop(pillTop: number, bubblesUnder: boolean): number {
 
 /** Where the chat window goes: over the pill and its bubbles (owner, 2026-09-28: "the answer box
  * appear above the chat bubble"), or under them (`below`), and how tall it may grow there
- * (`maxHeight`). Over them when there is room there for it at its tallest (`chatMaxHeight`), the pill's
- * top edge at `pillTop`; under them when there is room there instead; otherwise on the side with more
- * room, no taller than that room, so it stays on screen and scrolls. Decided once, as it opens, so it
- * never flips as it grows. */
-export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect): { below: boolean; maxHeight: number } {
+ * (`maxHeight`). Over them when there is room there for it at its tallest (`tallest`, the chat's
+ * `chatMaxHeight` unless the paste history's), the pill's top edge at `pillTop`; under them when there
+ * is room there instead; otherwise on the side with more room, no taller than that room, so it stays
+ * on screen and scrolls. Decided once, as it opens, so it never flips as it grows. */
+export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect, tallest: number = config.chatMaxHeight): { below: boolean; maxHeight: number } {
   const stripTop = chatStripTop(pillTop, bubblesUnder);
   const over = stripTop - config.chatPillGap - workArea.y;
   const under = maxY(workArea) - (stripTop + config.chatStripHeight + config.chatPillGap);
-  const below = over < config.chatMaxHeight && under > over;
-  return { below, maxHeight: Math.min(config.chatMaxHeight, Math.floor(below ? under : over)) };
+  const below = over < tallest && under > over;
+  return { below, maxHeight: Math.min(tallest, Math.floor(below ? under : over)) };
 }
 
 /** The overlay window's frame while the chat window shows, `contentHeight` tall (at most `side`'s
@@ -179,14 +179,16 @@ export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Re
   return { x, y, width, height };
 }
 
-/** Where the paste history window goes (ADR-DESK-043), `size` big: its corner
- * `pasteHistoryPointerGap` right of and under the mouse pointer, or on the pointer's other side where
- * that has no room, and kept within `workArea`. */
-export function historyWindowOrigin(pointer: Point, size: Size, workArea: Rect): Point {
-  const gap = config.pasteHistoryPointerGap;
-  const right = workArea.x + workArea.width - size.width;
-  const bottom = workArea.y + workArea.height - size.height;
-  const x = pointer.x + gap <= right ? pointer.x + gap : pointer.x - gap - size.width;
-  const y = pointer.y + gap <= bottom ? pointer.y + gap : pointer.y - gap - size.height;
-  return { x: Math.min(Math.max(x, workArea.x), right), y: Math.min(Math.max(y, workArea.y), bottom) };
+/** Where the paste history window goes (ADR-DESK-043), `size` big: where the chat window would
+ * (owner, 2026-09-30: "like the answer tool"), `chatPillGap` over the pill and its bubbles, or under
+ * them where there is more room (`chatSide`), no taller than the room on that side; centred on the
+ * pill (its top edge's centre at `pill`), kept inside the work area. The edge on the pill's side stays
+ * put as the list measures itself. */
+export function historyWindowFrame(pill: Point, size: Size, workArea: Rect, bubblesUnder: boolean): Rect {
+  const side = chatSide(pill.y, bubblesUnder, workArea, size.height);
+  const height = Math.min(size.height, side.maxHeight);
+  const stripTop = chatStripTop(pill.y, bubblesUnder);
+  const y = side.below ? stripTop + config.chatStripHeight + config.chatPillGap : stripTop - config.chatPillGap - height;
+  const x = Math.min(Math.max(pill.x - size.width / 2, workArea.x), maxX(workArea) - size.width);
+  return { x, y, width: size.width, height };
 }

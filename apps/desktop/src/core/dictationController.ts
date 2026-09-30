@@ -43,25 +43,17 @@ export type Phase =
   /** Agent mode: the agent chose this tool, which is writing its text. */
   | { kind: "running"; tool: AgentTool }
   | { kind: "failed"; message: string }
-  /** The text could not be pasted where the user spoke (`PasteOutcome`): it is on the clipboard and in
-   * the paste history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
+  /** The user went to another app before the paste: the text is on the clipboard and in the paste
+   * history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
   | { kind: "copied"; message: string };
 
-/** What a paste found (ADR-DESK-042): it pasted where the user spoke, with the caret put back if it
- * had moved; or it pasted nothing, the user being in another app (`appChanged`) or the field or caret
- * not going back (`caretMoved`). */
-export type PasteOutcome = "pasted" | "appChanged" | "caretMoved";
-
 /** What the pointer's message says when the text was copied instead of pasted. */
-export const notPastedMessages: Record<Exclude<PasteOutcome, "pasted">, string> = {
-  appChanged: "Switched apps: copied to clipboard and history",
-  caretMoved: "Cursor moved: copied to clipboard and history",
-};
+export const notPastedMessage = "Switched apps: copied to clipboard and history";
 
 /** A text copied instead of pasted: the dictation ends with its message (`copied`). */
 class NotPasted extends Error {
-  constructor(readonly outcome: Exclude<PasteOutcome, "pasted">) {
-    super(notPastedMessages[outcome]);
+  constructor() {
+    super(notPastedMessage);
     this.name = "NotPasted";
   }
 }
@@ -79,14 +71,10 @@ export interface DictationDependencies {
   settings: () => DictationSettings;
   account: AccountModel;
   tips: TipBook;
-  /** Keeps the field and caret of the app in front, now (key-down), for the dictation `session`
-   * (ADR-DESK-042). */
-  captureTarget: (session: number) => Promise<void>;
-  /** Pastes into the field and caret kept for `session`, put back if they moved, or pastes nothing
-   * and says why; for the dictation whose `signal` it is: one cancelled before the paste reaches the
-   * system pastes nothing. */
-  paste: (text: string, session: number, signal: AbortSignal) => Promise<PasteOutcome>;
-  /** Puts `text` on the clipboard, when it could not be pasted. */
+  /** Pastes into the focused field, for the dictation whose `signal` it is: one cancelled before the
+   * paste reaches the system pastes nothing. */
+  paste: (text: string, signal: AbortSignal) => Promise<void>;
+  /** Puts `text` on the clipboard, when it was not pasted. */
   copy: (text: string) => void;
   /** Every text pasted, or copied instead, for the triple tap's list (ADR-DESK-043). */
   history: PasteHistory;
@@ -180,10 +168,9 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
-  /** The app in front at key-down, whose field the corrections are learned from. */
+  /** The app in front at key-down: the paste goes there only, and the corrections are learned from
+   * its field. */
   private targetApp: Promise<number | null> = Promise.resolve(null);
-  /** The field and caret kept at key-down (`captureTarget`), which the paste waits for. */
-  private targetCapture: Promise<void> = Promise.resolve();
   /** The keyboard's language at key-down, which the badge shows and the transcription is asked in. */
   private languageRead: Promise<string | null> = Promise.resolve(null);
   private emailAppRead: Promise<EmailApp> | null = null;
@@ -374,9 +361,6 @@ export class DictationController extends Observable {
     this.hearing = false;
     this.startedAt = performance.now();
     this.targetApp = this.deps.frontmostApp().catch(() => null);
-    this.targetCapture = this.deps.captureTarget(current).catch((error: unknown) => {
-      log.error(`DictationController: couldn't keep the field: ${errorName(error)}`);
-    });
     this.currentLanguage = null;
     this.languageRead = this.deps.keyboardLanguage().catch(() => null);
     void this.languageRead.then((language) => {
@@ -524,6 +508,7 @@ export class DictationController extends Observable {
     const settings = this.dictationSettings;
     const mode = this.currentMode;
     const signal = this.abort.signal;
+    const targetApp = this.targetApp;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     try {
       const language = await this.languageRead;
@@ -553,10 +538,10 @@ export class DictationController extends Observable {
       }
       if (mode === "dictation") {
         const text = DictationCleanup.pasted(transcript, transcription.cleanedText);
-        await this.paste(text, generation, signal);
+        await this.paste(text, targetApp, signal);
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
-          const pid = await this.targetApp;
+          const pid = await targetApp;
           if (pid !== null && isCurrent()) corrections.watch(pid, text);
         }
       } else {
@@ -597,7 +582,7 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
         await toolImplementations[tool].deliver(text, {
           emailApp: email.app,
-          paste: (text) => this.paste(text, generation, signal),
+          paste: (text) => this.paste(text, targetApp, signal),
           thunderbird: this.deps.thunderbird,
           // Closed, cancelled or superseded meanwhile: the answer goes nowhere.
           showAnswer: (answer) => {
@@ -617,7 +602,6 @@ export class DictationController extends Observable {
       if (!isCurrent()) return;
       this.teardown();
       if (error instanceof NotPasted) {
-        log.debug(`DictationController: not pasted (${error.outcome}); copied instead`);
         this.showMessage({ kind: "copied", message: error.message });
         return;
       }
@@ -760,29 +744,40 @@ export class DictationController extends Observable {
     reply(answer);
   }
 
-  /** Pastes where the dictation `session` started, logging what it pastes (debug builds,
-   * ADR-DESK-015), and keeps the text in the paste history, pasted or not. Where it can't paste, the
-   * text goes on the clipboard instead, and the dictation ends saying so (`NotPasted`). */
-  private readonly paste = async (text: string, session: number, signal: AbortSignal): Promise<void> => {
+  /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015), and keeps
+   * the text in the paste history, pasted or not. Only into `targetApp`, the app in front at
+   * key-down: when the user has gone to another app (`focusChanged`), the text goes on the clipboard
+   * instead, and the dictation ends saying so (`NotPasted`, ADR-DESK-042). */
+  private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
-    await this.targetCapture;
-    const outcome = await this.deps.paste(text, session, signal);
-    // A dictation cancelled while the helper refused its paste wants the text nowhere: not on the
-    // clipboard, whose contents it would replace unseen.
-    if (outcome !== "pasted" && signal.aborted) throw new CancellationError();
+    const changed = await this.focusChanged(targetApp);
+    // Cancelled while the app in front was read: the text is no longer wanted anywhere, not even on
+    // the clipboard, whose contents it would replace unseen.
+    if (signal.aborted) throw new CancellationError();
     this.deps.history.add(text);
-    if (outcome === "pasted") return;
-    this.deps.copy(text);
-    throw new NotPasted(outcome);
+    if (changed) {
+      log.debug("DictationController: another app is in front; copied instead");
+      this.deps.copy(text);
+      throw new NotPasted();
+    }
+    await this.deps.paste(text, signal);
   };
 
-  /** A triple tap: the second tap's hands-free dictation has heard nothing yet, and goes unseen; the
-   * paste history shows. */
+  /** Whether the app in front now is not `targetApp`, the one at key-down (null for none, or one that
+   * couldn't be read). */
+  private async focusChanged(targetApp: Promise<number | null>): Promise<boolean> {
+    const [then, now] = await Promise.all([targetApp, this.deps.frontmostApp().catch(() => null)]);
+    return now !== then;
+  }
+
+  /** A triple tap: the paste history shows, by the pill (ADR-DESK-043), which is placed while the
+   * hold still shows; then the second tap's hands-free dictation, which has heard nothing yet, goes
+   * unseen. */
   private showHistory(): void {
     log.debug("DictationController: triple tap; showing the paste history");
     this.deps.tips.markLearned("agentAndHistory");
-    if (this.currentPhase.kind === "listening" || this.currentPhase.kind === "arming") this.discard();
     this.onShowHistory?.();
+    if (this.currentPhase.kind === "listening" || this.currentPhase.kind === "arming") this.discard();
   }
 
   /** The email app of the settings this dictation started with, asked once per dictation. */
