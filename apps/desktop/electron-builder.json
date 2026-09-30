@@ -38,6 +38,12 @@
     }
   },
   "dmg": {
-    "artifactName": "TabMail-Voice-${arch}.${ext}"
+    "artifactName": "TabMail-Voice-latest-${arch}.${ext}",
+    "title": "TabMail Voice",
+    "background": "dmg-background.png",
+    "contents": [
+      { "x": 130, "y": 145, "type": "file" },
+      { "x": 410, "y": 145, "type": "link", "path": "/Applications" }
+    ]
   }
 }

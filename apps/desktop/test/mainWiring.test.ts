@@ -841,6 +841,12 @@ describe("main process wiring", () => {
     expect(app.stored.get("userName")).toBe(" Alex Example");
   });
 
+  /** Settings › General shows the app's own version. */
+  test("the settings state carries the app's version", async () => {
+    await launch("darwin");
+    expect((app.handlers.get(channels.getState)?.({}, "settings") as { version: string }).version).toBe("0.0.0");
+  });
+
   /** Settings › Dictionary's commands change the stored dictionary and the learning switch, which the
    * state shows; learning is offered only on macOS, where the helper reads the field (ADR-DESK-038). */
   test.each(["darwin", "linux"] as const)("the dictionary's commands and state, on %s", async (platform) => {

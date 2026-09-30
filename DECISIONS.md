@@ -2028,9 +2028,15 @@ no user data.
   `useMultipleRangeRequest` is off: the CDN answers a request for several byte ranges with 400, so
   a differential update (only the blocks that changed, from the blockmaps) asks for one range at a
   time instead of falling back to the whole ZIP.
-- The DMG's name carries no version (`TabMail-Voice-arm64.dmg`): each release replaces it, so the
-  website's download button links to it and serves the newest release without an edit per release
-  (owner, 2026-09-30). A versioned copy is kept beside it.
+- The DMG's name carries no version (`TabMail-Voice-latest-arm64.dmg`, as the build names it, so the
+  build, the CDN and the website agree): each release replaces it, so the website's download button
+  links to it and serves the newest release without an edit per release (owner, 2026-09-30). A
+  versioned copy is kept beside it. The first name, `TabMail-Voice-arm64.dmg`, is retired: the CDN
+  served that object unreliably, and a fresh name was the fix.
+- The DMG window has our own background (`resources/dmg-background.png`, at 1x and 2x): white, with
+  the app and the Applications link in its top half. The window is the background's size, and
+  Finder's path and status bars cover its bottom; with the stock layout's icons lower down, the
+  window scrolled on a Mac with those bars on.
 - Nothing about the user or the installation is sent: `electron-updater` keeps a random ID for the
   installation (`.updaterId`, for staged rollouts, which we don't use) and sends it as
   `x-user-staging-id` with every request; `Updater` sets that header to a constant

@@ -35,6 +35,7 @@ const signedIn: SettingsState = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
+  version: "1.2.3",
 };
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
@@ -218,7 +219,7 @@ describe("Settings page", () => {
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
       Permissions: ["Microphone", "Accessibility"],
-      General: ["Open at login", "Debug mode"],
+      General: ["Open at login", "Debug mode", "Version", "1.2.3"],
     };
     const shown = { ...signedIn, debugAllowed: true };
     await settingsPage({ error: null }, shown, shown);

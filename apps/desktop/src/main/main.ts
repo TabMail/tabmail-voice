@@ -274,6 +274,7 @@ function launch(): void {
       openAtLogin: app.getLoginItemSettings().openAtLogin,
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,
+      version: app.getVersion(),
     };
   }
 

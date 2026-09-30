@@ -184,6 +184,11 @@
   padding: 10px 14px;
 }
 
+/* A setting's value that can't be changed, such as the version. */
+.value {
+  color: var(--secondary);
+}
+
 .group-caption {
   margin: 6px 14px 0;
 }

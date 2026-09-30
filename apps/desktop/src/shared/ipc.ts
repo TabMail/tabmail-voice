@@ -96,6 +96,8 @@ export interface SettingsState {
   /** Whether this account may switch debug mode on (`DebugAccess`). */
   debugAllowed: boolean;
   debugMode: boolean;
+  /** The app's version (`app.getVersion()`), shown in Settings › General. */
+  version: string;
 }
 
 /** Whether VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the

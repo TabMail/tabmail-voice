@@ -301,6 +301,10 @@ function GeneralPane({ state }: { state: SettingsState }) {
           Uses the development server and shows debug items in the menu.
         </Toggle>
       )}
+      <div className="row">
+        <span>Version</span>
+        <span className="value">{state.version}</span>
+      </div>
     </Group>
   );
 }
