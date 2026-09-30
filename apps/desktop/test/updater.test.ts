@@ -5,6 +5,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../src/core/config.js";
+import { log } from "../src/core/log.js";
 import { type UpdateSource, Updater, updateRequestHeaders } from "../src/main/updater.js";
 
 type CheckResult = Awaited<ReturnType<UpdateSource["checkForUpdates"]>>;
@@ -344,6 +345,35 @@ describe("Updater (ADR-DESK-041)", () => {
       expect(unhandled).toEqual([]);
     } finally {
       process.off("unhandledRejection", record);
+    }
+  });
+
+  /** The question stays open until answered; whatever frees the app meanwhile doesn't ask again. */
+  test("an open question is not asked again", async () => {
+    let busy = false;
+    const { source, updater, asked } = setUp({ busy: () => busy, ask: () => new Promise(() => {}) });
+
+    source.downloaded("1.1.0");
+    await settle();
+    busy = true;
+    updater.appIsFree();
+    busy = false;
+    updater.appIsFree();
+    await settle();
+
+    expect(asked).toEqual(["1.1.0"]);
+  });
+
+  test("a failure is logged with its type and electron-updater's code", () => {
+    const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+    try {
+      const { source } = setUp();
+      source.emit("error", Object.assign(new Error("no zip"), { code: "ERR_UPDATER_ZIP_FILE_NOT_FOUND" }));
+      source.emit("error", new TypeError("no code"));
+
+      expect(logged.mock.calls).toEqual([["Updater: Error ERR_UPDATER_ZIP_FILE_NOT_FOUND"], ["Updater: TypeError"]]);
+    } finally {
+      logged.mockRestore();
     }
   });
 

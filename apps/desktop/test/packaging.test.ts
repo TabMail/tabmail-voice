@@ -38,7 +38,19 @@ describe("the Mac app's packaging", () => {
 
     expect(builder.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/macos-arm64", useMultipleRangeRequest: false }]);
     expect(builder.mac.target.map(({ target }) => target)).toContain("zip");
-    expect(builder.mac.artifactName).not.toMatch(/\s/);
+    // The name the release script uploads and the feed names.
+    expect(builder.mac.artifactName).toBe("TabMail-Voice-${version}-${arch}.${ext}");
+  });
+
+  /** Squirrel.Mac installs an update only if its own version is not lower than the running app's, so
+   * whoever can write to the CDN can't roll the app back to an older signed build (ADR-DESK-041). It
+   * then refuses any version but x.y.z, the running app's included. */
+  test("it refuses to update to an older version, and its version is x.y.z", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { mac: { extendInfo: Record<string, unknown> } };
+    const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string };
+
+    expect(builder.mac.extendInfo.ElectronSquirrelPreventDowngrades).toBe(true);
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   /** The website's download button links to the CDN's `TabMail-Voice-arm64.dmg`, which each release

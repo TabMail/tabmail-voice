@@ -2029,8 +2029,12 @@ no user data.
   download and update from the CDN alone; the feed is not put on GitHub.
 - No update key of our own on macOS: Squirrel.Mac installs an update only if it carries the running
   app's Developer ID signature (its designated requirement), and the feed's SHA-512 covers the ZIP.
-  Someone who could write to the CDN can't ship a build we didn't sign; they could still serve an
-  older signed build under a higher version (Squirrel checks the signature, not the version).
+  Someone who could write to the CDN can't ship a build we didn't sign, nor roll the app back to an
+  older signed one: `ElectronSquirrelPreventDowngrades` in `Info.plist` makes Squirrel.Mac refuse an
+  update whose own `CFBundleShortVersionString` is lower than the running app's (the feed's version is
+  the writer's to choose; the bundle's is signed). Squirrel then also refuses any version not of the
+  form x.y.z, so releases keep plain x.y.z versions (no pre-release suffix); the release script
+  checks it.
 - `Updater` (`src/main/updater.ts`), packaged builds only: looks `updateFirstCheckDelay` after launch
   and every `updateCheckInterval`, downloads by itself (`autoDownload`), installs when the app quits
   (`autoInstallOnAppQuit`). An update is ready only when Squirrel.Mac (Electron's own
