@@ -6,7 +6,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { AudioCommand, AudioReport, Command, CommandResult, VoiceBridge, WindowName, WindowStates } from "../shared/ipc.js";
 
 // A sandboxed preload script can load only Electron's own modules, so the channel names are written
-// out here; test/ipc.test.ts checks they are `channels` in src/shared/ipc.ts.
+// out here; test/shared/ipc.test.ts checks they are `channels` in src/shared/ipc.ts.
 const channels = {
   state: "voice:state",
   getState: "voice:get-state",

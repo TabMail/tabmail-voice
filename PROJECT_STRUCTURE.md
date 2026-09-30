@@ -26,42 +26,67 @@ apps/desktop/
 │   ├── build-native.mts         Builds the platform's helpers into dist/helpers (macOS: SwiftPM, arm64)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
-├── native/macos/            SwiftPM package: the macOS helpers and their tests
-│   ├── Sources/VoiceHelperSupport/  The line protocol (requests, replies, events, stderr log lines)
-│   ├── Sources/VoiceHotkeyKit/      Event tap + push-to-talk gesture (`voice-hotkey`)
-│   └── Sources/VoiceMacOSKit/       Paste/restore, screen read, caret, keyboard language, Globe, activator, email apps, Thunderbird, the microphone, Calendar and Reminders (`EventStore.swift`), Contacts (`ContactStore.swift`), Spotlight search and opening files (`FileSearch.swift`) (`voice-macos`)
+├── native/macos/            SwiftPM package: the macOS helpers and their tests (ADR-DESK-044)
+│   ├── Package.swift            Products `voice-hotkey` and `voice-macos`, the executables the app spawns
+│   ├── Sources/
+│   │   ├── VoiceHelperSupport/      The line protocol both helpers speak (requests, replies, events, stderr log lines)
+│   │   ├── VoiceHotkey/             `voice-hotkey`'s `main.swift`
+│   │   ├── VoiceHotkeyKit/          Event tap + push-to-talk gesture, and `HotkeyService` (its requests)
+│   │   ├── VoiceMacOS/              `voice-macos`'s `main.swift`
+│   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility
+│   │       ├── Service/                 `MacService` (its requests), `HelperConfig` (its tunable numbers)
+│   │       ├── Dictation/               Paste and clipboard restore, the microphone, the caret, the focused field read after a paste, the keyboard's language
+│   │       ├── ScreenContext/           The screen read and its reader
+│   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
+│   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
+│   └── Tests/                   One test target per library; `VoiceMacOSKitTests` in the same folders
 ├── src/
-│   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app
-│   │   ├── dictationController.ts   The dictation state machine; settings snapshotted at key-down
-│   │   ├── pasteHistory.ts          The texts pasted, or copied instead, in memory, for the triple tap's list (ADR-DESK-043)
-│   │   ├── account.ts, backend.ts, cleanup.ts, http.ts   Sign-in, transcription/completions clients, the cleanup's variables and what gets pasted
-│   │   ├── agent/                   DesktopAgent, the tools (Edit, Compose, Thunderbird, Answer), AgentChat (the chat window's conversation), LoopTool (a tool Answer's model calls that runs on this computer), the connectors (`connectors.ts`: the apps those tools reach, each a switch) and their tools (`calendarTools.ts`: Calendar and Reminders; `contactsTools.ts`: Contacts; `filesTools.ts`: Files, with Spotlight; `emailTools.ts`: a prefilled new email; `notesTools.ts` and `messagesTools.ts`: Notes and Messages, through `appleScript.ts`'s `ScriptRunner`; `webTools.ts`: the web, pages read through a `WebFetch` and opened in the browser), EmailClient, ThunderbirdRelay
-│   │   ├── audio.ts, levelEnvelope.ts, wav.ts   Recording, waveform level, WAV
-│   │   ├── settings.ts, permissions.ts, tips.ts, welcomeWizard.ts, globeKeyAction.ts, screenContext.ts
-│   │   ├── dictionary.ts, corrections.ts, correctionWatch.ts, contextTerms.ts   The user's dictionary; the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
-│   │   ├── vscodeSettings.ts        VS Code settings that hide the caret, and the wizard's fix (with `jsonc-parser`)
-│   │   ├── overlayGeometry.ts, menuModel.ts   Where the overlay sits; what the tray menu shows
-│   │   └── config.ts, log.ts, observable.ts, keyValueStore.ts, timeout.ts, text.ts, hotkey.ts, localDateTime.ts (the backend's dates in the local zone)
+│   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app (folders: ADR-DESK-044)
+│   │   ├── config.ts, log.ts, settings.ts   Every tunable number; the debug-gated log; the settings every part reads
+│   │   ├── agent/                   Agent mode (ADR-DESK-011)
+│   │   │   ├── desktopAgent.ts          DesktopAgent: picks the tool, has it write, runs Answer's tool loop
+│   │   │   ├── agentTools.ts            Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
+│   │   │   ├── agentChat.ts, bubbleOrder.ts   The chat window's conversation; the bubbles' order
+│   │   │   ├── tools/                   The tools Answer's model calls that run on this computer (a new tool goes here)
+│   │   │   │   ├── loopTool.ts              `LoopTool`, the contract, and `Arguments`
+│   │   │   │   └── calendarTools.ts (Calendar and Reminders), contactsTools.ts, filesTools.ts (Spotlight), emailTools.ts (a prefilled new email), notesTools.ts, messagesTools.ts, webTools.ts (pages read through a `WebFetch`, opened in the browser)
+│   │   │   └── connectors/              The apps those tools reach, and how (a new connector goes here)
+│   │   │       ├── connectors.ts            The connectors, each a switch: names, icons, their backend tools
+│   │   │       ├── appleScript.ts           `ScriptRunner`, for Notes and Messages
+│   │   │       └── thunderbird/             `ThunderbirdRelay` (to TabMail's chat) and `EmailClient` (the email app it drives); its native connector goes here (ADR-DESK-037)
+│   │   ├── dictation/               The dictation state machine (`dictationController.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `screenContext.ts`; `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
+│   │   ├── audio/                   Recording, waveform level, WAV and FLAC
+│   │   ├── backend/                 Sign-in (`account.ts`), the transcription/completions clients, HTTP
+│   │   ├── dictionary/              The user's dictionary; the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
+│   │   ├── hotkey/                  The hotkey; the Globe key's own action while fn is it (ADR-DESK-031)
+│   │   ├── onboarding/              The welcome wizard, permissions, tips, VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
+│   │   ├── ui/                      Where the overlay sits; what the tray menu shows
+│   │   └── util/                    observable, keyValueStore, timeout, text, localDateTime (the backend's dates in the local zone)
 │   ├── main/                The main process (Node + Electron)
 │   │   ├── main.ts                  Wires everything: helpers, controller, windows, IPC, tray
-│   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
-│   │   ├── macos.ts                 `voice-macos`'s methods, typed
-│   │   ├── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
 │   │   ├── audioCapture.ts          The microphone, one session per dictation: through `voice-macos` on macOS, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, installed at the quit, "Restart now?" once ready (ADR-DESK-041)
-│   │   ├── permissions.ts, keychainSessionStore.ts, fileStore.ts, logFile.ts, profileFiles.ts
+│   │   ├── permissions.ts           The OS permissions, asked and read
+│   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
+│   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
+│   │   │   ├── macos.ts                 `voice-macos`'s methods, typed
+│   │   │   └── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
+│   │   └── storage/                 keychainSessionStore.ts (the sign-in), fileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
 │   ├── preload/preload.ts   `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
-│   └── renderer/            One page per window: overlay (pill, waveform, swirl, tips, bubbles), settings,
-│                            welcome, history (the paste history), audio (getUserMedia → captureWorklet; not used on macOS), context-debug
-└── test/                    Vitest: the core (ported Swift suites), main-process modules against a fake helper, IPC
+│   └── renderer/            One page per window: `<page>.html` (what Vite builds and the window loads) and `<page>/` (its code and style)
+│       ├── overlay/                 The pill, waveform, swirl, tips, bubbles and chat window
+│       ├── settings/, welcome/, history/ (the paste history), contextDebug/
+│       ├── audio/                   The microphone off macOS: getUserMedia → captureWorklet
+│       └── shared/                  The bridge to `window.voice`, the brand, icons, the name field, form.css
+└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird), fixtures/ (a fake helper); packaging.test.ts
 ```
 
 ## Flow
 
 `voice-hotkey` (`HotkeyMonitor` → `PushToTalkGesture`) sends each gesture action to the main
-process, which hands it to `DictationController` (`src/core/dictationController.ts`):
+process, which hands it to `DictationController` (`src/core/dictation/dictationController.ts`):
 
 1. **start** (key-down; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
    The microphone starts (`SessionAudioCapture` → `voice-macos`'s `MicrophoneCapture`, its engine

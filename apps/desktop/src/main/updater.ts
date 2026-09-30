@@ -5,7 +5,7 @@
 import type { OutgoingHttpHeaders } from "node:http";
 import * as config from "../core/config.js";
 import { errorName, log } from "../core/log.js";
-import type { UpdateState } from "../core/menuModel.js";
+import type { UpdateState } from "../core/ui/menuModel.js";
 
 /** Sent with every update request in place of `electron-updater`'s own `x-user-staging-id`, a random
  * ID it keeps for the installation (for staged rollouts, which we don't use): nothing about the user

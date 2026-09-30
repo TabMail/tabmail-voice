@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { DebugAccess } from "./account.js";
-import { type Connector, connectors, isConnector } from "./agent/connectors.js";
-import { type AgentTool, isAgentTool, offeredAgentTools } from "./agent/tools.js";
+import { DebugAccess } from "./backend/account.js";
+import { type Connector, connectors, isConnector } from "./agent/connectors/connectors.js";
+import { type AgentTool, isAgentTool, offeredAgentTools } from "./agent/agentTools.js";
 import * as config from "./config.js";
-import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary.js";
-import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey.js";
-import { type KeyValueStore, storedBool, storedString } from "./keyValueStore.js";
-import { Observable } from "./observable.js";
+import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/dictionary.js";
+import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/hotkey.js";
+import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
+import { Observable } from "./util/observable.js";
 
 const Key = {
   hotkey: "dictationHotkey",

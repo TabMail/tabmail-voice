@@ -4,17 +4,17 @@
 
 import type { AgentChat } from "../core/agent/agentChat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
-import { type Connector, isConnector } from "../core/agent/connectors.js";
-import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
-import type { Phase } from "../core/dictationController.js";
-import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
+import { type Connector, isConnector } from "../core/agent/connectors/connectors.js";
+import { type AgentTool, isAgentTool } from "../core/agent/agentTools.js";
+import type { Phase } from "../core/dictation/dictationController.js";
+import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/hotkey.js";
 import * as config from "../core/config.js";
-import type { DictionaryEntry } from "../core/dictionary.js";
-import type { UpdateState } from "../core/menuModel.js";
-import type { PasteEntry } from "../core/pasteHistory.js";
-import type { ScreenContext } from "../core/screenContext.js";
-import type { DictationTip } from "../core/tips.js";
-import type { WelcomeStep } from "../core/welcomeWizard.js";
+import type { DictionaryEntry } from "../core/dictionary/dictionary.js";
+import type { UpdateState } from "../core/ui/menuModel.js";
+import type { PasteEntry } from "../core/dictation/pasteHistory.js";
+import type { ScreenContext } from "../core/dictation/screenContext.js";
+import type { DictationTip } from "../core/onboarding/tips.js";
+import type { WelcomeStep } from "../core/onboarding/welcomeWizard.js";
 
 /** Between the main process, which owns every model, and the windows, which draw its state and send
  * back what the user did. The preload script exposes `VoiceBridge` as `window.voice`. */

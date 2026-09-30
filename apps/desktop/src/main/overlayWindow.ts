@@ -4,9 +4,9 @@
 
 import { type BrowserWindow, screen } from "electron";
 import * as config from "../core/config.js";
-import type { Phase } from "../core/dictationController.js";
+import type { Phase } from "../core/dictation/dictationController.js";
 import { errorName, log } from "../core/log.js";
-import { bubblesFitUnder, chatSide, chatWindowFrame, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/overlayGeometry.js";
+import { bubblesFitUnder, chatSide, chatWindowFrame, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/ui/overlayGeometry.js";
 import type { ChatPlacement } from "../shared/ipc.js";
 
 /**

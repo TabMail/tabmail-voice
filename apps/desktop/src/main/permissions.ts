@@ -4,7 +4,7 @@
 
 import { shell, systemPreferences } from "electron";
 import { errorName, log } from "../core/log.js";
-import type { PermissionSystem } from "../core/permissions.js";
+import type { PermissionSystem } from "../core/onboarding/permissions.js";
 
 /** System Settings' Privacy & Security panes. */
 const settingsPanes = {

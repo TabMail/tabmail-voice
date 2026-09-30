@@ -7,20 +7,22 @@ import PackageDescription
 
 /// TabMail Voice's macOS helpers: small executables the Electron app starts and talks to over
 /// stdin/stdout, one JSON object a line (ADR-DESK-032). `voice-hotkey` owns the keyboard event tap;
-/// `voice-macos` does everything else that needs AppKit or Accessibility.
+/// `voice-macos` does everything else that needs AppKit or Accessibility. Each helper is an executable
+/// target (`VoiceHotkey`, `VoiceMacOS`: its `main.swift`) over a library target (`…Kit`) its tests
+/// import; the products keep the helpers' executable names.
 let package = Package(
     name: "VoiceNative",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "voice-hotkey", targets: ["voice-hotkey"]),
-        .executable(name: "voice-macos", targets: ["voice-macos"]),
+        .executable(name: "voice-hotkey", targets: ["VoiceHotkey"]),
+        .executable(name: "voice-macos", targets: ["VoiceMacOS"]),
     ],
     targets: [
         .target(name: "VoiceHelperSupport", swiftSettings: strict),
         .target(name: "VoiceHotkeyKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
-        .executableTarget(name: "voice-hotkey", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
+        .executableTarget(name: "VoiceHotkey", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
         .target(name: "VoiceMacOSKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
-        .executableTarget(name: "voice-macos", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
+        .executableTarget(name: "VoiceMacOS", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceHotkeyKitTests", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceMacOSKitTests", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceHelperSupportTests", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),

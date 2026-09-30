@@ -22,7 +22,7 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   Debug builds, and a release build while debug mode is on, write
   `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual test's app log.
 - **Tests never hit the network.** Inject `StubTransport` and `InMemorySessionStore`
-  (`test/support.ts`); never the real Keychain item.
+  (`test/support/support.ts`); never the real Keychain item.
 - **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-macos` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary

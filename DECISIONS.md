@@ -953,7 +953,7 @@ default". First built in the Swift app; built here in the Electron app (ADR-DESK
 one that ships.
 
 **Decision:**
-- `src/core/agent/tools.ts`: `AnswerTool` (`answer`); its prompt `system_prompt_desktop_answer`
+- `src/core/agent/agentTools.ts`: `AnswerTool` (`answer`); its prompt `system_prompt_desktop_answer`
   (backend ADR-023 amendment) replies with text that `deliver` hands to `ToolContext.showAnswer`.
   Each tool carries a `settingsDescription` and a `chatCaption` (what it did with its text; none for
   Answer).
@@ -1043,7 +1043,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
   State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
   `AbortSignal` is checked before each round and each call: a request cancelled while a tool ran
   runs no later call and sends no further round.
-- `LoopTool` (`src/core/agent/loopTool.ts`): a tool that runs on this computer: its backend function
+- `LoopTool` (`src/core/agent/tools/loopTool.ts`): a tool that runs on this computer: its backend function
   `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
   a read), and `run(args)`. The controller takes them as `DictationDependencies.loopTools`, which the
   main process builds (a tool reaches the OS through a native helper); the list is empty until the
@@ -1106,14 +1106,14 @@ grant it. The backend defines the four tools (`calendar_read`, `calendar_event_c
 the user's zone. First built in the Swift app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- A connector is an app the tools reach (`src/core/agent/connectors.ts`: `Connector`, its display
+- A connector is an app the tools reach (`src/core/agent/connectors/connectors.ts`: `Connector`, its display
   name and description), and each `LoopTool` names its `connector`. Settings stores the switched-off
   names (`disabledConnectors`, so a new connector starts on and a retired name is ignored); the
   enabled ones are in the key-down snapshot (`DictationSettings.enabledConnectors`, ADR-DESK-017),
   and a request lists in `available_tools`, and runs, only the tools of the connectors on then. The
   switches follow the agent tools' in Settings' Agent mode and the wizard's Features step
   (`setConnectorEnabled`).
-- The tools are `src/core/agent/calendarTools.ts` over an `EventStore` the main process gives them;
+- The tools are `src/core/agent/tools/calendarTools.ts` over an `EventStore` the main process gives them;
   on macOS that is `voice-macos` (`EventStore.swift`, EventKit), elsewhere there is none and no
   connector is offered or shown. Reads need nothing confirmed; adding an event or a reminder asks,
   and the question is built from the same draft the tool then adds, so what is confirmed is what is
@@ -1160,7 +1160,7 @@ wizard; adding asks first; access is asked on first use and a refusal says where
 built in the Swift app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- The `contacts` connector, with `src/core/agent/contactsTools.ts`: `ContactsSearchTool` and
+- The `contacts` connector, with `src/core/agent/tools/contactsTools.ts`: `ContactsSearchTool` and
   `ContactsAddTool` over a `ContactStore` interface. On macOS the store is `voice-macos`
   (`ContactStore.swift`, the Contacts framework); elsewhere there is none.
 - A search matches a contact's name (either way round), company or an email address, ignoring case
@@ -1195,7 +1195,7 @@ app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
 - The `files` connector with `FilesSearchTool` (`files_search`) and `FileOpenTool` (`file_open`)
-  (`src/core/agent/filesTools.ts`) over a `FileStore`: on macOS `MacSystem.fileStore`, whose
+  (`src/core/agent/tools/filesTools.ts`) over a `FileStore`: on macOS `MacSystem.fileStore`, whose
   `filesSearch` and `fileOpen` requests `voice-macos` carries out (`FileSearch.swift`). A failure
   comes back by name (`Files.Failure`, `FileStoreFailure`), so a file's name in the system's error
   never reaches a log.
@@ -1256,7 +1256,7 @@ lists, `subject` and `body`, passed to the app as the model wrote them. First bu
 app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- The `email` connector with `EmailComposeTool` (`src/core/agent/emailTools.ts`) over an
+- The `email` connector with `EmailComposeTool` (`src/core/agent/tools/emailTools.ts`) over an
   `EmailOpener` the main process gives it.
 - One mechanism for every email app: a `mailto:` URL (RFC 6068, `mailtoURL`) opened with the app
   the system opens `mailto:` links with. Every value is percent-encoded from its UTF-8 bytes, leaving
@@ -1294,7 +1294,7 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
 - The `notes` connector with `NotesSearchTool` (`notes_search`: notes whose title or text contains
   the query, locked notes left out, newest first, at most `notesSearchMaxResults` in full, more
   said) and `NotesCreateTool` (`notes_create`: a title and text, added to the default account's
-  default folder once confirmed), in `src/core/agent/notesTools.ts`. The `messages` connector with
+  default folder once confirmed), in `src/core/agent/tools/notesTools.ts`. The `messages` connector with
   `MessagesSendTool` (`messages_send`: one iMessage to one phone number or email address, once
   confirmed; a name goes back to the model to look up with `contacts_search`), in
   `messagesTools.ts`.
@@ -1303,7 +1303,7 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
   as `argv`, never inside its source, so no text can change what a script does. The arguments
   follow `--`, so one that looks like an option (`-e …`) is data too (without it, a search for `-e`
   plus script ran that script unconfirmed).
-- The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/osascript.ts`),
+- The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/native/osascript.ts`),
   not a `voice-macos` method. The one reason is cancellation: `LoopTool.run` now takes the
   request's `AbortSignal`, and a cancelled request or a closed chat window ends the osascript
   process. The helper channel can't call off a request it has taken, so a script run there would
@@ -1385,7 +1385,7 @@ in the Electron app (ADR-DESK-032).
 
 **Decision:**
 - The `web` connector with `WebReadTool` (`web_read`) and `WebOpenTool` (`web_open`), in
-  `src/core/agent/webTools.ts`, and the backend's `search_web`. A connector's backend tools
+  `src/core/agent/tools/webTools.ts`, and the backend's `search_web`. A connector's backend tools
   (`connectorServerTools`) are listed in `available_tools` after the date tools while its own tools
   are (switched on at key-down, and on this computer), so a platform without the web's tools offers
   no search either; `web_search_enabled` is sent as whether `search_web` is listed (the backend refuses
@@ -2173,7 +2173,7 @@ actually just click on one of those to copy", and "when dictation is going on �
 to enter agent mode or triple tap to see history tooltip".
 
 **Decision:**
-- `PasteHistory` (`src/core/pasteHistory.ts`) keeps every text dictation and agent mode pasted, or
+- `PasteHistory` (`src/core/dictation/pasteHistory.ts`) keeps every text dictation and agent mode pasted, or
   copied instead (ADR-DESK-042), the newest first, at most `pasteHistoryLimit` (20); the same text
   again moves to the top. **In memory only**, for the app's life: no user content is written to disk
   (root ADR-004).
@@ -2205,3 +2205,59 @@ to enter agent mode or triple tap to see history tooltip".
 - A triple tap works only from hands-free listening: while the previous dictation is still
   transcribing, the double tap finds nothing listening and the gesture ends, so a third press starts
   a new hold. With the history open, a paste still to come sees this app in front and is copied.
+
+## ADR-DESK-044: The code in folders by concern, each with a place for what comes next
+
+**Context:** Owner, 2026-09-30: the agent's tools sat in `src/core/agent/` beside the agent, its
+chat and the connectors, with nothing to say which file is a tool, and `native/macos/Sources/` mixed
+the lowercase executables (`voice-hotkey`, `voice-macos`) with the libraries, `VoiceMacOSKit` one
+flat folder of everything the helper does. The owner asked for a layout where it is plain where a
+tool goes, as in the iOS app (`Services/AI/Tools/`), Thunderbird (`chat/tools/`) and the backend
+(`src/tools/<platform>/`), that scales as tools, connectors, platforms and windows are added, and
+that Thunderbird counts as a connector; a reorganisation only, with no change to what the code does.
+
+**Decision:**
+- `src/core/agent/`: the agent (`desktopAgent.ts`), the chat window's conversation (`agentChat.ts`),
+  the bubbles' order (`bubbleOrder.ts`) and agent mode's own tools, Edit, Compose, Thunderbird and
+  Answer (`agentTools.ts`, formerly `tools.ts`); then
+  - `tools/`: the tools Answer's model calls that run on this computer, one file per connector
+    (`calendarTools.ts` … `webTools.ts`), with their contract, `loopTool.ts`. **A new tool goes here**,
+    in its connector's file.
+  - `connectors/`: the apps agent mode reaches, and how: the connectors, each a switch
+    (`connectors.ts`); the AppleScript runner Notes and Messages go through (`appleScript.ts`); and
+    `thunderbird/`, the relay to TabMail's chat and the email app it drives, where its native
+    connector will go (ADR-DESK-037). **A new connector is listed here**; one that needs more than
+    a file gets a folder, as Thunderbird has.
+- The rest of `src/core/` by concern: `dictation/` (the controller, the cleanup, the screen read,
+  the paste history), `audio/`, `backend/` (sign-in and the backend clients), `dictionary/`,
+  `hotkey/`, `onboarding/` (the wizard, permissions, tips, the VS Code fix), `ui/` (the overlay's
+  geometry, the tray menu's model) and `util/`; `config.ts`, `log.ts` and `settings.ts` stay at its
+  top, as every part reads them.
+- `src/main/`: `native/` is the app's side of the OS helpers (`helperClient.ts`, `macos.ts`,
+  `osascript.ts`); **Windows' and Linux's go beside them.** `storage/` holds what the app keeps: the
+  sign-in, the preferences file, the debug log and Thunderbird's profiles read. The entry point, the
+  windows, the tray, the microphone, the updater and the permissions stay at its top; `windows.ts`
+  finds `dist/` from its own folder, so it does not move.
+- `src/renderer/`: each window is `<page>.html` at the top, what Vite builds and the window loads
+  (so `dist/renderer/<page>.html` and `windows.ts` are unchanged), and `<page>/`, its code and style;
+  what the pages share is in `shared/`. **A new window is one page and one folder.**
+- `native/macos/Sources/`: each helper is an executable target named as the libraries are
+  (`VoiceHotkey`, `VoiceMacOS`: only its `main.swift`) over its library (`VoiceHotkeyKit`,
+  `VoiceMacOSKit`), beside `VoiceHelperSupport`, the line protocol both use. The products keep the
+  executables' names, `voice-hotkey` and `voice-macos`, which the app spawns and ships.
+  `VoiceMacOSKit` is in folders by concern, mirrored in its tests: `Service/` (`MacService`, the
+  requests; `HelperConfig`), `Dictation/` (paste, microphone, caret, focused field, keyboard
+  language), `ScreenContext/`, `System/` (Accessibility activator, apps, Globe key) and
+  `Connectors/` (Calendar and Reminders, Contacts, Files: what the TypeScript connectors reach).
+- `test/` mirrors `src/`: a module's test is in the same folder under `test/` as the module under
+  `src/` (the renderer's by page), shared stubs in `test/support/`, the fake helper in
+  `test/fixtures/`, and the package's checks (`packaging.test.ts`) at the top.
+- File and symbol names are unchanged but for `tools.ts`; only import paths, the pages' script
+  paths, `Package.swift`'s target names and the paths tests read from disk changed.
+
+**Consequences:**
+- A branch open before this change rebases with git's rename detection; a file it adds under an old
+  folder moves by hand, and its imports follow.
+- Verified against `main` at 0.1.2: the same suites pass in the same numbers, the build gives the
+  same pages and helpers, and `npm run preview` renders every window as before (the frames that
+  differ are the animated ones, which differ between two renders of `main` too).

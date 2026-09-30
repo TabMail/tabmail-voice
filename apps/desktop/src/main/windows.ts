@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { app, BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme } from "electron";
 import * as config from "../core/config.js";
 import { log } from "../core/log.js";
-import type { Rect } from "../core/overlayGeometry.js";
+import type { Rect } from "../core/ui/overlayGeometry.js";
 import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
 
 /** The renderer page of each window, built by Vite into `dist/renderer`. */

@@ -2,15 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type AccountModel, withFreshToken } from "../account.js";
-import { BackendError, type CompletionsClient, type CompletionsMessage, type ServerToolEvent, type ToolCall } from "../backend.js";
+import { type AccountModel, withFreshToken } from "../backend/account.js";
+import { BackendError, type CompletionsClient, type CompletionsMessage, type ServerToolEvent, type ToolCall } from "../backend/backend.js";
 import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
-import type { ScreenContext } from "../screenContext.js";
-import { charCount, trimWhitespace } from "../text.js";
-import { connectors as allConnectors, connectorServerTools } from "./connectors.js";
-import type { LoopTool } from "./loopTool.js";
-import { AgentFailure, type AgentTool, isAgentTool, selection, toolImplementations } from "./tools.js";
+import type { ScreenContext } from "../dictation/screenContext.js";
+import { charCount, trimWhitespace } from "../util/text.js";
+import { connectors as allConnectors, connectorServerTools } from "./connectors/connectors.js";
+import type { LoopTool } from "./tools/loopTool.js";
+import { AgentFailure, type AgentTool, isAgentTool, selection, toolImplementations } from "./agentTools.js";
 
 /**
  * Agent mode on the backend: the tool for the spoken request is chosen (`tool`), then has the

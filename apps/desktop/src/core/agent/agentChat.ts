@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type AgentTool, toolImplementations } from "./tools.js";
+import { type AgentTool, toolImplementations } from "./agentTools.js";
 
 /** One request in the chat window and what came of it. */
 export interface ChatTurn {
