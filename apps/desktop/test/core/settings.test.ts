@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../../src/core/backend/account.js";
-import { agentToolIds, offeredAgentToolIds } from "../../src/core/agent/tools.js";
-import { connectorIds } from "../../src/core/agent/connectors/registry.js";
+import { agentToolIDs, offeredAgentToolIDs } from "../../src/core/agent/tools.js";
+import { connectorIDs } from "../../src/core/agent/connectors/registry.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
 import { AppSettings } from "../../src/core/settings.js";
@@ -147,8 +147,8 @@ describe("AppSettings", () => {
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,
       readsScreen: true,
-      enabledTools: [...offeredAgentToolIds],
-      enabledConnectors: [...connectorIds],
+      enabledTools: [...offeredAgentToolIDs],
+      enabledConnectors: [...connectorIDs],
       emailClient: null,
       hasTabMail: true,
       userName: "",
@@ -289,13 +289,13 @@ describe("connectors", () => {
   test("every app is on by default", () => {
     const app = settings();
 
-    for (const connector of connectorIds) expect(app.isConnectorEnabled(connector)).toBe(true);
-    expect(app.dictation(null).enabledConnectors).toEqual(connectorIds);
+    for (const connector of connectorIDs) expect(app.isConnectorEnabled(connector)).toBe(true);
+    expect(app.dictation(null).enabledConnectors).toEqual(connectorIDs);
   });
 
   /** An app turned off is left out of every dictation from then on, and stays off after a relaunch;
    * turned back on, it is reached again. */
-  test.each(connectorIds)("%s turned off stays off", (connector) => {
+  test.each(connectorIDs)("%s turned off stays off", (connector) => {
     const store = new MemoryStore();
     const changes: number[] = [];
     const app = settings(store);
@@ -305,10 +305,10 @@ describe("connectors", () => {
 
     const relaunched = settings(store);
     expect(relaunched.isConnectorEnabled(connector)).toBe(false);
-    expect(relaunched.dictation(null).enabledConnectors).toEqual(connectorIds.filter((other) => other !== connector));
+    expect(relaunched.dictation(null).enabledConnectors).toEqual(connectorIDs.filter((other) => other !== connector));
 
     relaunched.setConnectorEnabled(connector, true);
-    expect(settings(store).dictation(null).enabledConnectors).toEqual(connectorIds);
+    expect(settings(store).dictation(null).enabledConnectors).toEqual(connectorIDs);
   });
 
   /** Turning off two apps keeps both off; turning one off twice lists it once. */
@@ -336,7 +336,7 @@ describe("connectors", () => {
     expect(settings(store).dictation(null).enabledConnectors).toEqual(enabled);
 
     settings(store).setConnectorEnabled("reminders", true);
-    expect(store.get("disabledConnectors")).toEqual(connectorIds.filter((connector) => !enabled.includes(connector)));
+    expect(store.get("disabledConnectors")).toEqual(connectorIDs.filter((connector) => !enabled.includes(connector)));
   });
 });
 
@@ -346,7 +346,7 @@ describe("agent tools", () => {
   test("every tool is on by default", () => {
     const app = settings();
 
-    for (const tool of agentToolIds) expect(app.isEnabled(tool)).toBe(true);
+    for (const tool of agentToolIDs) expect(app.isEnabled(tool)).toBe(true);
     expect(app.dictation(null).enabledTools).toEqual(["edit", "compose", "answer"]);
   });
 
@@ -355,7 +355,7 @@ describe("agent tools", () => {
   test("Thunderbird's tool is not offered, and its stored switch is kept", () => {
     const store = new MemoryStore();
     const app = settings(store);
-    expect(offeredAgentToolIds).not.toContain("thunderbird");
+    expect(offeredAgentToolIDs).not.toContain("thunderbird");
     expect(app.enabledTools).not.toContain("thunderbird");
 
     app.setEnabled("thunderbird", false);
@@ -368,7 +368,7 @@ describe("agent tools", () => {
 
   /** A tool turned off is left out of every dictation from then on, and stays off after a relaunch;
    * turned back on, it is offered again. */
-  test.each(offeredAgentToolIds)("%s turned off stays off", (tool) => {
+  test.each(offeredAgentToolIDs)("%s turned off stays off", (tool) => {
     const store = new MemoryStore();
     const changes: number[] = [];
     const app = settings(store);
@@ -378,10 +378,10 @@ describe("agent tools", () => {
 
     const relaunched = settings(store);
     expect(relaunched.isEnabled(tool)).toBe(false);
-    expect(relaunched.dictation(null).enabledTools).toEqual(offeredAgentToolIds.filter((other) => other !== tool));
+    expect(relaunched.dictation(null).enabledTools).toEqual(offeredAgentToolIDs.filter((other) => other !== tool));
 
     relaunched.setEnabled(tool, true);
-    expect(settings(store).dictation(null).enabledTools).toEqual(offeredAgentToolIds);
+    expect(settings(store).dictation(null).enabledTools).toEqual(offeredAgentToolIDs);
   });
 
   /** Turning off two tools keeps both off; turning one off twice lists it once. */

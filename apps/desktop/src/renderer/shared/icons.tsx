@@ -3,18 +3,18 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ReactNode, useId } from "react";
-import type { ConnectorId } from "../../core/agent/connectors/registry.js";
-import type { AgentToolId } from "../../core/agent/tools.js";
+import type { ConnectorID } from "../../core/agent/connectors/registry.js";
+import type { AgentToolID } from "../../core/agent/tools.js";
 import { brandBlue, brandPurple } from "./brand.js";
 
 /** An id usable in an SVG `url(#…)` reference. */
-function useSvgId(): string {
+function useGradientID(): string {
   return `gradient-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
 }
 
 /** Line icons in the brand gradient, drawn on a 24-point grid (the Swift app's SF Symbols). */
 function GradientIcon({ size, children, filled = false }: { size: number; children: ReactNode; filled?: boolean }) {
-  const id = useSvgId();
+  const id = useGradientID();
   const paint = `url(#${id})`;
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill={filled ? paint : "none"} stroke={filled ? "none" : paint} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -29,7 +29,7 @@ function GradientIcon({ size, children, filled = false }: { size: number; childr
   );
 }
 
-const toolPaths: Record<AgentToolId, ReactNode> = {
+const toolPaths: Record<AgentToolID, ReactNode> = {
   // A pencil.
   edit: <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
   // A square and a pencil.
@@ -55,11 +55,11 @@ const toolPaths: Record<AgentToolId, ReactNode> = {
   ),
 };
 
-export function ToolIcon({ tool, size }: { tool: AgentToolId; size: number }) {
+export function ToolIcon({ tool, size }: { tool: AgentToolID; size: number }) {
   return <GradientIcon size={size}>{toolPaths[tool]}</GradientIcon>;
 }
 
-const connectorPaths: Record<ConnectorId, ReactNode> = {
+const connectorPaths: Record<ConnectorID, ReactNode> = {
   // A calendar page.
   calendar: (
     <>
@@ -123,7 +123,7 @@ const connectorPaths: Record<ConnectorId, ReactNode> = {
   ),
 };
 
-export function ConnectorIcon({ connector, size }: { connector: ConnectorId; size: number }) {
+export function ConnectorIcon({ connector, size }: { connector: ConnectorID; size: number }) {
   return <GradientIcon size={size}>{connectorPaths[connector]}</GradientIcon>;
 }
 
@@ -139,7 +139,7 @@ export function SparklesIcon({ size }: { size: number }) {
 
 /** An exclamation mark in a filled circle: a failure. */
 export function ExclamationIcon({ size }: { size: number }) {
-  const id = useSvgId();
+  const id = useGradientID();
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
       <defs>

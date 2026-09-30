@@ -13,21 +13,21 @@ import type { ThunderbirdRelay } from "./connectors/thunderbird/relay.js";
  * one the agent answers with; a tool that hands the request to another app goes through that app's
  * connector (ADR-DESK-020). Each tool is one backend prompt; its bubble shows above the pill while
  * agent mode listens, and its border circles while it runs. Edit and Compose are never offered
- * together: the selection decides which (`DesktopAgent.writingTool`). Each offered one (`offeredAgentToolIds`)
+ * together: the selection decides which (`DesktopAgent.writingTool`). Each offered one (`offeredAgentToolIDs`)
  * can be switched off in Settings and the welcome wizard; all are on by default (owner, 2026-09-26).
  */
-export type AgentToolId = "edit" | "compose" | "thunderbird" | "answer";
+export type AgentToolID = "edit" | "compose" | "thunderbird" | "answer";
 
-export const agentToolIds: readonly AgentToolId[] = ["edit", "compose", "thunderbird", "answer"];
+export const agentToolIDs: readonly AgentToolID[] = ["edit", "compose", "thunderbird", "answer"];
 
 /** The tools agent mode offers, and Settings and the welcome wizard list. Thunderbird's is left out
  * until the native connector to TabMail's add-on replaces its chat relay (owner, 2026-09-29: "right
  * now it's just clunky"), so the other tools can be tried without it; its code stays for that
  * connector (ADR-DESK-037). Offering it here again brings it back everywhere. */
-export const offeredAgentToolIds: readonly AgentToolId[] = agentToolIds.filter((tool) => tool !== "thunderbird");
+export const offeredAgentToolIDs: readonly AgentToolID[] = agentToolIDs.filter((tool) => tool !== "thunderbird");
 
-export function isAgentToolId(name: unknown): name is AgentToolId {
-  return typeof name === "string" && (agentToolIds as readonly string[]).includes(name);
+export function isAgentToolID(name: unknown): name is AgentToolID {
+  return typeof name === "string" && (agentToolIDs as readonly string[]).includes(name);
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
@@ -200,7 +200,7 @@ export const AnswerTool: AgentTool = {
   },
 };
 
-export const agentTools: Record<AgentToolId, AgentTool> = {
+export const agentTools: Record<AgentToolID, AgentTool> = {
   edit: EditTool,
   compose: ComposeTool,
   thunderbird: ThunderbirdTool,

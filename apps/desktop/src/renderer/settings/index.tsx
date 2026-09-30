@@ -6,8 +6,8 @@ import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } f
 import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnectorId } from "../../core/agent/connectors/registry.js";
-import { offeredAgentToolIds, agentTools } from "../../core/agent/tools.js";
+import { connectorInfo, isConnectorID } from "../../core/agent/connectors/registry.js";
+import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
@@ -240,8 +240,8 @@ function AgentPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
-        {alphabetical([...offeredAgentToolIds, ...state.connectors]).map((key) =>
-          isConnectorId(key) ? (
+        {alphabetical([...offeredAgentToolIDs, ...state.connectors]).map((key) =>
+          isConnectorID(key) ? (
             <Toggle
               key={key}
               label={connectorInfo[key].displayName}
@@ -265,7 +265,7 @@ function AgentPane({ state }: { state: SettingsState }) {
         )}
       </Group>
       {/* Only the Thunderbird tool uses it, and only while that is offered (ADR-DESK-037). */}
-      {offeredAgentToolIds.includes("thunderbird") && <EmailClientPicker state={state} />}
+      {offeredAgentToolIDs.includes("thunderbird") && <EmailClientPicker state={state} />}
     </>
   );
 }

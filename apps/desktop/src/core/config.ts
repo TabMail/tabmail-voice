@@ -213,8 +213,8 @@ export const phoneNumberMinDigits = 5;
 export const webSearchTool = "search_web";
 /** `web_read`, as the Thunderbird add-on reads a page: the page's and robots.txt's timeouts, the most
  * characters of a page the model gets, and the User-Agent both are asked with. */
-export const webReadTimeoutMs = 30_000;
-export const webReadRobotsTimeoutMs = 5_000;
+export const webReadTimeout = 30_000;
+export const webReadRobotsTimeout = 5_000;
 export const webReadMaxCharacters = 500_000;
 export const webUserAgent = "TabMail/1.0 (macOS; +https://tabmail.app)";
 /** The most of a page's body `web_read` reads, in bytes: enough for `webReadMaxCharacters` in any
@@ -288,7 +288,7 @@ export const helperRestartDelay = 1_000;
 /** Packaged builds look for an update this long after launch, once the helpers and the welcome
  * wizard are up, and then this often (ADR-DESK-041). "Check for Updates…" in the menu looks at once. */
 export const updateFirstCheckDelay = 10_000;
-export const updateCheckInterval = 4 * 60 * 60 * 1000;
+export const updateCheckInterval = 4 * 60 * 60 * 1_000;
 
 // MARK: Welcome wizard
 

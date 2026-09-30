@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from "vitest";
 import { alphabetical, bubbleName, bubbleOrder, ranNow, serverToolConnector } from "../../../src/core/agent/bubbleOrder.js";
-import { connectorInfo, connectorIds, connectorServerTools } from "../../../src/core/agent/connectors/registry.js";
-import { agentToolIds, agentTools } from "../../../src/core/agent/tools.js";
+import { connectorInfo, connectorIDs, connectorServerTools } from "../../../src/core/agent/connectors/registry.js";
+import { agentToolIDs, agentTools } from "../../../src/core/agent/tools.js";
 
 /** The order of agent mode's bubbles under the pill, and of Settings' switches. */
 describe("bubble order", () => {
@@ -15,10 +15,10 @@ describe("bubble order", () => {
   });
 
   test("tools and apps sort together by name", () => {
-    const sorted = alphabetical([...agentToolIds, ...connectorIds]);
+    const sorted = alphabetical([...agentToolIDs, ...connectorIDs]);
     const names = sorted.map(bubbleName);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
-    expect(new Set(sorted)).toEqual(new Set([...agentToolIds, ...connectorIds]));
+    expect(new Set(sorted)).toEqual(new Set([...agentToolIDs, ...connectorIDs]));
   });
 
   /** Those that ran lead, the latest first, then the rest alphabetically; one that ran but no longer
@@ -38,7 +38,7 @@ describe("bubble order", () => {
   /** A backend tool belongs to the app whose server tools list it; the backend's own (the date tools)
    * to none. */
   test("a backend tool's app", () => {
-    for (const connector of connectorIds) for (const tool of connectorServerTools[connector] ?? []) expect(serverToolConnector(tool)).toBe(connector);
+    for (const connector of connectorIDs) for (const tool of connectorServerTools[connector] ?? []) expect(serverToolConnector(tool)).toBe(connector);
     expect(serverToolConnector("search_web")).toBe("web");
     expect(serverToolConnector("date_to_day")).toBeNull();
   });

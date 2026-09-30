@@ -13,7 +13,7 @@ import { opensLink } from "../core/agent/chat.js";
 import { calendarTools } from "../core/agent/connectors/calendar.js";
 import { contactsTools } from "../core/agent/connectors/contacts.js";
 import { filesTools } from "../core/agent/connectors/files.js";
-import { connectorIds } from "../core/agent/connectors/registry.js";
+import { connectorIDs } from "../core/agent/connectors/registry.js";
 import { EmailClient } from "../core/agent/connectors/thunderbird/emailClient.js";
 import { type EmailOpener, emailTools, NoEmailAppError } from "../core/agent/connectors/email.js";
 import { messagesTools } from "../core/agent/connectors/messages.js";
@@ -70,7 +70,7 @@ import { Windows } from "./windows.js";
 /** Debug builds are the unpackaged app (`npm start`); a packaged build is a release. */
 const isDebugBuild = !app.isPackaged;
 /** The apps the Answer tool can reach here: the Mac's, through `voice-macos` (ADR-DESK-024). */
-const availableConnectors = process.platform === "darwin" ? [...connectorIds] : [];
+const availableConnectors = process.platform === "darwin" ? [...connectorIDs] : [];
 /** Shown for a failure without a message of its own. */
 const genericError = "Something went wrong. Try again.";
 /** The pages a window may open in the browser. */

@@ -18,7 +18,7 @@ export interface PasteEntry {
  * memory for the app's life and never saved: no user content goes to disk. */
 export class PasteHistory extends Observable {
   private items: PasteEntry[] = [];
-  private nextId = 1;
+  private nextID = 1;
 
   constructor(
     private readonly limit = config.pasteHistoryLimit,
@@ -36,7 +36,7 @@ export class PasteHistory extends Observable {
   add(text: string): void {
     if (trimWhitespace(text) === "") return;
     const kept = this.items.filter((entry) => entry.text !== text);
-    this.items = [{ id: this.nextId++, text, at: this.now() }, ...kept].slice(0, this.limit);
+    this.items = [{ id: this.nextID++, text, at: this.now() }, ...kept].slice(0, this.limit);
     this.changed();
   }
 

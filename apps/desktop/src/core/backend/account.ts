@@ -15,7 +15,7 @@ export interface TabMailSession {
   refreshToken: string;
   /** Seconds since 1970. */
   expiresAt: number;
-  userId: string;
+  userID: string;
   userEmail: string;
 }
 
@@ -35,7 +35,7 @@ export function sessionFromWire(value: unknown): TabMailSession {
     accessToken: wire.access_token,
     refreshToken: wire.refresh_token,
     expiresAt: wire.expires_at,
-    userId: wire.user.id,
+    userID: wire.user.id,
     userEmail: typeof wire.user.email === "string" ? wire.user.email : "",
   };
 }
@@ -45,7 +45,7 @@ export function sessionToWire(session: TabMailSession): Record<string, unknown> 
     access_token: session.accessToken,
     refresh_token: session.refreshToken,
     expires_at: session.expiresAt,
-    user: { id: session.userId, email: session.userEmail },
+    user: { id: session.userID, email: session.userEmail },
   };
 }
 
@@ -102,7 +102,7 @@ export class AuthClient {
     if ([400, 401, 403].includes(status)) throw new AuthError("refreshRejected");
     if (status !== 200) throw new AuthError("failed", `Couldn't refresh your session (HTTP ${status}).`);
     const refreshed = sessionFromWire(parse(body));
-    if (refreshed.userId !== session.userId) throw new AuthError("refreshRejected");
+    if (refreshed.userID !== session.userID) throw new AuthError("refreshRejected");
     return refreshed;
   }
 
@@ -239,25 +239,25 @@ export class AccountModel extends Observable {
   }
 
   private set(session: TabMailSession | null): void {
-    const previousUser = this.current?.userId ?? null;
+    const previousUser = this.current?.userID ?? null;
     this.current = session;
-    if ((session?.userId ?? null) !== previousUser) this.onAccountChange?.();
+    if ((session?.userID ?? null) !== previousUser) this.onAccountChange?.();
     this.changed();
   }
 }
 
-/** Runs a backend call with a valid token of the account `userId`; one retry with a forced refresh
+/** Runs a backend call with a valid token of the account `userID`; one retry with a forced refresh
  * if the backend says the token is no longer valid. Throws `unauthorized` when that account is no
  * longer the one signed in, so a dictation never continues under another account. */
-export async function withFreshToken<T>(account: AccountModel, userId: string | null, call: (token: string) => Promise<T>): Promise<T> {
+export async function withFreshToken<T>(account: AccountModel, userID: string | null, call: (token: string) => Promise<T>): Promise<T> {
   const token = await account.validToken();
-  if (token === null || (account.session?.userId ?? null) !== userId) throw new BackendError("unauthorized");
+  if (token === null || (account.session?.userID ?? null) !== userID) throw new BackendError("unauthorized");
   try {
     return await call(token);
   } catch (error) {
     if (!(error instanceof BackendError) || error.kind !== "unauthorized") throw error;
     const fresh = await account.validToken(true);
-    if (fresh === null || (account.session?.userId ?? null) !== userId) throw new BackendError("unauthorized");
+    if (fresh === null || (account.session?.userID ?? null) !== userID) throw new BackendError("unauthorized");
     return await call(fresh);
   }
 }

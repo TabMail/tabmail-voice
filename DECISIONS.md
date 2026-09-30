@@ -1842,10 +1842,10 @@ Thunderbird from outside (ADR-DESK-014's spike: shortcut, paste, Return). The na
 ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built separately.
 
 **Decision:**
-- `offeredAgentToolIds` (Edit, Compose, Answer) is what agent mode offers and what Settings and the
+- `offeredAgentToolIDs` (Edit, Compose, Answer) is what agent mode offers and what Settings and the
   welcome wizard list; `agentTools` stays the registry of every tool, Thunderbird's included, so a
-  bubble or a stored switch still names a tool (`isAgentToolId`). `AppSettings.enabledTools` is drawn
-  from `offeredAgentToolIds`, so no dictation offers Thunderbird's tool, and the agent is never told of
+  bubble or a stored switch still names a tool (`isAgentToolID`). `AppSettings.enabledTools` is drawn
+  from `offeredAgentToolIDs`, so no dictation offers Thunderbird's tool, and the agent is never told of
   it (`available_tools`).
 - Its switch, and Settings' Email app menu (which only chooses where that tool sends), are hidden. A
   switch the user stored for it is kept, for when it returns.
@@ -1856,7 +1856,7 @@ ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built se
 - Mail and calendar requests go to Answer, whose Calendar, Reminders, Email and other connectors
   carry them out; the backend's agent prompt says which requests each tool takes (ADR-023
   amendment, 2026-09-29).
-- Bringing the tool back is offering it in `offeredAgentToolIds`, with the native connector as its
+- Bringing the tool back is offering it in `offeredAgentToolIDs`, with the native connector as its
   delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
   case) were taken out with it and come back from this change's history.
 
@@ -2261,11 +2261,13 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
     `ContactStore…`, `EventStore…`, `FileStore…`, `Helper…`, `Microphone…`, `NoEmailApp…`,
     `Relay…`, `Script…` and `WebRead…` (their `…Kind` types too), `NotPasted` → `NotPastedError`,
     `LoopToolArgumentError` → `ToolArgumentError`. The kinds, the helper's wire codes, are unchanged.
-  - A list of names is `…Id`, the object it names takes the plain noun: `AgentTool` (the names:
-    edit, compose, thunderbird, answer) → `AgentToolId`, `agentTools` → `agentToolIds`,
-    `offeredAgentTools` → `offeredAgentToolIds`, `isAgentTool` → `isAgentToolId`; the tool itself,
+  - An acronym is written in capitals, as the code already had it (`HTTPRequest`, `JSONFileStore`,
+    `bundleID`, `mailtoURL`): `userId` → `userID`, and the SVG hook `useSvgId` → `useGradientID`.
+  - A list of names is `…ID`, the object it names takes the plain noun: `AgentTool` (the names:
+    edit, compose, thunderbird, answer) → `AgentToolID`, `agentTools` → `agentToolIDs`,
+    `offeredAgentTools` → `offeredAgentToolIDs`, `isAgentTool` → `isAgentToolID`; the tool itself,
     `DesktopTool` → `AgentTool`, and `toolImplementations` → `agentTools`. `Connector` →
-    `ConnectorId`, `connectors` → `connectorIds`, `isConnector` → `isConnectorId`.
+    `ConnectorID`, `connectors` → `connectorIDs`, `isConnector` → `isConnectorID`.
   - `LoopTool` → `ConnectorTool` (`connectors/tool.ts`): a tool a connector brings, not the
     backend's loop it runs in; `loopTools` → `connectorTools`, `config.loopToolDeclined` and
     `loopToolUnanswered` → `connectorToolDeclined` and `connectorToolUnanswered`.
@@ -2274,7 +2276,8 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
   - `config.ts` keeps its rule, durations in milliseconds unless the name says otherwise; the four that
     were seconds without saying so say it: `pillSpringResponseSeconds`,
     `agentBubbleRunningSpringResponseSeconds`, `agentBubbleMoveDurationSeconds`,
-    `chatAppearDurationSeconds`.
+    `chatAppearDurationSeconds`; the two milliseconds that said so drop the suffix
+    (`webReadTimeoutMs` → `webReadTimeout`, `webReadRobotsTimeoutMs` → `webReadRobotsTimeout`).
 - Beyond the moves, only import paths, the pages' script and entry paths, `Package.swift`'s target
   names, the paths tests read from disk and the names above changed; the backend clients' module
   was split in three (`completions.ts`, `transcription.ts`, `errors.ts`, the request log and headers

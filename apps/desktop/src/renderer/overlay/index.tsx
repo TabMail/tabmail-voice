@@ -6,8 +6,8 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEf
 import { createRoot } from "react-dom/client";
 import { type AgentChat, type ChatTurn, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
 import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnectorId } from "../../core/agent/connectors/registry.js";
-import { type AgentToolId, agentTools } from "../../core/agent/tools.js";
+import { connectorInfo, isConnectorID } from "../../core/agent/connectors/registry.js";
+import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import type { DictationHotkey } from "../../core/hotkey/bindings.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCentre, grownBubble, hintCentre, hintCentreOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
@@ -35,7 +35,7 @@ type Mode =
   | { kind: "swirl" }
   | { kind: "listening" }
   | { kind: "transcribing" }
-  | { kind: "running"; tool: AgentToolId }
+  | { kind: "running"; tool: AgentToolID }
   | { kind: "message"; text: string }
   /** The text went on the clipboard instead of being pasted: the note beside a clipboard. */
   | { kind: "copied"; text: string }
@@ -233,17 +233,17 @@ function PillLayout({
   if (keepsBubbles && shown.length === 0) shown = kept.current;
   else kept.current = shown;
   const running = mode.kind === "running" ? mode.tool : null;
-  const isRunning = (key: BubbleKey) => key === running || (isConnectorId(key) && state.runningConnectors.includes(key));
+  const isRunning = (key: BubbleKey) => key === running || (isConnectorID(key) && state.runningConnectors.includes(key));
   const anyRunning = running !== null || state.runningConnectors.length > 0;
   const bubbles: BubbleItem[] = bubbleOrder(shown, state.recentBubbles)
     .map((key, index) => ({
       key,
       name: bubbleName(key),
-      description: isConnectorId(key) ? connectorInfo[key].settingsDescription : agentTools[key].settingsDescription,
+      description: isConnectorID(key) ? connectorInfo[key].settingsDescription : agentTools[key].settingsDescription,
       isRunning: isRunning(key),
       isDimmed: anyRunning && !isRunning(key),
       opacity: bubbleRowOpacity(index),
-      icon: isConnectorId(key) ? (
+      icon: isConnectorID(key) ? (
         <ConnectorIcon connector={key} size={config.agentBubbleSymbolSize} />
       ) : key === "thunderbird" && state.emailAppIcon ? (
         <img src={state.emailAppIcon} alt="" width={config.agentBubbleAppIconSize} height={config.agentBubbleAppIconSize} />

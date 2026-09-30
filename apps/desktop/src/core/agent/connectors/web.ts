@@ -90,7 +90,7 @@ export class WebPageReader {
     if (!(await this.robotsAllow(url, signal))) throw new WebReadError("Access to this URL is disallowed by the site's robots.txt");
     let response: WebResponse;
     try {
-      response = await this.fetch(url.href, { "User-Agent": config.webUserAgent }, config.webReadTimeoutMs, signal);
+      response = await this.fetch(url.href, { "User-Agent": config.webUserAgent }, config.webReadTimeout, signal);
     } catch (error) {
       if (error instanceof CancellationError) throw error;
       throw new WebReadError(`Failed to fetch URL: ${error instanceof Error ? error.message : String(error)}`);
@@ -107,7 +107,7 @@ export class WebPageReader {
   private async robotsAllow(url: URL, signal: AbortSignal): Promise<boolean> {
     let response: WebResponse;
     try {
-      response = await this.fetch(`${url.protocol}//${url.host}/robots.txt`, { "User-Agent": config.webUserAgent }, config.webReadRobotsTimeoutMs, signal);
+      response = await this.fetch(`${url.protocol}//${url.host}/robots.txt`, { "User-Agent": config.webUserAgent }, config.webReadRobotsTimeout, signal);
     } catch (error) {
       if (error instanceof CancellationError) throw error;
       return true;

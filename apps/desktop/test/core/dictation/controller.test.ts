@@ -7,10 +7,10 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../../../src/core/backend/account.js";
 import { type AgentChat, chatTranscript, emptyChat } from "../../../src/core/agent/chat.js";
-import { type ConnectorId, connectorIds } from "../../../src/core/agent/connectors/registry.js";
+import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/registry.js";
 import type { ConnectorTool } from "../../../src/core/agent/connectors/tool.js";
 import { RelayError } from "../../../src/core/agent/connectors/thunderbird/relay.js";
-import { AgentError, type AgentToolId, agentToolIds } from "../../../src/core/agent/tools.js";
+import { AgentError, type AgentToolID, agentToolIDs } from "../../../src/core/agent/tools.js";
 import { AudioRecorder } from "../../../src/core/audio/recorder.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
@@ -44,17 +44,17 @@ const idle: Phase = { kind: "idle" };
 const arming: Phase = { kind: "arming" };
 const listening: Phase = { kind: "listening" };
 const transcribing: Phase = { kind: "transcribing" };
-const running = (tool: AgentToolId): Phase => ({ kind: "running", tool });
+const running = (tool: AgentToolID): Phase => ({ kind: "running", tool });
 const failed = (message: string): Phase => ({ kind: "failed", message });
 const copied: Phase = { kind: "copied", message: notPastedMessage };
 const microphoneFailed = failed("Couldn't start the microphone.");
 
 /** Without Answer: most agent tests are about the writing tools and Thunderbird, and Answer would
  * make every request a choice. The chat window's tests switch it on (`withAnswer`). */
-const toolsWithoutAnswer: AgentToolId[] = agentToolIds.filter((tool) => tool !== "answer");
+const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIds], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -774,7 +774,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   test("an account switch during the request sends nothing under the other account", async () => {
     const account = signedIn(auth);
     transcription.enqueue(200, cleanedReply);
-    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
+    auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
     transcription.gate = async () => {
       account.signOut();
       await account.verify(Fixtures.email, "123456");
@@ -784,7 +784,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     await holdAndRelease(controller);
     expect(await eventually(() => pastes.length > 0)).toBe(true);
 
-    expect(account.session?.userId).toBe("user-2");
+    expect(account.session?.userID).toBe("user-2");
     expect(transcription.authorizations).toEqual(["Bearer access-1"]);
     expect(completions.requests).toHaveLength(0);
     expect(pastes).toEqual([cleaned]);
@@ -1136,7 +1136,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** The selection alone decides between Edit and Compose, as the bubbles showed it: the other
      * writing tool is not offered (`available_tools`), and an agent that names it anyway fails the
      * request, pasting nothing. */
-    test.each<[string, string, AgentToolId]>([
+    test.each<[string, string, AgentToolID]>([
       ["Ship it Friday or else.", "compose", "edit"],
       ["", "edit", "compose"],
     ])("with the selection %j the agent's %s is not offered", async (selected, agentChoice, tool) => {
@@ -1278,8 +1278,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * runs their tools. A switch changed during the hold changes none of them (the settings are
      * snapshotted at key-down). */
     test.each([true, false])("the apps switched on show beside Answer (Answer on: %s)", async (answerOn) => {
-      const tool = (connector: ConnectorId): ConnectorTool => ({ name: `${connector}_example`, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
-      prefs.value = { ...prefs.value, enabledTools: answerOn ? [...agentToolIds] : toolsWithoutAnswer, enabledConnectors: connectorIds.filter((connector) => connector !== "notes") };
+      const tool = (connector: ConnectorID): ConnectorTool => ({ name: `${connector}_example`, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
+      prefs.value = { ...prefs.value, enabledTools: answerOn ? [...agentToolIDs] : toolsWithoutAnswer, enabledConnectors: connectorIDs.filter((connector) => connector !== "notes") };
       const { controller } = makeController({ capture: new CountingCapture(true), thunderbird: new FakeThunderbird(), connectorTools: [tool("web"), tool("calendar"), tool("notes"), tool("calendar")] });
       controller.captureContext = async () => selectionScreen("");
 
@@ -1288,7 +1288,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.connectors).toEqual([]);
       controller.handle("toggleMode");
       expect(await eventually(() => controller.tools.length > 0)).toBe(true);
-      prefs.value = { ...prefs.value, enabledTools: [...agentToolIds], enabledConnectors: [...connectorIds] };
+      prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs], enabledConnectors: [...connectorIDs] };
 
       expect(controller.tools.includes("answer")).toBe(answerOn);
       expect(controller.connectors).toEqual(answerOn ? ["calendar", "web"] : []);
@@ -1298,7 +1298,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** The user moved to another app while the text was written: it is not pasted there. */
-    test.each<[string, AgentToolId]>([
+    test.each<[string, AgentToolID]>([
       ["Ship it Friday or else.", "edit"],
       ["", "compose"],
     ])("agent text is not pasted into another app (selection %j)", async (selected, tool) => {
@@ -1318,7 +1318,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** Cancelled while the paste reads the app in front, the last wait before it, with the next
      * dictation already listening: the old request's text is pasted nowhere. */
-    test.each<[string, AgentToolId]>([
+    test.each<[string, AgentToolID]>([
       ["Ship it Friday or else.", "edit"],
       ["", "compose"],
     ])("agent text cancelled during the last wait is not pasted (selection %j)", async (selected, tool) => {
@@ -1451,7 +1451,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIds], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false };
         };
         const read = controller.captureContext;
         controller.captureContext = () => {
@@ -1485,7 +1485,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * switched off during the hold stays until the next. */
     test("the bubbles keep the tools switched on at key-down", async () => {
       const thunderbird = new FakeThunderbird();
-      const shown: AgentToolId[][] = [];
+      const shown: AgentToolID[][] = [];
       transcription.enqueue(200, { text: "find sam's invoice" });
       completions.enqueue(200, reply("thunderbird"));
       completions.enqueue(200, reply("Find the invoice Sam sent."));
@@ -1596,7 +1596,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       prefs.value = { ...prefs.value, emailClient: changedTo };
       controller.handle("toggleMode");
 
-      const offered: AgentToolId[] = atKeyDown === null ? ["compose"] : ["compose", "thunderbird"];
+      const offered: AgentToolID[] = atKeyDown === null ? ["compose"] : ["compose", "thunderbird"];
       expect(await eventually(() => JSON.stringify(controller.tools) === JSON.stringify(offered))).toBe(true);
       expect(controller.emailAppPath).toBe(atKeyDown === null ? null : FakeThunderbird.path);
       controller.handle("cancel");
@@ -1746,15 +1746,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       /** Every agent tool on, as they are by default. */
       function allToolsOn(): void {
-        prefs.value = { ...prefs.value, enabledTools: [...agentToolIds] };
+        prefs.value = { ...prefs.value, enabledTools: [...agentToolIDs] };
       }
 
-      function setTools(tools: AgentToolId[]): void {
+      function setTools(tools: AgentToolID[]): void {
         prefs.value = { ...prefs.value, enabledTools: tools };
       }
 
       /** Queues a request the agent gives `tool`, which writes `text`. */
-      function queue(spoken: string, tool: AgentToolId, text: string): void {
+      function queue(spoken: string, tool: AgentToolID, text: string): void {
         transcription.enqueue(200, { text: spoken });
         completions.enqueue(200, reply(tool));
         completions.enqueue(200, reply(text));
@@ -2147,7 +2147,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         account.signOut();
 
         expect(controller.chat).toBeNull();
-        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
+        auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
         await account.verify(Fixtures.email, "123456");
         queue("second account question", "answer", "second account reply");
         await holdAndRelease(controller, "agent");
@@ -2250,7 +2250,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       /** The only tool switched on does its own job unasked: Answer replies in the chat window, the
        * email app's tool sends to it; neither pastes in the app in front. */
-      test.each<AgentToolId>(["answer", "thunderbird"])("the only tool on (%s) does its own job", async (tool) => {
+      test.each<AgentToolID>(["answer", "thunderbird"])("the only tool on (%s) does its own job", async (tool) => {
         setTools([tool]);
         transcription.enqueue(200, { text: "the request" });
         completions.enqueue(200, reply("the reply"));
@@ -2294,7 +2294,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           constructor(
             readonly name = "example_create",
             readonly progressLabel = "Adding it to your calendar",
-            readonly connector: ConnectorId = "calendar",
+            readonly connector: ConnectorID = "calendar",
           ) {}
 
           confirmation(args: Record<string, unknown>): string | null {

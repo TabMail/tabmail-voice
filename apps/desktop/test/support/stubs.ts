@@ -76,25 +76,25 @@ export class InMemorySessionStore implements SessionStore {
 }
 
 export const Fixtures = {
-  userId: "user-1",
+  userID: "user-1",
   email: "person@example.com",
 
-  session(options: { access?: string; refresh?: string; expiresIn?: number; userId?: string } = {}): TabMailSession {
+  session(options: { access?: string; refresh?: string; expiresIn?: number; userID?: string } = {}): TabMailSession {
     return {
       accessToken: options.access ?? "access-1",
       refreshToken: options.refresh ?? "refresh-1",
       expiresAt: Math.floor(Date.now() / 1000) + (options.expiresIn ?? 3600),
-      userId: options.userId ?? Fixtures.userId,
+      userID: options.userID ?? Fixtures.userID,
       userEmail: Fixtures.email,
     };
   },
 
-  sessionJSON(options: { access: string; refresh: string; expiresIn?: number; userId?: string }): Record<string, unknown> {
+  sessionJSON(options: { access: string; refresh: string; expiresIn?: number; userID?: string }): Record<string, unknown> {
     return {
       access_token: options.access,
       refresh_token: options.refresh,
       expires_at: Math.floor(Date.now() / 1000) + (options.expiresIn ?? 3600),
-      user: { id: options.userId ?? Fixtures.userId, email: Fixtures.email },
+      user: { id: options.userID ?? Fixtures.userID, email: Fixtures.email },
     };
   },
 

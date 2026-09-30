@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { DebugAccess } from "./backend/account.js";
-import { type ConnectorId, connectorIds, isConnectorId } from "./agent/connectors/registry.js";
-import { type AgentToolId, isAgentToolId, offeredAgentToolIds } from "./agent/tools.js";
+import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connectors/registry.js";
+import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
@@ -35,9 +35,9 @@ export interface DictationSettings {
   backendURL: string;
   readsScreen: boolean;
   /** Agent mode's tools the user has on. */
-  enabledTools: AgentToolId[];
+  enabledTools: AgentToolID[];
   /** The apps the Answer tool's tools may reach (`ConnectorTool.connector`) the user has on. */
-  enabledConnectors: ConnectorId[];
+  enabledConnectors: ConnectorID[];
   /** The email app chosen in Settings; null for the user's default email app. With the system's
    * default, asked as agent mode needs it, it resolves to the app mail and calendar requests go to
    * (`EmailClient.resolve`). */
@@ -204,49 +204,49 @@ export class AppSettings extends Observable {
   }
 
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
-  private get disabledAgentTools(): AgentToolId[] {
+  private get disabledAgentTools(): AgentToolID[] {
     const stored = this.store.get(Key.disabledAgentTools);
-    return Array.isArray(stored) ? stored.filter(isAgentToolId) : [];
+    return Array.isArray(stored) ? stored.filter(isAgentToolID) : [];
   }
 
   /** Whether agent mode may use `tool`. Every tool is on unless switched off (owner, 2026-09-26). */
-  isEnabled(tool: AgentToolId): boolean {
+  isEnabled(tool: AgentToolID): boolean {
     return !this.disabledAgentTools.includes(tool);
   }
 
-  setEnabled(tool: AgentToolId, enabled: boolean): void {
+  setEnabled(tool: AgentToolID, enabled: boolean): void {
     const others = this.disabledAgentTools.filter((disabled) => disabled !== tool);
     this.store.set(Key.disabledAgentTools, (enabled ? others : [...others, tool]).sort());
     this.changed();
   }
 
   /** Agent mode's offered tools the user has on, in the registry's order. */
-  get enabledTools(): AgentToolId[] {
-    return offeredAgentToolIds.filter((tool) => this.isEnabled(tool));
+  get enabledTools(): AgentToolID[] {
+    return offeredAgentToolIDs.filter((tool) => this.isEnabled(tool));
   }
 
   /** The apps the Answer tool reaches that the user switched off, stored by name so one added later
    * starts on. */
-  private get disabledConnectors(): ConnectorId[] {
+  private get disabledConnectors(): ConnectorID[] {
     const stored = this.store.get(Key.disabledConnectors);
-    return Array.isArray(stored) ? stored.filter(isConnectorId) : [];
+    return Array.isArray(stored) ? stored.filter(isConnectorID) : [];
   }
 
   /** Whether the Answer tool may reach `connector`'s app. Every one is on unless switched off (owner,
    * 2026-09-26). */
-  isConnectorEnabled(connector: ConnectorId): boolean {
+  isConnectorEnabled(connector: ConnectorID): boolean {
     return !this.disabledConnectors.includes(connector);
   }
 
-  setConnectorEnabled(connector: ConnectorId, enabled: boolean): void {
+  setConnectorEnabled(connector: ConnectorID, enabled: boolean): void {
     const others = this.disabledConnectors.filter((disabled) => disabled !== connector);
     this.store.set(Key.disabledConnectors, (enabled ? others : [...others, connector]).sort());
     this.changed();
   }
 
   /** The apps the Answer tool reaches that the user has on, in the registry's order. */
-  get enabledConnectors(): ConnectorId[] {
-    return connectorIds.filter((connector) => this.isConnectorEnabled(connector));
+  get enabledConnectors(): ConnectorID[] {
+    return connectorIDs.filter((connector) => this.isConnectorEnabled(connector));
   }
 
   /** Debug mode: dictation goes to dev.tabmail.ai (the development server) instead of

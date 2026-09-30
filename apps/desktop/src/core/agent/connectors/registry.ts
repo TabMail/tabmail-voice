@@ -9,12 +9,12 @@
  */
 import * as config from "../../config.js";
 
-export type ConnectorId = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web";
+export type ConnectorID = "calendar" | "reminders" | "contacts" | "files" | "email" | "notes" | "messages" | "web";
 
-export const connectorIds: readonly ConnectorId[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
+export const connectorIDs: readonly ConnectorID[] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
 
-export function isConnectorId(name: unknown): name is ConnectorId {
-  return typeof name === "string" && (connectorIds as readonly string[]).includes(name);
+export function isConnectorID(name: unknown): name is ConnectorID {
+  return typeof name === "string" && (connectorIDs as readonly string[]).includes(name);
 }
 
 export interface ConnectorInfo {
@@ -23,7 +23,7 @@ export interface ConnectorInfo {
   settingsDescription: string;
 }
 
-export const connectorInfo: Record<ConnectorId, ConnectorInfo> = {
+export const connectorInfo: Record<ConnectorID, ConnectorInfo> = {
   calendar: {
     displayName: "Calendar",
     settingsDescription: "Answers from your calendars, and adds events you ask for once you confirm.",
@@ -60,6 +60,6 @@ export const connectorInfo: Record<ConnectorId, ConnectorInfo> = {
 
 /** The backend's own tools an app brings, listed in `available_tools` beside its tools while it is on
  * (ADR-DESK-030): the web's search runs on the server. */
-export const connectorServerTools: Partial<Record<ConnectorId, readonly string[]>> = {
+export const connectorServerTools: Partial<Record<ConnectorID, readonly string[]>> = {
   web: [config.webSearchTool],
 };

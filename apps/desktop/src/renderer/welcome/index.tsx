@@ -5,8 +5,8 @@
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnectorId } from "../../core/agent/connectors/registry.js";
-import { offeredAgentToolIds, agentTools } from "../../core/agent/tools.js";
+import { connectorInfo, isConnectorID } from "../../core/agent/connectors/registry.js";
+import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { WelcomeWizard } from "../../core/onboarding/welcomeWizard.js";
 import type { WelcomeState } from "../../shared/ipc.js";
@@ -81,8 +81,8 @@ function Page({ state }: { state: WelcomeState }) {
           {state.readsScreen && !state.accessibilityTrusted && <span className="caption">Screen reading needs Accessibility access.</span>}
           <hr />
           <span>Agent mode (press Space while dictating) can:</span>
-          {alphabetical([...offeredAgentToolIds, ...state.connectors]).map((key) =>
-            isConnectorId(key) ? (
+          {alphabetical([...offeredAgentToolIDs, ...state.connectors]).map((key) =>
+            isConnectorID(key) ? (
               <label key={key} className="check">
                 <input type="checkbox" checked={state.enabledConnectors.includes(key)} onChange={(event) => void send({ type: "setConnectorEnabled", connector: key, value: event.target.checked })} />
                 <span className="stack-text">

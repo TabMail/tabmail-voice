@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { connectorIds } from "../../../../src/core/agent/connectors/registry.js";
+import { connectorIDs } from "../../../../src/core/agent/connectors/registry.js";
 import { type EmailOpener, EmailComposeTool, emailTools, isAddress, mailtoURL, NoEmailAppError } from "../../../../src/core/agent/connectors/email.js";
 import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
 
@@ -163,6 +163,6 @@ describe("email_compose", () => {
     const tools = emailTools(opener);
 
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([["email", "email_compose"]]);
-    expect(connectorIds).toContain("email");
+    expect(connectorIDs).toContain("email");
   });
 });

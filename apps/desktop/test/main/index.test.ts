@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { connectorIds } from "../../src/core/agent/connectors/registry.js";
+import { connectorIDs } from "../../src/core/agent/connectors/registry.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
@@ -815,7 +815,7 @@ describe("main process wiring", () => {
 
     expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
     // Every app with a switch has its tools, and every tool's app a switch.
-    expect(new Set(app.connectorTools.map((tool) => tool.connector))).toEqual(new Set(connectorIds));
+    expect(new Set(app.connectorTools.map((tool) => tool.connector))).toEqual(new Set(connectorIDs));
     await app.connectorTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
     await app.connectorTools.find((tool) => tool.name === "contacts_search")?.run({ query: "Sam" }, signal);
     await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal);

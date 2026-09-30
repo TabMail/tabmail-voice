@@ -82,8 +82,8 @@ describe("web_read", () => {
 
     expect(result).toBe("URL: https://example.com/docs/page\nContent-Type: text/plain; charset=utf-8\nContent-Length: 12 characters\n\nContent:\nPlain words.");
     expect(web.requests.map((request) => [request.url, request.headers["User-Agent"], request.timeout, request.signal])).toEqual([
-      ["https://example.com/robots.txt", config.webUserAgent, config.webReadRobotsTimeoutMs, signal],
-      ["https://example.com/docs/page", config.webUserAgent, config.webReadTimeoutMs, signal],
+      ["https://example.com/robots.txt", config.webUserAgent, config.webReadRobotsTimeout, signal],
+      ["https://example.com/docs/page", config.webUserAgent, config.webReadTimeout, signal],
     ]);
   });
 

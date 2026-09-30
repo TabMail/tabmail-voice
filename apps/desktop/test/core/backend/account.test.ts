@@ -60,7 +60,7 @@ describe("AuthClient", () => {
 
   test("refresh rejects a session for a different user", async () => {
     const stub = new StubTransport();
-    stub.enqueue(200, Fixtures.sessionJSON({ access: "a2", refresh: "r2", userId: "someone-else" }));
+    stub.enqueue(200, Fixtures.sessionJSON({ access: "a2", refresh: "r2", userID: "someone-else" }));
     expect((await authError(client(stub).refresh(Fixtures.session())))?.kind).toBe("refreshRejected");
   });
 });
@@ -164,7 +164,7 @@ describe("AccountModel", () => {
    * kept and as stored, alone. */
   test.each([
     ["a rejected refresh, another account signed in", 400, "user-2"],
-    ["a refreshed token, the same user signed in again", 200, Fixtures.userId],
+    ["a refreshed token, the same user signed in again", 200, Fixtures.userID],
   ])("a refresh outlived by a new sign-in leaves it alone: %s", async (_, refreshStatus, newUser) => {
     const refreshing = deferred<void>();
     const release = deferred<void>();
@@ -175,7 +175,7 @@ describe("AccountModel", () => {
       await release.promise;
     };
     // Replies go out in the order requests are answered: the sign-in's, then the held refresh's.
-    stub.enqueue(200, Fixtures.sessionJSON({ access: "new-sign-in", refresh: "new-refresh", userId: newUser }));
+    stub.enqueue(200, Fixtures.sessionJSON({ access: "new-sign-in", refresh: "new-refresh", userID: newUser }));
     stub.enqueue(refreshStatus, refreshStatus === 200 ? Fixtures.sessionJSON({ access: "old-refreshed", refresh: "old-refresh-2" }) : { error: "invalid_grant" });
     const store = new InMemorySessionStore(Fixtures.session({ expiresIn: 0 }));
     const account = new AccountModel(client(stub), store);
@@ -259,12 +259,12 @@ describe("AccountModel", () => {
     const old = deferred<TabMailSession>();
     const fresh = deferred<TabMailSession>();
     const sent: string[] = [];
-    const newSignIn = Fixtures.session({ access: "access-b", refresh: "refresh-b", userId: "user-2" });
+    const newSignIn = Fixtures.session({ access: "access-b", refresh: "refresh-b", userID: "user-2" });
     const auth = {
       verify: async () => newSignIn,
       refresh: (session: TabMailSession) => {
         sent.push(session.refreshToken);
-        return session.userId === "user-2" ? fresh.promise : old.promise;
+        return session.userID === "user-2" ? fresh.promise : old.promise;
       },
     } as unknown as AuthClient;
     const store = new InMemorySessionStore(Fixtures.session({ expiresIn: 0 }));
@@ -277,7 +277,7 @@ describe("AccountModel", () => {
     old.resolve(Fixtures.session({ access: "obsolete", refresh: "obsolete-r" }));
     expect(await first).toBeNull();
     const third = account.validToken(true);
-    const refreshed = Fixtures.session({ access: "access-b2", refresh: "refresh-b2", userId: "user-2" });
+    const refreshed = Fixtures.session({ access: "access-b2", refresh: "refresh-b2", userID: "user-2" });
     fresh.resolve(refreshed);
 
     expect(await Promise.all([second, third])).toEqual(["access-b2", "access-b2"]);

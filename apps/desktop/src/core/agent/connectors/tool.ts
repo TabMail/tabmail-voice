@@ -4,7 +4,7 @@
 
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { trimWhitespace } from "../../util/text.js";
-import type { ConnectorId } from "./registry.js";
+import type { ConnectorID } from "./registry.js";
 
 /**
  * A tool the Answer prompt's model can call that runs on this computer (a calendar read, a reminder
@@ -16,7 +16,7 @@ export interface ConnectorTool {
   /** The function name, as in the backend's registry. */
   readonly name: string;
   /** The app it reaches, whose switch in Settings and the welcome wizard turns it on and off. */
-  readonly connector: ConnectorId;
+  readonly connector: ConnectorID;
   /** What the chat window says while it runs ("Checking your calendar"). */
   readonly progressLabel: string;
   /** What the chat window asks before the tool sends or creates anything ("Add “Launch review” to

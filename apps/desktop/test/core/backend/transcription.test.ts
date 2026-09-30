@@ -175,7 +175,7 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const transcription = await withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token));
+    const transcription = await withFreshToken(account, Fixtures.userID, (token) => client.transcribe(flac, null, [], token));
 
     expect(transcription.text).toBe("Retried.");
     expect(backend.authorizations).toEqual(["Bearer access-1", "Bearer access-2"]);
@@ -189,7 +189,7 @@ describe("withFreshToken", () => {
     const account = signedIn(auth);
     const client = makeClient(backend);
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userID, (token) => client.transcribe(flac, null, [], token)));
 
     expect(error.kind).toBe("subscriptionRequired");
     expect(backend.requests).toHaveLength(1);
@@ -201,7 +201,7 @@ describe("withFreshToken", () => {
     const account = signedIn(new StubTransport(), null);
     const client = makeClient(backend);
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userID, (token) => client.transcribe(flac, null, [], token)));
 
     expect(error.kind).toBe("unauthorized");
     expect(backend.requests).toHaveLength(0);
@@ -215,8 +215,8 @@ describe("withFreshToken", () => {
     backend.enqueue(200, { text: "Retried." });
     const auth = new StubTransport();
     if (switchAccount) {
-      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userId: "user-2" }));
-      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b2", refresh: "refresh-b2", userId: "user-2" }));
+      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b2", refresh: "refresh-b2", userID: "user-2" }));
     }
     const account = signedIn(auth);
     const client = makeClient(backend);
@@ -225,10 +225,10 @@ describe("withFreshToken", () => {
       if (switchAccount) await account.verify(Fixtures.email, "123456");
     };
 
-    const error = await backendError(withFreshToken(account, Fixtures.userId, (token) => client.transcribe(flac, null, [], token)));
+    const error = await backendError(withFreshToken(account, Fixtures.userID, (token) => client.transcribe(flac, null, [], token)));
 
     expect(error.kind).toBe("unauthorized");
     expect(backend.authorizations).toEqual(["Bearer access-1"]);
-    expect(account.session?.userId ?? null).toBe(switchAccount ? "user-2" : null);
+    expect(account.session?.userID ?? null).toBe(switchAccount ? "user-2" : null);
   });
 });

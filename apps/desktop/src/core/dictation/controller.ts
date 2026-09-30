@@ -5,12 +5,12 @@
 import { type AccountModel, withFreshToken } from "../backend/account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "../agent/chat.js";
 import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
-import { type ConnectorId, connectorIds } from "../agent/connectors/registry.js";
+import { type ConnectorID, connectorIDs } from "../agent/connectors/registry.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
 import { isJSONObject, type ConnectorTool } from "../agent/connectors/tool.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
-import { type AgentToolId, agentTools } from "../agent/tools.js";
+import { type AgentToolID, agentTools } from "../agent/tools.js";
 import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "../audio/recorder.js";
 import { BackendError } from "../backend/errors.js";
 import { type CompletionsClient, type ServerToolEvent, type ToolCall } from "../backend/completions.js";
@@ -43,7 +43,7 @@ export type Phase =
   /** The transcription failed on the server's side and is being tried again (`transcribeRetrying`). */
   | { kind: "retrying"; message: string }
   /** Agent mode: the agent chose this tool, which is writing its text. */
-  | { kind: "running"; tool: AgentToolId }
+  | { kind: "running"; tool: AgentToolID }
   | { kind: "failed"; message: string }
   /** The user went to another app before the paste: the text is on the clipboard and in the paste
    * history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
@@ -122,7 +122,7 @@ const gatewayTimeout = 504;
 export class DictationController extends Observable {
   private currentPhase: Phase = { kind: "idle" };
   private currentMode: DictationMode = "dictation";
-  private currentTools: AgentToolId[] = [];
+  private currentTools: AgentToolID[] = [];
   private currentLevel = 0;
   private hearing = false;
   private currentLanguage: string | null = null;
@@ -132,7 +132,7 @@ export class DictationController extends Observable {
   /** The bubbles whose tools ran, the most recent first: for the app's life, never saved. */
   private recent: BubbleKey[] = [];
   /** The apps whose tools run now: one at a time, as the answer's tools run in turn. */
-  private runningApps = new Set<ConnectorId>();
+  private runningApps = new Set<ConnectorID>();
 
   onPhaseChange: ((phase: Phase) => void) | undefined;
   /** The chat window opened (true) or closed. */
@@ -225,15 +225,15 @@ export class DictationController extends Observable {
   /** The tools agent mode offers this time (`DesktopAgent.tools`). Empty in dictation mode, and
    * until the screen read at key-down and the email app are known: the selection decides between
    * Edit and Compose. */
-  get tools(): AgentToolId[] {
+  get tools(): AgentToolID[] {
     return this.currentTools;
   }
 
   /** The apps agent mode shows a bubble for beside the tools': those switched on at key-down whose
    * tools this computer has, while Answer, whose loop runs their tools, is offered; none otherwise. */
-  get connectors(): ConnectorId[] {
+  get connectors(): ConnectorID[] {
     if (!this.currentTools.includes("answer")) return [];
-    return connectorIds.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.connectorTools.some((tool) => tool.connector === connector));
+    return connectorIDs.filter((connector) => this.dictationSettings.enabledConnectors.includes(connector) && this.deps.connectorTools.some((tool) => tool.connector === connector));
   }
 
   /** The bubbles whose tools have run since the app started, the most recent first, which the
@@ -244,7 +244,7 @@ export class DictationController extends Observable {
 
   /** The apps whose tools run now: one on this computer (`ConnectorTool`), or on the backend (the web's
    * search), each while it runs. */
-  get runningConnectors(): ConnectorId[] {
+  get runningConnectors(): ConnectorID[] {
     return [...this.runningApps];
   }
 
@@ -506,7 +506,7 @@ export class DictationController extends Observable {
     // Every request goes under the account signed in now, even if the user switches accounts while
     // they run.
     const account = this.deps.account;
-    const userId = account.session?.userId ?? null;
+    const userID = account.session?.userID ?? null;
     const settings = this.dictationSettings;
     const mode = this.currentMode;
     const signal = this.abort.signal;
@@ -528,7 +528,7 @@ export class DictationController extends Observable {
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
       const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
       const started = performance.now();
-      const transcription = await this.transcribeRetrying(() => withFreshToken(account, userId, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)), isCurrent, signal);
+      const transcription = await this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)), isCurrent, signal);
       if (!isCurrent()) return;
       const transcript = trimWhitespace(transcription.text);
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)} (${charCount(transcript)} chars)`);
@@ -558,7 +558,7 @@ export class DictationController extends Observable {
         const chat = this.currentChat;
         const conversation = chat ? chatTranscript(chat) : "";
         if (chat) this.setChat({ ...chat, pendingRequest: transcript });
-        const tool = await DesktopAgent.tool(transcript, offered, context, conversation, client, account, userId, signal);
+        const tool = await DesktopAgent.tool(transcript, offered, context, conversation, client, account, userID, signal);
         if (!isCurrent()) return;
         log.debug(`DictationController: agent chose ${tool}`);
         this.recent = ranNow(this.recent, tool);
@@ -575,12 +575,12 @@ export class DictationController extends Observable {
                 DesktopAgent.answerTools(connectorTools),
                 client,
                 account,
-                userId,
+                userID,
                 (call) => this.runConnectorTool(call, connectorTools, transcript, isCurrent, signal),
                 (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
-            : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userId, signal);
+            : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userID, signal);
         if (!isCurrent()) return;
         await agentTools[tool].deliver(text, {
           emailApp: email.app,
@@ -617,7 +617,7 @@ export class DictationController extends Observable {
   private async warmUp(backendURL: string): Promise<void> {
     const account = this.deps.account;
     try {
-      await withFreshToken(account, account.session?.userId ?? null, (token) => this.deps.warmUp(backendURL, token));
+      await withFreshToken(account, account.session?.userID ?? null, (token) => this.deps.warmUp(backendURL, token));
     } catch (error) {
       log.debug(`DictationController: warm-up failed: ${errorName(error)}`);
     }
@@ -699,13 +699,13 @@ export class DictationController extends Observable {
   }
 
   /** One of `connector`'s tools starts: its bubble moves to the front of the history and runs. */
-  private appStarted(connector: ConnectorId): void {
+  private appStarted(connector: ConnectorID): void {
     this.recent = ranNow(this.recent, connector);
     this.runningApps.add(connector);
     this.changed();
   }
 
-  private appEnded(connector: ConnectorId): void {
+  private appEnded(connector: ConnectorID): void {
     this.runningApps.delete(connector);
     this.changed();
   }
@@ -976,7 +976,7 @@ export class DictationController extends Observable {
 
   /** Adds a turn to the chat window, opening it if it is closed: then, unless the user has touched
    * it, it closes after `chatTimeout` (`keepChatOpen()`). */
-  private showInChat(request: string, tool: AgentToolId, reply: string): void {
+  private showInChat(request: string, tool: AgentToolID, reply: string): void {
     const chat = appendTurn(this.currentChat ?? this.newChat(), request, tool, reply);
     // Only the first answer finds it untouched: a follow-up touches it.
     if (chat.touched) return this.setChat(chat);

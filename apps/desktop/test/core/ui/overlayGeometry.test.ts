@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { connectorIds } from "../../../src/core/agent/connectors/registry.js";
-import { agentToolIds } from "../../../src/core/agent/tools.js";
+import { connectorIDs } from "../../../src/core/agent/connectors/registry.js";
+import { agentToolIDs } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
 import {
   bubbleRow,
@@ -136,7 +136,7 @@ describe("overlay geometry", () => {
     const showing = visible + config.agentBubbleRowFadeCount;
     for (const size of [{ width: 120, height: config.listeningPillHeight }, { width: config.pillHeight, height: config.pillHeight }]) {
       const pill = rect(midX(area) - size.width / 2, (area.height - config.pillHeight) / 2, size.width, size.height);
-      for (let count = 0; count <= agentToolIds.length + connectorIds.length; count += 1) {
+      for (let count = 0; count <= agentToolIDs.length + connectorIDs.length; count += 1) {
         const frames = bubbleRow(pill, count, underFits).map((centre) => framed(centre, bubble));
         expect(frames).toHaveLength(count);
         const tipFrame = framed(hintCentre(underBubbles(pill, frames), tip), tip);
