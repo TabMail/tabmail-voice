@@ -275,6 +275,7 @@ function launch(): void {
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,
       version: app.getVersion(),
+      update: updater?.state ?? null,
     };
   }
 
@@ -345,7 +346,7 @@ function launch(): void {
         void dialog.showMessageBox({ type: "info", message, detail, buttons: ["OK"] });
       },
       isBusy: () => !isResting(controller.phase) || controller.chat !== null,
-      onChange: () => tray.update(),
+      onChange: () => pushSettingsWindows(),
     });
   }
 
@@ -627,6 +628,10 @@ function launch(): void {
         return permissions.requestMicrophone();
       case "requestAccessibility":
         return permissions.requestAccessibility();
+      case "checkForUpdates":
+        return updater?.checkNow();
+      case "restartToUpdate":
+        return updater?.restart();
       case "welcomeNext":
         return wizard?.next();
       case "welcomeBack":

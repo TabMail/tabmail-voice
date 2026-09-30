@@ -11,6 +11,7 @@ import { offeredAgentTools, toolImplementations } from "../core/agent/tools.js";
 import * as config from "../core/config.js";
 import { dictionaryWord, isSameWord } from "../core/dictionary.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../core/hotkey.js";
+import { type UpdateState, updateItem } from "../core/menuModel.js";
 import type { SettingsState } from "../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
@@ -305,7 +306,21 @@ function GeneralPane({ state }: { state: SettingsState }) {
         <span>Version</span>
         <span className="value">{state.version}</span>
       </div>
+      {state.update && <UpdateRow update={state.update} />}
     </Group>
+  );
+}
+
+/** The menu's update item as a button: Check for Updates, what a check is doing, or Restart to Update. */
+function UpdateRow({ update }: { update: UpdateState }) {
+  const { label, enabled } = updateItem(update);
+  return (
+    <div className="row">
+      <span>Updates</span>
+      <button disabled={!enabled} onClick={() => void send({ type: update.kind === "ready" ? "restartToUpdate" : "checkForUpdates" })}>
+        {label}
+      </button>
+    </div>
   );
 }
 

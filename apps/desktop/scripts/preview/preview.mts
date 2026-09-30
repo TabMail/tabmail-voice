@@ -52,6 +52,7 @@ const settings = {
   debugAllowed: false,
   debugMode: false,
   version: "1.2.3",
+  update: { kind: "idle" },
   dictionary: [],
   learnsWords: true,
   canLearnWords: true,

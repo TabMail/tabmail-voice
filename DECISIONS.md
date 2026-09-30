@@ -2064,7 +2064,8 @@ no user data.
   never while a dictation runs or the chat window is open (it waits for `appIsFree`). Later is both
   the default and the cancel button: Return, typed as the question appears, does nothing, and
   Escape picks Later. The menu shows Check for Updates…, what a check is doing, or Restart to Update
-  once one is ready. A downloaded update stops further checks until the quit installs it.
+  once one is ready; Settings › General shows the same as a button under the version (owner,
+  2026-09-30). A downloaded update stops further checks until the quit installs it.
 - Its errors log their type and `electron-updater`'s code through `log.error`; the library's own
   logger is off (it writes to the console).
 - Released with `tabmail-release-helpers/voice/release-mac.sh` (skill `tabmail-voice-release`):
