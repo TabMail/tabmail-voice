@@ -53,11 +53,30 @@ describe("the Mac app's packaging", () => {
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  /** The website's download button links to the CDN's `TabMail-Voice-arm64.dmg`, which each release
-   * replaces, so the DMG's name is the same in every release. */
+  /** The website's download button links to the CDN's `TabMail-Voice-latest-arm64.dmg`, which each
+   * release replaces, so the DMG's name is the same in every release and the same as the CDN's. */
   test("the DMG's name is the same in every release, for the website's download link", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { dmg: { artifactName: string } };
 
-    expect(builder.dmg.artifactName).toBe("TabMail-Voice-${arch}.${ext}");
+    expect(builder.dmg.artifactName).toBe("TabMail-Voice-latest-${arch}.${ext}");
+  });
+
+  /** The DMG window is its background's size, and Finder's path and status bars take the bottom of
+   * it: the app and the Applications link sit in the top half, so neither falls under the bars and
+   * the window never scrolls. The background comes at 1x and 2x, the 2x twice the 1x. */
+  test("the DMG window shows both icons without scrolling, on a background at both scales, under the app's name", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { dmg: { title: string; background: string; contents: { y: number; type: string }[] } };
+    const size = (file: string) => {
+      const png = readFileSync(join(root, "resources", file));
+      return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+    };
+    const background = size(builder.dmg.background);
+    const retina = size(builder.dmg.background.replace(/\.png$/, "@2x.png"));
+
+    expect(retina).toEqual({ width: background.width * 2, height: background.height * 2 });
+    expect(builder.dmg.contents.map((item) => item.type).sort()).toEqual(["file", "link"]);
+    for (const item of builder.dmg.contents) expect(item.y).toBeLessThanOrEqual(background.height / 2);
+    // The window's title and the mounted volume's name: the app's, without a version.
+    expect(builder.dmg.title).toBe("TabMail Voice");
   });
 });

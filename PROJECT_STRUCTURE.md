@@ -21,7 +21,7 @@ Electron 44, React 19, Vite, Vitest, electron-builder; npm (`npx -y npm@11.19.1 
 ```
 apps/desktop/
 ├── package.json, electron-builder.json, tsconfig.{base,main,renderer,test}.json, vite.config.mts, vitest.config.mts, eslint.config.mjs
-├── resources/               App icon, tray template images, macOS entitlements (electron-builder's buildResources)
+├── resources/               App icon, tray template images, DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources)
 ├── scripts/
 │   ├── build-native.mts         Builds the platform's helpers into dist/helpers (macOS: SwiftPM, arm64)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries

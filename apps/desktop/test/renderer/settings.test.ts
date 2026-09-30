@@ -35,6 +35,8 @@ const signedIn: SettingsState = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
+  version: "1.2.3",
+  update: { kind: "idle" },
 };
 
 /** The Settings page, mounted afresh against a stand-in main process that shows `initial`, answers
@@ -218,7 +220,7 @@ describe("Settings page", () => {
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
       Permissions: ["Microphone", "Accessibility"],
-      General: ["Open at login", "Debug mode"],
+      General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
     };
     const shown = { ...signedIn, debugAllowed: true };
     await settingsPage({ error: null }, shown, shown);
@@ -426,6 +428,35 @@ describe("Settings page", () => {
     await settingsPage({ error: null }, shown, shown);
 
     for (const label of ["Read the screen while dictating", "Open at login", "Debug mode"]) expect(toggle(label).getAttribute("role")).toBe("switch");
+  });
+
+  /** Under the version, the menu's update item as a button: Check for Updates, disabled while a
+   * check or download runs, Restart to Update once one is ready; none where the app doesn't update
+   * itself. */
+  test("the update button checks, waits, and restarts to update", async () => {
+    const updateButton = () => [...document.querySelectorAll("main .row")].find((row) => row.firstElementChild?.textContent === "Updates")?.querySelector("button") ?? undefined;
+    const cases: [SettingsState["update"], string | null, boolean, Command | null][] = [
+      [{ kind: "idle" }, "Check for Updates…", false, { type: "checkForUpdates" }],
+      [{ kind: "checking" }, "Checking for Updates…", true, null],
+      [{ kind: "downloading", version: "2.0.0" }, "Downloading Version 2.0.0…", true, null],
+      [{ kind: "ready", version: "2.0.0" }, "Restart to Update to Version 2.0.0", false, { type: "restartToUpdate" }],
+      [null, null, false, null],
+    ];
+    for (const [update, label, disabled, command] of cases) {
+      const shown = { ...signedIn, update };
+      const page = await settingsPage({ error: null }, shown, shown);
+      await act(async () => button("General").click());
+      const shownButton = updateButton();
+      if (label === null) {
+        expect(shownButton).toBeUndefined();
+        expect(visibleText()).not.toContain("Updates");
+        continue;
+      }
+      expect(shownButton?.textContent).toBe(label);
+      expect(shownButton?.disabled).toBe(disabled);
+      await act(async () => shownButton?.click());
+      expect(page.commands).toEqual(command ? [command] : []);
+    }
   });
 
   /** Debug mode is offered, under General, only to an account allowed it. */

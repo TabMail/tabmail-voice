@@ -196,6 +196,11 @@
   user-select: text;
 }
 
+/* The app's version, which can't be changed. */
+.version {
+  color: var(--secondary);
+}
+
 .toggle-text {
   display: flex;
   flex-direction: column;

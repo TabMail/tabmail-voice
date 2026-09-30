@@ -60,6 +60,8 @@ const app = vi.hoisted(() => ({
   trayState: null as (() => { update: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
+  /** `app.getVersion()`. */
+  version: "0.0.0",
   /** `electron-updater`'s `autoUpdater` as the app last got it. */
   autoUpdater: null as (import("node:events").EventEmitter & { autoDownload: boolean; autoInstallOnAppQuit: boolean; logger: unknown; requestHeaders: Record<string, string> | null; checks: number; installs: number }) | null,
   /** Electron's own `autoUpdater` (Squirrel.Mac) as the app last got it. */
@@ -88,7 +90,7 @@ vi.mock("electron", async () => {
       whenReady: () => Promise.resolve(),
       getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
-      getVersion: () => "0.0.0",
+      getVersion: () => app.version,
       dock: { hide() {} },
       on() {},
       quit() {},
@@ -396,6 +398,7 @@ afterEach(() => {
   app.trayActions = null;
   app.trayState = null;
   app.packaged = false;
+  app.version = "0.0.0";
   app.autoUpdater = null;
   app.squirrel = null;
   app.trayUpdates = 0;
@@ -841,6 +844,13 @@ describe("main process wiring", () => {
     expect(app.stored.get("userName")).toBe(" Alex Example");
   });
 
+  /** Settings › General shows the app's own version. */
+  test("the settings state carries the app's version", async () => {
+    app.version = "9.8.7";
+    await launch("darwin");
+    expect((app.handlers.get(channels.getState)?.({}, "settings") as { version: string }).version).toBe("9.8.7");
+  });
+
   /** Settings › Dictionary's commands change the stored dictionary and the learning switch, which the
    * state shows; learning is offered only on macOS, where the helper reads the field (ADR-DESK-038). */
   test.each(["darwin", "linux"] as const)("the dictionary's commands and state, on %s", async (platform) => {
@@ -1088,6 +1098,33 @@ describe("main process wiring", () => {
       app.trayActions?.checkForUpdates();
 
       expect(app.trayUpdates).toBe(before + 1);
+    });
+
+    /** Settings › General's update button shows the update's state, pushed at each change, and does
+     * what the menu's item does. */
+    test("Settings shows the update's state and its button checks and restarts", async () => {
+      await launchPackaged();
+      const settingsUpdate = () => (app.handlers.get(channels.getState)?.({}, "settings") as { update: unknown }).update;
+      const pushed: unknown[] = [];
+      app.listeners.set("voice:state", [
+        (_event, name, state) => {
+          if (name === "settings") pushed.push((state as { update: unknown }).update);
+        },
+      ]);
+      expect(settingsUpdate()).toEqual({ kind: "idle" });
+
+      expect(await send({ type: "checkForUpdates" })).toEqual({ error: null });
+      expect(app.autoUpdater?.checks).toBe(1);
+      expect(settingsUpdate()).toEqual({ kind: "checking" });
+      expect(pushed).toContainEqual({ kind: "checking" });
+
+      downloaded("9.9.9");
+      await settle();
+      expect(settingsUpdate()).toEqual({ kind: "ready", version: "9.9.9" });
+      expect(pushed).toContainEqual({ kind: "ready", version: "9.9.9" });
+      expect(app.autoUpdater?.installs).toBe(0);
+      await send({ type: "restartToUpdate" });
+      expect(app.autoUpdater?.installs).toBe(1);
     });
 
     test("Check for Updates answers when the app is up to date", async () => {

@@ -2028,9 +2028,16 @@ no user data.
   `useMultipleRangeRequest` is off: the CDN answers a request for several byte ranges with 400, so
   a differential update (only the blocks that changed, from the blockmaps) asks for one range at a
   time instead of falling back to the whole ZIP.
-- The DMG's name carries no version (`TabMail-Voice-arm64.dmg`): each release replaces it, so the
-  website's download button links to it and serves the newest release without an edit per release
-  (owner, 2026-09-30). A versioned copy is kept beside it.
+- The DMG's name carries no version (`TabMail-Voice-latest-arm64.dmg`, as the build names it, so the
+  build, the CDN and the website agree): each release replaces it, so the website's download button
+  links to it and serves the newest release without an edit per release (owner, 2026-09-30). A
+  versioned copy is kept beside it. The first name, `TabMail-Voice-arm64.dmg`, is retired: the CDN
+  served that object unreliably, and a fresh name was the fix.
+- The DMG window has our own background (`resources/dmg-background.png`, at 1x and 2x): white with
+  the arrow, and the app and the Applications link in its top half. Its title, the volume's name, is
+  "TabMail Voice", without the version. The window is the background's size, and
+  Finder's path and status bars cover its bottom; with the stock layout's icons lower down, the
+  window scrolled on a Mac with those bars on.
 - Nothing about the user or the installation is sent: `electron-updater` keeps a random ID for the
   installation (`.updaterId`, for staged rollouts, which we don't use) and sends it as
   `x-user-staging-id` with every request; `Updater` sets that header to a constant
@@ -2058,7 +2065,8 @@ no user data.
   never while a dictation runs or the chat window is open (it waits for `appIsFree`). Later is both
   the default and the cancel button: Return, typed as the question appears, does nothing, and
   Escape picks Later. The menu shows Check for Updates…, what a check is doing, or Restart to Update
-  once one is ready. A downloaded update stops further checks until the quit installs it.
+  once one is ready; Settings › General shows the same as a button under the version (owner,
+  2026-09-30). A downloaded update stops further checks until the quit installs it.
 - Its errors log their type and `electron-updater`'s code through `log.error`; the library's own
   logger is off (it writes to the console).
 - Released with `tabmail-release-helpers/voice/release-mac.sh` (skill `tabmail-voice-release`):

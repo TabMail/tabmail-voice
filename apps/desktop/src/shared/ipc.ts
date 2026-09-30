@@ -10,6 +10,7 @@ import type { Phase } from "../core/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
 import * as config from "../core/config.js";
 import type { DictionaryEntry } from "../core/dictionary.js";
+import type { UpdateState } from "../core/menuModel.js";
 import type { PasteEntry } from "../core/pasteHistory.js";
 import type { ScreenContext } from "../core/screenContext.js";
 import type { DictationTip } from "../core/tips.js";
@@ -96,6 +97,11 @@ export interface SettingsState {
   /** Whether this account may switch debug mode on (`DebugAccess`). */
   debugAllowed: boolean;
   debugMode: boolean;
+  /** The app's version (`app.getVersion()`), shown in Settings › General. */
+  version: string;
+  /** Where an update is, for Settings › General's update button; null where the app doesn't update
+   * itself (a debug build). */
+  update: UpdateState | null;
 }
 
 /** Whether VS Code's settings hide the caret from TabMail Voice (`vscodeHidesCaret`), so the
@@ -163,6 +169,8 @@ export type Command =
   | { type: "setConsent"; value: boolean }
   | { type: "requestMicrophone" }
   | { type: "requestAccessibility" }
+  | { type: "checkForUpdates" }
+  | { type: "restartToUpdate" }
   | { type: "welcomeNext" }
   | { type: "welcomeBack" }
   | { type: "welcomeGoTo"; index: number }
@@ -227,6 +235,8 @@ export function isCommand(value: unknown): value is Command {
     case "signOut":
     case "requestMicrophone":
     case "requestAccessibility":
+    case "checkForUpdates":
+    case "restartToUpdate":
     case "welcomeNext":
     case "welcomeBack":
     case "fixVSCodeSettings":

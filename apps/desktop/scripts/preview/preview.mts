@@ -51,6 +51,8 @@ const settings = {
   openAtLogin: false,
   debugAllowed: false,
   debugMode: false,
+  version: "1.2.3",
+  update: { kind: "idle" },
   dictionary: [],
   learnsWords: true,
   canLearnWords: true,
@@ -121,6 +123,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
   // The dictionary: typed words and a learned one.
   { name: "settings-dictionary", page: "settings.html", size: settingsWindowSize, section: "Dictionary", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, dictionary: [{ word: "Xyvora", learned: false }, { word: "Kaelthorne Drake", learned: false }, { word: "TabMail", learned: true }] } },
   { name: "settings-permissions-vscode", page: "settings.html", size: settingsWindowSize, section: "Permissions", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, vscodeFix: "needed" } },
+  { name: "settings-general", page: "settings.html", size: settingsWindowSize, section: "General", state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true, debugAllowed: true } },
   // As under a Windows contrast theme, on a section with switches, others needing attention.
   { name: "settings-forced-colors", page: "settings.html", size: settingsWindowSize, forcedColors: true, section: "Dictation", state: settings },
   { name: "welcome-features", page: "welcome.html", size: welcomeWindowSize, whole: "footer", state: { ...welcome, step: "screenReading", index: 4, categoryIndex: 3, isFirstStep: false, isLastStep: true, canAdvance: true, hasConsented: true, accessibilityTrusted: true } },

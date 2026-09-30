@@ -43,6 +43,8 @@ describe("IPC", () => {
       { type: "setConsent", value: true },
       { type: "requestMicrophone" },
       { type: "requestAccessibility" },
+      { type: "checkForUpdates" },
+      { type: "restartToUpdate" },
       { type: "welcomeNext" },
       { type: "welcomeBack" },
       { type: "welcomeGoTo", index: 0 },
