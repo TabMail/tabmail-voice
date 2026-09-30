@@ -29,21 +29,20 @@ describe("the Mac app's packaging", () => {
     }
   });
 
-  /** The update feed (ADR-DESK-041): the app reads `latest-mac.yml` from the newest GitHub release,
-   * which names the ZIP by the file name electron-builder gave it, so that name must be the one
-   * GitHub serves (GitHub turns a space in an asset's name into a dot). Squirrel.Mac installs from
-   * the ZIP. */
-  test("it updates from this repository's GitHub releases, from a ZIP named as GitHub serves it", () => {
+  /** The update feed (ADR-DESK-041): the app reads `latest-mac.yml` from TabMail's own CDN, and from
+   * nowhere else (no third party sees an update check), which names the ZIP by the file name
+   * electron-builder gave it, uploaded as named: no spaces. Squirrel.Mac installs from the ZIP. */
+  test("it updates only from cdn.tabmail.ai, from a ZIP named without spaces", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { publish: unknown; mac: { artifactName: string; target: { target: string }[] } };
 
-    expect(builder.publish).toEqual([{ provider: "github", owner: "TabMail", repo: "tabmail-voice", releaseType: "release" }]);
+    expect(builder.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/macos-arm64" }]);
     expect(builder.mac.target.map(({ target }) => target)).toContain("zip");
     expect(builder.mac.artifactName).not.toMatch(/\s/);
   });
 
-  /** The website's download button links to `releases/latest/download/<the DMG>`, so the DMG's name
-   * is the same in every release: the newest release's DMG is always the one downloaded. */
-  test("the DMG's name is the same in every release, for the website's latest-release link", () => {
+  /** The website's download button links to the CDN's `TabMail-Voice-arm64.dmg`, which each release
+   * replaces, so the DMG's name is the same in every release. */
+  test("the DMG's name is the same in every release, for the website's download link", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { dmg: { artifactName: string } };
 
     expect(builder.dmg.artifactName).toBe("TabMail-Voice-${arch}.${ext}");

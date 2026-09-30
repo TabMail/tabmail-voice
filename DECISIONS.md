@@ -1995,43 +1995,58 @@ unscaled; its mobile app asks its own server to normalise.
 - One loud click (a key press) sets the gain, so a recording with a click louder than the speech is
   boosted less. The measured gain came from speech-only recordings.
 
-## ADR-DESK-041: The app updates itself from the GitHub releases
+## ADR-DESK-041: The app updates itself from cdn.tabmail.ai
 
 **Context:** Owner, 2026-09-30: 0.1.0 shipped with no way to update but downloading it again. The
 native-FTS host updates itself with its own Ed25519 signing key and a signed manifest, because
 nothing else vouches for its download. The owner asked whether Voice needs the same, and chose both
 behaviours offered: download quietly and install at the quit, and ask to restart once it is ready.
+Hosting: GitHub releases were the simpler option, but every installed app would then contact
+GitHub, a recipient the records of processing and the privacy policy don't name. TabMail's own CDN
+(Cloudflare R2, `cdn.tabmail.ai`, where the Thunderbird add-on and native-FTS updates already come
+from) adds none, so the owner chose R2 (2026-09-30). The owner also asked that an update check send
+no user data.
 
 **Decision:**
-- `electron-updater` (electron-builder's own), with the `github` provider: `electron-builder.json`'s
-  `publish` names `TabMail/tabmail-voice`, so the packaged app carries `app-update.yml` and reads
-  `latest-mac.yml` from the newest release (public: no token). Each release uploads
-  `latest-mac.yml`, the ZIP and its blockmap beside the DMG, the ZIP named without spaces
-  (`artifactName`) so the name in the feed is the name GitHub serves.
-- The DMG's name carries no version (`TabMail-Voice-arm64.dmg`), so the website's download button
-  links to `releases/latest/download/TabMail-Voice-arm64.dmg` and serves the newest release without
-  an edit per release (owner, 2026-09-30).
+- `electron-updater` (electron-builder's own), with the `generic` provider:
+  `electron-builder.json`'s `publish` is `https://cdn.tabmail.ai/releases/voice/macos-arm64`, so the
+  packaged app carries `app-update.yml` and reads `latest-mac.yml` there, and nowhere else. Each
+  release uploads the versioned ZIP and its blockmap, the DMG, and `latest-mac.yml` last, so the
+  feed never names a file not yet there. The ZIP's name has no spaces (`artifactName`).
+- The DMG's name carries no version (`TabMail-Voice-arm64.dmg`): each release replaces it, so the
+  website's download button links to it and serves the newest release without an edit per release
+  (owner, 2026-09-30). A versioned copy is kept beside it.
+- Nothing about the user or the installation is sent: `electron-updater` keeps a random ID for the
+  installation (`.updaterId`, for staged rollouts, which we don't use) and sends it as
+  `x-user-staging-id` with every request; `Updater` sets that header to a constant
+  (`updateRequestHeaders`), which the library merges over its own. A request carries the IP address
+  and user agent any download does, and the generic provider's random `noCache` query.
+- Uploaded twice (owner, 2026-09-30): the GitHub release also carries a copy of the DMG (versioned),
+  the ZIP and `SHA256SUMS`, for anyone who wants them from the source. The app and the website
+  download and update from the CDN alone; the feed is not put on GitHub.
 - No update key of our own on macOS: Squirrel.Mac installs an update only if it carries the running
   app's Developer ID signature (its designated requirement), and the feed's SHA-512 covers the ZIP.
-  A compromised GitHub account can't ship an update without the Apple signing identity as well.
+  Someone who could write to the CDN can't ship a build we didn't sign; they could still serve an
+  older signed build under a higher version (Squirrel checks the signature, not the version).
 - `Updater` (`src/main/updater.ts`), packaged builds only: looks `updateFirstCheckDelay` after launch
   and every `updateCheckInterval`, downloads by itself (`autoDownload`), installs when the app quits
-  (`autoInstallOnAppQuit`). Once downloaded it asks once per version "Restart now?"; never while a
-  dictation runs or the chat window is open (it waits for `appIsFree`), and Return picks Later, so a
-  question appearing under someone's typing can't restart the app. The menu shows Check for
-  Updates…, what a check is doing, or Restart to Update once one is ready. A downloaded update stops
-  further checks until the quit installs it.
-- Its errors log their type through `log.error`; `electron-updater`'s own logger is off (it writes
-  to the console).
-- The release (`tabmail-voice-release` skill) notarizes through electron-builder
-  (`APPLE_KEYCHAIN_PROFILE`), which staples the app before it zips it, so the ZIP and the feed's hash
-  are the published ones; the DMG is signed, notarized and stapled after, and the feed rewritten
-  with its final hash.
+  (`autoInstallOnAppQuit`). Once downloaded it asks once per version "Restart now?", on a task of its
+  own (the dialog is modal and holds the main process: never inside a dictation's phase change),
+  never while a dictation runs or the chat window is open (it waits for `appIsFree`). Later is both
+  the default and the cancel button: Return, typed as the question appears, does nothing, and
+  Escape picks Later. The menu shows Check for Updates…, what a check is doing, or Restart to Update
+  once one is ready. A downloaded update stops further checks until the quit installs it.
+- Its errors log their type and `electron-updater`'s code through `log.error`; the library's own
+  logger is off (it writes to the console).
+- Released with `tabmail-release-helpers/voice/release-mac.sh` (skill `tabmail-voice-release`):
+  electron-builder notarizes and staples the app before it zips it (`APPLE_KEYCHAIN_PROFILE`), so the
+  ZIP and the feed's hash are the published ones; the DMG is signed, notarized and stapled after, and
+  the feed rewritten with its final hash.
 
 **Consequences:**
 - 0.1.0 has no updater: its users download 0.1.1 once by hand; every release after reaches them.
-- Windows (NSIS) and Linux (AppImage) can use the same feed when their targets exist; without
-  Authenticode signing a Windows update is vouched for only by the feed's hash, and a `.deb`/`.rpm`
-  install is updated by its package manager instead.
+- Windows (NSIS) and Linux (AppImage) can use the same kind of feed when their targets exist;
+  without Authenticode signing a Windows update is vouched for only by the feed's hash, and a
+  `.deb`/`.rpm` install is updated by its package manager instead.
 - An app run from the mounted DMG, or from a folder the user can't write, can't be replaced: the
-  install fails and the next check starts over.
+  install fails silently and each check tries again (owner's call pending on telling the user).

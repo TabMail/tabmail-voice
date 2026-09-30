@@ -2,14 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import type { OutgoingHttpHeaders } from "node:http";
 import * as config from "../core/config.js";
 import { errorName, log } from "../core/log.js";
 import type { UpdateState } from "../core/menuModel.js";
+
+/** Sent with every update request in place of `electron-updater`'s own `x-user-staging-id`, a random
+ * ID it keeps for the installation (for staged rollouts, which we don't use): nothing about the user
+ * or the installation leaves the computer with an update check (ADR-DESK-041). Its headers are
+ * merged over the library's. */
+export const updateRequestHeaders = { "x-user-staging-id": "none" };
 
 /** `electron-updater`'s `autoUpdater`, as far as `Updater` uses it. */
 export interface UpdateSource {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  requestHeaders: OutgoingHttpHeaders | null;
   checkForUpdates(): Promise<{ isUpdateAvailable: boolean; downloadPromise?: Promise<unknown> | null } | null>;
   quitAndInstall(): void;
   on(event: "update-available" | "update-downloaded", listener: (info: { version: string }) => void): unknown;
@@ -31,7 +39,7 @@ export interface UpdaterOptions {
 }
 
 /**
- * Keeps a packaged app up to date (ADR-DESK-041): looks for a newer release on GitHub at launch and
+ * Keeps a packaged app up to date (ADR-DESK-041): looks for a newer release on cdn.tabmail.ai at launch and
  * every `updateCheckInterval`, downloads it quietly, and installs it when the app quits. Once it is
  * downloaded the user is asked once whether to restart now, never during a dictation or while the
  * chat window is open, and the menu offers the restart until then. macOS installs the update only if
@@ -41,13 +49,12 @@ export class Updater {
   private current: UpdateState = { kind: "idle" };
   /** The version the user was asked about: once per update, not per check. */
   private asked: string | null = null;
-  private asking = false;
-  private timers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(private readonly options: UpdaterOptions) {
     const { source } = options;
     source.autoDownload = true;
     source.autoInstallOnAppQuit = true;
+    source.requestHeaders = { ...updateRequestHeaders };
     source.on("update-available", (info) => {
       log.debug(`Updater: downloading ${info.version}`);
       this.set({ kind: "downloading", version: info.version });
@@ -60,7 +67,7 @@ export class Updater {
     // A failed check or download, or Squirrel.Mac refusing the update (a signature that isn't
     // ours): nothing to install, so the next check starts over.
     source.on("error", (error) => {
-      log.error(`Updater: ${errorName(error)}`);
+      log.error(`Updater: ${describe(error)}`);
       this.set({ kind: "idle" });
     });
   }
@@ -71,15 +78,8 @@ export class Updater {
 
   /** Looks for an update after `updateFirstCheckDelay`, then every `updateCheckInterval`. */
   start(): void {
-    this.timers.push(
-      setTimeout(() => void this.check(false), config.updateFirstCheckDelay),
-      setInterval(() => void this.check(false), config.updateCheckInterval),
-    );
-  }
-
-  stop(): void {
-    for (const timer of this.timers) clearTimeout(timer);
-    this.timers = [];
+    setTimeout(() => void this.check(false), config.updateFirstCheckDelay);
+    setInterval(() => void this.check(false), config.updateCheckInterval);
   }
 
   /** "Check for Updates…": looks at once and says what it found. */
@@ -112,31 +112,39 @@ export class Updater {
       // is reported as an `error` event, handled above.
       result.downloadPromise?.catch(() => undefined);
     } catch (error) {
-      log.error(`Updater: check failed: ${errorName(error)}`);
+      log.error(`Updater: check failed: ${describe(error)}`);
       this.set({ kind: "idle" });
       if (userAsked) this.options.tell("Couldn't check for updates.", "Check your internet connection and try again.");
     }
   }
 
+  /** Asks on a task of its own: the question is a modal dialog that holds the main process until
+   * answered, so it never runs inside what led here (the dictation's phase change, the chat's
+   * closing, `electron-updater`'s event). */
   private offer(): void {
-    const current = this.current;
-    if (current.kind !== "ready" || this.asking || this.asked === current.version || this.options.isBusy()) return;
-    this.asked = current.version;
-    this.asking = true;
-    this.options.ask(current.version).then(
-      (restart) => {
-        this.asking = false;
-        if (restart) this.restart();
-      },
-      (error: unknown) => {
-        this.asking = false;
-        log.error(`Updater: couldn't ask to restart: ${errorName(error)}`);
-      },
-    );
+    setImmediate(() => {
+      const current = this.current;
+      if (current.kind !== "ready" || this.asked === current.version || this.options.isBusy()) return;
+      this.asked = current.version;
+      this.options.ask(current.version).then(
+        (restart) => {
+          if (restart) this.restart();
+        },
+        (error: unknown) => {
+          log.error(`Updater: couldn't ask to restart: ${describe(error)}`);
+        },
+      );
+    });
   }
 
   private set(state: UpdateState): void {
     this.current = state;
     this.options.onChange();
   }
+}
+
+/** An error's type, and `electron-updater`'s code (`ERR_UPDATER_…`) where it gives one. */
+function describe(error: unknown): string {
+  const code = error instanceof Error && "code" in error && typeof error.code === "string" ? ` ${error.code}` : "";
+  return `${errorName(error)}${code}`;
 }

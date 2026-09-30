@@ -5,7 +5,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../src/core/config.js";
-import { type UpdateSource, Updater } from "../src/main/updater.js";
+import { type UpdateSource, Updater, updateRequestHeaders } from "../src/main/updater.js";
 
 type CheckResult = Awaited<ReturnType<UpdateSource["checkForUpdates"]>>;
 
@@ -14,6 +14,7 @@ type CheckResult = Awaited<ReturnType<UpdateSource["checkForUpdates"]>>;
 class FakeSource extends EventEmitter implements UpdateSource {
   autoDownload = false;
   autoInstallOnAppQuit = false;
+  requestHeaders: Record<string, string> | null = null;
   checks = 0;
   installs = 0;
   answer: () => Promise<CheckResult> = () => Promise.resolve(null);
@@ -35,6 +36,20 @@ class FakeSource extends EventEmitter implements UpdateSource {
     };
   }
 
+  /** The next check finds `version`, whose download fails as the real one reports it: an `error`
+   * event and a rejected `downloadPromise`. */
+  findsButCantDownload(version: string): void {
+    this.answer = () => {
+      this.emit("update-available", { version });
+      const error = new Error("download failed");
+      const downloadPromise = new Promise((_resolve, reject) => setImmediate(() => {
+        this.emit("error", error);
+        reject(error);
+      }));
+      return Promise.resolve({ isUpdateAvailable: true, downloadPromise });
+    };
+  }
+
   upToDate(): void {
     this.answer = () => Promise.resolve({ isUpdateAvailable: false });
   }
@@ -52,7 +67,7 @@ class FakeSource extends EventEmitter implements UpdateSource {
   }
 }
 
-function setUp(options: { busy?: () => boolean; restart?: boolean } = {}) {
+function setUp(options: { busy?: () => boolean; restart?: boolean; ask?: (version: string) => Promise<boolean> } = {}) {
   const source = new FakeSource();
   const asked: string[] = [];
   const told: string[] = [];
@@ -62,7 +77,7 @@ function setUp(options: { busy?: () => boolean; restart?: boolean } = {}) {
     currentVersion: "1.0.0",
     ask: (version) => {
       asked.push(version);
-      return Promise.resolve(options.restart ?? false);
+      return options.ask ? options.ask(version) : Promise.resolve(options.restart ?? false);
     },
     tell: (message) => told.push(message),
     isBusy: options.busy ?? (() => false),
@@ -75,6 +90,7 @@ function setUp(options: { busy?: () => boolean; restart?: boolean } = {}) {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 afterEach(() => {
+  vi.clearAllTimers();
   vi.useRealTimers();
 });
 
@@ -100,10 +116,6 @@ describe("Updater (ADR-DESK-041)", () => {
     expect(source.checks).toBe(2);
     expect(told).toEqual([]);
     expect(updater.state).toEqual({ kind: "idle" });
-
-    updater.stop();
-    await vi.advanceTimersByTimeAsync(config.updateCheckInterval);
-    expect(source.checks).toBe(2);
   });
 
   test("a downloaded update is offered once; Later leaves it to install at the quit", async () => {
@@ -188,7 +200,6 @@ describe("Updater (ADR-DESK-041)", () => {
     await vi.advanceTimersByTimeAsync(config.updateCheckInterval);
     expect(source.checks).toBe(2);
     expect(updater.state).toEqual({ kind: "downloading", version: "1.1.0" });
-    updater.stop();
   });
 
   test("one check at a time", async () => {
@@ -227,5 +238,97 @@ describe("Updater (ADR-DESK-041)", () => {
 
     // checking, downloading, ready
     expect(changes()).toBe(3);
+  });
+
+  /** The question is a modal dialog that holds the main process: it must never run inside the
+   * dictation's phase change or the chat's closing (`appIsFree`), nor inside `electron-updater`'s
+   * event, only after they return. */
+  test("the question is asked after what freed the app, or finished the download, has returned", async () => {
+    let busy = false;
+    const { source, updater, asked } = setUp({ busy: () => busy });
+
+    source.downloaded("1.1.0");
+    expect(asked).toEqual([]);
+    await settle();
+    expect(asked).toEqual(["1.1.0"]);
+
+    busy = true;
+    source.downloaded("1.2.0");
+    await settle();
+    busy = false;
+    updater.appIsFree();
+    expect(asked).toEqual(["1.1.0"]);
+    await settle();
+    expect(asked).toEqual(["1.1.0", "1.2.0"]);
+  });
+
+  test("an update macOS refuses before the question comes is never asked about", async () => {
+    const { source, asked } = setUp();
+
+    source.downloaded("1.1.0");
+    source.emit("error", new Error("Code signature did not pass validation"));
+    await settle();
+
+    expect(asked).toEqual([]);
+  });
+
+  test("a failed download leaves nothing unhandled, and the next check starts over", async () => {
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    try {
+      const { source, updater } = setUp();
+      source.findsButCantDownload("1.1.0");
+
+      updater.checkNow();
+      await settle();
+      await settle();
+      expect(updater.state).toEqual({ kind: "idle" });
+
+      source.finds("1.1.0");
+      updater.checkNow();
+      await settle();
+      expect(updater.state).toEqual({ kind: "downloading", version: "1.1.0" });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
+  test("a question that couldn't be shown doesn't stop the next update's", async () => {
+    const { source, asked } = setUp({ ask: (version) => (version === "1.1.0" ? Promise.reject(new Error("no dialog")) : Promise.resolve(false)) });
+
+    source.downloaded("1.1.0");
+    await settle();
+    source.emit("error", new Error("Code signature did not pass validation"));
+    source.downloaded("1.2.0");
+    await settle();
+
+    expect(asked).toEqual(["1.1.0", "1.2.0"]);
+  });
+
+  /** Nothing about the user or the installation leaves the computer with an update check: the real
+   * `electron-updater` merges the updater's headers over its own, so the random installation ID it
+   * keeps for staged rollouts is never sent, with the feed request or the download. */
+  test("an update request carries no installation ID", async () => {
+    // Its constructor and header merging are internal: reached through a cast, as the app never does.
+    const { AppUpdater } = (await import("electron-updater/out/AppUpdater.js")) as unknown as {
+      AppUpdater: new (options: null, app: object) => UpdateSource & {
+        computeFinalHeaders(headers: Record<string, string>): Record<string, string>;
+        computeRequestHeaders(provider: { fileExtraDownloadHeaders: null }): Record<string, string>;
+      };
+    };
+    const real = new AppUpdater(null, { version: "1.0.0", name: "TabMail Voice", isPackaged: true, appUpdateConfigPath: "/nonexistent", userDataPath: "/nonexistent", baseCachePath: "/nonexistent", whenReady: () => Promise.resolve(), relaunch() {}, quit() {}, onQuit() {} });
+    const installationID = "0b6f3c1e-1111-4222-8333-944445555666";
+    expect(real.computeFinalHeaders({ "x-user-staging-id": installationID })["x-user-staging-id"]).toBe(installationID);
+
+    new Updater({ source: real, currentVersion: "1.0.0", ask: () => Promise.resolve(false), tell: () => {}, isBusy: () => false, onChange: () => {} });
+
+    const feedRequest = real.computeFinalHeaders({ "x-user-staging-id": installationID });
+    const download = real.computeRequestHeaders({ fileExtraDownloadHeaders: null });
+    for (const headers of [feedRequest, download]) {
+      expect(JSON.stringify(headers)).not.toContain(installationID);
+      expect(headers["x-user-staging-id"]).toBe(updateRequestHeaders["x-user-staging-id"]);
+    }
   });
 });

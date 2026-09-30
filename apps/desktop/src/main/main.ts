@@ -189,7 +189,7 @@ function launch(): void {
     return pid === null ? null : mac.caretAnchor(pid);
   });
 
-  // Packaged builds keep themselves up to date from the GitHub releases (ADR-DESK-041).
+  // Packaged builds keep themselves up to date from cdn.tabmail.ai (ADR-DESK-041).
   const updater = isDebugBuild ? null : makeUpdater();
 
   const tray = new TrayMenu(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), menuState, {
@@ -320,7 +320,7 @@ function launch(): void {
           message: `TabMail Voice ${version} is ready.`,
           detail: "It installs when TabMail Voice quits. Restart now to update?",
           buttons: ["Restart Now", "Later"],
-          // Return, pressed by someone typing as the question appears, picks Later.
+          // Later is both: Return, typed as the question appears, does nothing; Escape picks Later.
           defaultId: 1,
           cancelId: 1,
         });

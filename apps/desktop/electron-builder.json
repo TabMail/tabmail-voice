@@ -13,7 +13,7 @@
     { "from": "resources", "to": ".", "filter": ["trayTemplate*.png"] }
   ],
   "asar": true,
-  "publish": [{ "provider": "github", "owner": "TabMail", "repo": "tabmail-voice", "releaseType": "release" }],
+  "publish": [{ "provider": "generic", "url": "https://cdn.tabmail.ai/releases/voice/macos-arm64" }],
   "mac": {
     "category": "public.app-category.productivity",
     "artifactName": "TabMail-Voice-${version}-${arch}.${ext}",
