@@ -118,7 +118,8 @@ describe("FLACEncoder", () => {
     expect([decoded.totalSamples, decoded.frames, decoded.pcm.length]).toEqual([0, 0, 0]);
   });
 
-  /** Frames are encoded as the audio arrives: the stream must not depend on how it was split. */
+  /** Each frame is encoded as soon as its samples are appended: the stream must not depend on how
+   * the samples were split across appends. */
   test("the stream is the same however the samples arrive", () => {
     const samples = speechLike(2 * config.flacBlockSize + 999);
     const whole = encode(samples);

@@ -21,7 +21,7 @@ export const doubleTapWindow = 400;
 /** Recording format: 16 kHz mono 16-bit PCM (~32 KB per second of speech), uploaded as FLAC at about
  * half that. The microphone is captured at this rate directly. */
 export const recordingSampleRate = 16_000;
-/** The upload's FLAC encoding (`encodeFLAC`): samples per frame, and the most Rice partitions a
+/** The upload's FLAC encoding (`FLACEncoder`): samples per frame, and the most Rice partitions a
  * frame's residual is split into (2^order), as libFLAC's defaults. */
 export const flacBlockSize = 4_096;
 export const flacMaxPartitionOrder = 6;
