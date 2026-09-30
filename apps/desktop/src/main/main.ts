@@ -6,7 +6,8 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { app, ipcMain, screen, session, shell } from "electron";
+import { app, dialog, ipcMain, screen, session, shell } from "electron";
+import { autoUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
 import { opensLink } from "../core/agent/agentChat.js";
 import { calendarTools } from "../core/agent/calendarTools.js";
@@ -60,6 +61,7 @@ import { macPermissions } from "./permissions.js";
 import { osascript } from "./osascript.js";
 import { nodeProfileFiles } from "./profileFiles.js";
 import { TrayMenu } from "./tray.js";
+import { Updater } from "./updater.js";
 import { Windows } from "./windows.js";
 
 /** Debug builds are the unpackaged app (`npm start`); a packaged build is a release. */
@@ -187,6 +189,9 @@ function launch(): void {
     return pid === null ? null : mac.caretAnchor(pid);
   });
 
+  // Packaged builds keep themselves up to date from the GitHub releases (ADR-DESK-041).
+  const updater = isDebugBuild ? null : makeUpdater();
+
   const tray = new TrayMenu(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), menuState, {
     showWelcome,
     showSettings,
@@ -194,6 +199,8 @@ function launch(): void {
     requestAccessibility: () => permissions.requestAccessibility(),
     toggleDictation: () => controller.toggle(),
     quit: () => app.quit(),
+    checkForUpdates: () => updater?.checkNow(),
+    restartToUpdate: () => updater?.restart(),
     debug: isDebugBuild
       ? {
           hasLastRecording: () => existsSync(lastRecordingPath),
@@ -296,7 +303,36 @@ function launch(): void {
       hotkey: settings.hotkey,
       debugMode: settings.isDebugMode(account.email),
       phase: controller.phase,
+      update: updater?.state ?? null,
     };
+  }
+
+  function makeUpdater(): Updater {
+    // Its own log goes to the console; ours says what failed.
+    autoUpdater.logger = null;
+    return new Updater({
+      source: autoUpdater,
+      currentVersion: app.getVersion(),
+      ask: async (version) => {
+        app.focus({ steal: true });
+        const { response } = await dialog.showMessageBox({
+          type: "info",
+          message: `TabMail Voice ${version} is ready.`,
+          detail: "It installs when TabMail Voice quits. Restart now to update?",
+          buttons: ["Restart Now", "Later"],
+          // Return, pressed by someone typing as the question appears, picks Later.
+          defaultId: 1,
+          cancelId: 1,
+        });
+        return response === 0;
+      },
+      tell: (message, detail) => {
+        app.focus({ steal: true });
+        void dialog.showMessageBox({ type: "info", message, detail, buttons: ["OK"] });
+      },
+      isBusy: () => (controller.phase.kind !== "idle" && controller.phase.kind !== "failed") || controller.chat !== null,
+      onChange: () => tray.update(),
+    });
   }
 
   /** Opens the welcome wizard at its first step; brings the open one forward instead. */
@@ -433,6 +469,7 @@ function launch(): void {
   controller.onPhaseChange = (phase) => {
     overlay.update(phase, controller.chat !== null);
     tray.update();
+    updater?.appIsFree();
     switch (phase.kind) {
       case "arming":
       case "listening":
@@ -445,6 +482,7 @@ function launch(): void {
   controller.onChatChange = (isOpen) => {
     setChatOpen(isOpen);
     overlay.update(controller.phase, isOpen);
+    updater?.appIsFree();
   };
   controller.onNothingListening = endHandsFree;
   controller.observe(() => {
@@ -602,6 +640,7 @@ function launch(): void {
   readSuggestedName();
   void globeKey.hotkeyIs(settings.hotkey);
   permissions.startPollingAccessibility();
+  updater?.start();
 
   // The welcome wizard asks for consent and the permissions; it opens until finished.
   if (!settings.hasFinishedWelcome) showWelcome();

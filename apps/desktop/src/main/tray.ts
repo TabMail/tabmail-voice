@@ -4,7 +4,7 @@
 
 import { join } from "node:path";
 import { Menu, type MenuItemConstructorOptions, nativeImage, Tray } from "electron";
-import { isReady, type MenuState, showsDictationButton, statusLine } from "../core/menuModel.js";
+import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/menuModel.js";
 
 /** What the menu's items do. */
 export interface TrayActions {
@@ -14,6 +14,8 @@ export interface TrayActions {
   requestAccessibility(): void;
   toggleDictation(): void;
   quit(): void;
+  checkForUpdates(): void;
+  restartToUpdate(): void;
   /** Debug builds with debug mode on only; null otherwise. */
   debug: {
     hasLastRecording(): boolean;
@@ -75,6 +77,10 @@ export class TrayMenu {
       { type: "separator" },
       { label: "Welcome Guide…", click: () => actions.showWelcome() },
       { label: "Settings…", accelerator: "CommandOrControl+,", click: () => actions.showSettings() },
+    );
+    const update = state.update;
+    if (update) items.push({ ...updateItem(update), click: () => (update.kind === "ready" ? actions.restartToUpdate() : actions.checkForUpdates()) });
+    items.push(
       { label: "Quit TabMail Voice", accelerator: "CommandOrControl+Q", click: () => actions.quit() },
     );
     return items;

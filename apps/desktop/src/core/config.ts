@@ -271,6 +271,13 @@ export const fileStoreRequestTimeout = 30_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
 
+// MARK: Updates
+
+/** Packaged builds look for an update this long after launch, once the helpers and the welcome
+ * wizard are up, and then this often (ADR-DESK-041). "Check for Updates…" in the menu looks at once. */
+export const updateFirstCheckDelay = 10_000;
+export const updateCheckInterval = 4 * 60 * 60 * 1000;
+
 // MARK: Welcome wizard
 
 export const termsURL = "https://tabmail.ai/terms";

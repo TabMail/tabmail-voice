@@ -7,7 +7,7 @@ import { connectors } from "../src/core/agent/connectors.js";
 import { agentTools } from "../src/core/agent/tools.js";
 import * as config from "../src/core/config.js";
 import type { Phase } from "../src/core/dictationController.js";
-import { type MenuState, showsDictationButton, statusLine } from "../src/core/menuModel.js";
+import { type MenuState, showsDictationButton, statusLine, type UpdateState, updateItem } from "../src/core/menuModel.js";
 import {
   bubbleRow,
   bubbleRowOpacity,
@@ -444,11 +444,22 @@ describe("menu", () => {
   });
 
   test("the status line says what is missing, else how to dictate", () => {
-    const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, hotkey: "function", debugMode: false, phase: { kind: "idle" } };
+    const ready: MenuState = { hasConsented: true, isSignedIn: true, microphoneGranted: true, accessibilityTrusted: true, hotkey: "function", debugMode: false, phase: { kind: "idle" }, update: null };
     expect(statusLine(ready)).toBe("Hold Fn / Globe (🌐) to dictate");
     expect(statusLine({ ...ready, hasConsented: false })).toBe("Setup needed");
     expect(statusLine({ ...ready, isSignedIn: false })).toBe("Sign in to start dictating");
     expect(statusLine({ ...ready, microphoneGranted: false })).toBe("Setup needed");
     expect(statusLine({ ...ready, accessibilityTrusted: false })).toBe("Setup needed");
+  });
+
+  /** Check for Updates can be clicked only while nothing is under way; Restart to Update once an
+   * update is downloaded (ADR-DESK-041). */
+  test.each<[UpdateState, string, boolean]>([
+    [{ kind: "idle" }, "Check for Updates…", true],
+    [{ kind: "checking" }, "Checking for Updates…", false],
+    [{ kind: "downloading", version: "1.2.3" }, "Downloading Version 1.2.3…", false],
+    [{ kind: "ready", version: "1.2.3" }, "Restart to Update to Version 1.2.3", true],
+  ])("update %j: the menu item says %s, enabled %s", (update, label, enabled) => {
+    expect(updateItem(update)).toEqual({ label, enabled });
   });
 });

@@ -13,8 +13,10 @@
     { "from": "resources", "to": ".", "filter": ["trayTemplate*.png"] }
   ],
   "asar": true,
+  "publish": [{ "provider": "github", "owner": "TabMail", "repo": "tabmail-voice", "releaseType": "release" }],
   "mac": {
     "category": "public.app-category.productivity",
+    "artifactName": "TabMail-Voice-${version}-${arch}.${ext}",
     "icon": "resources/icon.png",
     "target": [
       { "target": "dmg", "arch": ["arm64"] },
@@ -33,5 +35,8 @@
       "NSContactsUsageDescription": "TabMail Voice looks up people in your contacts to answer what you ask, and adds the ones you confirm.",
       "NSAppleEventsUsageDescription": "TabMail Voice uses Notes and Messages to answer what you ask, and adds the notes and sends the messages you confirm."
     }
+  },
+  "dmg": {
+    "artifactName": "TabMail-Voice-${arch}.${ext}"
   }
 }
