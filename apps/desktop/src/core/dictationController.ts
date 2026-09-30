@@ -80,7 +80,7 @@ export interface DictationDependencies {
   account: AccountModel;
   tips: TipBook;
   /** Keeps the field and caret of the app in front, now (key-down), for the dictation `session`
-   * (ADR-DESK-042); true when a field was found. */
+   * (ADR-DESK-042). */
   captureTarget: (session: number) => Promise<void>;
   /** Pastes into the field and caret kept for `session`, put back if they moved, or pastes nothing
    * and says why; for the dictation whose `signal` it is: one cancelled before the paste reaches the

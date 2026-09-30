@@ -161,7 +161,7 @@ function launch(): void {
     tips: new TipBook(store),
     captureTarget: (session) => mac.captureTarget(session),
     paste: (text, session, signal) => mac.paste(text, session, signal),
-    copy: (text) => clipboard.writeText(text),
+    copy: (text) => copyText(text),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
@@ -392,6 +392,13 @@ function launch(): void {
     const size = { width: config.pasteHistoryWindowWidth, height: Math.round(Math.min(height, config.pasteHistoryMaxHeight)) };
     const origin = historyPlace ? historyWindowOrigin(historyPlace.pointer, size, historyPlace.workArea) : { x: 0, y: 0 };
     return { x: Math.round(origin.x), y: Math.round(origin.y), ...size };
+  }
+
+  /** Puts `text` on the clipboard (a promise since Electron 44), logging a write that fails. */
+  function copyText(text: string): void {
+    clipboard.writeText(text).catch((error: unknown) => {
+      log.error(`main: couldn't copy to the clipboard: ${errorName(error)}`);
+    });
   }
 
   /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
@@ -657,7 +664,7 @@ function launch(): void {
         return;
       case "copyHistoryEntry": {
         const text = history.text(command.id);
-        if (text !== null) clipboard.writeText(text);
+        if (text !== null) copyText(text);
         closeHistory();
         return;
       }

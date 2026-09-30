@@ -241,6 +241,18 @@ struct MacServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
+    /// The restore a paste asks for compares the kept target's app with the one in front now: another
+    /// app in front answers `appChanged`, the same app with no field kept `inPlace`. (No field is kept,
+    /// so no Accessibility call is made and the test needs no Accessibility trust.)
+    @Test func aRestoreChecksTheKeptAppAgainstTheOneInFront() async throws {
+        let frontmost = try #require(NSWorkspace.shared.frontmostApplication, "the restore needs an app in front").processIdentifier
+        let targets = InsertionTargets()
+        targets.keep(InsertionTargets.Captured(target: InsertionTarget(pid: frontmost == 1 ? 2 : 1, element: nil, selection: nil)), session: 7)
+        #expect(await MacService.restoreTarget(targets, session: 7) == .appChanged)
+        targets.keep(InsertionTargets.Captured(target: InsertionTarget(pid: frontmost, element: nil, selection: nil)), session: 8)
+        #expect(await MacService.restoreTarget(targets, session: 8) == .inPlace)
+    }
+
     @Test func aPasteWithoutASessionPastesWhereFocusIs() async throws {
         let (outcome, pasted) = try await insert(session: "", restore: { _, _ in .appChanged })
         #expect(outcome == "pasted")

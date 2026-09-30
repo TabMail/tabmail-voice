@@ -27,12 +27,16 @@ const app = vi.hoisted(() => ({
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, session: number, signal: AbortSignal) => Promise<string>) | null,
+  captureTarget: null as ((session: number) => Promise<void>) | null,
+  copy: null as ((text: string) => void) | null,
   corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
   prewarms: 0,
   /** The paste history the controller was given, what went on the clipboard, the history window's
    * openings, moves and closings, and each time the app was hidden. */
   history: null as { add(text: string): void; entries: readonly { id: number; text: string }[] } | null,
   clipboard: [] as string[],
+  /** The clipboard refuses the next write. */
+  clipboardFails: false,
   historyWindow: [] as string[],
   hides: 0,
   /** The windows other than the overlay that are open. */
@@ -93,7 +97,12 @@ vi.mock("electron", async () => {
         app.hides += 1;
       },
     },
-    clipboard: { writeText: (text: string) => app.clipboard.push(text) },
+    clipboard: {
+      writeText: async (text: string) => {
+        if (app.clipboardFails) throw new Error("the clipboard is busy");
+        app.clipboard.push(text);
+      },
+    },
     screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
     shell: {
@@ -242,12 +251,14 @@ vi.mock("../src/main/helperClient.js", () => ({
 vi.mock("../src/core/dictationController.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/core/dictationController.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; paste: (text: string, session: number, signal: AbortSignal) => Promise<string>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; captureTarget: (session: number) => Promise<void>; copy: (text: string) => void; paste: (text: string, session: number, signal: AbortSignal) => Promise<string>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
       app.loopTools = dependencies.loopTools;
       app.paste = dependencies.paste;
+      app.captureTarget = dependencies.captureTarget;
+      app.copy = dependencies.copy;
       app.controller = this;
     }
     chat: object | null = null;
@@ -360,10 +371,13 @@ afterEach(() => {
   app.helpers.clear();
   app.capture = null;
   app.paste = null;
+  app.captureTarget = null;
+  app.copy = null;
   app.corrections = undefined;
   app.prewarms = 0;
   app.history = null;
   app.clipboard = [];
+  app.clipboardFails = false;
   app.historyWindow = [];
   app.hides = 0;
   app.openWindows = [];
@@ -491,6 +505,33 @@ describe("main process wiring", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
     expect(inserts[0]?.params).toMatchObject({ text: "Hello.", session: 4 });
+  });
+
+  /** Key-down keeps the dictation's field and caret in `voice-macos` under its session, which its
+   * paste then asks for (ADR-DESK-042); a text not pasted goes on the clipboard. */
+  test("a dictation's field is kept by voice-macos, and a text not pasted is copied", async () => {
+    await launch("darwin");
+    const helper = app.helpers.get("voice-macos");
+
+    await app.captureTarget?.(4);
+    expect(helper?.requests.filter((request) => request.method === "captureTarget").map((request) => request.params)).toEqual([{ session: 4 }]);
+
+    app.copy?.("Hello.");
+    expect(app.clipboard).toEqual(["Hello."]);
+  });
+
+  /** Electron 44's clipboard write is a promise: a refused one is logged, never left unhandled. */
+  test("a clipboard write that fails is logged", async () => {
+    await launch("darwin");
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      app.clipboardFails = true;
+      app.copy?.("Hello.");
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(stderr).toHaveBeenCalledWith("main: couldn't copy to the clipboard: Error\n");
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   /** A triple tap opens the paste history by the pointer (ADR-DESK-043), which shows the controller's

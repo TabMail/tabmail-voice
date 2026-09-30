@@ -41,7 +41,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, captured: true, outcome: "pasted" };
+      return { value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, outcome: "pasted" };
     },
     on() {},
   } as unknown as HelperClient;
