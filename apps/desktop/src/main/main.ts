@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { app, autoUpdater as squirrel, dialog, ipcMain, screen, session, shell } from "electron";
+import { app, autoUpdater as squirrel, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
 import { opensLink } from "../core/agent/agentChat.js";
@@ -29,6 +29,8 @@ import { type DictationHotkey, isHotkeyAction } from "../core/hotkey.js";
 import { liveTransport } from "../core/http.js";
 import { configureLog, errorName, log } from "../core/log.js";
 import type { MenuState } from "../core/menuModel.js";
+import { historyWindowOrigin, type Point, type Rect } from "../core/overlayGeometry.js";
+import { PasteHistory } from "../core/pasteHistory.js";
 import { PermissionsModel } from "../core/permissions.js";
 import { ScreenContextProbe } from "../core/screenContext.js";
 import { AppSettings, suggestedUserName } from "../core/settings.js";
@@ -151,12 +153,16 @@ function launch(): void {
     () => windows.push("contextDebug"),
   );
 
+  const history = new PasteHistory();
   const controller = new DictationController({
     permissions,
     settings: () => settings.dictation(account.email),
     account,
     tips: new TipBook(store),
-    paste: (text, signal) => mac.paste(text, signal),
+    captureTarget: (session) => mac.captureTarget(session),
+    paste: (text, session, signal) => mac.paste(text, session, signal),
+    copy: (text) => clipboard.writeText(text),
+    history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
     frontmostApp: () => mac.frontmostApp(),
@@ -212,7 +218,13 @@ function launch(): void {
   });
 
   function stateOf<Name extends WindowName>(name: Name): WindowStates[Name] {
-    const states: { [Key in WindowName]: () => WindowStates[Key] } = { overlay: overlayState, settings: settingsState, welcome: welcomeState, contextDebug: () => ({ context: probe.lastContext }) };
+    const states: { [Key in WindowName]: () => WindowStates[Key] } = {
+      overlay: overlayState,
+      settings: settingsState,
+      welcome: welcomeState,
+      contextDebug: () => ({ context: probe.lastContext }),
+      history: () => ({ entries: [...history.entries] }),
+    };
     return states[name]();
   }
 
@@ -363,6 +375,31 @@ function launch(): void {
     );
   }
 
+  /** Where the paste history opened: by the mouse pointer then, on its display. */
+  let historyPlace: { pointer: Point; workArea: Rect } | null = null;
+
+  /** The paste history (ADR-DESK-043), by the mouse pointer, at its tallest until its list measures
+   * itself (`historyHeight`). */
+  function showHistory(): void {
+    const pointer = screen.getCursorScreenPoint();
+    historyPlace = { pointer, workArea: screen.getDisplayNearestPoint(pointer).workArea };
+    windows.showHistory(historyBounds(config.pasteHistoryMaxHeight), () => windows.close("history"));
+  }
+
+  function historyBounds(height: number): Rect {
+    const size = { width: config.pasteHistoryWindowWidth, height: Math.round(Math.min(height, config.pasteHistoryMaxHeight)) };
+    const origin = historyPlace ? historyWindowOrigin(historyPlace.pointer, size, historyPlace.workArea) : { x: 0, y: 0 };
+    return { x: Math.round(origin.x), y: Math.round(origin.y), ...size };
+  }
+
+  /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
+   * another of this app's windows is open. */
+  function closeHistory(): void {
+    windows.close("history");
+    const othersOpen = (["settings", "welcome", "contextDebug"] as const).some((name) => windows.isOpen(name));
+    if (process.platform === "darwin" && !othersOpen) app.hide();
+  }
+
   /** The Thunderbird bubble shows the email app's icon: read once per app. */
   function updateEmailAppIcon(): void {
     const path = controller.emailAppPath;
@@ -486,6 +523,8 @@ function launch(): void {
     updater?.appIsFree();
   };
   controller.onNothingListening = endHandsFree;
+  controller.onShowHistory = showHistory;
+  history.observe(() => windows.push("history"));
   controller.observe(() => {
     updateEmailAppIcon();
     windows.push("overlay");
@@ -612,6 +651,18 @@ function launch(): void {
         return;
       case "chatHeight":
         overlay.fitChat(command.height);
+        return;
+      case "copyHistoryEntry": {
+        const text = history.text(command.id);
+        if (text !== null) clipboard.writeText(text);
+        closeHistory();
+        return;
+      }
+      case "closeHistory":
+        closeHistory();
+        return;
+      case "historyHeight":
+        windows.setBounds("history", historyBounds(command.height));
         return;
     }
   }

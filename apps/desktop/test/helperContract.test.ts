@@ -41,7 +41,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
+      return { value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false, captured: true, outcome: "pasted" };
     },
     on() {},
   } as unknown as HelperClient;
@@ -53,7 +53,8 @@ describe("helper wire contract", () => {
     const { helper, requests } = recordingHelper();
     const mac = new MacSystem(helper);
     const app = "org.example.app";
-    await mac.paste("text");
+    await mac.captureTarget(1);
+    await mac.paste("text", 1);
     await mac.frontmostApp();
     await mac.keyboardLanguage();
     await mac.fullUserName();
@@ -105,7 +106,7 @@ describe("helper wire contract", () => {
     const helper = {
       request: async (method: string, params?: unknown, timeout?: unknown) => {
         calls.push({ method, params, timeout });
-        return method === "frontmostApp" ? { pid: 321 } : {};
+        return method === "frontmostApp" ? { pid: 321 } : { outcome: "pasted" };
       },
     } as unknown as HelperClient;
     const mac = new MacSystem(helper);
@@ -117,6 +118,34 @@ describe("helper wire contract", () => {
       { method: "insert", params: { text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000 }, timeout: config.helperRequestTimeout + config.clipboardRestoreDelay },
       { method: "frontmostApp", params: undefined, timeout: undefined },
     ]);
+  });
+
+  /** A dictation's paste names its session, whose field and caret the helper puts back first
+   * (ADR-DESK-042); the outcome comes back as the helper names it, and a reply without a known one is
+   * a failure, never taken for a paste. The names are `InsertionOutcome`'s and `pastedOutcome`. */
+  test("a dictation's paste names its session and answers the helper's outcome", async () => {
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8");
+    const target = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/InsertionTarget.swift"), "utf8");
+    const pasted = /pastedOutcome = "(\w+)"/.exec(source)?.[1];
+    const outcomes = [...(/enum InsertionOutcome[^{]*\{([^}]*)\}/.exec(target)?.[1] ?? "").matchAll(/case (\w+)/g)].map((match) => match[1]).filter((name) => name !== "inPlace");
+    expect([pasted, ...outcomes].sort()).toEqual(["appChanged", "caretMoved", "pasted"]);
+
+    let reply: unknown = { outcome: "caretMoved" };
+    const calls: unknown[] = [];
+    const mac = new MacSystem({
+      request: async (_method: string, params?: unknown) => {
+        calls.push(params);
+        return reply;
+      },
+    } as unknown as HelperClient);
+    expect(await mac.paste("some text", 7)).toBe("caretMoved");
+    expect(calls).toEqual([{ text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000, session: 7 }]);
+    reply = {};
+    await expect(mac.paste("some text", 7)).rejects.toThrow();
+    reply = { captured: true };
+    expect(await mac.captureTarget(7)).toBe(true);
+    reply = {};
+    expect(await mac.captureTarget(7)).toBe(false);
   });
 
   /** The account's full name comes back as the helper answers it, empty included; a reply without one

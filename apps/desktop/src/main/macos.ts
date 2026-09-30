@@ -7,6 +7,7 @@ import { type ContactCard, type ContactStore, ContactStoreFailure } from "../cor
 import { type FileStore, FileStoreFailure, type FoundItem } from "../core/agent/filesTools.js";
 import type { FocusedElement, ThunderbirdSystem } from "../core/agent/thunderbirdRelay.js";
 import * as config from "../core/config.js";
+import type { PasteOutcome } from "../core/dictationController.js";
 import type { GlobeKeySystem } from "../core/globeKeyAction.js";
 import type { Rect } from "../core/overlayGeometry.js";
 import { errorName, log } from "../core/log.js";
@@ -18,11 +19,22 @@ import { HelperFailure, type HelperClient } from "./helperClient.js";
 export class MacSystem {
   constructor(private readonly helper: HelperClient) {}
 
-  /** Pastes `text` into the focused field, then restores the user's clipboard (ADR-DESK-002). Given
-   * its dictation's `signal`, the paste waits out a helper restart unless the dictation is cancelled
-   * first (`HelperClient.request`). */
-  async paste(text: string, signal?: AbortSignal): Promise<void> {
-    await this.helper.request("insert", { text, restoreDelay: config.clipboardRestoreDelay / 1000 }, config.helperRequestTimeout + config.clipboardRestoreDelay, signal);
+  /** Keeps the focused field of the app in front and its caret for the dictation `session`
+   * (ADR-DESK-042); true when there was a field. */
+  async captureTarget(session: number): Promise<boolean> {
+    const reply = await this.helper.request<{ captured?: unknown }>("captureTarget", { session });
+    return reply.captured === true;
+  }
+
+  /** Pastes `text` into the focused field, then restores the user's clipboard (ADR-DESK-002). With a
+   * dictation's `session`, it first puts back the field and caret kept for it (`captureTarget`), and
+   * pastes nothing if it can't (ADR-DESK-042). Given its dictation's `signal`, the paste waits out a
+   * helper restart unless the dictation is cancelled first (`HelperClient.request`). */
+  async paste(text: string, session?: number, signal?: AbortSignal): Promise<PasteOutcome> {
+    const params = { text, restoreDelay: config.clipboardRestoreDelay / 1000, ...(session === undefined ? {} : { session }) };
+    const { outcome } = await this.helper.request<{ outcome?: unknown }>("insert", params, config.helperRequestTimeout + config.clipboardRestoreDelay, signal);
+    if (outcome !== "pasted" && outcome !== "appChanged" && outcome !== "caretMoved") throw new HelperFailure("failed", "insert", "no outcome in the reply");
+    return outcome;
   }
 
   /** The process of the app in front. */
@@ -106,7 +118,9 @@ export class MacSystem {
     openChat: async () => {
       await this.helper.request("openTabMailChat");
     },
-    paste: (text) => this.paste(text),
+    paste: async (text) => {
+      await this.paste(text);
+    },
     pressReturn: async () => {
       await this.helper.request("pressReturn");
     },

@@ -8,7 +8,7 @@ import { defineConfig } from "vite";
 
 const root = resolve(import.meta.dirname, "src/renderer");
 
-/** The renderer's pages, one per window (the overlay, Settings, the welcome wizard, the hidden microphone window, the screen-read debug view). */
+/** The renderer's pages, one per window (the overlay, Settings, the welcome wizard, the hidden microphone window, the screen-read debug view, the paste history). */
 export default defineConfig({
   root,
   base: "./",
@@ -23,6 +23,7 @@ export default defineConfig({
         welcome: resolve(root, "welcome.html"),
         audio: resolve(root, "audio.html"),
         contextDebug: resolve(root, "context-debug.html"),
+        history: resolve(root, "history.html"),
       },
     },
   },

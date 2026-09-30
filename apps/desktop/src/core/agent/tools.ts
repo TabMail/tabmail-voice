@@ -5,7 +5,6 @@
 import * as config from "../config.js";
 import type { ScreenContext } from "../screenContext.js";
 import { trimWhitespace } from "../text.js";
-import { CancellationError } from "../timeout.js";
 import type { ThunderbirdRelay } from "./thunderbirdRelay.js";
 
 /**
@@ -32,12 +31,11 @@ export function isAgentTool(name: unknown): name is AgentTool {
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
-export type AgentFailureKind = "noTool" | "noText" | "appChanged" | "noToolEnabled";
+export type AgentFailureKind = "noTool" | "noText" | "noToolEnabled";
 
 const failureMessages: Record<AgentFailureKind, string> = {
   noTool: "Couldn't work out what to do. Try again.",
   noText: "Couldn't write that. Try again.",
-  appChanged: "You switched apps, so nothing was pasted.",
   /** Every tool this request could use is switched off in Settings. */
   noToolEnabled: "Turn on an agent tool in Settings.",
 };
@@ -58,23 +56,19 @@ export interface ToolContext {
   /** The email app mail and calendar requests go to, resolved from the settings the dictation
    * started with (ADR-DESK-017); null when there is none. */
   emailApp: string | null;
-  /** Pastes into the focused field. */
+  /** Pastes where the user spoke: the field and caret at key-down, put back if they moved. Where it
+   * can't (the user went to another app, or the caret would not go back), it pastes nothing and throws,
+   * the text copied instead (ADR-DESK-042). */
   paste(text: string): Promise<void>;
-  /** Whether the app in front at key-down still is. */
-  isTargetAppFrontmost(): Promise<boolean>;
   thunderbird: ThunderbirdRelay;
   /** Shows a reply in the chat window, opening it if it is closed. */
   showAnswer(text: string): void;
   signal: AbortSignal;
 }
 
-/** Pastes `text` into the app the user spoke over. The request may have taken long enough for the
- * user to move on: the text belongs in that app, and is pasted nowhere else. */
+/** Pastes `text` where the user spoke. The request may have taken long enough for the user to move
+ * on: the text belongs in that field at that caret, and is pasted nowhere else (`ToolContext.paste`). */
 async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<void> {
-  if (!(await context.isTargetAppFrontmost())) throw new AgentFailure("appChanged");
-  // Cancelled while the app in front was read (the Swift app reads it synchronously): the text is
-  // no longer wanted anywhere.
-  if (context.signal.aborted) throw new CancellationError();
   await context.paste(text);
 }
 

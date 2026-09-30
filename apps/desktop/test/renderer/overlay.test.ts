@@ -136,7 +136,7 @@ describe("overlay page", () => {
   test.each<[DictationTip, boolean, boolean]>([
     ["handsFree", true, true],
     ["handsFree", false, false],
-    ["switchMode", true, false],
+    ["agentAndHistory", true, false],
     ["doubleTap", true, false],
   ])("the %s tip, opened upward %s, is over the pill: %s", async (tip, opensUpward, over) => {
     const page = await overlayPage();
@@ -175,7 +175,7 @@ describe("overlay page", () => {
     const page = await overlayPage();
     const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
     const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
-    await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "switchMode" });
+    await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "agentAndHistory" });
 
     const showing = config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount;
     const labels = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.getAttribute("aria-label"));

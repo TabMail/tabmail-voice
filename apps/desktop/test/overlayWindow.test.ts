@@ -287,6 +287,38 @@ describe("OverlayWindowController", () => {
     }
   });
 
+  /** A text copied instead of pasted (ADR-DESK-042) says so where the user is now, at the mouse
+   * pointer, not at the caret they left; a failure stays where the pill was. */
+  test.each<[string, Phase, boolean]>([
+    ["copied", { kind: "copied", message: "Copied." }, true],
+    ["failed", { kind: "failed", message: "Failed." }, false],
+  ])("a %s note shows at the pointer only when copied", async (_, end, atPointer) => {
+    const caret: Rect = { x: 200, y: 200, width: 1, height: 16 };
+    screenNow.pointer = { x: 1000, y: 600 };
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => caret);
+      controller.update({ kind: "arming" });
+      controller.update({ kind: "listening" });
+      await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+      const atCaret = overlay.bounds();
+      controller.update({ kind: "transcribing" });
+
+      controller.update(end);
+
+      expect(overlay.visible()).toBe(true);
+      const pill = pillOnScreen(overlay.bounds());
+      if (atPointer) {
+        expect(Math.abs(pill.x - screenNow.pointer.x)).toBeLessThanOrEqual(1);
+        expect(pill.y).toBeGreaterThan(screenNow.pointer.y);
+      } else {
+        expect(overlay.bounds()).toEqual(atCaret);
+      }
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+  });
+
   /** A caret found after the chat window opened doesn't move it back to where the pill would be. */
   test("a caret found after the chat opened leaves it where it opened", async () => {
     const caret = deferred<Rect | null>();

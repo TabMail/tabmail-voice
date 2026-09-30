@@ -51,6 +51,9 @@ describe("IPC", () => {
       { type: "answerConfirmation", confirmed: true },
       { type: "setConnectorEnabled", connector: "reminders", value: false },
       { type: "answerConfirmation", confirmed: false },
+      { type: "copyHistoryEntry", id: 3 },
+      { type: "closeHistory" },
+      { type: "historyHeight", height: 120 },
     ]) {
       expect(isCommand(command), command.type).toBe(true);
     }
@@ -86,6 +89,10 @@ describe("IPC", () => {
     { type: "setConnectorEnabled", connector: "calendar", value: "no" },
     { type: "answerConfirmation" },
     { type: "answerConfirmation", confirmed: "yes" },
+    { type: "copyHistoryEntry" },
+    { type: "copyHistoryEntry", id: 1.5 },
+    { type: "historyHeight", height: 0 },
+    { type: "historyHeight", height: Number.NaN },
   ])("a malformed command is refused (%j)", (command) => {
     expect(isCommand(command)).toBe(false);
   });
@@ -104,7 +111,7 @@ describe("IPC", () => {
   });
 
   test("window names are checked", () => {
-    expect(["overlay", "settings", "welcome", "contextDebug"].every(isWindowName)).toBe(true);
+    expect(["overlay", "settings", "welcome", "contextDebug", "history"].every(isWindowName)).toBe(true);
     expect(isWindowName("audio")).toBe(false);
     expect(isWindowName(undefined)).toBe(false);
   });

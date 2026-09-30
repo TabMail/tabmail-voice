@@ -14,7 +14,8 @@ import { AgentFailure, type AgentTool, agentTools } from "../src/core/agent/tool
 import { AudioRecorder } from "../src/core/audio.js";
 import { BackendError, CompletionsClient, TranscriptionClient } from "../src/core/backend.js";
 import * as config from "../src/core/config.js";
-import { DictationController, type DictationDependencies, nothingHeardMessage, type Phase, retryingMessage } from "../src/core/dictationController.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessages, type Phase, retryingMessage } from "../src/core/dictationController.js";
+import { PasteHistory } from "../src/core/pasteHistory.js";
 import type { DictationMode } from "../src/core/hotkey.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
 import { configureLog, type LogLevel } from "../src/core/log.js";
@@ -22,7 +23,7 @@ import { type MicrophoneStatus, PermissionsModel } from "../src/core/permissions
 import type { ScreenContext } from "../src/core/screenContext.js";
 import type { DictationSettings } from "../src/core/settings.js";
 import { TipBook, tipDetails } from "../src/core/tips.js";
-import { sleep } from "../src/core/timeout.js";
+import { CancellationError, sleep } from "../src/core/timeout.js";
 import { type HTTPTransport, liveTransport, TransportError } from "../src/core/http.js";
 import { FakeThunderbird } from "./fakeThunderbird.js";
 import { screen as blankScreen } from "./screens.js";
@@ -43,7 +44,7 @@ const listening: Phase = { kind: "listening" };
 const transcribing: Phase = { kind: "transcribing" };
 const running = (tool: AgentTool): Phase => ({ kind: "running", tool });
 const failed = (message: string): Phase => ({ kind: "failed", message });
-const appChanged = new AgentFailure("appChanged").message;
+const copied = (outcome: keyof typeof notPastedMessages): Phase => ({ kind: "copied", message: notPastedMessages[outcome] });
 const microphoneFailed = failed("Couldn't start the microphone.");
 
 /** Without Answer: most agent tests are about the writing tools and Thunderbird, and Answer would
@@ -74,9 +75,9 @@ async function throughout(ms: number, condition: () => boolean): Promise<boolean
   return condition();
 }
 
-/** Done: idle or failed. */
+/** Done: idle, failed, or copied instead of pasted. */
 function settled(controller: DictationController): boolean {
-  return controller.phase.kind === "idle" || controller.phase.kind === "failed";
+  return controller.phase.kind === "idle" || controller.phase.kind === "failed" || controller.phase.kind === "copied";
 }
 
 /** The content-log steps of the controller and the agent, without the backend clients' own entries. */
@@ -94,6 +95,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
   let auth: StubTransport;
   /** The app in front, as the controller sees it: a process id the test changes. */
   let front: { pid: number | null };
+  /** The fake helper's insertion targets (ADR-DESK-042): the app in front at each dictation's
+   * key-down, by session; and whether its caret won't go back. */
+  let targets: Map<number, number | null>;
+  let caret: { stuck: boolean };
   /** The keyboard's language, and what the controller showed as its language when each hold was
    * revealed. */
   let keyboard: { language: string | null; atReveal: (string | null)[] };
@@ -107,6 +112,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     completions = new StubTransport();
     auth = new StubTransport();
     front = { pid: 101 };
+    targets = new Map();
+    caret = { stuck: false };
     keyboard = { language: null, atReveal: [] };
     prefs = { value: defaultSettings() };
     tipStore = new MemoryStore();
@@ -115,9 +122,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
    * backend. Thunderbird is not installed unless a test passes one. */
   function makeController(
-    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; paste?: (text: string, signal: AbortSignal) => Promise<void>; loopTools?: LoopTool[]; corrections?: DictationDependencies["corrections"] } = {},
-  ): { controller: DictationController; pastes: string[] } {
+    options: { account?: AccountModel; capture?: CountingCapture; thunderbird?: FakeThunderbird; microphone?: MicrophoneStatus; accessibility?: boolean; transcriptionTransport?: HTTPTransport; frontmostApp?: () => Promise<number | null>; captureTarget?: DictationDependencies["captureTarget"]; paste?: DictationDependencies["paste"]; loopTools?: LoopTool[]; corrections?: DictationDependencies["corrections"] } = {},
+  ): { controller: DictationController; pastes: string[]; copies: string[]; history: PasteHistory } {
     const pastes: string[] = [];
+    const copies: string[] = [];
+    const history = new PasteHistory();
     const thunderbird = options.thunderbird ?? Object.assign(new FakeThunderbird(), { installed: false });
     const controller = new DictationController({
       permissions: new PermissionsModel({
@@ -130,11 +139,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
       settings: () => prefs.value,
       account: options.account ?? signedIn(auth),
       tips: new TipBook(tipStore),
+      captureTarget:
+        options.captureTarget ??
+        (async (session) => {
+          targets.set(session, front.pid);
+          return true;
+        }),
+      // As `voice-macos` pastes (`MacSystem.paste`): nothing once cancelled; nothing in an app other
+      // than the one in front at the dictation's key-down (the app in front, for a recording handed to
+      // `transcribe` without one), or when the caret won't go back.
       paste:
         options.paste ??
-        (async (text) => {
+        (async (text, session, signal) => {
+          if (signal.aborted) throw new CancellationError();
+          const app = targets.has(session) ? targets.get(session) : front.pid;
+          if (app !== front.pid) return "appChanged";
+          if (caret.stuck) return "caretMoved";
           pastes.push(text);
+          return "pasted";
         }),
+      copy: (text) => copies.push(text),
+      history,
       thunderbird: thunderbird.relay(),
       capture: options.capture ?? new CountingCapture(),
       frontmostApp: options.frontmostApp ?? (async () => front.pid),
@@ -146,7 +171,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       loopTools: options.loopTools ?? [],
       corrections: options.corrections,
     });
-    return { controller, pastes };
+    return { controller, pastes, copies, history };
   }
 
   /** Runs one recording through the controller; returns what was pasted. */
@@ -302,6 +327,73 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** After a dictation's paste, the field of the app in front at key-down is watched for the user's
    * corrections (`CorrectionWatch`), with the text pasted; the next key-down stops the watch first. */
+  /** Where the text goes (ADR-DESK-042): the field and caret kept at key-down, put back if the user
+   * moved them; where that can't be done, nothing is pasted anywhere, the text goes on the clipboard
+   * and into the paste history, and the note says so. */
+  describe("pasting where the user spoke", () => {
+    test("keeps the field at key-down and pastes into it, into the history too", async () => {
+      transcription.enqueue(200, cleanedReply);
+      const sessions: number[] = [];
+      const { controller, pastes, copies, history } = makeController({
+        capture: new CountingCapture(true),
+        captureTarget: async (session) => {
+          sessions.push(session);
+          targets.set(session, front.pid);
+          return true;
+        },
+      });
+
+      await holdAndRelease(controller);
+      expect(sessions).toHaveLength(1);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+
+      expect(pastes).toEqual([cleaned]);
+      expect(copies).toEqual([]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+    });
+
+    test.each<[string, () => void, "appChanged" | "caretMoved"]>([
+      ["another app is in front", () => (front.pid = 202), "appChanged"],
+      ["the caret won't go back", () => (caret.stuck = true), "caretMoved"],
+    ])("when %s, the text is copied, not pasted", async (_, move, outcome) => {
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => move();
+      const { controller, pastes, copies, history } = makeController({ capture: new CountingCapture(true) });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+
+      expect(controller.phase).toEqual(copied(outcome));
+      expect(pastes).toEqual([]);
+      expect(copies).toEqual([cleaned]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+      // The note goes, and the next hold dictates as ever.
+      transcription.gate = undefined;
+      front.pid = 101;
+      caret.stuck = false;
+      transcription.enqueue(200, cleanedReply);
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 1)).toBe(true);
+    });
+
+    /** Agent mode's text is copied the same way: Edit's and Compose's. */
+    test("agent text for a caret that won't go back is copied", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("We ship on Friday."));
+      caret.stuck = true;
+      const { controller, pastes, copies, history } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => selectionScreen("");
+
+      await holdAndRelease(controller, "agent");
+      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+
+      expect(controller.phase).toEqual(copied("caretMoved"));
+      expect(pastes).toEqual([]);
+      expect(copies).toEqual(["We ship on Friday."]);
+      expect(history.entries.map((entry) => entry.text)).toEqual(["We ship on Friday."]);
+    });
+  });
+
   describe("learning the user's corrections", () => {
     function watcher(): { calls: string[]; corrections: NonNullable<DictationDependencies["corrections"]> } {
       const calls: string[] = [];
@@ -360,9 +452,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = makeController({
         capture: new CountingCapture(true),
         corrections,
-        paste: () => {
+        paste: async () => {
           pastes += 1;
-          return pasting.promise;
+          await pasting.promise;
+          return "pasted";
         },
       });
       transcription.enqueue(200, cleanedReply);
@@ -495,6 +588,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         paste: async (text) => {
           pastedWhile.push(controller.phase.kind);
           pastes.push(text);
+          return "pasted";
         },
       });
       controller.transcriptionRetryDelays = [1, 1];
@@ -913,7 +1007,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       context: ScreenContext | null,
       thunderbird?: FakeThunderbird,
       prepare: (controller: DictationController) => void = () => {},
-      options: { account?: AccountModel; paste?: (text: string, signal: AbortSignal) => Promise<void>; frontmostApp?: () => Promise<number | null>; loopTools?: LoopTool[] } = {},
+      options: { account?: AccountModel; paste?: DictationDependencies["paste"]; frontmostApp?: () => Promise<number | null>; loopTools?: LoopTool[] } = {},
     ): Promise<{ controller: DictationController; pastes: string[]; phases: Phase[] }> {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), thunderbird, ...options });
       const phases: Phase[] = [];
@@ -1172,41 +1266,41 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases).toContainEqual(running(tool));
       expect(completions.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(failed(appChanged));
+      expect(controller.phase).toEqual(copied("appChanged"));
     });
 
-    /** Cancelled while the app in front is read for the paste, the last wait before it, with the next
-     * dictation already listening: the old request's text is pasted nowhere. */
+    /** Cancelled while the paste waits for the field kept at key-down, the last wait before it, with
+     * the next dictation already listening: the old request's text is pasted nowhere. */
     test.each<[string, AgentTool]>([
       ["Ship it Friday or else.", "edit"],
       ["", "compose"],
-    ])("agent text cancelled during the last app check is not pasted (selection %j)", async (selected, tool) => {
+    ])("agent text cancelled during the last wait is not pasted (selection %j)", async (selected, tool) => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply("Could we ship on Friday?"));
-      const checking = deferred<void>();
-      const lastCheck = deferred<number | null>();
-      let reads = 0;
-      // The first read is key-down's; the second, the check before the paste.
-      const frontmostApp = (): Promise<number | null> => {
-        reads += 1;
-        if (reads !== 2) return Promise.resolve(front.pid);
-        checking.resolve();
-        return lastCheck.promise;
+      const kept = deferred<boolean>();
+      let captures = 0;
+      // The first capture is this request's; the next dictation's answers at once.
+      const captureTarget = (session: number): Promise<boolean> => {
+        captures += 1;
+        targets.set(session, front.pid);
+        return captures === 1 ? kept.promise : Promise.resolve(true);
       };
-      const { controller, pastes } = makeController({ capture: new CountingCapture(true), frontmostApp });
+      const { controller, pastes, history } = makeController({ capture: new CountingCapture(true), captureTarget });
       controller.captureContext = async () => selectionScreen(selected);
 
       await holdAndRelease(controller, "agent");
-      await checking.promise;
+      expect(await eventually(() => controller.phase.kind === "running")).toBe(true);
       expect(controller.phase).toEqual(running(tool));
+      await sleep(50);
       expect(completions.requests).toHaveLength(1);
       controller.handle("cancel");
       controller.handle("start");
       expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
-      lastCheck.resolve(front.pid);
+      kept.resolve(true);
       await sleep(50);
 
       expect(pastes).toEqual([]);
+      expect(history.entries).toEqual([]);
       expect(controller.phase.kind).toBe("listening");
       controller.handle("cancel");
     });
@@ -1217,17 +1311,18 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("a double tap while agent mode writes leaves nothing hands-free", async () => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply("We ship on Friday."));
-      const checking = deferred<void>();
-      const lastCheck = deferred<number | null>();
-      let reads = 0;
-      // The first read is key-down's; the second, the check before the paste.
-      const frontmostApp = (): Promise<number | null> => {
-        reads += 1;
-        if (reads !== 2) return Promise.resolve(front.pid);
-        checking.resolve();
-        return lastCheck.promise;
-      };
-      const { controller, pastes } = makeController({ capture: new CountingCapture(true), frontmostApp });
+      const pasting = deferred<void>();
+      const reached = deferred<void>();
+      const pastes: string[] = [];
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        paste: async (text) => {
+          reached.resolve();
+          await pasting.promise;
+          pastes.push(text);
+          return "pasted";
+        },
+      });
       controller.captureContext = async () => selectionScreen("");
       let nothingListening = 0;
       controller.onNothingListening = () => {
@@ -1235,7 +1330,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       };
 
       await holdAndRelease(controller, "agent");
-      await checking.promise;
+      await reached.promise;
       expect(controller.phase).toEqual(running("compose"));
       controller.handle("start");
       controller.handle("finish");
@@ -1244,7 +1339,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(nothingListening).toBe(1);
       expect(controller.phase).toEqual(running("compose"));
-      lastCheck.resolve(front.pid);
+      pasting.resolve();
       expect(await eventually(() => pastes.length === 1 && controller.phase.kind === "idle")).toBe(true);
     });
 
@@ -1261,7 +1356,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(phases).toContainEqual(running("compose"));
       expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(failed(appChanged));
+      expect(controller.phase).toEqual(copied("appChanged"));
     });
 
     /** The app that counts is the one in front at key-down, not at release: a switch made while the
@@ -1278,8 +1373,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       front.pid = 202;
       controller.handle("finish");
 
-      expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
-      expect(controller.phase).toEqual(failed(appChanged));
+      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+      expect(controller.phase).toEqual(copied("appChanged"));
       expect(completions.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
     });
@@ -1939,12 +2034,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       /** Closed while the follow-up's answer waits on the app in front: the answer opens no chat. */
       test("an answer that outlives its closed chat opens none", async () => {
-        const appInFront = deferred<number | null>();
-        let holds = 0;
-        const { controller } = await openChat(() => {}, undefined, {
-          frontmostApp: () => (++holds === 1 ? Promise.resolve(front.pid) : appInFront.promise),
-        });
+        const answering = deferred<void>();
+        const { controller } = await openChat(() => {});
         queue("and how do I fix it", "answer", "Define it before the call.");
+        // The follow-up's answer is held back until the chat has closed.
+        completions.gate = () => (completions.requests.length === 4 ? answering.promise : Promise.resolve());
         controller.handle("start");
         expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
         controller.handle("finish");
@@ -1952,7 +2046,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         await sleep(100);
 
         controller.closeChat();
-        appInFront.resolve(front.pid);
+        answering.resolve();
         await sleep(200);
 
         expect(controller.chat).toBeNull();
@@ -1980,6 +2074,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           paste: async () => {
             pasteReached = true;
             await delivery.promise;
+            return "pasted";
           },
         });
         queue("old follow up", "compose", "old pasted words");
@@ -2853,23 +2948,35 @@ describe("DictationController", { timeout: 20_000 }, () => {
   });
 
   describe("tips and hands-free dictation", () => {
-    /** The Space tip shows as the pill listens, until the user switches modes once; then never again. */
-    test("the Space tip shows until Space is used", async () => {
+    /** The Space and history tip shows as the pill listens; Space puts it away for that hold, and the
+     * tip shows again at the next, until the user has opened the history with a triple tap; then never
+     * again. */
+    test("the Space and history tip shows until the history is opened", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
       controller.tipDisplayDuration = () => 60_000;
 
       controller.handle("start");
-      expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       expect(controller.phase).toEqual(listening);
       controller.handle("toggleMode");
       expect(controller.tip).toBeNull();
       controller.handle("cancel");
+      expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(true);
+
+      controller.handle("start");
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
+      controller.handle("cancel");
+      controller.handle("start");
+      controller.handle("finish");
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
+      controller.handle("showHistory");
 
       controller.handle("start");
       expect(await eventually(() => controller.phase.kind === "listening" && controller.isHearing)).toBe(true);
       expect(await throughout(300, () => controller.tip === null)).toBe(true);
       controller.handle("cancel");
-      expect(new TipBook(tipStore).isEligible("switchMode")).toBe(false);
+      expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
     });
 
     /** With no name set, switching to agent mode shows the tip inviting one, until it switches back;
@@ -2877,10 +2984,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("the name tip shows in agent mode while no name is set", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
       controller.tipDisplayDuration = () => 60_000;
-      new TipBook(tipStore).markLearned("switchMode");
+      new TipBook(tipStore).markLearned("agentAndHistory");
 
       prefs.value = { ...prefs.value, userName: "" };
-      for (let hold = 0; hold < (config.switchModeTip.maxDisplays ?? 0) + 2; hold += 1) {
+      for (let hold = 0; hold < (config.agentAndHistoryTip.maxDisplays ?? 0) + 2; hold += 1) {
         controller.handle("start");
         expect(await eventually(() => controller.phase.kind === "listening" && controller.isHearing)).toBe(true);
         expect(controller.tip).toBeNull();
@@ -2904,7 +3011,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("the name tip waits for the pill to listen, and goes with a switch back", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
       controller.tipDisplayDuration = () => 60_000;
-      new TipBook(tipStore).markLearned("switchMode");
+      new TipBook(tipStore).markLearned("agentAndHistory");
       prefs.value = { ...prefs.value, userName: "" };
 
       controller.handle("start");
@@ -2926,7 +3033,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("the name tip goes by the name set at key-down", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
       controller.tipDisplayDuration = () => 60_000;
-      new TipBook(tipStore).markLearned("switchMode");
+      new TipBook(tipStore).markLearned("agentAndHistory");
 
       async function switchDuringHold(nameMidHold: string): Promise<void> {
         controller.handle("start");
@@ -2978,7 +3085,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** A tip with a display duration keeps its turn: the name tip follows it, and it shows once. */
     test("the name tip waits for a timed tip showing", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
-      new TipBook(tipStore).markLearned("switchMode");
+      new TipBook(tipStore).markLearned("agentAndHistory");
       controller.doubleTapTipHoldDuration = 100;
       const doubleTapTipDuration = 400;
       controller.tipDisplayDuration = (tip) => (tip === "doubleTap" ? doubleTapTipDuration : 60_000);
@@ -3000,14 +3107,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.tipDisplayDuration = () => 150;
 
       controller.handle("start");
-      expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       expect(await eventually(() => controller.tip === null)).toBe(true);
       expect(controller.phase).toEqual(listening);
       controller.handle("cancel");
 
       controller.tipDisplayDuration = () => 60_000;
       controller.handle("start");
-      expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       controller.handle("cancel");
       expect(controller.tip).toBeNull();
     });
@@ -3026,7 +3133,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("a long hold shows the double-tap tip", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
       controller.doubleTapTipHoldDuration = 800;
-      controller.tipDisplayDuration = (tip) => (tip === "switchMode" ? 50 : 60_000);
+      controller.tipDisplayDuration = (tip) => (tip === "agentAndHistory" ? 50 : 60_000);
 
       controller.handle("start");
       expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
@@ -3171,6 +3278,31 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => pastes.length === 1 && pastes[0] === cleaned && controller.phase.kind === "idle")).toBe(true);
     });
 
+    /** A triple tap (ADR-DESK-043): the hands-free dictation the second tap started goes unseen, nothing
+     * is sent, and the paste history is asked for. */
+    test("a triple tap drops the hands-free dictation and shows the history", async () => {
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      let shown = 0;
+      controller.onShowHistory = () => {
+        shown += 1;
+      };
+
+      controller.handle("start");
+      controller.handle("finish");
+      controller.handle("startHandsFree");
+      controller.handle("listenHandsFree");
+      controller.handle("showHistory");
+
+      expect(shown).toBe(1);
+      expect(controller.phase).toEqual(idle);
+      await sleep(100);
+      expect(transcription.requests).toHaveLength(0);
+      // The next press dictates as ever.
+      controller.handle("start");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      controller.handle("cancel");
+    });
+
     /** The hands-free tip shows in a double-tapped dictation even when the microphone was already
      * heard during the first tap, before anything was shown, and stays until it stops listening. (It
      * took the Space tip's place in a double tap: owner, 2026-09-27.) */
@@ -3197,7 +3329,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(tipDetails.handsFree.displayDuration).toBeNull();
       const longestTimedTip = Math.max(...Object.values(tipDetails).map((details) => details.displayDuration ?? 0));
       const book = new TipBook(tipStore);
-      for (let index = 0; index < (config.switchModeTip.maxDisplays ?? 0) + 5; index += 1) book.recordDisplay("handsFree");
+      for (let index = 0; index < (config.agentAndHistoryTip.maxDisplays ?? 0) + 5; index += 1) book.recordDisplay("handsFree");
       const { controller } = makeController({ capture: new CountingCapture(true) });
 
       for (let round = 0; round < 3; round += 1) {
@@ -3221,7 +3353,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test.each([true, false])("the hands-free tip shows only once the second press is a tap (after a tap: %s)", async (afterATap) => {
       const capture = new CountingCapture();
       const { controller } = makeController({ capture });
-      expect(new TipBook(tipStore).isEligible("switchMode")).toBe(true);
+      expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(true);
       const secondPress = () => {
         if (afterATap) {
           controller.handle("start");
@@ -3233,13 +3365,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       secondPress();
       controller.handle("listenHandsFree");
-      expect(await throughout(config.minimumHoldDuration * 3, () => controller.tip !== "switchMode")).toBe(true);
+      expect(await throughout(config.minimumHoldDuration * 3, () => controller.tip !== "agentAndHistory")).toBe(true);
       expect(controller.tip).toBe("handsFree");
       controller.handle("cancel");
 
       secondPress();
       expect(await throughout(config.minimumHoldDuration / 2, () => controller.tip === null)).toBe(true);
-      expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       expect(await throughout(config.minimumHoldDuration * 3, () => controller.tip !== "handsFree")).toBe(true);
       controller.handle("finish");
       expect(controller.phase).toEqual(transcribing);
@@ -3313,12 +3445,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * way to the hands-free tip. */
     test("a Space tip up as the second tap ends gives way to the hands-free tip", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
-      controller.tipDisplayDuration = (tip) => (tip === "switchMode" ? 60_000 : tipDetails[tip].displayDuration);
+      controller.tipDisplayDuration = (tip) => (tip === "agentAndHistory" ? 60_000 : tipDetails[tip].displayDuration);
 
       controller.handle("start");
       controller.handle("finish");
       controller.handle("startHandsFree");
-      expect(await eventually(() => controller.tip === "switchMode")).toBe(true);
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
       controller.handle("listenHandsFree");
 
       expect(controller.tip).toBe("handsFree");
@@ -3483,7 +3615,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const signals: AbortSignal[] = [];
       const { controller } = makeController({
         capture: new CountingCapture(true),
-        paste: (_text, signal) => {
+        paste: (_text, _session, signal) => {
           signals.push(signal);
           return new Promise(() => {});
         },

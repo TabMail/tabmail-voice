@@ -91,6 +91,12 @@ enum HelperConfig {
     /// Per-call cap on Accessibility calls reading the focused field after a paste (seconds).
     static let focusedFieldTimeout: Float = 0.25
 
+    // MARK: Insertion target
+
+    /// Per-call cap on Accessibility calls capturing the field and caret at key-down, and putting
+    /// them back before the paste (seconds).
+    static let insertionTargetTimeout: Float = 0.25
+
     // MARK: Email apps
 
     /// Asked for the app that opens it, to find the user's default email app.

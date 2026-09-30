@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { app, BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme } from "electron";
 import * as config from "../core/config.js";
 import { log } from "../core/log.js";
+import type { Rect } from "../core/overlayGeometry.js";
 import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
 
 /** The renderer page of each window, built by Vite into `dist/renderer`. */
@@ -14,6 +15,7 @@ const pages: Record<WindowName | "audio", string> = {
   settings: "settings.html",
   welcome: "welcome.html",
   contextDebug: "context-debug.html",
+  history: "history.html",
   audio: "audio.html",
 };
 
@@ -83,6 +85,50 @@ export class Windows {
 
   showContextDebug(): void {
     this.present("contextDebug", { ...config.contextDebugWindowSize, title: "Last Screen Context" });
+  }
+
+  /** The paste history (ADR-DESK-043) at `bounds`: a small frameless window over every other, on
+   * the Space in front, brought forward with the app so Escape reaches it; `onBlur` as it loses
+   * focus (the user clicked elsewhere). Open already, it moves to `bounds`. */
+  showHistory(bounds: Rect, onBlur: () => void): void {
+    const look: BrowserWindowConstructorOptions =
+      process.platform === "darwin"
+        ? { vibrancy: "popover", visualEffectState: "active", backgroundColor: "#00000000" }
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColour.dark : config.settingsWindowColour.light };
+    const existing = this.open.get("history");
+    if (existing && !existing.isDestroyed()) {
+      existing.setBounds(bounds);
+      app.focus({ steal: true });
+      existing.focus();
+      return;
+    }
+    const window = this.window("history", {
+      ...bounds,
+      ...look,
+      type: "panel",
+      frame: false,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+    }, (window) => {
+      window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+      window.on("blur", onBlur);
+    });
+    window.once("ready-to-show", () => {
+      app.focus({ steal: true });
+      window.show();
+    });
+  }
+
+  /** Moves `name`'s window to `bounds`, if it is open. */
+  setBounds(name: WindowName, bounds: Rect): void {
+    const window = this.open.get(name);
+    if (window && !window.isDestroyed()) window.setBounds(bounds);
   }
 
   isOpen(name: WindowName): boolean {

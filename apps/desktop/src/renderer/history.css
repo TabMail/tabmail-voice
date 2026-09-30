@@ -1,0 +1,69 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+/* The paste history (ADR-DESK-043): a popover of the texts pasted, each a row to click. */
+html,
+body {
+  background: transparent;
+  overflow: hidden;
+}
+
+.history {
+  padding: 6px;
+}
+
+.history-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+  font-weight: 600;
+}
+
+.history-hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--secondary);
+}
+
+.history-list {
+  overflow-y: auto;
+}
+
+.history-entry {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.history-entry:hover,
+.history-entry:focus-visible {
+  background: var(--separator);
+  outline: none;
+}
+
+.history-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.history-time {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--secondary);
+}
+
+.history-empty {
+  padding: 8px 8px 12px;
+  color: var(--secondary);
+}

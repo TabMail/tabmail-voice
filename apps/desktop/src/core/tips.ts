@@ -9,17 +9,19 @@ import { type KeyValueStore, storedBool, storedInteger } from "./keyValueStore.j
 /** A tip the overlay shows by the listening pill (`hintCentre`). Most behave as TipKit tips do: a
  * tip shows until the user has done what it teaches, or has seen it `maxDisplays` times, and then
  * never again. Its words, display duration and display count are in the config (`tipDetails`).
- * - `switchMode`: Space switches between dictation and agent mode; shown as a hold starts listening.
+ * - `agentAndHistory`: Space switches between dictation and agent mode, and a triple tap shows the
+ *   paste history; shown as a hold starts listening. Learned once the history is opened (Space puts it
+ *   away for that hold only).
  * - `doubleTap`: a double tap of the hotkey dictates without holding it; shown once a hold passes
  *   `config.doubleTapTipHoldDuration`.
  * - `handsFree`: how hands-free listening ends (tap the hotkey, or Escape); shown the whole time it
  *   listens, every time, but for the name tip's turn. Never learned: nothing marks it so.
  * - `setName`: adding a name in Settings lets agent mode tell the user's messages from others'; shown
  *   as agent mode is switched on while no name is set, every time. Never learned: a name set ends it. */
-export type DictationTip = "switchMode" | "doubleTap" | "handsFree" | "setName";
+export type DictationTip = "agentAndHistory" | "doubleTap" | "handsFree" | "setName";
 
 export const tipDetails: Record<DictationTip, config.TipSettings> = {
-  switchMode: config.switchModeTip,
+  agentAndHistory: config.agentAndHistoryTip,
   doubleTap: config.doubleTapTip,
   handsFree: config.handsFreeTip,
   setName: config.setNameTip,

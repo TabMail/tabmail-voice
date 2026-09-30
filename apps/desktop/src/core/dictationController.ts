@@ -21,6 +21,7 @@ import { TransportError } from "./http.js";
 import { LevelEnvelope } from "./levelEnvelope.js";
 import { elapsed, errorName, log } from "./log.js";
 import { Observable } from "./observable.js";
+import type { PasteHistory } from "./pasteHistory.js";
 import type { MicrophoneStatus } from "./permissions.js";
 import type { ScreenContext } from "./screenContext.js";
 import type { DictationSettings } from "./settings.js";
@@ -41,7 +42,29 @@ export type Phase =
   | { kind: "retrying"; message: string }
   /** Agent mode: the agent chose this tool, which is writing its text. */
   | { kind: "running"; tool: AgentTool }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; message: string }
+  /** The text could not be pasted where the user spoke (`PasteOutcome`): it is on the clipboard and in
+   * the paste history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
+  | { kind: "copied"; message: string };
+
+/** What a paste found (ADR-DESK-042): it pasted where the user spoke, with the caret put back if it
+ * had moved; or it pasted nothing, the user being in another app (`appChanged`) or the field or caret
+ * not going back (`caretMoved`). */
+export type PasteOutcome = "pasted" | "appChanged" | "caretMoved";
+
+/** What the pointer's message says when the text was copied instead of pasted. */
+export const notPastedMessages: Record<Exclude<PasteOutcome, "pasted">, string> = {
+  appChanged: "Switched apps: copied to clipboard and history",
+  caretMoved: "Cursor moved: copied to clipboard and history",
+};
+
+/** A text copied instead of pasted: the dictation ends with its message (`copied`). */
+class NotPasted extends Error {
+  constructor(readonly outcome: Exclude<PasteOutcome, "pasted">) {
+    super(notPastedMessages[outcome]);
+    this.name = "NotPasted";
+  }
+}
 
 /** The email app agent mode's mail and calendar requests go to, and its installed bundle (the
  * Thunderbird bubble shows its icon); both null when there is none. */
@@ -56,9 +79,17 @@ export interface DictationDependencies {
   settings: () => DictationSettings;
   account: AccountModel;
   tips: TipBook;
-  /** Pastes into the focused field, for the dictation whose `signal` it is: one cancelled before the
-   * paste reaches the system pastes nothing. */
-  paste: (text: string, signal: AbortSignal) => Promise<void>;
+  /** Keeps the field and caret of the app in front, now (key-down), for the dictation `session`
+   * (ADR-DESK-042); true when a field was found. */
+  captureTarget: (session: number) => Promise<boolean>;
+  /** Pastes into the field and caret kept for `session`, put back if they moved, or pastes nothing
+   * and says why; for the dictation whose `signal` it is: one cancelled before the paste reaches the
+   * system pastes nothing. */
+  paste: (text: string, session: number, signal: AbortSignal) => Promise<PasteOutcome>;
+  /** Puts `text` on the clipboard, when it could not be pasted. */
+  copy: (text: string) => void;
+  /** Every text pasted, or copied instead, for the triple tap's list (ADR-DESK-043). */
+  history: PasteHistory;
   thunderbird: ThunderbirdRelay;
   capture: AudioCapture;
   /** The process of the app in front, null without one. */
@@ -129,6 +160,8 @@ export class DictationController extends Observable {
    * to start, or its dictation ended while the key was down. The helper must be told, or it keeps
    * Space and Escape from the app in front until the next hotkey press. */
   onNothingListening: (() => void) | undefined;
+  /** A triple tap asks for the paste history (ADR-DESK-043). */
+  onShowHistory: (() => void) | undefined;
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
   captureContext: (() => Promise<ScreenContext | null> | null) | undefined;
@@ -147,8 +180,10 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
-  /** The app in front at key-down, where agent mode's text belongs. */
+  /** The app in front at key-down, whose field the corrections are learned from. */
   private targetApp: Promise<number | null> = Promise.resolve(null);
+  /** The field and caret kept at key-down (`captureTarget`), which the paste waits for. */
+  private targetCapture: Promise<boolean> = Promise.resolve(false);
   /** The keyboard's language at key-down, which the badge shows and the transcription is asked in. */
   private languageRead: Promise<string | null> = Promise.resolve(null);
   private emailAppRead: Promise<EmailApp> | null = null;
@@ -275,6 +310,8 @@ export class DictationController extends Observable {
         return this.toggleMode();
       case "closeChat":
         return this.closeChat();
+      case "showHistory":
+        return this.showHistory();
     }
   }
 
@@ -305,7 +342,7 @@ export class DictationController extends Observable {
       // A new hold: the tap before it was only a tap.
       this.discard();
     }
-    if (this.currentPhase.kind !== "idle" && this.currentPhase.kind !== "failed") return;
+    if (!isResting(this.currentPhase)) return;
     // First, before anything else: the settings this dictation uses, whatever changes meanwhile.
     const settings = this.deps.settings();
     this.dictationSettings = settings;
@@ -337,6 +374,10 @@ export class DictationController extends Observable {
     this.hearing = false;
     this.startedAt = performance.now();
     this.targetApp = this.deps.frontmostApp().catch(() => null);
+    this.targetCapture = this.deps.captureTarget(current).catch((error: unknown) => {
+      log.error(`DictationController: couldn't keep the field: ${errorName(error)}`);
+      return false;
+    });
     this.currentLanguage = null;
     this.languageRead = this.deps.keyboardLanguage().catch(() => null);
     void this.languageRead.then((language) => {
@@ -344,7 +385,7 @@ export class DictationController extends Observable {
       this.currentLanguage = language;
       this.changed();
     });
-    this.dueTips = ["switchMode"];
+    this.dueTips = ["agentAndHistory"];
     if (isFollowUp) void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
@@ -411,8 +452,8 @@ export class DictationController extends Observable {
     if (kind !== "arming" && kind !== "listening") return;
     if (this.currentChat !== null) return;
     this.currentMode = toggled(this.currentMode);
-    this.deps.tips.markLearned("switchMode");
-    if (this.currentTip === "switchMode") this.hideTip();
+    // Space was used; the tip, which teaches the history too, shows again at the next hold.
+    if (this.currentTip === "agentAndHistory") this.hideTip();
     if (this.currentMode === "agent") void this.lookUpEmailApp();
     this.updateNameTip();
     this.updateTools();
@@ -459,8 +500,7 @@ export class DictationController extends Observable {
   }
 
   cancel(): void {
-    const kind = this.currentPhase.kind;
-    if (kind === "idle" || kind === "failed") return;
+    if (isResting(this.currentPhase)) return;
     log.debug("DictationController: cancelled");
     this.discard();
   }
@@ -514,7 +554,7 @@ export class DictationController extends Observable {
       }
       if (mode === "dictation") {
         const text = DictationCleanup.pasted(transcript, transcription.cleanedText);
-        await this.paste(text, signal);
+        await this.paste(text, generation, signal);
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
           const pid = await this.targetApp;
@@ -556,11 +596,9 @@ export class DictationController extends Observable {
               )
             : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userId, signal);
         if (!isCurrent()) return;
-        const targetApp = await this.targetApp;
         await toolImplementations[tool].deliver(text, {
           emailApp: email.app,
-          paste: (text) => this.paste(text, signal),
-          isTargetAppFrontmost: async () => (await this.deps.frontmostApp().catch(() => null)) === targetApp,
+          paste: (text) => this.paste(text, generation, signal),
           thunderbird: this.deps.thunderbird,
           // Closed, cancelled or superseded meanwhile: the answer goes nowhere.
           showAnswer: (answer) => {
@@ -578,8 +616,13 @@ export class DictationController extends Observable {
       this.setPhase({ kind: "idle" });
     } catch (error) {
       if (!isCurrent()) return;
-      log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
       this.teardown();
+      if (error instanceof NotPasted) {
+        log.debug(`DictationController: not pasted (${error.outcome}); copied instead`);
+        this.showMessage({ kind: "copied", message: error.message });
+        return;
+      }
+      log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
       this.fail(error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again.");
     }
   }
@@ -718,11 +761,27 @@ export class DictationController extends Observable {
     reply(answer);
   }
 
-  /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015). */
-  private readonly paste = async (text: string, signal: AbortSignal): Promise<void> => {
+  /** Pastes where the dictation `session` started, logging what it pastes (debug builds,
+   * ADR-DESK-015), and keeps the text in the paste history, pasted or not. Where it can't paste, the
+   * text goes on the clipboard instead, and the dictation ends saying so (`NotPasted`). */
+  private readonly paste = async (text: string, session: number, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
-    await this.deps.paste(text, signal);
+    await this.targetCapture;
+    const outcome = await this.deps.paste(text, session, signal);
+    this.deps.history.add(text);
+    if (outcome === "pasted") return;
+    this.deps.copy(text);
+    throw new NotPasted(outcome);
   };
+
+  /** A triple tap: the second tap's hands-free dictation has heard nothing yet, and goes unseen; the
+   * paste history shows. */
+  private showHistory(): void {
+    log.debug("DictationController: triple tap; showing the paste history");
+    this.deps.tips.markLearned("agentAndHistory");
+    if (this.currentPhase.kind === "listening" || this.currentPhase.kind === "arming") this.discard();
+    this.onShowHistory?.();
+  }
 
   /** The email app of the settings this dictation started with, asked once per dictation. */
   private lookUpEmailApp(): Promise<EmailApp> {
@@ -836,7 +895,7 @@ export class DictationController extends Observable {
     this.secondPressTimer = after(config.minimumHoldDuration, () => {
       if (this.generation !== current) return;
       this.secondPressTimer = null;
-      this.dueTips = ["switchMode"];
+      this.dueTips = ["agentAndHistory"];
       this.showDueTip();
     });
   }
@@ -1026,10 +1085,15 @@ export class DictationController extends Observable {
   }
 
   private fail(message: string): void {
-    this.setPhase({ kind: "failed", message });
+    this.showMessage({ kind: "failed", message });
+  }
+
+  /** Shows a failure, or the text copied instead of pasted, for `overlayErrorDisplayDuration`. */
+  private showMessage(phase: Extract<Phase, { kind: "failed" | "copied" }>): void {
+    this.setPhase(phase);
     cancelTimer(this.failureResetTimer);
     this.failureResetTimer = after(config.overlayErrorDisplayDuration, () => {
-      if (this.currentPhase.kind === "failed") this.setPhase({ kind: "idle" });
+      if (this.currentPhase === phase) this.setPhase({ kind: "idle" });
     });
   }
 
@@ -1038,6 +1102,11 @@ export class DictationController extends Observable {
     this.onPhaseChange?.(phase);
     this.changed();
   }
+}
+
+/** Nothing under way: idle, or a message showing, which the next hold replaces. */
+function isResting(phase: Phase): boolean {
+  return phase.kind === "idle" || phase.kind === "failed" || phase.kind === "copied";
 }
 
 /** `json` parsed; undefined when it isn't JSON. */

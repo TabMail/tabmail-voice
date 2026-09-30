@@ -386,6 +386,9 @@ grants. The privacy policy tells users they can switch screen reading off.
 >
 > **Later (ADR-DESK-021):** the Space hint became a tip that retires once learned, and a double tap is
 > back, for hands-free dictation (not agent mode).
+>
+> **Later (ADR-DESK-042):** the "You switched apps, so nothing was pasted" check is gone: every paste
+> goes where the caret was at key-down, or onto the clipboard and into the paste history.
 
 **Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
 request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
@@ -912,6 +915,15 @@ a dictation, had then already come before that release, so Space and Escape stay
 controller answers a `listenHandsFree` that finds nothing listening with `onNothingListening`, which
 sends the helper `dictationEnded` too. The helper still goes hands-free for the moment the round
 trip takes.
+
+**Amendment 2026-09-30 (owner):** "show the press space to enter agent mode or triple tap to see
+history tooltip", and the hands-free tip "should be a little bit wider, because it's now in three
+lines, it looks so bad. It should just be in two lines."
+- The Space tip is `agentAndHistoryTip` (ADR-DESK-043): "Press [space] for agent mode, / triple-tap
+  [hotkey] for history", shown 4 s. The hands-free tip is "Tap [hotkey] to finish dictating, / or tap
+  [esc] to cancel".
+- A tip has at most `tipLineCount` lines; its box is as tall as its own (`tipBoxHeight`), and the
+  overlay still leaves room for the tallest (`tipHeight`).
 
 ## ADR-DESK-022: The Answer tool, the chat window, and agent tools switched on and off
 
@@ -2062,3 +2074,73 @@ no user data.
 - An app run from the mounted DMG, or from a folder the user can't write, can't be replaced: the
   update is refused, so it is never offered, and each check tries again. The owner accepted this
   without telling the user (2026-09-30): the disk image's window shows where the app goes.
+
+## ADR-DESK-042: The text goes where the caret was at key-down, or onto the clipboard
+
+**Context:** Owner, 2026-09-30: "if I move my cursor or caret while the dictation is still trying to
+go on, I paste it in the wrong place … paste … where the dictation button was pressed". The paste
+(ADR-DESK-002) went to whatever had focus when the text arrived. Asked, the owner chose, both for an
+app switched in the meantime and for a caret that can't be put back: "Don't paste, keep text". Then:
+"if the app focus changed, we can just briefly show at the mouse cursor location that we've just
+copied it into your history and also your clipboard" (the history is ADR-DESK-043).
+
+**Decision:**
+- At key-down the controller asks `voice-macos` to keep the insertion target (`captureTarget
+  {session}`, the dictation's generation): the app in front, its focused element
+  (`kAXFocusedUIElementAttribute`) and that element's selection, as a text-marker range
+  (`AXSelectedTextMarkerRange`, WebKit and Chromium) where it has one, else a character range
+  (`kAXSelectedTextRangeAttribute`). One target is kept, the latest dictation's; each AX call times
+  out after `HelperConfig.insertionTargetTimeout` (0.25 s).
+- `insert {text, restoreDelay, session}` first puts the target back (`InsertionTarget.restore`):
+  another app in front → `appChanged`; focus in another element → focus it back, and `caretMoved` if
+  it won't take it; a caret moved → select the kept range again, and `caretMoved` if the field won't
+  take it. Only then the paste of ADR-DESK-002; the reply is `{outcome: "pasted" | "appChanged" |
+  "caretMoved"}`. Nothing is ever brought to the front: an app switch is the user's.
+- Two marker ranges are the same when `CFEqual`, or when both have the same non-empty bounds
+  (`AXBoundsForTextMarkerRange`, taller than zero): an app may describe one place with different
+  marker objects.
+- Not pasted: the text goes on the clipboard (Electron's `clipboard.writeText`, left there, not
+  restored) and into the paste history, and the dictation ends in a `copied` phase whose message
+  ("Switched apps: copied to clipboard and history", "Cursor moved: …") shows at the mouse pointer,
+  where the user now is, not at the old caret, for `overlayErrorDisplayDuration`. Like `failed`, the
+  next hold replaces it.
+- Agent mode's Edit and Compose paste the same way; the target app check they had
+  (`isTargetAppFrontmost`, the "You switched apps, so nothing was pasted" failure of ADR-DESK-011's
+  amendment) is gone, the helper's check replacing it. The Thunderbird tool is unchanged.
+
+**Consequences:**
+- An app that shows no focused element at key-down (thin accessibility trees, some games and
+  terminals) is checked by app only: the text pastes where focus is then, in that app.
+- A field without a readable selection gets its focus back, not its caret.
+- A caret the user moved on purpose within the same field goes back to where it was at key-down.
+- The clipboard keeps the text after an unpasted dictation: the user's earlier clipboard is replaced,
+  which is what "copied to your clipboard" means.
+
+## ADR-DESK-043: The paste history, on a triple tap
+
+**Context:** Owner, 2026-09-30: "triple tap to see past history of the pastes, so that you can
+actually just click on one of those to copy", and "when dictation is going on … show the press space
+to enter agent mode or triple tap to see history tooltip".
+
+**Decision:**
+- `PasteHistory` (`src/core/pasteHistory.ts`) keeps every text dictation and agent mode pasted, or
+  copied instead (ADR-DESK-042), the newest first, at most `pasteHistoryLimit` (20); the same text
+  again moves to the top. **In memory only**, for the app's life: no user content is written to disk
+  (root ADR-004).
+- Gesture (`PushToTalkGesture`): a press while hands-free that comes within `doubleTapWindow` of the
+  double tap's second release is `showHistory`, not `finish`. The hands-free dictation the double tap
+  started has heard a moment at most; it is discarded unseen.
+- The history window (`history.html`) opens by the mouse pointer (`historyWindowOrigin`: right of and
+  under it, or on its other side where the screen has no room), `pasteHistoryWindowWidth` wide and as
+  tall as its list up to `pasteHistoryMaxHeight`, each entry clipped to `pasteHistoryEntryLines`
+  lines with how long ago it came. It takes focus; a click copies the whole entry to the clipboard and
+  closes it; Escape or a click elsewhere closes it. On macOS the app then hides, so focus returns to
+  the app the user was in (unless Settings, the welcome window or the context debug window is open).
+- The Space tip becomes `agentAndHistoryTip` ("Press [space] for agent mode, / triple-tap [hotkey]
+  for history", 4 s, at most 10 holds); opening the history learns it. Using Space no longer does,
+  as the tip still teaches the history. Its new id restarts its counts.
+
+**Consequences:**
+- The history is lost when the app quits.
+- A triple tap while the previous dictation is still transcribing opens the history too; that
+  dictation carries on.

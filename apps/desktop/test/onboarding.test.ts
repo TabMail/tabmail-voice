@@ -182,7 +182,7 @@ describe("the user's name", () => {
 });
 
 describe("TipBook", () => {
-  test.each<DictationTip>(["switchMode", "doubleTap"])("%s shows at most its max displays", (tip) => {
+  test.each<DictationTip>(["agentAndHistory", "doubleTap"])("%s shows at most its max displays", (tip) => {
     const store = new MemoryStore();
     const tips = new TipBook(store);
     const maxDisplays = tipDetails[tip].maxDisplays;
@@ -207,15 +207,15 @@ describe("TipBook", () => {
 
   test("a learned tip never shows again, and learning one leaves the other", () => {
     const store = new MemoryStore();
-    new TipBook(store).markLearned("switchMode");
+    new TipBook(store).markLearned("agentAndHistory");
 
     const tips = new TipBook(store);
-    expect(tips.isEligible("switchMode")).toBe(false);
+    expect(tips.isEligible("agentAndHistory")).toBe(false);
     expect(tips.isEligible("doubleTap")).toBe(true);
   });
 
   test("the tips' words, limits and durations come from the config", () => {
-    expect(tipDetails).toEqual({ switchMode: config.switchModeTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip, setName: config.setNameTip });
+    expect(tipDetails).toEqual({ agentAndHistory: config.agentAndHistoryTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip, setName: config.setNameTip });
   });
 });
 

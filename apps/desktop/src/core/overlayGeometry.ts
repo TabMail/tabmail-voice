@@ -178,3 +178,15 @@ export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Re
   x = Math.min(Math.max(x, workArea.x - margin), maxX(workArea) + margin - width);
   return { x, y, width, height };
 }
+
+/** Where the paste history window goes (ADR-DESK-043), `size` big: its corner
+ * `pasteHistoryPointerGap` right of and under the mouse pointer, or on the pointer's other side where
+ * that has no room, and kept within `workArea`. */
+export function historyWindowOrigin(pointer: Point, size: Size, workArea: Rect): Point {
+  const gap = config.pasteHistoryPointerGap;
+  const right = workArea.x + workArea.width - size.width;
+  const bottom = workArea.y + workArea.height - size.height;
+  const x = pointer.x + gap <= right ? pointer.x + gap : pointer.x - gap - size.width;
+  const y = pointer.y + gap <= bottom ? pointer.y + gap : pointer.y - gap - size.height;
+  return { x: Math.min(Math.max(x, workArea.x), right), y: Math.min(Math.max(y, workArea.y), bottom) };
+}

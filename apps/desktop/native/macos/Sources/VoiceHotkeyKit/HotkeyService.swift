@@ -11,7 +11,7 @@ import VoiceHelperSupport
 /// - `dictationEnded` → `{}`: nothing listens hands-free (the dictation ended without the hotkey, or a
 ///   double tap's release found no dictation listening).
 /// - `setChatOpen {isOpen}` → `{}`: the chat window opened or closed (Escape closes it while open).
-/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat"}`.
+/// and its event `{"event": "action", "action": "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat" | "showHistory"}`.
 public enum HotkeyService {
     @MainActor
     public static func register(on channel: HelperChannel) -> HotkeyMonitor {

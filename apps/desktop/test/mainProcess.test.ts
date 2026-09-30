@@ -77,13 +77,13 @@ describe("FileStore", () => {
     const path = join(scratch(), "Preferences/settings.json");
     const store = new FileStore(path);
     store.set("dictationHotkey", "function");
-    store.set("tip.switchMode.displays", 3);
+    store.set("tip.agentAndHistory.displays", 3);
     store.set("gone", true);
     store.remove("gone");
 
     const relaunched = new FileStore(path);
     expect(relaunched.get("dictationHotkey")).toBe("function");
-    expect(relaunched.get("tip.switchMode.displays")).toBe(3);
+    expect(relaunched.get("tip.agentAndHistory.displays")).toBe(3);
     expect(relaunched.get("gone")).toBeUndefined();
   });
 

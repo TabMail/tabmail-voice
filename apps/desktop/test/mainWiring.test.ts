@@ -26,12 +26,18 @@ const app = vi.hoisted(() => ({
   refusesDelete: false,
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
-  paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
+  paste: null as ((text: string, session: number, signal: AbortSignal) => Promise<string>) | null,
   corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
   prewarms: 0,
+  /** The paste history the controller was given, what went on the clipboard, the history window's
+   * openings, moves and closings, and each time the app was hidden. */
+  history: null as { add(text: string): void; entries: readonly { id: number; text: string }[] } | null,
+  clipboard: [] as string[],
+  historyWindow: [] as string[],
+  hides: 0,
   audioCommands: [] as unknown[],
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
-  controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
+  controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
@@ -79,7 +85,12 @@ vi.mock("electron", async () => {
       on() {},
       quit() {},
       getLoginItemSettings: () => ({ openAtLogin: false }),
+      hide: () => {
+        app.hides += 1;
+      },
     },
+    clipboard: { writeText: (text: string) => app.clipboard.push(text) },
+    screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
     shell: {
       openExternal: async (url: string) => {
@@ -226,8 +237,9 @@ vi.mock("../src/main/helperClient.js", () => ({
 }));
 vi.mock("../src/core/dictationController.js", () => ({
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; paste: (text: string, session: number, signal: AbortSignal) => Promise<string>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
+      app.history = dependencies.history;
       app.corrections = dependencies.corrections;
       app.loopTools = dependencies.loopTools;
       app.paste = dependencies.paste;
@@ -237,6 +249,7 @@ vi.mock("../src/core/dictationController.js", () => ({
     onChatChange: ((isOpen: boolean) => void) | undefined;
     onPhaseChange: ((phase: { kind: string }) => void) | undefined;
     onNothingListening: (() => void) | undefined;
+    onShowHistory: (() => void) | undefined;
     readonly calls: string[] = [];
     keepChatOpen() {
       this.calls.push("keepChatOpen");
@@ -312,7 +325,15 @@ vi.mock("../src/main/windows.js", () => ({
       return false;
     }
     showWelcome() {}
-    close() {}
+    showHistory(bounds: { x: number; y: number; width: number; height: number }) {
+      app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
+    }
+    setBounds(name: string, bounds: { height: number }) {
+      app.historyWindow.push(`${name} height ${bounds.height}`);
+    }
+    close(name: string) {
+      if (name === "history") app.historyWindow.push("close");
+    }
   },
 }));
 
@@ -335,6 +356,10 @@ afterEach(() => {
   app.paste = null;
   app.corrections = undefined;
   app.prewarms = 0;
+  app.history = null;
+  app.clipboard = [];
+  app.historyWindow = [];
+  app.hides = 0;
   app.audioCommands = [];
   app.overlay = null;
   app.controller = null;
@@ -444,18 +469,52 @@ describe("main process wiring", () => {
     expect(helper?.onExit).toBeUndefined();
   });
 
-  /** A dictation's paste reaches `voice-macos` with the dictation's signal, so a paste waiting out a
+  /** A dictation's paste reaches `voice-macos` with the dictation's session and signal, so a paste waiting out a
    * helper restart is called off when the dictation is. */
   test("a dictation's paste carries its signal to voice-macos", async () => {
     await launch("darwin");
     const helper = app.helpers.get("voice-macos");
     const { signal } = new AbortController();
+    helper?.replies.set("insert", { outcome: "pasted" });
 
-    await app.paste?.("Hello.", signal);
+    expect(await app.paste?.("Hello.", 4, signal)).toBe("pasted");
 
     const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
+    expect(inserts[0]?.params).toMatchObject({ text: "Hello.", session: 4 });
+  });
+
+  /** A triple tap opens the paste history by the pointer (ADR-DESK-043), which shows the controller's
+   * history and takes its list's height; a click copies the entry, closes the window and gives the
+   * user's app its focus back, as Escape does without copying. */
+  test("the paste history opens by the pointer, and a click copies its entry", async () => {
+    await launch("darwin");
+    const states: unknown[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        if (name === "history") states.push(state);
+      },
+    ]);
+    app.history?.add("Hello there.");
+    expect(states).toEqual([{ entries: [expect.objectContaining({ text: "Hello there." })] }]);
+
+    app.controller?.onShowHistory?.();
+    const gap = config.pasteHistoryPointerGap;
+    expect(app.historyWindow).toEqual([`show ${100 + gap},${100 + gap} ${config.pasteHistoryWindowWidth}x${config.pasteHistoryMaxHeight}`]);
+    await send({ type: "historyHeight", height: 120 });
+    await send({ type: "historyHeight", height: config.pasteHistoryMaxHeight + 100 });
+    expect(app.historyWindow.slice(1)).toEqual(["history height 120", `history height ${config.pasteHistoryMaxHeight}`]);
+
+    const id = app.history?.entries[0]?.id;
+    await send({ type: "copyHistoryEntry", id });
+    expect(app.clipboard).toEqual(["Hello there."]);
+    expect(app.historyWindow.at(-1)).toBe("close");
+    expect(app.hides).toBe(1);
+
+    await send({ type: "closeHistory" });
+    expect(app.clipboard).toEqual(["Hello there."]);
+    expect(app.hides).toBe(2);
   });
 
   /** Placing the overlay pushes its view the direction it opened in, which the hands-free tip is

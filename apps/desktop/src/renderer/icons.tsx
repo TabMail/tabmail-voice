@@ -155,6 +155,17 @@ export function ExclamationIcon({ size }: { size: number }) {
   );
 }
 
+/** A clipboard: the text was copied instead of pasted. */
+export function ClipboardIcon({ size }: { size: number }) {
+  return (
+    <GradientIcon size={size}>
+      <rect x="5" y="4.5" width="14" height="17" rx="2" />
+      <rect x="9" y="2.5" width="6" height="4" rx="1" />
+      <path d="M9 12h6M9 16h4" />
+    </GradientIcon>
+  );
+}
+
 /** A line icon in the text's colour. */
 function PlainIcon({ size, children }: { size: number; children: ReactNode }) {
   return (
