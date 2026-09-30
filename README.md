@@ -41,7 +41,8 @@ npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is 
 An unpackaged build (what `npm start` runs) keeps a detailed log at
 `~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
 every request to the TabMail backend and its reply, and what was pasted. The access token and the
-audio are never in it. Packaged builds keep no log file.
+audio are never in it. Packaged builds keep no log file, except while debug mode is on, which only
+TabMail's own accounts can switch on.
 
 Sign a build you keep using. macOS ties the Microphone and Accessibility permissions to the app's
 signature, so an ad-hoc signed build loses them on every rebuild.

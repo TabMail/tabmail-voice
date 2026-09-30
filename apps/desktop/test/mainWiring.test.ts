@@ -846,7 +846,8 @@ describe("main process wiring", () => {
   });
 
   /** A packaged build writes the debug log while debug mode is on for an account allowed it: on at
-   * launch when stored on, off when switched off, and off for an account not allowed it. */
+   * launch when stored on, off when switched off, off once the account signs out, and off for an
+   * account not allowed it. */
   test("a packaged build logs while debug mode is on", async () => {
     const signIn = (email: string) => {
       app.credential = JSON.stringify({ access_token: "access", refresh_token: "refresh", expires_at: Math.floor(Date.now() / 1000) + 3600, user: { id: "user", email } });
@@ -863,6 +864,9 @@ describe("main process wiring", () => {
     expect(isDebugLogging()).toBe(false);
     expect(await send({ type: "setDebugMode", value: true })).toEqual({ error: null });
     expect(isDebugLogging()).toBe(true);
+    // Signed out, the switch left on logs nothing: no account is allowed it.
+    expect(await send({ type: "signOut" })).toEqual({ error: null });
+    expect(isDebugLogging()).toBe(false);
 
     signIn("tester@example.com");
     await launch("darwin");

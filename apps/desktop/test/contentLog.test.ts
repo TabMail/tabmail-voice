@@ -35,7 +35,7 @@ afterEach(() => configureLog({ isDebugBuild: false, sinks: { error: () => {} } }
  * in full, never an access token or audio. */
 describe("content log", () => {
   /** The whole point: in a debug build an entry reaches the log file, as a named block. */
-  test("content is written to the log file in debug builds only", () => {
+  test("content is written to the log file in debug builds, and not in a packaged build with debug mode off", () => {
     const lines: [LogLevel, string][] = [];
     const sinks = { file: (level: LogLevel, text: string) => lines.push([level, text]), error: () => {} };
 

@@ -60,7 +60,7 @@ export const levelRelease = 0.25;
  * people tend to let go while still finishing it. It adds to every dictation's wait: owner,
  * 2026-09-29, 150 ms (was 300). */
 export const releaseTailDuration = 150;
-/** Debug builds only: the log file moves aside past this size, keeping one earlier file. Sized for
+/** The debug log file (`isDebugLogging`) moves aside past this size, keeping one earlier file. Sized for
  * full content logging (ADR-DESK-015): a dictation logs its screen read several times. */
 export const logFileMaxBytes = 50_000_000;
 /** Debug builds only: the latest recording's file name in the temporary directory, overwritten each
