@@ -36,13 +36,34 @@ export function level(samples: Float32Array): number {
   return Math.max(0, Math.min(1, (decibels(samples) - quiet) / (config.levelLoudDecibels - quiet)));
 }
 
+/** Scales 16-bit samples in place so the loudest sits at `config.normalizedPeakDecibels`, boosting
+ * by at most `config.maxNormalizationGainDecibels` and never cutting (peak normalisation, one gain
+ * for the whole recording). Returns the gain applied (1 when none). */
+export function normalizePeak(samples: Int16Array): number {
+  let peak = 0;
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  if (peak === 0) return 1;
+  const target = 0x7fff * 10 ** (config.normalizedPeakDecibels / 20);
+  const gain = Math.min(target / peak, 10 ** (config.maxNormalizationGainDecibels / 20));
+  if (gain <= 1) return 1;
+  // Rounded half away from zero, as Swift's `rounded()` in the iOS app. No clamp needed: every
+  // scaled sample is at most the target.
+  for (let index = 0; index < samples.length; index += 1) {
+    const scaled = (samples[index] ?? 0) * gain;
+    samples[index] = Math.sign(scaled) * Math.round(Math.abs(scaled));
+  }
+  return gain;
+}
+
 export interface Recording {
-  /** Little-endian 16-bit mono PCM samples. */
+  /** Little-endian 16-bit mono PCM samples, peak-normalised (`normalizePeak`). */
   pcm: Uint8Array;
   /** The same samples FLAC-encoded, the upload. */
   flac: Uint8Array;
   sampleRate: number;
-  /** Loudest chunk's level on the fixed 0…1 scale. */
+  /** The gain `normalizePeak` applied (1 when none). */
+  gain: number;
+  /** Loudest chunk's level on the fixed 0…1 scale, as captured (before `gain`). */
   peakLevel: number;
   /** When the microphone delivered its first chunk (`performance.now()`), null if it never did. */
   firstChunkAt: number | null;
@@ -54,7 +75,8 @@ export function recordingDuration(recording: Recording): number {
   return recording.pcm.length / 2 / recording.sampleRate;
 }
 
-/** Accumulates one dictation as 16 kHz mono 16-bit PCM, FLAC-encoding it as it arrives for the upload. */
+/** Accumulates one dictation as 16 kHz mono 16-bit PCM; `finish` peak-normalises it and FLAC-encodes
+ * it for the upload. */
 export class AudioRecorder {
   private readonly maxFrames: number;
   private readonly chunks: Int16Array[] = [];
@@ -62,7 +84,6 @@ export class AudioRecorder {
   private peakLevel = 0;
   private firstChunkAt: number | null = null;
   private truncated = false;
-  private readonly encoder: FLACEncoder;
 
   constructor(
     readonly sampleRate: number = config.recordingSampleRate,
@@ -70,7 +91,6 @@ export class AudioRecorder {
     maxDuration: number = config.maxRecordingDuration,
   ) {
     this.maxFrames = Math.floor((maxDuration / 1000) * sampleRate);
-    this.encoder = new FLACEncoder(sampleRate);
   }
 
   append(samples: Float32Array, now: number = performance.now()): void {
@@ -87,21 +107,24 @@ export class AudioRecorder {
       pcm[index] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff);
     }
     this.chunks.push(pcm);
-    this.encoder.append(pcm);
     this.frames += count;
   }
 
-  /** Everything recorded so far. */
+  /** Everything recorded so far, peak-normalised. The whole recording's loudest sample sets the
+   * gain, so it is encoded here rather than as it arrives: about 1.4 ms per second of audio. */
   finish(): Recording {
+    const samples = new Int16Array(this.frames);
+    let frame = 0;
+    for (const chunk of this.chunks) {
+      samples.set(chunk, frame);
+      frame += chunk.length;
+    }
+    const gain = normalizePeak(samples);
+    const encoder = new FLACEncoder(this.sampleRate);
+    encoder.append(samples);
     const pcm = new Uint8Array(this.frames * 2);
     const view = new DataView(pcm.buffer);
-    let offset = 0;
-    for (const chunk of this.chunks) {
-      for (const sample of chunk) {
-        view.setInt16(offset, sample, true);
-        offset += 2;
-      }
-    }
-    return { pcm, flac: this.encoder.finish(), sampleRate: this.sampleRate, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated };
+    samples.forEach((sample, index) => view.setInt16(index * 2, sample, true));
+    return { pcm, flac: encoder.finish(), sampleRate: this.sampleRate, gain, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated };
   }
 }

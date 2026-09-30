@@ -238,7 +238,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** The names and terms on the screen read at key-down go with the recording after the dictionary's
    * words, none of them twice; the cleanup gets the dictionary alone (it reads the screen itself). */
-  /** The recording goes up as FLAC, and losslessly: the backend hears exactly what was recorded. */
+  /** The recording goes up as FLAC, losslessly and peak-normalised (the capture's −6 dBFS tone
+   * raised to −3 dBFS): the backend hears exactly what the recorder made of it. */
   test("uploads the recording as FLAC", async () => {
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -250,7 +251,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
     recorder.append(tone(0.1));
     const body = transcription.body(0);
     expect(body.format).toBe("flac");
-    expect(decodeFLAC(new Uint8Array(Buffer.from(String(body.audio), "base64"))).pcm).toEqual(recorder.finish().pcm);
+    const uploaded = decodeFLAC(new Uint8Array(Buffer.from(String(body.audio), "base64"))).pcm;
+    expect(uploaded).toEqual(recorder.finish().pcm);
+    const view = new DataView(uploaded.buffer, uploaded.byteOffset, uploaded.byteLength);
+    const peak = Math.max(...Array.from({ length: uploaded.length / 2 }, (_, index) => Math.abs(view.getInt16(index * 2, true))));
+    expect(peak).toBe(Math.round(0x7fff * 10 ** (config.normalizedPeakDecibels / 20)));
   });
 
   test("sends the screen's names and terms after the dictionary", async () => {

@@ -783,7 +783,7 @@ export class DictationController extends Observable {
     const recording = recorder.finish();
     const startedAt = this.startedAt ?? 0;
     const micDelay = recording.firstChunkAt === null ? "no audio" : `${Math.round(recording.firstChunkAt - startedAt)}ms`;
-    log.debug(() => `DictationController: recorded ${recordingDuration(recording).toFixed(2)}s, peak ${recording.peakLevel.toFixed(3)}, waveform peak ${this.peakMeterLevel.toFixed(3)}, first audio after ${micDelay}`);
+    log.debug(() => `DictationController: recorded ${recordingDuration(recording).toFixed(2)}s, peak ${recording.peakLevel.toFixed(3)}, gain ${(20 * Math.log10(recording.gain)).toFixed(1)} dB, waveform peak ${this.peakMeterLevel.toFixed(3)}, first audio after ${micDelay}`);
 
     this.deps.keepRecording?.(encodeWAV(recording.pcm, recording.sampleRate));
 
