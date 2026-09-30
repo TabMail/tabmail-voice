@@ -1,7 +1,7 @@
 {
   "name": "tabmail-voice",
   "productName": "TabMail Voice",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dictation anywhere: hold a key, speak, and the text is typed where you are writing.",
   "license": "MPL-2.0",
   "author": "TabMail <hello@tabmail.ai>",
