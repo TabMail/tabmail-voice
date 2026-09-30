@@ -384,6 +384,8 @@ function launch(): void {
     const pointer = screen.getCursorScreenPoint();
     historyPlace = { pointer, workArea: screen.getDisplayNearestPoint(pointer).workArea };
     windows.showHistory(historyBounds(config.pasteHistoryMaxHeight), () => windows.close("history"));
+    // An open window was just made its tallest: its page measures its list again.
+    windows.push("history");
   }
 
   function historyBounds(height: number): Rect {

@@ -524,6 +524,12 @@ describe("main process wiring", () => {
     expect(app.clipboard).toEqual(["Hello there."]);
     expect(app.hides).toBe(2);
 
+    // Opened again while open, its list measures itself again, so it takes that height once more.
+    app.controller?.onShowHistory?.();
+    const pushes = states.length;
+    app.controller?.onShowHistory?.();
+    expect(states.length).toBeGreaterThan(pushes);
+
     // A click elsewhere closes it, the focus already gone where the user clicked.
     app.controller?.onShowHistory?.();
     app.historyBlur?.();

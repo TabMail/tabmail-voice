@@ -408,6 +408,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual(outcome === "pasted" ? [text] : []);
     });
 
+    /** A capture that fails at key-down (the helper restarting) leaves the helper nothing to put
+     * back: the paste is still asked for, the helper answers `caretMoved`, and the text is copied,
+     * never lost to a failure. */
+    test("a failed capture at key-down still copies the text", async () => {
+      transcription.enqueue(200, cleanedReply);
+      const asked: number[] = [];
+      const { controller, copies, history } = makeController({
+        capture: new CountingCapture(true),
+        captureTarget: () => Promise.reject(new Error("helper exited")),
+        paste: async (_text, session) => {
+          asked.push(session);
+          return "caretMoved";
+        },
+      });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
+
+      expect(controller.phase).toEqual(copied("caretMoved"));
+      expect(asked).toHaveLength(1);
+      expect(copies).toEqual([cleaned]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+    });
+
     /** The note shows as long as a failure does, then the pill rests. */
     test("the copied note goes after its display time", async () => {
       vi.useFakeTimers();
