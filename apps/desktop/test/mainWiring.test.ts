@@ -929,7 +929,7 @@ describe("main process wiring", () => {
       app.squirrel?.emit("update-downloaded");
       await settle();
       expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
-      expect(app.dialogs).toHaveLength(1);
+      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready." })]);
     });
 
     test("every change of the update's state reaches the menu", async () => {
@@ -949,7 +949,8 @@ describe("main process wiring", () => {
       app.trayActions?.checkForUpdates();
       await settle();
 
-      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice is up to date.", buttons: ["OK"] })]);
+      // The running version, as the app reports it.
+      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice is up to date.", detail: "Version 0.0.0 is the latest version.", buttons: ["OK"] })]);
     });
 
     test("the question waits for the dictation to end and the chat to close; Later is Return's and Escape's", async () => {
