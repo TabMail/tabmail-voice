@@ -170,12 +170,28 @@ struct MacServiceRequestTests {
             #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
             #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
             #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
+            #"{"id":9,"method":"insert","params":{"text":"x","restoreDelay":0.5,"session":1.5}}"#,
+            #"{"id":10,"method":"captureTarget","params":{}}"#,
         ]
         for request in requests { await channel.handle(line: Data(request.utf8)) }
 
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
+        withExtendedLifetime(service) {}
+    }
+
+    /// The paste for a dictation whose field and caret were never kept (the helper restarted, or the
+    /// capture failed) pastes nothing: where the caret was is unknown (ADR-DESK-042).
+    @Test func aPasteWithoutItsCapturedTargetPastesNothing() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(on: channel)
+        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"x","restoreDelay":0.5,"session":99}}"#.utf8))
+
+        let line = try #require(lines.withLock { $0.first })
+        let reply = try #require(try JSONSerialization.jsonObject(with: line) as? [String: Any])
+        #expect((reply["result"] as? [String: Any])?["outcome"] as? String == "caretMoved")
         withExtendedLifetime(service) {}
     }
 }

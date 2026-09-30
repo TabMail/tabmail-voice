@@ -142,7 +142,8 @@ public enum MacService {
                   let milliseconds = Int(exactly: (delay * 1000).rounded()), milliseconds >= 0 else {
                 throw HelperError("insert needs text and restoreDelay")
             }
-            if let session = params["session"]?.integer {
+            if params["session"] != nil {
+                guard let session = params["session"]?.integer else { throw HelperError("insert needs a whole-number session") }
                 let outcome = await restoreTarget(targets, session: session)
                 guard outcome == .inPlace else { return ["outcome": .string(outcome.rawValue)] }
             }

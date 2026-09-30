@@ -35,6 +35,8 @@ const app = vi.hoisted(() => ({
   clipboard: [] as string[],
   historyWindow: [] as string[],
   hides: 0,
+  /** The windows other than the overlay that are open. */
+  openWindows: [] as string[],
   audioCommands: [] as unknown[],
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
@@ -321,8 +323,8 @@ vi.mock("../src/main/windows.js", () => ({
     push(name: string) {
       for (const listener of app.listeners.get("voice:state") ?? []) listener({}, name, this.state(name));
     }
-    isOpen() {
-      return false;
+    isOpen(name: string) {
+      return app.openWindows.includes(name);
     }
     showWelcome() {}
     showHistory(bounds: { x: number; y: number; width: number; height: number }) {
@@ -360,6 +362,7 @@ afterEach(() => {
   app.clipboard = [];
   app.historyWindow = [];
   app.hides = 0;
+  app.openWindows = [];
   app.audioCommands = [];
   app.overlay = null;
   app.controller = null;
@@ -515,6 +518,33 @@ describe("main process wiring", () => {
     await send({ type: "closeHistory" });
     expect(app.clipboard).toEqual(["Hello there."]);
     expect(app.hides).toBe(2);
+  });
+
+  /** Closing the history hides the app, to give the user's app its focus back, only on macOS and only
+   * with nothing else of the app's showing: not Settings, and not the chat, which the hide would take
+   * with it while the next holds talk to it. An entry gone from the history copies nothing. */
+  test("closing the paste history hides the app only when nothing else of it shows", async () => {
+    await launch("darwin");
+    app.openWindows = ["settings"];
+    await send({ type: "closeHistory" });
+    app.openWindows = [];
+    const controller = app.controller;
+    if (!controller) throw new Error("no controller");
+    controller.chat = {};
+    await send({ type: "closeHistory" });
+    expect(app.hides).toBe(0);
+    controller.chat = null;
+    await send({ type: "copyHistoryEntry", id: 999 });
+    expect(app.hides).toBe(1);
+    expect(app.clipboard).toEqual([]);
+    expect(app.historyWindow).toEqual(["close", "close", "close"]);
+  });
+
+  test("closing the paste history elsewhere leaves the app shown", async () => {
+    await launch("linux");
+    await send({ type: "closeHistory" });
+    expect(app.hides).toBe(0);
+    expect(app.historyWindow).toEqual(["close"]);
   });
 
   /** Placing the overlay pushes its view the direction it opened in, which the hands-free tip is

@@ -7,7 +7,8 @@ import Testing
 @testable import VoiceMacOSKit
 
 /// One app's fields as `InsertionTarget` sees them: which has focus, and each one's caret, which the
-/// user moves between the capture and the paste. A field may refuse focus or a caret put back.
+/// user moves between the capture and the paste. A field may refuse focus or a caret put back, or,
+/// as Chromium does, apply a set only after `lag` more reads.
 private final class FakeApp: TextFieldAccess {
     let pid: pid_t = 42
     var focused: Int?
@@ -16,17 +17,39 @@ private final class FakeApp: TextFieldAccess {
     var refusesCaret: Set<Int> = []
     private(set) var focusRequests: [Int] = []
     private(set) var caretRequests: [Int] = []
+    var lag = 0
+    private var pending: [() -> Void] = []
+    private var readsBeforeApplied = 0
 
-    func focusedElement(inApp pid: pid_t) -> Int? { pid == self.pid ? focused : nil }
+    private func apply(_ set: @escaping () -> Void) {
+        guard lag > 0 else { return set() }
+        pending.append(set)
+        readsBeforeApplied = lag
+    }
+
+    private func read() {
+        guard !pending.isEmpty else { return }
+        if readsBeforeApplied > 0 { readsBeforeApplied -= 1; return }
+        pending.forEach { $0() }
+        pending = []
+    }
+
+    func focusedElement(inApp pid: pid_t) -> Int? {
+        read()
+        return pid == self.pid ? focused : nil
+    }
     func isSame(_ first: Int, _ second: Int) -> Bool { first == second }
     func focus(_ element: Int) {
         focusRequests.append(element)
-        if !refusesFocus.contains(element) { focused = element }
+        if !refusesFocus.contains(element) { apply { self.focused = element } }
     }
-    func selection(of element: Int) -> Int? { carets[element] }
+    func selection(of element: Int) -> Int? {
+        read()
+        return carets[element]
+    }
     func select(_ selection: Int, in element: Int) {
         caretRequests.append(selection)
-        if !refusesCaret.contains(element) { carets[element] = selection }
+        if !refusesCaret.contains(element) { apply { self.carets[element] = selection } }
     }
     func isSame(_ first: Int, _ second: Int, in element: Int) -> Bool { first == second }
 }
@@ -71,6 +94,25 @@ struct InsertionTargetTests {
         #expect(target.restore(frontmost: nil, access: app) == .appChanged)
         #expect(app.focusRequests.isEmpty)
         #expect(app.caretRequests.isEmpty)
+    }
+
+    /// Chromium applies a focus or selection set after answering the next reads from its cached tree:
+    /// the restore waits for the set to show rather than refusing the paste at once.
+    @Test func aFocusAndCaretPutBackLateStillPasteInPlace() {
+        let (app, target) = captured()
+        app.focused = 2
+        app.carets[1] = 3
+        app.lag = 3
+        #expect(target.restore(frontmost: app.pid, access: app, settle: 5, poll: 0.001) == .inPlace)
+        #expect(app.focused == 1)
+        #expect(app.carets[1] == 10)
+    }
+
+    @Test func aCaretThatDoesntShowWithinTheSettleTimePastesNothing() {
+        let (app, target) = captured()
+        app.carets[1] = 3
+        app.lag = .max
+        #expect(target.restore(frontmost: app.pid, access: app, settle: 0.02, poll: 0.001) == .caretMoved)
     }
 
     @Test func aFieldThatWontTakeFocusBackPastesNothing() {
@@ -129,6 +171,17 @@ struct InsertionTargetTests {
         #expect(targets.target(session: 2) == nil)
         targets.keep(target, session: 4)
         #expect(targets.target(session: 3) == nil)
+    }
+
+    /// Captures run concurrently: an older dictation's finishing last keeps the newer one's target.
+    @MainActor
+    @Test func anOlderCaptureFinishingLastDoesntReplaceANewerOne() {
+        let targets = InsertionTargets()
+        let target = InsertionTargets.Captured(target: InsertionTarget(pid: 1, element: nil, selection: nil))
+        targets.keep(target, session: 5)
+        targets.keep(target, session: 4)
+        #expect(targets.target(session: 5) != nil)
+        #expect(targets.target(session: 4) == nil)
     }
 
     @Test func characterRangesAreTheSameOnlyWhenEqual() {

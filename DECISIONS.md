@@ -2094,8 +2094,12 @@ copied it into your history and also your clipboard" (the history is ADR-DESK-04
 - `insert {text, restoreDelay, session}` first puts the target back (`InsertionTarget.restore`):
   another app in front → `appChanged`; focus in another element → focus it back, and `caretMoved` if
   it won't take it; a caret moved → select the kept range again, and `caretMoved` if the field won't
-  take it. Only then the paste of ADR-DESK-002; the reply is `{outcome: "pasted" | "appChanged" |
-  "caretMoved"}`. Nothing is ever brought to the front: an app switch is the user's.
+  take it. A set gets `insertionTargetSettleTime` (0.2 s) to show, checked every
+  `insertionTargetPollInterval`: Chromium hands focus and selection sets to its renderer and answers
+  reads from its cached tree until the renderer replies. Only then the paste of ADR-DESK-002; the reply is `{outcome: "pasted" | "appChanged" |
+  "caretMoved"}`. Nothing is ever brought to the front: an app switch is the user's. Captures run
+  concurrently, so an older session's finishing late never replaces a newer one's; an `insert` whose
+  session has no target (a capture that failed, a helper restarted since key-down) pastes nothing.
 - Two marker ranges are the same when `CFEqual`, or when both have the same non-empty bounds
   (`AXBoundsForTextMarkerRange`, taller than zero): an app may describe one place with different
   marker objects.
@@ -2113,6 +2117,9 @@ copied it into your history and also your clipboard" (the history is ADR-DESK-04
   terminals) is checked by app only: the text pastes where focus is then, in that app.
 - A field without a readable selection gets its focus back, not its caret.
 - A caret the user moved on purpose within the same field goes back to where it was at key-down.
+- A dictation whose `voice-macos` restarted after key-down (ADR-DESK-032's amendment: "what was said
+  is then pasted through the restarted helper") is copied instead, with the "Cursor moved" note: the
+  restarted helper has no target for it.
 - The clipboard keeps the text after an unpasted dictation: the user's earlier clipboard is replaced,
   which is what "copied to your clipboard" means.
 
@@ -2135,7 +2142,9 @@ to enter agent mode or triple tap to see history tooltip".
   tall as its list up to `pasteHistoryMaxHeight`, each entry clipped to `pasteHistoryEntryLines`
   lines with how long ago it came. It takes focus; a click copies the whole entry to the clipboard and
   closes it; Escape or a click elsewhere closes it. On macOS the app then hides, so focus returns to
-  the app the user was in (unless Settings, the welcome window or the context debug window is open).
+  the app the user was in, unless Settings, the welcome window, the context debug window or the chat
+  window is open (hiding the app would hide the chat, with nothing to show it again while the next
+  holds talk to it).
 - The Space tip becomes `agentAndHistoryTip` ("Press [space] for agent mode, / triple-tap [hotkey]
   for history", 4 s, at most 10 holds); opening the history learns it. Using Space no longer does,
   as the tip still teaches the history. Its new id restarts its counts.

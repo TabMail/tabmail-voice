@@ -376,6 +376,31 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => pastes.length === 1)).toBe(true);
     });
 
+    /** The note shows as long as a failure does, then the pill rests. */
+    test("the copied note goes after its display time", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, cleanedReply);
+      transcription.gate = async () => {
+        front.pid = 202;
+      };
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "copied"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(controller.phase).toEqual(copied("appChanged"));
+        await vi.advanceTimersByTimeAsync(config.overlayErrorDisplayDuration - 1);
+        expect(controller.phase.kind).toBe("copied");
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(idle);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
     /** Agent mode's text is copied the same way: Edit's and Compose's. */
     test("agent text for a caret that won't go back is copied", async () => {
       transcription.enqueue(200, { text: request });

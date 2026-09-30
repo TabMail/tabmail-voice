@@ -393,10 +393,11 @@ function launch(): void {
   }
 
   /** Closes the paste history, and on macOS gives the app the user was in back its focus, unless
-   * another of this app's windows is open. */
+   * another of this app's windows is open, or the chat is: hiding the app would hide the chat too,
+   * with nothing to show it again while the next holds talk to it. */
   function closeHistory(): void {
     windows.close("history");
-    const othersOpen = (["settings", "welcome", "contextDebug"] as const).some((name) => windows.isOpen(name));
+    const othersOpen = (["settings", "welcome", "contextDebug"] as const).some((name) => windows.isOpen(name)) || controller.chat !== null;
     if (process.platform === "darwin" && !othersOpen) app.hide();
   }
 

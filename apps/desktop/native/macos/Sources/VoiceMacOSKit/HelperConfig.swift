@@ -96,6 +96,10 @@ enum HelperConfig {
     /// Per-call cap on Accessibility calls capturing the field and caret at key-down, and putting
     /// them back before the paste (seconds).
     static let insertionTargetTimeout: Float = 0.25
+    /// How long a field gets to show the focus or caret put back before the paste is refused
+    /// (Chromium applies the set asynchronously), and how often it is checked meanwhile (seconds).
+    static let insertionTargetSettleTime: TimeInterval = 0.2
+    static let insertionTargetPollInterval: TimeInterval = 0.02
 
     // MARK: Email apps
 

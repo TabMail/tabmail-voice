@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import ApplicationServices
+import Foundation
 import VoiceHelperSupport
 
 /// What the paste finds as it comes: the dictation's field with its caret put back (`inPlace`), the
@@ -45,7 +46,14 @@ struct InsertionTarget<Access: TextFieldAccess> {
 
     /// Puts the captured field and caret back, with `frontmost` the app in front now. Never brings
     /// another app forward: the user left for it on purpose.
-    func restore(frontmost: pid_t?, access: Access) -> InsertionOutcome {
+    /// An app may apply a focus or selection set a moment later than it answers reads: Chromium hands
+    /// the set to its renderer and answers from its cached tree until the renderer replies. So a set
+    /// is checked every `poll` until it shows, for at most `settle` (seconds), before it counts as
+    /// refused.
+    func restore(
+        frontmost: pid_t?, access: Access,
+        settle: TimeInterval = HelperConfig.insertionTargetSettleTime, poll: TimeInterval = HelperConfig.insertionTargetPollInterval
+    ) -> InsertionOutcome {
         guard frontmost == pid else {
             HelperLog.debug("InsertionTarget: app \(pid) is no longer in front")
             return .appChanged
@@ -54,7 +62,7 @@ struct InsertionTarget<Access: TextFieldAccess> {
         if !isFocused(element, access: access) {
             HelperLog.debug("InsertionTarget: focus moved; focusing the field again")
             access.focus(element)
-            guard isFocused(element, access: access) else {
+            guard shows(within: settle, every: poll, { isFocused(element, access: access) }) else {
                 HelperLog.debug("InsertionTarget: the field would not take focus")
                 return .caretMoved
             }
@@ -63,11 +71,21 @@ struct InsertionTarget<Access: TextFieldAccess> {
         if isSelected(selection, in: element, access: access) { return .inPlace }
         HelperLog.debug("InsertionTarget: caret moved; putting it back")
         access.select(selection, in: element)
-        guard isSelected(selection, in: element, access: access) else {
+        guard shows(within: settle, every: poll, { isSelected(selection, in: element, access: access) }) else {
             HelperLog.debug("InsertionTarget: the caret would not go back")
             return .caretMoved
         }
         return .inPlace
+    }
+
+    /// Whether `condition` holds now or within `settle`, checked every `poll`.
+    private func shows(within settle: TimeInterval, every poll: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(settle)
+        while !condition() {
+            guard Date() < deadline else { return false }
+            Thread.sleep(forTimeInterval: poll)
+        }
+        return true
     }
 
     private func isFocused(_ element: Access.Element, access: Access) -> Bool {
@@ -169,7 +187,10 @@ final class InsertionTargets {
 
     private var current: (session: Int, target: Captured)?
 
+    /// Captures run concurrently and may finish out of order: an older dictation's (a lower session)
+    /// never replaces a newer one's.
     func keep(_ target: Captured, session: Int) {
+        if let current, current.session > session { return }
         current = (session, target)
     }
 
