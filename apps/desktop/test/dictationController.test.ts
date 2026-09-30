@@ -352,10 +352,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
     });
 
-    test.each<[string, () => void, "appChanged" | "caretMoved"]>([
-      ["another app is in front", () => (front.pid = 202), "appChanged"],
-      ["the caret won't go back", () => (caret.stuck = true), "caretMoved"],
-    ])("when %s, the text is copied, not pasted", async (_, move, outcome) => {
+    test.each<[string, () => void, "appChanged" | "caretMoved", string]>([
+      ["another app is in front", () => (front.pid = 202), "appChanged", "Switched apps: copied to clipboard and history"],
+      ["the caret won't go back", () => (caret.stuck = true), "caretMoved", "Cursor moved: copied to clipboard and history"],
+    ])("when %s, the text is copied, not pasted", async (_, move, outcome, message) => {
       transcription.enqueue(200, cleanedReply);
       transcription.gate = async () => move();
       const { controller, pastes, copies, history } = makeController({ capture: new CountingCapture(true) });
@@ -364,6 +364,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => controller.phase.kind === "copied")).toBe(true);
 
       expect(controller.phase).toEqual(copied(outcome));
+      expect(controller.phase).toEqual({ kind: "copied", message });
       expect(pastes).toEqual([]);
       expect(copies).toEqual([cleaned]);
       expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
@@ -374,6 +375,39 @@ describe("DictationController", { timeout: 20_000 }, () => {
       transcription.enqueue(200, cleanedReply);
       await holdAndRelease(controller);
       expect(await eventually(() => pastes.length === 1)).toBe(true);
+    });
+
+    /** A dictation cancelled while the helper works on its paste wants its text nowhere: a refusal
+     * answered after the cancel copies nothing, so the user's clipboard stays theirs; a paste the
+     * helper did make is still kept in the history. */
+    test.each<["dictation" | "agent", "appChanged" | "caretMoved" | "pasted"]>([
+      ["dictation", "appChanged"],
+      ["agent", "caretMoved"],
+      ["dictation", "pasted"],
+    ])("a %s cancelled while the helper answers %s", async (mode, outcome) => {
+      transcription.enqueue(200, mode === "agent" ? { text: request } : cleanedReply);
+      if (mode === "agent") completions.enqueue(200, reply("We ship on Friday."));
+      const text = mode === "agent" ? "We ship on Friday." : cleaned;
+      let answer: (outcome: "appChanged" | "caretMoved" | "pasted") => void = () => {};
+      let asked = false;
+      const { controller, copies, history } = makeController({
+        capture: new CountingCapture(true),
+        paste: () => {
+          asked = true;
+          return new Promise((resolve) => (answer = resolve));
+        },
+      });
+      if (mode === "agent") controller.captureContext = async () => selectionScreen("");
+
+      await holdAndRelease(controller, mode);
+      expect(await eventually(() => asked)).toBe(true);
+      controller.handle("cancel");
+      answer(outcome);
+      expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(copies).toEqual([]);
+      expect(history.entries.map((entry) => entry.text)).toEqual(outcome === "pasted" ? [text] : []);
     });
 
     /** The note shows as long as a failure does, then the pill rests. */

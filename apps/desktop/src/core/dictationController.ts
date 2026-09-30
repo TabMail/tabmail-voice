@@ -27,7 +27,7 @@ import type { ScreenContext } from "./screenContext.js";
 import type { DictationSettings } from "./settings.js";
 import { charCount, trimWhitespace } from "./text.js";
 import { type DictationTip, type TipBook, tipDetails } from "./tips.js";
-import { sleep, withTimeout } from "./timeout.js";
+import { CancellationError, sleep, withTimeout } from "./timeout.js";
 import { encodeWAV } from "./wav.js";
 
 export type Phase =
@@ -768,6 +768,9 @@ export class DictationController extends Observable {
     log.content("DictationController: pasting", text);
     await this.targetCapture;
     const outcome = await this.deps.paste(text, session, signal);
+    // A dictation cancelled while the helper refused its paste wants the text nowhere: not on the
+    // clipboard, whose contents it would replace unseen.
+    if (outcome !== "pasted" && signal.aborted) throw new CancellationError();
     this.deps.history.add(text);
     if (outcome === "pasted") return;
     this.deps.copy(text);

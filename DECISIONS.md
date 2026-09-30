@@ -2151,5 +2151,6 @@ to enter agent mode or triple tap to see history tooltip".
 
 **Consequences:**
 - The history is lost when the app quits.
-- A triple tap while the previous dictation is still transcribing opens the history too; that
-  dictation carries on.
+- A triple tap works only from hands-free listening: while the previous dictation is still
+  transcribing, the double tap finds nothing listening and the gesture ends, so a third press starts
+  a new hold. With the history open, a paste still to come sees this app in front and is copied.

@@ -75,11 +75,14 @@ public enum MacService {
     }
 
     /// `eventStore` and `contactStore` are the user's calendars and contacts, `fileSearch` Spotlight
-    /// and `fileOpener` the Finder, or a test's stand-ins.
+    /// and `fileOpener` the Finder, `restore` puts a dictation's field and caret back and `paste`
+    /// pastes (text, clipboard restore delay), or a test's stand-ins.
     @MainActor
     static func register(
         on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore,
-        fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace
+        fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace,
+        restore: @escaping @Sendable (InsertionTargets, Int) async -> InsertionOutcome = restoreTarget,
+        paste: @escaping @Sendable (String, Duration) async -> Void = { text, delay in await TextInserter(restoreDelay: delay).insert(text) }
     ) -> AnyObject {
         let activator = AccessibilityActivator()
         let targets = InsertionTargets()
@@ -144,10 +147,10 @@ public enum MacService {
             }
             if params["session"] != nil {
                 guard let session = params["session"]?.integer else { throw HelperError("insert needs a whole-number session") }
-                let outcome = await restoreTarget(targets, session: session)
+                let outcome = await restore(targets, session)
                 guard outcome == .inPlace else { return ["outcome": .string(outcome.rawValue)] }
             }
-            await TextInserter(restoreDelay: .milliseconds(milliseconds)).insert(text)
+            await paste(text, .milliseconds(milliseconds))
             return ["outcome": .string(pastedOutcome)]
         }
         channel.on("keyboardLanguage") { _ in
@@ -295,7 +298,7 @@ public enum MacService {
     }
 
     /// Puts back the field and caret captured for `session`, with the app in front now.
-    private static func restoreTarget(_ targets: InsertionTargets, session: Int) async -> InsertionOutcome {
+    static func restoreTarget(_ targets: InsertionTargets, session: Int) async -> InsertionOutcome {
         let (captured, frontmost) = await MainActor.run {
             (targets.target(session: session), NSWorkspace.shared.frontmostApplication?.processIdentifier)
         }

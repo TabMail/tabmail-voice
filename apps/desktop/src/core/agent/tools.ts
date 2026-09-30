@@ -91,7 +91,8 @@ export interface DesktopTool {
   variables(request: string, context: ScreenContext | null): Record<string, string>;
   /** The text the prompt wrote (trimmed, not empty), ready to deliver. */
   fitted(text: string, context: ScreenContext | null): string;
-  /** Puts the text where the tool puts it. Throws when it can't, and then nothing is put anywhere. */
+  /** Puts the text where the tool puts it. Throws when it can't: then nothing is pasted, though Edit's
+   * and Compose's text goes to the clipboard and the paste history instead (ADR-DESK-042). */
   deliver(text: string, context: ToolContext): Promise<void>;
 }
 

@@ -192,4 +192,17 @@ struct InsertionTargetTests {
         #expect(!access.isSame(caret, .range(CFRange(location: 4, length: 2)), in: element))
         #expect(!access.isSame(caret, .range(CFRange(location: 5, length: 0)), in: element))
     }
+
+    /// Text markers are opaque: equal ones are the same place; unequal ones are only when the field
+    /// puts both at the same bounds, which a field without them (here, this test process) never does;
+    /// a marker is never the same as a character range.
+    @Test func textMarkersAreTheSameWhenEqual() {
+        let access = AXTextFieldAccess()
+        let element = AXUIElementCreateApplication(getpid())
+        let marker = AXSelection.marker("marker" as CFString)
+        #expect(access.isSame(marker, .marker("marker" as CFString), in: element))
+        #expect(!access.isSame(marker, .marker("other" as CFString), in: element))
+        #expect(!access.isSame(marker, .range(CFRange(location: 0, length: 0)), in: element))
+        #expect(!access.isSame(.range(CFRange(location: 0, length: 0)), marker, in: element))
+    }
 }

@@ -181,18 +181,45 @@ struct MacServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
-    /// The paste for a dictation whose field and caret were never kept (the helper restarted, or the
-    /// capture failed) pastes nothing: where the caret was is unknown (ADR-DESK-042).
-    @Test func aPasteWithoutItsCapturedTargetPastesNothing() async throws {
+    /// `insert` for a dictation `session` after `restore` answered `outcome`, with a stand-in paste
+    /// (tests never post keystrokes or touch the clipboard): the reply's outcome and the texts pasted.
+    private func insert(session: String, restore: @escaping @Sendable (InsertionTargets, Int) async -> InsertionOutcome = MacService.restoreTarget) async throws -> (String?, [String]) {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let service = MacService.register(on: channel)
-        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"x","restoreDelay":0.5,"session":99}}"#.utf8))
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore(), restore: restore,
+            paste: { text, _ in pasted.withLock { $0.append(text) } }
+        )
+        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"x","restoreDelay":0.5\#(session)}}"#.utf8))
 
         let line = try #require(lines.withLock { $0.first })
         let reply = try #require(try JSONSerialization.jsonObject(with: line) as? [String: Any])
-        #expect((reply["result"] as? [String: Any])?["outcome"] as? String == "caretMoved")
         withExtendedLifetime(service) {}
+        return ((reply["result"] as? [String: Any])?["outcome"] as? String, pasted.withLock { $0 })
+    }
+
+    /// The paste for a dictation whose field and caret were never kept (the helper restarted, or the
+    /// capture failed) pastes nothing: where the caret was is unknown (ADR-DESK-042).
+    @Test func aPasteWithoutItsCapturedTargetPastesNothing() async throws {
+        let (outcome, pasted) = try await insert(session: #","session":99"#)
+        #expect(outcome == "caretMoved")
+        #expect(pasted.isEmpty)
+    }
+
+    /// Only a field and caret back in place are pasted into; a paste without a session (Thunderbird's
+    /// relay) pastes where focus is, as before.
+    @Test(arguments: [InsertionOutcome.inPlace, .appChanged, .caretMoved])
+    func aPasteGoesOnlyWhereTheCaretWasPutBack(restored: InsertionOutcome) async throws {
+        let (outcome, pasted) = try await insert(session: #","session":3"#, restore: { _, session in session == 3 ? restored : .caretMoved })
+        #expect(outcome == (restored == .inPlace ? "pasted" : restored.rawValue))
+        #expect(pasted == (restored == .inPlace ? ["x"] : []))
+    }
+
+    @Test func aPasteWithoutASessionPastesWhereFocusIs() async throws {
+        let (outcome, pasted) = try await insert(session: "", restore: { _, _ in .appChanged })
+        #expect(outcome == "pasted")
+        #expect(pasted == ["x"])
     }
 }
 
