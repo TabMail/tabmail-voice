@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AppKit
 import AVFoundation
 import Foundation
 import os
@@ -214,6 +215,30 @@ struct MacServiceRequestTests {
         let (outcome, pasted) = try await insert(session: #","session":3"#, restore: { _, session in session == 3 ? restored : .caretMoved })
         #expect(outcome == (restored == .inPlace ? "pasted" : restored.rawValue))
         #expect(pasted == (restored == .inPlace ? ["x"] : []))
+    }
+
+    /// The target `captureTarget` keeps at key-down is the one its dictation's `insert` restores: the
+    /// same session's paste goes ahead, another session's finds none. (The restore here only reports
+    /// whether a target was kept, so the test needs no Accessibility trust.)
+    @Test func aCaptureKeepsTheTargetItsOwnPasteFinds() async throws {
+        _ = try #require(NSWorkspace.shared.frontmostApplication, "the capture needs an app in front")
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore(),
+            restore: { targets, session in await MainActor.run { targets.target(session: session) } != nil ? .inPlace : .caretMoved },
+            paste: { text, _ in pasted.withLock { $0.append(text) } }
+        )
+        await channel.handle(line: Data(#"{"id":1,"method":"captureTarget","params":{"session":5}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":2,"method":"insert","params":{"text":"mine","restoreDelay":0.5,"session":5}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":3,"method":"insert","params":{"text":"other","restoreDelay":0.5,"session":6}}"#.utf8))
+
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        let outcomes = replies.compactMap { ($0["result"] as? [String: Any])?["outcome"] as? String }
+        #expect(outcomes == ["pasted", "caretMoved"])
+        #expect(pasted.withLock { $0 } == ["mine"])
+        withExtendedLifetime(service) {}
     }
 
     @Test func aPasteWithoutASessionPastesWhereFocusIs() async throws {

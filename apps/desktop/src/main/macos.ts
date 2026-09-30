@@ -20,10 +20,9 @@ export class MacSystem {
   constructor(private readonly helper: HelperClient) {}
 
   /** Keeps the focused field of the app in front and its caret for the dictation `session`
-   * (ADR-DESK-042); true when there was a field. */
-  async captureTarget(session: number): Promise<boolean> {
-    const reply = await this.helper.request<{ captured?: unknown }>("captureTarget", { session });
-    return reply.captured === true;
+   * (ADR-DESK-042). */
+  async captureTarget(session: number): Promise<void> {
+    await this.helper.request("captureTarget", { session });
   }
 
   /** Pastes `text` into the focused field, then restores the user's clipboard (ADR-DESK-002). With a

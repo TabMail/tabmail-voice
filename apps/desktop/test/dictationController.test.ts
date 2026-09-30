@@ -143,7 +143,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
         options.captureTarget ??
         (async (session) => {
           targets.set(session, front.pid);
-          return true;
         }),
       // As `voice-macos` pastes (`MacSystem.paste`): nothing once cancelled; nothing in an app other
       // than the one in front at the dictation's key-down (the app in front, for a recording handed to
@@ -339,7 +338,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
         captureTarget: async (session) => {
           sessions.push(session);
           targets.set(session, front.pid);
-          return true;
         },
       });
 
@@ -1336,13 +1334,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
     ])("agent text cancelled during the last wait is not pasted (selection %j)", async (selected, tool) => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply("Could we ship on Friday?"));
-      const kept = deferred<boolean>();
+      const kept = deferred<void>();
       let captures = 0;
       // The first capture is this request's; the next dictation's answers at once.
-      const captureTarget = (session: number): Promise<boolean> => {
+      const captureTarget = (session: number): Promise<void> => {
         captures += 1;
         targets.set(session, front.pid);
-        return captures === 1 ? kept.promise : Promise.resolve(true);
+        return captures === 1 ? kept.promise : Promise.resolve();
       };
       const { controller, pastes, history } = makeController({ capture: new CountingCapture(true), captureTarget });
       controller.captureContext = async () => selectionScreen(selected);
@@ -1355,7 +1353,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("cancel");
       controller.handle("start");
       expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
-      kept.resolve(true);
+      kept.resolve();
       await sleep(50);
 
       expect(pastes).toEqual([]);

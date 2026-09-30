@@ -14,9 +14,8 @@ import VoiceHelperSupport
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
 /// - `focusedFieldValue {pid, maxLength}` → `{value}`: the text of the app's focused field, null for
 ///   none, a password field, or one longer than `maxLength` UTF-16 code units (`FocusedField`).
-/// - `captureTarget {session}` → `{captured}`: keeps the frontmost app's focused field and its caret
-///   for the dictation `session` (`InsertionTarget`), replacing any other's; `captured` is whether a
-///   field was found.
+/// - `captureTarget {session}` → `{}`: keeps the frontmost app's focused field and its caret for the
+///   dictation `session` (`InsertionTarget`), replacing any older session's.
 /// - `insert {text, restoreDelay, session?}` → `{outcome}`: pastes `text` into the focused field, then
 ///   restores the clipboard after `restoreDelay` seconds; `outcome` is `pasted`. With `session`, first
 ///   puts back that dictation's field and caret, and pastes nothing if it can't: `outcome` is then
@@ -130,7 +129,7 @@ public enum MacService {
         channel.on("captureTarget") { params in
             guard let session = params["session"]?.integer else { throw HelperError("captureTarget needs session") }
             guard let pid = await MainActor.run(body: { NSWorkspace.shared.frontmostApplication?.processIdentifier }) else {
-                return ["captured": .bool(false)]
+                return [:]
             }
             // Blocking Accessibility calls: off the main thread.
             let captured = await Task.detached {
@@ -138,7 +137,7 @@ public enum MacService {
             }.value
             await MainActor.run { targets.keep(captured, session: session) }
             HelperLog.debug("captureTarget: app \(pid), field \(captured.target.element != nil), caret \(captured.target.selection != nil)")
-            return ["captured": .bool(captured.target.element != nil)]
+            return [:]
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,

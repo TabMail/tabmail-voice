@@ -142,10 +142,6 @@ describe("helper wire contract", () => {
     expect(calls).toEqual([{ text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000, session: 7 }]);
     reply = {};
     await expect(mac.paste("some text", 7)).rejects.toThrow();
-    reply = { captured: true };
-    expect(await mac.captureTarget(7)).toBe(true);
-    reply = {};
-    expect(await mac.captureTarget(7)).toBe(false);
   });
 
   /** The account's full name comes back as the helper answers it, empty included; a reply without one

@@ -81,5 +81,10 @@ describe("the paste history window's place", () => {
     const origin = historyWindowOrigin({ x: 700, y: 450 }, tall, workArea);
     expect(origin.y).toBeGreaterThanOrEqual(workArea.y);
     expect(origin.y + tall.height).toBeLessThanOrEqual(workArea.y + workArea.height);
+
+    const narrow = { x: 100, y: 25, width: size.width + 40, height: 875 };
+    const across = historyWindowOrigin({ x: 100 + narrow.width / 2, y: 450 }, size, narrow);
+    expect(across.x).toBeGreaterThanOrEqual(narrow.x);
+    expect(across.x + size.width).toBeLessThanOrEqual(narrow.x + narrow.width);
   });
 });

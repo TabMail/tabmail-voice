@@ -37,6 +37,8 @@ const app = vi.hoisted(() => ({
   hides: 0,
   /** The windows other than the overlay that are open. */
   openWindows: [] as string[],
+  /** What the history window does when it loses the focus. */
+  historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
@@ -237,7 +239,8 @@ vi.mock("../src/main/helperClient.js", () => ({
     }
   },
 }));
-vi.mock("../src/core/dictationController.js", () => ({
+vi.mock("../src/core/dictationController.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/core/dictationController.js")>()),
   DictationController: class {
     constructor(dependencies: { capture: AudioCapture; paste: (text: string, session: number, signal: AbortSignal) => Promise<string>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
@@ -327,7 +330,8 @@ vi.mock("../src/main/windows.js", () => ({
       return app.openWindows.includes(name);
     }
     showWelcome() {}
-    showHistory(bounds: { x: number; y: number; width: number; height: number }) {
+    showHistory(bounds: { x: number; y: number; width: number; height: number }, onBlur: () => void) {
+      app.historyBlur = onBlur;
       app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
     }
     setBounds(name: string, bounds: { height: number }) {
@@ -363,6 +367,7 @@ afterEach(() => {
   app.historyWindow = [];
   app.hides = 0;
   app.openWindows = [];
+  app.historyBlur = null;
   app.audioCommands = [];
   app.overlay = null;
   app.controller = null;
@@ -518,6 +523,12 @@ describe("main process wiring", () => {
     await send({ type: "closeHistory" });
     expect(app.clipboard).toEqual(["Hello there."]);
     expect(app.hides).toBe(2);
+
+    // A click elsewhere closes it, the focus already gone where the user clicked.
+    app.controller?.onShowHistory?.();
+    app.historyBlur?.();
+    expect(app.historyWindow.at(-1)).toBe("close");
+    expect(app.hides).toBe(2);
   });
 
   /** Closing the history hides the app, to give the user's app its focus back, only on macOS and only
@@ -525,8 +536,10 @@ describe("main process wiring", () => {
    * with it while the next holds talk to it. An entry gone from the history copies nothing. */
   test("closing the paste history hides the app only when nothing else of it shows", async () => {
     await launch("darwin");
-    app.openWindows = ["settings"];
-    await send({ type: "closeHistory" });
+    for (const window of ["settings", "welcome", "contextDebug"]) {
+      app.openWindows = [window];
+      await send({ type: "closeHistory" });
+    }
     app.openWindows = [];
     const controller = app.controller;
     if (!controller) throw new Error("no controller");
@@ -537,7 +550,7 @@ describe("main process wiring", () => {
     await send({ type: "copyHistoryEntry", id: 999 });
     expect(app.hides).toBe(1);
     expect(app.clipboard).toEqual([]);
-    expect(app.historyWindow).toEqual(["close", "close", "close"]);
+    expect(app.historyWindow).toEqual(["close", "close", "close", "close", "close"]);
   });
 
   test("closing the paste history elsewhere leaves the app shown", async () => {

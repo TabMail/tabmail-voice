@@ -81,7 +81,7 @@ export interface DictationDependencies {
   tips: TipBook;
   /** Keeps the field and caret of the app in front, now (key-down), for the dictation `session`
    * (ADR-DESK-042); true when a field was found. */
-  captureTarget: (session: number) => Promise<boolean>;
+  captureTarget: (session: number) => Promise<void>;
   /** Pastes into the field and caret kept for `session`, put back if they moved, or pastes nothing
    * and says why; for the dictation whose `signal` it is: one cancelled before the paste reaches the
    * system pastes nothing. */
@@ -183,7 +183,7 @@ export class DictationController extends Observable {
   /** The app in front at key-down, whose field the corrections are learned from. */
   private targetApp: Promise<number | null> = Promise.resolve(null);
   /** The field and caret kept at key-down (`captureTarget`), which the paste waits for. */
-  private targetCapture: Promise<boolean> = Promise.resolve(false);
+  private targetCapture: Promise<void> = Promise.resolve();
   /** The keyboard's language at key-down, which the badge shows and the transcription is asked in. */
   private languageRead: Promise<string | null> = Promise.resolve(null);
   private emailAppRead: Promise<EmailApp> | null = null;
@@ -376,7 +376,6 @@ export class DictationController extends Observable {
     this.targetApp = this.deps.frontmostApp().catch(() => null);
     this.targetCapture = this.deps.captureTarget(current).catch((error: unknown) => {
       log.error(`DictationController: couldn't keep the field: ${errorName(error)}`);
-      return false;
     });
     this.currentLanguage = null;
     this.languageRead = this.deps.keyboardLanguage().catch(() => null);
@@ -1108,7 +1107,7 @@ export class DictationController extends Observable {
 }
 
 /** Nothing under way: idle, or a message showing, which the next hold replaces. */
-function isResting(phase: Phase): boolean {
+export function isResting(phase: Phase): boolean {
   return phase.kind === "idle" || phase.kind === "failed" || phase.kind === "copied";
 }
 

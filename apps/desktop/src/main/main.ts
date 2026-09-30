@@ -23,7 +23,7 @@ import { ThunderbirdRelay } from "../core/agent/thunderbirdRelay.js";
 import { CompletionsClient, TranscriptionClient } from "../core/backend.js";
 import * as config from "../core/config.js";
 import { CorrectionWatch } from "../core/correctionWatch.js";
-import { DictationController } from "../core/dictationController.js";
+import { DictationController, isResting } from "../core/dictationController.js";
 import { GlobeKeyAction } from "../core/globeKeyAction.js";
 import { type DictationHotkey, isHotkeyAction } from "../core/hotkey.js";
 import { liveTransport } from "../core/http.js";
@@ -343,8 +343,7 @@ function launch(): void {
         app.focus({ steal: true });
         void dialog.showMessageBox({ type: "info", message, detail, buttons: ["OK"] });
       },
-      // A failure or a copied note showing is at rest: the next hold replaces it.
-      isBusy: () => !["idle", "failed", "copied"].includes(controller.phase.kind) || controller.chat !== null,
+      isBusy: () => !isResting(controller.phase) || controller.chat !== null,
       onChange: () => tray.update(),
     });
   }
