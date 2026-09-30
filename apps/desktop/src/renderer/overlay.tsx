@@ -15,7 +15,7 @@ import { type DictationTip, tipDetails, tipLines } from "../core/tips.js";
 import type { ChatPlacement, OverlayState } from "../shared/ipc.js";
 import { brandBlue, brandColour, brandGradient, grey, rgba } from "./brand.js";
 import { send, useWindowState } from "./bridge.js";
-import { ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "./icons.js";
+import { ClipboardIcon, ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "./icons.js";
 import "./overlay.css";
 
 /**
@@ -37,6 +37,8 @@ type Mode =
   | { kind: "transcribing" }
   | { kind: "running"; tool: AgentTool }
   | { kind: "message"; text: string }
+  /** The text went on the clipboard instead of being pasted: the note beside a clipboard. */
+  | { kind: "copied"; text: string }
   /** A server error, while the transcription is tried again: the note alone, no warning sign. */
   | { kind: "retrying"; text: string }
   /** Under the open chat window while nothing runs. */
@@ -58,6 +60,8 @@ function modeOf(state: OverlayState): Mode {
       return { kind: "running", tool: phase.tool };
     case "failed":
       return { kind: "message", text: phase.message };
+    case "copied":
+      return { kind: "copied", text: phase.message };
   }
 }
 
@@ -609,7 +613,7 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
 
 function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; language: string | null; isAgent: boolean }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
-  const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
+  const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "copied" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponse * 1000);
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
@@ -653,9 +657,10 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
       );
       break;
     case "message":
+    case "copied":
       content = (
         <>
-          <ExclamationIcon size={config.overlayFontSize} />
+          {mode.kind === "message" ? <ExclamationIcon size={config.overlayFontSize} /> : <ClipboardIcon size={config.overlayFontSize} />}
           <span className="message" style={{ fontSize: config.overlayFontSize, maxWidth: config.pillMaxTextWidth, WebkitLineClamp: config.pillMaxTextLines }}>
             {mode.text}
           </span>
@@ -897,6 +902,7 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
  * box with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. */
 function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: DictationHotkey; pointsDown: boolean }) {
   const [ref, size] = useSize<HTMLDivElement>();
+  const lines = tipLines(tip, hotkey);
   return (
     <div ref={ref} className="tip" style={pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }}>
       <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${grey(0, config.tipShadowOpacity)})` }}>
@@ -905,9 +911,9 @@ function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: Di
       </svg>
       <div
         className="tip-lines"
-        style={{ gap: config.tipLineSpacing, height: config.tipHeight, padding: `${config.tipVerticalPadding}px ${config.tipHorizontalPadding}px` }}
+        style={{ gap: config.tipLineSpacing, height: config.tipBoxHeight(lines.length), padding: `${config.tipVerticalPadding}px ${config.tipHorizontalPadding}px` }}
       >
-        {tipLines(tip, hotkey).map((line, index) => (
+        {lines.map((line, index) => (
           <div key={index} className="tip-line" style={{ gap: config.tipSpacing, height: config.tipLineHeight }}>
             {line.map((part, partIndex) =>
               "words" in part ? (

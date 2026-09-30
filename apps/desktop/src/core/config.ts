@@ -76,6 +76,20 @@ export const microphoneStartTimeout = 5_000;
 
 /** How long the target app gets to read the pasteboard before the user's clipboard is restored. */
 export const clipboardRestoreDelay = 500;
+/** The paste history a triple tap shows (ADR-DESK-043): the texts dictation and agent mode pasted, or
+ * copied when they could not paste, the newest first, at most this many. In memory only, for the
+ * app's life: no user content is saved. */
+export const pasteHistoryLimit = 20;
+/** The paste history window, opened at the mouse pointer: this wide, as tall as its entries up to
+ * `pasteHistoryMaxHeight`, then it scrolls; each entry shows at most `pasteHistoryEntryLines` lines
+ * (the whole text is copied). */
+export const pasteHistoryWindowWidth = 380;
+export const pasteHistoryMaxHeight = 440;
+export const pasteHistoryEntryLines = 3;
+/** The window's padding and title, over its list: the list scrolls within the rest. */
+export const pasteHistoryChromeHeight = 44;
+/** Clear of the mouse pointer, the window's corner. */
+export const pasteHistoryPointerGap = 8;
 
 // MARK: Screen context
 
@@ -432,10 +446,12 @@ export interface TipSettings {
   readonly maxDisplays: number | null;
 }
 
-/** Space switches between dictation and agent mode: shown as a hold starts listening. */
-export const switchModeTip: TipSettings = {
-  lines: ["Press [space] to switch", "between dictation", "and agent mode"],
-  displayDuration: 2_500,
+/** Space switches to agent mode, and a triple tap shows the paste history: shown as a hold starts
+ * listening (owner, 2026-09-30: "press space to enter agent mode or triple tap to see history"),
+ * longer than one hint needs, as it has two. */
+export const agentAndHistoryTip: TipSettings = {
+  lines: ["Press [space] for agent mode,", "triple-tap [hotkey] for history"],
+  displayDuration: 4_000,
   maxDisplays: 10,
 };
 /** A double tap dictates without holding: shown once a hold passes `doubleTapTipHoldDuration`. */
@@ -444,9 +460,10 @@ export const doubleTapTip: TipSettings = {
   displayDuration: 4_000,
   maxDisplays: 5,
 };
-/** How hands-free listening ends: shown the whole time it listens, every time (owner, 2026-09-27). */
+/** How hands-free listening ends: shown the whole time it listens, every time (owner, 2026-09-27), in
+ * two wider lines (owner, 2026-09-30: three "looks so bad"). */
 export const handsFreeTip: TipSettings = {
-  lines: ["Tap [hotkey] to finish", "dictating, or", "tap [esc] to cancel"],
+  lines: ["Tap [hotkey] to finish dictating,", "or tap [esc] to cancel"],
   displayDuration: null,
   maxDisplays: null,
 };
@@ -466,12 +483,16 @@ export const doubleTapTipHoldDuration = 20_000;
  * few words around keycaps. Dark, as macOS HUDs are, so it reads as the system's hint rather than
  * part of the pill. */
 export const tipFontSize = 13;
-/** A tip is `tipLineCount` centred lines of a few words, each `tipLineHeight` tall. */
+/** A tip is at most `tipLineCount` centred lines of a few words, each `tipLineHeight` tall; its box is
+ * as tall as its lines (`tipBoxHeight`), and the overlay leaves room for the tallest (`tipHeight`). */
 export const tipLineCount = 3;
 export const tipLineHeight = 18;
 export const tipLineSpacing = 1;
 export const tipVerticalPadding = 6;
-export const tipHeight = 2 * tipVerticalPadding + tipLineCount * tipLineHeight + (tipLineCount - 1) * tipLineSpacing;
+export function tipBoxHeight(lines: number): number {
+  return 2 * tipVerticalPadding + lines * tipLineHeight + (lines - 1) * tipLineSpacing;
+}
+export const tipHeight = tipBoxHeight(tipLineCount);
 export const tipHorizontalPadding = 10;
 export const tipSpacing = 5;
 export const tipCornerRadius = 8;

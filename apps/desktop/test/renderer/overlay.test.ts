@@ -130,13 +130,40 @@ afterEach(async () => {
 });
 
 describe("overlay page", () => {
+  /** Each tip's box is as tall as its own lines (owner, 2026-09-30: the hands-free tip in two lines,
+   * not three). */
+  test.each<[DictationTip, number]>([
+    ["handsFree", 2],
+    ["agentAndHistory", 2],
+    ["doubleTap", 3],
+  ])("the %s tip is %d lines, its box as tall", async (tip, count) => {
+    const page = await overlayPage();
+    await page.show({ ...listening, tip });
+    expect(document.querySelectorAll(".tip-line")).toHaveLength(count);
+    expect(document.querySelector<HTMLElement>(".tip-lines")?.style.height).toBe(`${config.tipBoxHeight(count)}px`);
+  });
+
+  /** A text copied instead of pasted (ADR-DESK-042) says so in the pill with a clipboard, not a
+   * failure's exclamation mark. */
+  test("the copied note shows its message by a clipboard", async () => {
+    const page = await overlayPage();
+    const message = "Switched apps: copied to clipboard and history";
+    await page.show({ ...listening, phase: { kind: "copied", message } });
+    expect(document.querySelector(".pill .message")?.textContent).toBe(message);
+    const copiedIcon = document.querySelector(".pill svg")?.innerHTML;
+    await page.show({ ...listening, phase: { kind: "failed", message } });
+    expect(document.querySelector(".pill .message")?.textContent).toBe(message);
+    expect(document.querySelector(".pill svg")?.innerHTML).not.toBe(copiedIcon);
+    expect(copiedIcon).toContain("rect");
+  });
+
   /** The hands-free tip, up the whole time it listens, goes over the pill in an overlay opened above
    * the caret's line, its arrow pointing down at the pill; opened below, it stays under the pill, and
    * a timed tip stays under it either way (owner, 2026-09-27: "above pill when opening up"). */
   test.each<[DictationTip, boolean, boolean]>([
     ["handsFree", true, true],
     ["handsFree", false, false],
-    ["switchMode", true, false],
+    ["agentAndHistory", true, false],
     ["doubleTap", true, false],
   ])("the %s tip, opened upward %s, is over the pill: %s", async (tip, opensUpward, over) => {
     const page = await overlayPage();
@@ -175,7 +202,7 @@ describe("overlay page", () => {
     const page = await overlayPage();
     const tools: OverlayState["tools"] = ["compose", "thunderbird", "answer"];
     const apps: OverlayState["connectors"] = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];
-    await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "switchMode" });
+    await page.show({ ...listening, mode: "agent", tools, connectors: apps, bubblesFitUnder, tip: "agentAndHistory" });
 
     const showing = config.agentBubbleRowVisibleCount + config.agentBubbleRowFadeCount;
     const labels = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.getAttribute("aria-label"));

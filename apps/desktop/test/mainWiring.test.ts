@@ -26,12 +26,26 @@ const app = vi.hoisted(() => ({
   refusesDelete: false,
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
-  paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
+  paste: null as ((text: string, session: number, signal: AbortSignal) => Promise<string>) | null,
+  captureTarget: null as ((session: number) => Promise<void>) | null,
+  copy: null as ((text: string) => void) | null,
   corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
   prewarms: 0,
+  /** The paste history the controller was given, what went on the clipboard, the history window's
+   * openings, moves and closings, and each time the app was hidden. */
+  history: null as { add(text: string): void; entries: readonly { id: number; text: string }[] } | null,
+  clipboard: [] as string[],
+  /** The clipboard refuses the next write. */
+  clipboardFails: false,
+  historyWindow: [] as string[],
+  hides: 0,
+  /** The windows other than the overlay that are open. */
+  openWindows: [] as string[],
+  /** What the history window does when it loses the focus. */
+  historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
-  controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; calls: string[] } | null,
+  controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
@@ -79,7 +93,17 @@ vi.mock("electron", async () => {
       on() {},
       quit() {},
       getLoginItemSettings: () => ({ openAtLogin: false }),
+      hide: () => {
+        app.hides += 1;
+      },
     },
+    clipboard: {
+      writeText: async (text: string) => {
+        if (app.clipboardFails) throw new Error("the clipboard is busy");
+        app.clipboard.push(text);
+      },
+    },
+    screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
     shell: {
       openExternal: async (url: string) => {
@@ -224,19 +248,24 @@ vi.mock("../src/main/helperClient.js", () => ({
     }
   },
 }));
-vi.mock("../src/core/dictationController.js", () => ({
+vi.mock("../src/core/dictationController.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/core/dictationController.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; paste: (text: string, signal: AbortSignal) => Promise<void>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; captureTarget: (session: number) => Promise<void>; copy: (text: string) => void; paste: (text: string, session: number, signal: AbortSignal) => Promise<string>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
+      app.history = dependencies.history;
       app.corrections = dependencies.corrections;
       app.loopTools = dependencies.loopTools;
       app.paste = dependencies.paste;
+      app.captureTarget = dependencies.captureTarget;
+      app.copy = dependencies.copy;
       app.controller = this;
     }
     chat: object | null = null;
     onChatChange: ((isOpen: boolean) => void) | undefined;
     onPhaseChange: ((phase: { kind: string }) => void) | undefined;
     onNothingListening: (() => void) | undefined;
+    onShowHistory: (() => void) | undefined;
     readonly calls: string[] = [];
     keepChatOpen() {
       this.calls.push("keepChatOpen");
@@ -308,11 +337,20 @@ vi.mock("../src/main/windows.js", () => ({
     push(name: string) {
       for (const listener of app.listeners.get("voice:state") ?? []) listener({}, name, this.state(name));
     }
-    isOpen() {
-      return false;
+    isOpen(name: string) {
+      return app.openWindows.includes(name);
     }
     showWelcome() {}
-    close() {}
+    showHistory(bounds: { x: number; y: number; width: number; height: number }, onBlur: () => void) {
+      app.historyBlur = onBlur;
+      app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
+    }
+    setBounds(name: string, bounds: { height: number }) {
+      app.historyWindow.push(`${name} height ${bounds.height}`);
+    }
+    close(name: string) {
+      if (name === "history") app.historyWindow.push("close");
+    }
   },
 }));
 
@@ -333,8 +371,17 @@ afterEach(() => {
   app.helpers.clear();
   app.capture = null;
   app.paste = null;
+  app.captureTarget = null;
+  app.copy = null;
   app.corrections = undefined;
   app.prewarms = 0;
+  app.history = null;
+  app.clipboard = [];
+  app.clipboardFails = false;
+  app.historyWindow = [];
+  app.hides = 0;
+  app.openWindows = [];
+  app.historyBlur = null;
   app.audioCommands = [];
   app.overlay = null;
   app.controller = null;
@@ -444,18 +491,120 @@ describe("main process wiring", () => {
     expect(helper?.onExit).toBeUndefined();
   });
 
-  /** A dictation's paste reaches `voice-macos` with the dictation's signal, so a paste waiting out a
+  /** A dictation's paste reaches `voice-macos` with the dictation's session and signal, so a paste waiting out a
    * helper restart is called off when the dictation is. */
   test("a dictation's paste carries its signal to voice-macos", async () => {
     await launch("darwin");
     const helper = app.helpers.get("voice-macos");
     const { signal } = new AbortController();
+    helper?.replies.set("insert", { outcome: "pasted" });
 
-    await app.paste?.("Hello.", signal);
+    expect(await app.paste?.("Hello.", 4, signal)).toBe("pasted");
 
     const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
+    expect(inserts[0]?.params).toMatchObject({ text: "Hello.", session: 4 });
+  });
+
+  /** Key-down keeps the dictation's field and caret in `voice-macos` under its session, which its
+   * paste then asks for (ADR-DESK-042); a text not pasted goes on the clipboard. */
+  test("a dictation's field is kept by voice-macos, and a text not pasted is copied", async () => {
+    await launch("darwin");
+    const helper = app.helpers.get("voice-macos");
+
+    await app.captureTarget?.(4);
+    expect(helper?.requests.filter((request) => request.method === "captureTarget").map((request) => request.params)).toEqual([{ session: 4 }]);
+
+    app.copy?.("Hello.");
+    expect(app.clipboard).toEqual(["Hello."]);
+  });
+
+  /** Electron 44's clipboard write is a promise: a refused one is logged, never left unhandled. */
+  test("a clipboard write that fails is logged", async () => {
+    await launch("darwin");
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      app.clipboardFails = true;
+      app.copy?.("Hello.");
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(stderr).toHaveBeenCalledWith("main: couldn't copy to the clipboard: Error\n");
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  /** A triple tap opens the paste history by the pointer (ADR-DESK-043), which shows the controller's
+   * history and takes its list's height; a click copies the entry, closes the window and gives the
+   * user's app its focus back, as Escape does without copying. */
+  test("the paste history opens by the pointer, and a click copies its entry", async () => {
+    await launch("darwin");
+    const states: unknown[] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        if (name === "history") states.push(state);
+      },
+    ]);
+    app.history?.add("Hello there.");
+    expect(states).toEqual([{ entries: [expect.objectContaining({ text: "Hello there." })] }]);
+
+    app.controller?.onShowHistory?.();
+    const gap = config.pasteHistoryPointerGap;
+    expect(app.historyWindow).toEqual([`show ${100 + gap},${100 + gap} ${config.pasteHistoryWindowWidth}x${config.pasteHistoryMaxHeight}`]);
+    await send({ type: "historyHeight", height: 120 });
+    await send({ type: "historyHeight", height: config.pasteHistoryMaxHeight + 100 });
+    expect(app.historyWindow.slice(1)).toEqual(["history height 120", `history height ${config.pasteHistoryMaxHeight}`]);
+
+    const id = app.history?.entries[0]?.id;
+    await send({ type: "copyHistoryEntry", id });
+    expect(app.clipboard).toEqual(["Hello there."]);
+    expect(app.historyWindow.at(-1)).toBe("close");
+    expect(app.hides).toBe(1);
+
+    await send({ type: "closeHistory" });
+    expect(app.clipboard).toEqual(["Hello there."]);
+    expect(app.hides).toBe(2);
+
+    // Opened again while open, its list measures itself again, so it takes that height once more.
+    app.controller?.onShowHistory?.();
+    const pushes = states.length;
+    app.controller?.onShowHistory?.();
+    expect(states.length).toBeGreaterThan(pushes);
+
+    // A click elsewhere closes it, the focus already gone where the user clicked.
+    app.controller?.onShowHistory?.();
+    app.historyBlur?.();
+    expect(app.historyWindow.at(-1)).toBe("close");
+    expect(app.hides).toBe(2);
+  });
+
+  /** Closing the history hides the app, to give the user's app its focus back, only on macOS and only
+   * with nothing else of the app's showing: not Settings, and not the chat, which the hide would take
+   * with it while the next holds talk to it. An entry gone from the history copies nothing. */
+  test("closing the paste history hides the app only when nothing else of it shows", async () => {
+    await launch("darwin");
+    for (const window of ["settings", "welcome", "contextDebug"]) {
+      app.openWindows = [window];
+      await send({ type: "closeHistory" });
+    }
+    app.openWindows = [];
+    const controller = app.controller;
+    if (!controller) throw new Error("no controller");
+    controller.chat = {};
+    await send({ type: "closeHistory" });
+    expect(app.hides).toBe(0);
+    controller.chat = null;
+    await send({ type: "copyHistoryEntry", id: 999 });
+    expect(app.hides).toBe(1);
+    expect(app.clipboard).toEqual([]);
+    expect(app.historyWindow).toEqual(["close", "close", "close", "close", "close"]);
+  });
+
+  test("closing the paste history elsewhere leaves the app shown", async () => {
+    await launch("linux");
+    await send({ type: "closeHistory" });
+    expect(app.hides).toBe(0);
+    expect(app.historyWindow).toEqual(["close"]);
   });
 
   /** Placing the overlay pushes its view the direction it opened in, which the hands-free tip is
@@ -984,7 +1133,8 @@ describe("main process wiring", () => {
       expect(updater?.installs).toBe(1);
     });
 
-    test("after a failed dictation, Restart Now installs at once", async () => {
+    /** A text copied instead of pasted (ADR-DESK-042) ends a dictation as a failure does. */
+    test.each(["failed", "copied"])("after a %s dictation, Restart Now installs at once", async (ended) => {
       await launchPackaged();
       const updater = app.autoUpdater;
       const controller = app.controller as unknown as { phase: { kind: string }; onPhaseChange: (phase: { kind: string }) => void };
@@ -994,8 +1144,8 @@ describe("main process wiring", () => {
       downloaded("9.9.9");
       await settle();
       expect(app.dialogs).toEqual([]);
-      controller.phase = { kind: "failed" };
-      controller.onPhaseChange({ kind: "failed" });
+      controller.phase = { kind: ended };
+      controller.onPhaseChange({ kind: ended });
       await settle();
 
       expect((app.dialogs[0] as { buttons: string[] }).buttons[0]).toBe("Restart Now");

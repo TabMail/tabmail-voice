@@ -60,6 +60,17 @@ const settings = {
 };
 const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
 
+/** The paste history: a short entry, a long one clipped to its lines, and an older one. */
+const history = {
+  entries: [
+    { id: 3, text: "Sounds good, see you at ten.", at: Date.now() - 20_000 },
+    { id: 2, text: "Thanks for sending the draft over. I read through it this morning and left a few notes in the margins; the second section needs the numbers from last quarter, and the summary could be shorter. Happy to go over it together on Friday if that helps.", at: Date.now() - 4 * 60_000 },
+    { id: 1, text: "Can we move the review to Thursday?", at: Date.now() - 3 * 3_600_000 },
+  ],
+};
+/** `config.pasteHistoryWindowWidth` by `config.pasteHistoryMaxHeight`. */
+const historyWindowSize = { width: 380, height: 440 };
+
 /** `config.settingsWindowSize`: a script run by Electron cannot import the app's TypeScript. */
 const settingsWindowSize = { width: 700, height: 500 };
 /** `config.welcomeWindowSize`. */
@@ -71,19 +82,20 @@ const shots: { name: string; page: string; size: { width: number; height: number
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
     ["overlay-swirl", { phase: { kind: "listening" }, isHearing: false }],
-    ["overlay-tip-switch", { phase: { kind: "listening" }, tip: "switchMode" }],
+    ["overlay-tip-switch", { phase: { kind: "listening" }, tip: "agentAndHistory" }],
     ["overlay-tip-double-tap", { phase: { kind: "listening" }, tip: "doubleTap", language: null }],
     ["overlay-tip-hands-free", { phase: { kind: "listening" }, tip: "handsFree" }],
     ["overlay-tip-hands-free-up", { phase: { kind: "listening" }, tip: "handsFree", opensUpward: true, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-transcribing", { phase: { kind: "transcribing" } }],
     ["overlay-agent-listening", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-agent-running", { phase: { kind: "running", tool: "compose" }, mode: "agent", tools: ["compose", "thunderbird"] }],
-    ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "switchMode" }],
+    ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "agentAndHistory" }],
     ["overlay-agent-apps-up", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, bubblesFitUnder: false, opensUpward: true, tip: "handsFree" }],
     ["overlay-agent-apps-running", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors }],
     ["overlay-agent-history", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, recentBubbles: ["web", "answer", "notes"] }],
     ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
+    ["overlay-copied", { phase: { kind: "copied", message: "Switched apps: copied to clipboard and history" } }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),
   ...[
@@ -95,6 +107,9 @@ const shots: { name: string; page: string; size: { width: number; height: number
     // A tool's question in the chat window, a third of its 30 seconds gone.
     ["overlay-chat-confirmation", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay.html", size: chatWindowSize, state: { ...overlay, ...(change as object) }, transparent: true })),
+  { name: "history", page: "history.html", size: historyWindowSize, state: history },
+  { name: "history-dark", page: "history.html", size: historyWindowSize, dark: true, state: history },
+  { name: "history-empty", page: "history.html", size: historyWindowSize, state: { entries: [] } },
   { name: "settings", page: "settings.html", size: settingsWindowSize, state: settings },
   { name: "settings-signed-in", page: "settings.html", size: settingsWindowSize, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },
   { name: "settings-dark", page: "settings.html", size: settingsWindowSize, dark: true, state: { ...settings, email: "user@example.com", hotkey: "rightOption", accessibilityTrusted: true } },

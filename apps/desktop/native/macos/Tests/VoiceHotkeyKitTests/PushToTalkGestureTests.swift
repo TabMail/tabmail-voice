@@ -152,6 +152,27 @@ struct PushToTalkGestureTests {
         #expect(!gesture.isActive)
     }
 
+    /// A third press soon after the double tap's release shows the paste history instead of finishing;
+    /// its release does nothing, and the next press is an ordinary hold.
+    @Test func aTripleTapShowsTheHistory() {
+        var gesture = makeGesture()
+        #expect(doubleTap(&gesture) == [.start, .finish, .startHandsFree, .listenHandsFree])
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 0.4 + doubleTapWindow) == .showHistory)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 0.5 + doubleTapWindow) == nil)
+        #expect(!gesture.isActive)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 8) == .start)
+    }
+
+    /// A third press after the window, or after typing, finishes the hands-free dictation as ever.
+    @Test(arguments: [false, true])
+    func aLateOrTypedAfterThirdPressFinishes(typesFirst: Bool) {
+        var gesture = makeGesture()
+        _ = doubleTap(&gesture)
+        if typesFirst { #expect(gesture.keyPressed(keyCode: letterA, isRepeat: false) == nil) }
+        let at = typesFirst ? 0.5 : 0.45 + doubleTapWindow + 0.05
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: at) == .finish)
+    }
+
     /// Only a tap followed soon by a press is a double tap: not a press after the window, and not a
     /// press after a hold.
     @Test func onlyATapFollowedWithinTheWindowIsADoubleTap() {

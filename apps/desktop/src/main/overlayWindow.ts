@@ -79,6 +79,16 @@ export class OverlayWindowController {
         this.lookupPending = false;
         this.showWhenLocated = false;
         return;
+      case "copied":
+        // Not pasted where the user spoke: the note goes where the user is now, at the mouse
+        // pointer (ADR-DESK-042).
+        this.cancelHide();
+        this.lookupGeneration += 1;
+        this.lookupPending = false;
+        this.showWhenLocated = false;
+        this.anchor = this.pointer();
+        this.show();
+        return;
       case "arming":
         // A new hold during the previous exit animation: start clean, at the new caret.
         this.cancelHide();

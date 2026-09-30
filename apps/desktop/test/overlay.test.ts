@@ -286,12 +286,14 @@ describe("overlay geometry", () => {
     expect(under.y).toBe(fits - 1 + 30 + config.bubbleTooltipGap);
   });
 
-  /** The tip's room beside the pill is its gap, arrow and box, in `tipLineCount` lines. */
+  /** The tip's room beside the pill is its gap, arrow and box, in `tipLineCount` lines, the most any
+   * tip has; a tip of fewer lines has a shorter box. */
   test("the tip takes the room left for it", () => {
     expect(config.tipFootprint).toBe(config.tipGap + tip.height);
     for (const name of allTips) {
-      for (const hotkey of ["rightOption", "function"] as const) expect(tipLines(name, hotkey)).toHaveLength(config.tipLineCount);
+      for (const hotkey of ["rightOption", "function"] as const) expect(tipLines(name, hotkey).length).toBeLessThanOrEqual(config.tipLineCount);
     }
+    expect(config.tipBoxHeight(2)).toBe(config.tipHeight - config.tipLineHeight - config.tipLineSpacing);
   });
 });
 
@@ -407,12 +409,12 @@ describe("tips", () => {
   test("the double-tap tip names the hotkey", () => {
     expect(tipKeycap("doubleTap", "rightOption")).toBe("right ⌥");
     expect(tipKeycap("doubleTap", "function")).toBe("fn");
-    expect(tipKeycap("switchMode", "function")).toBe("space");
+    expect(tipKeycap("agentAndHistory", "function")).toBe("space");
   });
 
   test("the tips say what the key does", () => {
     const words = (lines: ReturnType<typeof tipLines>) => lines.flat().map((part) => ("words" in part ? part.words : part.key)).join(" ").toLowerCase();
-    expect(words(tipLines("switchMode", "rightOption"))).toBe("press space to switch between dictation and agent mode");
+    expect(words(tipLines("agentAndHistory", "rightOption"))).toBe("press space for agent mode, triple-tap right ⌥ for history");
     expect(words(tipLines("doubleTap", "function"))).toBe("double-tap fn to dictate without holding");
     expect(words(tipLines("handsFree", "function"))).toBe("tap fn to finish dictating, or tap esc to cancel");
   });
@@ -424,7 +426,7 @@ describe("tips", () => {
     expect(tipParts("[space] then [hotkey]", "rightOption")).toEqual([{ key: "space" }, { words: "then" }, { key: "right ⌥" }]);
     expect(tipParts("dictating, or", "function")).toEqual([{ words: "dictating, or" }]);
     expect(tipParts("press [esc", "function")).toEqual([{ words: "press [esc" }]);
-    expect(tipLines("handsFree", "function")).toEqual([[{ words: "Tap" }, { key: "fn" }, { words: "to finish" }], [{ words: "dictating, or" }], [{ words: "tap" }, { key: "esc" }, { words: "to cancel" }]]);
+    expect(tipLines("handsFree", "function")).toEqual([[{ words: "Tap" }, { key: "fn" }, { words: "to finish dictating," }], [{ words: "or tap" }, { key: "esc" }, { words: "to cancel" }]]);
   });
 });
 

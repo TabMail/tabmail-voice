@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import AppKit
 import AVFoundation
 import Foundation
 import os
@@ -170,6 +171,8 @@ struct MacServiceRequestTests {
             #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
             #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
             #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
+            #"{"id":9,"method":"insert","params":{"text":"x","restoreDelay":0.5,"session":1.5}}"#,
+            #"{"id":10,"method":"captureTarget","params":{}}"#,
         ]
         for request in requests { await channel.handle(line: Data(request.utf8)) }
 
@@ -177,6 +180,83 @@ struct MacServiceRequestTests {
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
         withExtendedLifetime(service) {}
+    }
+
+    /// `insert` for a dictation `session` after `restore` answered `outcome`, with a stand-in paste
+    /// (tests never post keystrokes or touch the clipboard): the reply's outcome and the texts pasted.
+    private func insert(session: String, restore: @escaping @Sendable (InsertionTargets, Int) async -> InsertionOutcome = MacService.restoreTarget) async throws -> (String?, [String]) {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore(), restore: restore,
+            paste: { text, _ in pasted.withLock { $0.append(text) } }
+        )
+        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"x","restoreDelay":0.5\#(session)}}"#.utf8))
+
+        let line = try #require(lines.withLock { $0.first })
+        let reply = try #require(try JSONSerialization.jsonObject(with: line) as? [String: Any])
+        withExtendedLifetime(service) {}
+        return ((reply["result"] as? [String: Any])?["outcome"] as? String, pasted.withLock { $0 })
+    }
+
+    /// The paste for a dictation whose field and caret were never kept (the helper restarted, or the
+    /// capture failed) pastes nothing: where the caret was is unknown (ADR-DESK-042).
+    @Test func aPasteWithoutItsCapturedTargetPastesNothing() async throws {
+        let (outcome, pasted) = try await insert(session: #","session":99"#)
+        #expect(outcome == "caretMoved")
+        #expect(pasted.isEmpty)
+    }
+
+    /// Only a field and caret back in place are pasted into; a paste without a session (Thunderbird's
+    /// relay) pastes where focus is, as before.
+    @Test(arguments: [InsertionOutcome.inPlace, .appChanged, .caretMoved])
+    func aPasteGoesOnlyWhereTheCaretWasPutBack(restored: InsertionOutcome) async throws {
+        let (outcome, pasted) = try await insert(session: #","session":3"#, restore: { _, session in session == 3 ? restored : .caretMoved })
+        #expect(outcome == (restored == .inPlace ? "pasted" : restored.rawValue))
+        #expect(pasted == (restored == .inPlace ? ["x"] : []))
+    }
+
+    /// The target `captureTarget` keeps at key-down is the one its dictation's `insert` restores: the
+    /// same session's paste goes ahead, another session's finds none. (The restore here only reports
+    /// whether a target was kept, so the test needs no Accessibility trust.)
+    @Test func aCaptureKeepsTheTargetItsOwnPasteFinds() async throws {
+        _ = try #require(NSWorkspace.shared.frontmostApplication, "the capture needs an app in front")
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore(),
+            restore: { targets, session in await MainActor.run { targets.target(session: session) } != nil ? .inPlace : .caretMoved },
+            paste: { text, _ in pasted.withLock { $0.append(text) } }
+        )
+        await channel.handle(line: Data(#"{"id":1,"method":"captureTarget","params":{"session":5}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":2,"method":"insert","params":{"text":"mine","restoreDelay":0.5,"session":5}}"#.utf8))
+        await channel.handle(line: Data(#"{"id":3,"method":"insert","params":{"text":"other","restoreDelay":0.5,"session":6}}"#.utf8))
+
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        let outcomes = replies.compactMap { ($0["result"] as? [String: Any])?["outcome"] as? String }
+        #expect(outcomes == ["pasted", "caretMoved"])
+        #expect(pasted.withLock { $0 } == ["mine"])
+        withExtendedLifetime(service) {}
+    }
+
+    /// The restore a paste asks for compares the kept target's app with the one in front now: another
+    /// app in front answers `appChanged`, the same app with no field kept `inPlace`. (No field is kept,
+    /// so no Accessibility call is made and the test needs no Accessibility trust.)
+    @Test func aRestoreChecksTheKeptAppAgainstTheOneInFront() async throws {
+        let frontmost = try #require(NSWorkspace.shared.frontmostApplication, "the restore needs an app in front").processIdentifier
+        let targets = InsertionTargets()
+        targets.keep(InsertionTargets.Captured(target: InsertionTarget(pid: frontmost == 1 ? 2 : 1, element: nil, selection: nil)), session: 7)
+        #expect(await MacService.restoreTarget(targets, session: 7) == .appChanged)
+        targets.keep(InsertionTargets.Captured(target: InsertionTarget(pid: frontmost, element: nil, selection: nil)), session: 8)
+        #expect(await MacService.restoreTarget(targets, session: 8) == .inPlace)
+    }
+
+    @Test func aPasteWithoutASessionPastesWhereFocusIs() async throws {
+        let (outcome, pasted) = try await insert(session: "", restore: { _, _ in .appChanged })
+        #expect(outcome == "pasted")
+        #expect(pasted == ["x"])
     }
 }
 

@@ -10,6 +10,7 @@ import type { Phase } from "../core/dictationController.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
 import * as config from "../core/config.js";
 import type { DictionaryEntry } from "../core/dictionary.js";
+import type { PasteEntry } from "../core/pasteHistory.js";
 import type { ScreenContext } from "../core/screenContext.js";
 import type { DictationTip } from "../core/tips.js";
 import type { WelcomeStep } from "../core/welcomeWizard.js";
@@ -124,6 +125,11 @@ export interface WelcomeState {
   vscodeFix: VSCodeFix;
 }
 
+/** The paste history a triple tap shows (ADR-DESK-043), the newest first. */
+export interface HistoryState {
+  entries: PasteEntry[];
+}
+
 export interface ContextDebugState {
   context: ScreenContext | null;
 }
@@ -133,6 +139,7 @@ export interface WindowStates {
   settings: SettingsState;
   welcome: WelcomeState;
   contextDebug: ContextDebugState;
+  history: HistoryState;
 }
 
 export type WindowName = keyof WindowStates;
@@ -167,7 +174,11 @@ export type Command =
   | { type: "closeChat" }
   | { type: "openChatLink"; url: string }
   | { type: "answerConfirmation"; confirmed: boolean }
-  | { type: "chatHeight"; height: number };
+  | { type: "chatHeight"; height: number }
+  /** The paste history: an entry clicked, to copy; closed (Escape); its list measured. */
+  | { type: "copyHistoryEntry"; id: number }
+  | { type: "closeHistory" }
+  | { type: "historyHeight"; height: number };
 
 /** A command's outcome: an error message to show, or none. */
 export interface CommandResult {
@@ -202,7 +213,7 @@ export const channels = {
   audioReport: "voice:audio-report",
 } as const;
 
-const windowNames: readonly WindowName[] = ["overlay", "settings", "welcome", "contextDebug"];
+const windowNames: readonly WindowName[] = ["overlay", "settings", "welcome", "contextDebug", "history"];
 
 export function isWindowName(value: unknown): value is WindowName {
   return windowNames.includes(value as WindowName);
@@ -221,7 +232,10 @@ export function isCommand(value: unknown): value is Command {
     case "fixVSCodeSettings":
     case "keepChatOpen":
     case "closeChat":
+    case "closeHistory":
       return true;
+    case "copyHistoryEntry":
+      return Number.isInteger(command.id);
     case "sendCode":
       return typeof command.email === "string";
     case "verify":
@@ -253,6 +267,7 @@ export function isCommand(value: unknown): value is Command {
     case "setConnectorEnabled":
       return isConnector(command.connector) && typeof command.value === "boolean";
     case "chatHeight":
+    case "historyHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;
     default:
       return false;

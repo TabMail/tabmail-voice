@@ -17,10 +17,23 @@ const electron = vi.hoisted(() => {
   }
   class FakeBrowserWindow extends EventEmitter {
     static made: Record<string, unknown>[] = [];
+    static instances: FakeBrowserWindow[] = [];
     readonly webContents = new FakeWebContents();
+    /** What the window was asked: its bounds set, `focus`, `show`. */
+    readonly calls: unknown[] = [];
     constructor(options: Record<string, unknown>) {
       super();
       FakeBrowserWindow.made.push(options);
+      FakeBrowserWindow.instances.push(this);
+    }
+    setBounds(bounds: unknown): void {
+      this.calls.push(bounds);
+    }
+    focus(): void {
+      this.calls.push("focus");
+    }
+    show(): void {
+      this.calls.push("show");
     }
     private destroyed = false;
     isDestroyed(): boolean {
@@ -45,7 +58,8 @@ const electron = vi.hoisted(() => {
     setAlwaysOnTop(): void {}
     setVisibleOnAllWorkspaces(): void {}
   }
-  return { BrowserWindow: FakeBrowserWindow, app: { focus: () => {} }, nativeTheme: { shouldUseDarkColors: false } };
+  const focuses: unknown[] = [];
+  return { BrowserWindow: FakeBrowserWindow, app: { focus: (options: unknown) => focuses.push(options), focuses }, nativeTheme: { shouldUseDarkColors: false } };
 });
 
 // Hoisted above the imports by Vitest, so `Windows` gets the fake.
@@ -56,6 +70,8 @@ const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 afterEach(() => {
   if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
   electron.BrowserWindow.made = [];
+  electron.BrowserWindow.instances = [];
+  electron.app.focuses.length = 0;
   electron.nativeTheme.shouldUseDarkColors = false;
 });
 
@@ -67,6 +83,34 @@ function settingsWindow(platform: NodeJS.Platform): Record<string, unknown> | un
 }
 
 describe("Windows", () => {
+  /** The paste history (ADR-DESK-043): a frameless panel over every other window, shown with the
+   * focus (the list takes clicks and Escape), closed by the caller when it loses it; a second triple
+   * tap moves the open one to the new place and focuses it, rather than opening another. */
+  test("the paste history opens focused where asked, and a second opening moves it", () => {
+    const windows = new Windows(() => null as never);
+    let blurs = 0;
+    const first = { x: 10, y: 20, width: config.pasteHistoryWindowWidth, height: 200 };
+    windows.showHistory(first, () => (blurs += 1));
+    expect(electron.BrowserWindow.made).toEqual([expect.objectContaining({ ...first, type: "panel", frame: false, alwaysOnTop: true, show: false })]);
+    const window = electron.BrowserWindow.instances[0];
+    if (!window) throw new Error("no window");
+    expect(window.calls).toEqual([]);
+    window.emit("ready-to-show");
+    expect(window.calls).toEqual(["show"]);
+    expect(electron.app.focuses).toEqual([{ steal: true }]);
+    window.emit("blur");
+    expect(blurs).toBe(1);
+
+    const second = { ...first, x: 300 };
+    windows.showHistory(second, () => (blurs += 1));
+    expect(electron.BrowserWindow.made).toHaveLength(1);
+    expect(window.calls.slice(1)).toEqual([second, "focus"]);
+    expect(electron.app.focuses).toHaveLength(2);
+
+    windows.setBounds("history", { ...second, height: 120 });
+    expect(window.calls.at(-1)).toEqual({ ...second, height: 120 });
+  });
+
   /** On macOS the sidebar shows the frosted material through a clear window, under inset traffic
    * lights; elsewhere nothing draws a material, so the window has the config's own colour for the
    * theme, never a clear one. */
