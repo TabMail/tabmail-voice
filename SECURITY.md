@@ -9,7 +9,7 @@ Email **security@tabmail.ai** with:
 
 - A description of the vulnerability and its impact
 - Steps to reproduce (proof-of-concept if possible)
-- The affected app version (`MARKETING_VERSION` in `apps/macos/project.yml`)
+- The affected app version (`version` in `apps/desktop/package.json`)
 
 We aim to acknowledge reports within 72 hours and to provide a remediation
 timeline after triage.

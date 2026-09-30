@@ -9,6 +9,8 @@ fall under).
 ## ADR-DESK-001: Native Swift menu-bar app, on-device speech recognition
 
 > ⛔ **Speech-recognition half SUPERSEDED by ADR-DESK-005 (owner 2026-09-24).** The native Swift menu-bar app stands; on-device `SpeechAnalyzer` was removed in favour of backend STT so all platforms share one engine. Kept for history.
+>
+> ⛔ **Native-Swift half SUPERSEDED by ADR-DESK-032 (owner 2026-09-27):** one Electron app for macOS, Windows and Linux replaces the Swift app; `apps/macos/` was removed 2026-09-27 (ADR-DESK-032's cutover amendment). Kept for history.
 
 **Context:** Phase 1 replaces Wispr Flow for basic system-wide dictation. Options: Electron/Tauri
 (cross-platform) or native Swift; cloud STT (Groq Whisper via the backend) or on-device.
@@ -75,7 +77,7 @@ client type.
 backend, so the same engine serves desktop, iOS and Thunderbird later.
 
 **Decision:** The app records 16 kHz mono 16-bit PCM (`AudioRecorder`), wraps it in WAV
-(`WAVEncoder`) and posts it as base64 JSON to the TabMail backend's `POST /dictation/transcribe`,
+(`WAVEncoder`; FLAC since ADR-DESK-039) and posts it as base64 JSON to the TabMail backend's `POST /dictation/transcribe`,
 which relays it to an OpenRouter speech-to-text model. Requires TabMail sign-in (email one-time
 code, same flow as iOS) and an active subscription; dictation counts toward the account's usage.
 
@@ -92,11 +94,21 @@ multilingual accuracy than Apple's on-device model.
   from silence either. The model, chosen by comparison with `Scripts/stt-compare/`, handles
   that input. Recording continues `releaseTailDuration` after the key is released so the last
   word isn't clipped.
-- Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).
-- A failed transcription loses that recording (no retry queue yet). Chunking long dictations
+- ~~Recording auto-stops at `maxRecordingDuration` (5 min ≈ 9.6 MB, under the backend's 10 MiB upload limit).~~
+  Superseded 2026-09-27: auto-stops at 120 s, below.
+- A failed transcription loses that recording (no retry queue yet). (Since ADR-DESK-039 a server
+  error or dropped connection is retried twice before it does.) Chunking long dictations
   (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
   issue #1 (P3).
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
+
+**Amendment 2026-09-27 — the length cap is 120 s.** Owner: *"there was a bug before about this
+recording limit being five minutes instead of just two, which is the 120 second limit that fits the
+back end… we should do it for two minutes for now until the chunking arrives in the back end."* The
+5-minute cap fitted the backend's 10 MiB upload limit, but the backend's transcription model takes
+at most 120 s of audio (backend ADR-022), so a longer recording was uploaded only to fail.
+`maxRecordingDuration` is 120 s in both apps (`DictationConfig`, `config.ts`), for a hold and
+hands-free alike; the recorder keeps nothing past it. Raise it once chunking (issue #1) lands.
 
 ## ADR-DESK-006: Boot the microphone at key-down, reveal the overlay at the caret after the hold
 
@@ -113,7 +125,8 @@ incoming sound relative to the range coming in (`LevelEnvelope`: EMA floor and p
 fast on their outward side, slow inward), so it follows the voice on quiet and loud mics alike
 (telling speech from background is still the model's job), then a circle with a spinning rim while
 transcribing. On exit it plays in reverse (the pill shrinks into the swirl, which disperses).
-The overlay uses only the icon's blue → purple. The pill is
+The overlay uses only the icon's blue → purple (but for agent mode's red-pink pill glow, ADR-DESK-036's
+2026-09-29 amendment). The pill is
 the surface for status now and agent responses later (as on iOS).
 
 **Consequences:**
@@ -143,6 +156,29 @@ the surface for status now and agent responses later (as on iOS).
   "unsupported" yet acts on; Electron: `AXManualAccessibility`), once per process, so the tree is
   ready before the user dictates. Other apps are not touched: `AXEnhancedUserInterface` has
   window-management side effects in some of them.
+
+**Amendment 2026-09-28 — VS Code with accessibility support off.** Owner: in VS Code the overlay
+opened at the start of the line, not at the cursor. Measured on VS Code 1.139 through
+`voice-macos`'s `caretAnchor`: with `"editor.accessibilitySupport": "off"`, VS Code's default
+EditContext input answers Accessibility with no text and the whole line's box, so no caret column
+exists to read (anchor at the line's start, x 3359 where the caret was at x 3533). With the setting
+at its default (`auto`, which `AXManualAccessibility` turns on) or with `"editor.editContext": false`
+(the classic input sits at the caret, 1 pt wide) the anchor is exact. Anchoring at the mouse
+pointer's x on the caret's line was tried and rejected by the owner. Users can't be expected to find
+the setting, so the welcome wizard's Accessibility step detects it (`vscodeHidesCaret` over VS Code's
+user `settings.json`, macOS only for now, where the caret is found) and offers **Fix VS Code's
+Settings**, which sets `editor.editContext` false and nothing else, parsed and edited with
+Microsoft's `jsonc-parser` (VS Code's own) so comments and layout are kept. `editor.editContext`
+false was chosen over turning accessibility support back on because the user switched that off on
+purpose. VS Code applies the change without a restart; the caret is exact from the next cursor move.
+A file that doesn't parse is never offered or written. The wizard opens on first launch and from
+Welcome Guide…; nothing is changed without the button. Settings › Permissions offers the same fix
+(owner, 2026-09-28): a VS Code row with Fix Settings, shown only while it's needed, the section
+marked for attention meanwhile. The file is rewritten in place, not through a
+temporary file and a rename, so a settings file that is a symlink (dotfile managers) stays one; a
+crash inside that single write could shorten it. Only the default profile's `Code/User/settings.json`
+is read: VS Code profiles (`User/profiles/<id>/`), language-specific and workspace settings, VS Code
+Insiders and other VS Code-based editors are not checked yet.
 
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
@@ -226,6 +262,61 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
   2026-09-25: not a risk for dictation; no guard. The reply is only trimmed of surrounding blank
   space before it is pasted.
 
+**Amendment 2026-09-28 — only the text around the caret, and a 1.5 s cap.** Owner: the cleanup
+"doesn't really need to be that heavy"; "8K characters is useless ... only a brief capture text
+should go for the cleanup. The full screen content should only be available for the agent". Measured
+over 133 dictations in a debug log: release to paste took a median 1.7 s, of which the cleanup's round
+trip was a median 0.75 s (0.97 s with more than 8k characters of screen text), and one timed out at
+3 s with about 4k characters. The cleanup now gets, as `screen_text`, only the rendered screen within
+`cleanupContextBefore` (500) code units before the caret and `cleanupContextAfter` (200) after it,
+cut between characters, markers as rendered (`textAroundCaret`). The caret is the marker on the
+focused field's `» ` lines; with no field holding the caret, the cleanup gets no screen text. Agent
+mode's tools still get the whole screen. `cleanupTimeout` is 1.5 s (was 3 s); past it the transcript
+is pasted as heard, as before. The backend prompt's wording ("the window's visible text") is
+unchanged; the excerpt keeps its markers.
+
+**Amendment 2026-09-29 — the cleanup runs in the transcription request.** Owner: the cleanup
+"is always done", so the app sends "all the cleanup related information" with the recording and the
+backend "calls the transcriber and the cleanup all together on one go"; the cleanup deadline stays and
+"it should be the backend that enforces it". A dictation now makes one request,
+`POST /dictation/transcribe` with a `cleanup` block (`DictationCleanup.variables`: app name, web host,
+terminal program, window title, the text around the caret and the dictionary, one word per line), and
+gets `{ text, cleaned_text }` back (backend ADR-027). The second authorization, quota and throttle pass
+the cleanup's own request paid, and its round trip, are gone. The app pastes `cleaned_text`, or the
+transcript as heard when it is empty (the backend's cleanup failed, was refused or ran past its 1.5 s
+deadline) or absent (a backend from before this change) (`DictationCleanup.pasted`). The app's own
+`cleanupTimeout` is gone; the request's `transcriptionRequestTimeout` covers both. Consequences:
+- The screen read must be done by the upload, since its text goes with the recording: the upload
+  waits up to `contextWait` for it (it was the transcript's arrival). The read starts at key-down, so
+  it is usually done; one that is not goes out empty, as before. The recording's screen terms
+  (ADR-DESK-038) see a read done in that wait too.
+- Transcription and cleanup share one token: an account switch during the request sends nothing
+  under the other account and pastes that request's cleanup (both ran under the account signed in at
+  the upload, as this ADR required).
+- Agent mode's transcription sends no `cleanup` and is unchanged.
+- Every field is cut to the backend's per-field limit (`config.cleanupFieldMaxLength`, 20,000 UTF-16
+  code units, its `cleanup.maxFieldChars`), its start kept, between characters. Over the limit the
+  backend refuses the whole request, the transcription included, and a window title is whatever the
+  app or web page sets. The cut bounds the cleanup model's input only.
+
+**Amendment 2026-09-28 (later) — never no screen for want of the marker; no selection.** Owner: "we
+should not have empty screen just because we can't find the correct character"; "if we are able to
+find the line where the character is ... including that line in the context"; and "when simply
+dictating i think that selected text should not even go through". In the owner's debug log the helper
+placed no marker in almost every terminal capture without tmux (the terminal's lines are kept as a plain
+field) and in about half the captures of one chat app (the walk hit its time budget before the field). `placeCaret` now puts one caret
+marker in the screen text, in order: the helper's marker on the `» ` lines; else on the caret's line as
+the helper read it around the caret (`textBeforeCaret` to its last line break, the selection as the
+screen still shows it, `textAfterCaret` to its first line break, trailing blanks dropped), found as
+whole `> ` field lines, the last such on screen, the selection then cut from the screen (a terminal
+without tmux renders its lines so; the caret's text inside a word, a longer line or a page line is not
+its line); else after the screen, the helper's text
+around the caret rendered as a focused field (`» ` lines). The excerpt is then cut around that marker as
+before; the screen text is empty only without a screen read. A selection is left out wherever the caret
+is placed: the dictation replaces it, so the cleanup gets the caret alone, and the reach before and after
+counts no selected text. A caret line that is also another whole field line lower on screen places
+the marker there; the owner asked for the line search.
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the
@@ -252,7 +343,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   - a top rail of category labels, with one bubble per step;
   - Back and Next buttons, with Finish on the last step;
   - bubbles that return only to steps already reached.
-- **Steps.** Consent → Permissions (Microphone, Accessibility) → Features (screen reading).
+- **Steps.** Consent → About You (the user's name, ADR-DESK-035) → Permissions (Microphone,
+  Accessibility) → Features (screen reading).
 - **Consent step.** It says what dictation sends: the voice, and the text in the front window
   while screen reading is on. It says where that goes (TabMail and its AI providers, not stored)
   and links the Terms of Service and the Privacy Policy. Next stays disabled until the user
@@ -291,6 +383,9 @@ grants. The privacy policy tells users they can switch screen reading off.
 > selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
 > timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
 > timeout bullets below are superseded where it says so.
+>
+> **Later (ADR-DESK-021):** the Space hint became a tip that retires once learned, and a double tap is
+> back, for hands-free dictation (not agent mode).
 
 **Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
 request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
@@ -327,7 +422,8 @@ desktop platform, not the Thunderbird email prompts.
 **Consequences:**
 - Agent mode adds a model round trip before the tool runs (light tier, reasoning off).
 - No client-side tools: the Mac app at 0.1.0 would read Thunderbird's tool registry, and a
-  desktop tool listed there would reach Thunderbird's agent too. The later Thunderbird connector
+  desktop tool listed there would reach Thunderbird's agent too. *(Later (ADR-DESK-023): the app has
+  its own `macos` registry, and the Answer prompt calls tools that run on the user's computer.)* The later Thunderbird connector
   follows the same tool-choice contract (a third tool name; ADR-DESK-014).
 - Apps whose accessibility tree hides the selection (thin trees, some Electron apps) can't be
   edited; the request fails with "Select the text to edit". Copying the selection with ⌘C
@@ -387,7 +483,7 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
 ## ADR-DESK-012: The app is TabMail Voice (`ai.tabmail.voice`)
 
 **Context:** Owner, 2026-09-25. The app built as `TabMail.app` (bundle id `ai.tabmail.desktop`). The
-Thunderbird installer's pkg (`tabmail-release-helpers/tb-mac/build-mac-installer-local.sh`) installs
+Thunderbird installer's pkg installs
 `/Applications/TabMail.app` too: the launcher that starts Thunderbird, carrying `tabmail.xpi` and
 the native-fts `fts_helper`, which `tabmail-native-fts` looks for at that path. Dragging this app into
 `/Applications` would replace the launcher and break Thunderbird's local search. "Tabby" was ruled out
@@ -413,6 +509,8 @@ renamed `tabmail-voice` on 2026-09-26 (owner), see ADR-DESK-013.
   where they describe history.
 
 ## ADR-DESK-013: One repository for TabMail Voice on every platform, one folder per platform
+
+> ⚠️ **Amended by ADR-DESK-032 (owner 2026-09-27):** the platforms share one Electron app, `apps/desktop/`, not a native app each; `apps/macos/` was deleted at cutover (2026-09-27), with `Scripts/copy-worktree-secrets.sh` and the signing-config template.
 
 **Context:** Owner, 2026-09-25: the repository will be renamed `tabmail-voice` on GitHub, with the
 macOS app in a folder of its own so that other platforms (Windows, Linux) can follow. The layout
@@ -710,3 +808,1155 @@ protocol-and-registry design with generic connectors.
   another branch changes that file); a second app-backed tool moves it into the protocol.
 - No behaviour change: the suite passes unchanged except `fitted(_:toSelection:)` moving from
   `DesktopAgent` to `EditTool`.
+
+## ADR-DESK-021: Tips that retire once learned, and hands-free dictation on a double tap
+
+**Context:** Owner, 2026-09-26: the Space hint (ADR-DESK-011 amendment) should become a real tip,
+"sort of a TipKit": "Press space to switch between dictation and agent mode", shown at the
+beginning. After a dictation held for more than 20 seconds, a second tip: double-tap the hotkey to
+dictate without holding it. The double tap starts a hands-free dictation that goes on until the
+hotkey is tapped again (finish) or Escape is pressed (cancel). The double tap ADR-DESK-011 removed was
+for agent mode; this one is for dictation, and Space still switches the mode.
+
+**Decision:**
+- Tips (`DictationTip`, `TipBook`) behave as TipKit's: a tip shows until the user has done what it
+  teaches, or has seen it ~~`switchModeTipMaxDisplays`~~ (10) / ~~`doubleTapTipMaxDisplays`~~ (5) times
+  (now each tip's `DictationConfig.TipSettings.maxDisplays`, amendment 2026-09-27),
+  then never again; the counts and the learned flags are kept in UserDefaults (`tip.<name>.displays`,
+  `tip.<name>.learned`; no user content). Switching the mode learns the Space tip; a double tap
+  learns the double-tap tip. The TipKit framework itself is not used: the overlay is a click-through,
+  non-activating panel, so TipKit's views (dismissed by a click) do not fit, and its rules and
+  datastore are global state a unit test cannot own.
+- The controller decides which tip shows (`DictationController.tip`); the overlay draws it in the
+  same dark tooltip under the pill (`TipTooltip`, formerly `ModeHint`) and shows none over the warm-up
+  swirl. The Space tip is due as the pill starts listening; the double-tap tip once a hold has gone on
+  `doubleTapTipHoldDuration` (20 s), shown right then, while the user is holding. One tip at a time,
+  each for its display duration (2.5 s, 4 s); a tip that is used (Space) goes away at once.
+- Gesture (`PushToTalkGesture`): a press released within `minimumHoldDuration` is a tap (discarded
+  unseen, as before); a press within `doubleTapWindow` (400 ms) of a tap's release is `startHandsFree`:
+  the overlay shows at once (no reveal delay: the double tap is deliberate). Released as a tap, the
+  dictation goes on hands-free; held, it finishes on release like any hold. Hands-free, the next
+  hotkey press finishes (its release does nothing), Escape cancels, Space switches the mode; the
+  monitor keeps that Space and Escape from the app in front. Other keys reach the app and change
+  nothing (unlike a hold, where a key means a chord and cancels). Typing between the two taps makes
+  them no double tap.
+- A dictation that ends without the hotkey (length cap, failure, Escape, the menu) ends hands-free
+  listening: the app calls `HotkeyMonitor.dictationEnded()` on every phase past listening, so Space and
+  Escape are never kept from the app while nothing listens.
+
+**Consequences:**
+- Hands-free listening is capped like a hold (`maxRecordingDuration`, 120 s since the ADR-DESK-005
+  amendment of 2026-09-27), then transcribed.
+- While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
+- ~~A first tap is still a discarded recording start (the microphone boots and stops); a double tap
+  starts it twice.~~ Superseded by the amendment below.
+
+**Amendment 2026-09-26 (owner, after trying it):** "the double tap launches slower than just
+holding"; the tip "is just too wide in a single line … a bit of a larger font … not go too much
+wider than the pill itself, so it should be multi-line".
+- The debug log showed why: the first audio came ~1.4 s after a double tap against ~0.6 s after a
+  hold, because the first tap's release discarded its recording and the second press restarted the
+  microphone. Now a tap's release (in `arming`) keeps that recording, unseen, for `doubleTapWindow`;
+  a second press latches it hands-free and shows it at once (`latchHandsFree`), the microphone
+  already running. With no second press it is discarded as before; a hold pressed meanwhile (after
+  the gesture's window) discards it and starts afresh. The microphone is still released after
+  every dictation, at most `doubleTapWindow` after a lone tap. A microphone that fails to start while a released tap waits for its
+  second press is discarded unseen too; a failure after the second press shows, and a double tap
+  after a failed tap starts the microphone again.
+- A tip is three centred lines at 13 pt ("Press [space] to switch / between dictation / and agent
+  mode"; "Double-tap [key] / to dictate / without holding"), each `tipLineHeight` tall, so its height
+  is a config constant (`tipHeight`) and `opensUpward` still counts it exactly. The overlay canvas grew
+  to 210 pt tall so the tip and its shadow fit under the vertically centred pill; on the screen's
+  bottom lines the overlay is raised that much further above the caret.
+- The double-tap tip did not show in the owner's test because it was already learned (a double tap
+  came first), and the Space tip had used its 10 displays: working as decided, not a defect.
+
+**Amendment 2026-09-27 (owner):** "when in double tap lock in mode, we should show tool tip saying
+tap <hotkey> to finish dictating or tap <esc> to cancel", shown "whole time, every time"; and "the
+exact text and duration, or how many times we show it, as a configurable variable that we can
+change easily at a single location."
+- A third tip, `handsFree`: "Tap [hotkey] to finish / dictating, or / tap [esc] to cancel". It shows
+  for the whole hands-free listening, on every hands-free dictation: no display duration and no
+  maximum, so it is never counted out, and nothing marks it learned. It takes the Space tip's place
+  in hands-free listening (Space still switches the mode there; the Space tip still shows on holds).
+  It goes when listening ends (finish, cancel, Escape, the length cap).
+- Asked, the owner chose "only once truly hands-free": the tip is due when the double tap's second
+  press is released as a tap (`PushToTalkGesture.Action.listenHandsFree`), not at that press. While
+  the press is down no tip shows; still held once a tap is over (`minimumHoldDuration`), it is a hold
+  and gets a hold's Space tip, finishing on release. A Space tip already up as a long tap ends gives
+  way to the hands-free tip.
+- Asked, the owner chose "above pill when opening up": in an overlay opened above the caret's line,
+  a tip with no display duration (the hands-free one) goes over the pill, and over agent mode's
+  bubbles when they show, its arrow pointing down (`OverlayPanelController.tipGoesAbove`,
+  `hintCentre(over:bubbles:size:)`), so it never covers that line for a whole dictation. Timed tips
+  stay under the pill, covering the line only briefly. The canvas grew from 210 pt to room for a tip
+  and its shadow past the bubbles on each side of the centred pill (derived in `overlayCanvasSize`).
+- Each tip's words, display duration and maximum displays are one `DictationConfig.TipSettings`
+  (`switchModeTip`, `doubleTapTip`, `handsFreeTip`; `DictationTip.config`), replacing the four separate
+  duration and count constants. Any `[key]` in a line is drawn as a keycap reading `key` (`[space]`,
+  `[esc]`), and `[hotkey]` as the dictation key's (`TipTooltip.parts`); `displayDuration` nil means
+  "while it applies", `maxDisplays` nil "every time". The tooltip's layout still counts on
+  `tipLineCount` lines, so a tip's `lines` must keep that count.
+- Ported to the Electron app (ADR-DESK-032) the same day: the `voice-hotkey` helper sends
+  `listenHandsFree`; `config.switchModeTip`/`doubleTapTip`/`handsFreeTip` (`TipSettings`, null for
+  nil) and `tipParts`; `tipGoesAbove`/`hintCentreOver` in `overlayGeometry.ts`, the main process
+  telling the overlay page which way it opened (`OverlayState.opensUpward`, pushed on each
+  placement).
+
+**Amendment 2026-09-28 (owner: "fix the hands-free bug"):** a double tap's second press released as
+a tap made the helper hands-free even when no hands-free dictation listened. That happens when the
+press came while the last dictation was still transcribing or agent mode was writing (the
+controller ignores it), when its dictation failed to start, or when its dictation ended while the
+key was down (the menu, a lost microphone). The helper's only reset, `dictationEnded` at the end of
+a dictation, had then already come before that release, so Space and Escape stayed swallowed until the next hotkey press. Now the
+controller answers a `listenHandsFree` that finds nothing listening with `onNothingListening`, which
+sends the helper `dictationEnded` too. The helper still goes hands-free for the moment the round
+trip takes.
+
+## ADR-DESK-022: The Answer tool, the chat window, and agent tools switched on and off
+
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** the chat window no longer replaces the pill or
+> opens at the caret's line (`chatFrame`, `chatOpensUpward`): it opens over the pill, which stays
+> where it was with its bubbles (under them only without room over them), and rests there as a small
+> circle between follow-ups. The status pill inside the window is gone.
+
+**Context:** Owner, 2026-09-26: agent mode gains an Answer tool whose reply is shown, not pasted, in a
+chat window that grows from the pill. With the window open, the hotkey starts a follow-up, "always in
+agent mode". Escape or the window's X closes it; untouched it closes after 30 seconds, "like iOS
+undo", with a bar showing the time left; a hover, click or scroll ends that timeout for good ("the
+30-second thing is when there's no behavior"), and a click elsewhere does not close it. The owner also
+asked that the availability of each tool be sent to the backend, "because the tool JSON definitions
+live in the backend", and that every tool be in the welcome wizard and Settings, "toggleable, on by
+default". First built in the Swift app; built here in the Electron app (ADR-DESK-032), which is the
+one that ships.
+
+**Decision:**
+- `src/core/agent/tools.ts`: `AnswerTool` (`answer`); its prompt `system_prompt_desktop_answer`
+  (backend ADR-023 amendment) replies with text that `deliver` hands to `ToolContext.showAnswer`.
+  Each tool carries a `settingsDescription` and a `chatCaption` (what it did with its text; none for
+  Answer).
+- The tools offered (`DesktopAgent.tools(context, enabled, emailAppAvailable)`): the selection's
+  writing tool (Edit or Compose), Thunderbird while an email app is available, and Answer, each only
+  while enabled. None → `AgentFailure("noToolEnabled")`, with no completions call; one → it runs,
+  with no choice call; more → the choice request lists them in `available_tools`
+  (`CompletionsClient.complete`), and a reply naming a tool not offered is `noTool`. The agent's pick
+  of the other writing tool is no longer overruled: that tool is not offered.
+- `AppSettings` keeps the tools switched OFF (`disabledAgentTools`), so every tool, and every tool
+  added later, is on until the user turns it off. `DictationSettings.enabledTools` is part of the
+  key-down snapshot (ADR-DESK-017). Settings' Agent mode section and the wizard's Features step show
+  one switch per tool, with its icon and `settingsDescription` (`setAgentToolEnabled`).
+- `src/core/agent/agentChat.ts`: `AgentChat` (in memory only, gone when the window closes; root
+  ADR-004) holds the turns: the request, the tool and its reply (an answer, or the text another tool
+  pasted or sent). A follow-up sends `chatTranscript` to every prompt as `conversation`
+  (`User: …` / `TabMail[ [caption]]: …`), so "why?" or "shorter" refers to the last reply. A
+  follow-up another tool carries out is added to the chat with its caption. `formattedReply` renders
+  inline Markdown only; a link that is not a web page's (`opensLink`) shows as plain text, as a reply
+  carries the words on screen.
+- `DictationController.chat` is the window's state (`onChatChange` on open and close). An answer
+  opens it (`closesAt` = now + `chatTimeout`); `keepChatOpen()` (a hover, click or scroll in the
+  window, or a follow-up) clears the timeout, and does nothing once it has closed; `closeChat()`
+  (Escape, X, or the timeout) drops the conversation and discards a follow-up under way, or the
+  failure a follow-up left showing. With the chat open, `start()` is a follow-up:
+  agent mode from the start, Space switches nothing, no tips.
+- `PushToTalkGesture.isChatOpen` in the `voice-hotkey` helper (the `setChatOpen` request, sent on
+  every open and close and again when the helper restarts): Escape is kept from the app and closes
+  the window (the `closeChat` action), during a follow-up too, held or hands-free, which closing it
+  cancels; a held follow-up's key-up then does nothing. The helper handles each request in its own
+  task, so two sent together can be applied in either order (found in review: an open and a close
+  together left Escape kept after the window closed); the main process sends the hotkey's state
+  (`configure`, `setChatOpen`) one request at a time, each after the last is answered, so the helper
+  ends in the state sent last. A failed request holds up none after it.
+- The conversation belongs to the account it was held under: `AccountModel.onAccountChange`
+  (sign-out, or another account signing in, not a refreshed token) ends it and any agent request
+  under way before the next account can send anything. A dictation under way goes on and is pasted
+  as heard, without the cleanup (ADR-DESK-008).
+- Nothing that finishes late writes to a newer chat: every step of a request checks its generation
+  after each await, the answer and the delivery too, and the chat window drops a caret lookup still
+  under way when it opens, so it stays where it opened.
+- `OverlayWindowController.update(phase, chatOpen)`: the overlay window shows the chat window
+  instead of the pill while the chat is open, takes the mouse only then (`setIgnoreMouseEvents`), and
+  fits the height the page measures (`chatHeight`, at most `chatMaxHeight`, then it scrolls to the
+  newest turn when a turn, the request under way or the follow-up's status changes, and not for a
+  push that shows nothing new, so an earlier answer the user scrolled up to stays put), so only
+  the shadow's margin around it catches clicks. It opens where the pill was (`chatFrame`), below the caret's line,
+  or above it when the tallest window would not fit below (`chatOpensUpward`), and stays there for
+  follow-ups. The window accepts the first click (`acceptFirstMouse`) without taking focus. The page
+  sends `keepChatOpen` on pointer enter, move, down and wheel. A link opens through the main process
+  (`openChatLink`), which checks it again and opens it only while the chat is open.
+
+**Consequences:**
+- The backend's ADR-023 amendment deploys before this build: an older backend ignores
+  `available_tools` and has no answer prompt.
+- Closing the chat while a follow-up is running cancels it before its next step: nothing more
+  reaches the app, but a Thunderbird request closed between its paste and its Return is left typed,
+  unsent, in TabMail's chat (the relay's cancellation, as before).
+- The conversation is sent in full with every follow-up (no truncation); a very long one ends in a
+  backend context-length error for that follow-up.
+- Whether hover and the first click reach the never-focused overlay window on macOS is checked by
+  hand; the tests drive the page's events and the window's calls.
+
+## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
+
+**Context:** Owner, 2026-09-26: agent mode gains tools that run on the user's computer (calendar,
+reminders, contacts, file search, email prefill, notes, messages, shortcuts, web), "the tool JSON
+definitions live in the backend", and "sending or creating anything, you should ask for confirmation
+first". The backend gave the app its own `macos` platform, whose Answer prompt runs the
+function-calling loop with the tools the app lists in `available_tools` (backend ADR-017
+amendment), starting with its own date tools. ADR-DESK-011's "no client-side tools" held while the
+app read Thunderbird's registry; it no longer does. First built in the Swift app; built here in the
+Electron app (ADR-DESK-032), which is the one that ships.
+
+**Decision:**
+- The Answer prompt is a loop (`DesktopAgent.answer`); Edit, Compose and Thunderbird stay one call
+  each, and the choice stays one call. Each round (`CompletionsClient.round`) sends tools on
+  (`disable_tools: false`), `available_tools` = the backend's date tools
+  (`config.answerServerTools`) plus every `LoopTool`'s name (`DesktopAgent.answerTools`), and, after
+  the first round, the loop's `conversation_state`. A round either replies (the answer) or returns
+  `tool_calls` (each an `id`, a function `name` and its `arguments` as a JSON string; anything else
+  is `invalidResponse`) and the state.
+- The state stays opaque JSON: the app appends one `role: tool` message per call to its
+  `harmony_messages` (`content`, `tool_call_id`), sets `current_round` to the rounds it has run, and
+  sends every other field back as it came (reasoning signatures included). The backend's round limit
+  counts that `current_round`, as for the iOS app (`BackendClient.sendCompletionsWithToolsInternal`).
+  State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
+  `AbortSignal` is checked before each round and each call: a request cancelled while a tool ran
+  runs no later call and sends no further round.
+- `LoopTool` (`src/core/agent/loopTool.ts`): a tool that runs on this computer: its backend function
+  `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
+  a read), and `run(args)`. The controller takes them as `DictationDependencies.loopTools`, which the
+  main process builds (a tool reaches the OS through a native helper); the list is empty until the
+  first connector (a later PR). The backend's server tools (the date tools) run on the backend.
+- `DictationController.runLoopTool`: a call to a tool the app doesn't have, or with arguments that
+  aren't a JSON object, runs nothing and tells the model why (`Error: …`), as does a tool that
+  throws (its error's message). The chat window opens for the first tool (if the request was not a
+  follow-up), showing the request and the tool's `progressLabel` (`AgentChat.activity`) while it
+  runs. A tool with a `confirmation` asks it in the window (`AgentChat.confirmation`, Cancel /
+  Confirm, the `answerConfirmation` command) and runs only once confirmed; declined, the model
+  reads `config.loopToolDeclined`. An answer that comes before the question has shown for
+  `config.chatConfirmationMinimumDisplay` (half a second) is ignored: the second click of a
+  double-click on one question's Confirm, or a click aimed at its card as the next question
+  replaces it, would otherwise confirm a question the user never saw (found in review; a question
+  id sent back with the answer would catch only the stale card). Closing the window or cancelling
+  the request declines the question at once (`teardown`, the one place a request ends) and drops
+  the request: the round's request in flight is cancelled, the round's later calls don't run, and
+  nothing is left waiting for the answer. A tool still running for a request that ended clears
+  nothing of a newer one's.
+- The chat window's timeout starts when the first answer joins it, and only if the user has not
+  touched it (`AgentChat.touched`, which the page reads too, so a touch counts before the timeout
+  starts): a window a tool opened waits for the answer, and one touched while a tool ran stays
+  open. Each window opens untouched, so one touched and closed leaves the next to
+  time out. A request that fails, is cancelled or ends with the account after a tool opened an empty
+  window closes it (`teardown`): the pill says what failed, and the next hold dictates.
+- The date tools are not a switch in Settings or the wizard: they read nothing of the user's and
+  only make dates right. Each tool that runs on this computer adds its switch with its connector.
+
+**Consequences:**
+- The backend's `macos` platform (ADR-017 amendment) is deployed before this build: an older backend
+  offers the Answer prompt no tools, and the answer is written without them.
+- Server tools run inside a round and show no progress in the chat window (the whole stream is read,
+  then parsed); a slow server tool (web search, later) would need the stream read as it arrives.
+  *(Later (ADR-DESK-036): the stream is read as it arrives, and a server tool's start and end show.)*
+- A request waiting on a confirmation holds agent mode: the hotkey starts nothing until the user
+  confirms, declines or closes the window, or the question's time runs out (below).
+- Each round has the completions request timeout of its own (`completionsRequestTimeout`); a tool's
+  run has none. A confirmation had none at first.
+
+**Amendment 2026-09-28: a question has 30 seconds.** Owner: "Confirmation should get a time limit of
+30 seconds max, and it should show a timer ticking, similar to the undo toast that we have." (It came
+up as an event confirmed after its time had passed.)
+- A question left unanswered for `config.chatConfirmationTimeout` (30 seconds) is declined: the tool
+  doesn't run, and the model reads `config.loopToolUnanswered` ("didn't confirm in time"), not the
+  decline, so it can say why. A touch in the window doesn't stop the clock, as it does the window's
+  own timeout: the limit is a maximum.
+- `AgentChat.confirmationExpiresAt` says when; the card shows the time left as a thin bar along its
+  bottom edge, the chat window's `TimeoutBar` (itself the iOS undo toast's), timed by the question's
+  own timeout.
+- Each question has its own clock, stopped by any answer (the user's, the window closing, the request
+  ending), so one answered in time never declines the next.
+
+## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
+
+**Context:** Owner, 2026-09-26: the Answer prompt's tools reach the user's apps, each a switch in
+Settings and the welcome wizard, "toggleable on by default"; "sending or creating anything, you
+should ask for confirmation first"; a macOS permission refused fails with a message saying where to
+grant it. The backend defines the four tools (`calendar_read`, `calendar_event_create`,
+`reminders_read`, `reminder_create`, `src/tools/macos/`), their dates ISO 8601 without an offset, in
+the user's zone. First built in the Swift app; built here in the Electron app (ADR-DESK-032).
+
+**Decision:**
+- A connector is an app the tools reach (`src/core/agent/connectors.ts`: `Connector`, its display
+  name and description), and each `LoopTool` names its `connector`. Settings stores the switched-off
+  names (`disabledConnectors`, so a new connector starts on and a retired name is ignored); the
+  enabled ones are in the key-down snapshot (`DictationSettings.enabledConnectors`, ADR-DESK-017),
+  and a request lists in `available_tools`, and runs, only the tools of the connectors on then. The
+  switches follow the agent tools' in Settings' Agent mode and the wizard's Features step
+  (`setConnectorEnabled`).
+- The tools are `src/core/agent/calendarTools.ts` over an `EventStore` the main process gives them;
+  on macOS that is `voice-macos` (`EventStore.swift`, EventKit), elsewhere there is none and no
+  connector is offered or shown. Reads need nothing confirmed; adding an event or a reminder asks,
+  and the question is built from the same draft the tool then adds, so what is confirmed is what is
+  added. A day as an event's start is an all-day event; with no end, an event lasts
+  `config.calendarEventDefaultDuration` (an hour); a day as an end means through that day, and an
+  all-day event over several days reads as its first to its last day. Bad or missing arguments
+  throw `LoopToolArgumentError`, which the model reads (ADR-DESK-023).
+- The backend's dates are parsed in the local zone in core (`LocalDateTime`), and cross the wire as
+  milliseconds since 1970, so the helper does no date parsing; a reminder due on a day carries
+  `dueHasTime: false` and is stored with no time. A reminder's due date is stored as Gregorian
+  components in the Mac's zone (`ReminderItem.dueCalendar`), as EventKit reads them whatever
+  calendar the Mac is set to: in the Mac's own calendar a Buddhist-calendar Mac stored a date 543
+  years late. The helper sets an event's `isAllDay` before its dates (`EventKitStore.fill`): set
+  after, EventKit moves an all-day event's end back to its first day, losing the rest.
+- `calendar_read` refuses a range longer than `config.calendarReadMaxDays` (four years of 365
+  days): EventKit reads at most four years of events for one request and silently drops the rest,
+  so a longer read would report events missing. The model is told to read it in parts.
+- `EventKitStore` takes its `EKEventStore` and authorization status (EventKit's own by default),
+  and `MacService.register` its `EventKitStore`, so the helper's tests read and save through a
+  stand-in `EKEventStore` subclass, never the user's calendars.
+- The helper asks for full access on first use (`requestFullAccessToEvents`/`…ToReminders`); the
+  packaged app carries the usage strings (`NSCalendarsFullAccessUsageDescription`,
+  `NSRemindersFullAccessUsageDescription`) and the `personal-information.calendars` entitlement,
+  since the prompt is attributed to the app. A refusal (a request for access that fails counts as
+  one), or no default calendar or list, goes back by
+  name (`calendarNoAccess`, `remindersNoAccess`, `noDefaultCalendar`, `noDefaultList`) and becomes an
+  `EventStoreFailure` whose message names where to grant access (System Settings › Privacy &
+  Security › Calendars or Reminders); the model reads it and tells the user.
+- A call waits `config.eventStoreRequestTimeout` (two minutes), long enough for the user to answer
+  the permission prompt.
+
+**Consequences:**
+- A new connector is a name in `connectors.ts`, a tools file taking its OS access as an interface,
+  and the helper methods behind it; the switch, the snapshot and the offer come with the name.
+- The permission prompt raised from a helper process, attributed to the app, is checked by hand on a
+  signed build (TESTS.md).
+
+## ADR-DESK-025: Contacts, the third app the Answer tool reaches
+
+**Context:** Owner, 2026-09-26: the Answer tool looks people up in the user's contacts and adds
+them (the backend's `contacts_search` and `contacts_add` in its `macos` registry), under the same
+rules as Calendar and Reminders (ADR-DESK-024): one switch, on by default, in Settings and the
+wizard; adding asks first; access is asked on first use and a refusal says where to allow it. First
+built in the Swift app; built here in the Electron app (ADR-DESK-032).
+
+**Decision:**
+- The `contacts` connector, with `src/core/agent/contactsTools.ts`: `ContactsSearchTool` and
+  `ContactsAddTool` over a `ContactStore` interface. On macOS the store is `voice-macos`
+  (`ContactStore.swift`, the Contacts framework); elsewhere there is none.
+- A search matches a contact's name (either way round), company or an email address, ignoring case
+  and accents (`ContactMatch`), in the user's sort order. The helper matches, reading every contact
+  it enumerates (the framework's name predicate matches neither email addresses nor accents) and
+  stopping at the limit, so the address book never crosses the wire. The model sees at most
+  `config.contactsSearchMaxResults`; the tool asks for one more to say that more match. Phone numbers
+  are returned, not searched.
+- `contacts_add` needs a name, a company or an email address; one email address and one phone
+  number, as the backend's schema gives them. The question and the contact come from one `draft`,
+  and every field added is shown (ADR-DESK-024). It goes to the default container.
+- Access is asked on first use (`CNContactStore.requestAccess`); without it (a request that fails
+  counts as a refusal) the helper refuses with `contactsNoAccess`, which becomes a
+  `ContactStoreFailure` naming System Settings › Privacy & Security › Contacts. A call waits `config.contactStoreRequestTimeout`, as long as Calendar's, for
+  the prompt. The framework's calls block, so the helper runs them off its main thread.
+- The packaged app carries `NSContactsUsageDescription`; the hardened runtime gets
+  `com.apple.security.personal-information.addressbook`.
+
+**Consequences:**
+- Matches go to the model only: nothing is stored (ADR-004).
+- A search reads the whole address book in the helper when fewer than the limit match; fine for a
+  personal one, and the model's results stay capped.
+- The permission prompt raised from the helper is checked by hand on a signed build (TESTS.md).
+
+## ADR-DESK-026: Files, Spotlight search the Answer tool can open from
+
+**Context:** Owner, 2026-09-26: the Answer tool finds files ("the PDF from last week") and, where the
+user has Apple Mail, its messages, through Spotlight, and opens a hit; one switch, on by default, in
+Settings and the wizard (ADR-DESK-024). Opening is neither sending nor creating, so it asks nothing.
+The backend defines `files_search` and `file_open` (`src/tools/macos/`). First built in the Swift
+app; built here in the Electron app (ADR-DESK-032).
+
+**Decision:**
+- The `files` connector with `FilesSearchTool` (`files_search`) and `FileOpenTool` (`file_open`)
+  (`src/core/agent/filesTools.ts`) over a `FileStore`: on macOS `MacSystem.fileStore`, whose
+  `filesSearch` and `fileOpen` requests `voice-macos` carries out (`FileSearch.swift`). A failure
+  comes back by name (`Files.Failure`, `FileStoreFailure`), so a file's name in the system's error
+  never reaches a log.
+- `SpotlightQuery` (in the helper) builds the query: every word in the display name, the text
+  content (word prefix), or an email's subject, senders or sender addresses, ignoring case and
+  accents; a kind from the backend's list as content types (`document` = composite content or
+  text); `changed_after`/`changed_before` on the content change date, a day as the end reading
+  through that day (the app reads the dates, `Arguments.localDate`/`localEnd`, and sends them in
+  milliseconds). Words are escaped, so a quote cannot end a value and `*` matches itself. `MDQuery`
+  runs synchronously off the main thread, in the home folder, gathers at most
+  `HelperConfig.filesSearchScanLimit`, and keeps the newest (`Files.newest`); the app asks for
+  `filesSearchMaxResults` + 1 to say that more match. Paths go to the model with the home folder as
+  `~`, which `file_open` expands (`~user` and relative paths are refused).
+- Apple Mail messages are found when Spotlight has indexed them (`.emlx`, shown by subject and
+  sender) and opened like any file, by path: Launch Services opens them in Mail.
+- `OpenPolicy` (in the helper): `file_open` opens only a plain folder or a type conforming to PDF,
+  image, audiovisual content, presentation, spreadsheet, composite content, text or email, and not
+  to source code (scripts are source code), to executable (macro-enabled Office documents, `.xlsm`,
+  `.docm`, `.pptm` and the like, are composite content and executable) nor to the XML types that launch a Java app or install a
+  configuration profile (`.jnlp`, `.mobileconfig`, `.configprofile`, `.provisionprofile`), which
+  the Swift app opened. Anything else (apps, `.command`, installers, Terminal settings,
+  `.webloc`/`.fileloc` links, disk images, archives, shortcuts, no extension) is none of the opened
+  types and is shown in the Finder instead, and the model is told why; `reveal` shows even a
+  document. The type comes from the name's extension, as Launch Services picks the opening app by
+  it; a symbolic link or a Finder alias, which opens what it points to whatever its own name says
+  (`Invoice.pdf` pointing at a script), is only shown. A path planted in screen text or a file can
+  therefore at most open a document.
+- A package (a folder the Finder shows as one item) is typed as a package (`.rtfd` names only a
+  package type) and opens only when it is rich text with attachments or a Pages, Keynote or Numbers
+  document (`OpenPolicy.openedPackages`). Most other packages are composite content too, among them
+  Xcode projects, workspaces, toolchains and playgrounds, Swift packages and app preference bundles,
+  several of which run or install something as they open, so every other package is only shown
+  (review 2026-09-28: the extension-only lookup showed a real `.rtfd` and told the model it could run
+  something; a census of this Mac's registered package types found those among the composite ones).
+- An item that isn't there fails (`openFailed`), shown or not: the Finder shows nothing for a missing
+  item and reports nothing, so the model would otherwise say it showed it.
+- The Swift app's shown-only list also named application and property list; no type among the
+  opened ones conforms to application, and the property lists that are text (`.entitlements`,
+  `.aupreset` and the like) are harmless XML, so both are left out.
+
+**Consequences:**
+- No new permission: Spotlight queries and Launch Services need none. Which items in folders macOS
+  protects Spotlight returns to the helper is macOS's call; the app asks for no Full Disk Access.
+- Found names, paths and email subjects go to the model only: nothing is stored (ADR-004).
+- A search as broad as one letter sees only the first `filesSearchScanLimit` items Spotlight
+  gathers, not necessarily the newest.
+- An HTML page, an `.ics` or a `.vcf` is a document here: it opens in the browser, Calendar or
+  Contacts, which ask before importing anything.
+- Offered on macOS only, with the other connectors.
+
+## ADR-DESK-027: Email, a prefilled new message in the user's email app
+
+**Context:** Owner, 2026-09-26: without TabMail, mail is prefill only: Apple Mail, Thunderbird
+without the add-on and any other email app get a filled-in compose window and the user presses
+Send; the agent never sends mail. One switch, on by default, in Settings and the wizard
+(ADR-DESK-024). The backend defines `email_compose` (`src/tools/macos/`): `to`/`cc`/`bcc` address
+lists, `subject` and `body`, passed to the app as the model wrote them. First built in the Swift
+app; built here in the Electron app (ADR-DESK-032).
+
+**Decision:**
+- The `email` connector with `EmailComposeTool` (`src/core/agent/emailTools.ts`) over an
+  `EmailOpener` the main process gives it.
+- One mechanism for every email app: a `mailto:` URL (RFC 6068, `mailtoURL`) opened with the app
+  the system opens `mailto:` links with. Every value is percent-encoded from its UTF-8 bytes, leaving
+  only the unreserved set (and `@` in an address), so an `&`, `=`, `?` or `#` the model writes stays
+  in its field and cannot add a header; line breaks are CRLF; a lone surrogate becomes U+FFFD
+  rather than failing the call.
+- The main process asks `voice-macos` for the default email app (`emailApps`, which Settings
+  already uses), names it in the result, and opens the URL with `shell.openExternal`. With none,
+  the tool fails with `NoEmailAppFailure`, whose message the model passes on.
+- Nothing is sent, so nothing is asked first. At least one recipient, a subject and a body are
+  required, and every recipient must be one address (`isAddress`); a name goes back to the model
+  to look up with `contacts_search`.
+- Not used: Apple Mail's AppleScript (`make new outgoing message`) and Thunderbird's `-compose`.
+  `mailto:` fills every app the same way with no Automation permission prompt; it gives up
+  attachments and reply threading (a reply is a new message to the sender with "Re: ").
+- Its icon is an open envelope with a letter, told apart from the Thunderbird tool's closed one.
+
+**Consequences:**
+- No new permission or entitlement.
+- The draft goes to the email app only: nothing is stored (ADR-004).
+- How long a body a `mailto:` URL carries is up to the email app; not measured.
+- Offered on macOS only, with the other connectors, though the mechanism is Electron's and would
+  work elsewhere once the default app can be named there.
+
+## ADR-DESK-028: Notes and Messages, through AppleScript
+
+**Context:** Owner, 2026-09-26: the agent answers from Apple Notes, adds notes, and sends iMessages;
+AppleScript is acceptable where the app has no framework. Sending or creating anything is confirmed
+first (ADR-DESK-023). One switch per app, on by default, in Settings and the wizard (ADR-DESK-024).
+The backend defines `notes_search {query}`, `notes_create {title, body}` and `messages_send {to,
+text}` (`src/tools/macos/`). First built in the Swift app; built here in the Electron app
+(ADR-DESK-032).
+
+**Decision:**
+- The `notes` connector with `NotesSearchTool` (`notes_search`: notes whose title or text contains
+  the query, locked notes left out, newest first, at most `notesSearchMaxResults` in full, more
+  said) and `NotesCreateTool` (`notes_create`: a title and text, added to the default account's
+  default folder once confirmed), in `src/core/agent/notesTools.ts`. The `messages` connector with
+  `MessagesSendTool` (`messages_send`: one iMessage to one phone number or email address, once
+  confirmed; a name goes back to the model to look up with `contacts_search`), in
+  `messagesTools.ts`.
+- Neither app has a public framework, so each tool runs a fixed AppleScript through a
+  `ScriptRunner` (`appleScript.ts`, faked in tests). What the model wrote reaches the script only
+  as `argv`, never inside its source, so no text can change what a script does. The arguments
+  follow `--`, so one that looks like an option (`-e …`) is data too (without it, a search for `-e`
+  plus script ran that script unconfirmed).
+- The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/osascript.ts`),
+  not a `voice-macos` method. The one reason is cancellation: `LoopTool.run` now takes the
+  request's `AbortSignal`, and a cancelled request or a closed chat window ends the osascript
+  process. The helper channel can't call off a request it has taken, so a script run there would
+  keep going, a send included, until it finished or timed out. This is a system program run with
+  arguments, not native code in Node, so `apps/desktop`'s rule (OS work in a native helper, never
+  a Node addon) is kept in spirit; the scripts are plain text either way. A request already
+  cancelled starts no process: Node starts one for an aborted signal and ends it only a tick later.
+- Each script waits at most `appleScriptTimeoutSeconds` for the app to answer each command it
+  sends (`with timeout`); a whole run has no deadline (ADR-DESK-023), and cancelling ends it. A search's
+  output is capped at `appleScriptMaxOutputBytes`; past it the search fails rather than cutting a
+  note short.
+- A note's text is written as Notes' HTML (`NotesScripts.html`): the title as its heading, one line
+  per line, escaped, so what the user confirmed is what the note shows.
+- Access: macOS asks the first time the app sends Notes or Messages an Apple Event
+  (`NSAppleEventsUsageDescription`, the hardened runtime's `automation.apple-events` entitlement).
+  A refusal (-1743) fails the request with where to allow it (System Settings › Privacy & Security
+  › Automation), naming the app the script tells (`ScriptFailure.noAccess`).
+
+**Consequences:**
+- The first use of each app raises macOS's Automation prompt, and launches the app if it is not
+  running.
+- Notes' text and the message go to the model and the app only: nothing is stored (ADR-004).
+- Messages sends over iMessage only; SMS through a paired iPhone is not offered. A send cancelled
+  after Messages has taken it may still go out.
+- Unverified against a live Notes library: whether its `notes` include "Recently Deleted" ones, and
+  how long a search over a large library takes (each command bounded by `appleScriptTimeoutSeconds`,
+  the whole search only by a cancel). No test
+  sends an Apple Event to either app: the scripts are compiled against each app's dictionary
+  (`osacompile`), and the runner is tested on scripts that tell no app.
+- Offered on macOS only, with the other connectors.
+
+## ADR-DESK-029: Shortcuts, listed and run through the `shortcuts` command
+
+**Retired 2026-09-28, before the first release** (owner: "Let's not support shortcuts for the first
+release … I don't need shortcuts at all"). The connector, its tools (`shortcutsTools.ts`), the main
+process's `shortcuts.ts`, their tests, config and icon were deleted; the last source is in git
+history (PR #41). A stored `shortcuts` in `disabledConnectors` is a retired name and turns nothing
+off (ADR-DESK-024). What follows is the decision as it was built.
+
+**Context:** Owner, 2026-09-26: the agent can run the user's shortcuts; running one counts as doing
+something, so it is confirmed first (ADR-DESK-023). One switch, on by default, in Settings and the
+wizard (ADR-DESK-024). The backend defines `shortcuts_list {query?}` and `shortcuts_run {name}`
+(`src/tools/macos/`). First built in the Swift app; built here in the Electron app (ADR-DESK-032).
+
+**Decision:**
+- The `shortcuts` connector with `ShortcutsListTool` (`shortcuts_list`: every shortcut's name, or
+  those whose name contains the query ignoring case and accents, at most `shortcutsListMaxResults`,
+  more said) and `ShortcutsRunTool` (`shortcuts_run`: one shortcut by its exact name, once
+  confirmed; its text output back to the model), in `src/core/agent/shortcutsTools.ts`.
+- Both run `/usr/bin/shortcuts` (`ShortcutsRunner`, faked in tests) from the **main process**
+  (`src/main/shortcuts.ts`), for ADR-DESK-028's reason: a cancelled request or a closed chat window
+  ends the command. Whether a shortcut already running in Shortcuts stops with it is unverified (on
+  the by-hand list). The name is one argument, never parsed by a shell, after
+  `--`, so a name that looks like an option is the name (without `--`, `shortcuts run …
+  --help` prints the help and succeeds). The output is asked for as plain text
+  (`--output-type public.plain-text`), capped at `shortcutsMaxOutputBytes`.
+- A run takes the name the user confirmed and runs only if a shortcut has exactly that name; any
+  other name is sent back to the model to look up with `shortcuts_list`.
+- A run takes no input, and its stdin is closed at once: `shortcuts` reads an open stdin as the
+  shortcut's input and waits for it, so with Node's default pipe every command hung (found by the
+  test that runs the real command). Passing the model's text to a shortcut is left for the owner
+  to ask for.
+
+**Consequences:**
+- No permission of TabMail Voice's own; a shortcut's actions ask for theirs as Shortcuts does.
+- Shortcut names and output go to the model only: nothing is stored (ADR-004).
+- A shortcut that waits for the user (a dialog, a menu) keeps the request running until it is
+  answered or the request is cancelled.
+- No test runs a shortcut of the user's: the command is a stand-in script, and the real one is only
+  asked to run a name like an option, which it looks up and does not find.
+- Offered on macOS only, with the other connectors.
+
+## ADR-DESK-030: The web, searched on the backend, read and opened on this computer
+
+**Context:** Owner, 2026-09-26: the agent can search the web and read and open pages. One switch,
+on by default, in Settings and the wizard (ADR-DESK-024). The backend defines `search_web` (which
+runs on the server), `web_read {url}` and `web_open {url}`. First built in the Swift app; built here
+in the Electron app (ADR-DESK-032).
+
+**Decision:**
+- The `web` connector with `WebReadTool` (`web_read`) and `WebOpenTool` (`web_open`), in
+  `src/core/agent/webTools.ts`, and the backend's `search_web`. A connector's backend tools
+  (`connectorServerTools`) are listed in `available_tools` after the date tools while its own tools
+  are (switched on at key-down, and on this computer), so a platform without the web's tools offers
+  no search either; `web_search_enabled` is sent as whether `search_web` is listed (the backend refuses
+  `web_read` and `web_open` too without it).
+- `web_read` is a port of the add-on's `web_read` and the iOS app's `WebReadTool`
+  (`WebPageReader`): the site's robots.txt is asked first (one that can't be read allows; a cancel
+  ends the read), then the page, both as `webUserAgent`; an HTML page comes back as its text
+  (extracted by the add-on's rules, without a DOM), other text as it is in the charset it names
+  (UTF-8 for one the runtime doesn't know), cut at `webReadMaxCharacters`, in the same result
+  format. The fetch (`liveWebFetch`, injectable as `WebFetch`) follows redirects, as the add-on's
+  does, and reads at most `webReadMaxBytes` of a body, so an endless page never fills the memory.
+- `web_open` opens the page in the default browser (`shell.openExternal`). Both take only a
+  complete `http`/`https` URL with a host: another scheme could open an app (a `shortcuts:` link
+  runs a shortcut).
+- Neither asks first: reading and opening a page is neither sending nor creating (ADR-DESK-023).
+  Which URLs the model may pass is the backend's guard, the one `web_read` has on every platform:
+  only a URL the user said or one in an earlier tool result, never a private address, and never a
+  URL that appears only on the screen (the screen read is text the model can't vouch for).
+
+**Consequences:**
+- A page on the user's screen can be read or opened only once the user says its address or a search
+  finds it.
+- Pages go to the model only: nothing is stored (ADR-004).
+- The robots.txt group match is the add-on's: a group applies when its `User-agent` is `*` or the
+  whole `webUserAgent` string, so a group naming TabMail by a short token is not read as ours.
+- The main process decodes a charset with Electron's `TextDecoder`, which reads `windows-1252`
+  0x80–0x9F as curly quotes and dashes; plain Node 24, which runs the tests, decodes them as control
+  characters, so the tests use an ISO-8859-1 page.
+- The text is extracted on the main process, so extraction takes time linear in the page: each
+  chrome element is found with its closing tag in one pass, and a tag ends at the next `<` or `>`.
+  A regex that rescans to the end from every unclosed `<` (a lazy `<script>…</script>`, or
+  `<[^>]+>`) held the app for 35 seconds to 4 minutes on a hostile page of half a million `<` or
+  `<script` (review, 2026-09-28). A chrome tag's name ends at a space, `/` or `>`, so a custom
+  element such as `<nav-menu>` stays page text, and a closing tag may have spaces before its `>`.
+- Offered on macOS only, with the other connectors.
+
+## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
+
+**Context:** Owner, 2026-09-27: with fn as the hotkey, a press or a double tap also switched the
+input source, macOS's "Press 🌐 key to" action. The event tap cannot stop it: WindowServer runs the
+Globe action ahead of every event tap (reported by OpenWhispr, TTP and input0, all of which tried
+to swallow the event), so returning nil from `HotkeyMonitor`'s tap changes nothing. Most dictation
+apps that default to fn ask the user to pick "Do Nothing"; Settings asked the same. Offered that or
+switching the setting for the user, the owner chose the second ("option 2").
+
+**Decision:**
+- While fn is the hotkey, `GlobeKeyAction` sets the Globe action to Do Nothing, and puts the user's
+  choice back when another key becomes the hotkey or the app quits (`NSApplication.willTerminateNotification`,
+  observed in `AppDelegate.connectHotkey`, which also points the hotkey monitor at each change). It
+  calls HIToolbox's private `TISGetFnUsageType`/`TISUpdateFnUsageType`, looked up with `dlsym` in
+  Carbon: what System Settings calls, which applies at once; writing `AppleFnUsageType` itself takes
+  effect only at the next login. OpenWhispr (MIT) and Inputalk ship the same approach.
+- The user's choice is saved in the app's defaults (`globeKeyActionBeforeFnHotkey`) before the
+  setting changes, so a run that crashed is put right at the next launch: restored if fn is no
+  longer the hotkey, still held if it is.
+- The user's own later choice wins: the setting is put back only while it is still Do Nothing, and a
+  choice made while the app was not running is the one saved. A user who chose Do Nothing already
+  is never touched. A later choice of Do Nothing itself cannot be told from the app's own, so after
+  a crash it is replaced by the saved choice.
+- Settings says so under the hotkey picker, in place of asking the user to change the setting.
+
+**Consequences:**
+- A private API: if a macOS drops the calls, `System.live` is nil, the setting is left alone and fn
+  still triggers the Globe action (logged). `theSystemCallsExist` fails first on such a macOS.
+- The app changes a system-wide setting: while it runs with fn as the hotkey, the Globe key does
+  nothing anywhere, including its double press for macOS dictation. An app deleted without quitting
+  normally, or never launched again after a crash, leaves Do Nothing in place.
+- Put back through `TISUpdateFnUsageType`, a choice that was macOS's computed default is now stored
+  explicitly; it reads the same.
+- The unit-test host never creates `GlobeKeyAction` (it is made after the XCTest guard), so a test
+  run can never restore a setting the running app holds. (No test pins that placement: the SwiftUI
+  delegate adaptor keeps the `AppDelegate` out of the test's reach, and so is the launch call to
+  `connectHotkey`, like all wiring after the guard; the owner's use of fn exercises it.) Tests use a stand-in for the setting and only read the real one.
+- Numbered 031: ADR-DESK-022 to 030 are taken by agent-tool branches not yet merged.
+- Whether fn still reaches the event tap with Do Nothing selected is reported both ways online; the
+  owner's manual test on this change settles it for the hotkey.
+
+**Amendment 2026-09-27 (owner report: with fn, a double tap never went hands-free; Right Option's did):**
+- Settled by a listen-only probe on the owner's MacBook keyboard, Globe action on Do Nothing: fn does
+  reach the event tap (`flagsChanged`, key code 63), and each release from a tap is followed 0–3 ms
+  later by a `keyDown` and `keyUp` of key code 0xB3, the Globe key's own, which Carbon has no name for.
+  The gesture read that key-down as typing between the taps (ADR-DESK-021: typing breaks a double
+  tap), so the second press started an ordinary hold. The app log showed it: "tap; waiting for a
+  second press", then a new arming instead of hands-free, about 100 ms apart.
+- `PushToTalkGesture.keyPressed` ignores that key-down while fn is the hotkey
+  (`DictationHotkey.globeKeyCode`); both events still reach the app. `HotkeyMonitorTests` replays
+  the recorded sequence. The owner confirmed the double tap with fn on a build with this change.
+- The Electron app's `voice-hotkey` helper (ADR-DESK-032) carries the same skip and replay test.
+
+## ADR-DESK-032: One Electron app for macOS, Windows and Linux
+
+**Context:** Owner, 2026-09-27, after a study of OpenWhispr (MIT), which ships one Electron app on
+all three platforms: "We should move to a unified one NOW (move mac to electron). mimic openwhispr,
+don't reinvent the wheel. prefer ts over js." Then: "we should build our own app — our focus is
+different. we hold the release until unification. Current feature parity must be matched before …
+we're working towards using the Electron Mac app to replace the Swift one." Wayland may be tap to
+start, tap to stop. The study and the phase plan are kept outside this repository.
+
+**Decision:**
+- `apps/desktop/` is one Electron app in TypeScript (strict `tsc`, eslint with zero warnings):
+  Electron, React and Vite for the windows, Vitest for the tests, electron-builder for the packages.
+  Our own app, not a fork of OpenWhispr; we copy its patterns.
+- `src/core/` is the platform-free port of the Swift app's logic (the dictation controller, the
+  gesture timing, the backend clients, the agent and its tools, tips, the welcome wizard, settings,
+  the overlay geometry): no Node or Electron imports, so every OS runs the same code and Vitest
+  tests it directly. The Swift app is its behavioural spec, as Thunderbird is iOS's (ADR-IOS-008);
+  its tests were ported with it.
+- What needs the OS is a **native helper executable** per role, spawned by the main process and
+  spoken to over stdin/stdout, one JSON object a line (`{id, method, params}` → `{id, result}` or
+  `{id, error}`; events as `{event, …}`; stderr lines `debug …`/`error …`, the debug ones only
+  with `TABMAIL_VOICE_DEBUG=1`). A helper exits when its stdin closes and is restarted after
+  `helperRestartDelay` if it dies (`HelperClient`). On macOS the helpers are the Swift app's own code
+  as a SwiftPM package (`native/macos`): `voice-hotkey` owns the keyboard event tap (it must decide
+  within the tap whether Space or Escape is kept from the app, so the gesture runs there) and
+  `voice-macos` the rest (paste and clipboard restore, the screen read, the caret, the keyboard's
+  language, the Globe setting, the Accessibility activator, the email apps, Thunderbird). The
+  Accessibility grant is expected to be the app's, macOS attributing a spawned helper's use of it to
+  the app that launched it; the first manual pass on a packaged, signed build confirms it. Helpers are executables, not Node addons, so they need no rebuild per Electron version and can
+  crash without taking the app down.
+- The microphone is `getUserMedia` in a hidden window, into an AudioWorklet in an `AudioContext`
+  at the recording rate (Chromium resamples), each chunk sent to the main process; each dictation is
+  a session and the tracks are stopped when it ends. Only that window may use the microphone
+  (`setPermissionRequestHandler`), and only for audio.
+- The main process owns every model; each window draws the state it is sent and sends back commands,
+  which are checked at the boundary (`isCommand`, `isAudioReport`). Every window is sandboxed with
+  context isolation, no Node, no navigation and no new windows, under a CSP with no inline script.
+- The session stays in the Keychain item the Swift app uses (`@napi-rs/keyring`), settings in a JSON
+  file in the app's data folder, the debug log in `~/Library/Logs/TabMail Voice/`.
+- macOS first, to the Swift app's parity; Windows and Linux follow with their own helpers. The
+  public release waits for the Electron app, which then replaces the Swift app (`apps/macos/` is
+  deleted then).
+
+**Consequences:**
+- A resident Electron app uses more memory than the Swift one; accepted by the owner's choice.
+- Every Swift change merged before cutover must be ported too (the parity checklist in the plan).
+- Wayland has no global key-up: tap to start, tap to stop there (owner, 2026-09-27).
+- The first launch of the Electron build asks for access to the Swift app's Keychain item once, as
+  the item's access list names the Swift app.
+- The macOS helpers are built for Apple silicon only, as the Swift app is (Xcode 27 deprecates
+  x86_64).
+- Numbered 032: ADR-DESK-031 is the Globe key's, and 022 to 030 are taken by agent-tool branches not
+  yet merged.
+
+**Amendment 2026-09-27 (owner): a sign-out the credential store refuses.** The Swift app signs out
+in memory and only logs a refused Keychain delete, so the old sign-in returns at the next launch
+without a word. Asked, the owner chose "sign out, show a warning": `AccountModel.signOut` signs out
+in the app first, then removes the saved sign-in; when the store refuses, its error says, in the
+app's words, that the sign-in may come back at the next launch, and Settings shows it. A refused save (sign-in or refresh) fails with the app's own
+message and leaves the account as it was, as the Swift store's throwing `save` does.
+
+**Amendment 2026-09-27 (owner): Settings in a branded sidebar.** The Electron Settings page was the
+Swift app's single grouped form on a flat grey; the owner found it "bland" and wanted it "themed and
+look professional", and chose, from three looks, the branded sidebar. Settings is now a
+System Settings-style window: a sidebar with the app icon, the account and five sections (Account,
+Dictation, Agent mode, Permissions, General), the chosen section's cards beside it. It is in the
+TabMail icon's blue → purple (`brand.ts`, as the overlay): the selected section, switches and the
+default button carry the gradient, section icons the brand blue, and a red dot marks a section that
+needs the user (signed out, a permission missing), in light and dark. White text sits on the
+gradient darkened by `textShade`, so small text keeps WCAG AA's 4.5:1 along it, the account shows
+in the text colour (in the content and the sidebar), the notes and "Allowed" are darker than
+`form.css`'s in light mode (its grey and green were under 4.5:1 on the window's colour), and focus
+is Chromium's own ring, the browser's default indicator (the brand blue's was under 3:1 on the light sidebar); under a Windows
+contrast theme (`forced-colors`), which drops gradients, the switches are the system's checkboxes,
+the chosen section is in the system's selection colours with its own focus ring in the text colour
+(the system's took no contrast with that fill) and the attention mark in the text colour.
+The page's transparency outranks `form.css`'s page colour by specificity, since the build links the
+shared `form.css` after `settings.css`: at equal specificity it painted over the frosted sidebar. On macOS the sidebar shows the
+window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
+no material, so the window has its own colour (`settingsWindowColour`). The settings and their
+wording are unchanged (a test holds the notes to the Swift app's); the sidebar adds only its own
+labels (the app's name, the account or "Not signed in", the attention mark's "Needs attention").
+This departs from the Swift app's look only, which the Swift app keeps until cutover. Whether the
+sidebar shows the frosted material with a clear `backgroundColor` but no `transparent` flag can
+only be seen in the running app on macOS, not in the offscreen previews.
+
+**Amendment 2026-09-27 (owner, trying the Electron build): "the startup is much slower … at least
+2–3 seconds until the thing shows up … the awesome startup that Swift app has to be carried on."**
+- Measured on the owner's Mac: the app's log gave the first audio 1.47–1.56 s after key-down (the
+  Swift app: 0.59–0.62 s). A probe of the same `getUserMedia` call gave 0.4–1.3 s to open the device,
+  up to 0.5 s to resume the context, then up to 0.45 s of digital silence before the first real
+  signal, which is when the pill replaces the swirl. Chromium opens the device afresh for each
+  dictation; nothing it offers keeps a device prepared with the microphone off. The overlay window
+  itself paints 30–50 ms after it is shown, so it is not the cause.
+- On macOS the microphone is now `voice-macos`'s, run as the Swift app runs it (`MicrophoneCapture`:
+  an `AVAudioEngine` prepared ahead with the microphone off, started per dictation, discarded after
+  it, rebuilt when the default input changes). It converts each buffer to mono float samples at
+  `recordingSampleRate` and sends them as `microphoneChunk` events (base64 of little-endian floats),
+  numbered by the app's session; `SessionAudioCapture` (formerly `WindowAudioCapture`) drives it
+  through `MacSystem.microphone`, with the same sessions, start timeout and late-report dropping.
+  The same probe through the helper: first audio 0.57–0.62 s, first real signal 0.67–0.9 s.
+- Elsewhere the hidden audio window (`getUserMedia`) stays the microphone for now. The owner
+  (2026-09-27): *"it is important that the dictation part and everything as you did right now
+  remains native so that it's super fast … this needs to be done for other platforms as well"*: the
+  Windows and Linux helpers take over the microphone, hotkey and paste when those platforms are built.
+- The helper runs under the app's microphone grant, as its Accessibility use does; packaged, it
+  inherits the `audio-input` entitlement (`entitlementsInherit`). A restarted helper is prepared
+  again (`macHelper.onStart`).
+- A helper that exits mid-dictation takes the microphone with it (the Swift app has no such case: its
+  microphone is in-process). Asked, the owner chose *"send what was said"*: `macHelper.onExit` makes
+  `SessionAudioCapture.lost()` tell the started session, and the controller finishes the dictation as
+  at the length cap, transcribing what was heard; lost during the release tail, the tail's end
+  transcribes it; lost before the hold is deliberate, it fails as the microphone does. A start still pending when the helper exits fails through its request, as before. What was said
+  is then pasted through the restarted helper (agent mode's Edit and Compose first check the app in
+  front, a request that fails during a restart as "you switched apps"; after a loss their backend
+  calls outlast the restart): the paste carries its dictation's `AbortSignal`, and a
+  request with one made while the helper restarts (from `onExit` on, the restart being due first)
+  waits for it within its own timeout; one that times out, or whose dictation is cancelled, while it
+  waits is never sent (a cancelled dictation pastes nothing). Every other request fails at once
+  during a restart, as before.
+- The helper's engine stopping by itself mid-dictation (AVAudioEngine stops on a configuration
+  change: the input's sample rate or channels changed) is the same loss: `MicrophoneCapture`
+  watches each engine for `AVAudioEngineConfigurationChange` from before it starts (weakly, so the
+  notification's queue never holds the engine's last reference), stops that session
+  (`MicrophoneSessions.lost`, like a failed start) and emits `microphoneLost {session}` after the
+  chunks already queued; the app reports it as `lost`, and the controller sends what was said, as
+  above. One arriving while the start is still pending fails that start. (The Swift app does not
+  watch for this; its dictation keeps listening to a stopped engine.) The audio window's path
+  (Windows, Linux) does not report it yet.
+- `MicrophoneSessions` treats a failed start like its stop (no older session starts after it), and
+  the whole-number request params (session, pid, Globe value) are read with `JSON.integer`, the
+  restore delay rounded to whole milliseconds with `Int(exactly:)`, so a malformed number is refused
+  rather than trapping the helper. Engine release has no hardware-free test: the owner declined a test-only
+  engine seam in `MicrophoneCapture` (no production complication for test convenience); the release
+  decision itself is `MicrophoneSessions`', which is tested.
+
+**Amendment 2026-09-27 (owner): the Swift app removed.** *"Once everything is clean … clean up the
+non‑Electron version so that we don't have dead weight being carried over."* With the Electron app's
+parity branches merged (the native microphone, the branded Settings, the overlay's swirl and icon,
+the hands-free tip and fn double tap), `apps/macos/` is deleted, together with what only the Swift
+app used: `Scripts/copy-worktree-secrets.sh` and the signing-config template (the Xcode project read
+its `DEVELOPMENT_TEAM`; the Electron app signs through electron-builder from the keychain). The
+gitignore keeps ignoring the local signing config, so a copy left in a checkout is never committed.
+The native helpers in `apps/desktop/native/` stay: the dictation path stays native. The Swift app's
+source stays in git history (the parent of this change) and in the unmerged Swift agent-tool
+branches, which remain the reference for porting agent mode. The docs describe the Electron app
+only; code comments that name the Swift app record what a port matches.
+
+## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
+
+> ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
+> without room), four at most, the latest to run first, replaces the rows around it
+> (`bubbleCentres`, `agentBubbleRowCapacity`, `agentBubbleRowsAbove`). An app's bubble now circles
+> while its tools run. One bubble per tool and per connector switched on stands.
+
+**Context:** Owner, 2026-09-26: "many bubbles surround the pill": the single row above the pill fills
+first, then the bubbles wrap around the pill's sides and underneath, keeping clear of the caret's
+line. Owner, 2026-09-27: each connector switched on gets its own bubble ("Connector bubbles"). First
+built in the Swift app (its ADR-DESK-031 there, on the unmerged agent-tool branch); built here in the
+Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
+
+**Decision:**
+- Beside the tools' bubbles (`DictationController.tools`), agent mode shows one for each connector
+  (`DictationController.connectors`) switched on at key-down whose tools this computer has, while
+  Answer, whose loop runs them, is offered; with Answer off, none. The connector's icon, never drawn
+  as running (its tools' progress shows in the chat window, ADR-DESK-023); it fades while a tool
+  runs, as the idle tools' bubbles do. One `Bubble` draws both.
+- `bubbleCentres(pill, sizes, underFits)` places them in order: a row of up to
+  `agentBubbleRowCapacity` (5) centred over the pill (with no more bubbles than that, the row as
+  before); then one beside the pill on the left and one on the right; then rows under the pill. When
+  they don't fit under it (`bubblesFitUnder`: the pill opened above the caret's line, or sits too near
+  the work area's bottom for a row and the tip under it), the later rows go over the first instead,
+  so none covers a caret's line under the pill. The overlay window works this out as it places the
+  pill, and the view is told (`OverlayState.bubblesFitUnder`).
+- A tip under the pill goes under any bubbles under it (`underBubbles`); the hands-free tip over the
+  pill (ADR-DESK-021's amendment) goes over them all, as before. The canvas grew to room for two
+  rows and a tip over the pill (`agentBubbleRowsAbove`), the pill still centred in it.
+
+**Consequences:**
+- With every tool offered at once (three) and every connector (eight since Shortcuts was retired,
+  ADR-DESK-029; nine before) on, eleven bubbles: five over, two beside, four under (or a second row
+  over).
+- A pill below the caret still has its first row over the caret's line, as before; only the rows
+  after it keep clear of it.
+- A thirteenth bubble (two more connectors) would start a third row: the geometry test, which places up to
+  every tool and connector, checks they stay inside the canvas.
+
+## ADR-DESK-034: A bubble under the pointer grows and says what it is
+
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** bubbles grow about their centre, not up from
+> their bottom edge, to fixed sizes (`agentBubbleHoverDiameter`, `agentBubbleRunningDiameter`), from
+> a smaller size at rest.
+
+**Context:** Owner, 2026-09-28: "for the tools, when mouse hovers over them, make them sort of
+enlarged and also show tooltips on what this tool is. Sort of something that you can even inspect."
+The overlay lets every click through (ADR-DESK-022) until the chat window opens, so the page saw no
+pointer at all.
+
+**Decision:**
+- The overlay window ignores the mouse with `forward: true` (`Windows.overlay`, and again as the
+  chat window closes): clicks still pass through to the app under it, but the pointer's moves reach
+  the page, which is all a hover needs. The window stays unfocusable, so hovering takes no focus.
+- A bubble under the pointer (a tool's or an app's, ADR-DESK-033) grows to `agentBubbleHoverScale`
+  upward from its bottom edge, as a running one does (a running one keeps its own, larger scale), and
+  shows in full even while faded for another tool's run.
+- Its tooltip names it and says what it does, in the words Settings uses (`settingsDescription`),
+  drawn as the tips are. It goes over the bubble as grown (`grownBubble`), `bubbleTooltipGap` clear,
+  or under it when the canvas has no room over it, moved in from the canvas's edge when centring
+  would leave it (`bubbleTooltipCentre`); it is hidden until measured and lets the pointer through,
+  so it never takes the hover from the bubble under it.
+
+**Consequences:**
+- Hovering needs no click and moves no focus, so it works mid-hold without disturbing the dictation.
+- Electron forwards the pointer's moves on macOS and Windows only: on Linux the bubbles show no
+  hover. On Windows forwarding is a system-wide low-level mouse hook, kept while the overlay is
+  hidden, and Electron has open reports of forwarding making the cursor or other windows flicker
+  there (electron#35030, #35414, #48035); worth forwarding only while the overlay shows once the
+  Windows helpers exist.
+- The hover follows the bubbles: one that goes (Space back to dictation) takes its hover with it, and
+  each bubble's tooltip is measured afresh, never shown at the last one's size.
+- A tooltip can cover other bubbles, the pill or a tip while it shows; it is drawn over them.
+
+## ADR-DESK-035: Agent mode sends the user's name, set in the wizard or Settings
+
+**Context:** Owner, 2026-09-28. In a direct-message chat the user asked agent mode to relay a message
+to the other person ("tell him…"); Compose wrote the reply as the other person, greeting the user by name. The request
+carried the window title, the screen (messages under both people's names) and the request, but
+nothing said who the user is, so the backend's model could not tell the user's own messages on screen
+from the other person's. Thunderbird's compose prompt has always had the user's name. The owner:
+"send the macOS full name or the username, but a more natural way is to have it in the setup wizard",
+and, when it is not set, a tip in "a neutral, inviting way"; "if it's not set, it's fine, but it's a
+sort of nag to set it in the wizard and settings".
+
+**Decision:**
+- A stored setting, `AppSettings.userName`: null until the welcome wizard or Settings stores one,
+  empty when the user cleared it, kept as typed and sent trimmed (`sentUserName`). It is part of the
+  dictation's settings snapshot (`DictationSettings.userName`).
+- The welcome wizard has an "About You" step after consent, with a name field offering the computer
+  account's name (`suggestedUserName`): on macOS the account's full name from `voice-macos`
+  (`fullUserName`, `NSFullUserName()`), else its short name (`os.userInfo().username`), the only name
+  elsewhere. Next without editing keeps the offered name; a name typed, or one cleared, stays as the
+  user left it. Nothing else stores the offered name.
+- Settings › Agent mode has the same field, empty with the offered name as its placeholder while none
+  is set, and a note inviting one; the section is marked for attention until a name is set.
+- While no name is set, switching to agent mode shows a tip by the pill (`setName`: "Add your name in
+  Settings so agent mode knows which messages are yours"), every time, until a name is set; switching
+  back to dictation takes it away. Hands-free, it takes the hands-free tip's place for its display
+  duration, and the hands-free tip returns after it. A follow-up in the chat window shows no tips, as before.
+- Every tool's request (edit, compose, thunderbird, answer) sends `user_name`, empty when none is set
+  (the backend leaves a missing variable in the prompt as written). The choice of tool sends none. The
+  backend's prompts say text on screen under that name is the user's own, and Compose that a relayed
+  request ("tell him…") is a message from the user to that person (backend ADR-023 amendment).
+
+**Consequences:**
+- The name leaves the computer only with agent mode's requests, and the backend does not store it.
+  Dictation's cleanup does not send it.
+- A user who finished the wizard before this step (the app has not shipped) has no name set, sees the
+  tip in agent mode and the mark in Settings until they set one.
+- A name that matches none of the names on screen (a nickname, another spelling) helps less; the
+  prompt reads "that name, or part of it".
+
+## ADR-DESK-036: The chat window opens over the pill; the bubbles are a history of what ran
+
+**Context:** Owner, 2026-09-28, reading an agent-mode answer session's log: "the answer box [should]
+appear above the … voice pill … and close the other tools"; "while the chat is running, I don't see
+the circle running and executing tools"; "we want the tools to appear below the … voice pill … only
+show like three or so, and it just fades away to the right … sort of alphabetical … the most recent
+run tool just appears on the left … shifting the other tools to the right"; the Settings tools page
+sorted alphabetically; "the answers being shown are … pretty rough … look at Thunderbird and how the
+text appears … and mimic that"; and some turns seemed "not in turn". Asked, the owner chose a small
+resting circle for the pill between follow-ups, and, for an unclear request in agent mode, "have a
+prompt to ask the user". Later the same day: a grey request bubble "looks bad"; "make the … neon glow
+very apparent for the pills … a hint that we're in agent mode, only for the pill"; the pill should
+circle while agent mode works; a bubble "slightly smaller than the pill" at rest but as large as
+before when grown; and "4 entries tops". The log showed three causes: the chooser pasted a spelled-out
+name as Compose text into the app instead of continuing the conversation; the answer asked instead of
+acting on a correction; and the web search, run on the backend inside a round, showed nothing, since
+the stream was read whole and named its tools only in development builds.
+
+**Decision:**
+- **Placement.** The pill stays where the overlay put it for the caret, or for the pointer without
+  one (`pillPosition`; the pointer's spot is kept, so the chat opens there even if it has moved). The
+  chat window opens `chatPillGap` over the pill and its bubbles (`chatStripHeight`), or under them
+  when the tallest window would not fit over them but would under them; on a screen too short for
+  either, on the side with more room, growing no taller than that room and scrolling instead
+  (`chatSide`, `ChatPlacement.maxHeight`), so all of it, a question's buttons too, stays on screen.
+  The side is decided once, so it never flips as the chat grows. The overlay window is laid out by
+  `chatWindowFrame`, keeping the edge on the pill's side fixed as it fits the chat's height, so the
+  pill never moves; its bubbles keep the side they had
+  (`ChatPlacement.bubblesUnder`). The view is told where the pill is across the window
+  (`ChatPlacement.pillX`). The window takes the mouse over all of it while the chat is open, as
+  before; the pill's layer lets the pointer through to the chat but for its bubbles.
+- **One tree.** The overlay page renders the pill in the same place in its tree with the chat window
+  open or not, so the pill and its bubbles don't remount as the chat opens. The chat appears once,
+  fading in as it rises `chatAppearRise` from the pill and scales up from `chatAppearScale` over
+  `chatAppearDuration`. Under it the pill rests as a circle with a fainter sparkle
+  (`agentRestingSymbolOpacity`) while nothing runs, listens for a follow-up without the warm-up
+  swirl, and keeps the last request's bubbles until a follow-up knows its own.
+- **The row.** Bubbles go in one row under the pill (over it without room, `bubblesFitUnder`), a
+  `agentBubbleGap` from it and `agentBubbleSpacing` apart (`bubbleRow`): the first
+  `agentBubbleRowVisibleCount` (3) centred on the pill in full, then `agentBubbleRowFadeCount` (1)
+  fading away to the right (`bubbleRowOpacity`), four at most. Their order is `bubbleOrder`: those
+  that ran, the latest first (`DictationController.recentBubbles`, `ranNow`: the tool the agent
+  chose, then the app whose tool starts), then the rest alphabetically by name (`alphabetical`). The
+  history lasts the app's run, in memory only. A bubble slides to its new place over
+  `agentBubbleMoveDuration`.
+- **Running.** A bubble circles while its tool runs, and an app's while one of its tools runs: a
+  `LoopTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
+  inside a round, one at a time as the answer's tools run in turn
+  (`DictationController.runningConnectors`, cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
+  `agentBubbleDiameter` (20) at rest, smaller than the pill, and grow about their centre to
+  `agentBubbleHoverDiameter` or `agentBubbleRunningDiameter`, as large as before; neighbours both
+  running don't touch.
+- **Agent mode's pill.** In agent mode (and under the chat window) the pill glows as neon, a tight
+  blue glow in a wide purple one (`agentPillGlow…`); dictation's pill and every bubble keep the plain
+  glow. *Amended 2026-09-29:* the owner found the blue and purple neon "not as apparent" beside
+  dictation's own blue and purple glow and, from eight colours rendered side by side and then seen
+  live, chose red-pink: a tight `#FF2D55` glow in a wide `#FF006E` one (`agentPillGlowInnerColour`,
+  `agentPillGlowOuterColour`), the one colour in the overlay outside the brand's.
+- **Server tools as they run.** `HTTPRequest.onChunk` hands the completions stream to `SSEParser` as
+  it arrives (a piece may end anywhere, a CRLF split across two included), and `Completions.round`
+  reports each `tool_started`, `tool_completed` and `tool_failed` event that names its tool
+  (`ServerToolEvent`); the chat shows a named tool's label while it runs. The backend now names the
+  tool in production too, for every client (its ADR-023 amendment of 2026-09-28, deployed before this
+  build; an event without a name is skipped, so an older backend shows no progress, as before). Its
+  arguments and result stay development-only.
+- **Replies as Thunderbird shows them.** A reply is laid out in blocks (`replyBlocks`: paragraphs at
+  blank lines, each line break a line; bulleted and numbered lists, numbered from where they start,
+  an unmarked line continuing an item; `#` headings), each line's inline Markdown as before, and
+  revealed as TabMail's chat in Thunderbird reveals one: a line or list item every
+  `chatRevealStepInterval` (100 ms), each fading in over `chatRevealFadeDuration` (180 ms) as it rises
+  `chatRevealRise`, the newest kept in view unless the user scrolled up. Line height and paragraph
+  spacing are Thunderbird's (`chatLineHeight`, `chatParagraphSpacing`). The request sits on the right
+  at most `chatRequestMaxWidthFraction` of the width, as there, but in a light tint of the brand's
+  gradient with a hairline brand border rather than grey. While a request waits with nothing else
+  to show, the window says `chatThinkingLabel`.
+- **Settings** lists the tools and apps together alphabetically (`alphabetical`). The welcome
+  wizard keeps its own order.
+- **Unclear requests** (backend ADR-023 amendment, 2026-09-28): the chooser picks Answer for an
+  unclear request, a bare name, a spelling or a reply to the last answer's question, and never
+  guesses text into the app; the answer carries a reply or correction on into the request before it,
+  and asks one short question when still unclear.
+
+**Consequences:**
+- The pill never jumps as the chat opens or grows, and the caret's line stays clear of the chat, which
+  opens away from it.
+- A follow-up's pill listens in place under the chat instead of in a status pill inside it; a
+  follow-up's phase changes show nothing new in the chat, so they no longer scroll it.
+- Only four bubbles show: with more tools and apps on, the rest show once they run.
+- A server tool's progress needs the backend deployed first; the Voice app tolerates an older one.
+- The reveal starts again for a reply whose turn remounts (it doesn't while the chat stays open).
+
+
+## ADR-DESK-037: The Thunderbird tool is off until its native connector
+
+**Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test
+all the others. And then for the Thunderbird tool, we should only use it … after introducing the
+native connector, because right now it's just clunky." The tool drives TabMail's chat in
+Thunderbird from outside (ADR-DESK-014's spike: shortcut, paste, Return). The native connector is
+ADR-DESK-014's option B, a native-messaging bridge to the add-on, being built separately.
+
+**Decision:**
+- `offeredAgentTools` (Edit, Compose, Answer) is what agent mode offers and what Settings and the
+  welcome wizard list; `agentTools` stays the registry of every tool, Thunderbird's included, so a
+  bubble or a stored switch still names a tool (`isAgentTool`). `AppSettings.enabledTools` is drawn
+  from `offeredAgentTools`, so no dictation offers Thunderbird's tool, and the agent is never told of
+  it (`available_tools`).
+- Its switch, and Settings' Email app menu (which only chooses where that tool sends), are hidden. A
+  switch the user stored for it is kept, for when it returns.
+- Its code stays (`ThunderbirdTool`, `ThunderbirdRelay`, the email app's resolution and icon), and
+  the controller's tests still run it with a tool list that offers it.
+
+**Consequences:**
+- Mail and calendar requests go to Answer, whose Calendar, Reminders, Email and other connectors
+  carry them out; the backend's agent prompt says which requests each tool takes (ADR-023
+  amendment, 2026-09-29).
+- Bringing the tool back is offering it in `offeredAgentTools`, with the native connector as its
+  delivery. Settings' tests of the Email app menu (its choices, and its three notes by email-app
+  case) were taken out with it and come back from this change's history.
+
+## ADR-DESK-038: A dictionary of the user's words, typed or learned from their corrections
+
+**Context:** Owner, 2026-09-29: dictation should learn the user's vocabulary, as other dictation apps
+do, with a dictionary the user also edits by hand, in its own Settings section. A live test the same
+day showed the speech model spells made-up names right when given them as a word list, and that a
+name in Hangul is left in Hangul, so the cleanup pass must see the words too (backend ADR-025). The
+consent step is reworded, not re-asked (owner: the app has never been released, so no one has
+consented to the old text). Later the same day, the owner: don't rely on the dictionary alone, but
+leave half of the backend's 200 words to names and uncommon words picked from the context, "a dynamic
+dictionary being constructed on the fly from the captured context", by rules on this computer, not a
+model; TabMail on iOS does the same (its ADR-IOS-086).
+
+**Decision:**
+- `AppSettings.dictionary`: entries `{word, learned}`, in the order added, kept on this computer, not
+  synced. Words are trimmed with their spaces collapsed, and must pass the backend's rules
+  (`dictionaryWord`, in the backend's units: UTF-16 code units, JS `trim`, words split on spaces): at
+  most `dictionaryWordMaxChars` characters and `dictionaryWordMaxWords` words, no control characters
+  or `<` `>`, at most `dictionaryMaxEntries` (100) words, half the backend's 200, so all of them are
+  always sent; the same word in another case is one entry, spelled as the user last typed it. A word
+  the backend would refuse is never stored, so no dictation fails on one.
+- The dictation's key-down snapshot (ADR-DESK-017) carries the words and the learning switch. Every
+  transcription sends them as `vocabulary` (none when empty), and dictation's cleanup as `dictionary`,
+  one per line. Agent mode's prompts don't take them.
+- Screen terms (`contextTerms`): the transcription's `vocabulary` also carries up to
+  `contextTermsMax` (100) names and terms from the key-down screen read (window title and rendered
+  text), after the dictionary's words, when the read is already done as the recording is sent (it
+  never waits for one) and screen reading is on. A term is a word with a capital letter inside it
+  ("TabMail", "OKR", "iOS"), or at its start where no sentence starts (a line's start or after `.`
+  `!` `?` starts one); a run of them is one term ("Kaelthorne Drake") up to `dictionaryWordMaxWords`
+  words, split by punctuation after a word or before one ("Xyvora (Brevalle Labs)", a link's `[`), a longer run (a heading) counting word by word; not an everyday word
+  (`correctionCommonWords`), a word under `correctionMinWordLength`, an address (`@`, `://`), or a
+  word `dictionaryWord` refuses; none the same as a dictionary word; the most frequent first, then
+  the earliest. The cleanup does not get them: it reads the screen itself.
+- Settings › Dictionary: a field to add a word, the words with a Remove button each, a learned one
+  tagged "Learned" (typing it makes it the user's own), and "Learn from my corrections" (on by
+  default) where the field can be read: macOS.
+- Learning (`CorrectionWatch`, `learnedCorrections`, our own implementation of the approach of
+  OpenWhispr's `correctionLearner` (MIT, https://github.com/OpenWhispr/openwhispr), credited in
+  `corrections.ts` and the README; no code copied): after a dictation's paste, with learning on at its key-down, `voice-macos` reads the
+  focused field of the app that was in front at key-down (`focusedFieldValue`) every
+  `correctionPollInterval` for `correctionWatchDuration`. The first read holding the pasted text is the
+  field before any edit; each later change that stays for one interval is compared with it, and the
+  words the last one teaches are learned when the watch ends (the next key-down, its duration, or a
+  field it can't read), so a pause in the middle of an edit ("tabmail" on the way to "TabMail")
+  teaches nothing. A change that respells something new, or has the pasted text back as it was (an
+  undo), replaces what an earlier one taught: with what it teaches once it has stayed, with nothing
+  before, so a spelling paused on and then changed teaches nothing though the message is sent before
+  the change stays. A change that respells nothing (a field emptied by sending the message, another
+  field focused, a word half retyped) keeps the correction. The
+  changed span (common prefix and suffix) must lie within one copy of the pasted text; the words are
+  aligned (longest common subsequence), and a run of changed words is learned when it respells rather
+  than replaces: at most half the dictation's words changed, an edit distance within
+  `correctionMaxEditShare` of the longer spelling, not another form of a lowercase word (only its end
+  changed past `correctionMinStemShare` of its start: "report" → "reports", "send" → "sent"; a
+  capitalised name or a script without case is exempt), not an everyday word or one shorter than
+  `correctionMinWordLength`, and for a change of case alone, a capital inside a word or a change of
+  spacing ("tabmail", "tab mail" → "TabMail"), not one at a word's start. The next key-down stops the
+  watch first, so a dictation's own paste is never taken for a correction; an unreadable field ends it.
+- The helper never reads a password field (`kAXSecureTextFieldSubrole`) or a field longer than
+  `correctionMaxFieldLength`. The field's text stays on the computer and is never logged; the debug
+  log sees only the words learned (`log.content`).
+- The consent step lists the dictionary's words among what a dictation sends, and says learning reads
+  the field on this computer and can be switched off.
+
+**Consequences:**
+- A word removed from the dictionary can be learned again from a later correction.
+- A lowercase term the speech model gets right at its start but wrong at its end ("kubctl" for
+  "kubectl") is not learned; the user adds it by hand.
+- Windows and Linux have the dictionary but no learning until their helpers read the field.
+- No notice when a word is learned yet: the user sees it in Settings (an overlay "Learned … Undo" is a
+  follow-up), and the privacy policy's Voice Data wording is updated separately.
+- Every word is sent with every dictation: the list's cap keeps that small.
+- The screen terms leave the computer only as words picked from a screen the consent already covers
+  sending. The picking is heuristic: a capitalised ordinary word mid-sentence ("Monday") is sent too,
+  harmlessly, since the list only biases the speech model; a name only ever at a sentence's start is
+  missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
+  backend fall back to it (its ADR-025).
+
+## ADR-DESK-039: A shorter wait between the release and the text
+
+**Context:** Owner, 2026-09-29: two to three seconds passed between letting go of the key and the
+text appearing. Measured end to end the same day (the app's log against the backend's per-request
+timeline, the Mac's clock corrected): the app itself adds nothing after the reply (the paste starts
+in the same millisecond), so the wait was the release tail (300 ms), the connection and upload
+(45–175 ms), the backend's sign-in, entitlement and quota checks (about 90 ms, but 365 ms on the
+first dictation after a pause), the transcription (250–700 ms) and the cleanup (300–470 ms). One
+dictation that day failed outright: the speech model's provider answered 429 (rate limited), the
+backend passed it on as a 502, and the recording was lost. The owner approved all four changes below,
+and asked that a server error be retried with a note on the pill, "so that the user doesn't have to
+say it again". Before the audio was compressed, the owner asked whether compressing would itself add
+time; measured first (below).
+
+**Decision:**
+- **Warm-up at key-down.** Every hold sends `GET /whoami` with the sign-in
+  (`TranscriptionClient.warmUp`, under `withFreshToken`) while the user speaks, so the transcription
+  after the release finds the connection open, the token refreshed if it was about to expire, and the
+  backend's token check and entitlement warm. Best effort: nothing waits for it, and a failure is
+  logged only.
+- **FLAC upload.** The recording is uploaded as FLAC (`format: "flac"`, which the backend already
+  accepted), lossless, at about half WAV's size. `FLACEncoder` (in `src/core`, no dependency) encodes
+  each 4,096-sample frame (256 ms) as the audio arrives, so the release leaves only the last partial
+  frame to encode. Measured before it was adopted: the whole recording takes about 1.4 ms per second
+  of audio to encode (10–18 ms for 7 s, 160 ms for 120 s), against about 90 ms of upload saved for
+  7 s and 1.5 s for 120 s on the owner's connection; encoding while recording removes even that cost.
+  The reference `flac` decoder gave back the exact samples. The debug "Play Last Recording" file
+  stays WAV.
+- **Retry on a server error.** A transcription that fails with a 5xx (the speech model behind the
+  backend rate limited, overloaded or failed) or a dropped connection is sent again after
+  `transcriptionRetryDelays` (0.5 s, then 1.5 s), the same recording and request, while the pill
+  shows "Server error, retrying…" (the `retrying` phase), back to transcribing once a retry
+  answers; after the last it fails with the server's error as before. Nothing else is retried:
+  signed out, no subscription, over quota or throttled (the backend's own 429), a refused request,
+  or a timeout, here or the backend's own 504 (either already waited: `transcriptionRequestTimeout`,
+  or the backend's 30 s for the speech model; retrying a 504 would hold the hotkey for 1.5 minutes). Cancelling during the wait sends nothing more. Both modes share it,
+  since agent mode's request starts with the same transcription.
+- **Release tail 150 ms** (was 300 ms), owner's choice.
+
+**Consequences:**
+- Every hold, a tap included, sends one small `GET /whoami`. For a user without an entitlement it can
+  grant the signup trial, as the transcription request it precedes would.
+- Node's `fetch` closes an idle connection after 4 s, so a dictation longer than that may upload over
+  a new connection; the backend's warmth outlasts it.
+- A retried request whose first attempt did reach the model but lost its reply (a dropped connection
+  after the backend answered) is transcribed, and counted, twice. A 5xx is never counted: the backend
+  reports usage only on success.
+- Supersedes ADR-DESK-005's "A failed transcription loses that recording (no retry queue yet)" for
+  server errors; its WAV upload is now FLAC.

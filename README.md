@@ -1,55 +1,55 @@
 # TabMail Voice
 
-Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: the text is typed
-into whatever you're writing in. Speech is transcribed by TabMail's servers and isn't stored.
+**Dictate your intentions.**
 
-Requires macOS 15 or later, a TabMail account and an active subscription.
-Supports Apple Silicon and Intel Macs.
+[![Get TabMail](https://img.shields.io/badge/Get_TabMail-tabmail.ai-6D28D9)](https://tabmail.ai)
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](./LICENSE)
+![Platform: macOS 15+](https://img.shields.io/badge/platform-macOS_15+-lightgrey)
 
-## Download
+Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: your words are
+cleaned up and typed into whatever you're writing in. Switch to agent mode to ask for something
+instead: edit the text you selected, write a reply from what's on screen, or answer a question
+with your calendar, contacts, files and the web. Speech is transcribed by TabMail's servers and
+isn't stored.
 
-Download the signed, notarized macOS installer from [TabMail downloads](https://tabmail.ai/download#voice-install).
-Install **TabMail Voice.app** in Applications. It is separate from the TabMail Thunderbird launcher.
+Requires macOS 15 or later and a TabMail account. Windows ([#61](https://github.com/TabMail/tabmail-voice/issues/61))
+and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to come.
 
-![TabMail Voice cleaning up grammar and filler words](docs/voice-dictation.webp)
+## See it in action
 
-![TabMail Voice editing selected text](docs/voice-edit.webp)
+https://github.com/user-attachments/assets/66857e8f-0757-4faa-b6e0-ad01a4a88244
 
-![TabMail Voice composing from visible chat history](docs/voice-compose.webp)
-
-[Watch the silent demonstration](https://tabmail.ai/demos/tabmail-promo-voice.mp4).
+[Get TabMail](https://tabmail.ai)
 
 ## Build
 
-1. Create your secrets file from the template and set your Apple Developer Team ID:
-   ```sh
-   cp Secrets.xcconfig.example Secrets.xcconfig
-   ```
-   `Secrets.xcconfig` is gitignored. The comments in the template explain each value.
-2. Generate the Xcode project (requires [XcodeGen](https://github.com/yonaskolb/XcodeGen)):
-   ```sh
-   ./apps/macos/Scripts/xcodegen.sh
-   ```
-   Always use this script rather than a bare `xcodegen generate`: it reads your
-   `DEVELOPMENT_TEAM` from `Secrets.xcconfig` and passes it to XcodeGen.
-3. Open `apps/macos/TabMailVoice.xcodeproj` and run the `TabMailVoice` scheme, or run the tests:
-   ```sh
-   xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice -derivedDataPath apps/macos/DerivedData test
-   ```
+The app is `apps/desktop/`, one Electron app for macOS, Windows and Linux (macOS first). Its
+dictation path (microphone, hotkey, paste) runs in native helpers, built from `native/<os>`
+(macOS today; the Windows and Linux helpers are to come). It needs Node 24 and, on macOS, Xcode
+for the helpers:
 
-A debug build (what the scheme runs) keeps a detailed log at
+```sh
+cd apps/desktop
+npx -y npm@11.19.1 install
+npm start          # builds the helpers, the main process and the windows, then runs the app
+npm test           # unit tests; also: npm run typecheck, npm run lint, ./scripts/swift-errors.sh test
+npm run dist       # a DMG and a ZIP in release/ (signed when a Developer ID is in the keychain)
+```
+
+An unpackaged build (what `npm start` runs) keeps a detailed log at
 `~/Library/Logs/TabMail Voice/TabMail Voice.log`: what you dictated, the text read from your screen,
 every request to the TabMail backend and its reply, and what was pasted. The access token and the
-audio are never in it. Release builds keep no log file.
+audio are never in it. Packaged builds keep no log file.
 
-Sign with a real team. macOS ties the Microphone and Accessibility permissions to the app's
+Sign a build you keep using. macOS ties the Microphone and Accessibility permissions to the app's
 signature, so an ad-hoc signed build loses them on every rebuild.
 
 ## First run
 
-TabMail lives in the menu bar. It asks for:
+TabMail lives in the menu bar. A welcome window asks for your consent to send dictations to
+TabMail, your name (for agent mode), whether to read the screen, and two permissions:
 
-- **Microphone**: to hear you while you hold the key.
+- **Microphone**: to hear you while you dictate.
 - **Accessibility**: to notice the key from any app and to paste the text for you.
 
 Then sign in with your TabMail email in Settings (we email you a one-time code).
@@ -58,14 +58,31 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 
 - **Hold** the dictation key, speak, **release**. A swirl gathers at your text cursor and turns
   into a pill whose waveform follows your voice once the microphone is listening. When you let
-  go, the pill shrinks to a spinning circle while your words are transcribed, then the text is
-  typed in.
-  The language badge follows the keyboard language selected when you start speaking.
-  A quick tap does nothing.
-- Press **Space** while holding to toggle agent mode. With text selected, ask Voice to edit it; otherwise, ask it to compose.
-- Pressing another key while holding cancels (so ⌥-shortcuts keep working).
-- Choose Fn/Globe instead of Right Option in Settings. If you do, set System Settings › Keyboard ›
-  "Press 🌐 key to" to "Do Nothing".
+  go, the pill shrinks to a spinning circle while your words are transcribed and cleaned up, then
+  the text is typed in. The language badge follows the keyboard language selected when you start
+  speaking. A quick tap does nothing.
+- **Double-tap** the key to dictate without holding it. Tap it again to finish, or press Esc to
+  cancel.
+- Pressing any other key while holding cancels (so ⌥-shortcuts keep working), except Space:
+  it switches to **agent mode**, where what you say is a request, and pressing it again switches
+  back. With text selected, ask to edit it; otherwise ask it to write something new, or ask a
+  question. Agent mode can use your calendar, reminders, contacts, files, notes, messages, email and
+  the web, and it asks before it sends or creates anything. Turn each of these on or off in
+  Settings › Agent mode.
+- **Dictionary**: add names and terms in Settings › Dictionary so they're spelled your way. When
+  you correct a word after a dictation, TabMail Voice can learn the new spelling. The dictionary
+  stays on your computer.
+- **Read the screen while dictating** (Settings › Dictation) sends the text in the window in
+  front with your dictation, so names and terms come out as they appear there. It isn't stored.
+- Choose Fn/Globe instead of Right Option in Settings. While it is the hotkey, TabMail Voice sets
+  System Settings › Keyboard › "Press 🌐 key to" to "Do Nothing", and puts your choice back when you
+  pick another key or quit.
+
+## Privacy
+
+Your recording, the screen text and your dictionary are sent to TabMail only to process the
+dictation, and none of it is stored or used to train AI models. See the
+[Privacy Policy](https://tabmail.ai/privacy/).
 
 ## Comparing speech-to-text models
 
@@ -83,17 +100,18 @@ sudo extract only the key line, and keeps the key in memory without writing it a
 python3 Scripts/stt-compare/compare.py --sudo --env-file /path/to/secrets.env
 ```
 
-## Privacy
-
-Audio is sent to the TabMail service for transcription. Optional screen reading sends context
-from the front window to help with writing. Turn screen reading off in Settings if desired.
-See the [Privacy Policy](https://tabmail.ai/privacy/).
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the DCO and development workflow,
 [SECURITY.md](SECURITY.md) for private vulnerability reports, and
 [TRADEMARKS.md](TRADEMARKS.md) for name and logo usage.
+
+## Acknowledgements
+
+TabMail Voice follows patterns from [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT),
+an open-source dictation app: one Electron app for macOS, Windows and Linux, and the approach of
+its correction learner, which the dictionary's learning from the user's corrections is modelled on.
+It is our own app and code, not a fork of OpenWhispr.
 
 ## License
 

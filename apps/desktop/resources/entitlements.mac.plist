@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Hardened runtime, not sandboxed: the paste keystroke into other apps and the global hotkey
+       both need Accessibility, which the App Sandbox forbids (ADR-DESK-003). -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <!-- Calendar and Reminders, for the Answer tool (ADR-DESK-024); the hardened runtime has one
+       entitlement for both. -->
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
+  <!-- Contacts, for the Answer tool (ADR-DESK-025). -->
+  <key>com.apple.security.personal-information.addressbook</key>
+  <true/>
+  <!-- Notes and Messages, through AppleScript, for the Answer tool (ADR-DESK-028): the hardened
+       runtime refuses the app's Apple Events to other apps without it. -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+  <!-- V8 compiles JavaScript at run time. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+</dict>
+</plist>

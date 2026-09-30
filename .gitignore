@@ -1,6 +1,10 @@
-# XcodeGen-generated project — sourced from project.yml. Regenerate with
-# ./apps/macos/Scripts/xcodegen.sh; none of it is tracked.
+# The retired Swift app: a checkout may still hold its generated Xcode project (with the signing
+# team) and DerivedData, in apps/macos/ or, from before the platform folders, at the root, so
+# nothing left there is ever committed.
+/apps/macos/
 TabMailVoice.xcodeproj/
+
+# Xcode and SwiftPM output (the helpers' package in apps/desktop/native/macos).
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
@@ -20,8 +24,8 @@ xcuserdata/
 *.log
 *.env
 
-# Local signing and secrets — never committed. Secrets.xcconfig holds
-# DEVELOPMENT_TEAM (create it from Secrets.xcconfig.example), as in tabmail-ios.
+# Local signing and secrets — never committed. Secrets.xcconfig was the retired Swift app's
+# signing config; a checkout may still have one, so it stays ignored.
 Secrets.xcconfig
 Secrets.xcconfig.bak
 credentials.json
@@ -49,3 +53,8 @@ scratchpad/
 # Speech-to-text comparison: your voice recordings and their transcripts stay local.
 Scripts/stt-compare/recordings/
 Scripts/stt-compare/results/
+
+# Electron app (apps/desktop): dependencies and build output.
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/release/

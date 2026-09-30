@@ -1,0 +1,127 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+body {
+  overflow: hidden;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+}
+
+.rail {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.category {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.category-label[data-current="true"] {
+  color: var(--accent);
+}
+
+.bubbles {
+  display: flex;
+  align-items: center;
+}
+
+.step-bubble {
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  box-shadow: none;
+  background: var(--separator);
+}
+
+.step-bubble:disabled {
+  opacity: 1;
+}
+
+.step-bubble.current {
+  background: var(--accent);
+}
+
+.step-bubble.done {
+  background: var(--allowed);
+}
+
+.page {
+  flex: 1;
+  padding: 28px;
+  overflow: auto;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  line-height: 1.25;
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.step hr {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--separator);
+}
+
+.stack-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.secondary {
+  color: var(--secondary);
+}
+
+.sends {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sends li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sends .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.links {
+  display: flex;
+  gap: 16px;
+}
+
+.footer {
+  padding: 16px;
+  border-top: 1px solid var(--separator);
+}

@@ -30,13 +30,16 @@ git commit --amend -s
 
 ## Development setup
 
-TabMail Voice is a native Swift 6 app for macOS 15 or later. Use Xcode and
-XcodeGen, then follow the build instructions in [README.md](README.md).
-Run the full app-hosted tests before submitting a change:
+TabMail Voice is one Electron app in TypeScript, `apps/desktop/`, with native helpers per
+operating system in `apps/desktop/native/<os>` (macOS today, in Swift). Follow the build
+instructions in [README.md](README.md), and run every check before submitting a change:
 
 ```sh
-xcodebuild -project apps/macos/TabMailVoice.xcodeproj -scheme TabMailVoice \
-  -derivedDataPath apps/macos/DerivedData test
+cd apps/desktop
+npm test
+npm run typecheck
+npm run lint
+./scripts/swift-errors.sh test   # the macOS helpers
 ```
 
 Tests use synthetic content, isolated pasteboards, fake audio and HTTP transports.
