@@ -1073,7 +1073,8 @@ describe("main process wiring", () => {
       expect(updater?.installs).toBe(1);
     });
 
-    test("after a failed dictation, Restart Now installs at once", async () => {
+    /** A text copied instead of pasted (ADR-DESK-042) ends a dictation as a failure does. */
+    test.each(["failed", "copied"])("after a %s dictation, Restart Now installs at once", async (ended) => {
       await launchPackaged();
       const updater = app.autoUpdater;
       const controller = app.controller as unknown as { phase: { kind: string }; onPhaseChange: (phase: { kind: string }) => void };
@@ -1083,8 +1084,8 @@ describe("main process wiring", () => {
       downloaded("9.9.9");
       await settle();
       expect(app.dialogs).toEqual([]);
-      controller.phase = { kind: "failed" };
-      controller.onPhaseChange({ kind: "failed" });
+      controller.phase = { kind: ended };
+      controller.onPhaseChange({ kind: ended });
       await settle();
 
       expect((app.dialogs[0] as { buttons: string[] }).buttons[0]).toBe("Restart Now");

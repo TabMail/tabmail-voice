@@ -343,7 +343,8 @@ function launch(): void {
         app.focus({ steal: true });
         void dialog.showMessageBox({ type: "info", message, detail, buttons: ["OK"] });
       },
-      isBusy: () => (controller.phase.kind !== "idle" && controller.phase.kind !== "failed") || controller.chat !== null,
+      // A failure or a copied note showing is at rest: the next hold replaces it.
+      isBusy: () => !["idle", "failed", "copied"].includes(controller.phase.kind) || controller.chat !== null,
       onChange: () => tray.update(),
     });
   }
