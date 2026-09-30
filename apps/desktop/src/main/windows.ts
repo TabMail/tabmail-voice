@@ -132,7 +132,6 @@ export class Windows {
     window.show();
   }
 
-  /** Moves `name`'s window to `bounds`, if it is open. */
   isOpen(name: WindowName): boolean {
     const window = this.open.get(name);
     return window !== undefined && !window.isDestroyed();

@@ -195,6 +195,14 @@ describe("OverlayWindowController", () => {
 
     controller.update({ kind: "idle" });
     expect(controller.pillPlace).toEqual(atPointer);
+
+    // By the bottom of the screen a row of bubbles has no room under the pill: they go over it, and
+    // the place says so, for the paste history to open where the chat would (red-verified).
+    caret.y = workArea.y + workArea.height - 20;
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(placed).toHaveLength(2));
+    expect(controller.pillPlace.bubblesUnder).toBe(false);
   });
 
   /** The overlay takes the mouse, as the chat window, opened over the pill at the caret the request

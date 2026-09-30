@@ -568,6 +568,13 @@ describe("main process wiring", () => {
     app.controller?.onShowHistory?.();
     expect(app.historyWindow.at(-1)).toMatch(/ \d+x150$/);
 
+    // With the bubbles over the pill (by the bottom of the screen), it opens over them, as the chat
+    // would, never over the pill alone where it would cover them (red-verified).
+    (app.overlay as unknown as { pillPlace: { bubblesUnder: boolean } }).pillPlace.bubblesUnder = false;
+    app.controller?.onShowHistory?.();
+    const overBubbles = 600 - config.agentBubbleGap - config.agentBubbleDiameter - config.chatPillGap - 150;
+    expect(app.historyWindow.at(-1)).toBe(`show ${700 - config.pasteHistoryWindowWidth / 2},${overBubbles} ${config.pasteHistoryWindowWidth}x150`);
+
     // A click elsewhere closes it, the focus already gone where the user clicked.
     app.controller?.onShowHistory?.();
     app.historyBlur?.();

@@ -2103,8 +2103,8 @@ no user data.
 >   `HelperConfig` values, the `insert` outcome and `session`, and the `caretMoved` outcome with its
 >   "Cursor moved" note. `insert` is as before this ADR.
 > - Consequences: a caret moved within the same app is not put back (the ADR-DESK-002 behaviour);
->   a helper restart after key-down no longer copies the text (the restarted helper reads the app in
->   front as well). The decision below is kept as the record of what was tried.
+>   a helper restart after key-down no longer copies the text once the restarted helper is up (it reads
+>   the app in front as well); a read that fails while it restarts copies it. The decision below is kept as the record of what was tried.
 
 **Context:** Owner, 2026-09-30: "if I move my cursor or caret while the dictation is still trying to
 go on, I paste it in the wrong place … paste … where the dictation button was pressed". The paste

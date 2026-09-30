@@ -439,8 +439,6 @@ describe("overlay page", () => {
     expect(document.querySelectorAll(".bubble")).toHaveLength(0);
   });
 
-  /** A tip that appears during a hold (the double-tap tip, 20 s in, with the Space tip learned) is
-   * placed as one shown from the start is: under the pill, not over it. */
   /** The tip and its outline are placed and drawn by their size: until measured they are hidden, never
    * shown for a frame away from the pill or as words without their box (red-verified against each). */
   test("a tip is hidden until measured", async () => {
@@ -458,6 +456,8 @@ describe("overlay page", () => {
     expect(tip()?.closest<HTMLElement>(".centred")?.style.visibility).toBe("visible");
   });
 
+  /** A tip that appears during a hold (the double-tap tip, 20 s in, with the Space tip learned) is
+   * placed as one shown from the start is: under the pill, not over it. */
   test("a tip that appears later is placed under the pill, as one shown from the start", async () => {
     const atStart = await overlayPage();
     await atStart.show({ ...listening, tip: "doubleTap" });
