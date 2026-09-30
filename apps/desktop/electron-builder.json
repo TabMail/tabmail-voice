@@ -13,8 +13,10 @@
     { "from": "resources", "to": ".", "filter": ["trayTemplate*.png"] }
   ],
   "asar": true,
+  "publish": [{ "provider": "generic", "url": "https://cdn.tabmail.ai/releases/voice/macos-arm64", "useMultipleRangeRequest": false }],
   "mac": {
     "category": "public.app-category.productivity",
+    "artifactName": "TabMail-Voice-${version}-${arch}.${ext}",
     "icon": "resources/icon.png",
     "target": [
       { "target": "dmg", "arch": ["arm64"] },
@@ -27,11 +29,15 @@
     "entitlementsInherit": "resources/entitlements.mac.plist",
     "extendInfo": {
       "LSUIElement": true,
+      "ElectronSquirrelPreventDowngrades": true,
       "NSMicrophoneUsageDescription": "TabMail Voice listens only while you hold the dictation key.",
       "NSCalendarsFullAccessUsageDescription": "TabMail Voice reads your calendars to answer what you ask, and adds the events you confirm.",
       "NSRemindersFullAccessUsageDescription": "TabMail Voice reads your reminders to answer what you ask, and adds the ones you confirm.",
       "NSContactsUsageDescription": "TabMail Voice looks up people in your contacts to answer what you ask, and adds the ones you confirm.",
       "NSAppleEventsUsageDescription": "TabMail Voice uses Notes and Messages to answer what you ask, and adds the notes and sends the messages you confirm."
     }
+  },
+  "dmg": {
+    "artifactName": "TabMail-Voice-${arch}.${ext}"
   }
 }

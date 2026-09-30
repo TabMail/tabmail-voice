@@ -14,6 +14,8 @@ export interface MenuState {
   hotkey: DictationHotkey;
   debugMode: boolean;
   phase: Phase;
+  /** Packaged builds only (ADR-DESK-041); null otherwise. */
+  update: UpdateState | null;
 }
 
 /** Start Dictation is a debug item: dictation starts from the hotkey. Once a recording started from
@@ -33,4 +35,26 @@ export function statusLine(state: MenuState): string {
   if (!state.isSignedIn) return "Sign in to start dictating";
   if (!state.microphoneGranted || !state.accessibilityTrusted) return "Setup needed";
   return `Hold ${hotkeyNames[state.hotkey].displayName} to dictate`;
+}
+
+/** Where an update is (ADR-DESK-041). `ready`: downloaded, installed when the app quits. */
+export type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "downloading"; version: string }
+  | { kind: "ready"; version: string };
+
+/** The menu's update item: Check for Updates, what a check is doing, or Restart to Update once one is
+ * ready. */
+export function updateItem(update: UpdateState): { label: string; enabled: boolean } {
+  switch (update.kind) {
+    case "idle":
+      return { label: "Check for Updates…", enabled: true };
+    case "checking":
+      return { label: "Checking for Updates…", enabled: false };
+    case "downloading":
+      return { label: `Downloading Version ${update.version}…`, enabled: false };
+    case "ready":
+      return { label: `Restart to Update to Version ${update.version}`, enabled: true };
+  }
 }

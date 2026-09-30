@@ -48,6 +48,7 @@ apps/desktop/
 │   │   ├── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
 │   │   ├── audioCapture.ts          The microphone, one session per dictation: through `voice-macos` on macOS, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
+│   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, installed at the quit, "Restart now?" once ready (ADR-DESK-041)
 │   │   ├── permissions.ts, keychainSessionStore.ts, fileStore.ts, logFile.ts, profileFiles.ts
 │   ├── preload/preload.ts   `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
@@ -109,3 +110,5 @@ message and pastes nothing. No agent call has a deadline.
 Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) with a Supabase
 JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
 dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
+Packaged builds update themselves from `cdn.tabmail.ai/releases/voice/macos-arm64/latest-mac.yml`
+(`electron-updater`), sending no installation ID (ADR-DESK-041).

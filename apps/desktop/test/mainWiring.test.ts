@@ -41,36 +41,90 @@ const app = vi.hoisted(() => ({
   appData: null as string | null,
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
-  /** The tray menu's actions, as the app gives them. */
-  trayActions: null as { showWelcome: () => void } | null,
+  /** The tray menu's actions and state, as the app gives them. */
+  trayActions: null as { showWelcome: () => void; checkForUpdates: () => void; restartToUpdate: () => void } | null,
+  trayState: null as (() => { update: unknown }) | null,
+  /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
+  packaged: false,
+  /** `electron-updater`'s `autoUpdater` as the app last got it. */
+  autoUpdater: null as (import("node:events").EventEmitter & { autoDownload: boolean; autoInstallOnAppQuit: boolean; logger: unknown; requestHeaders: Record<string, string> | null; checks: number; installs: number }) | null,
+  /** Electron's own `autoUpdater` (Squirrel.Mac) as the app last got it. */
+  squirrel: null as import("node:events").EventEmitter | null,
+  /** How often the app refreshed its tray menu. */
+  trayUpdates: 0,
+  /** The message boxes shown, and the button each is answered with. */
+  dialogs: [] as Record<string, unknown>[],
+  dialogResponse: 1,
 }));
 
-vi.mock("electron", () => ({
-  app: {
-    isPackaged: false,
-    requestSingleInstanceLock: () => true,
-    whenReady: () => Promise.resolve(),
-    getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
-    getAppPath: () => "/nonexistent",
-    getVersion: () => "0.0.0",
-    dock: { hide() {} },
-    on() {},
-    quit() {},
-    getLoginItemSettings: () => ({ openAtLogin: false }),
-  },
-  session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
-  shell: {
-    openExternal: async (url: string) => {
-      if (app.openFailure) throw app.openFailure;
-      app.opened.push(url);
+vi.mock("electron", async () => {
+  const { EventEmitter } = await import("node:events");
+  return {
+    // A fresh one for each test's launch: the mocked module outlives `vi.resetModules`.
+    get autoUpdater() {
+      app.squirrel ??= new EventEmitter();
+      return app.squirrel;
     },
-  },
-  systemPreferences: {},
-  ipcMain: {
-    handle: (channel: string, handler: (event: unknown, argument: unknown) => unknown) => app.handlers.set(channel, handler),
-    on() {},
-  },
-}));
+    app: {
+      get isPackaged() {
+        return app.packaged;
+      },
+      focus() {},
+      requestSingleInstanceLock: () => true,
+      whenReady: () => Promise.resolve(),
+      getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
+      getAppPath: () => "/nonexistent",
+      getVersion: () => "0.0.0",
+      dock: { hide() {} },
+      on() {},
+      quit() {},
+      getLoginItemSettings: () => ({ openAtLogin: false }),
+    },
+    session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+    shell: {
+      openExternal: async (url: string) => {
+        if (app.openFailure) throw app.openFailure;
+        app.opened.push(url);
+      },
+    },
+    systemPreferences: {},
+    dialog: {
+      showMessageBox: async (options: Record<string, unknown>) => {
+        app.dialogs.push(options);
+        return { response: app.dialogResponse };
+      },
+    },
+    ipcMain: {
+      handle: (channel: string, handler: (event: unknown, argument: unknown) => unknown) => app.handlers.set(channel, handler),
+      on() {},
+    },
+  };
+});
+vi.mock("electron-updater", async () => {
+  const { EventEmitter } = await import("node:events");
+  class FakeAutoUpdater extends EventEmitter {
+    autoDownload = false;
+    autoInstallOnAppQuit = false;
+    logger: unknown = "the console";
+    requestHeaders: Record<string, string> | null = null;
+    checks = 0;
+    installs = 0;
+    checkForUpdates() {
+      this.checks += 1;
+      return new Promise(() => {});
+    }
+    quitAndInstall() {
+      this.installs += 1;
+    }
+  }
+  // A fresh one for each test's launch: the mocked module outlives `vi.resetModules`.
+  return {
+    get autoUpdater() {
+      app.autoUpdater ??= new FakeAutoUpdater();
+      return app.autoUpdater;
+    },
+  };
+});
 vi.mock("@napi-rs/keyring", () => ({
   Entry: class {
     getPassword(): string | null {
@@ -233,10 +287,13 @@ vi.mock("../src/main/overlayWindow.js", () => ({
 }));
 vi.mock("../src/main/tray.js", () => ({
   TrayMenu: class {
-    constructor(_resources: string, _state: unknown, actions: { showWelcome: () => void }) {
+    constructor(_resources: string, state: () => { update: unknown }, actions: { showWelcome: () => void; checkForUpdates: () => void; restartToUpdate: () => void }) {
       app.trayActions = actions;
+      app.trayState = state;
     }
-    update() {}
+    update() {
+      app.trayUpdates += 1;
+    }
   },
 }));
 vi.mock("../src/main/windows.js", () => ({
@@ -290,6 +347,13 @@ afterEach(() => {
   app.appData = null;
   app.fullName = null;
   app.trayActions = null;
+  app.trayState = null;
+  app.packaged = false;
+  app.autoUpdater = null;
+  app.squirrel = null;
+  app.trayUpdates = 0;
+  app.dialogs = [];
+  app.dialogResponse = 1;
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -801,5 +865,141 @@ describe("main process wiring", () => {
     expect(ended()).toBe(1);
     controller?.onNothingListening?.();
     expect(ended()).toBe(2);
+  });
+
+  describe("updates (ADR-DESK-041)", () => {
+    /** A packaged build, launched with its resources where Electron puts them. */
+    async function launchPackaged(): Promise<void> {
+      app.packaged = true;
+      Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
+      await launch("darwin");
+    }
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    /** `electron-updater` has downloaded `version`, and macOS has accepted it. */
+    function downloaded(version: string): void {
+      app.autoUpdater?.emit("update-downloaded", { version });
+      app.squirrel?.emit("update-downloaded");
+    }
+
+    test("a debug build has no updater and no update item", async () => {
+      await launch("darwin");
+
+      expect(app.trayState?.().update).toBeNull();
+      app.trayActions?.checkForUpdates();
+      app.trayActions?.restartToUpdate();
+    });
+
+    test("a packaged build updates by itself, silently to the console, and shows it in the menu", async () => {
+      await launchPackaged();
+      const updater = app.autoUpdater;
+
+      expect(updater?.autoDownload).toBe(true);
+      expect(updater?.autoInstallOnAppQuit).toBe(true);
+      expect(updater?.logger).toBeNull();
+      expect(updater?.requestHeaders).toEqual({ "x-user-staging-id": "none" });
+      expect(app.trayState?.().update).toEqual({ kind: "idle" });
+      app.trayActions?.checkForUpdates();
+      expect(updater?.checks).toBe(1);
+      expect(app.trayState?.().update).toEqual({ kind: "checking" });
+    });
+
+    test("a packaged build looks for an update by itself after launching", async () => {
+      vi.useFakeTimers();
+      try {
+        const launched = launchPackaged();
+        await vi.advanceTimersByTimeAsync(0);
+        await launched;
+        expect(app.autoUpdater?.checks).toBe(0);
+
+        await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);
+        expect(app.autoUpdater?.checks).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("a download is not ready until macOS accepts it", async () => {
+      await launchPackaged();
+
+      app.autoUpdater?.emit("update-downloaded", { version: "9.9.9" });
+      await settle();
+      expect(app.trayState?.().update).toEqual({ kind: "idle" });
+      expect(app.dialogs).toEqual([]);
+
+      app.squirrel?.emit("update-downloaded");
+      await settle();
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
+      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready." })]);
+    });
+
+    test("every change of the update's state reaches the menu", async () => {
+      await launchPackaged();
+      const before = app.trayUpdates;
+
+      app.trayActions?.checkForUpdates();
+
+      expect(app.trayUpdates).toBe(before + 1);
+    });
+
+    test("Check for Updates answers when the app is up to date", async () => {
+      await launchPackaged();
+      const updater = app.autoUpdater;
+      if (updater) (updater as unknown as { checkForUpdates: () => Promise<unknown> }).checkForUpdates = () => Promise.resolve({ isUpdateAvailable: false });
+
+      app.trayActions?.checkForUpdates();
+      await settle();
+
+      // The running version, as the app reports it.
+      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice is up to date.", detail: "Version 0.0.0 is the latest version.", buttons: ["OK"] })]);
+    });
+
+    test("the question waits for the dictation to end and the chat to close; Later is Return's and Escape's", async () => {
+      await launchPackaged();
+      const updater = app.autoUpdater;
+      const controller = app.controller as unknown as { phase: { kind: string }; chat: object | null; onPhaseChange: (phase: { kind: string }) => void; onChatChange: (isOpen: boolean) => void };
+
+      controller.phase = { kind: "listening" };
+      downloaded("9.9.9");
+      await settle();
+      expect(app.dialogs).toEqual([]);
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
+
+      // The dictation ends into the chat window: still not.
+      controller.phase = { kind: "idle" };
+      controller.chat = {};
+      controller.onPhaseChange({ kind: "idle" });
+      await settle();
+      expect(app.dialogs).toEqual([]);
+
+      controller.chat = null;
+      controller.onChatChange(false);
+      await settle();
+      expect(app.dialogs).toHaveLength(1);
+      const dialog = app.dialogs[0] as { buttons: string[]; defaultId: number; cancelId: number };
+      expect(dialog.buttons[dialog.defaultId]).toBe("Later");
+      expect(dialog.buttons[dialog.cancelId]).toBe("Later");
+      // Answered Later: nothing installs until the quit, or the menu's Restart to Update.
+      expect(updater?.installs).toBe(0);
+      app.trayActions?.restartToUpdate();
+      expect(updater?.installs).toBe(1);
+    });
+
+    test("after a failed dictation, Restart Now installs at once", async () => {
+      await launchPackaged();
+      const updater = app.autoUpdater;
+      const controller = app.controller as unknown as { phase: { kind: string }; onPhaseChange: (phase: { kind: string }) => void };
+      app.dialogResponse = 0;
+
+      controller.phase = { kind: "transcribing" };
+      downloaded("9.9.9");
+      await settle();
+      expect(app.dialogs).toEqual([]);
+      controller.phase = { kind: "failed" };
+      controller.onPhaseChange({ kind: "failed" });
+      await settle();
+
+      expect((app.dialogs[0] as { buttons: string[] }).buttons[0]).toBe("Restart Now");
+      expect(updater?.installs).toBe(1);
+    });
   });
 });
