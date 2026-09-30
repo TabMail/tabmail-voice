@@ -304,7 +304,7 @@ function GeneralPane({ state }: { state: SettingsState }) {
       )}
       <div className="row">
         <span>Version</span>
-        <span className="value">{state.version}</span>
+        <span className="value version">{state.version}</span>
       </div>
       {state.update && <UpdateRow update={state.update} />}
     </Group>

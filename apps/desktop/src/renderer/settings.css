@@ -184,11 +184,6 @@
   padding: 10px 14px;
 }
 
-/* A setting's value that can't be changed, such as the version. */
-.value {
-  color: var(--secondary);
-}
-
 .group-caption {
   margin: 6px 14px 0;
 }
@@ -199,6 +194,11 @@
 
 .value {
   user-select: text;
+}
+
+/* The app's version, which can't be changed. */
+.version {
+  color: var(--secondary);
 }
 
 .toggle-text {

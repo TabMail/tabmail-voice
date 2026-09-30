@@ -2033,8 +2033,9 @@ no user data.
   links to it and serves the newest release without an edit per release (owner, 2026-09-30). A
   versioned copy is kept beside it. The first name, `TabMail-Voice-arm64.dmg`, is retired: the CDN
   served that object unreliably, and a fresh name was the fix.
-- The DMG window has our own background (`resources/dmg-background.png`, at 1x and 2x): white, with
-  the app and the Applications link in its top half. The window is the background's size, and
+- The DMG window has our own background (`resources/dmg-background.png`, at 1x and 2x): white with
+  the arrow, and the app and the Applications link in its top half. Its title, the volume's name, is
+  "TabMail Voice", without the version. The window is the background's size, and
   Finder's path and status bars cover its bottom; with the stock layout's icons lower down, the
   window scrolled on a Mac with those bars on.
 - Nothing about the user or the installation is sent: `electron-updater` keeps a random ID for the

@@ -64,8 +64,8 @@ describe("the Mac app's packaging", () => {
   /** The DMG window is its background's size, and Finder's path and status bars take the bottom of
    * it: the app and the Applications link sit in the top half, so neither falls under the bars and
    * the window never scrolls. The background comes at 1x and 2x, the 2x twice the 1x. */
-  test("the DMG window shows both icons without scrolling, on a background at both scales", () => {
-    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { dmg: { background: string; contents: { y: number; type: string }[] } };
+  test("the DMG window shows both icons without scrolling, on a background at both scales, under the app's name", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { dmg: { title: string; background: string; contents: { y: number; type: string }[] } };
     const size = (file: string) => {
       const png = readFileSync(join(root, "resources", file));
       return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
@@ -76,5 +76,7 @@ describe("the Mac app's packaging", () => {
     expect(retina).toEqual({ width: background.width * 2, height: background.height * 2 });
     expect(builder.dmg.contents.map((item) => item.type).sort()).toEqual(["file", "link"]);
     for (const item of builder.dmg.contents) expect(item.y).toBeLessThanOrEqual(background.height / 2);
+    // The window's title and the mounted volume's name: the app's, without a version.
+    expect(builder.dmg.title).toBe("TabMail Voice");
   });
 });

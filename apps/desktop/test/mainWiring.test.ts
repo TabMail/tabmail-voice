@@ -60,6 +60,8 @@ const app = vi.hoisted(() => ({
   trayState: null as (() => { update: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
+  /** `app.getVersion()`. */
+  version: "0.0.0",
   /** `electron-updater`'s `autoUpdater` as the app last got it. */
   autoUpdater: null as (import("node:events").EventEmitter & { autoDownload: boolean; autoInstallOnAppQuit: boolean; logger: unknown; requestHeaders: Record<string, string> | null; checks: number; installs: number }) | null,
   /** Electron's own `autoUpdater` (Squirrel.Mac) as the app last got it. */
@@ -88,7 +90,7 @@ vi.mock("electron", async () => {
       whenReady: () => Promise.resolve(),
       getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
-      getVersion: () => "0.0.0",
+      getVersion: () => app.version,
       dock: { hide() {} },
       on() {},
       quit() {},
@@ -396,6 +398,7 @@ afterEach(() => {
   app.trayActions = null;
   app.trayState = null;
   app.packaged = false;
+  app.version = "0.0.0";
   app.autoUpdater = null;
   app.squirrel = null;
   app.trayUpdates = 0;
@@ -843,8 +846,9 @@ describe("main process wiring", () => {
 
   /** Settings › General shows the app's own version. */
   test("the settings state carries the app's version", async () => {
+    app.version = "9.8.7";
     await launch("darwin");
-    expect((app.handlers.get(channels.getState)?.({}, "settings") as { version: string }).version).toBe("0.0.0");
+    expect((app.handlers.get(channels.getState)?.({}, "settings") as { version: string }).version).toBe("9.8.7");
   });
 
   /** Settings › Dictionary's commands change the stored dictionary and the learning switch, which the
