@@ -408,6 +408,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     [402, `{"error":"no_active_subscription"}`, "Dictation needs an active TabMail subscription."],
     [429, `{"error":"rate_limited"}`, new BackendError("rateLimited").message],
     [400, `{"error":"invalid_request"}`, "Dictation failed. Please try again."],
+    // The backend's own timeout: it already waited for the speech model.
+    [504, `{"error":"transcription_timeout"}`, "Dictation failed. Please try again."],
     [200, `{"unexpected":true}`, "TabMail returned an unexpected response."],
   ])("a failed transcription (%i %s) is neither cleaned up nor pasted, nor tried again", async (status, body, message) => {
     transcription.enqueue(status, body);
@@ -477,12 +479,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["a 500", () => transcription.enqueue(500, "")],
       ["a 502", () => transcription.enqueue(502, { error: "transcription_failed" })],
       ["a 503", () => transcription.enqueue(503, { error: "transcription_unavailable" })],
-      ["a 504", () => transcription.enqueue(504, { error: "transcription_timeout" })],
       ["a dropped connection", dropsConnection],
     ])("is tried again after %s, and the retry's text pasted", async (_, fail) => {
       fail();
       transcription.enqueue(200, cleanedReply);
-      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const pastes: string[] = [];
+      const pastedWhile: Phase["kind"][] = [];
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        paste: async (text) => {
+          pastedWhile.push(controller.phase.kind);
+          pastes.push(text);
+        },
+      });
       controller.transcriptionRetryDelays = [1, 1];
       const phases: Phase[] = [];
       controller.onPhaseChange = (phase) => phases.push(phase);
@@ -491,6 +500,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(pastes).toEqual([cleaned]);
+      // The note goes once the retry answers: nothing is being tried again while the text goes in.
+      expect(pastedWhile).toEqual(["transcribing"]);
       expect(controller.phase).toEqual(idle);
       // The same recording, sent again as it was.
       expect(transcription.requests).toHaveLength(2);

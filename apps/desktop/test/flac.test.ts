@@ -30,6 +30,26 @@ function speechLike(count: number): Int16Array {
   return samples;
 }
 
+/** A pure tone, which a high predictor order codes best. */
+function tone(count: number): Int16Array {
+  return Int16Array.from({ length: count }, (_, index) => Math.round(9_000 * Math.sin((2 * Math.PI * 440 * index) / 16_000)));
+}
+
+/** Quiet audio with a full-scale burst in the middle and a step near the end: the burst's partition
+ * needs the largest Rice parameter, while the quiet rest keeps a predictor cheaper than verbatim. */
+function burstAndStep(count: number): Int16Array {
+  const samples = noise(count, 30, 5);
+  const burst = Math.floor(count / 2);
+  for (let index = burst; index < Math.min(count, burst + 64); index += 1) samples[index] = index % 2 === 0 ? 32_767 : -32_768;
+  for (let index = Math.floor((count * 3) / 4); index < count; index += 1) samples[index] = samples[index]! + 12_000;
+  return samples;
+}
+
+/** The encoded size of the stream header ("fLaC" and the STREAMINFO block), and a generous bound on a
+ * frame's own header and footer. */
+const streamHeaderBytes = 42;
+const frameOverheadBytes = 16;
+
 function pcmOf(samples: Int16Array): Uint8Array {
   const pcm = new Uint8Array(samples.length * 2);
   const view = new DataView(pcm.buffer);
@@ -58,6 +78,39 @@ describe("FLACEncoder", () => {
     expect(decoded.pcm).toEqual(pcmOf(samples));
     expect(decoded.totalSamples).toBe(samples.length);
     expect(decoded.sampleRate).toBe(16_000);
+  });
+
+  /** A recording can end on any sample, so the last frame can be any length: every short one, and a
+   * few odd longer ones, alone and after a full block, over noise, a tone and a burst with a step
+   * (each takes a different coding path). */
+  test.each([
+    ["noise", (count: number) => noise(count, 2_000, 11)],
+    ["a tone", tone],
+    ["quiet audio with a full-scale burst and a step", burstAndStep],
+  ])("%s decodes to the same samples, whatever length the last frame is", (_, signal) => {
+    const tails = [...Array.from({ length: 40 }, (_, index) => index + 1), 127, 255, 1_001];
+    for (const tail of tails) {
+      for (const count of [tail, config.flacBlockSize + tail]) {
+        const samples = signal(count);
+        expect(decodeFLAC(encode(samples)).pcm, `${count} samples`).toEqual(pcmOf(samples));
+      }
+    }
+  });
+
+  /** Silence is a constant subframe: a few bytes a frame, not a sample's worth each. */
+  test("digital silence costs a few bytes a frame", () => {
+    const frames = 5;
+    expect(encode(new Int16Array(frames * config.flacBlockSize)).length).toBeLessThanOrEqual(streamHeaderBytes + frames * frameOverheadBytes);
+  });
+
+  /** A frame no predictor shrinks is sent verbatim, so no stream is much larger than its PCM (the
+   * upload's size limit rests on this, ADR-DESK-039). */
+  test.each([
+    ["full-scale noise", noise(3 * config.flacBlockSize + 5, 32_767, 3)],
+    ["a full-scale square wave", Int16Array.from({ length: 3 * config.flacBlockSize + 5 }, (_, index) => (index % 2 === 0 ? 32_767 : -32_768))],
+  ])("%s is no larger than its PCM and a frame's overhead", (_, samples) => {
+    const frames = Math.ceil(samples.length / config.flacBlockSize);
+    expect(encode(samples).length).toBeLessThanOrEqual(samples.length * 2 + streamHeaderBytes + frames * frameOverheadBytes);
   });
 
   test("an empty recording is a valid stream of no samples", () => {

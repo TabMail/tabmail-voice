@@ -1942,10 +1942,11 @@ time; measured first (below).
 - **Retry on a server error.** A transcription that fails with a 5xx (the speech model behind the
   backend rate limited, overloaded or failed) or a dropped connection is sent again after
   `transcriptionRetryDelays` (0.5 s, then 1.5 s), the same recording and request, while the pill
-  shows "Server error, retrying…" (the `retrying` phase); after the last it fails with the server's
-  error as before. Nothing else is retried: signed out, no subscription, over quota or throttled
-  (the backend's own 429), a refused request, or a request that timed out (it already waited
-  `transcriptionRequestTimeout`). Cancelling during the wait sends nothing more. Both modes share it,
+  shows "Server error, retrying…" (the `retrying` phase), back to transcribing once a retry
+  answers; after the last it fails with the server's error as before. Nothing else is retried:
+  signed out, no subscription, over quota or throttled (the backend's own 429), a refused request,
+  or a timeout, here or the backend's own 504 (either already waited: `transcriptionRequestTimeout`,
+  or the backend's 30 s for the speech model; retrying a 504 would hold the hotkey for 1.5 minutes). Cancelling during the wait sends nothing more. Both modes share it,
   since agent mode's request starts with the same transcription.
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 

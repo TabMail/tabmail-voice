@@ -12,6 +12,7 @@ import { toolImplementations } from "../../src/core/agent/tools.js";
 import * as config from "../../src/core/config.js";
 import { brandColour } from "../../src/renderer/brand.js";
 import type { DictationTip } from "../../src/core/tips.js";
+import { retryingMessage } from "../../src/core/dictationController.js";
 import type { AgentChat } from "../../src/core/agent/agentChat.js";
 import type { ChatPlacement, Command, OverlayState } from "../../src/shared/ipc.js";
 
@@ -390,6 +391,17 @@ describe("overlay page", () => {
   });
 
   /** In dictation mode, and in agent mode before the tools are known, no app's bubble shows. */
+  /** A transcription tried again after a server error says so in the pill, in place of the waveform
+   * and without a failure's exclamation mark; agent mode's bubbles stay, as while it transcribes. */
+  test.each(["dictation", "agent"] as const)("the retrying note shows in the pill in %s mode", async (mode) => {
+    const page = await overlayPage();
+    await page.show({ ...listening, mode, tools: ["compose"], phase: { kind: "retrying", message: retryingMessage } });
+
+    expect(document.querySelector(".pill .message")?.textContent).toBe(retryingMessage);
+    expect(document.querySelector(".pill svg")).toBeNull();
+    expect(document.querySelectorAll(".bubble")).toHaveLength(mode === "agent" ? 1 : 0);
+  });
+
   test("no app's bubble shows in dictation mode", async () => {
     const page = await overlayPage();
     await page.show({ ...listening, connectors: ["calendar", "web"] });

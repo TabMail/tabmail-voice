@@ -86,6 +86,9 @@ export const nothingHeardMessage = "Didn't catch that. Try again.";
 /** Shown while a transcription that failed on the server's side is tried again. */
 export const retryingMessage = "Server error, retrying…";
 
+/** The status the backend answers when the speech model did not answer in time. */
+const gatewayTimeout = 504;
+
 /**
  * Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
  * transcript with the screen context → paste. In agent mode (Space pressed during the hold) the
@@ -592,14 +595,17 @@ export class DictationController extends Observable {
     }
   }
 
-  /** Makes the transcription request, and makes it again after a server error (a 5xx: the speech
-   * model behind the backend was rate limited or failed) or a dropped connection, up to
-   * `transcriptionRetryDelays.length` more times, so the user need not say it again. The pill says so
-   * meanwhile. Any other failure (signed out, over quota, a refused request) fails at once. */
+  /** Makes the transcription request, and makes it again after a server error (a 5xx other than the
+   * backend's own timeout: the speech model behind it was rate limited or failed) or a dropped
+   * connection, up to `transcriptionRetryDelays.length` more times, so the user need not say it again.
+   * The pill says so while it waits and tries, and goes back to transcribing once a retry answers. Any
+   * other failure (signed out, over quota, a refused request, a timeout) fails at once. */
   private async transcribeRetrying(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal): Promise<Transcription> {
     for (let retry = 0; ; retry += 1) {
       try {
-        return await request();
+        const transcription = await request();
+        if (retry > 0 && isCurrent()) this.setPhase({ kind: "transcribing" });
+        return transcription;
       } catch (error) {
         const delay = this.transcriptionRetryDelays[retry];
         if (delay === undefined || !isServerError(error) || !isCurrent()) throw error;
@@ -1049,9 +1055,11 @@ type Timer = ReturnType<typeof setTimeout>;
  * for `confirmationTimeout`. */
 type ConfirmationAnswer = "confirmed" | "declined" | "unanswered";
 
-/** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. */
+/** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. Not a 504:
+ * the backend gave up waiting for the speech model, and like a request that timed out here, it
+ * already waited (ADR-DESK-039). */
 function isServerError(error: unknown): boolean {
-  if (error instanceof BackendError) return error.kind === "failed" && error.status !== undefined && error.status >= 500;
+  if (error instanceof BackendError) return error.kind === "failed" && error.status !== undefined && error.status >= 500 && error.status !== gatewayTimeout;
   return error instanceof TransportError && error.reason === "network";
 }
 
