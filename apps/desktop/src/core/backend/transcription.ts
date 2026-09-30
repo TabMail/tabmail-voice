@@ -36,7 +36,7 @@ export class TranscriptionClient {
   ) {}
 
   /** `language`: the keyboard's at key-down, which picks the backend's model; null sends none (the
-   * default model). `vocabulary`: the user's dictionary words, which the speech model favours
+   * default model). `vocabulary`: the user's dictionary words, which the speech model favors
    * (ADR-DESK-038); none are sent when it is empty. `cleanup`: the cleanup's variables, for the backend
    * to clean up the transcript in the same request (ADR-DESK-008); none for no cleanup. */
   async transcribe(

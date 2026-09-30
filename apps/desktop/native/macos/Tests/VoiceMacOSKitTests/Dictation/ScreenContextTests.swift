@@ -291,7 +291,7 @@ struct ScreenContextTests {
     /// In web content a toolbar's text is read (a chat's header with the conversation's name), and
     /// a control with a screen-reader label still shows its drawn child text; in native apps both
     /// stay skipped.
-    @Test func webToolbarsAndLabelledControlsKeepTheirShownText() {
+    @Test func webToolbarsAndLabeledControlsKeepTheirShownText() {
         let shown = CGRect(x: 20, y: 40, width: 100, height: 20)
         let thin = CGRect(x: 20, y: 40, width: 100, height: 1)
         func read(_ element: FakeElement, inside role: String) -> String {

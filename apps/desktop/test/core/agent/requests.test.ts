@@ -396,8 +396,8 @@ describe("the answer's tool loop", () => {
     expect((error as AgentError).kind).toBe("noText");
   });
 
-  /** Cancelled before it starts, the answer asks nothing. */
-  test("a cancelled answer asks nothing", async () => {
+  /** Canceled before it starts, the answer asks nothing. */
+  test("a canceled answer asks nothing", async () => {
     const { completions, client, account } = setup();
     const abort = new AbortController();
     abort.abort();
@@ -406,9 +406,9 @@ describe("the answer's tool loop", () => {
     expect(completions.requests).toHaveLength(0);
   });
 
-  /** Cancelled while a tool runs (the chat window closed as it asked), the round's later calls don't
+  /** Canceled while a tool runs (the chat window closed as it asked), the round's later calls don't
    * run and the model is asked nothing more. */
-  test("cancelled while a tool runs, it runs and asks nothing more", async () => {
+  test("canceled while a tool runs, it runs and asks nothing more", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }, { id: "call_b", name: "example_read", arguments: "{}" }]));
     completions.enqueue(200, Fixtures.reply("Never asked."));
@@ -428,8 +428,8 @@ describe("the answer's tool loop", () => {
     expect(completions.requests).toHaveLength(1);
   });
 
-  /** Cancelled after a round's last tool, the next round is not asked. */
-  test("cancelled after a round's tools, the next round is not asked", async () => {
+  /** Canceled after a round's last tool, the next round is not asked. */
+  test("canceled after a round's tools, the next round is not asked", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }]));
     completions.enqueue(200, Fixtures.reply("Never asked."));

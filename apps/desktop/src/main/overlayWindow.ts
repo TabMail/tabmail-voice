@@ -29,7 +29,7 @@ export class OverlayWindowController {
   private placedUpward = false;
   /** A row of agent mode's bubbles fit under the pill where it was last placed (`bubblesFitUnder`). */
   private placedBubblesFitUnder = true;
-  /** Where the chat window opened, while it shows: by the pill (its top edge's centre), which stays
+  /** Where the chat window opened, while it shows: by the pill (its top edge's center), which stays
    * there for follow-ups, its bubbles under it or over it as they were, on the side of them with room
    * (`chatSide`). */
   private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean } | null = null;
@@ -54,7 +54,7 @@ export class OverlayWindowController {
   }
 
   /** Where the pill of the hold under way shows, or would: at the caret the request was spoken over,
-   * or the pointer without one (`pillPosition`, its top edge's centre), with its display's work area
+   * or the pointer without one (`pillPosition`, its top edge's center), with its display's work area
    * and whether agent mode's bubbles go under it. The paste history opens by it, as the chat window
    * does (ADR-DESK-043). */
   get pillPlace(): { pill: Point; workArea: Rect; bubblesUnder: boolean } {

@@ -56,7 +56,7 @@ export interface ChatPlacement {
   maxHeight: number;
   /** The bubbles are under the pill, or over it (`bubblesFitUnder`, where the pill opened). */
   bubblesUnder: boolean;
-  /** The pill's centre, across the window. */
+  /** The pill's center, across the window. */
   pillX: number;
 }
 

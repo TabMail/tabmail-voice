@@ -30,7 +30,7 @@ body {
   transform: translateX(-50%);
 }
 
-.centred {
+.centered {
   position: absolute;
   width: max-content;
   transform: translate(-50%, -50%);
@@ -46,7 +46,7 @@ body {
   white-space: nowrap;
 }
 
-.centre-content {
+.center-content {
   display: flex;
   align-items: center;
   justify-content: center;

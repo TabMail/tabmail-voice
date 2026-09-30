@@ -9,7 +9,7 @@ import Testing
 /// An app's icon as the agent's Thunderbird bubble shows it.
 struct AppsTests {
     /// The app's own icon, at the size asked: Finder's is blue, where the system's placeholder for an
-    /// icon still loading (what Electron's `getFileIcon` handed back for Thunderbird) is a pale grey
+    /// icon still loading (what Electron's `getFileIcon` handed back for Thunderbird) is a pale gray
     /// square, mean saturation ≈ 0.03.
     @Test @MainActor
     func drawsTheAppsOwnIconAtTheSizeAsked() throws {
@@ -21,8 +21,8 @@ struct AppsTests {
         var opaque = 0
         for x in 0..<bitmap.pixelsWide {
             for y in 0..<bitmap.pixelsHigh {
-                guard let colour = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), colour.alphaComponent > 0.9 else { continue }
-                saturation += colour.saturationComponent
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), color.alphaComponent > 0.9 else { continue }
+                saturation += color.saturationComponent
                 opaque += 1
             }
         }

@@ -8,7 +8,7 @@ fall under).
 
 ## ADR-DESK-001: Native Swift menu-bar app, on-device speech recognition
 
-> ⛔ **Speech-recognition half SUPERSEDED by ADR-DESK-005 (owner 2026-09-24).** The native Swift menu-bar app stands; on-device `SpeechAnalyzer` was removed in favour of backend STT so all platforms share one engine. Kept for history.
+> ⛔ **Speech-recognition half SUPERSEDED by ADR-DESK-005 (owner 2026-09-24).** The native Swift menu-bar app stands; on-device `SpeechAnalyzer` was removed in favor of backend STT so all platforms share one engine. Kept for history.
 >
 > ⛔ **Native-Swift half SUPERSEDED by ADR-DESK-032 (owner 2026-09-27):** one Electron app for macOS, Windows and Linux replaces the Swift app; `apps/macos/` was removed 2026-09-27 (ADR-DESK-032's cutover amendment). Kept for history.
 
@@ -40,7 +40,7 @@ from mail and calendar. Verified end-to-end by `SpeechTranscriptionSessionTests`
 and type of the prior clipboard, unless the pasteboard changed meanwhile.
 
 **Rationale:** Setting `kAXSelectedTextAttribute` silently fails in most web views and Electron
-apps; synthesising per-character key events is slow and breaks on non-ASCII text. Pasting is what
+apps; synthesizing per-character key events is slow and breaks on non-ASCII text. Pasting is what
 Wispr Flow and similar tools do.
 
 **Consequences:** A clipboard manager that ignores the transient markers may record the text.
@@ -68,7 +68,7 @@ is lost on every rebuild.
 **Decision:** Phase 1 ships without TabMail sign-in or backend calls. Sign-in (Supabase, mirroring
 iOS `TabMailAuthService`) arrives with the first backend feature: AI cleanup in phase 1b or phase 2.
 
-**Consequences:** Adding backend features later requires the backend to recognise a `desktop`
+**Consequences:** Adding backend features later requires the backend to recognize a `desktop`
 client type.
 
 ## ADR-DESK-005: Speech-to-text on the TabMail backend (OpenRouter), shared by all platforms
@@ -236,7 +236,7 @@ and it accepts only HTTP 200 (iOS accepts any 2xx). The backend never sends both
   ADR-DESK-015, 2026-09-26: debug builds log the text in full to the local debug log file.)*
 - Every dictation gains one model round trip; its duration is logged (debug) for tuning. Owner,
   2026-09-25: the cleanup is capped at `cleanupTimeout` (3 s; the owner asked for 2–3 s); past it
-  the request is cancelled and the transcript is pasted as heard, like any other failed cleanup.
+  the request is canceled and the transcript is pasted as heard, like any other failed cleanup.
 - ~~A failed or empty cleanup fails the dictation with an error; the raw transcript is not pasted
   instead (no fallback without an owner decision).~~ Owner, 2026-09-25: when the cleanup fails
   for any reason (error, refusal, empty reply, offline, signed out), the transcript is pasted as
@@ -449,7 +449,7 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   it when the overlay opens upward) says "Space to toggle agent mode" / "Space to disable agent mode";
   later the same day made quieter at the owner's request: a small "space" keycap with "agent mode" /
   "exit agent", no border. Later again (owner: "a tooltip that appears below the middle and
-  disappears after a little"): a tooltip centred under the pill, with an arrow up at it, always
+  disappears after a little"): a tooltip centered under the pill, with an arrow up at it, always
   below (even when the overlay opens upward, since it is brief), fading after
   `modeHintDisplayDuration` (2.5 s), once a hold. Then styled as a system tooltip (owner: the light
   one "looks cheap … almost a black background"): a near-black rounded box with a hairline border
@@ -470,7 +470,7 @@ the bubbles wiggled too much ("appearing alongside looks okay"); "agent should n
   removed. The completions request keeps its idle timeout (`completionsRequestTimeout`, a pause
   between stream bytes; the backend sends keepalives), which is a dead-connection check, not a cap.
 - Bubbles sit level with the pill, first to its right, then its left, with no drift (later the same
-  day, owner: "appear on top … like a list on top": one row centred above the pill; the hint then
+  day, owner: "appear on top … like a list on top": one row centered above the pill; the hint then
   went over the whole stack when the overlay opened upward, until it became the tooltip above); they are icon-only circles (20 pt, 13 pt app icon, 10 pt symbol): with one writing tool shown, the name
   adds nothing (owner). The name stays as the accessibility label. Owner, later the same day: small
   but slightly larger (now 24 pt, 16 pt app icon, 12 pt symbol), and the running tool's bubble grows
@@ -536,7 +536,7 @@ their copy where it is; `project.yml` reads it as `../../`.
 - No shared package yet. Most of the app is platform-specific (hotkey, microphone, Accessibility
   reading, paste, overlay), and the intelligence (transcription, cleanup, agent prompts) is on the
   backend, which is already shared. When a second app needs the platform-free parts (gesture
-  recogniser, dictation and agent flow, backend clients, WAV encoding), they move into
+  recognizer, dictation and agent flow, backend clients, WAV encoding), they move into
   `apps/shared/` as a Swift package, if that app is Swift; otherwise the second app shares the
   backend contract and test vectors, not code.
 - The GitHub rename and the local folder rename (`tabmail-macos` → `tabmail-voice`) are separate
@@ -582,7 +582,7 @@ the agent restating the request as a chat message, and sending being enough (no 
   focus and timing guesses if the spike shows they matter.
 
 **Amendment 2026-09-26 (review):**
-- The chat is recognised by its exact title, "TabMail Chat". On macOS Thunderbird titles an add-on's
+- The chat is recognized by its exact title, "TabMail Chat". On macOS Thunderbird titles an add-on's
   popup window with the page title alone (`extension-popup-title` in `popup.ftl`, every locale), so no
   other title is the chat. A substring match also took a draft replying to a message about the chat
   ("Write: Re: TabMail Chat feedback"), or the main window showing a message whose subject starts with
@@ -594,9 +594,9 @@ the agent restating the request as a chat message, and sending being enough (no 
   element does not carry over to the elements read from it). A hung Thunderbird then holds up only
   the relay, not the keyboard. Since those reads now suspend, the check that Thunderbird is in front
   comes after the title read (the user may switch away during it, and Accessibility still reports
-  the chat as Thunderbird's focused window), and a cancel is honoured before the paste and before
+  the chat as Thunderbird's focused window), and a cancel is honored before the paste and before
   Return. When that first read finds no chat, Thunderbird is checked to be in front again, and a
-  cancel honoured, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
+  cancel honored, before the shortcut: a false read can mean the user switched away, and ⌥⌘L
   would go to the app they switched to (Finder, Safari and Chrome bind it to Downloads).
 - The chat is ready for a message only once its input has focus (Accessibility role `AXTextArea` in
   the "TabMail Chat" window), not as soon as the window has its title. A chat just opened has its title
@@ -723,7 +723,7 @@ another; each fix compared Settings again and missed the next window.
 - Every "does Settings still say X" comparison in the relay is deleted; a mid-send Settings change
   can no longer retarget a send.
 - Not covered: the hotkey itself. Changing it in Settings reinstalls the monitor, which cancels a
-  hold in progress (`HotkeyMonitor.setHotkey`); the owner accepts that behaviour (2026-09-26).
+  hold in progress (`HotkeyMonitor.setHotkey`); the owner accepts that behavior (2026-09-26).
 
 ## ADR-DESK-018: Debug mode, only for allowed accounts
 
@@ -814,10 +814,10 @@ protocol-and-registry design with generic connectors.
   offer rules (the selection picks Edit or Compose; the email app gates Thunderbird) span tools.
 - A new connector is a folder in `Connectors/`, passed into `DictationController` and carried in
   `ToolContext`. There is no `Connector` protocol yet: with one connector there is nothing to
-  generalise, and the next one decides its shape.
+  generalize, and the next one decides its shape.
 - The bubble's app icon still comes from `tool == .thunderbird` in `OverlayPanel` (left alone while
   another branch changes that file); a second app-backed tool moves it into the protocol.
-- No behaviour change: the suite passes unchanged except `fitted(_:toSelection:)` moving from
+- No behavior change: the suite passes unchanged except `fitted(_:toSelection:)` moving from
   `DesktopAgent` to `EditTool`.
 
 ## ADR-DESK-021: Tips that retire once learned, and hands-free dictation on a double tap
@@ -876,10 +876,10 @@ wider than the pill itself, so it should be multi-line".
   every dictation, at most `doubleTapWindow` after a lone tap. A microphone that fails to start while a released tap waits for its
   second press is discarded unseen too; a failure after the second press shows, and a double tap
   after a failed tap starts the microphone again.
-- A tip is three centred lines at 13 pt ("Press [space] to switch / between dictation / and agent
+- A tip is three centered lines at 13 pt ("Press [space] to switch / between dictation / and agent
   mode"; "Double-tap [key] / to dictate / without holding"), each `tipLineHeight` tall, so its height
   is a config constant (`tipHeight`) and `opensUpward` still counts it exactly. The overlay canvas grew
-  to 210 pt tall so the tip and its shadow fit under the vertically centred pill; on the screen's
+  to 210 pt tall so the tip and its shadow fit under the vertically centered pill; on the screen's
   bottom lines the overlay is raised that much further above the caret.
 - The double-tap tip did not show in the owner's test because it was already learned (a double tap
   came first), and the Space tip had used its 10 displays: working as decided, not a defect.
@@ -901,9 +901,9 @@ change easily at a single location."
 - Asked, the owner chose "above pill when opening up": in an overlay opened above the caret's line,
   a tip with no display duration (the hands-free one) goes over the pill, and over agent mode's
   bubbles when they show, its arrow pointing down (`OverlayPanelController.tipGoesAbove`,
-  `hintCentre(over:bubbles:size:)`), so it never covers that line for a whole dictation. Timed tips
+  `hintCenter(over:bubbles:size:)`), so it never covers that line for a whole dictation. Timed tips
   stay under the pill, covering the line only briefly. The canvas grew from 210 pt to room for a tip
-  and its shadow past the bubbles on each side of the centred pill (derived in `overlayCanvasSize`).
+  and its shadow past the bubbles on each side of the centered pill (derived in `overlayCanvasSize`).
 - Each tip's words, display duration and maximum displays are one `DictationConfig.TipSettings`
   (`switchModeTip`, `doubleTapTip`, `handsFreeTip`; `DictationTip.config`), replacing the four separate
   duration and count constants. Any `[key]` in a line is drawn as a keycap reading `key` (`[space]`,
@@ -912,7 +912,7 @@ change easily at a single location."
   `tipLineCount` lines, so a tip's `lines` must keep that count.
 - Ported to the Electron app (ADR-DESK-032) the same day: the `voice-hotkey` helper sends
   `listenHandsFree`; `config.switchModeTip`/`doubleTapTip`/`handsFreeTip` (`TipSettings`, null for
-  nil) and `tipParts`; `tipGoesAbove`/`hintCentreOver` in `overlayGeometry.ts`, the main process
+  nil) and `tipParts`; `tipGoesAbove`/`hintCenterOver` in `overlayGeometry.ts`, the main process
   telling the overlay page which way it opened (`OverlayState.opensUpward`, pushed on each
   placement).
 
@@ -1041,7 +1041,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
   sends every other field back as it came (reasoning signatures included). The backend's round limit
   counts that `current_round`, as for the iOS app (`BackendClient.sendCompletionsWithToolsInternal`).
   State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
-  `AbortSignal` is checked before each round and each call: a request cancelled while a tool ran
+  `AbortSignal` is checked before each round and each call: a request canceled while a tool ran
   runs no later call and sends no further round.
 - `ConnectorTool` (`src/core/agent/connectors/tool.ts`): a tool that runs on this computer: its backend function
   `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
@@ -1058,16 +1058,16 @@ Electron app (ADR-DESK-032), which is the one that ships.
   `config.chatConfirmationMinimumDisplay` (half a second) is ignored: the second click of a
   double-click on one question's Confirm, or a click aimed at its card as the next question
   replaces it, would otherwise confirm a question the user never saw (found in review; a question
-  id sent back with the answer would catch only the stale card). Closing the window or cancelling
+  id sent back with the answer would catch only the stale card). Closing the window or canceling
   the request declines the question at once (`teardown`, the one place a request ends) and drops
-  the request: the round's request in flight is cancelled, the round's later calls don't run, and
+  the request: the round's request in flight is canceled, the round's later calls don't run, and
   nothing is left waiting for the answer. A tool still running for a request that ended clears
   nothing of a newer one's.
 - The chat window's timeout starts when the first answer joins it, and only if the user has not
   touched it (`AgentChat.touched`, which the page reads too, so a touch counts before the timeout
   starts): a window a tool opened waits for the answer, and one touched while a tool ran stays
   open. Each window opens untouched, so one touched and closed leaves the next to
-  time out. A request that fails, is cancelled or ends with the account after a tool opened an empty
+  time out. A request that fails, is canceled or ends with the account after a tool opened an empty
   window closes it (`teardown`): the pill says what failed, and the next hold dictates.
 - The date tools are not a switch in Settings or the wizard: they read nothing of the user's and
   only make dates right. Each tool that runs on this computer adds its switch with its connector.
@@ -1305,14 +1305,14 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
   plus script ran that script unconfirmed).
 - The runner is `/usr/bin/osascript` launched from the **main process** (`src/main/native/osascript.ts`),
   not a `voice-macos` method. The one reason is cancellation: `ConnectorTool.run` now takes the
-  request's `AbortSignal`, and a cancelled request or a closed chat window ends the osascript
+  request's `AbortSignal`, and a canceled request or a closed chat window ends the osascript
   process. The helper channel can't call off a request it has taken, so a script run there would
   keep going, a send included, until it finished or timed out. This is a system program run with
   arguments, not native code in Node, so `apps/desktop`'s rule (OS work in a native helper, never
   a Node addon) is kept in spirit; the scripts are plain text either way. A request already
-  cancelled starts no process: Node starts one for an aborted signal and ends it only a tick later.
+  canceled starts no process: Node starts one for an aborted signal and ends it only a tick later.
 - Each script waits at most `appleScriptTimeoutSeconds` for the app to answer each command it
-  sends (`with timeout`); a whole run has no deadline (ADR-DESK-023), and cancelling ends it. A search's
+  sends (`with timeout`); a whole run has no deadline (ADR-DESK-023), and canceling ends it. A search's
   output is capped at `appleScriptMaxOutputBytes`; past it the search fails rather than cutting a
   note short.
 - A note's text is written as Notes' HTML (`NotesScripts.html`): the title as its heading, one line
@@ -1326,7 +1326,7 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
 - The first use of each app raises macOS's Automation prompt, and launches the app if it is not
   running.
 - Notes' text and the message go to the model and the app only: nothing is stored (ADR-004).
-- Messages sends over iMessage only; SMS through a paired iPhone is not offered. A send cancelled
+- Messages sends over iMessage only; SMS through a paired iPhone is not offered. A send canceled
   after Messages has taken it may still go out.
 - Unverified against a live Notes library: whether its `notes` include "Recently Deleted" ones, and
   how long a search over a large library takes (each command bounded by `appleScriptTimeoutSeconds`,
@@ -1354,7 +1354,7 @@ wizard (ADR-DESK-024). The backend defines `shortcuts_list {query?}` and `shortc
   more said) and `ShortcutsRunTool` (`shortcuts_run`: one shortcut by its exact name, once
   confirmed; its text output back to the model), in `src/core/agent/shortcutsTools.ts`.
 - Both run `/usr/bin/shortcuts` (`ShortcutsRunner`, faked in tests) from the **main process**
-  (`src/main/shortcuts.ts`), for ADR-DESK-028's reason: a cancelled request or a closed chat window
+  (`src/main/shortcuts.ts`), for ADR-DESK-028's reason: a canceled request or a closed chat window
   ends the command. Whether a shortcut already running in Shortcuts stops with it is unverified (on
   the by-hand list). The name is one argument, never parsed by a shell, after
   `--`, so a name that looks like an option is the name (without `--`, `shortcuts run …
@@ -1371,7 +1371,7 @@ wizard (ADR-DESK-024). The backend defines `shortcuts_list {query?}` and `shortc
 - No permission of TabMail Voice's own; a shortcut's actions ask for theirs as Shortcuts does.
 - Shortcut names and output go to the model only: nothing is stored (ADR-004).
 - A shortcut that waits for the user (a dialog, a menu) keeps the request running until it is
-  answered or the request is cancelled.
+  answered or the request is canceled.
 - No test runs a shortcut of the user's: the command is a stand-in script, and the real one is only
   asked to run a name like an option, which it looks up and does not find.
 - Offered on macOS only, with the other connectors.
@@ -1491,7 +1491,7 @@ start, tap to stop. The study and the phase plan are kept outside this repositor
 - `src/core/` is the platform-free port of the Swift app's logic (the dictation controller, the
   gesture timing, the backend clients, the agent and its tools, tips, the welcome wizard, settings,
   the overlay geometry): no Node or Electron imports, so every OS runs the same code and Vitest
-  tests it directly. The Swift app is its behavioural spec, as Thunderbird is iOS's (ADR-IOS-008);
+  tests it directly. The Swift app is its behavioral spec, as Thunderbird is iOS's (ADR-IOS-008);
   its tests were ported with it.
 - What needs the OS is a **native helper executable** per role, spawned by the main process and
   spoken to over stdin/stdout, one JSON object a line (`{id, method, params}` → `{id, result}` or
@@ -1537,7 +1537,7 @@ app's words, that the sign-in may come back at the next launch, and Settings sho
 message and leaves the account as it was, as the Swift store's throwing `save` does.
 
 **Amendment 2026-09-27 (owner): Settings in a branded sidebar.** The Electron Settings page was the
-Swift app's single grouped form on a flat grey; the owner found it "bland" and wanted it "themed and
+Swift app's single grouped form on a flat gray; the owner found it "bland" and wanted it "themed and
 look professional", and chose, from three looks, the branded sidebar. Settings is now a
 System Settings-style window: a sidebar with the app icon, the account and five sections (Account,
 Dictation, Agent mode, Permissions, General), the chosen section's cards beside it. It is in the
@@ -1545,16 +1545,16 @@ TabMail icon's blue → purple (`brand.ts`, as the overlay): the selected sectio
 default button carry the gradient, section icons the brand blue, and a red dot marks a section that
 needs the user (signed out, a permission missing), in light and dark. White text sits on the
 gradient darkened by `textShade`, so small text keeps WCAG AA's 4.5:1 along it, the account shows
-in the text colour (in the content and the sidebar), the notes and "Allowed" are darker than
-`form.css`'s in light mode (its grey and green were under 4.5:1 on the window's colour), and focus
+in the text color (in the content and the sidebar), the notes and "Allowed" are darker than
+`form.css`'s in light mode (its gray and green were under 4.5:1 on the window's color), and focus
 is Chromium's own ring, the browser's default indicator (the brand blue's was under 3:1 on the light sidebar); under a Windows
 contrast theme (`forced-colors`), which drops gradients, the switches are the system's checkboxes,
-the chosen section is in the system's selection colours with its own focus ring in the text colour
-(the system's took no contrast with that fill) and the attention mark in the text colour.
-The page's transparency outranks `form.css`'s page colour by specificity, since the build links the
+the chosen section is in the system's selection colors with its own focus ring in the text color
+(the system's took no contrast with that fill) and the attention mark in the text color.
+The page's transparency outranks `form.css`'s page color by specificity, since the build links the
 shared `form.css` after `settings/index.css`: at equal specificity it painted over the frosted sidebar. On macOS the sidebar shows the
 window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
-no material, so the window has its own colour (`settingsWindowColour`). The settings and their
+no material, so the window has its own color (`settingsWindowColor`). The settings and their
 wording are unchanged (a test holds the notes to the Swift app's); the sidebar adds only its own
 labels (the app's name, the account or "Not signed in", the attention mark's "Needs attention").
 This departs from the Swift app's look only, which the Swift app keeps until cutover. Whether the
@@ -1592,8 +1592,8 @@ only be seen in the running app on macOS, not in the offscreen previews.
   front, a request that fails during a restart as "you switched apps"; after a loss their backend
   calls outlast the restart): the paste carries its dictation's `AbortSignal`, and a
   request with one made while the helper restarts (from `onExit` on, the restart being due first)
-  waits for it within its own timeout; one that times out, or whose dictation is cancelled, while it
-  waits is never sent (a cancelled dictation pastes nothing). Every other request fails at once
+  waits for it within its own timeout; one that times out, or whose dictation is canceled, while it
+  waits is never sent (a canceled dictation pastes nothing). Every other request fails at once
   during a restart, as before.
 - The helper's engine stopping by itself mid-dictation (AVAudioEngine stops on a configuration
   change: the input's sample rate or channels changed) is the same loss: `MicrophoneCapture`
@@ -1627,7 +1627,7 @@ only; code comments that name the Swift app record what a port matches.
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
 > without room), four at most, the latest to run first, replaces the rows around it
-> (`bubbleCentres`, `agentBubbleRowCapacity`, `agentBubbleRowsAbove`). An app's bubble now circles
+> (`bubbleCenters`, `agentBubbleRowCapacity`, `agentBubbleRowsAbove`). An app's bubble now circles
 > while its tools run. One bubble per tool and per connector switched on stands.
 
 **Context:** Owner, 2026-09-26: "many bubbles surround the pill": the single row above the pill fills
@@ -1642,8 +1642,8 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
   Answer, whose loop runs them, is offered; with Answer off, none. The connector's icon, never drawn
   as running (its tools' progress shows in the chat window, ADR-DESK-023); it fades while a tool
   runs, as the idle tools' bubbles do. One `Bubble` draws both.
-- `bubbleCentres(pill, sizes, underFits)` places them in order: a row of up to
-  `agentBubbleRowCapacity` (5) centred over the pill (with no more bubbles than that, the row as
+- `bubbleCenters(pill, sizes, underFits)` places them in order: a row of up to
+  `agentBubbleRowCapacity` (5) centered over the pill (with no more bubbles than that, the row as
   before); then one beside the pill on the left and one on the right; then rows under the pill. When
   they don't fit under it (`bubblesFitUnder`: the pill opened above the caret's line, or sits too near
   the work area's bottom for a row and the tip under it), the later rows go over the first instead,
@@ -1651,7 +1651,7 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
   pill, and the view is told (`OverlayState.bubblesFitUnder`).
 - A tip under the pill goes under any bubbles under it (`underBubbles`); the hands-free tip over the
   pill (ADR-DESK-021's amendment) goes over them all, as before. The canvas grew to room for two
-  rows and a tip over the pill (`agentBubbleRowsAbove`), the pill still centred in it.
+  rows and a tip over the pill (`agentBubbleRowsAbove`), the pill still centered in it.
 
 **Consequences:**
 - With every tool offered at once (three) and every connector (eight since Shortcuts was retired,
@@ -1664,7 +1664,7 @@ Electron app (ADR-DESK-032), numbered 033 as 031 is the Globe key's.
 
 ## ADR-DESK-034: A bubble under the pointer grows and says what it is
 
-> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** bubbles grow about their centre, not up from
+> ⚠️ **Amended by ADR-DESK-036 (owner 2026-09-28):** bubbles grow about their center, not up from
 > their bottom edge, to fixed sizes (`agentBubbleHoverDiameter`, `agentBubbleRunningDiameter`), from
 > a smaller size at rest.
 
@@ -1682,8 +1682,8 @@ pointer at all.
   shows in full even while faded for another tool's run.
 - Its tooltip names it and says what it does, in the words Settings uses (`settingsDescription`),
   drawn as the tips are. It goes over the bubble as grown (`grownBubble`), `bubbleTooltipGap` clear,
-  or under it when the canvas has no room over it, moved in from the canvas's edge when centring
-  would leave it (`bubbleTooltipCentre`); it is hidden until measured and lets the pointer through,
+  or under it when the canvas has no room over it, moved in from the canvas's edge when centering
+  would leave it (`bubbleTooltipCenter`); it is hidden until measured and lets the pointer through,
   so it never takes the hover from the bubble under it.
 
 **Consequences:**
@@ -1746,7 +1746,7 @@ run tool just appears on the left … shifting the other tools to the right"; th
 sorted alphabetically; "the answers being shown are … pretty rough … look at Thunderbird and how the
 text appears … and mimic that"; and some turns seemed "not in turn". Asked, the owner chose a small
 resting circle for the pill between follow-ups, and, for an unclear request in agent mode, "have a
-prompt to ask the user". Later the same day: a grey request bubble "looks bad"; "make the … neon glow
+prompt to ask the user". Later the same day: a gray request bubble "looks bad"; "make the … neon glow
 very apparent for the pills … a hint that we're in agent mode, only for the pill"; the pill should
 circle while agent mode works; a bubble "slightly smaller than the pill" at rest but as large as
 before when grown; and "4 entries tops". The log showed three causes: the chooser pasted a spelled-out
@@ -1775,7 +1775,7 @@ the stream was read whole and named its tools only in development builds.
   swirl, and keeps the last request's bubbles until a follow-up knows its own.
 - **The row.** Bubbles go in one row under the pill (over it without room, `bubblesFitUnder`), a
   `agentBubbleGap` from it and `agentBubbleSpacing` apart (`bubbleRow`): the first
-  `agentBubbleRowVisibleCount` (3) centred on the pill in full, then `agentBubbleRowFadeCount` (1)
+  `agentBubbleRowVisibleCount` (3) centered on the pill in full, then `agentBubbleRowFadeCount` (1)
   fading away to the right (`bubbleRowOpacity`), four at most. Their order is `bubbleOrder`: those
   that ran, the latest first (`DictationController.recentBubbles`, `ranNow`: the tool the agent
   chose, then the app whose tool starts), then the rest alphabetically by name (`alphabetical`). The
@@ -1785,15 +1785,15 @@ the stream was read whole and named its tools only in development builds.
   `ConnectorTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
   inside a round, one at a time as the answer's tools run in turn
   (`DictationController.runningConnectors`, cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
-  `agentBubbleDiameter` (20) at rest, smaller than the pill, and grow about their centre to
-  `agentBubbleHoverDiameter` or `agentBubbleRunningDiameter`, as large as before; neighbours both
+  `agentBubbleDiameter` (20) at rest, smaller than the pill, and grow about their center to
+  `agentBubbleHoverDiameter` or `agentBubbleRunningDiameter`, as large as before; neighbors both
   running don't touch.
 - **Agent mode's pill.** In agent mode (and under the chat window) the pill glows as neon, a tight
   blue glow in a wide purple one (`agentPillGlow…`); dictation's pill and every bubble keep the plain
   glow. *Amended 2026-09-29:* the owner found the blue and purple neon "not as apparent" beside
-  dictation's own blue and purple glow and, from eight colours rendered side by side and then seen
-  live, chose red-pink: a tight `#FF2D55` glow in a wide `#FF006E` one (`agentPillGlowInnerColour`,
-  `agentPillGlowOuterColour`), the one colour in the overlay outside the brand's.
+  dictation's own blue and purple glow and, from eight colors rendered side by side and then seen
+  live, chose red-pink: a tight `#FF2D55` glow in a wide `#FF006E` one (`agentPillGlowInnerColor`,
+  `agentPillGlowOuterColor`), the one color in the overlay outside the brand's.
 - **Server tools as they run.** `HTTPRequest.onChunk` hands the completions stream to `SSEParser` as
   it arrives (a piece may end anywhere, a CRLF split across two included), and `Completions.round`
   reports each `tool_started`, `tool_completed` and `tool_failed` event that names its tool
@@ -1809,7 +1809,7 @@ the stream was read whole and named its tools only in development builds.
   `chatRevealRise`, the newest kept in view unless the user scrolled up. Line height and paragraph
   spacing are Thunderbird's (`chatLineHeight`, `chatParagraphSpacing`). The request sits on the right
   at most `chatRequestMaxWidthFraction` of the width, as there, but in a light tint of the brand's
-  gradient with a hairline brand border rather than grey. While a request waits with nothing else
+  gradient with a hairline brand border rather than gray. While a request waits with nothing else
   to show, the window says `chatThinkingLabel`.
 - **Settings** lists the tools and apps together alphabetically (`alphabetical`). The welcome
   wizard keeps its own order.
@@ -1914,7 +1914,7 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   than replaces: at most half the dictation's words changed, an edit distance within
   `correctionMaxEditShare` of the longer spelling, not another form of a lowercase word (only its end
   changed past `correctionMinStemShare` of its start: "report" → "reports", "send" → "sent"; a
-  capitalised name or a script without case is exempt), not an everyday word or one shorter than
+  capitalized name or a script without case is exempt), not an everyday word or one shorter than
   `correctionMinWordLength`, and for a change of case alone, a capital inside a word or a change of
   spacing ("tabmail", "tab mail" → "TabMail"), not one at a word's start. The next key-down stops the
   watch first, so a dictation's own paste is never taken for a correction; an unreadable field ends it.
@@ -1933,7 +1933,7 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   follow-up), and the privacy policy's Voice Data wording is updated separately.
 - Every word is sent with every dictation: the list's cap keeps that small.
 - The screen terms leave the computer only as words picked from a screen the consent already covers
-  sending. The picking is heuristic: a capitalised ordinary word mid-sentence ("Monday") is sent too,
+  sending. The picking is heuristic: a capitalized ordinary word mid-sentence ("Monday") is sent too,
   harmlessly, since the list only biases the speech model; a name only ever at a sentence's start is
   missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
   backend fall back to it (its ADR-025).
@@ -1964,7 +1964,7 @@ time; measured first (below).
   frame to encode. Measured before it was adopted: the whole recording takes about 1.4 ms per second
   of audio to encode (10–18 ms for 7 s, 160 ms for 120 s), against about 90 ms of upload saved for
   7 s and 1.5 s for 120 s on the owner's connection; encoding while recording removes even that cost.
-  *(Later (ADR-DESK-040): the recording is peak-normalised first, which needs all of it, so it is
+  *(Later (ADR-DESK-040): the recording is peak-normalized first, which needs all of it, so it is
   encoded at the release, about 10 ms for a typical dictation.)*
   The reference `flac` decoder gave back the exact samples. The debug "Play Last Recording" file
   stays WAV.
@@ -1975,7 +1975,7 @@ time; measured first (below).
   answers; after the last it fails with the server's error as before. Nothing else is retried:
   signed out, no subscription, over quota or throttled (the backend's own 429), a refused request,
   or a timeout, here or the backend's own 504 (either already waited: `transcriptionRequestTimeout`,
-  or the backend's 30 s for the speech model; retrying a 504 would hold the hotkey for 1.5 minutes). Cancelling during the wait sends nothing more. Both modes share it,
+  or the backend's 30 s for the speech model; retrying a 504 would hold the hotkey for 1.5 minutes). Canceling during the wait sends nothing more. Both modes share it,
   since agent mode's request starts with the same transcription.
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
@@ -1990,29 +1990,29 @@ time; measured first (below).
 - Supersedes ADR-DESK-005's "A failed transcription loses that recording (no retry queue yet)" for
   server errors; its WAV upload is now FLAC.
 
-## ADR-DESK-040: The recording is peak-normalised before it is uploaded
+## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
 **Context:** Owner, 2026-09-29, after a speech-to-text comparison (`Scripts/stt-compare`, the 10
 recordings of `passages.txt`, 3 runs each, word error rate after the Whisper English text
-normaliser): the recordings, made on a Mac's microphone with no automatic gain (the app turns it off,
+normalizer): the recordings, made on a Mac's microphone with no automatic gain (the app turns it off,
 as OpenWhispr does), peak at only −22 to −29 dBFS. Scaled so their loudest sample sits at −3 dBFS,
 the backend's model (MAI-Transcribe-2) made 9.5 % word errors against 11.0 % as recorded, and one
 Whisper Large V3 host that dropped most quiet speech as silence (79 %) came down to 19 %. The owner
 asked for the same boost in this app and the iOS app. OpenWhispr's desktop app sends its recording
-unscaled; its mobile app asks its own server to normalise.
+unscaled; its mobile app asks its own server to normalize.
 
 **Decision:**
 - `AudioRecorder.finish` scales the whole recording by one gain so its loudest sample sits at
   `normalizedPeakDecibels` (−3 dBFS; the headroom keeps any sample from clipping), boosting by at
   most `maxNormalizationGainDecibels` (30 dB, so near-silence isn't raised into loud noise; the
   quietest measured recording needed +26 dB) and never cutting a louder one (`normalizePeak`).
-- Peak normalisation, one gain for the whole recording: the transform that was measured, and it
+- Peak normalization, one gain for the whole recording: the transform that was measured, and it
   changes nothing but the level. Not automatic gain control (the microphone's own stays off: on
   Windows Chromium's changes the system input volume, as OpenWhispr found), and not loudness
-  (RMS/LUFS) normalisation, which would need a limiter to keep peaks from clipping.
+  (RMS/LUFS) normalization, which would need a limiter to keep peaks from clipping.
 - The FLAC upload is therefore encoded at the release instead of while recording (ADR-DESK-039):
   about 1.4 ms per second of audio. The debug "Play Last Recording" file and `Recording.pcm` are the
-  normalised samples, what the backend hears. `peakLevel` stays the level as captured; the debug log
+  normalized samples, what the backend hears. `peakLevel` stays the level as captured; the debug log
   adds the gain.
 - The iOS app does the same (its `AudioRecorder`), with the same two values.
 
@@ -2027,7 +2027,7 @@ unscaled; its mobile app asks its own server to normalise.
 **Context:** Owner, 2026-09-30: 0.1.0 shipped with no way to update but downloading it again. The
 native-FTS host updates itself with its own Ed25519 signing key and a signed manifest, because
 nothing else vouches for its download. The owner asked whether Voice needs the same, and chose both
-behaviours offered: download quietly and install at the quit, and ask to restart once it is ready.
+behaviors offered: download quietly and install at the quit, and ask to restart once it is ready.
 Hosting: GitHub releases were the simpler option, but every installed app would then contact
 GitHub, a recipient the records of processing and the privacy policy don't name. TabMail's own CDN
 (Cloudflare R2, `cdn.tabmail.ai`, where the Thunderbird add-on and native-FTS updates already come
@@ -2112,11 +2112,11 @@ no user data.
 >   on the clipboard and into the paste history, and the `copied` note ("Switched apps: copied to
 >   clipboard and history") shows at the mouse pointer. Unchanged: the paste of ADR-DESK-002, into
 >   whatever has focus in that app.
-> - Cancelled while the app in front is read: the text goes nowhere, not even the history.
+> - Canceled while the app in front is read: the text goes nowhere, not even the history.
 > - Gone: `captureTarget`, `InsertionTarget`/`InsertionTargets`, the settle poll and its
 >   `HelperConfig` values, the `insert` outcome and `session`, and the `caretMoved` outcome with its
 >   "Cursor moved" note. `insert` is as before this ADR.
-> - Consequences: a caret moved within the same app is not put back (the ADR-DESK-002 behaviour);
+> - Consequences: a caret moved within the same app is not put back (the ADR-DESK-002 behavior);
 >   a helper restart after key-down no longer copies the text once the restarted helper is up (it reads
 >   the app in front as well); a read that fails while it restarts copies it. The decision below is kept as the record of what was tried.
 
@@ -2183,7 +2183,7 @@ to enter agent mode or triple tap to see history tooltip".
 - The history window (`history/index.html`) opens where the chat window's answer box does (amended, owner,
   2026-09-30: "paste history should appear like the answer tool, not near cursor";
   `historyWindowFrame`): `chatPillGap` over the pill of the hold that asked for it and its bubbles,
-  or under them where there is more room (`chatSide`, with the history's tallest), centred on the
+  or under them where there is more room (`chatSide`, with the history's tallest), centered on the
   pill and kept on screen, the edge by the pill staying put as the list measures itself. The pill's
   place (`OverlayWindowController.pillPlace`: at the caret, or the pointer without one) is read before
   the hands-free dictation is discarded, which forgets it. (It first opened by the mouse pointer,
@@ -2214,7 +2214,7 @@ the lowercase executables (`voice-hotkey`, `voice-macos`) with the libraries, `V
 flat folder of everything the helper does. The owner asked for a layout where it is plain where a
 tool goes, as in the iOS app (`Services/AI/Tools/`), Thunderbird (`chat/tools/`) and the backend
 (`src/tools/<platform>/`), that scales as tools, connectors, platforms and windows are added, and
-that Thunderbird counts as a connector; a reorganisation only, with no change to what the code does.
+that Thunderbird counts as a connector; a reorganization only, with no change to what the code does.
 
 **Decision:**
 - No file repeats its folder's name (owner, 2026-09-30: "no repeated folder names in the sub names"):
@@ -2278,6 +2278,11 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
     `agentBubbleRunningSpringResponseSeconds`, `agentBubbleMoveDurationSeconds`,
     `chatAppearDurationSeconds`; the two milliseconds that said so drop the suffix
     (`webReadTimeoutMs` → `webReadTimeout`, `webReadRobotsTimeoutMs` → `webReadRobotsTimeout`).
+- American spelling throughout (owner, 2026-09-30: "consistent american spelling"), in names, CSS
+  classes, UI text, comments and docs, as the platforms' own APIs have it (`color`, `center`):
+  `brandColour` → `brandColor`, `hintCentre` → `hintCenter`, `grey` → `gray`, `honoursCancel` →
+  `honorsCancel`, the `centred` class → `centered`, "Cancelled." → "Canceled.", and likewise
+  behavior, neighbor, favor, -ize, labeled, signaled, modeled. Only URLs keep their spelling.
 - Beyond the moves, only import paths, the pages' script and entry paths, `Package.swift`'s target
   names, the paths tests read from disk and the names above changed; the backend clients' module
   was split in three (`completions.ts`, `transcription.ts`, `errors.ts`, the request log and headers

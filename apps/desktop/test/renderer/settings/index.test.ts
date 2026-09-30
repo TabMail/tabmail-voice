@@ -71,7 +71,7 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-/** The switch labelled `label`: the input its label names. */
+/** The switch labeled `label`: the input its label names. */
 function toggle(label: string): HTMLInputElement {
   const found = [...document.querySelectorAll("label")].find((element) => element.textContent === label);
   const input = found && document.getElementById(found.htmlFor);
@@ -371,7 +371,7 @@ describe("Settings page", () => {
   });
 
   /** Only on macOS, where the window is frosted under inset traffic lights, is the page clear with
-   * its sidebar the title bar (`.mac`); elsewhere the page has its own colour. */
+   * its sidebar the title bar (`.mac`); elsewhere the page has its own color. */
   test("the page is styled for the Mac only on a Mac", async () => {
     const userAgent = vi.spyOn(navigator, "userAgent", "get");
     userAgent.mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron");
@@ -384,10 +384,10 @@ describe("Settings page", () => {
     expect(document.querySelector(".settings")?.classList.contains("mac")).toBe(false);
   });
 
-  /** Every colour `settings/index.css` reads is there: declared by a stylesheet, or set on the page by
+  /** Every color `settings/index.css` reads is there: declared by a stylesheet, or set on the page by
    * `settings/index.tsx` from the brand and the config (a missing gradient would leave the chosen
    * section's white label on white). */
-  test("the page provides every colour its stylesheet reads", async () => {
+  test("the page provides every color its stylesheet reads", async () => {
     const stylesheet = (name: string) => readFileSync(join(import.meta.dirname, "../../../src/renderer", name), "utf8");
     const settingsCSS = stylesheet("settings/index.css");
     const declared = new Set([...(settingsCSS + stylesheet("shared/form.css")).matchAll(/(--[\w-]+)\s*:/g)].map(([, name = ""]) => name));
@@ -399,8 +399,8 @@ describe("Settings page", () => {
       "--brand-gradient": brandGradient,
       "--brand-text-gradient": brandTextGradient,
       "--brand-blue": brandBlue,
-      "--window-light": config.settingsWindowColour.light,
-      "--window-dark": config.settingsWindowColour.dark,
+      "--window-light": config.settingsWindowColor.light,
+      "--window-dark": config.settingsWindowColor.dark,
     };
 
     expect(read.size).toBeGreaterThan(0);

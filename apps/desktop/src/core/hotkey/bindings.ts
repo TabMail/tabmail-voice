@@ -26,7 +26,7 @@ export function toggled(mode: DictationMode): DictationMode {
   return mode === "dictation" ? "agent" : "dictation";
 }
 
-/** What the platform's hotkey helper recognised (the push-to-talk gesture runs beside the key tap,
+/** What the platform's hotkey helper recognized (the push-to-talk gesture runs beside the key tap,
  * so a key that starts a dictation is swallowed before any app sees it). `closeChat`: Escape while
  * the chat window is open. `showHistory`: a triple tap, for the paste history (ADR-DESK-043). */
 export type HotkeyAction = "start" | "startHandsFree" | "listenHandsFree" | "finish" | "cancel" | "toggleMode" | "closeChat" | "showHistory";

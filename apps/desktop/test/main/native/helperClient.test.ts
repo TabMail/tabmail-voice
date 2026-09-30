@@ -147,8 +147,8 @@ describe("HelperClient", () => {
     expect(Date.now() - started).toBeLessThan(100);
   });
 
-  /** One whose caller gave up while it waited, timed out or cancelled (a dictation cancelled after
-   * its paste was asked for), is never sent, so the helper never acts on it; one already cancelled
+  /** One whose caller gave up while it waited, timed out or canceled (a dictation canceled after
+   * its paste was asked for), is never sent, so the helper never acts on it; one already canceled
    * isn't taken; and stopping fails whatever still waits. */
   test("a request given up while the helper restarts is never sent", async () => {
     const client = helper({ restartDelay: 150 });
@@ -158,10 +158,10 @@ describe("HelperClient", () => {
 
     const operation = new AbortController();
     expect((await failure(client.request("emit", { action: "timed out" }, 30, operation.signal))).kind).toBe("timeout");
-    const cancelled = client.request("emit", { action: "cancelled" }, undefined, operation.signal);
+    const canceled = client.request("emit", { action: "canceled" }, undefined, operation.signal);
     operation.abort();
-    await expect(cancelled).rejects.toBeInstanceOf(CancellationError);
-    await expect(client.request("emit", { action: "already cancelled" }, undefined, operation.signal)).rejects.toBeInstanceOf(CancellationError);
+    await expect(canceled).rejects.toBeInstanceOf(CancellationError);
+    await expect(client.request("emit", { action: "already canceled" }, undefined, operation.signal)).rejects.toBeInstanceOf(CancellationError);
     await client.request("echo", {}, undefined, new AbortController().signal);
     expect(actions).toEqual([]);
 
@@ -171,9 +171,9 @@ describe("HelperClient", () => {
     expect((await failure(waiting)).kind).toBe("exited");
   });
 
-  /** Written to the restarted helper, a request is the helper's to carry out: cancelling it then
+  /** Written to the restarted helper, a request is the helper's to carry out: canceling it then
    * changes nothing, and it ends as any written request does (here, unanswered, in its timeout). */
-  test("a request cancelled once written to the restarted helper is not called off", async () => {
+  test("a request canceled once written to the restarted helper is not called off", async () => {
     const client = helper({ restartDelay: 50 });
     await failure(client.request("exit"));
     const operation = new AbortController();

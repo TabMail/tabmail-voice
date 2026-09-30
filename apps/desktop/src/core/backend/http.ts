@@ -29,11 +29,11 @@ export type HTTPTransport = (request: HTTPRequest) => Promise<HTTPResponse>;
 
 /** A request that timed out or failed to connect: no HTTP status. */
 export class TransportError extends Error {
-  constructor(readonly reason: "timeout" | "network" | "cancelled") {
+  constructor(readonly reason: "timeout" | "network" | "canceled") {
     super(
       reason === "timeout" ? "TabMail took too long to answer. Try again."
         : reason === "network" ? "Couldn't reach TabMail. Check your internet connection."
-          : "Cancelled.",
+          : "Canceled.",
     );
     this.name = "TransportError";
   }
@@ -47,9 +47,9 @@ export class TransportError extends Error {
 /** The real network, through fetch. The body is read as it arrives, and the request is abandoned
  * when nothing has arrived for `timeout`. */
 export const liveTransport: HTTPTransport = async (request) => {
-  // Cancelled before it went out (during a token refresh): an abort listener added now would never
+  // Canceled before it went out (during a token refresh): an abort listener added now would never
   // fire, so nothing would stop the upload.
-  if (request.signal?.aborted) throw new TransportError("cancelled");
+  if (request.signal?.aborted) throw new TransportError("canceled");
   const controller = new AbortController();
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -90,7 +90,7 @@ export const liveTransport: HTTPTransport = async (request) => {
     return { status: response.status, headers, body };
   } catch (error) {
     if (timedOut) throw new TransportError("timeout");
-    if (request.signal?.aborted) throw new TransportError("cancelled");
+    if (request.signal?.aborted) throw new TransportError("canceled");
     throw error instanceof TransportError ? error : new TransportError("network");
   } finally {
     clearTimeout(timer);

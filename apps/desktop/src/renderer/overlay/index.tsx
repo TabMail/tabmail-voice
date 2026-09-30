@@ -10,10 +10,10 @@ import { connectorInfo, isConnectorID } from "../../core/agent/connectors/regist
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import type { DictationHotkey } from "../../core/hotkey/bindings.js";
-import { bubbleRow, bubbleRowOpacity, bubbleTooltipCentre, grownBubble, hintCentre, hintCentreOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
+import { bubbleRow, bubbleRowOpacity, bubbleTooltipCenter, grownBubble, hintCenter, hintCenterOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/tips.js";
 import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
-import { brandBlue, brandColour, brandGradient, grey, rgba } from "../shared/brand.js";
+import { brandBlue, brandColor, brandGradient, gray, rgba } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { ClipboardIcon, ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
 import "./index.css";
@@ -140,7 +140,7 @@ function Overlay() {
   const placement = state.chat === null ? null : state.chatPlacement;
   const chat = placement === null ? null : state.chat;
   const canvas = config.overlayCanvasSize;
-  // The one-line pill's top edge, centred in the canvas: taller pills grow downward.
+  // The one-line pill's top edge, centered in the canvas: taller pills grow downward.
   let anchor: Point = { x: canvas.width / 2, y: (canvas.height - config.pillHeight) / 2 };
   let layer: { size: Size; style?: CSSProperties } = { size: canvas };
   let pillMode: Mode | null = mode.kind === "hidden" || mode.kind === "swirl" ? null : mode;
@@ -195,11 +195,11 @@ interface BubbleItem {
   icon: ReactNode;
 }
 
-/** Places the pill with its top edge's centre at `anchor`, taller pills growing downward, away from
+/** Places the pill with its top edge's center at `anchor`, taller pills growing downward, away from
  * the caret line; agent mode's bubbles in a row under it (over it when they don't fit under it,
  * `bubbleRow`), the ones that ran last first (`bubbleOrder`), the first few in full and the rest fading
  * away to the right; and a tip under it and the bubbles, or over it all when `tipGoesAbove`
- * (`hintCentre`, `hintCentreOver`), following it as it grows or shrinks to a circle. With the chat
+ * (`hintCenter`, `hintCenterOver`), following it as it grows or shrinks to a circle. With the chat
  * window open (`keepsBubbles`), the bubbles of the last request stay while a follow-up works out its
  * own. */
 function PillLayout({
@@ -252,8 +252,8 @@ function PillLayout({
       ),
     }))
     .filter((item) => item.opacity > 0);
-  const centres = bubbleRow(pill, bubbles.length, bubblesUnder);
-  const frames = centres.map((centre) => ({ x: centre.x - bubble.width / 2, y: centre.y - bubble.height / 2, ...bubble }));
+  const centers = bubbleRow(pill, bubbles.length, bubblesUnder);
+  const frames = centers.map((center) => ({ x: center.x - bubble.width / 2, y: center.y - bubble.height / 2, ...bubble }));
   // The bubble under the pointer, by name.
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredIndex = bubbles.findIndex((item) => item.key === hovered);
@@ -274,12 +274,12 @@ function PillLayout({
         <Pill mode={mode} level={state.level} language={state.language} isAgent={state.mode === "agent" || keepsBubbles} />
       </div>
       {bubbles.map((item, index) => {
-        const centre = centres[index];
-        if (!centre) return null;
+        const center = centers[index];
+        if (!center) return null;
         const move = `${config.agentBubbleMoveDurationSeconds}s ${config.pillSpringEasing}`;
         return (
           // Keyed by bubble, so one that moves along the row as another runs slides there.
-          <div key={item.key} className="centred" style={{ left: centre.x, top: centre.y, transition: `left ${move}, top ${move}` }}>
+          <div key={item.key} className="centered" style={{ left: center.x, top: center.y, transition: `left ${move}, top ${move}` }}>
             <Bubble
               label={item.key}
               isRunning={item.isRunning}
@@ -378,8 +378,8 @@ function ChatBox({ chat, below, maxHeight }: { chat: AgentChat; below: boolean; 
         width: config.chatWidth,
         borderRadius: config.chatCornerRadius,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
-        boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
+        background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+        boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
       }}
     >
       <div
@@ -461,7 +461,7 @@ function ConfirmationCard({ question, expiresAt }: { question: string; expiresAt
 }
 
 /** The user's words on the right, laid out as Thunderbird's chat shows them, in a light tint of the
- * brand's gradient with a hairline border (owner, 2026-09-28: a grey one "looks bad"). */
+ * brand's gradient with a hairline border (owner, 2026-09-28: a gray one "looks bad"). */
 function RequestBubble({ text }: { text: string }) {
   return (
     <div
@@ -472,8 +472,8 @@ function RequestBubble({ text }: { text: string }) {
         padding: `${config.chatBubblePadding}px ${config.chatBubblePadding + 2}px`,
         borderRadius: config.chatBubbleCornerRadius,
         maxWidth: config.chatWidth * config.chatRequestMaxWidthFraction,
-        background: `linear-gradient(to right, ${brandColour(0, config.chatRequestFillOpacity)}, ${brandColour(1, config.chatRequestFillOpacity)})`,
-        border: `${config.pillBorderWidth}px solid ${brandColour(0.5, config.chatRequestBorderOpacity)}`,
+        background: `linear-gradient(to right, ${brandColor(0, config.chatRequestFillOpacity)}, ${brandColor(1, config.chatRequestFillOpacity)})`,
+        border: `${config.pillBorderWidth}px solid ${brandColor(0.5, config.chatRequestBorderOpacity)}`,
       }}
     >
       {text}
@@ -625,11 +625,11 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
     borderRadius: config.pillHeight / 2,
     borderWidth: config.pillBorderWidth,
     // A light pill in light and dark mode alike, in a gradient border.
-    background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
+    background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
     // Neon red-pink in agent mode, a sign of the mode.
     boxShadow: isAgent
-      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(config.agentPillGlowInnerColour, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(config.agentPillGlowOuterColour, config.agentPillGlowOuterOpacity)}`
-      : `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
+      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(config.agentPillGlowInnerColor, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(config.agentPillGlowOuterColor, config.agentPillGlowOuterOpacity)}`
+      : `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
     transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponseSeconds}s ease-out`,
   };
 
@@ -644,7 +644,7 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
     case "running":
     case "resting":
       content = (
-        <div className="centre-content" style={{ width: circleContent, height: circleContent, opacity: mode.kind === "resting" ? config.agentRestingSymbolOpacity : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out` }}>
+        <div className="center-content" style={{ width: circleContent, height: circleContent, opacity: mode.kind === "resting" ? config.agentRestingSymbolOpacity : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out` }}>
           <SparklesIcon size={config.agentRunningSymbolSize} />
         </div>
       );
@@ -698,7 +698,7 @@ function LanguageBadge({ code }: { code: string }) {
         width: diameter,
         height: diameter,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+        background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
       }}
     >
       <span className="gradient-text" style={{ fontSize: config.languageBadgeFontSize, backgroundImage: brandGradient }}>
@@ -708,7 +708,7 @@ function LanguageBadge({ code }: { code: string }) {
   );
 }
 
-/** Voice waveform: bars follow the incoming sound level with a travelling ripple. */
+/** Voice waveform: bars follow the incoming sound level with a traveling ripple. */
 function Waveform({ level }: { level: number }) {
   const bars = useRef<(HTMLDivElement | null)[]>([]);
   const latestLevel = useRef(level);
@@ -737,8 +737,8 @@ function Waveform({ level }: { level: number }) {
 
 function barHeight(index: number, time: number, level: number): number {
   const count = config.overlayMeterBarCount;
-  const centre = (count - 1) / 2;
-  const distance = Math.abs(index - centre) / Math.max(centre, 1);
+  const center = (count - 1) / 2;
+  const distance = Math.abs(index - center) / Math.max(center, 1);
   const weight = 1 - distance * (1 - config.overlayMeterEdgeBarWeight);
   // Each bar ripples at its own speed, so the motion reads as a voice rather than a meter.
   const speed = config.waveformRippleSpeed * (1 + config.waveformSpeedVariance * Math.sin(index * 1.7));
@@ -763,12 +763,12 @@ function SpinningRim() {
   const ring: CSSProperties = { mask: ringMask(width) };
   return (
     <>
-      <div className="rim" style={{ ...ring, background: brandColour(0, config.thinkingTrackOpacity) }} />
+      <div className="rim" style={{ ...ring, background: brandColor(0, config.thinkingTrackOpacity) }} />
       <div
         className="rim spinning"
         style={{
           ...ring,
-          background: `conic-gradient(${brandColour(0, 0)} 0deg, ${brandBlue} ${arc / 2}deg, ${brandColour(config.thinkingArcEndColour)} ${arc}deg, transparent ${arc}deg)`,
+          background: `conic-gradient(${brandColor(0, 0)} 0deg, ${brandBlue} ${arc / 2}deg, ${brandColor(config.thinkingArcEndColor)} ${arc}deg, transparent ${arc}deg)`,
           animationDuration: `${1 / config.thinkingRevolutionsPerSecond}s`,
         }}
       />
@@ -781,12 +781,12 @@ function CirclingBorder() {
   const ring: CSSProperties = { mask: ringMask(config.agentBubbleRimWidth) };
   return (
     <>
-      <div className="rim" style={{ ...ring, background: brandColour(0, config.thinkingTrackOpacity) }} />
+      <div className="rim" style={{ ...ring, background: brandColor(0, config.thinkingTrackOpacity) }} />
       <div
         className="rim spinning"
         style={{
           ...ring,
-          background: `conic-gradient(${brandColour(0, 0)}, ${brandBlue}, ${brandColour(config.thinkingArcEndColour)}, ${brandColour(0, 0)})`,
+          background: `conic-gradient(${brandColor(0, 0)}, ${brandBlue}, ${brandColor(config.thinkingArcEndColor)}, ${brandColor(0, 0)})`,
           animationDuration: `${1 / config.agentBubbleRevolutionsPerSecond}s`,
         }}
       />
@@ -829,8 +829,8 @@ function Bubble({
           width: diameter,
           height: diameter,
           borderWidth: config.pillBorderWidth,
-          background: `linear-gradient(${grey(config.pillFillWhite)}, ${grey(config.pillFillWhite)}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
-          boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColour(1, config.pillGlowOpacity)}`,
+          background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
+          boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
           transform: `scale(${isRunning ? config.agentBubbleRunningScale : isHovered ? config.agentBubbleHoverScale : 1})`,
           opacity: isHovered ? 1 : opacity * (isDimmed ? config.agentBubbleIdleOpacity : 1),
           transition: `transform ${config.agentBubbleRunningSpringResponseSeconds}s ${config.agentBubbleRunningSpringEasing}, opacity ${config.pillSpringResponseSeconds}s ease-out`,
@@ -844,34 +844,34 @@ function Bubble({
 }
 
 /** What the hovered bubble is: its name over what it does (its Settings description), in a dark
- * tooltip as the tips are, over the bubble or under it when there is no room (`bubbleTooltipCentre`).
+ * tooltip as the tips are, over the bubble or under it when there is no room (`bubbleTooltipCenter`).
  * The pointer passes through it, so it never takes the hover from the bubble under it. */
 function BubbleTooltip({ name, description, bubble, canvas }: { name: string; description: string; bubble: Rect; canvas: Size }) {
   const [ref, size] = useSize<HTMLDivElement>();
-  const centre = bubbleTooltipCentre(bubble, size, canvas);
+  const center = bubbleTooltipCenter(bubble, size, canvas);
   return (
     <div
       ref={ref}
       role="tooltip"
-      className="centred bubble-tooltip"
+      className="centered bubble-tooltip"
       style={{
-        left: centre.x,
-        top: centre.y,
+        left: center.x,
+        top: center.y,
         maxWidth: config.bubbleTooltipMaxWidth,
         padding: config.bubbleTooltipPadding,
         gap: config.bubbleTooltipLineSpacing,
         borderRadius: config.tipCornerRadius,
-        background: grey(config.tipFillWhite, config.tipFillOpacity),
-        border: `${config.pillBorderWidth}px solid ${grey(1, config.tipBorderOpacity)}`,
-        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${grey(0, config.tipShadowOpacity)}`,
+        background: gray(config.tipFillWhite, config.tipFillOpacity),
+        border: `${config.pillBorderWidth}px solid ${gray(1, config.tipBorderOpacity)}`,
+        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)}`,
         // Hidden until measured, so it never shows for a frame where it doesn't belong.
         visibility: size.width > 0 ? "visible" : "hidden",
       }}
     >
-      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: grey(1, config.tipKeyTextOpacity) }}>
+      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: gray(1, config.tipKeyTextOpacity) }}>
         {name}
       </span>
-      <span style={{ fontSize: config.bubbleTooltipFontSize, color: grey(1, config.tipTextOpacity) }}>{description}</span>
+      <span style={{ fontSize: config.bubbleTooltipFontSize, color: gray(1, config.tipTextOpacity) }}>{description}</span>
     </div>
   );
 }
@@ -887,12 +887,12 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
   const [ref, size] = useSize<HTMLDivElement>();
   if (shown === null) return null;
   const above = tipGoesAbove(tipDetails[shown].displayDuration, opensUpward);
-  const centre = above ? hintCentreOver(pill, bubbles, size) : hintCentre(underBubbles(pill, bubbles), size);
+  const center = above ? hintCenterOver(pill, bubbles, size) : hintCenter(underBubbles(pill, bubbles), size);
   return (
     <div
       ref={ref}
-      className="centred"
-      style={{ left: centre.x, top: centre.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out`, visibility: size.width > 0 ? "visible" : "hidden" }}
+      className="centered"
+      style={{ left: center.x, top: center.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out`, visibility: size.width > 0 ? "visible" : "hidden" }}
     >
       <TipTooltip tip={shown} hotkey={hotkey} pointsDown={above} />
     </div>
@@ -907,9 +907,9 @@ function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: Di
   const lines = tipLines(tip, hotkey);
   return (
     <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
-      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${grey(0, config.tipShadowOpacity)})` }}>
+      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)})` }}>
         {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
-        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={grey(config.tipFillWhite, config.tipFillOpacity)} stroke={grey(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />
+        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={gray(config.tipFillWhite, config.tipFillOpacity)} stroke={gray(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />
       </svg>
       <div
         className="tip-lines"
@@ -919,7 +919,7 @@ function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: Di
           <div key={index} className="tip-line" style={{ gap: config.tipSpacing, height: config.tipLineHeight }}>
             {line.map((part, partIndex) =>
               "words" in part ? (
-                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: grey(1, config.tipTextOpacity) }}>
+                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: gray(1, config.tipTextOpacity) }}>
                   {part.words}
                 </span>
               ) : (
@@ -928,13 +928,13 @@ function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: Di
                   className="keycap"
                   style={{
                     fontSize: config.tipKeyFontSize,
-                    color: grey(1, config.tipKeyTextOpacity),
+                    color: gray(1, config.tipKeyTextOpacity),
                     padding: `0 ${config.tipKeyPadding}px`,
                     height: config.tipKeyHeight,
                     borderRadius: config.tipKeyCornerRadius,
                     borderWidth: config.pillBorderWidth,
-                    borderColor: grey(1, config.tipKeyBorderOpacity),
-                    background: grey(1, config.tipKeyFillOpacity),
+                    borderColor: gray(1, config.tipKeyBorderOpacity),
+                    background: gray(1, config.tipKeyFillOpacity),
                   }}
                 >
                   {part.key}
@@ -948,7 +948,7 @@ function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: Di
   );
 }
 
-/** A rounded box under an arrow centred on its top edge, one outline so the fill and the border run
+/** A rounded box under an arrow centered on its top edge, one outline so the fill and the border run
  * around the arrow without a seam; inset half a border so the stroke stays inside. */
 function tooltipPath({ width, height }: Size): string {
   const inset = config.pillBorderWidth / 2;
@@ -1004,7 +1004,7 @@ function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; 
       const r = radius * (1 + fraction * config.swirlSpiralSpread);
       const dot = config.swirlParticleSize * (0.5 + 0.5 * (1 - fraction));
       context.globalAlpha = (0.35 + 0.65 * (1 - fraction)) * fade;
-      context.fillStyle = brandColour(fraction);
+      context.fillStyle = brandColor(fraction);
       context.beginPath();
       context.arc(width / 2 + Math.cos(angle) * r, height / 2 + Math.sin(angle) * r, dot / 2, 0, 2 * Math.PI);
       context.fill();

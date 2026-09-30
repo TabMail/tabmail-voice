@@ -10,7 +10,7 @@ import { charCount, trimWhitespace } from "../util/text.js";
 
 /**
  * The backend pass over a transcript: with the text around the caret when the dictation started, it fixes
- * speech-recognition errors (names and terms shown on screen, capitalisation that doesn't fit where
+ * speech-recognition errors (names and terms shown on screen, capitalization that doesn't fit where
  * the text lands), removes filler words and accidentally repeated words, and corrects grammar,
  * changing nothing else. The instructions live in the backend prompt `system_prompt_dictate_cleanup`,
  * which the backend runs in the transcription request, under its own deadline (backend ADR-027).

@@ -13,7 +13,7 @@ import * as config from "../../src/core/config.js";
 import { channels } from "../../src/shared/ipc.js";
 import { eventually } from "../support/stubs.js";
 
-/** The signal a tool runs with: a request never cancelled. */
+/** The signal a tool runs with: a request never canceled. */
 const signal = new AbortController().signal;
 
 /** The main process as the app wires it, over stand-ins for Electron, the helpers and the
@@ -545,7 +545,7 @@ describe("main process wiring", () => {
     expect(states).toEqual([{ entries: [expect.objectContaining({ text: "Hello there." })] }]);
 
     app.controller?.onShowHistory?.();
-    // Over the pill (its top edge's centre at 700,600, the bubbles under it), the pill's gap clear.
+    // Over the pill (its top edge's center at 700,600, the bubbles under it), the pill's gap clear.
     const top = 600 - config.chatPillGap - config.pasteHistoryMaxHeight;
     expect(app.historyWindow).toEqual([`show ${700 - config.pasteHistoryWindowWidth / 2},${top} ${config.pasteHistoryWindowWidth}x${config.pasteHistoryMaxHeight}`]);
     await send({ type: "historyHeight", height: 120 });

@@ -73,7 +73,7 @@ export interface DictationDependencies {
   settings: () => DictationSettings;
   account: AccountModel;
   tips: TipBook;
-  /** Pastes into the focused field, for the dictation whose `signal` it is: one cancelled before the
+  /** Pastes into the focused field, for the dictation whose `signal` it is: one canceled before the
    * paste reaches the system pastes nothing. */
   paste: (text: string, signal: AbortSignal) => Promise<void>;
   /** Puts `text` on the clipboard, when it was not pasted. */
@@ -486,7 +486,7 @@ export class DictationController extends Observable {
 
   cancel(): void {
     if (isResting(this.currentPhase)) return;
-    log.debug("DictationController: cancelled");
+    log.debug("DictationController: canceled");
     this.discard();
   }
 
@@ -586,13 +586,13 @@ export class DictationController extends Observable {
           emailApp: email.app,
           paste: (text) => this.paste(text, targetApp, signal),
           thunderbird: this.deps.thunderbird,
-          // Closed, cancelled or superseded meanwhile: the answer goes nowhere.
+          // Closed, canceled or superseded meanwhile: the answer goes nowhere.
           showAnswer: (answer) => {
             if (isCurrent()) this.showInChat(transcript, tool, answer);
           },
           signal,
         });
-        // Closed, cancelled or superseded while it delivered: the chat now open may be a newer one.
+        // Closed, canceled or superseded while it delivered: the chat now open may be a newer one.
         if (!isCurrent()) return;
         // A follow-up's other tools are listed in the chat too, so a later follow-up can refer to them.
         if (tool !== "answer" && this.currentChat !== null) this.showInChat(transcript, tool, text);
@@ -711,7 +711,7 @@ export class DictationController extends Observable {
   }
 
   /** Shows `question` in the chat window, and waits for the user to confirm or decline it
-   * (`answerConfirmation`); closing the window or cancelling the request declines it, and so does
+   * (`answerConfirmation`); closing the window or canceling the request declines it, and so does
    * leaving it unanswered for `confirmationTimeout`. */
   private confirm(question: string): Promise<ConfirmationAnswer> {
     this.confirmationShownAt = Date.now();
@@ -753,7 +753,7 @@ export class DictationController extends Observable {
   private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
     const changed = await this.focusChanged(targetApp);
-    // Cancelled while the app in front was read: the text is no longer wanted anywhere, not even on
+    // Canceled while the app in front was read: the text is no longer wanted anywhere, not even on
     // the clipboard, whose contents it would replace unseen.
     if (signal.aborted) throw new CancellationError();
     this.deps.history.add(text);
@@ -1007,7 +1007,7 @@ export class DictationController extends Observable {
   }
 
   /** Escape or the window's close button: the conversation is gone, and a follow-up under way is
-   * cancelled. */
+   * canceled. */
   closeChat(): void {
     if (this.currentChat === null) return;
     this.endConversation();
@@ -1079,7 +1079,7 @@ export class DictationController extends Observable {
     if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
     this.replyToConfirmation("declined");
     // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
-    // cancelled or ended with the account: the pill says what failed, and the next hold dictates.
+    // canceled or ended with the account: the pill says what failed, and the next hold dictates.
     if (this.currentChat?.turns.length === 0) this.dropChat();
   }
 

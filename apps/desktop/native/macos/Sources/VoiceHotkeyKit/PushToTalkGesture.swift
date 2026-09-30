@@ -25,7 +25,7 @@ public enum DictationHotkey: String, CaseIterable, Identifiable, Sendable {
     public static let globeKeyCode: UInt16 = 0xB3
 }
 
-/// Pure push-to-talk recogniser: turns raw modifier/key events into start / finish / cancel / toggle.
+/// Pure push-to-talk recognizer: turns raw modifier/key events into start / finish / cancel / toggle.
 ///
 /// - Pressing the hotkey starts a dictation; releasing it finishes the hold. A release too soon to be
 ///   deliberate (a tap) is discarded by the controller, unseen.
@@ -38,7 +38,7 @@ public enum DictationHotkey: String, CaseIterable, Identifiable, Sendable {
 ///   The monitor keeps that Space (and hands-free listening's Escape) from the app in front
 ///   (`owns(keyCode:)`); its auto-repeat switches nothing.
 /// - Pressing any other key during a hold means the user is typing (e.g. a ⌥-letter shortcut), so it
-///   is cancelled and nothing is inserted. Hands-free, other keys reach the app and change nothing.
+///   is canceled and nothing is inserted. Hands-free, other keys reach the app and change nothing.
 /// - While the chat window is open, Escape closes it (a follow-up under way with it), and is kept from
 ///   the app in front.
 ///
@@ -71,7 +71,7 @@ public struct PushToTalkGesture: Sendable {
     public private(set) var isHolding = false
     /// A dictation is listening without the key held; the next press finishes it.
     public private(set) var isHandsFree = false
-    /// Set when the hold ended before its key-up (a chord cancelled it, or its press finished
+    /// Set when the hold ended before its key-up (a chord canceled it, or its press finished
     /// hands-free listening); the eventual key-up must then be swallowed.
     private var holdIsOver = false
     private var pressedAt: TimeInterval = 0

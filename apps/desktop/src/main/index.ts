@@ -525,7 +525,7 @@ function launch(): void {
       case "listening":
         return;
       default:
-        // Finished, failed or cancelled without the hotkey: hands-free listening is over too.
+        // Finished, failed or canceled without the hotkey: hands-free listening is over too.
         endHandsFree();
     }
   };

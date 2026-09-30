@@ -192,7 +192,7 @@ describe("the cleanup's screen text", () => {
   });
 
   test("leaves agent mode the whole screen", () => {
-    expect(screenVariables("summarise this", screen({ renderedText: rendered })).screen_text).toBe(rendered);
+    expect(screenVariables("summarize this", screen({ renderedText: rendered })).screen_text).toBe(rendered);
   });
 });
 
@@ -207,10 +207,10 @@ describe("withTimeout", () => {
 
   /** The deadline releases the caller without waiting for an operation that ignores its signal. */
   test("times out without waiting for an operation that ignores cancellation", async () => {
-    let signalled: AbortSignal | undefined;
+    let signaled: AbortSignal | undefined;
     const started = performance.now();
     const result = withTimeout(200, (signal) => {
-      signalled = signal;
+      signaled = signal;
       return new Promise<string>(() => {});
     });
 
@@ -220,7 +220,7 @@ describe("withTimeout", () => {
     expect((error as TimeoutError).duration).toBe(200);
     expect((error as TimeoutError).message).toBe("Operation timed out after 200ms");
     expect(performance.now() - started).toBeLessThan(2_000);
-    expect(signalled?.aborted).toBe(true);
+    expect(signaled?.aborted).toBe(true);
   });
 
   test("sleep ends early when its signal aborts", async () => {

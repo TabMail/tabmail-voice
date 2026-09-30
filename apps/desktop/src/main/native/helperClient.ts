@@ -92,7 +92,7 @@ export class HelperClient {
    * `timeout`, or is not running. A request given its operation's `signal` waits instead while the
    * helper restarts (within `timeout`), so what a crash sets off (sending what was said, then pasting
    * it) still reaches the helper; if the signal aborts first it is never sent and rejects with a
-   * `CancellationError` (a cancelled dictation pastes nothing). */
+   * `CancellationError` (a canceled dictation pastes nothing). */
   request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = this.options.requestTimeout ?? config.helperRequestTimeout, signal?: AbortSignal): Promise<T> {
     const child = this.child;
     if (!child && (this.restartTimer === null || signal === undefined)) return Promise.reject(new HelperError("exited", method));
@@ -132,7 +132,7 @@ export class HelperClient {
     // helper isn't restarted (it would fail the same way) and its requests time out.
     child.on("error", (error) => log.error(`${name}: could not run: ${error.name}`));
     child.stdin.on("error", () => {});
-    // Those that timed out or were cancelled while it restarted are dropped: their callers have
+    // Those that timed out or were canceled while it restarted are dropped: their callers have
     // given up. Once written, a request goes through.
     for (const { id, line, drop } of this.waiting.splice(0)) {
       drop();

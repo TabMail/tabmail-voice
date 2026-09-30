@@ -35,13 +35,13 @@ const sections: { name: SectionName; title: string; icon: (size: number) => Reac
 /** macOS draws its traffic lights over the sidebar and the frosted material behind it. */
 const isMac = navigator.userAgent.includes("Macintosh");
 
-/** The stylesheet's colours from the brand and the config: `index.css` reads them. */
-const colours = {
+/** The stylesheet's colors from the brand and the config: `index.css` reads them. */
+const colors = {
   "--brand-gradient": brandGradient,
   "--brand-text-gradient": brandTextGradient,
   "--brand-blue": brandBlue,
-  "--window-light": config.settingsWindowColour.light,
-  "--window-dark": config.settingsWindowColour.dark,
+  "--window-light": config.settingsWindowColor.light,
+  "--window-dark": config.settingsWindowColor.dark,
 } as CSSProperties;
 
 /** Whether `name`'s section wants the user's attention: signed out, no name for agent mode, a
@@ -62,7 +62,7 @@ function Settings() {
   if (!state) return null;
   const section = sections.find((candidate) => candidate.name === shown) ?? sections[0];
   return (
-    <div className={isMac ? "settings mac" : "settings"} style={colours}>
+    <div className={isMac ? "settings mac" : "settings"} style={colors}>
       <nav className="sidebar" style={{ width: config.settingsSidebarWidth }}>
         <div className="identity">
           <img src={icon} alt="" width={config.settingsAppIconSize} height={config.settingsAppIconSize} />
@@ -342,7 +342,7 @@ function Toggle({ label, icon, checked, onChange, children }: { label: string; i
   return (
     <div className="row toggle">
       <span className="toggle-text">
-        <label htmlFor={id} className={icon ? "labelled-icon" : undefined}>
+        <label htmlFor={id} className={icon ? "labeled-icon" : undefined}>
           {icon}
           {label}
         </label>

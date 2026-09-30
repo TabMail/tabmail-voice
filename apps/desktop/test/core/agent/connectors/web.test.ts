@@ -124,7 +124,7 @@ describe("web_read", () => {
     expect(await reader.read(new URL("https://example.com/page"), signal)).toContain("Content:\nWords.");
   });
 
-  /** A cancelled request ends the read, robots.txt's included, rather than reading on or failing. */
+  /** A canceled request ends the read, robots.txt's included, rather than reading on or failing. */
   test.each(["https://example.com/robots.txt", "https://example.com/page"])("a cancel while %s is read ends it", async (url) => {
     web.page("https://example.com/page", "Words.");
     web.pages.set(url, new CancellationError());
@@ -427,7 +427,7 @@ describe("liveWebFetch", () => {
     await expect(request).rejects.toBeInstanceOf(CancellationError);
   });
 
-  test("a request already cancelled asks nothing", async () => {
+  test("a request already canceled asks nothing", async () => {
     handle = (_request, response) => response.end();
     const controller = new AbortController();
     controller.abort();

@@ -70,12 +70,12 @@ export class Windows {
   }
 
   /** Settings: on macOS the title bar gives way to the sidebar, which shows the frosted material
-   * behind the window, as System Settings does; elsewhere the window has its own colour. */
+   * behind the window, as System Settings does; elsewhere the window has its own color. */
   showSettings(): void {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { titleBarStyle: "hiddenInset", vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColour.dark : config.settingsWindowColour.light };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColor.dark : config.settingsWindowColor.light };
     this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
   }
 
@@ -95,7 +95,7 @@ export class Windows {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { vibrancy: "popover", visualEffectState: "active", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColour.dark : config.settingsWindowColour.light };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColor.dark : config.settingsWindowColor.light };
     const existing = this.open.get("history");
     if (existing && !existing.isDestroyed()) {
       existing.setBounds(bounds);

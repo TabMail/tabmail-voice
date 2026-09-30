@@ -117,9 +117,9 @@ describe("welcome wizard", () => {
    * native connector (ADR-DESK-037). */
   test("the Features step has a checkbox for each agent tool", async () => {
     const page = await welcomePage(features);
-    const tools = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labelled-icon"));
+    const tools = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labeled-icon"));
 
-    expect(tools.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Answer", "Compose", "Edit"]);
+    expect(tools.map((label) => label.querySelector(".labeled-icon")?.textContent)).toEqual(["Answer", "Compose", "Edit"]);
     expect(tools.every((label) => (label.querySelector(".caption")?.textContent ?? "") !== "")).toBe(true);
     const boxes = tools.map((label) => label.querySelector("input") as HTMLInputElement);
     expect(boxes.map((box) => box.checked)).toEqual([false, true, false]);
@@ -138,9 +138,9 @@ describe("welcome wizard", () => {
    * which turns it on or off. */
   test("the Features step has a checkbox for each app the Answer tool reaches", async () => {
     const page = await welcomePage({ ...features, connectors: ["calendar", "reminders"], enabledConnectors: ["calendar"] });
-    const rows = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labelled-icon"));
+    const rows = [...document.querySelectorAll<HTMLLabelElement>("label.check")].filter((label) => label.querySelector(".labeled-icon"));
 
-    expect(rows.map((label) => label.querySelector(".labelled-icon")?.textContent)).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders"]);
+    expect(rows.map((label) => label.querySelector(".labeled-icon")?.textContent)).toEqual(["Answer", "Calendar", "Compose", "Edit", "Reminders"]);
     expect(rows.every((label) => (label.querySelector(".caption")?.textContent ?? "") !== "")).toBe(true);
     const boxes = [rows[1], rows[4]].map((label) => label?.querySelector("input") as HTMLInputElement);
     expect(boxes.map((box) => box.checked)).toEqual([true, false]);

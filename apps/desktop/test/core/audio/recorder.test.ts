@@ -109,7 +109,7 @@ describe("AudioRecorder", () => {
 
   /** Quiet microphones: the upload's loudest sample sits at −3 dBFS whatever the microphone gave,
    * the whole recording scaled by one gain so its shape is unchanged. */
-  test("uploads a quiet recording peak-normalised to −3 dBFS", () => {
+  test("uploads a quiet recording peak-normalized to −3 dBFS", () => {
     const quiet = tone(1, 0.05); // −26 dBFS
     const recorder = new AudioRecorder();
     feed(recorder, quiet);

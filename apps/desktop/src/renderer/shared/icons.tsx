@@ -166,7 +166,7 @@ export function ClipboardIcon({ size }: { size: number }) {
   );
 }
 
-/** A line icon in the text's colour. */
+/** A line icon in the text's color. */
 function PlainIcon({ size, children }: { size: number; children: ReactNode }) {
   return (
     <svg className="icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">

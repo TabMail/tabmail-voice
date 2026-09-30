@@ -13,7 +13,7 @@ export class TimeoutError extends Error {
 /** The operation was called off. */
 export class CancellationError extends Error {
   constructor() {
-    super("Cancelled");
+    super("Canceled");
     this.name = "CancellationError";
   }
 }

@@ -24,7 +24,7 @@ export interface ConnectorTool {
    * user confirms (owner, 2026-09-26: send or create = confirm first, always). */
   confirmation(args: Record<string, unknown>): string | null;
   /** Runs the tool; the result is what the model reads next. Throws when it can't: the model is told
-   * why. `signal` aborts when the request is cancelled or its chat window closed: a tool that can
+   * why. `signal` aborts when the request is canceled or its chat window closed: a tool that can
    * stop what it started (a script) stops it. */
   run(args: Record<string, unknown>, signal: AbortSignal): Promise<string>;
 }

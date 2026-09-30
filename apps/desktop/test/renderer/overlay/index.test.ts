@@ -10,7 +10,7 @@ import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
 import { connectorInfo } from "../../../src/core/agent/connectors/registry.js";
 import { agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
-import { brandColour } from "../../../src/renderer/shared/brand.js";
+import { brandColor } from "../../../src/renderer/shared/brand.js";
 import type { DictationTip } from "../../../src/core/onboarding/tips.js";
 import { retryingMessage } from "../../../src/core/dictation/controller.js";
 import type { AgentChat } from "../../../src/core/agent/chat.js";
@@ -102,8 +102,8 @@ async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>
   });
   const frame = (element: Element | null, height: number) => {
     if (!(element instanceof HTMLElement)) return null;
-    // `.centred` elements are placed by their centre; `.pill-anchor` by its top.
-    const top = parseFloat(element.style.top) - (element.classList.contains("centred") ? height / 2 : 0);
+    // `.centered` elements are placed by their center; `.pill-anchor` by its top.
+    const top = parseFloat(element.style.top) - (element.classList.contains("centered") ? height / 2 : 0);
     return { top, bottom: top + height };
   };
   return {
@@ -112,7 +112,7 @@ async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>
         listener?.(state);
         await new Promise((resolve) => setTimeout(resolve, 0));
       }),
-    tipFrame: () => frame(document.querySelector(".tip")?.closest(".centred") ?? null, tipSize.height),
+    tipFrame: () => frame(document.querySelector(".tip")?.closest(".centered") ?? null, tipSize.height),
     pillFrame: () => frame(document.querySelector(".pill-anchor"), pillSize.height) ?? { top: NaN, bottom: NaN },
     commands,
   };
@@ -190,7 +190,7 @@ describe("overlay page", () => {
     const page = await overlayPage();
     await page.show({ ...listening, mode: "agent", tools: ["compose", "thunderbird"], tip: "handsFree", opensUpward: true });
 
-    const bubbleTops = [...document.querySelectorAll(".bubble")].map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    const bubbleTops = [...document.querySelectorAll(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
     expect(bubbleTops).toHaveLength(2);
     const tipFrame = page.tipFrame();
     expect(tipFrame).not.toBeNull();
@@ -212,12 +212,12 @@ describe("overlay page", () => {
     const opacities = () => [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat(bubble.style.opacity));
     expect(labels()).toEqual(alphabetical([...tools, ...apps]).slice(0, showing));
     expect(labels()).toEqual(["answer", "calendar", "compose", "contacts"]);
-    const lefts = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.left));
+    const lefts = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.left));
     expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
     expect(opacities().slice(0, config.agentBubbleRowVisibleCount)).toEqual([1, 1, 1]);
     expect(opacities().at(-1)).toBeGreaterThan(0);
     expect(opacities().at(-1)).toBeLessThan(1);
-    const tops = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centred") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
+    const tops = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => parseFloat((bubble.closest(".centered") as HTMLElement).style.top) - config.agentBubbleDiameter / 2);
     const pill = page.pillFrame();
     for (const top of tops) {
       if (bubblesFitUnder) expect(top).toBeGreaterThanOrEqual(pill.bottom);
@@ -252,7 +252,7 @@ describe("overlay page", () => {
   });
 
   /** In agent mode the pill glows as neon, a sign of the mode, in its own red-pink rather than the
-   * brand's colours (owner, 2026-09-29), its bubbles not; working, a gradient arc circles its border
+   * brand's colors (owner, 2026-09-29), its bubbles not; working, a gradient arc circles its border
    * (owner, 2026-09-28). Dictating, it has the plain glow and nothing circles. */
   test("the agent pill glows as neon, and circles while it works", async () => {
     const page = await overlayPage();
@@ -265,11 +265,11 @@ describe("overlay page", () => {
     const neon = pill()?.style.boxShadow ?? "";
     expect(neon).not.toBe(plain);
     expect(neon).toContain(`${config.agentPillGlowOuterRadius}px`);
-    expect(neon).toContain(`rgba(${config.agentPillGlowInnerColour.join(", ")}, ${config.agentPillGlowInnerOpacity})`);
-    expect(neon).toContain(`rgba(${config.agentPillGlowOuterColour.join(", ")}, ${config.agentPillGlowOuterOpacity})`);
+    expect(neon).toContain(`rgba(${config.agentPillGlowInnerColor.join(", ")}, ${config.agentPillGlowInnerOpacity})`);
+    expect(neon).toContain(`rgba(${config.agentPillGlowOuterColor.join(", ")}, ${config.agentPillGlowOuterOpacity})`);
     // Not the brand's blue in its purple, as it was before.
-    expect(neon).not.toContain(brandColour(0, config.agentPillGlowInnerOpacity));
-    expect(neon).not.toContain(brandColour(1, config.agentPillGlowOuterOpacity));
+    expect(neon).not.toContain(brandColor(0, config.agentPillGlowInnerOpacity));
+    expect(neon).not.toContain(brandColor(1, config.agentPillGlowOuterOpacity));
     expect(document.querySelector<HTMLElement>(".bubble")?.style.boxShadow).toBe(plain);
     expect(document.querySelector(".pill .spinning")).toBeNull();
 
@@ -313,8 +313,8 @@ describe("overlay page", () => {
     const said = () => [...(tooltip()?.children ?? [])].map((line) => line.textContent);
     // The tooltip's bottom, and the top of `label`'s bubble grown to `scale`, which it clears.
     const tooltipBottom = () => parseFloat(tooltip()?.style.top ?? "") + tooltipSize.height / 2;
-    // Grown about its centre, where its `.centred` wrapper is placed.
-    const grownTop = (label: string, scale: number) => parseFloat(bubble(label).closest<HTMLElement>(".centred")?.style.top ?? "") - (config.agentBubbleDiameter * scale) / 2;
+    // Grown about its center, where its `.centered` wrapper is placed.
+    const grownTop = (label: string, scale: number) => parseFloat(bubble(label).closest<HTMLElement>(".centered")?.style.top ?? "") - (config.agentBubbleDiameter * scale) / 2;
     expect(tooltip()).toBeNull();
 
     await pointer("compose", "pointerover");
@@ -323,7 +323,7 @@ describe("overlay page", () => {
     expect(tooltip()?.style.visibility).toBe("visible");
     // Over the bubble as it has grown, clear of it.
     expect(tooltipBottom()).toBeCloseTo(grownTop("compose", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
-    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(parseFloat(bubble("compose").closest<HTMLElement>(".centred")?.style.left ?? ""));
+    expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(parseFloat(bubble("compose").closest<HTMLElement>(".centered")?.style.left ?? ""));
 
     await pointer("compose", "pointerout");
     expect(tooltip()).toBeNull();
@@ -339,8 +339,8 @@ describe("overlay page", () => {
     await pointer("compose", "pointerout");
     expect(bubble("compose").style.transform).toBe("scale(1)");
 
-    // Each bubble's tooltip over that bubble: centred on it, clear of it.
-    const left = (label: string) => parseFloat(bubble(label).closest<HTMLElement>(".centred")?.style.left ?? "");
+    // Each bubble's tooltip over that bubble: centered on it, clear of it.
+    const left = (label: string) => parseFloat(bubble(label).closest<HTMLElement>(".centered")?.style.left ?? "");
     await pointer("calendar", "pointerover");
     expect(said()).toEqual([connectorInfo.calendar.displayName, connectorInfo.calendar.settingsDescription]);
     expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("calendar"));
@@ -401,7 +401,7 @@ describe("overlay page", () => {
     expect(document.querySelector<HTMLElement>('.bubble[aria-label="compose"]')?.style.transform).toBe("scale(1)");
   });
 
-  /** Under the chat window, with the pill off the window's centre, the row's last bubble is nearer the
+  /** Under the chat window, with the pill off the window's center, the row's last bubble is nearer the
    * window's edge than half the widest tooltip: its tooltip moves in to stay inside the window. */
   test("a tooltip under the chat window stays inside it", async () => {
     const page = await overlayPage();
@@ -415,9 +415,9 @@ describe("overlay page", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     const tooltip = document.querySelector<HTMLElement>('[role="tooltip"]');
-    const centre = parseFloat(tooltip?.style.left ?? "");
-    expect(centre + tooltipSize.width / 2).toBeLessThanOrEqual(width);
-    expect(Math.abs(centre - parseFloat((bubble.closest(".centred") as HTMLElement).style.left))).toBeGreaterThan(1);
+    const center = parseFloat(tooltip?.style.left ?? "");
+    expect(center + tooltipSize.width / 2).toBeLessThanOrEqual(width);
+    expect(Math.abs(center - parseFloat((bubble.closest(".centered") as HTMLElement).style.left))).toBeGreaterThan(1);
   });
 
   /** In dictation mode, and in agent mode before the tools are known, no app's bubble shows. */
@@ -447,13 +447,13 @@ describe("overlay page", () => {
     await page.show({ ...listening, tip: "doubleTap" });
     const tip = () => document.querySelector<HTMLElement>(".tip");
     expect(tip()?.style.visibility).toBe("hidden");
-    expect(tip()?.closest<HTMLElement>(".centred")?.style.visibility).toBe("hidden");
+    expect(tip()?.closest<HTMLElement>(".centered")?.style.visibility).toBe("hidden");
     tipLaidOut = true;
     await act(async () => {
       for (const observer of observers) observer.changed();
     });
     expect(tip()?.style.visibility).toBe("visible");
-    expect(tip()?.closest<HTMLElement>(".centred")?.style.visibility).toBe("visible");
+    expect(tip()?.closest<HTMLElement>(".centered")?.style.visibility).toBe("visible");
   });
 
   /** A tip that appears during a hold (the double-tap tip, 20 s in, with the Space tip learned) is
@@ -559,7 +559,7 @@ describe("overlay page", () => {
 });
 
 describe("the chat window", () => {
-  /** Over the pill, its bubbles under it, the pill centred. */
+  /** Over the pill, its bubbles under it, the pill centered. */
   const above: ChatPlacement = { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: (config.chatWidth + 2 * config.chatShadowMargin) / 2 };
   /** An answer, then an Edit follow-up, with a third under way; untouched while it times out. */
   function chat(closesAt: number | null, touched = closesAt === null): AgentChat {
@@ -593,11 +593,11 @@ describe("the chat window", () => {
     // The pill, resting: a circle with a fainter sparkle.
     const pill = document.querySelector<HTMLElement>(".chat-canvas .pill");
     expect(pill).not.toBeNull();
-    expect(document.querySelector<HTMLElement>(".chat-canvas .pill .centre-content")?.style.opacity).toBe(String(config.agentRestingSymbolOpacity));
+    expect(document.querySelector<HTMLElement>(".chat-canvas .pill .center-content")?.style.opacity).toBe(String(config.agentRestingSymbolOpacity));
     expect(document.querySelector(".swirl")).toBeNull();
 
     await page.show({ ...listening, chatPlacement: above, chat: chat(null) });
-    expect(document.querySelector(".chat-canvas .pill .centre-content")).toBeNull();
+    expect(document.querySelector(".chat-canvas .pill .center-content")).toBeNull();
     expect(document.querySelector(".chat-canvas .pill")).not.toBeNull();
   });
 
@@ -763,7 +763,7 @@ describe("the chat window", () => {
 
     await page.show({ ...running, ...agent });
     expect(pillCircles()).toBe(true);
-    expect(document.querySelector(".chat-canvas .pill .centre-content")).not.toBeNull();
+    expect(document.querySelector(".chat-canvas .pill .center-content")).not.toBeNull();
     expect(circling()).toEqual(["answer"]);
 
     await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningConnectors: ["web"] });

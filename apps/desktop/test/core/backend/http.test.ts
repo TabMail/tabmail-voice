@@ -60,26 +60,26 @@ describe("liveTransport", () => {
     expect(received).toEqual(["recording"]);
   });
 
-  /** A request whose dictation was cancelled before it went out (during a token refresh): nothing
+  /** A request whose dictation was canceled before it went out (during a token refresh): nothing
    * is sent. */
-  test("a request already cancelled sends nothing", async () => {
+  test("a request already canceled sends nothing", async () => {
     const url = await serve((response) => response.end("done"));
     const controller = new AbortController();
     controller.abort();
 
-    expect(await failure(liveTransport(post(url, { signal: controller.signal })))).toBe("cancelled");
+    expect(await failure(liveTransport(post(url, { signal: controller.signal })))).toBe("canceled");
     await sleep(100);
     expect(received).toEqual([]);
   });
 
-  test("a request cancelled while it waits is cancelled at once", async () => {
+  test("a request canceled while it waits is canceled at once", async () => {
     const url = await serve(() => {});
     const controller = new AbortController();
     const request = liveTransport(post(url, { signal: controller.signal }));
     await sleep(100);
     controller.abort();
 
-    expect(await failure(request)).toBe("cancelled");
+    expect(await failure(request)).toBe("canceled");
     expect(received).toEqual(["recording"]);
   });
 

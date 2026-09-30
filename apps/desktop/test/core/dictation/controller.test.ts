@@ -135,7 +135,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       settings: () => prefs.value,
       account: options.account ?? signedIn(auth),
       tips: new TipBook(tipStore),
-      // As `voice-macos` pastes (`MacSystem.paste`): nothing once cancelled.
+      // As `voice-macos` pastes (`MacSystem.paste`): nothing once canceled.
       paste:
         options.paste ??
         (async (text, signal) => {
@@ -248,7 +248,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** The names and terms on the screen read at key-down go with the recording after the dictionary's
    * words, none of them twice; the cleanup gets the dictionary alone (it reads the screen itself). */
-  /** The recording goes up as FLAC, losslessly and peak-normalised (the capture's −6 dBFS tone
+  /** The recording goes up as FLAC, losslessly and peak-normalized (the capture's −6 dBFS tone
    * raised to −3 dBFS): the backend hears exactly what the recorder made of it. */
   test("uploads the recording as FLAC", async () => {
     transcription.enqueue(200, cleanedReply);
@@ -370,12 +370,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(copies).toEqual([cleaned]);
     });
 
-    /** A dictation cancelled while the app in front is read wants its text nowhere: not pasted, not
+    /** A dictation canceled while the app in front is read wants its text nowhere: not pasted, not
      * copied (the user's clipboard stays theirs), not in the history. */
     test.each<["dictation" | "agent", number]>([
       ["dictation", 101],
       ["agent", 202],
-    ])("a %s cancelled while the app in front is read goes nowhere (app %i)", async (mode, pid) => {
+    ])("a %s canceled while the app in front is read goes nowhere (app %i)", async (mode, pid) => {
       transcription.enqueue(200, mode === "agent" ? { text: request } : cleanedReply);
       if (mode === "agent") completions.enqueue(200, reply("We ship on Friday."));
       const reading = deferred<number>();
@@ -492,8 +492,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
     });
 
-    /** A paste the helper finishes after the user cancelled and pressed the key again belongs to the
-     * dictation cancelled: it is not watched, or its watch would outlive the new key-down's stop. */
+    /** A paste the helper finishes after the user canceled and pressed the key again belongs to the
+     * dictation canceled: it is not watched, or its watch would outlive the new key-down's stop. */
     test("a paste finished after the next key-down is not watched", async () => {
       const { calls, corrections } = watcher();
       const pasting = deferred<void>();
@@ -703,7 +703,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(failed(new TransportError("timeout").message));
     });
 
-    test("cancelled while it waits to try again, it sends nothing more", async () => {
+    test("canceled while it waits to try again, it sends nothing more", async () => {
       transcription.enqueue(502, { error: "transcription_failed" });
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -719,7 +719,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(idle);
     });
 
-    /** The server's error can still arrive after the dictation was cancelled: it is not tried again,
+    /** The server's error can still arrive after the dictation was canceled: it is not tried again,
      * and the pill never says it is. */
     test("a server error answered after a cancel is not tried again", async () => {
       transcription.enqueue(502, { error: "transcription_failed" });
@@ -742,30 +742,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
   });
 
-  /** Cancelled while the request runs, the cleanup with it (another key pressed while the hotkey is
-   * held): the request is cancelled right away and its result is not pasted. */
-  test("a dictation cancelled during its request pastes nothing", async () => {
+  /** Canceled while the request runs, the cleanup with it (another key pressed while the hotkey is
+   * held): the request is canceled right away and its result is not pasted. */
+  test("a dictation canceled during its request pastes nothing", async () => {
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
-    let cancelledAfter: number | null = null;
+    let canceledAfter: number | null = null;
     transcription.gate = async (asked) => {
       const started = performance.now();
       controller.handle("cancel");
       try {
         await sleep(5_000, asked.signal);
       } catch {
-        cancelledAfter = performance.now() - started;
+        canceledAfter = performance.now() - started;
       }
     };
 
     await holdAndRelease(controller);
 
-    expect(await eventually(() => cancelledAfter !== null)).toBe(true);
+    expect(await eventually(() => canceledAfter !== null)).toBe(true);
     await sleep(50);
     expect(transcription.requests).toHaveLength(1);
     expect(pastes).toEqual([]);
     expect(controller.phase).toEqual(idle);
-    expect(cancelledAfter ?? 60_000).toBeLessThan(1_000);
+    expect(canceledAfter ?? 60_000).toBeLessThan(1_000);
   });
 
   /** The user signed out and into another account while the request ran: the transcription and its
@@ -850,15 +850,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect([capture.starts, reads, transcription.requests.length, completions.requests.length, pastes.length]).toEqual([0, 0, 0, 0, 0]);
     });
 
-    /** Cancelled while the transcription runs: nothing is cleaned up or pasted, and the overlay just
+    /** Canceled while the transcription runs: nothing is cleaned up or pasted, and the overlay just
      * goes, with no error for the user's own cancel (not even "nothing heard"), whether the reply
-     * still arrives or the request fails as cancelled. */
+     * still arrives or the request fails as canceled. */
     test.each([
       ["whose reply arrives anyway", false, transcript],
       ["whose empty reply arrives anyway", false, "  "],
-      ["whose request fails as cancelled", true, transcript],
-    ])("a dictation cancelled during the transcription %s shows nothing", async (_, honoursCancel, heard) => {
-      transcription.honoursCancel = honoursCancel;
+      ["whose request fails as canceled", true, transcript],
+    ])("a dictation canceled during the transcription %s shows nothing", async (_, honorsCancel, heard) => {
+      transcription.honorsCancel = honorsCancel;
       transcription.enqueue(200, { text: heard });
       completions.enqueue(200, cleanedStream);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
@@ -877,10 +877,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
-    /** A hold started while the cancelled dictation's request is still failing keeps its microphone:
+    /** A hold started while the canceled dictation's request is still failing keeps its microphone:
      * the older dictation's end doesn't stop the newer one. */
     test("a hold right after a cancel during the transcription keeps listening", async () => {
-      transcription.honoursCancel = true;
+      transcription.honorsCancel = true;
       transcription.enqueue(200, { text: transcript });
       const capture = new CountingCapture(true);
       const { controller } = makeController({ capture });
@@ -898,9 +898,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("cancel");
     });
 
-    /** Cancelled while the sign-in is refreshed, before the recording goes out: the recording is
+    /** Canceled while the sign-in is refreshed, before the recording goes out: the recording is
      * never sent. The real transport, against a server on the loopback interface. */
-    test("a dictation cancelled during a sign-in refresh sends nothing", async () => {
+    test("a dictation canceled during a sign-in refresh sends nothing", async () => {
       const uploads: string[] = [];
       const server = createServer((incoming, response) => {
         uploads.push(incoming.url ?? "");
@@ -912,7 +912,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         const account = signedIn(auth, Fixtures.session({ expiresIn: config.tokenRefreshLeewaySeconds / 2 }));
         auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
         const { controller, pastes } = makeController({ account, capture: new CountingCapture(true), transcriptionTransport: liveTransport });
-        // The key-down warm-up starts the refresh; the upload waits for the same one, and is cancelled
+        // The key-down warm-up starts the refresh; the upload waits for the same one, and is canceled
         // while it does.
         auth.gate = async () => {
           await eventually(() => controller.phase.kind === "transcribing");
@@ -975,13 +975,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual([transcript, cleaned, cleaned]);
     });
 
-    /** Cancelled while its screen is still being read, during the release tail or in the upload's
+    /** Canceled while its screen is still being read, during the release tail or in the upload's
      * wait for the read after it: nothing is sent or pasted, and the next dictation is cleaned up
      * with its own screen. */
     test.each([
       ["during the release tail", config.releaseTailDuration / 2],
       ["during the upload's wait", config.releaseTailDuration + 200],
-    ])("a dictation cancelled while its screen is read is not sent (%s)", async (_, cancelAfter) => {
+    ])("a dictation canceled while its screen is read is not sent (%s)", async (_, cancelAfter) => {
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const first = deferred<ScreenContext | null>();
@@ -1316,12 +1316,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(copied);
     });
 
-    /** Cancelled while the paste reads the app in front, the last wait before it, with the next
+    /** Canceled while the paste reads the app in front, the last wait before it, with the next
      * dictation already listening: the old request's text is pasted nowhere. */
     test.each<[string, AgentToolID]>([
       ["Ship it Friday or else.", "edit"],
       ["", "compose"],
-    ])("agent text cancelled during the last wait is not pasted (selection %j)", async (selected, tool) => {
+    ])("agent text canceled during the last wait is not pasted (selection %j)", async (selected, tool) => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply("Could we ship on Friday?"));
       const kept = deferred<number>();
@@ -1640,8 +1640,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(idle);
     });
 
-    /** Cancelled while the tool writes: nothing is pasted, then or when the text arrives. */
-    test("a request cancelled while running pastes nothing", async () => {
+    /** Canceled while the tool writes: nothing is pasted, then or when the text arrives. */
+    test("a request canceled while running pastes nothing", async () => {
       transcription.enqueue(200, { text: request });
       completions.enqueue(200, reply("We ship on Friday."));
       const seen: Phase[] = [];
@@ -1657,7 +1657,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(seen).toEqual([running("compose")]);
       expect(completions.requests).toHaveLength(1);
-      // The request itself is cancelled, not just its reply ignored: it stops at once, and one not
+      // The request itself is canceled, not just its reply ignored: it stops at once, and one not
       // yet sent (behind a sign-in refresh) never goes.
       expect(completions.requests[0]?.signal?.aborted).toBe(true);
       expect(pastes).toEqual([]);
@@ -1694,7 +1694,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.emailAppPath).toBeNull();
     });
 
-    /** A cancelled hold's screen read that finishes during the next hold does not change the tools that
+    /** A canceled hold's screen read that finishes during the next hold does not change the tools that
      * hold offers: its selection is of a screen the user has left. */
     test("a superseded screen read leaves the tools alone", async () => {
       const { controller } = makeController({ capture: new CountingCapture(true) });
@@ -2452,9 +2452,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.recentBubbles).toEqual(["calendar", "web", "answer"]);
         });
 
-        /** A request cancelled while its tool runs leaves no app running, and one that ends meanwhile
+        /** A request canceled while its tool runs leaves no app running, and one that ends meanwhile
          * doesn't touch the next request's. */
-        test("a request cancelled while its tool runs leaves no app running", async () => {
+        test("a request canceled while its tool runs leaves no app running", async () => {
           const tool = new FakeLoopTool();
           const release = deferred<void>();
           tool.during = () => release.promise;
@@ -2613,9 +2613,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Added.", "Added."]);
         });
 
-        /** A question dropped with its request (the window closed, or the request cancelled) takes its
+        /** A question dropped with its request (the window closed, or the request canceled) takes its
          * clock with it: the next request's question gets its whole time. */
-        test.each(["closed", "cancelled"])("a question whose request is %s leaves the next its whole time", async (how) => {
+        test.each(["closed", "canceled"])("a question whose request is %s leaves the next its whole time", async (how) => {
           const timeout = 1_500;
           const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"])], (controller) => {
@@ -2624,7 +2624,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
           const firstDeadline = Date.now() + timeout;
           if (how === "closed") controller.closeChat();
-          if (how === "cancelled") controller.handle("cancel");
+          if (how === "canceled") controller.handle("cancel");
           await done;
           expect(tool.runs).toEqual([]);
 
@@ -2692,7 +2692,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.phase).toEqual(idle);
         });
 
-        /** A request cancelled while a round waits on the backend stops that round's request itself,
+        /** A request canceled while a round waits on the backend stops that round's request itself,
          * not just its reply, and asks nothing more. */
         test("closing the chat window while a round waits stops its request", async () => {
           const tool = new FakeLoopTool();
@@ -2741,11 +2741,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Friday."]);
         });
 
-        /** Cancelled, or ended with the account, while a tool runs or asks, a first request's chat
+        /** Canceled, or ended with the account, while a tool runs or asks, a first request's chat
          * window, still empty, closes with it: the next hold dictates. */
         test.each([
-          ["cancelled", "asks"],
-          ["cancelled", "runs"],
+          ["canceled", "asks"],
+          ["canceled", "runs"],
           ["signed out", "asks"],
           ["signed out", "runs"],
         ])("%s while a tool %s, the empty chat window closes", async (how, when) => {
@@ -2763,7 +2763,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           else await started.promise;
           expect(controller.chat?.turns).toEqual([]);
 
-          if (how === "cancelled") controller.handle("cancel");
+          if (how === "canceled") controller.handle("cancel");
           else account.signOut();
           finish.resolve();
           await done;
@@ -2780,9 +2780,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           controller.handle("cancel");
         });
 
-        /** Cancelled while its tool runs or asks, a follow-up leaves the chat window as it was: no
+        /** Canceled while its tool runs or asks, a follow-up leaves the chat window as it was: no
          * question, no tool running, no request pending; a tool that asked never runs. */
-        test.each(["asks", "runs"])("a follow-up cancelled while its tool %s leaves the chat as it was", async (when) => {
+        test.each(["asks", "runs"])("a follow-up canceled while its tool %s leaves the chat as it was", async (when) => {
           const tool = new FakeLoopTool();
           if (when === "asks") tool.question = confirmationQuestion;
           const started = deferred<void>();
@@ -2813,10 +2813,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(completions.requests).toHaveLength(4);
         });
 
-        /** A tool runs with its request's signal, which aborts when the request is cancelled or its
+        /** A tool runs with its request's signal, which aborts when the request is canceled or its
          * chat window closed, so a tool that started something (a script) ends it; a request that
          * finishes leaves it running on. */
-        test.each(["cancelled", "closed", "finished"])("a tool's signal when its request is %s", async (how) => {
+        test.each(["canceled", "closed", "finished"])("a tool's signal when its request is %s", async (how) => {
           const tool = new FakeLoopTool();
           const started = deferred<void>();
           const finish = deferred<void>();
@@ -2829,7 +2829,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(tool.signals).toHaveLength(1);
           expect(tool.signals[0]?.aborted).toBe(false);
 
-          if (how === "cancelled") controller.handle("cancel");
+          if (how === "canceled") controller.handle("cancel");
           if (how === "closed") controller.closeChat();
           finish.resolve();
           await done;
@@ -2837,9 +2837,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(tool.signals[0]?.aborted).toBe(how !== "finished");
         });
 
-        /** A tool still running for a cancelled request leaves the next request's tool shown: its end
+        /** A tool still running for a canceled request leaves the next request's tool shown: its end
          * clears nothing of a newer request's. */
-        test("a cancelled request's tool leaves the next one's shown", async () => {
+        test("a canceled request's tool leaves the next one's shown", async () => {
           const first = new FakeLoopTool("example_create", "Adding it to your calendar");
           const second = new FakeLoopTool("example_read", "Checking your calendar");
           const firstStarted = deferred<void>();
@@ -3421,10 +3421,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.handle("cancel");
     });
 
-    /** A second press cancelled while down (a typing chord) leaves nothing for the next one: a newer
-     * second press shows no tip until it has been down as long as a hold, even when the cancelled one
+    /** A second press canceled while down (a typing chord) leaves nothing for the next one: a newer
+     * second press shows no tip until it has been down as long as a hold, even when the canceled one
      * would have become a hold before that; released as a tap, it gets the hands-free tip. */
-    test("a cancelled second press leaves no tip for the next one", async () => {
+    test("a canceled second press leaves no tip for the next one", async () => {
       const capture = new CountingCapture(true);
       const { controller, pastes } = makeController({ capture });
       const hold = config.minimumHoldDuration;
@@ -3437,7 +3437,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const pressed = performance.now();
       controller.handle("startHandsFree");
       expect(controller.phase).toEqual(listening);
-      // Past when the cancelled press would have become a hold, short of when this one does.
+      // Past when the canceled press would have become a hold, short of when this one does.
       expect(await throughout((hold * 3) / 4, () => controller.tip === null || performance.now() - pressed >= hold)).toBe(true);
 
       controller.handle("listenHandsFree");
@@ -3451,7 +3451,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
-    /** A second press ended before it has been down as long as a hold (cancelled, here) leaves no timer
+    /** A second press ended before it has been down as long as a hold (canceled, here) leaves no timer
      * of its own behind to act in whatever comes next. */
     test("a second press ended early leaves no timer behind", async () => {
       vi.useFakeTimers();
@@ -3609,7 +3609,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Escape during a hands-free dictation: nothing is sent or pasted. */
-    test("a hands-free dictation cancelled sends nothing", async () => {
+    test("a hands-free dictation canceled sends nothing", async () => {
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
 
       controller.handle("startHandsFree");
@@ -3648,10 +3648,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
-    /** The paste is for its dictation: cancelled before the paste reaches the system (it waits out a
+    /** The paste is for its dictation: canceled before the paste reaches the system (it waits out a
      * helper restart after the loss), the dictation calls it off, so nothing is pasted (in agent
      * mode too); the next dictation's paste is its own. */
-    test.each(["dictation", "agent"] as const)("a %s cancelled while its paste waits calls the paste off", async (mode) => {
+    test.each(["dictation", "agent"] as const)("a %s canceled while its paste waits calls the paste off", async (mode) => {
       transcription.enqueue(200, { text: transcript });
       completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
       const signals: AbortSignal[] = [];

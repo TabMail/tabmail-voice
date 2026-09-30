@@ -55,7 +55,7 @@ enum CaretLocator {
 
     /// Some apps answer a caret query with a whole line's box instead of a caret: Chromium at the
     /// very start of a field (e.g. over its placeholder), terminals at a wrapped line. The caret is
-    /// at that box's leading edge; centring on the box would put the overlay mid-line.
+    /// at that box's leading edge; centering on the box would put the overlay mid-line.
     static func caretEdge(of rect: CGRect) -> CGRect {
         guard rect.width > HelperConfig.caretMaxWidth else { return rect }
         return CGRect(x: rect.minX, y: rect.minY, width: 0, height: rect.height)

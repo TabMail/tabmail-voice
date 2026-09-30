@@ -59,8 +59,8 @@ describe.runIf(process.platform === "darwin")("osascript", () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  /** A cancelled request ends the script: what it would have done later never happens. */
-  test("cancelling ends the script", async () => {
+  /** A canceled request ends the script: what it would have done later never happens. */
+  test("canceling ends the script", async () => {
     const file = marker();
     const controller = new AbortController();
 
@@ -73,9 +73,9 @@ describe.runIf(process.platform === "darwin")("osascript", () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  /** A request already cancelled starts no script at all: no osascript process, not one Node would
+  /** A request already canceled starts no script at all: no osascript process, not one Node would
    * end a tick later. */
-  test("an already cancelled request runs nothing", async () => {
+  test("an already canceled request runs nothing", async () => {
     const file = marker();
     const controller = new AbortController();
     controller.abort();
@@ -87,9 +87,9 @@ describe.runIf(process.platform === "darwin")("osascript", () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  /** The script that runs uncancelled does what it says: the two tests above are not green for a
+  /** The script that runs uncanceled does what it says: the two tests above are not green for a
    * script that never runs. */
-  test("an uncancelled script runs", async () => {
+  test("an uncanceled script runs", async () => {
     const file = marker();
 
     vi.mocked(execFile).mockClear();

@@ -30,9 +30,9 @@ export const midY = (rect: Rect): number => rect.y + rect.height / 2;
 
 /**
  * Window origin that puts the pill's top edge just below the caret's line (the pill just above the
- * line when there's no room below), centred horizontally on the caret and kept inside the display's
+ * line when there's no room below), centered horizontally on the caret and kept inside the display's
  * work area with a tip under it. The canvas is larger than the pill (room for the swirl); the
- * one-line pill sits vertically centred in it and taller pills grow downward.
+ * one-line pill sits vertically centered in it and taller pills grow downward.
  */
 export function overlayOrigin(anchor: Rect, canvas: Size, pillHeight: number, workArea: Rect): Point {
   const gap = config.overlayCaretGap;
@@ -57,16 +57,16 @@ function heightUnderPillTop(pillHeight: number): number {
 }
 
 /** Whether a row of agent mode's bubbles fits under the pill, with the tip under it
- * (`bubbleCentres`): not when the pill opened above the caret's line (`opensUpward`), where they
+ * (`bubbleCenters`): not when the pill opened above the caret's line (`opensUpward`), where they
  * would cover it, nor when it sits too near the bottom of the work area. */
 export function bubblesFitUnder(anchor: Rect, pillHeight: number, workArea: Rect): boolean {
   const row = config.agentBubbleGap + config.agentBubbleDiameter;
   return maxY(anchor) + config.overlayCaretGap + heightUnderPillTop(pillHeight) + row <= maxY(workArea);
 }
 
-/** Centres of agent mode's `count` bubbles, in one row under the pill at `pill`, `agentBubbleGap`
+/** Centers of agent mode's `count` bubbles, in one row under the pill at `pill`, `agentBubbleGap`
  * clear of it and `agentBubbleSpacing` apart (owner, 2026-09-28: "tools appear below the pill … only show like three or so,
- * and it just fades away to the right"): the first `agentBubbleRowVisibleCount` centred under the
+ * and it just fades away to the right"): the first `agentBubbleRowVisibleCount` centered under the
  * pill, the rest going on to the right (`bubbleRowOpacity`). Over the pill instead when a row
  * doesn't fit under it (`underFits`, `bubblesFitUnder`), so it never covers the caret's line. */
 export function bubbleRow(pill: Rect, count: number, underFits: boolean): Point[] {
@@ -86,17 +86,17 @@ export function bubbleRowOpacity(index: number): number {
   return Math.max(0, 1 - faded / (config.agentBubbleRowFadeCount + 1));
 }
 
-/** Centre of the hovered bubble's tooltip, of `size`: centred over the bubble at `bubble`
+/** Center of the hovered bubble's tooltip, of `size`: centered over the bubble at `bubble`
  * (`bubbleTooltipGap` clear of it), or under it when there is no room over it in a canvas of `canvas`,
  * moved sideways to stay inside the canvas. */
-export function bubbleTooltipCentre(bubble: Rect, size: Size, canvas: Size): Point {
+export function bubbleTooltipCenter(bubble: Rect, size: Size, canvas: Size): Point {
   const gap = config.bubbleTooltipGap;
   const over = bubble.y - gap - size.height >= 0;
   const x = Math.min(Math.max(midX(bubble), size.width / 2), canvas.width - size.width / 2);
   return { x, y: over ? bubble.y - gap - size.height / 2 : maxY(bubble) + gap + size.height / 2 };
 }
 
-/** A bubble at `bubble` grown to `scale` about its centre, as the page draws it (`transform-origin:
+/** A bubble at `bubble` grown to `scale` about its center, as the page draws it (`transform-origin:
  * center`), so it grows as far toward the pill as away from it, whichever side of it it is. */
 export function grownBubble(bubble: Rect, scale: number): Rect {
   const width = bubble.width * scale;
@@ -104,24 +104,24 @@ export function grownBubble(bubble: Rect, scale: number): Rect {
   return { x: midX(bubble) - width / 2, y: bubble.y + bubble.height / 2 - height / 2, width, height };
 }
 
-/** The pill with any bubbles under it: what a tip under the pill goes under (`hintCentre`). */
+/** The pill with any bubbles under it: what a tip under the pill goes under (`hintCenter`). */
 export function underBubbles(pill: Rect, bubbles: Rect[]): Rect {
   const bottom = bubbles.reduce((most, bubble) => Math.max(most, maxY(bubble)), maxY(pill));
   return { ...pill, height: bottom - pill.y };
 }
 
-/** Centre of a tip, of `size`: a tooltip centred `tipGap` under a pill at `pill` (and any bubbles
+/** Center of a tip, of `size`: a tooltip centered `tipGap` under a pill at `pill` (and any bubbles
  * under it, `underBubbles`) (owner,
  * 2026-09-26: "a tooltip that appears below the middle and disappears after a little"). A tip that
  * fades after its display duration covers the caret's line only briefly, even in an overlay opened
  * above that line; one that stays up goes over the pill there (`tipGoesAbove`). */
-export function hintCentre(pill: Rect, size: Size): Point {
+export function hintCenter(pill: Rect, size: Size): Point {
   return { x: midX(pill), y: maxY(pill) + config.tipGap + size.height / 2 };
 }
 
-/** Centre of a tip, of `size`, over the pill instead: a tooltip centred `tipGap` over a pill at
+/** Center of a tip, of `size`, over the pill instead: a tooltip centered `tipGap` over a pill at
  * `pill`, or over agent mode's bubbles at `bubbles` when they show. */
-export function hintCentreOver(pill: Rect, bubbles: Rect[], size: Size): Point {
+export function hintCenterOver(pill: Rect, bubbles: Rect[], size: Size): Point {
   const top = bubbles.reduce((least, bubble) => Math.min(least, bubble.y), pill.y);
   return { x: midX(pill), y: top - config.tipGap - size.height / 2 };
 }
@@ -134,7 +134,7 @@ export function tipGoesAbove(displayDuration: number | null, opensUpward: boolea
 }
 
 /** Where the pill sits on screen for a caret at `anchor`, as `overlayOrigin` places the overlay: its
- * centre's x, and its top edge's y. */
+ * center's x, and its top edge's y. */
 export function pillPosition(anchor: Rect, workArea: Rect): Point {
   const canvas = config.overlayCanvasSize;
   const origin = overlayOrigin(anchor, canvas, config.pillHeight, workArea);
@@ -162,10 +162,10 @@ export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect,
 }
 
 /** The overlay window's frame while the chat window shows, `contentHeight` tall (at most `side`'s
- * `maxHeight`), with the pill, its top edge's centre at `pill`, where it was: the chat `chatPillGap`
+ * `maxHeight`), with the pill, its top edge's center at `pill`, where it was: the chat `chatPillGap`
  * over the pill and its bubbles (`chatStripHeight`, the bubbles under the pill or over it,
  * `bubblesUnder`), or under them (`side.below`, `chatSide`), with the shadow's margin around them
- * all; centred on the pill, kept inside the work area. The window keeps the edge on the pill's side
+ * all; centered on the pill, kept inside the work area. The window keeps the edge on the pill's side
  * as the chat grows, so the pill never moves. */
 export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Rect, side: { below: boolean; maxHeight: number }, bubblesUnder: boolean): Rect {
   const margin = config.chatShadowMargin;
@@ -181,8 +181,8 @@ export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Re
 
 /** Where the paste history window goes (ADR-DESK-043), `size` big: where the chat window would
  * (owner, 2026-09-30: "like the answer tool"), `chatPillGap` over the pill and its bubbles, or under
- * them where there is more room (`chatSide`), no taller than the room on that side; centred on the
- * pill (its top edge's centre at `pill`), kept inside the work area. The edge on the pill's side stays
+ * them where there is more room (`chatSide`), no taller than the room on that side; centered on the
+ * pill (its top edge's center at `pill`), kept inside the work area. The edge on the pill's side stays
  * put as the list measures itself. */
 export function historyWindowFrame(pill: Point, size: Size, workArea: Rect, bubblesUnder: boolean): Rect {
   const side = chatSide(pill.y, bubblesUnder, workArea, size.height);

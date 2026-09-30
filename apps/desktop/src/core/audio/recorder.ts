@@ -37,7 +37,7 @@ export function level(samples: Float32Array): number {
 }
 
 /** Scales 16-bit samples in place so the loudest sits at `config.normalizedPeakDecibels`, boosting
- * by at most `config.maxNormalizationGainDecibels` and never cutting (peak normalisation, one gain
+ * by at most `config.maxNormalizationGainDecibels` and never cutting (peak normalization, one gain
  * for the whole recording). Returns the gain applied (1 when none). */
 export function normalizePeak(samples: Int16Array): number {
   let peak = 0;
@@ -56,7 +56,7 @@ export function normalizePeak(samples: Int16Array): number {
 }
 
 export interface Recording {
-  /** Little-endian 16-bit mono PCM samples, peak-normalised (`normalizePeak`). */
+  /** Little-endian 16-bit mono PCM samples, peak-normalized (`normalizePeak`). */
   pcm: Uint8Array;
   /** The same samples FLAC-encoded, the upload. */
   flac: Uint8Array;
@@ -75,7 +75,7 @@ export function recordingDuration(recording: Recording): number {
   return recording.pcm.length / 2 / recording.sampleRate;
 }
 
-/** Accumulates one dictation as 16 kHz mono 16-bit PCM; `finish` peak-normalises it and FLAC-encodes
+/** Accumulates one dictation as 16 kHz mono 16-bit PCM; `finish` peak-normalizes it and FLAC-encodes
  * it for the upload. */
 export class AudioRecorder {
   private readonly maxFrames: number;
@@ -110,7 +110,7 @@ export class AudioRecorder {
     this.frames += count;
   }
 
-  /** Everything recorded so far, peak-normalised. The whole recording's loudest sample sets the
+  /** Everything recorded so far, peak-normalized. The whole recording's loudest sample sets the
    * gain, so it is encoded here rather than as it arrives: about 1.4 ms per second of audio. */
   finish(): Recording {
     const samples = new Int16Array(this.frames);

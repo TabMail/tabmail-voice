@@ -15,11 +15,11 @@ struct AccessibilityActivatorTests {
         AccessibilityActivator.engine(of: bundle) { files.contains($0) }
     }
 
-    @Test func geckoAppsAreRecognisedByTheirXULLibrary() {
+    @Test func geckoAppsAreRecognizedByTheirXULLibrary() {
         #expect(engine(with: ["/Applications/Example.app/Contents/MacOS/XUL"]) == .gecko)
     }
 
-    @Test func electronAppsAreRecognisedByTheirFramework() {
+    @Test func electronAppsAreRecognizedByTheirFramework() {
         #expect(engine(with: ["/Applications/Example.app/Contents/Frameworks/Electron Framework.framework"]) == .electron)
     }
 

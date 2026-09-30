@@ -6,7 +6,7 @@ import * as config from "../config.js";
 import { type DictationHotkey, hotkeyNames } from "../hotkey/bindings.js";
 import { type KeyValueStore, storedBool, storedInteger } from "../util/keyValueStore.js";
 
-/** A tip the overlay shows by the listening pill (`hintCentre`). Most behave as TipKit tips do: a
+/** A tip the overlay shows by the listening pill (`hintCenter`). Most behave as TipKit tips do: a
  * tip shows until the user has done what it teaches, or has seen it `maxDisplays` times, and then
  * never again. Its words, display duration and display count are in the config (`tipDetails`).
  * - `agentAndHistory`: Space switches between dictation and agent mode, and a triple tap shows the

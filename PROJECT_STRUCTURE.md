@@ -68,7 +68,7 @@ apps/desktop/
 │   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
 │   │   │   ├── macos.ts                 `voice-macos`'s methods, typed
-│   │   │   └── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
+│   │   │   └── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a canceled request ends it)
 │   │   └── storage/                 keychainSessionStore.ts (the sign-in), jsonFileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
 │   ├── preload/index.ts     `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks

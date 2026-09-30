@@ -128,7 +128,7 @@ describe("OverlayWindowController", () => {
     ]);
   });
 
-  /** Where the pill is on screen, its top edge's centre, in the overlay's canvas at `bounds`, or in
+  /** Where the pill is on screen, its top edge's center, in the overlay's canvas at `bounds`, or in
    * the chat window at `bounds` as `controller` places it (its bubbles `row` over it, or none). */
   function pillOnScreen(bounds: Rect, controller?: OverlayWindowController): { x: number; y: number } {
     const placement = controller?.chatPlacement;
@@ -331,10 +331,10 @@ describe("OverlayWindowController", () => {
 
   /** A window a tool opened, dropped when its request fails (`DictationController.teardown`), gives
    * way to the pill saying what failed, where the pill was and letting clicks through; one dropped
-   * when the request is cancelled leaves nothing once the pill's exit has played. */
+   * when the request is canceled leaves nothing once the pill's exit has played. */
   test.each<[string, Phase, boolean]>([
     ["fails", { kind: "failed", message: "Something went wrong. Try again." }, true],
-    ["is cancelled", { kind: "idle" }, false],
+    ["is canceled", { kind: "idle" }, false],
   ])("a tool's window dropped as its request %s gives way to the pill", async (_, end, showsPill) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {

@@ -109,7 +109,7 @@ export const DesktopAgent = {
     let state: unknown;
     let round = 0;
     for (;;) {
-      // A request cancelled while a tool ran (the chat window closed as it asked) asks nothing more.
+      // A request canceled while a tool ran (the chat window closed as it asked) asks nothing more.
       signal?.throwIfAborted();
       const started = performance.now();
       const result = await withFreshToken(account, userID, (token) => client.round(message, tools, state, token, signal, onServerTool));

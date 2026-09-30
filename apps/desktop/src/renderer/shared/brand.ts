@@ -2,34 +2,34 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-/** The overlay uses the TabMail icon's colours, blue → purple, but for agent mode's red-pink glow
- * (`agentPillGlow…Colour`). */
+/** The overlay uses the TabMail icon's colors, blue → purple, but for agent mode's red-pink glow
+ * (`agentPillGlow…Color`). */
 const blue = [0, 0x91, 0xff] as const;
 const purple = [0x7b, 0, 0xff] as const;
 
 /** A point on the blue → purple gradient (0 = blue, 1 = purple), at `alpha`, darkened by `shade`
  * (0 none … 1 black). */
-export function brandColour(fraction: number, alpha = 1, shade = 0): string {
+export function brandColor(fraction: number, alpha = 1, shade = 0): string {
   const [r, g, b] = blue.map((start, index) => Math.round((start + ((purple[index] ?? start) - start) * fraction) * (1 - shade)));
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export const brandBlue = brandColour(0);
-export const brandPurple = brandColour(1);
+export const brandBlue = brandColor(0);
+export const brandPurple = brandColor(1);
 export const brandGradient = `linear-gradient(to right, ${brandBlue}, ${brandPurple})`;
 
 /** How much the gradient darkens under white text, so that even its lightest (blue) end gives small
  * text the 4.5:1 contrast WCAG AA asks for. */
 export const textShade = 0.2;
-export const brandTextGradient = `linear-gradient(to right, ${brandColour(0, 1, textShade)}, ${brandColour(1, 1, textShade)})`;
+export const brandTextGradient = `linear-gradient(to right, ${brandColor(0, 1, textShade)}, ${brandColor(1, 1, textShade)})`;
 
-/** `colour` (red, green and blue, 0–255) at `alpha`. */
-export function rgba(colour: readonly [number, number, number], alpha = 1): string {
-  return `rgba(${colour.join(", ")}, ${alpha})`;
+/** `color` (red, green and blue, 0–255) at `alpha`. */
+export function rgba(color: readonly [number, number, number], alpha = 1): string {
+  return `rgba(${color.join(", ")}, ${alpha})`;
 }
 
-/** A grey of `white` (0 black … 1 white), at `alpha`. */
-export function grey(white: number, alpha = 1): string {
+/** A gray of `white` (0 black … 1 white), at `alpha`. */
+export function gray(white: number, alpha = 1): string {
   const value = Math.round(white * 255);
   return `rgba(${value}, ${value}, ${value}, ${alpha})`;
 }

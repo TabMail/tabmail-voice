@@ -9,7 +9,7 @@ import { CancellationError } from "../../core/util/timeout.js";
 
 /**
  * The Notes and Messages scripts, run by `/usr/bin/osascript` from the main process (ADR-DESK-028):
- * a cancelled request ends the process, which `voice-macos` can't do for a request it has taken.
+ * a canceled request ends the process, which `voice-macos` can't do for a request it has taken.
  * macOS asks the user the first time the app sends Notes or Messages an Apple Event.
  */
 export const osascript: ScriptRunner = {

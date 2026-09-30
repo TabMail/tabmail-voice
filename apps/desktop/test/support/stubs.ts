@@ -19,10 +19,10 @@ export class StubTransport {
   private readonly replies: { status: number; body: string }[] = [];
   /** Suspends each request until it resolves (for single-flight and cancellation tests). */
   gate: ((request: HTTPRequest) => Promise<void>) | undefined;
-  /** Answers a cancelled request as `liveTransport` does: one cancelled before it goes out is never
-   * sent, and one cancelled while it waits fails. Off, a reply arrives however the request is
-   * cancelled (as one already on its way does). */
-  honoursCancel = false;
+  /** Answers a canceled request as `liveTransport` does: one canceled before it goes out is never
+   * sent, and one canceled while it waits fails. Off, a reply arrives however the request is
+   * canceled (as one already on its way does). */
+  honorsCancel = false;
   /** How much of a reply's body each piece streamed to `onChunk` holds. */
   chunkSize = Number.POSITIVE_INFINITY;
 
@@ -31,10 +31,10 @@ export class StubTransport {
   }
 
   readonly transport: HTTPTransport = async (request) => {
-    if (this.honoursCancel && request.signal?.aborted) throw new TransportError("cancelled");
+    if (this.honorsCancel && request.signal?.aborted) throw new TransportError("canceled");
     this.requests.push(request);
     await this.gate?.(request);
-    if (this.honoursCancel && request.signal?.aborted) throw new TransportError("cancelled");
+    if (this.honorsCancel && request.signal?.aborted) throw new TransportError("canceled");
     const reply = this.replies.shift();
     if (!reply) throw new TransportError("network");
     // Streamed as `liveTransport` does, in pieces of `chunkSize` characters.

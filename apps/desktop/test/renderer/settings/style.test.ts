@@ -41,19 +41,19 @@ function value(text: string, selector: string, property: string): string | undef
   return rule?.body.match(new RegExp(`${property}:\\s*([^;]+);`))?.[1]?.trim();
 }
 
-/** `colour` (`rgba(…)` or `#rrggbb`) laid over the opaque `background`, as `#rrggbb`. */
-function opaque(colour: string, background: string): string {
+/** `color` (`rgba(…)` or `#rrggbb`) laid over the opaque `background`, as `#rrggbb`. */
+function opaque(color: string, background: string): string {
   const channels = (text: string): number[] => (text.startsWith("#") ? [1, 3, 5].map((start) => parseInt(text.slice(start, start + 2), 16)).concat(1) : (text.match(/[\d.]+/g) ?? []).map(Number));
   const [br = 0, bg = 0, bb = 0] = channels(background);
-  const [r = 0, g = 0, b = 0, alpha = 1] = channels(colour);
+  const [r = 0, g = 0, b = 0, alpha = 1] = channels(color);
   return `#${[r * alpha + br * (1 - alpha), g * alpha + bg * (1 - alpha), b * alpha + bb * (1 - alpha)].map((channel) => Math.round(channel).toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** WCAG's contrast ratio of `colour` (`#rrggbb` or `rgba(…)`) laid over the opaque `background`. */
-function contrast(colour: string, background: string): number {
+/** WCAG's contrast ratio of `color` (`#rrggbb` or `rgba(…)`) laid over the opaque `background`. */
+function contrast(color: string, background: string): number {
   const channels = (text: string): number[] => (text.startsWith("#") ? [1, 3, 5].map((start) => parseInt(text.slice(start, start + 2), 16)).concat(1) : (text.match(/[\d.]+/g) ?? []).map(Number));
   const [br = 0, bg = 0, bb = 0] = channels(background);
-  const [r = 0, g = 0, b = 0, alpha = 1] = channels(colour);
+  const [r = 0, g = 0, b = 0, alpha = 1] = channels(color);
   const over = [r * alpha + br * (1 - alpha), g * alpha + bg * (1 - alpha), b * alpha + bb * (1 - alpha)];
   const luminance = (rgb: number[]): number => {
     const [lr = 0, lg = 0, lb = 0] = rgb.map((channel) => {
@@ -77,8 +77,8 @@ function specificity(selector: string): number {
 
 describe("Settings stylesheet", () => {
   /** White text sits only on the darkened gradient (4.5:1, `brand.test.ts`): the plain gradient only
-   * under the switch's thumb, no text. The sidebar's account line is in the text colour. */
-  test("text on the brand colours keeps its contrast", () => {
+   * under the switch's thumb, no text. The sidebar's account line is in the text color. */
+  test("text on the brand colors keeps its contrast", () => {
     expect(declaring(css, /var\(--brand-gradient\)/)).toEqual(["input.switch:checked"]);
     expect(declaring(css, /var\(--brand-text-gradient\)/).sort()).toEqual([".settings button.default", ".sidebar button.nav.selected"]);
     expect(declaring(css, /color:\s*var\(--text\)/)).toContain(".identity .identity-account");
@@ -86,7 +86,7 @@ describe("Settings stylesheet", () => {
   });
 
   /** In light mode the notes (`form.css`'s `.caption`, in `--secondary`) and "Allowed" hold small
-   * text's 4.5:1 on the window's colour and on the white cards, set on `.settings` (inside `:root`,
+   * text's 4.5:1 on the window's color and on the white cards, set on `.settings` (inside `:root`,
    * so they hold whichever stylesheet loads last). */
   test("notes and Allowed keep small-text contrast in light mode", () => {
     const light = mediaBlock("(prefers-color-scheme: light)");
@@ -94,17 +94,17 @@ describe("Settings stylesheet", () => {
     const allowed = value(light, ".settings", "--allowed");
     expect(secondary).toBeDefined();
     expect(allowed).toBeDefined();
-    for (const background of [config.settingsWindowColour.light, "#ffffff"]) {
+    for (const background of [config.settingsWindowColor.light, "#ffffff"]) {
       expect(contrast(secondary ?? "", background)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(allowed ?? "", background)).toBeGreaterThanOrEqual(4.5);
     }
     // form.css's own values, which these replace, fall short.
-    expect(contrast("rgba(0, 0, 0, 0.5)", config.settingsWindowColour.light)).toBeLessThan(4.5);
+    expect(contrast("rgba(0, 0, 0, 0.5)", config.settingsWindowColor.light)).toBeLessThan(4.5);
     expect(contrast("#28a745", "#ffffff")).toBeLessThan(4.5);
   });
 
-  /** In dark mode the text, the notes and "Allowed" (`form.css`'s dark colours) hold small text's
-   * 4.5:1 on the window's colour and on the cards, and an off switch's white thumb stands 3:1 from
+  /** In dark mode the text, the notes and "Allowed" (`form.css`'s dark colors) hold small text's
+   * 4.5:1 on the window's color and on the cards, and an off switch's white thumb stands 3:1 from
    * its track on a card. (`form.css`'s error red, 4.2:1 on a dark card, predates this page.) */
   test("text and an off switch stay legible in dark mode", () => {
     const form = readFileSync(join(import.meta.dirname, "../../../src/renderer/shared/form.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -112,16 +112,16 @@ describe("Settings stylesheet", () => {
     const card = value(formDark, ":root", "--group") ?? "";
     expect(card).toMatch(/^#/);
     for (const name of ["--text", "--secondary", "--allowed"]) {
-      const colour = value(formDark, ":root", name);
-      expect(colour, name).toBeDefined();
-      for (const background of [config.settingsWindowColour.dark, card]) expect(contrast(colour ?? "", background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      const color = value(formDark, ":root", name);
+      expect(color, name).toBeDefined();
+      for (const background of [config.settingsWindowColor.dark, card]) expect(contrast(color ?? "", background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
     }
     const track = value(mediaBlock("(prefers-color-scheme: dark)"), ":root", "--switch-off") ?? "";
     expect(contrast("#ffffff", opaque(track, card))).toBeGreaterThanOrEqual(3);
   });
 
   /** Focus is Chromium's own ring (the browser's default indicator, in the system accent), except in
-   * a contrast theme, where the chosen section needs its own ring in a system colour, set off from
+   * a contrast theme, where the chosen section needs its own ring in a system color, set off from
    * its fill. */
   test("focus shows on every background", () => {
     const forced = mediaBlock("(forced-colors: active)");
@@ -138,16 +138,16 @@ describe("Settings stylesheet", () => {
   });
 
   /** The page is clear for the frosted sidebar whichever of it and `form.css` (`html, body` in the
-   * page's colour) loads last: each selector outranks theirs. */
+   * page's color) loads last: each selector outranks theirs. */
   test("the page stays clear above form.css", () => {
     const clear = rules(css).find((rule) => /background:\s*transparent/.test(rule.body) && /height:\s*100%/.test(rule.body));
     expect(clear?.selectors).toHaveLength(3);
     for (const selector of clear?.selectors ?? []) expect(specificity(selector)).toBeGreaterThan(specificity("html"));
   });
 
-  /** A Windows contrast theme drops the gradients and forces colours: the switch is the system's
-   * checkbox, the chosen section is in the system's selection colours, and the attention mark in
-   * the text colour, so none of them vanishes. */
+  /** A Windows contrast theme drops the gradients and forces colors: the switch is the system's
+   * checkbox, the chosen section is in the system's selection colors, and the attention mark in
+   * the text color, so none of them vanishes. */
   test("switches, the chosen section and attention marks show in contrast themes", () => {
     const forced = mediaBlock("(forced-colors: active)");
     expect(declaring(forced, /appearance:\s*auto/)).toContain("input.switch");
@@ -157,7 +157,7 @@ describe("Settings stylesheet", () => {
   });
 
   /** The chosen section's label is white on its gradient, and hovering it keeps that gradient: the
-   * hover's grey goes only on the other sections, whatever the rules' order. */
+   * hover's gray goes only on the other sections, whatever the rules' order. */
   test("the chosen section stays white on its gradient, hovered or not", () => {
     expect(value(css, ".sidebar button.nav.selected", "color")).toBe("white");
     expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover"]);
@@ -171,7 +171,7 @@ describe("Settings stylesheet", () => {
     expect(contrast(value(css, ":root", "--switch-off") ?? "", "#ffffff")).toBeGreaterThanOrEqual(3);
   });
 
-  /** An on switch differs from an off one by its thumb's place, not colour alone: the thumb crosses
+  /** An on switch differs from an off one by its thumb's place, not color alone: the thumb crosses
    * the track to the far inset. */
   test("an on switch's thumb moves to the far side", () => {
     const px = (selector: string, property: string) => parseFloat(value(css, selector, property) ?? "NaN");

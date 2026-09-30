@@ -122,18 +122,18 @@ describe("Windows", () => {
   });
 
   /** On macOS the sidebar shows the frosted material through a clear window, under inset traffic
-   * lights; elsewhere nothing draws a material, so the window has the config's own colour for the
+   * lights; elsewhere nothing draws a material, so the window has the config's own color for the
    * theme, never a clear one. */
   test("the Settings window is frosted only on macOS", () => {
     expect(settingsWindow("darwin")).toMatchObject({ vibrancy: "sidebar", titleBarStyle: "hiddenInset", backgroundColor: "#00000000", ...config.settingsWindowSize });
 
     const light = settingsWindow("win32");
-    expect(light).toMatchObject({ backgroundColor: config.settingsWindowColour.light });
+    expect(light).toMatchObject({ backgroundColor: config.settingsWindowColor.light });
     expect(light).not.toHaveProperty("vibrancy");
     expect(light).not.toHaveProperty("titleBarStyle");
 
     electron.nativeTheme.shouldUseDarkColors = true;
-    expect(settingsWindow("linux")).toMatchObject({ backgroundColor: config.settingsWindowColour.dark });
+    expect(settingsWindow("linux")).toMatchObject({ backgroundColor: config.settingsWindowColor.dark });
   });
 
   /** The overlay is never focused, so every click on it is a first click: the chat window's close

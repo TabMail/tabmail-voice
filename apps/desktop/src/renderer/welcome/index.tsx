@@ -86,7 +86,7 @@ function Page({ state }: { state: WelcomeState }) {
               <label key={key} className="check">
                 <input type="checkbox" checked={state.enabledConnectors.includes(key)} onChange={(event) => void send({ type: "setConnectorEnabled", connector: key, value: event.target.checked })} />
                 <span className="stack-text">
-                  <span className="labelled-icon">
+                  <span className="labeled-icon">
                     <ConnectorIcon connector={key} size={config.settingsToolIconSize} />
                     {connectorInfo[key].displayName}
                   </span>
@@ -97,7 +97,7 @@ function Page({ state }: { state: WelcomeState }) {
               <label key={key} className="check">
                 <input type="checkbox" checked={state.enabledTools.includes(key)} onChange={(event) => void send({ type: "setAgentToolEnabled", tool: key, value: event.target.checked })} />
                 <span className="stack-text">
-                  <span className="labelled-icon">
+                  <span className="labeled-icon">
                     <ToolIcon tool={key} size={config.settingsToolIconSize} />
                     {agentTools[key].displayName}
                   </span>

@@ -173,7 +173,7 @@ pre {
 }
 
 /* A label after its icon (an agent tool's switch). */
-.labelled-icon {
+.labeled-icon {
   display: inline-flex;
   align-items: center;
   gap: 6px;

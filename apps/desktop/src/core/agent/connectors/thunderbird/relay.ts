@@ -95,7 +95,7 @@ export class ThunderbirdRelay {
     const path = app === null ? null : await this.system.applicationPath(app);
     if (app === null || path === null) throw new RelayError("notInstalled");
     const running = await this.system.isRunning(app);
-    // Cancelled during these reads, a newer dictation may have started: Thunderbird is neither
+    // Canceled during these reads, a newer dictation may have started: Thunderbird is neither
     // launched nor brought to the front for this one.
     checkCancellation(signal);
     if (!running) {
@@ -109,7 +109,7 @@ export class ThunderbirdRelay {
     if (!(await this.wait(this.timings.activateTimeout, () => this.system.isFrontmost(app), signal))) throw new RelayError("notFrontmost");
     if (!(await this.isChatFocused(app))) {
       // The shortcut goes to whatever app is in front, and the user may have switched, or
-      // cancelled, during the focus read.
+      // canceled, during the focus read.
       if (!(await this.system.isFrontmost(app))) throw new RelayError("notFrontmost");
       checkCancellation(signal);
       log.debug("ThunderbirdRelay: opening the chat");
@@ -117,7 +117,7 @@ export class ThunderbirdRelay {
       if (!(await this.wait(this.timings.chatTimeout, () => this.isChatFocused(app), signal))) throw new RelayError("chatNotFocused");
       log.debug("ThunderbirdRelay: the chat is ready");
     }
-    // The user may have moved on, or cancelled, while this waited: paste and send only into the
+    // The user may have moved on, or canceled, while this waited: paste and send only into the
     // chat, and only for a request still wanted.
     if (!(await this.isChatFocused(app))) throw new RelayError("chatNotFocused");
     checkCancellation(signal);

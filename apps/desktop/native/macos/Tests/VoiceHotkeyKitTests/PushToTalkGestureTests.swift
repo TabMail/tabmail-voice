@@ -99,7 +99,7 @@ struct PushToTalkGestureTests {
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: clock.tick()) == .finish)
     }
 
-    /// Space is the app's again once no hold is under way, or once a chord cancelled the hold.
+    /// Space is the app's again once no hold is under way, or once a chord canceled the hold.
     @Test func spaceIsOwnedOnlyDuringALiveHold() {
         var gesture = makeGesture()
         #expect(!gesture.owns(keyCode: space))
@@ -111,7 +111,7 @@ struct PushToTalkGestureTests {
         #expect(!gesture.owns(keyCode: space))
     }
 
-    /// Another key after Space still means typing: the hold is cancelled.
+    /// Another key after Space still means typing: the hold is canceled.
     @Test func aChordAfterTheToggleCancels() {
         var gesture = makeGesture()
         _ = gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: clock.tick())

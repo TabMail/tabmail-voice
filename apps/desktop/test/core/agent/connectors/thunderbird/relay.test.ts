@@ -13,12 +13,12 @@ function send(thunderbird: FakeThunderbird, app: string | null = FakeThunderbird
   return thunderbird.relay().send(message, app, signal);
 }
 
-async function failure(promise: Promise<unknown>): Promise<RelayErrorKind | "cancelled" | undefined> {
+async function failure(promise: Promise<unknown>): Promise<RelayErrorKind | "canceled" | undefined> {
   try {
     await promise;
   } catch (error) {
     if (error instanceof RelayError) return error.kind;
-    if (error instanceof CancellationError) return "cancelled";
+    if (error instanceof CancellationError) return "canceled";
     throw error;
   }
   return undefined;
@@ -284,13 +284,13 @@ describe("ThunderbirdRelay", () => {
     expect(thunderbird.events).toEqual(["activate"]);
   });
 
-  /** Cancelled while the chat's title is read (before the shortcut, the paste, or Return): nothing
+  /** Canceled while the chat's title is read (before the shortcut, the paste, or Return): nothing
    * more is sent. */
   test.each([
     [1, "Inbox - Thunderbird", []],
     [2, FakeThunderbird.chatTitle, []],
     [3, FakeThunderbird.chatTitle, ["paste"]],
-  ])("cancelled during title read %i sends nothing more", async (read, title, sentBefore) => {
+  ])("canceled during title read %i sends nothing more", async (read, title, sentBefore) => {
     const thunderbird = new FakeThunderbird();
     thunderbird.focusedTitle = title;
     const controller = new AbortController();
@@ -298,23 +298,23 @@ describe("ThunderbirdRelay", () => {
       if (n === read) controller.abort();
     };
 
-    expect(await failure(send(thunderbird, FakeThunderbird.app, controller.signal))).toBe("cancelled");
+    expect(await failure(send(thunderbird, FakeThunderbird.app, controller.signal))).toBe("canceled");
     expect(thunderbird.events).toEqual(["activate", ...sentBefore]);
   });
 
-  /** Cancelled while the relay reads whether Thunderbird runs: a newer dictation may have started,
+  /** Canceled while the relay reads whether Thunderbird runs: a newer dictation may have started,
    * so Thunderbird is neither launched nor brought to the front. */
-  test.each([true, false])("cancelled before Thunderbird is reached (running: %s) touches no app", async (running) => {
+  test.each([true, false])("canceled before Thunderbird is reached (running: %s) touches no app", async (running) => {
     const thunderbird = new FakeThunderbird();
     thunderbird.running = running;
     const controller = new AbortController();
     thunderbird.onRunningRead = () => controller.abort();
 
-    expect(await failure(send(thunderbird, FakeThunderbird.app, controller.signal))).toBe("cancelled");
+    expect(await failure(send(thunderbird, FakeThunderbird.app, controller.signal))).toBe("canceled");
     expect(thunderbird.events).toEqual([]);
   });
 
-  test("cancelled while waiting for the chat pastes nothing", async () => {
+  test("canceled while waiting for the chat pastes nothing", async () => {
     const thunderbird = new FakeThunderbird();
     thunderbird.shortcutOpensChat = false;
     const controller = new AbortController();
@@ -323,7 +323,7 @@ describe("ThunderbirdRelay", () => {
 
     controller.abort();
 
-    expect(await sending).toBe("cancelled");
+    expect(await sending).toBe("canceled");
     expect(thunderbird.pasted).toEqual([]);
     expect(thunderbird.events).not.toContain("return");
   });
