@@ -19,8 +19,8 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   transcripts, the screen read, every backend request and its raw reply, the text pasted.
   `log.debug`/`log.error` carry lengths, states and error types only, and `log.error` reaches
   stderr in every build. Never log audio or an access token (`BackendLog` masks `Authorization`).
-  Debug builds write `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual
-  test's app log.
+  Debug builds, and a release build while debug mode is on, write
+  `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual test's app log.
 - **Tests never hit the network.** Inject `StubTransport` and `InMemorySessionStore`
   (`test/support.ts`); never the real Keychain item.
 - **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).

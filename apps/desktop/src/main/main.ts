@@ -27,7 +27,7 @@ import { DictationController, isResting } from "../core/dictationController.js";
 import { GlobeKeyAction } from "../core/globeKeyAction.js";
 import { type DictationHotkey, isHotkeyAction } from "../core/hotkey.js";
 import { liveTransport } from "../core/http.js";
-import { configureLog, errorName, log } from "../core/log.js";
+import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
 import type { MenuState } from "../core/menuModel.js";
 import { historyWindowOrigin, type Point, type Rect } from "../core/overlayGeometry.js";
 import { PasteHistory } from "../core/pasteHistory.js";
@@ -113,9 +113,8 @@ function launch(): void {
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
-  const helperEnv = isDebugBuild ? { TABMAIL_VOICE_DEBUG: "1" } : {};
-  const hotkeyHelper = new HelperClient({ name: "voice-hotkey", executable: join(helpers, "voice-hotkey"), env: helperEnv });
-  const macHelper = new HelperClient({ name: "voice-macos", executable: join(helpers, "voice-macos"), env: helperEnv });
+  const hotkeyHelper = new HelperClient({ name: "voice-hotkey", executable: join(helpers, "voice-hotkey") });
+  const macHelper = new HelperClient({ name: "voice-macos", executable: join(helpers, "voice-macos") });
   const mac = new MacSystem(macHelper);
 
   let wizard: WelcomeWizard | null = null;
@@ -544,6 +543,12 @@ function launch(): void {
   overlay.onPlace = () => windows.push("overlay");
   settings.observe(pushSettingsWindows);
   account.observe(pushSettingsWindows);
+  // A packaged build writes the debug log while debug mode is on: switched on, or the account it is
+  // allowed for signing in (ADR-DESK-015).
+  const followDebugMode = () => setDebugMode(settings.isDebugMode(account.email));
+  followDebugMode();
+  settings.observe(followDebugMode);
+  account.observe(followDebugMode);
   permissions.observe(pushSettingsWindows);
 
   // The hotkey's event tap can't be created until Accessibility is granted: configure again once

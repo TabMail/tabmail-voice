@@ -5,14 +5,11 @@
 import Foundation
 
 /// The helpers' diagnostics, one line each to stderr, which the app copies into its own log (its
-/// debug log file, and errors to its production log). `debug` lines are written only when the app
-/// started the helper with `TABMAIL_VOICE_DEBUG=1` (debug builds). Lengths, states and error types
-/// only: never user content, which the app logs itself (ADR-DESK-015).
+/// debug log file while it keeps one, and errors to its production log). The app decides whether a
+/// `debug` line is kept, since debug mode can be switched while the helper runs. Lengths, states and
+/// error types only: never user content, which the app logs itself (ADR-DESK-015).
 public enum HelperLog {
-    public static let isDebugEnabled = ProcessInfo.processInfo.environment["TABMAIL_VOICE_DEBUG"] == "1"
-
     public static func debug(_ message: @autoclosure () -> String) {
-        guard isDebugEnabled else { return }
         write("debug", message())
     }
 

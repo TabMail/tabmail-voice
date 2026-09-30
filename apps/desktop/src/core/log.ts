@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 /**
- * Debug-gated logging. Diagnostic logs are written only in debug builds, to the debug log file.
+ * Debug-gated logging. Diagnostic logs are written only in debug builds, and in a packaged build
+ * while debug mode is on (`setDebugMode`), to the debug log file.
  *
  * `debug` and `error` never carry transcript text or audio: dictation is user content. User
  * content goes through `content`, to the debug log file only (ADR-DESK-015). Nothing logs audio or
@@ -14,46 +15,54 @@ import { charCount } from "./text.js";
 export type LogLevel = "debug" | "CONTENT" | "ERROR";
 
 export interface LogSinks {
-  /** Debug builds only: set to write the debug log file. */
+  /** Writes the debug log file, while debug logging is on. */
   file?: (level: LogLevel, text: string) => void;
   /** Production observability: structured errors, in every build. */
   error: (text: string) => void;
 }
 
 let isDebugBuild = false;
+let isDebugModeOn = false;
 let sinks: LogSinks = { error: () => {} };
 let contentObserver: ((label: string, text: string) => void) | undefined;
 
-/** Called once at launch by the main process. */
+/** Called once at launch by the main process. Debug mode starts off. */
 export function configureLog(options: { isDebugBuild: boolean; sinks: LogSinks }): void {
   isDebugBuild = options.isDebugBuild;
+  isDebugModeOn = false;
   sinks = options.sinks;
 }
 
+/** Debug mode is on or off (`AppSettings.isDebugMode`): a packaged build logs while it is on. */
+export function setDebugMode(on: boolean): void {
+  isDebugModeOn = on;
+}
+
+/** Whether the debug log file is written: always in a debug build, and while debug mode is on. */
 export function isDebugLogging(): boolean {
-  return isDebugBuild;
+  return isDebugBuild || isDebugModeOn;
 }
 
 export const log = {
   debug(message: string | (() => string)): void {
-    if (!isDebugBuild) return;
+    if (!isDebugLogging()) return;
     sinks.file?.("debug", typeof message === "string" ? message : message());
   },
 
-  /** Debug builds only: user content in full (a transcript, the screen read, a request to the
+  /** Debug logging only (`isDebugLogging`): user content in full (a transcript, the screen read, a request to the
    * backend and its raw reply, the text pasted), as a block in the log file and nowhere else, so a
    * session can be replayed after the fact (ADR-DESK-015). Never audio or an access token. */
   content(label: string, text: string | (() => string)): void {
-    if (!isDebugBuild && !contentObserver) return;
+    if (!isDebugLogging() && !contentObserver) return;
     const value = typeof text === "string" ? text : text();
     contentObserver?.(label, value);
-    if (isDebugBuild) sinks.file?.("CONTENT", block(label, value));
+    if (isDebugLogging()) sinks.file?.("CONTENT", block(label, value));
   },
 
   /** Structured errors production observability needs. Must never carry user content. */
   error(message: string): void {
     sinks.error(message);
-    if (isDebugBuild) sinks.file?.("ERROR", message);
+    if (isDebugLogging()) sinks.file?.("ERROR", message);
   },
 };
 

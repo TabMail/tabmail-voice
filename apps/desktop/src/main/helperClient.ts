@@ -33,8 +33,6 @@ export interface HelperOptions {
   name: string;
   executable: string;
   args?: string[];
-  /** Debug builds pass `TABMAIL_VOICE_DEBUG=1`, which turns the helper's debug lines on. */
-  env?: NodeJS.ProcessEnv;
   requestTimeout?: number;
   restartDelay?: number;
 }
@@ -122,8 +120,8 @@ export class HelperClient {
   }
 
   private launch(): void {
-    const { name, executable, args = [], env } = this.options;
-    const child = spawn(executable, args, { env: { ...process.env, ...env }, stdio: ["pipe", "pipe", "pipe"] });
+    const { name, executable, args = [] } = this.options;
+    const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     createInterface({ input: child.stdout }).on("line", (line) => this.receive(line));
     createInterface({ input: child.stderr }).on("line", (line) => {
