@@ -9,10 +9,10 @@ import {
   ContactsSearchTool,
   type ContactStore,
   ContactStoreError,
-  contactsTools,
+  contactsConnector,
   describeContact,
 } from "../../../../src/core/agent/connectors/contacts.js";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
 import * as config from "../../../../src/core/config.js";
 
 /** Contacts as the Answer prompt's tools, against a fake store: what the model searches for, what the
@@ -157,7 +157,7 @@ describe("contacts_add", () => {
 describe("connectors", () => {
   /** The Contacts switch covers both tools, and only adding asks first. */
   test("the Contacts switch covers its tools", () => {
-    const tools = contactsTools(store);
+    const tools = contactsConnector.tools({ contactStore: store });
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([
       ["contacts", "contacts_search"],
       ["contacts", "contacts_add"],

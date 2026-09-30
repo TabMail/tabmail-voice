@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { DesktopAgent } from "../../../src/core/agent/requests.js";
-import type { ConnectorTool } from "../../../src/core/agent/connectors/tool.js";
+import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
 import { AgentError, type AgentToolID, agentToolIDs, EditTool } from "../../../src/core/agent/tools.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient, type ServerToolEvent, type ToolCall } from "../../../src/core/backend/completions.js";

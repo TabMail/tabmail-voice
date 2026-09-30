@@ -4,7 +4,7 @@
 
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** The kinds of item the backend's `files_search` offers. */
 export const fileKinds = ["any", "document", "pdf", "image", "presentation", "spreadsheet", "folder", "email"] as const;
@@ -60,10 +60,13 @@ export class FileStoreError extends Error {
   }
 }
 
-/** The Files connector's tools; `home` is the user's home folder, which the model reads as `~`. */
-export function filesTools(store: FileStore, home: string): ConnectorTool[] {
-  return [new FilesSearchTool(store, home), new FileOpenTool(store, home)];
-}
+export const filesConnector = defineConnector({
+  id: "files",
+  order: 40,
+  displayName: "Files",
+  settingsDescription: "Finds files, and Apple Mail messages, with Spotlight, and opens the ones you ask for.",
+  tools: ({ fileStore, home }: Pick<ConnectorServices, "fileStore" | "home">): ConnectorTool[] => [new FilesSearchTool(fileStore, home), new FileOpenTool(fileStore, home)],
+});
 
 /** Finds files, and Apple Mail messages Spotlight has indexed, in the user's home folder
  * (`files_search`), for "find the PDF Sam sent last week". */

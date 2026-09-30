@@ -10,15 +10,10 @@ import { app, autoUpdater as squirrel, clipboard, dialog, ipcMain, screen, sessi
 import { autoUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
-import { calendarTools } from "../core/agent/connectors/calendar.js";
-import { contactsTools } from "../core/agent/connectors/contacts.js";
-import { filesTools } from "../core/agent/connectors/files.js";
-import { connectorIDs } from "../core/agent/connectors/registry.js";
+import { connectorIDs, connectors } from "../core/agent/connectors/index.js";
 import { EmailClient } from "../core/agent/connectors/thunderbird/emailClient.js";
-import { type EmailOpener, emailTools, NoEmailAppError } from "../core/agent/connectors/email.js";
-import { messagesTools } from "../core/agent/connectors/messages.js";
-import { notesTools } from "../core/agent/connectors/notes.js";
-import { liveWebFetch, webTools } from "../core/agent/connectors/web.js";
+import { type EmailOpener, NoEmailAppError } from "../core/agent/connectors/email.js";
+import { liveWebFetch } from "../core/agent/connectors/web.js";
 import { ThunderbirdRelay } from "../core/agent/connectors/thunderbird/relay.js";
 import { CompletionsClient } from "../core/backend/completions.js";
 import { TranscriptionClient } from "../core/backend/transcription.js";
@@ -170,12 +165,23 @@ function launch(): void {
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
     warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport).warmUp(accessToken),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
-    // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
-    // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), the web
-    // (ADR-DESK-030), none elsewhere.
+    // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): every
+    // connector's, over the Mac's apps (ADR-DESK-024), Notes and Messages through AppleScript
+    // (ADR-DESK-028) and the web (ADR-DESK-030); none elsewhere.
     connectorTools:
       process.platform === "darwin"
-        ? [...calendarTools(mac.eventStore), ...contactsTools(mac.contactStore), ...filesTools(mac.fileStore, homedir()), ...emailTools(emailOpener), ...notesTools(osascript), ...messagesTools(osascript), ...webTools(liveWebFetch, { open: (url) => shell.openExternal(url) })]
+        ? connectors.flatMap((connector) =>
+            connector.tools({
+              eventStore: mac.eventStore,
+              contactStore: mac.contactStore,
+              fileStore: mac.fileStore,
+              home: homedir(),
+              emailOpener,
+              scriptRunner: osascript,
+              webFetch: liveWebFetch,
+              webOpener: { open: (url) => shell.openExternal(url) },
+            }),
+          )
         : [],
     // The user's corrections are learned where the helper reads the field: macOS (ADR-DESK-038).
     corrections: process.platform === "darwin" ? new CorrectionWatch((pid) => mac.focusedFieldValue(pid), (words) => settings.learnWords(words)) : undefined,

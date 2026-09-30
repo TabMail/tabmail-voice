@@ -5,7 +5,7 @@
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
 import type { ScriptRunner } from "./appleScript.js";
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** A note in Apple Notes, as the notes tools read them. */
 export interface NoteItem {
@@ -72,10 +72,13 @@ function escaped(text: string): string {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-/** The Notes connector's tools. */
-export function notesTools(runner: ScriptRunner): ConnectorTool[] {
-  return [new NotesSearchTool(runner), new NotesCreateTool(runner)];
-}
+export const notesConnector = defineConnector({
+  id: "notes",
+  order: 60,
+  displayName: "Notes",
+  settingsDescription: "Answers from your notes, and adds ones you ask for once you confirm.",
+  tools: ({ scriptRunner }: Pick<ConnectorServices, "scriptRunner">): ConnectorTool[] => [new NotesSearchTool(scriptRunner), new NotesCreateTool(scriptRunner)],
+});
 
 /** Finds notes in Apple Notes (`notes_search`), for "what did I write down about the offsite". */
 export class NotesSearchTool implements ConnectorTool {

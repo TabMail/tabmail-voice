@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { connectorIDs } from "../../../../src/core/agent/connectors/registry.js";
-import { type EmailOpener, EmailComposeTool, emailTools, isAddress, mailtoURL, NoEmailAppError } from "../../../../src/core/agent/connectors/email.js";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
+import { connectorIDs } from "../../../../src/core/agent/connectors/index.js";
+import { type EmailOpener, emailConnector, EmailComposeTool, isAddress, mailtoURL, NoEmailAppError } from "../../../../src/core/agent/connectors/email.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
 
 /** Email as the Answer prompt's tool: a new email filled in, as a `mailto:` URL, opened in the user's
  * email app and never sent (from the Swift `EmailToolsTests`). */
@@ -160,7 +160,7 @@ describe("email_compose", () => {
 
   /** The Email switch covers its one tool, which asks nothing. */
   test("the Email switch covers its tool", () => {
-    const tools = emailTools(opener);
+    const tools = emailConnector.tools({ emailOpener: opener });
 
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([["email", "email_compose"]]);
     expect(connectorIDs).toContain("email");

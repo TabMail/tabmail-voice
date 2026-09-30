@@ -23,6 +23,9 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   `~/Library/Logs/TabMail Voice/TabMail Voice.log`, the place to read a manual test's app log.
 - **Tests never hit the network.** Inject `StubTransport` and `InMemorySessionStore`
   (`test/support/stubs.ts`); never the real Keychain item.
+- **A connector is one file in `src/core/agent/connectors/`, declared with `defineConnector`.**
+  `registry.ts` there is AUTO-GENERATED (`npm run gen:registries`, run before build, typecheck and
+  test): never edit it by hand (ADR-DESK-044).
 - **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-macos` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary

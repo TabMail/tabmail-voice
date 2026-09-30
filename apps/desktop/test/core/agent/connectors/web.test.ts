@@ -5,8 +5,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
-import { liveWebFetch, type WebFetch, WebOpenTool, WebPageReader, WebReadError, WebReadTool, type WebResponse, webTools, webURL } from "../../../../src/core/agent/connectors/web.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
+import { liveWebFetch, type WebFetch, WebOpenTool, WebPageReader, WebReadError, WebReadTool, type WebResponse, webConnector, webURL } from "../../../../src/core/agent/connectors/web.js";
 import * as config from "../../../../src/core/config.js";
 import { CancellationError } from "../../../../src/core/util/timeout.js";
 
@@ -47,7 +47,7 @@ beforeEach(() => {
 
 describe("the connector", () => {
   test("Web has web_read and web_open, and neither asks", () => {
-    const tools = webTools(web.fetch, { open: async () => {} });
+    const tools = webConnector.tools({ webFetch: web.fetch, webOpener: { open: async () => {} } });
 
     expect(tools.map((tool) => [tool.name, tool.connector])).toEqual([
       ["web_read", "web"],

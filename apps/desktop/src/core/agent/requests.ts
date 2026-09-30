@@ -9,8 +9,8 @@ import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
 import type { ScreenContext } from "../dictation/screenContext.js";
 import { charCount, trimWhitespace } from "../util/text.js";
-import { connectorIDs as allConnectors, connectorServerTools } from "./connectors/registry.js";
-import type { ConnectorTool } from "./connectors/tool.js";
+import { connectors } from "./connectors/index.js";
+import type { ConnectorTool } from "./connectors/contract.js";
 import { AgentError, type AgentToolID, isAgentToolID, selection, agentTools } from "./tools.js";
 
 /**
@@ -84,7 +84,7 @@ export const DesktopAgent = {
    * backend tools their apps bring (web search), and `connectorTools`, those of the apps switched on that
    * run on this computer. An app with no tools here (none off macOS) brings no backend tools either. */
   answerTools(connectorTools: readonly ConnectorTool[]): string[] {
-    const serverTools = allConnectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector)).flatMap((connector) => connectorServerTools[connector] ?? []);
+    const serverTools = connectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector.id)).flatMap((connector) => connector.serverTools ?? []);
     return [...config.answerServerTools, ...serverTools, ...connectorTools.map((tool) => tool.name)];
   },
 

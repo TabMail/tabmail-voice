@@ -6,7 +6,7 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useLayoutEf
 import { createRoot } from "react-dom/client";
 import { type AgentChat, type ChatTurn, formattedReply, remainingFraction, replyBlocks, revealSteps } from "../../core/agent/chat.js";
 import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnectorID } from "../../core/agent/connectors/registry.js";
+import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import type { DictationHotkey } from "../../core/hotkey/bindings.js";
@@ -239,7 +239,7 @@ function PillLayout({
     .map((key, index) => ({
       key,
       name: bubbleName(key),
-      description: isConnectorID(key) ? connectorInfo[key].settingsDescription : agentTools[key].settingsDescription,
+      description: isConnectorID(key) ? connectorByID[key].settingsDescription : agentTools[key].settingsDescription,
       isRunning: isRunning(key),
       isDimmed: anyRunning && !isRunning(key),
       opacity: bubbleRowOpacity(index),

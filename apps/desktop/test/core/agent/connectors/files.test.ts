@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { type FileQuery, type FileStore, FileOpenTool, FilesSearchTool, FileStoreError, filesTools, type FoundItem } from "../../../../src/core/agent/connectors/files.js";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
+import { type FileQuery, type FileStore, FileOpenTool, FilesSearchTool, FileStoreError, filesConnector, type FoundItem } from "../../../../src/core/agent/connectors/files.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 
@@ -174,7 +174,7 @@ describe("file_open", () => {
 describe("connector", () => {
   /** The Files switch covers both tools, and neither asks first. */
   test("the Files switch covers its tools", () => {
-    const tools = filesTools(store, home);
+    const tools = filesConnector.tools({ fileStore: store, home });
 
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([
       ["files", "files_search"],

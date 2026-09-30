@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { connectorIDs } from "../../src/core/agent/connectors/registry.js";
+import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";

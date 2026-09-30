@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../../config.js";
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** A person in the user's contacts, as the contacts tools read and add them. */
 export interface ContactCard {
@@ -49,10 +49,13 @@ export class ContactStoreError extends Error {
   }
 }
 
-/** The Contacts connector's tools. */
-export function contactsTools(store: ContactStore): ConnectorTool[] {
-  return [new ContactsSearchTool(store), new ContactsAddTool(store)];
-}
+export const contactsConnector = defineConnector({
+  id: "contacts",
+  order: 30,
+  displayName: "Contacts",
+  settingsDescription: "Finds people’s details in your contacts, and adds ones you ask for once you confirm.",
+  tools: ({ contactStore }: Pick<ConnectorServices, "contactStore">): ConnectorTool[] => [new ContactsSearchTool(contactStore), new ContactsAddTool(contactStore)],
+});
 
 /** Finds people in the user's contacts (`contacts_search`), for "what's Sam's email" or before
  * writing to someone the user names. */

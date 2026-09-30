@@ -5,7 +5,7 @@
 import * as config from "../../config.js";
 import type { ScriptRunner } from "./appleScript.js";
 import { isAddress } from "./email.js";
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** The AppleScript behind `messages_send` (ADR-DESK-028), which takes its values as arguments
  * (`ScriptRunner`). */
@@ -29,10 +29,13 @@ export function isHandle(text: string): boolean {
   return (text.match(/[0-9]/g) ?? []).length >= config.phoneNumberMinDigits;
 }
 
-/** The Messages connector's tool. */
-export function messagesTools(runner: ScriptRunner): ConnectorTool[] {
-  return [new MessagesSendTool(runner)];
-}
+export const messagesConnector = defineConnector({
+  id: "messages",
+  order: 70,
+  displayName: "Messages",
+  settingsDescription: "Sends iMessages you ask for once you confirm.",
+  tools: ({ scriptRunner }: Pick<ConnectorServices, "scriptRunner">): ConnectorTool[] => [new MessagesSendTool(scriptRunner)],
+});
 
 /** Sends an iMessage from Messages (`messages_send`), once the user confirms the recipient and text
  * the chat window shows: the question and the message come from the same draft. */

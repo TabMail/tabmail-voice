@@ -4,7 +4,7 @@
 
 import type { AgentChat } from "../core/agent/chat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
-import { type ConnectorID, isConnectorID } from "../core/agent/connectors/registry.js";
+import { type ConnectorID, isConnectorID } from "../core/agent/connectors/index.js";
 import { type AgentToolID, isAgentToolID } from "../core/agent/tools.js";
 import type { Phase } from "../core/dictation/controller.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/bindings.js";

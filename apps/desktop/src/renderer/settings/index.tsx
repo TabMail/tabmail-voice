@@ -6,7 +6,7 @@ import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } f
 import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnectorID } from "../../core/agent/connectors/registry.js";
+import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
@@ -244,12 +244,12 @@ function AgentPane({ state }: { state: SettingsState }) {
           isConnectorID(key) ? (
             <Toggle
               key={key}
-              label={connectorInfo[key].displayName}
+              label={connectorByID[key].displayName}
               icon={<ConnectorIcon connector={key} size={config.settingsToolIconSize} />}
               checked={state.enabledConnectors.includes(key)}
               onChange={(value) => send({ type: "setConnectorEnabled", connector: key, value })}
             >
-              {connectorInfo[key].settingsDescription}
+              {connectorByID[key].settingsDescription}
             </Toggle>
           ) : (
             <Toggle

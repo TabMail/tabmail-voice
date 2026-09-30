@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ReactNode, useId } from "react";
-import type { ConnectorID } from "../../core/agent/connectors/registry.js";
+import type { ConnectorID } from "../../core/agent/connectors/index.js";
 import type { AgentToolID } from "../../core/agent/tools.js";
 import { brandBlue, brandPurple } from "./brand.js";
 

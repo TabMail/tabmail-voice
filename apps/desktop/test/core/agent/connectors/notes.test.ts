@@ -4,8 +4,8 @@
 
 import { beforeEach, describe, expect, test } from "vitest";
 import { ScriptError } from "../../../../src/core/agent/connectors/appleScript.js";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
-import { NotesCreateTool, NotesScripts, NotesSearchTool, notesTools } from "../../../../src/core/agent/connectors/notes.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
+import { NotesCreateTool, NotesScripts, notesConnector, NotesSearchTool } from "../../../../src/core/agent/connectors/notes.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 import { FakeScriptRunner } from "../../../support/stubs.js";
@@ -34,7 +34,7 @@ function iso(date: Date): string {
 
 describe("the connector", () => {
   test("Notes has notes_search and notes_create", () => {
-    expect(notesTools(runner).map((tool) => [tool.name, tool.connector])).toEqual([
+    expect(notesConnector.tools({ scriptRunner: runner }).map((tool) => [tool.name, tool.connector])).toEqual([
       ["notes_search", "notes"],
       ["notes_create", "notes"],
     ]);

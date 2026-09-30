@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** A new email for the user to review and send in their email app (`email_compose`). */
 export interface EmailDraft {
@@ -69,10 +69,13 @@ function crlf(text: string): string {
   return text.replace(/\r\n|\r|\n/g, "\r\n");
 }
 
-/** The Email connector's tool. */
-export function emailTools(opener: EmailOpener): ConnectorTool[] {
-  return [new EmailComposeTool(opener)];
-}
+export const emailConnector = defineConnector({
+  id: "email",
+  order: 50,
+  displayName: "Email",
+  settingsDescription: "Opens a new email in your email app, written for you to review and send.",
+  tools: ({ emailOpener }: Pick<ConnectorServices, "emailOpener">): ConnectorTool[] => [new EmailComposeTool(emailOpener)],
+});
 
 /** Opens a new email, filled in, in the user's email app (`email_compose`), for them to review and
  * send. Nothing is sent, so nothing is asked first (owner, 2026-09-26: mail without TabMail is

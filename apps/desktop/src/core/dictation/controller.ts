@@ -5,10 +5,10 @@
 import { type AccountModel, withFreshToken } from "../backend/account.js";
 import { type AgentChat, appendTurn, chatTranscript, emptyChat } from "../agent/chat.js";
 import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrder.js";
-import { type ConnectorID, connectorIDs } from "../agent/connectors/registry.js";
+import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
-import { isJSONObject, type ConnectorTool } from "../agent/connectors/tool.js";
+import { isJSONObject, type ConnectorTool } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
 import { type AgentToolID, agentTools } from "../agent/tools.js";
 import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "../audio/recorder.js";

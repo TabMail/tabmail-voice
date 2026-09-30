@@ -4,7 +4,7 @@
 
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** An event in the user's calendars, as the calendar tools read and create them. */
 export interface CalendarEvent {
@@ -62,10 +62,21 @@ export class EventStoreError extends Error {
   }
 }
 
-/** The Calendar and Reminders connectors' tools. */
-export function calendarTools(store: EventStore, now: () => Date = () => new Date()): ConnectorTool[] {
-  return [new CalendarReadTool(store, now), new CalendarEventCreateTool(store), new RemindersReadTool(store), new ReminderCreateTool(store)];
-}
+export const calendarConnector = defineConnector({
+  id: "calendar",
+  order: 10,
+  displayName: "Calendar",
+  settingsDescription: "Answers from your calendars, and adds events you ask for once you confirm.",
+  tools: ({ eventStore }: Pick<ConnectorServices, "eventStore">): ConnectorTool[] => [new CalendarReadTool(eventStore, () => new Date()), new CalendarEventCreateTool(eventStore)],
+});
+
+export const remindersConnector = defineConnector({
+  id: "reminders",
+  order: 20,
+  displayName: "Reminders",
+  settingsDescription: "Answers from your reminders, and adds ones you ask for once you confirm.",
+  tools: ({ eventStore }: Pick<ConnectorServices, "eventStore">): ConnectorTool[] => [new RemindersReadTool(eventStore), new ReminderCreateTool(eventStore)],
+});
 
 /** Reads the events in the user's calendars between two times (`calendar_read`), for "what's on
  * tomorrow" or "am I free Friday afternoon". */

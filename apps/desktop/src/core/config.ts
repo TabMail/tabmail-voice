@@ -208,7 +208,7 @@ export const appleScriptTimeoutSeconds = 60;
 export const appleScriptMaxOutputBytes = 64 * 1024 * 1024;
 /** The fewest digits a phone number `messages_send` sends to has. */
 export const phoneNumberMinDigits = 5;
-/** The backend's web search, which the Web switch lists (`connectorServerTools`); while it is listed
+/** The backend's web search, which the Web switch lists (`Connector.serverTools`); while it is listed
  * the request says `web_search_enabled`, without which the backend refuses `web_read` and `web_open`. */
 export const webSearchTool = "search_web";
 /** `web_read`, as the Thunderbird add-on reads a page: the page's and robots.txt's timeouts, the most

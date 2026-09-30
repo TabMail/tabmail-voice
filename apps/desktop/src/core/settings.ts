@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { DebugAccess } from "./backend/account.js";
-import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connectors/registry.js";
+import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connectors/index.js";
 import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/entries.js";

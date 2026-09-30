@@ -12,14 +12,15 @@ import {
   type CalendarEvent,
   CalendarEventCreateTool,
   CalendarReadTool,
-  calendarTools,
+  calendarConnector,
   type EventStore,
   EventStoreError,
   type ReminderItem,
   ReminderCreateTool,
+  remindersConnector,
   RemindersReadTool,
 } from "../../../../src/core/agent/connectors/calendar.js";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 
@@ -340,7 +341,7 @@ describe("connectors", () => {
   /** Each app's switch covers its own tools, the reading one and the creating one, and only the
    * creating one asks first. */
   test("each app's switch covers its tools", () => {
-    const tools = calendarTools(store);
+    const tools = [...calendarConnector.tools({ eventStore: store }), ...remindersConnector.tools({ eventStore: store })];
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([
       ["calendar", "calendar_read"],
       ["calendar", "calendar_event_create"],

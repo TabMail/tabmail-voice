@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { connectorIDs } from "../../../src/core/agent/connectors/registry.js";
+import { connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import { agentToolIDs } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
 import {

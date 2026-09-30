@@ -1043,7 +1043,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
   State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
   `AbortSignal` is checked before each round and each call: a request canceled while a tool ran
   runs no later call and sends no further round.
-- `ConnectorTool` (`src/core/agent/connectors/tool.ts`): a tool that runs on this computer: its backend function
+- `ConnectorTool` (`src/core/agent/connectors/contract.ts`): a tool that runs on this computer: its backend function
   `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
   a read), and `run(args)`. The controller takes them as `DictationDependencies.connectorTools`, which the
   main process builds (a tool reaches the OS through a native helper); the list is empty until the
@@ -1106,8 +1106,8 @@ grant it. The backend defines the four tools (`calendar_read`, `calendar_event_c
 the user's zone. First built in the Swift app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- A connector is an app the tools reach (`src/core/agent/connectors/registry.ts`: `Connector`, its display
-  name and description), and each `ConnectorTool` names its `connector`. Settings stores the switched-off
+- A connector is an app the tools reach (a `Connector`, declared in its own file in
+  `src/core/agent/connectors/` with its display name and description, ADR-DESK-044), and each `ConnectorTool` names its `connector`. Settings stores the switched-off
   names (`disabledConnectors`, so a new connector starts on and a retired name is ignored); the
   enabled ones are in the key-down snapshot (`DictationSettings.enabledConnectors`, ADR-DESK-017),
   and a request lists in `available_tools`, and runs, only the tools of the connectors on then. The
@@ -1146,7 +1146,7 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
   the permission prompt.
 
 **Consequences:**
-- A new connector is a name in `registry.ts`, a tools file taking its OS access as an interface,
+- A new connector is one file declaring it (`defineConnector`), taking its OS access as an interface,
   and the helper methods behind it; the switch, the snapshot and the offer come with the name.
 - The permission prompt raised from a helper process, attributed to the app, is checked by hand on a
   signed build (TESTS.md).
@@ -1386,7 +1386,7 @@ in the Electron app (ADR-DESK-032).
 **Decision:**
 - The `web` connector with `WebReadTool` (`web_read`) and `WebOpenTool` (`web_open`), in
   `src/core/agent/connectors/web.ts`, and the backend's `search_web`. A connector's backend tools
-  (`connectorServerTools`) are listed in `available_tools` after the date tools while its own tools
+  (`Connector.serverTools`) are listed in `available_tools` after the date tools while its own tools
   are (switched on at key-down, and on this computer), so a platform without the web's tools offers
   no search either; `web_search_enabled` is sent as whether `search_web` is listed (the backend refuses
   `web_read` and `web_open` too without it).
@@ -2225,9 +2225,10 @@ that Thunderbird counts as a connector; a reorganization only, with no change to
   window's conversation (`chat.ts`), the bubbles' order (`bubbleOrder.ts`) and agent mode's own
   tools, Edit, Compose, Thunderbird and Answer (`tools.ts`); then `connectors/`, the apps Answer's
   model reaches on this computer: one file per connector with its tools (`calendar.ts` … `web.ts`;
-  **a new tool goes in its connector's file, a new connector is a new file**), the list of them
-  (`registry.ts`), the tools' contract (`tool.ts`), the AppleScript runner Notes and Messages go
-  through (`appleScript.ts`) and `thunderbird/`, the relay to TabMail's chat (`relay.ts`) and the
+  **a new tool goes in its connector's file, a new connector is a new file**), the contract both
+  keep (`contract.ts`), the generated list of them (`registry.ts`) and what the rest of the app reads
+  (`index.ts`), the AppleScript runner Notes and Messages go through (`appleScript.ts`) and
+  `thunderbird/`, the relay to TabMail's chat (`relay.ts`) and the
   email app it drives, where its native connector will go (ADR-DESK-037). A connector that needs
   more than a file gets a folder, as Thunderbird has.
 - The rest of `src/core/` by concern: `dictation/` (the controller, the cleanup, the screen read,
@@ -2268,7 +2269,7 @@ that Thunderbird counts as a connector; a reorganization only, with no change to
     `offeredAgentTools` → `offeredAgentToolIDs`, `isAgentTool` → `isAgentToolID`; the tool itself,
     `DesktopTool` → `AgentTool`, and `toolImplementations` → `agentTools`. `Connector` →
     `ConnectorID`, `connectors` → `connectorIDs`, `isConnector` → `isConnectorID`.
-  - `LoopTool` → `ConnectorTool` (`connectors/tool.ts`): a tool a connector brings, not the
+  - `LoopTool` → `ConnectorTool` (`connectors/contract.ts`): a tool a connector brings, not the
     backend's loop it runs in; `loopTools` → `connectorTools`, `config.loopToolDeclined` and
     `loopToolUnanswered` → `connectorToolDeclined` and `connectorToolUnanswered`.
   - The main process's preferences file, `FileStore` → `JSONFileStore` (`storage/jsonFileStore.ts`),
@@ -2278,6 +2279,19 @@ that Thunderbird counts as a connector; a reorganization only, with no change to
     `agentBubbleRunningSpringResponseSeconds`, `agentBubbleMoveDurationSeconds`,
     `chatAppearDurationSeconds`; the two milliseconds that said so drop the suffix
     (`webReadTimeoutMs` → `webReadTimeout`, `webReadRobotsTimeoutMs` → `webReadRobotsTimeout`).
+- The connectors' list is generated, as the backend's tool registries are (owner, 2026-09-30:
+  "someone doesn't have to remember to update both registry and tool file"). Each connector is
+  declared once, in its own file: `export const webConnector = defineConnector({ id, order,
+  displayName, settingsDescription, serverTools?, tools(services) })`. `scripts/gen-registries.mts`
+  (`npm run gen:registries`, run before every build, typecheck and test run) writes `registry.ts`, marked
+  AUTO-GENERATED, with the `ConnectorID` union and the connectors in their `order`. `index.ts`
+  derives `connectorIDs`, `isConnectorID` and `connectorByID`, replacing the hand-kept
+  `connectorInfo` and `connectorServerTools`. The main process builds every tool from the list over
+  one `ConnectorServices`, the OS access (Calendar and Reminders, Contacts, Files, the email app,
+  osascript, the web). The order keeps the switches and bubbles where they were. A test fails when
+  `registry.ts` is behind the files, and the generator refuses a declaration it can't read and an id
+  or order used twice. Only the icons stay beside the pages (`icons.tsx`, a `Record<ConnectorID>`, so
+  a connector without one doesn't compile).
 - American spelling throughout (owner, 2026-09-30: "consistent american spelling"), in names, CSS
   classes, UI text, comments and docs, as the platforms' own APIs have it (`color`, `center`):
   `brandColour` → `brandColor`, `hintCentre` → `hintCenter`, `grey` → `gray`, `honoursCancel` →

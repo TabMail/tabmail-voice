@@ -4,8 +4,8 @@
 
 import { beforeEach, describe, expect, test } from "vitest";
 import { ScriptError } from "../../../../src/core/agent/connectors/appleScript.js";
-import { ToolArgumentError } from "../../../../src/core/agent/connectors/tool.js";
-import { isHandle, MessagesScripts, MessagesSendTool, messagesTools } from "../../../../src/core/agent/connectors/messages.js";
+import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
+import { isHandle, MessagesScripts, messagesConnector, MessagesSendTool } from "../../../../src/core/agent/connectors/messages.js";
 import * as config from "../../../../src/core/config.js";
 import { FakeScriptRunner } from "../../../support/stubs.js";
 
@@ -23,7 +23,7 @@ beforeEach(() => {
 
 describe("the connector", () => {
   test("Messages has messages_send", () => {
-    expect(messagesTools(runner).map((tool) => [tool.name, tool.connector])).toEqual([["messages_send", "messages"]]);
+    expect(messagesConnector.tools({ scriptRunner: runner }).map((tool) => [tool.name, tool.connector])).toEqual([["messages_send", "messages"]]);
   });
 
   /** The script waits at most `appleScriptTimeoutSeconds` for the app. */

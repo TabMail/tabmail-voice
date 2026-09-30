@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
-import { connectorInfo, isConnectorID } from "../../core/agent/connectors/registry.js";
+import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { WelcomeWizard } from "../../core/onboarding/welcomeWizard.js";
@@ -88,9 +88,9 @@ function Page({ state }: { state: WelcomeState }) {
                 <span className="stack-text">
                   <span className="labeled-icon">
                     <ConnectorIcon connector={key} size={config.settingsToolIconSize} />
-                    {connectorInfo[key].displayName}
+                    {connectorByID[key].displayName}
                   </span>
-                  <span className="caption">{connectorInfo[key].settingsDescription}</span>
+                  <span className="caption">{connectorByID[key].settingsDescription}</span>
                 </span>
               </label>
             ) : (

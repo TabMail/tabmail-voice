@@ -7,7 +7,7 @@
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
-import { connectorInfo } from "../../../src/core/agent/connectors/registry.js";
+import { connectorByID } from "../../../src/core/agent/connectors/index.js";
 import { agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
 import { brandColor } from "../../../src/renderer/shared/brand.js";
@@ -342,12 +342,12 @@ describe("overlay page", () => {
     // Each bubble's tooltip over that bubble: centered on it, clear of it.
     const left = (label: string) => parseFloat(bubble(label).closest<HTMLElement>(".centered")?.style.left ?? "");
     await pointer("calendar", "pointerover");
-    expect(said()).toEqual([connectorInfo.calendar.displayName, connectorInfo.calendar.settingsDescription]);
+    expect(said()).toEqual([connectorByID.calendar.displayName, connectorByID.calendar.settingsDescription]);
     expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("calendar"));
     expect(tooltipBottom()).toBeCloseTo(grownTop("calendar", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
     await page.show({ ...state, phase: { kind: "running", tool: "answer" } });
     expect([bubble("calendar").style.opacity, bubble("compose").style.opacity]).toEqual(["1", String(config.agentBubbleIdleOpacity)]);
-    expect(said()[0]).toBe(connectorInfo.calendar.displayName);
+    expect(said()[0]).toBe(connectorByID.calendar.displayName);
 
     await pointer("calendar", "pointerout");
     await pointer("answer", "pointerover");

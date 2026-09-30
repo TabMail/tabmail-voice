@@ -4,7 +4,7 @@
 
 import * as config from "../../config.js";
 import { CancellationError } from "../../util/timeout.js";
-import { Arguments, type ConnectorTool, ToolArgumentError } from "./tool.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
 
 /** A web page's response as `web_read` reads it: at most `webReadMaxBytes` of its body. */
 export interface WebResponse {
@@ -212,10 +212,15 @@ function decoded(body: Uint8Array, contentType: string): string {
   }
 }
 
-/** The Web connector's tools; its web search runs on the backend (`connectorServerTools`). */
-export function webTools(fetch: WebFetch, opener: WebOpener): ConnectorTool[] {
-  return [new WebReadTool(new WebPageReader(fetch)), new WebOpenTool(opener)];
-}
+/** Its web search runs on the backend (`serverTools`). */
+export const webConnector = defineConnector({
+  id: "web",
+  order: 80,
+  displayName: "Web",
+  settingsDescription: "Searches the web, reads pages, and opens the ones you ask for in your browser.",
+  serverTools: [config.webSearchTool],
+  tools: ({ webFetch, webOpener }: Pick<ConnectorServices, "webFetch" | "webOpener">): ConnectorTool[] => [new WebReadTool(new WebPageReader(webFetch)), new WebOpenTool(webOpener)],
+});
 
 /** Reads a web page's text (`web_read`), as the Thunderbird add-on and the iOS app do; a URL from what
  * the user said or a search result, which the backend checked before handing the call over. Reading

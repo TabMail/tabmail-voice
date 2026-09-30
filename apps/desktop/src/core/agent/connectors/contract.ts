@@ -4,7 +4,13 @@
 
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { trimWhitespace } from "../../util/text.js";
+import type { ScriptRunner } from "./appleScript.js";
+import type { EventStore } from "./calendar.js";
+import type { ContactStore } from "./contacts.js";
+import type { EmailOpener } from "./email.js";
+import type { FileStore } from "./files.js";
 import type { ConnectorID } from "./registry.js";
+import type { WebFetch, WebOpener } from "./web.js";
 
 /**
  * A tool the Answer prompt's model can call that runs on this computer (a calendar read, a reminder
@@ -76,4 +82,45 @@ export const Arguments = {
 /** Whether `value`, parsed JSON, is an object (not an array or null). */
 export function isJSONObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** What the main process gives the connectors' tools: the OS access each needs (on a Mac, through
+ * `voice-macos` and osascript). A connector that needs something new adds it here. */
+export interface ConnectorServices {
+  eventStore: EventStore;
+  contactStore: ContactStore;
+  fileStore: FileStore;
+  /** The user's home folder, which the model reads as `~`. */
+  home: string;
+  emailOpener: EmailOpener;
+  scriptRunner: ScriptRunner;
+  webFetch: WebFetch;
+  webOpener: WebOpener;
+}
+
+/**
+ * An app on this computer the Answer prompt's tools reach (`ConnectorTool.connector`), a switch in
+ * Settings and the welcome wizard, on by default (owner, 2026-09-26). The OS asks for access the
+ * first time a request needs it. All are macOS apps for now: elsewhere none is offered or shown.
+ * Each is declared in its own file in this folder with `defineConnector`, and
+ * `scripts/gen-registries.mts` lists them in `registry.ts` (ADR-DESK-044).
+ */
+export interface Connector {
+  readonly id: ConnectorID;
+  /** Where its switch and bubble sit among the connectors', lowest first. */
+  readonly order: number;
+  readonly displayName: string;
+  /** What it does, under its switch. */
+  readonly settingsDescription: string;
+  /** The backend's own tools it brings, listed in `available_tools` beside its tools while it is on
+   * (ADR-DESK-030): the web's search runs on the server. */
+  readonly serverTools?: readonly string[];
+  /** Its tools, over the OS access they need. */
+  tools(services: ConnectorServices): ConnectorTool[];
+}
+
+/** Declares a connector; `npm run gen:registries` finds it by this call. Its type is kept, so a test
+ * gives `tools` only the services the connector uses. */
+export function defineConnector<T extends Connector>(connector: T): T {
+  return connector;
 }

@@ -4,14 +4,14 @@
 
 import { describe, expect, test } from "vitest";
 import { alphabetical, bubbleName, bubbleOrder, ranNow, serverToolConnector } from "../../../src/core/agent/bubbleOrder.js";
-import { connectorInfo, connectorIDs, connectorServerTools } from "../../../src/core/agent/connectors/registry.js";
+import { connectorByID, connectorIDs, connectors } from "../../../src/core/agent/connectors/index.js";
 import { agentToolIDs, agentTools } from "../../../src/core/agent/tools.js";
 
 /** The order of agent mode's bubbles under the pill, and of Settings' switches. */
 describe("bubble order", () => {
   test("a bubble is named as Settings names it", () => {
     expect(bubbleName("compose")).toBe(agentTools.compose.displayName);
-    expect(bubbleName("web")).toBe(connectorInfo.web.displayName);
+    expect(bubbleName("web")).toBe(connectorByID.web.displayName);
   });
 
   test("tools and apps sort together by name", () => {
@@ -38,7 +38,7 @@ describe("bubble order", () => {
   /** A backend tool belongs to the app whose server tools list it; the backend's own (the date tools)
    * to none. */
   test("a backend tool's app", () => {
-    for (const connector of connectorIDs) for (const tool of connectorServerTools[connector] ?? []) expect(serverToolConnector(tool)).toBe(connector);
+    for (const connector of connectors) for (const tool of connector.serverTools ?? []) expect(serverToolConnector(tool)).toBe(connector.id);
     expect(serverToolConnector("search_web")).toBe("web");
     expect(serverToolConnector("date_to_day")).toBeNull();
   });

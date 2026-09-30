@@ -5,7 +5,7 @@
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../../src/core/backend/account.js";
 import { agentToolIDs, offeredAgentToolIDs } from "../../src/core/agent/tools.js";
-import { connectorIDs } from "../../src/core/agent/connectors/registry.js";
+import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
 import { AppSettings } from "../../src/core/settings.js";
