@@ -24,8 +24,17 @@ export interface UpdateSource {
   on(event: "error", listener: (error: Error) => void): unknown;
 }
 
+/** Electron's own `autoUpdater` (Squirrel.Mac), which installs what `electron-updater` downloaded. It
+ * fetches the update from `electron-updater` only after `electron-updater` says `update-downloaded`,
+ * checks that it carries the running app's Developer ID signature, and then says `update-downloaded`
+ * itself; a refusal reaches `UpdateSource` as `error`. */
+export interface Installer {
+  on(event: "update-downloaded", listener: () => void): unknown;
+}
+
 export interface UpdaterOptions {
   source: UpdateSource;
+  installer: Installer;
   /** The running app's version, for "up to date". */
   currentVersion: string;
   /** Asks whether to restart now into `version`; true to restart. */
@@ -42,16 +51,19 @@ export interface UpdaterOptions {
  * Keeps a packaged app up to date (ADR-DESK-041): looks for a newer release on cdn.tabmail.ai at launch and
  * every `updateCheckInterval`, downloads it quietly, and installs it when the app quits. Once it is
  * downloaded the user is asked once whether to restart now, never during a dictation or while the
- * chat window is open, and the menu offers the restart until then. macOS installs the update only if
- * it carries the same Developer ID signature as the running app (Squirrel.Mac).
+ * chat window is open, and the menu offers the restart until then. An update is ready only once macOS
+ * has accepted it (Squirrel.Mac: the same Developer ID signature as the running app); one it refuses,
+ * as from an app run off its disk image, is never offered.
  */
 export class Updater {
   private current: UpdateState = { kind: "idle" };
   /** The version the user was asked about: once per update, not per check. */
   private asked: string | null = null;
+  /** The version `electron-updater` downloaded, while macOS fetches and checks it. */
+  private downloaded: string | null = null;
 
   constructor(private readonly options: UpdaterOptions) {
-    const { source } = options;
+    const { source, installer } = options;
     source.autoDownload = true;
     source.autoInstallOnAppQuit = true;
     source.requestHeaders = { ...updateRequestHeaders };
@@ -59,15 +71,24 @@ export class Updater {
       log.debug(`Updater: downloading ${info.version}`);
       this.set({ kind: "downloading", version: info.version });
     });
+    // Not ready yet: macOS hasn't fetched or checked it, and may refuse it.
     source.on("update-downloaded", (info) => {
-      log.debug(`Updater: ${info.version} is ready`);
-      this.set({ kind: "ready", version: info.version });
+      log.debug(`Updater: downloaded ${info.version}`);
+      this.downloaded = info.version;
+    });
+    installer.on("update-downloaded", () => {
+      const version = this.downloaded;
+      if (version === null) return;
+      this.downloaded = null;
+      log.debug(`Updater: ${version} is ready`);
+      this.set({ kind: "ready", version });
       this.offer();
     });
     // A failed check or download, or Squirrel.Mac refusing the update (a signature that isn't
-    // ours): nothing to install, so the next check starts over.
+    // ours, an app run off its disk image): nothing to install, so the next check starts over.
     source.on("error", (error) => {
       log.error(`Updater: ${describe(error)}`);
+      this.downloaded = null;
       this.set({ kind: "idle" });
     });
   }
@@ -120,7 +141,7 @@ export class Updater {
 
   /** Asks on a task of its own: the question is a modal dialog that holds the main process until
    * answered, so it never runs inside what led here (the dictation's phase change, the chat's
-   * closing, `electron-updater`'s event). */
+   * closing, Squirrel.Mac's event). */
   private offer(): void {
     setImmediate(() => {
       const current = this.current;

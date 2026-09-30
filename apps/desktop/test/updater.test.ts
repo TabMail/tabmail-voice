@@ -62,9 +62,24 @@ class FakeSource extends EventEmitter implements UpdateSource {
     };
   }
 
+  /** `electron-updater` has downloaded `version`, and macOS then accepts it. */
   downloaded(version: string): void {
     this.emit("update-downloaded", { version });
+    this.installer.emit("update-downloaded");
   }
+
+  /** `electron-updater` has downloaded `version`; macOS then fetches it on a later task, as the real
+   * one does, and refuses it (a signature that isn't ours, an app run off its disk image). */
+  downloadedButRefused(version: string): Promise<void> {
+    this.emit("update-downloaded", { version });
+    return new Promise((resolve) => setTimeout(() => {
+      this.emit("error", new Error("Code signature did not pass validation"));
+      resolve();
+    }, 0));
+  }
+
+  /** Squirrel.Mac, Electron's own `autoUpdater`. */
+  readonly installer = new EventEmitter();
 }
 
 function setUp(options: { busy?: () => boolean; restart?: boolean; ask?: (version: string) => Promise<boolean> } = {}) {
@@ -74,6 +89,7 @@ function setUp(options: { busy?: () => boolean; restart?: boolean; ask?: (versio
   let changes = 0;
   const updater = new Updater({
     source,
+    installer: source.installer,
     currentVersion: "1.0.0",
     ask: (version) => {
       asked.push(version);
@@ -262,13 +278,49 @@ describe("Updater (ADR-DESK-041)", () => {
     expect(asked).toEqual(["1.1.0", "1.2.0"]);
   });
 
-  test("an update macOS refuses before the question comes is never asked about", async () => {
-    const { source, asked } = setUp();
-
-    source.downloaded("1.1.0");
-    source.emit("error", new Error("Code signature did not pass validation"));
+  test("an update macOS refuses is never asked about, and Restart does nothing", async () => {
+    const { source, updater, asked } = setUp({ restart: true });
+    source.finds("1.1.0");
+    updater.checkNow();
     await settle();
 
+    await source.downloadedButRefused("1.1.0");
+    await settle();
+    updater.restart();
+
+    expect(asked).toEqual([]);
+    expect(updater.state).toEqual({ kind: "idle" });
+    expect(source.installs).toBe(0);
+  });
+
+  test("the update is ready only once macOS has accepted it", async () => {
+    const { source, updater, asked } = setUp();
+    source.finds("1.1.0");
+    updater.checkNow();
+    await settle();
+
+    source.emit("update-downloaded", { version: "1.1.0" });
+    await settle();
+    updater.restart();
+    expect(updater.state).toEqual({ kind: "downloading", version: "1.1.0" });
+    expect(asked).toEqual([]);
+    expect(source.installs).toBe(0);
+
+    source.installer.emit("update-downloaded");
+    await settle();
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0" });
+    expect(asked).toEqual(["1.1.0"]);
+  });
+
+  test("macOS saying it has an update no download led to changes nothing", async () => {
+    const { source, updater, asked } = setUp();
+
+    source.installer.emit("update-downloaded");
+    await source.downloadedButRefused("1.1.0");
+    source.installer.emit("update-downloaded");
+    await settle();
+
+    expect(updater.state).toEqual({ kind: "idle" });
     expect(asked).toEqual([]);
   });
 
@@ -322,7 +374,7 @@ describe("Updater (ADR-DESK-041)", () => {
     const installationID = "0b6f3c1e-1111-4222-8333-944445555666";
     expect(real.computeFinalHeaders({ "x-user-staging-id": installationID })["x-user-staging-id"]).toBe(installationID);
 
-    new Updater({ source: real, currentVersion: "1.0.0", ask: () => Promise.resolve(false), tell: () => {}, isBusy: () => false, onChange: () => {} });
+    new Updater({ source: real, installer: new EventEmitter(), currentVersion: "1.0.0", ask: () => Promise.resolve(false), tell: () => {}, isBusy: () => false, onChange: () => {} });
 
     const feedRequest = real.computeFinalHeaders({ "x-user-staging-id": installationID });
     const download = real.computeRequestHeaders({ fileExtraDownloadHeaders: null });

@@ -2013,6 +2013,9 @@ no user data.
   packaged app carries `app-update.yml` and reads `latest-mac.yml` there, and nowhere else. Each
   release uploads the versioned ZIP and its blockmap, the DMG, and `latest-mac.yml` last, so the
   feed never names a file not yet there. The ZIP's name has no spaces (`artifactName`).
+  `useMultipleRangeRequest` is off: the CDN answers a request for several byte ranges with 400, so
+  a differential update (only the blocks that changed, from the blockmaps) asks for one range at a
+  time instead of falling back to the whole ZIP.
 - The DMG's name carries no version (`TabMail-Voice-arm64.dmg`): each release replaces it, so the
   website's download button links to it and serves the newest release without an edit per release
   (owner, 2026-09-30). A versioned copy is kept beside it.
@@ -2030,7 +2033,11 @@ no user data.
   older signed build under a higher version (Squirrel checks the signature, not the version).
 - `Updater` (`src/main/updater.ts`), packaged builds only: looks `updateFirstCheckDelay` after launch
   and every `updateCheckInterval`, downloads by itself (`autoDownload`), installs when the app quits
-  (`autoInstallOnAppQuit`). Once downloaded it asks once per version "Restart now?", on a task of its
+  (`autoInstallOnAppQuit`). An update is ready only when Squirrel.Mac (Electron's own
+  `autoUpdater`) says `update-downloaded`: `electron-updater`'s event of that name comes before
+  Squirrel has fetched the ZIP from it, let alone checked its signature, so an update Squirrel then
+  refuses would have been offered and Restart Now would do nothing. Once ready it asks once per
+  version "Restart now?", on a task of its
   own (the dialog is modal and holds the main process: never inside a dictation's phase change),
   never while a dictation runs or the chat window is open (it waits for `appIsFree`). Later is both
   the default and the cancel button: Return, typed as the question appears, does nothing, and
@@ -2049,4 +2056,5 @@ no user data.
   without Authenticode signing a Windows update is vouched for only by the feed's hash, and a
   `.deb`/`.rpm` install is updated by its package manager instead.
 - An app run from the mounted DMG, or from a folder the user can't write, can't be replaced: the
-  install fails silently and each check tries again (owner's call pending on telling the user).
+  update is refused, so it is never offered, and each check tries again. The owner accepted this
+  without telling the user (2026-09-30): the disk image's window shows where the app goes.

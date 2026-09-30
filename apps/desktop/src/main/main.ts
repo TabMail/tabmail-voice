@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { app, dialog, ipcMain, screen, session, shell } from "electron";
+import { app, autoUpdater as squirrel, dialog, ipcMain, screen, session, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/account.js";
 import { opensLink } from "../core/agent/agentChat.js";
@@ -312,6 +312,7 @@ function launch(): void {
     autoUpdater.logger = null;
     return new Updater({
       source: autoUpdater,
+      installer: squirrel,
       currentVersion: app.getVersion(),
       ask: async (version) => {
         app.focus({ steal: true });

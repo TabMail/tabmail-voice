@@ -31,11 +31,12 @@ describe("the Mac app's packaging", () => {
 
   /** The update feed (ADR-DESK-041): the app reads `latest-mac.yml` from TabMail's own CDN, and from
    * nowhere else (no third party sees an update check), which names the ZIP by the file name
-   * electron-builder gave it, uploaded as named: no spaces. Squirrel.Mac installs from the ZIP. */
+   * electron-builder gave it, uploaded as named: no spaces. Squirrel.Mac installs from the ZIP. The
+   * CDN refuses a request for several byte ranges, so a differential update asks for one at a time. */
   test("it updates only from cdn.tabmail.ai, from a ZIP named without spaces", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { publish: unknown; mac: { artifactName: string; target: { target: string }[] } };
 
-    expect(builder.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/macos-arm64" }]);
+    expect(builder.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/macos-arm64", useMultipleRangeRequest: false }]);
     expect(builder.mac.target.map(({ target }) => target)).toContain("zip");
     expect(builder.mac.artifactName).not.toMatch(/\s/);
   });
