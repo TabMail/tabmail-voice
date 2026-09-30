@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { ThunderbirdRelay } from "../../src/core/agent/connectors/thunderbird/thunderbirdRelay.js";
+import { ThunderbirdRelay } from "../../src/core/agent/connectors/thunderbird/relay.js";
 
 /** A pretend Thunderbird for `ThunderbirdRelay`: no app is launched, no keystroke posted. Records
  * what the relay did to it, in order. */

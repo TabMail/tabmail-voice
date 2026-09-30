@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../config.js";
-import { type DictationHotkey, hotkeyNames } from "../hotkey/hotkey.js";
+import { type DictationHotkey, hotkeyNames } from "../hotkey/bindings.js";
 import { type KeyValueStore, storedBool, storedInteger } from "../util/keyValueStore.js";
 
 /** A tip the overlay shows by the listening pill (`hintCentre`). Most behave as TipKit tips do: a

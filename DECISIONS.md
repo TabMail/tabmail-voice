@@ -953,7 +953,7 @@ default". First built in the Swift app; built here in the Electron app (ADR-DESK
 one that ships.
 
 **Decision:**
-- `src/core/agent/agentTools.ts`: `AnswerTool` (`answer`); its prompt `system_prompt_desktop_answer`
+- `src/core/agent/tools.ts`: `AnswerTool` (`answer`); its prompt `system_prompt_desktop_answer`
   (backend ADR-023 amendment) replies with text that `deliver` hands to `ToolContext.showAnswer`.
   Each tool carries a `settingsDescription` and a `chatCaption` (what it did with its text; none for
   Answer).
@@ -967,7 +967,7 @@ one that ships.
   added later, is on until the user turns it off. `DictationSettings.enabledTools` is part of the
   key-down snapshot (ADR-DESK-017). Settings' Agent mode section and the wizard's Features step show
   one switch per tool, with its icon and `settingsDescription` (`setAgentToolEnabled`).
-- `src/core/agent/agentChat.ts`: `AgentChat` (in memory only, gone when the window closes; root
+- `src/core/agent/chat.ts`: `AgentChat` (in memory only, gone when the window closes; root
   ADR-004) holds the turns: the request, the tool and its reply (an answer, or the text another tool
   pasted or sent). A follow-up sends `chatTranscript` to every prompt as `conversation`
   (`User: …` / `TabMail[ [caption]]: …`), so "why?" or "shorter" refers to the last reply. A
@@ -1043,7 +1043,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
   State without a `harmony_messages` array is `invalidResponse`, and no tool runs. The request's
   `AbortSignal` is checked before each round and each call: a request cancelled while a tool ran
   runs no later call and sends no further round.
-- `ConnectorTool` (`src/core/agent/tools/connectorTool.ts`): a tool that runs on this computer: its backend function
+- `ConnectorTool` (`src/core/agent/connectors/tool.ts`): a tool that runs on this computer: its backend function
   `name`, a `progressLabel`, a `confirmation(args)` question for one that sends or creates (null for
   a read), and `run(args)`. The controller takes them as `DictationDependencies.connectorTools`, which the
   main process builds (a tool reaches the OS through a native helper); the list is empty until the
@@ -1106,14 +1106,14 @@ grant it. The backend defines the four tools (`calendar_read`, `calendar_event_c
 the user's zone. First built in the Swift app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- A connector is an app the tools reach (`src/core/agent/connectors/connectors.ts`: `Connector`, its display
+- A connector is an app the tools reach (`src/core/agent/connectors/registry.ts`: `Connector`, its display
   name and description), and each `ConnectorTool` names its `connector`. Settings stores the switched-off
   names (`disabledConnectors`, so a new connector starts on and a retired name is ignored); the
   enabled ones are in the key-down snapshot (`DictationSettings.enabledConnectors`, ADR-DESK-017),
   and a request lists in `available_tools`, and runs, only the tools of the connectors on then. The
   switches follow the agent tools' in Settings' Agent mode and the wizard's Features step
   (`setConnectorEnabled`).
-- The tools are `src/core/agent/tools/calendarTools.ts` over an `EventStore` the main process gives them;
+- The tools are `src/core/agent/connectors/calendar.ts` over an `EventStore` the main process gives them;
   on macOS that is `voice-macos` (`EventStore.swift`, EventKit), elsewhere there is none and no
   connector is offered or shown. Reads need nothing confirmed; adding an event or a reminder asks,
   and the question is built from the same draft the tool then adds, so what is confirmed is what is
@@ -1146,7 +1146,7 @@ the user's zone. First built in the Swift app; built here in the Electron app (A
   the permission prompt.
 
 **Consequences:**
-- A new connector is a name in `connectors.ts`, a tools file taking its OS access as an interface,
+- A new connector is a name in `registry.ts`, a tools file taking its OS access as an interface,
   and the helper methods behind it; the switch, the snapshot and the offer come with the name.
 - The permission prompt raised from a helper process, attributed to the app, is checked by hand on a
   signed build (TESTS.md).
@@ -1160,7 +1160,7 @@ wizard; adding asks first; access is asked on first use and a refusal says where
 built in the Swift app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- The `contacts` connector, with `src/core/agent/tools/contactsTools.ts`: `ContactsSearchTool` and
+- The `contacts` connector, with `src/core/agent/connectors/contacts.ts`: `ContactsSearchTool` and
   `ContactsAddTool` over a `ContactStore` interface. On macOS the store is `voice-macos`
   (`ContactStore.swift`, the Contacts framework); elsewhere there is none.
 - A search matches a contact's name (either way round), company or an email address, ignoring case
@@ -1195,7 +1195,7 @@ app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
 - The `files` connector with `FilesSearchTool` (`files_search`) and `FileOpenTool` (`file_open`)
-  (`src/core/agent/tools/filesTools.ts`) over a `FileStore`: on macOS `MacSystem.fileStore`, whose
+  (`src/core/agent/connectors/files.ts`) over a `FileStore`: on macOS `MacSystem.fileStore`, whose
   `filesSearch` and `fileOpen` requests `voice-macos` carries out (`FileSearch.swift`). A failure
   comes back by name (`Files.Failure`, `FileStoreError`), so a file's name in the system's error
   never reaches a log.
@@ -1256,7 +1256,7 @@ lists, `subject` and `body`, passed to the app as the model wrote them. First bu
 app; built here in the Electron app (ADR-DESK-032).
 
 **Decision:**
-- The `email` connector with `EmailComposeTool` (`src/core/agent/tools/emailTools.ts`) over an
+- The `email` connector with `EmailComposeTool` (`src/core/agent/connectors/email.ts`) over an
   `EmailOpener` the main process gives it.
 - One mechanism for every email app: a `mailto:` URL (RFC 6068, `mailtoURL`) opened with the app
   the system opens `mailto:` links with. Every value is percent-encoded from its UTF-8 bytes, leaving
@@ -1294,10 +1294,10 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
 - The `notes` connector with `NotesSearchTool` (`notes_search`: notes whose title or text contains
   the query, locked notes left out, newest first, at most `notesSearchMaxResults` in full, more
   said) and `NotesCreateTool` (`notes_create`: a title and text, added to the default account's
-  default folder once confirmed), in `src/core/agent/tools/notesTools.ts`. The `messages` connector with
+  default folder once confirmed), in `src/core/agent/connectors/notes.ts`. The `messages` connector with
   `MessagesSendTool` (`messages_send`: one iMessage to one phone number or email address, once
   confirmed; a name goes back to the model to look up with `contacts_search`), in
-  `messagesTools.ts`.
+  `messages.ts`.
 - Neither app has a public framework, so each tool runs a fixed AppleScript through a
   `ScriptRunner` (`appleScript.ts`, faked in tests). What the model wrote reaches the script only
   as `argv`, never inside its source, so no text can change what a script does. The arguments
@@ -1385,7 +1385,7 @@ in the Electron app (ADR-DESK-032).
 
 **Decision:**
 - The `web` connector with `WebReadTool` (`web_read`) and `WebOpenTool` (`web_open`), in
-  `src/core/agent/tools/webTools.ts`, and the backend's `search_web`. A connector's backend tools
+  `src/core/agent/connectors/web.ts`, and the backend's `search_web`. A connector's backend tools
   (`connectorServerTools`) are listed in `available_tools` after the date tools while its own tools
   are (switched on at key-down, and on this computer), so a platform without the web's tools offers
   no search either; `web_search_enabled` is sent as whether `search_web` is listed (the backend refuses
@@ -1552,7 +1552,7 @@ contrast theme (`forced-colors`), which drops gradients, the switches are the sy
 the chosen section is in the system's selection colours with its own focus ring in the text colour
 (the system's took no contrast with that fill) and the attention mark in the text colour.
 The page's transparency outranks `form.css`'s page colour by specificity, since the build links the
-shared `form.css` after `settings.css`: at equal specificity it painted over the frosted sidebar. On macOS the sidebar shows the
+shared `form.css` after `settings/index.css`: at equal specificity it painted over the frosted sidebar. On macOS the sidebar shows the
 window's frosted material under inset traffic lights (`vibrancy: "sidebar"`); Windows and Linux draw
 no material, so the window has its own colour (`settingsWindowColour`). The settings and their
 wording are unchanged (a test holds the notes to the Swift app's); the sidebar adds only its own
@@ -2180,7 +2180,7 @@ to enter agent mode or triple tap to see history tooltip".
 - Gesture (`PushToTalkGesture`): a press while hands-free that comes within `doubleTapWindow` of the
   double tap's second release is `showHistory`, not `finish`. The hands-free dictation the double tap
   started has heard a moment at most; it is discarded unseen.
-- The history window (`history.html`) opens where the chat window's answer box does (amended, owner,
+- The history window (`history/index.html`) opens where the chat window's answer box does (amended, owner,
   2026-09-30: "paste history should appear like the answer tool, not near cursor";
   `historyWindowFrame`): `chatPillGap` over the pill of the hold that asked for it and its bubbles,
   or under them where there is more room (`chatSide`, with the history's tallest), centred on the
@@ -2217,41 +2217,44 @@ tool goes, as in the iOS app (`Services/AI/Tools/`), Thunderbird (`chat/tools/`)
 that Thunderbird counts as a connector; a reorganisation only, with no change to what the code does.
 
 **Decision:**
-- `src/core/agent/`: the agent (`desktopAgent.ts`), the chat window's conversation (`agentChat.ts`),
-  the bubbles' order (`bubbleOrder.ts`) and agent mode's own tools, Edit, Compose, Thunderbird and
-  Answer (`agentTools.ts`, formerly `tools.ts`); then
-  - `tools/`: the tools Answer's model calls that run on this computer, one file per connector
-    (`calendarTools.ts` … `webTools.ts`), with their contract, `connectorTool.ts`. **A new tool goes here**,
-    in its connector's file.
-  - `connectors/`: the apps agent mode reaches, and how: the connectors, each a switch
-    (`connectors.ts`); the AppleScript runner Notes and Messages go through (`appleScript.ts`); and
-    `thunderbird/`, the relay to TabMail's chat and the email app it drives, where its native
-    connector will go (ADR-DESK-037). **A new connector is listed here**; one that needs more than
-    a file gets a folder, as Thunderbird has.
+- No file repeats its folder's name (owner, 2026-09-30: "no repeated folder names in the sub names"):
+  the folder says what it holds, the file what part it is (`agent/chat.ts`, not
+  `agent/agentChat.ts`), and an entry point is `index` (`main/index.ts`, `preload/index.ts`, each
+  window's `index.html`). Swift keeps its own convention, a file named for the type it declares.
+- `src/core/agent/`: the agent's requests to the backend (`requests.ts`, `DesktopAgent`), the chat
+  window's conversation (`chat.ts`), the bubbles' order (`bubbleOrder.ts`) and agent mode's own
+  tools, Edit, Compose, Thunderbird and Answer (`tools.ts`); then `connectors/`, the apps Answer's
+  model reaches on this computer: one file per connector with its tools (`calendar.ts` … `web.ts`;
+  **a new tool goes in its connector's file, a new connector is a new file**), the list of them
+  (`registry.ts`), the tools' contract (`tool.ts`), the AppleScript runner Notes and Messages go
+  through (`appleScript.ts`) and `thunderbird/`, the relay to TabMail's chat (`relay.ts`) and the
+  email app it drives, where its native connector will go (ADR-DESK-037). A connector that needs
+  more than a file gets a folder, as Thunderbird has.
 - The rest of `src/core/` by concern: `dictation/` (the controller, the cleanup, the screen read,
-  the paste history), `audio/`, `backend/` (sign-in and the backend clients), `dictionary/`,
-  `hotkey/`, `onboarding/` (the wizard, permissions, tips, the VS Code fix), `ui/` (the overlay's
-  geometry, the tray menu's model) and `util/`; `config.ts`, `log.ts` and `settings.ts` stay at its
-  top, as every part reads them.
-- `src/main/`: `native/` is the app's side of the OS helpers (`helperClient.ts`, `macos.ts`,
-  `osascript.ts`); **Windows' and Linux's go beside them.** `storage/` holds what the app keeps: the
-  sign-in, the preferences file, the debug log and Thunderbird's profiles read. The entry point, the
-  windows, the tray, the microphone, the updater and the permissions stay at its top; `windows.ts`
-  finds `dist/` from its own folder, so it does not move.
-- `src/renderer/`: each window is `<page>.html` at the top, what Vite builds and the window loads
-  (so `dist/renderer/<page>.html` and `windows.ts` are unchanged), and `<page>/`, its code and style;
-  what the pages share is in `shared/`. **A new window is one page and one folder.**
+  the paste history), `audio/` (the recorder, levels, WAV and FLAC), `backend/` (sign-in, the
+  completions and transcription clients, their errors, HTTP), `dictionary/`, `hotkey/`,
+  `onboarding/` (the wizard, permissions, tips, the VS Code fix), `ui/` (the overlay's geometry, the
+  tray menu's model) and `util/`; `config.ts`, `log.ts` and `settings.ts` stay at its top, as every
+  part reads them.
+- `src/main/`: `index.ts` wires the app; `native/` is the app's side of the OS helpers
+  (`helperClient.ts`, `macos.ts`, `osascript.ts`); **Windows' and Linux's go beside them.**
+  `storage/` holds what the app keeps: the sign-in, the preferences file, the debug log and
+  Thunderbird's profiles read. The windows, the tray, the microphone, the updater and the
+  permissions stay at its top.
+- `src/renderer/`: each window is a folder, `<page>/index.html` (what Vite builds and the window
+  loads, `dist/renderer/<page>/index.html`), `index.tsx` and `index.css`, with anything else only it
+  uses; what the pages share is in `shared/`. **A new window is one folder.**
 - `native/macos/Sources/`: each helper is an executable target named as the libraries are
   (`VoiceHotkey`, `VoiceMacOS`: only its `main.swift`) over its library (`VoiceHotkeyKit`,
   `VoiceMacOSKit`), beside `VoiceHelperSupport`, the line protocol both use. The products keep the
   executables' names, `voice-hotkey` and `voice-macos`, which the app spawns and ships.
-  `VoiceMacOSKit` is in folders by concern, mirrored in its tests: `Service/` (`MacService`, the
-  requests; `HelperConfig`), `Dictation/` (paste, microphone, caret, focused field, keyboard
-  language), `ScreenContext/`, `System/` (Accessibility activator, apps, Globe key) and
+  `VoiceMacOSKit` has `MacService` (the requests) and `HelperConfig` at its top and the rest in
+  folders by concern, mirrored in its tests: `Dictation/` (paste, microphone, caret, focused field,
+  keyboard language, the screen read), `System/` (Accessibility activator, apps, Globe key) and
   `Connectors/` (Calendar and Reminders, Contacts, Files: what the TypeScript connectors reach).
-- `test/` mirrors `src/`: a module's test is in the same folder under `test/` as the module under
-  `src/` (the renderer's by page), shared stubs in `test/support/`, the fake helper in
-  `test/fixtures/`, and the package's checks (`packaging.test.ts`) at the top.
+- `test/` mirrors `src/`: a module's test has its name and folder under `test/` (the renderer's
+  `<page>/index.test.ts`), a test file tests one module, shared stubs and the fake helper are in
+  `test/support/`, and the package's checks (`packaging.test.ts`) are at the top.
 - Names follow the TypeScript conventions (owner, 2026-09-30: "make things more standard"), renamed
   with the language service so only real references changed:
   - Error classes end in `Error`, as JavaScript's own do: `AgentFailure` → `AgentError`, likewise
@@ -2263,7 +2266,7 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
     `offeredAgentTools` → `offeredAgentToolIds`, `isAgentTool` → `isAgentToolId`; the tool itself,
     `DesktopTool` → `AgentTool`, and `toolImplementations` → `agentTools`. `Connector` →
     `ConnectorId`, `connectors` → `connectorIds`, `isConnector` → `isConnectorId`.
-  - `LoopTool` → `ConnectorTool` (`tools/connectorTool.ts`): a tool a connector brings, not the
+  - `LoopTool` → `ConnectorTool` (`connectors/tool.ts`): a tool a connector brings, not the
     backend's loop it runs in; `loopTools` → `connectorTools`, `config.loopToolDeclined` and
     `loopToolUnanswered` → `connectorToolDeclined` and `connectorToolUnanswered`.
   - The main process's preferences file, `FileStore` → `JSONFileStore` (`storage/jsonFileStore.ts`),
@@ -2272,8 +2275,10 @@ that Thunderbird counts as a connector; a reorganisation only, with no change to
     were seconds without saying so say it: `pillSpringResponseSeconds`,
     `agentBubbleRunningSpringResponseSeconds`, `agentBubbleMoveDurationSeconds`,
     `chatAppearDurationSeconds`.
-- Beyond the moves, only import paths, the pages' script paths, `Package.swift`'s target names, the
-  paths tests read from disk and the names above changed.
+- Beyond the moves, only import paths, the pages' script and entry paths, `Package.swift`'s target
+  names, the paths tests read from disk and the names above changed; the backend clients' module
+  was split in three (`completions.ts`, `transcription.ts`, `errors.ts`, the request log and headers
+  joining `http.ts`), and tests that covered several modules were split to one file each.
 
 **Consequences:**
 - A branch open before this change rebases with git's rename detection; a file it adds under an old

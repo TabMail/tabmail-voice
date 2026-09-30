@@ -6,10 +6,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
-import { hotkeyActions } from "../../../src/core/hotkey/hotkey.js";
-import { EventStoreError } from "../../../src/core/agent/tools/calendarTools.js";
-import { ContactStoreError } from "../../../src/core/agent/tools/contactsTools.js";
-import { FileStoreError } from "../../../src/core/agent/tools/filesTools.js";
+import { hotkeyActions } from "../../../src/core/hotkey/bindings.js";
+import { EventStoreError } from "../../../src/core/agent/connectors/calendar.js";
+import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.js";
+import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
 import { decodeSamples, MacSystem } from "../../../src/main/native/macos.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
@@ -89,7 +89,7 @@ describe("helper wire contract", () => {
     microphone({ type: "start", session: 1 });
     microphone({ type: "stop", session: 1 });
 
-    const handlers = registered("native/macos/Sources/VoiceMacOSKit/Service/MacService.swift");
+    const handlers = registered("native/macos/Sources/VoiceMacOSKit/MacService.swift");
     expect(new Set(requests.map((request) => request.method))).toEqual(new Set(handlers.keys()));
     for (const { method, params } of requests) {
       for (const param of handlers.get(method) ?? []) expect(params, `${method} without ${param}`).toHaveProperty(param);
@@ -123,7 +123,7 @@ describe("helper wire contract", () => {
    * is a failure, not a name. The helper answers it under the key read here, as a string: a key
    * renamed on one side only would offer the short name on every launch while both suites pass. */
   test("the full user name is the helper's, and a reply without one fails", async () => {
-    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/Service/MacService.swift"), "utf8");
+    const source = readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8");
     const handler = source.split('channel.on("fullUserName")')[1]?.split("channel.on(")[0] ?? "";
     expect(handler).toMatch(/\["name": \.string\(/);
     expect([...handler.matchAll(/"(\w+)":/g)].map((match) => match[1])).toEqual(["name"]);
@@ -340,12 +340,12 @@ describe("helper wire contract", () => {
     microphone({ type: "start", session: 3 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     const samples = new Float32Array([0.25, -0.5, 1]);
-    const emitted = /microphoneChunkEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/Service/MacService.swift"), "utf8"));
+    const emitted = /microphoneChunkEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"));
     const chunkEvent = events.get(emitted?.[1] ?? "");
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from(samples.buffer).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from([1, 2, 3]).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: "3", samples: Buffer.from(samples.buffer).toString("base64") });
-    const lostName = /microphoneLostEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/Service/MacService.swift"), "utf8"))?.[1] ?? "";
+    const lostName = /microphoneLostEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"))?.[1] ?? "";
     events.get(lostName)?.({ event: lostName, session: "3" });
     events.get(lostName)?.({ event: lostName, session: 3 });
     refuse = true;
@@ -384,7 +384,7 @@ describe("helper wire contract", () => {
   });
 
   test("every request the app sends voice-hotkey is one it handles, with the params it reads", () => {
-    const main = readFileSync(join(root, "src/main/main.ts"), "utf8");
+    const main = readFileSync(join(root, "src/main/index.ts"), "utf8");
     // Directly, or through `sendHotkeyState`, which sends the hotkey's state one request at a time.
     const sent = [...main.matchAll(/(?:hotkeyHelper\s*\.request|sendHotkeyState)(?:<[^>]*>)?\("(\w+)"(?:,\s*\{([^}]*)\})?/g)].map((match) => ({
       method: match[1] ?? "",

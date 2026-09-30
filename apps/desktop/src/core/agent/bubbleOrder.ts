@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type ConnectorId, connectorInfo, connectorServerTools, connectorIds } from "./connectors/connectors.js";
-import { type AgentToolId, isAgentToolId, agentTools } from "./agentTools.js";
+import { type ConnectorId, connectorInfo, connectorServerTools, connectorIds } from "./connectors/registry.js";
+import { type AgentToolId, isAgentToolId, agentTools } from "./tools.js";
 
 /** One of agent mode's bubbles under the pill: a tool's, or an app's that Answer reaches. */
 export type BubbleKey = AgentToolId | ConnectorId;

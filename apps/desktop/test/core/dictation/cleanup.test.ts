@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { screenVariables } from "../../../src/core/agent/agentTools.js";
+import { screenVariables } from "../../../src/core/agent/tools.js";
 import { DictationCleanup, textAroundCaret } from "../../../src/core/dictation/cleanup.js";
 import * as config from "../../../src/core/config.js";
 import type { ScreenContext } from "../../../src/core/dictation/screenContext.js";

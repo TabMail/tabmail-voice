@@ -5,7 +5,7 @@
 import { describe, expect, test } from "vitest";
 import { AccountModel, AuthClient, AuthError, type TabMailSession } from "../../../src/core/backend/account.js";
 import * as config from "../../../src/core/config.js";
-import { deferred, Fixtures, InMemorySessionStore, StubTransport } from "../../support/support.js";
+import { deferred, Fixtures, InMemorySessionStore, StubTransport } from "../../support/stubs.js";
 
 function client(stub: StubTransport, key = "pk"): AuthClient {
   return new AuthClient(stub.transport, "https://auth.example.com", key);

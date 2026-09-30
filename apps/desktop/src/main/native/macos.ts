@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CalendarEvent, type EventStore, EventStoreError, type ReminderItem } from "../../core/agent/tools/calendarTools.js";
-import { type ContactCard, type ContactStore, ContactStoreError } from "../../core/agent/tools/contactsTools.js";
-import { type FileStore, FileStoreError, type FoundItem } from "../../core/agent/tools/filesTools.js";
-import type { FocusedElement, ThunderbirdSystem } from "../../core/agent/connectors/thunderbird/thunderbirdRelay.js";
+import { type CalendarEvent, type EventStore, EventStoreError, type ReminderItem } from "../../core/agent/connectors/calendar.js";
+import { type ContactCard, type ContactStore, ContactStoreError } from "../../core/agent/connectors/contacts.js";
+import { type FileStore, FileStoreError, type FoundItem } from "../../core/agent/connectors/files.js";
+import type { FocusedElement, ThunderbirdSystem } from "../../core/agent/connectors/thunderbird/relay.js";
 import * as config from "../../core/config.js";
 import type { GlobeKeySystem } from "../../core/hotkey/globeKeyAction.js";
 import type { Rect } from "../../core/ui/overlayGeometry.js";

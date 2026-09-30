@@ -8,7 +8,7 @@ import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { type AccountModel, sessionToWire } from "../../../src/core/backend/account.js";
 import type { VoiceBridge } from "../../../src/shared/ipc.js";
-import { Fixtures } from "../../support/support.js";
+import { Fixtures } from "../../support/stubs.js";
 
 /** The main process, the preload bridge and the Settings page wired as the app wires them, over an
  * in-memory Electron IPC and credential store; every other part of the app is a stand-in. Nothing
@@ -120,7 +120,7 @@ vi.mock("../../../src/main/native/helperClient.js", () => ({
     }
   },
 }));
-vi.mock("../../../src/core/dictation/dictationController.js", () => ({
+vi.mock("../../../src/core/dictation/controller.js", () => ({
   DictationController: class {
     constructor(dependencies: { account: AccountModel }) {
       app.account = dependencies.account;
@@ -172,12 +172,12 @@ async function signedInSettings(): Promise<void> {
   document.body.innerHTML = '<div id="root"></div>';
   app.credential = JSON.stringify(sessionToWire(Fixtures.session()));
   vi.resetModules();
-  await import("../../../src/main/main.js");
+  await import("../../../src/main/index.js");
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(app.account?.isSignedIn).toBe(true);
-  await import("../../../src/preload/preload.js");
+  await import("../../../src/preload/index.js");
   await act(async () => {
-    await import("../../../src/renderer/settings/settings.js");
+    await import("../../../src/renderer/settings/index.js");
   });
 }
 

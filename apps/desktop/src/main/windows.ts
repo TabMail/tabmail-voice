@@ -11,15 +11,15 @@ import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
 
 /** The renderer page of each window, built by Vite into `dist/renderer`. */
 const pages: Record<WindowName | "audio", string> = {
-  overlay: "overlay.html",
-  settings: "settings.html",
-  welcome: "welcome.html",
-  contextDebug: "context-debug.html",
-  history: "history.html",
-  audio: "audio.html",
+  overlay: "overlay/index.html",
+  settings: "settings/index.html",
+  welcome: "welcome/index.html",
+  contextDebug: "contextDebug/index.html",
+  history: "history/index.html",
+  audio: "audio/index.html",
 };
 
-/** Where the built app lives: the main script is `dist/node/main/main.js`. */
+/** Where the built app lives: the main script is `dist/node/main/index.js`. */
 const distDirectory = join(__dirname, "../..");
 
 /** Every window the app opens: at most one of each, locked down (context isolation, a sandboxed
@@ -171,7 +171,7 @@ export class Windows {
       ...options,
       webPreferences: {
         ...options.webPreferences,
-        preload: join(distDirectory, "node/preload/preload.js"),
+        preload: join(distDirectory, "node/preload/index.js"),
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,

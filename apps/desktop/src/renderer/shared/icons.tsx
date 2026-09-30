@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ReactNode, useId } from "react";
-import type { ConnectorId } from "../../core/agent/connectors/connectors.js";
-import type { AgentToolId } from "../../core/agent/agentTools.js";
+import type { ConnectorId } from "../../core/agent/connectors/registry.js";
+import type { AgentToolId } from "../../core/agent/tools.js";
 import { brandBlue, brandPurple } from "./brand.js";
 
 /** An id usable in an SVG `url(#…)` reference. */

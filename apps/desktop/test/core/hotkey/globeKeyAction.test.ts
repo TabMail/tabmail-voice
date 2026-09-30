@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { GlobeKeyAction, type GlobeKeySystem, savedChoiceKey } from "../../../src/core/hotkey/globeKeyAction.js";
-import type { DictationHotkey } from "../../../src/core/hotkey/hotkey.js";
+import type { DictationHotkey } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 
 /** `AppleFnUsageType`'s Do Nothing, as the system defines it: not the app's own constant, so a

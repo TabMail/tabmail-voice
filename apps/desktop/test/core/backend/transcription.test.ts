@@ -4,9 +4,10 @@
 
 import { describe, expect, test } from "vitest";
 import { withFreshToken } from "../../../src/core/backend/account.js";
-import { BackendError, type CleanupVariables, TranscriptionClient } from "../../../src/core/backend/backend.js";
+import { BackendError } from "../../../src/core/backend/errors.js";
+import { type CleanupVariables, TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import { base64 } from "../../../src/core/util/text.js";
-import { Fixtures, signedIn, StubTransport } from "../../support/support.js";
+import { Fixtures, signedIn, StubTransport } from "../../support/stubs.js";
 
 const baseURL = "https://api.example.com";
 const flac = new TextEncoder().encode("fLaC-test-audio");

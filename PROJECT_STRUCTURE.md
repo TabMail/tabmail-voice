@@ -33,10 +33,8 @@ apps/desktop/
 │   │   ├── VoiceHotkey/             `voice-hotkey`'s `main.swift`
 │   │   ├── VoiceHotkeyKit/          Event tap + push-to-talk gesture, and `HotkeyService` (its requests)
 │   │   ├── VoiceMacOS/              `voice-macos`'s `main.swift`
-│   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility
-│   │       ├── Service/                 `MacService` (its requests), `HelperConfig` (its tunable numbers)
-│   │       ├── Dictation/               Paste and clipboard restore, the microphone, the caret, the focused field read after a paste, the keyboard's language
-│   │       ├── ScreenContext/           The screen read and its reader
+│   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
+│   │       ├── Dictation/               Paste and clipboard restore, the microphone, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
 │   └── Tests/                   One test target per library; `VoiceMacOSKitTests` in the same folders
@@ -44,26 +42,25 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app (folders: ADR-DESK-044)
 │   │   ├── config.ts, log.ts, settings.ts   Every tunable number; the debug-gated log; the settings every part reads
 │   │   ├── agent/                   Agent mode (ADR-DESK-011)
-│   │   │   ├── desktopAgent.ts          DesktopAgent: picks the tool, has it write, runs Answer's tool loop
-│   │   │   ├── agentTools.ts            Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
-│   │   │   ├── agentChat.ts, bubbleOrder.ts   The chat window's conversation; the bubbles' order
-│   │   │   ├── tools/                   The tools Answer's model calls that run on this computer (a new tool goes here)
-│   │   │   │   ├── connectorTool.ts              `ConnectorTool`, the contract, and `Arguments`
-│   │   │   │   └── calendarTools.ts (Calendar and Reminders), contactsTools.ts, filesTools.ts (Spotlight), emailTools.ts (a prefilled new email), notesTools.ts, messagesTools.ts, webTools.ts (pages read through a `WebFetch`, opened in the browser)
-│   │   │   └── connectors/              The apps those tools reach, and how (a new connector goes here)
-│   │   │       ├── connectors.ts            The connectors, each a switch: names, icons, their backend tools
+│   │   │   ├── requests.ts              `DesktopAgent`: picks the tool, has it write, runs Answer's tool loop
+│   │   │   ├── tools.ts                 Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
+│   │   │   ├── chat.ts, bubbleOrder.ts  The chat window's conversation; the bubbles' order
+│   │   │   └── connectors/              The apps Answer's model reaches on this computer, one file each with its tools (a new connector or tool goes here)
+│   │   │       ├── calendar.ts (Calendar and Reminders), contacts.ts, files.ts (Spotlight), email.ts (a prefilled new email), notes.ts, messages.ts, web.ts (pages read through a `WebFetch`, opened in the browser)
+│   │   │       ├── registry.ts              The connectors, each a switch: names, their backend tools
+│   │   │       ├── tool.ts                  `ConnectorTool`, the contract, and `Arguments`
 │   │   │       ├── appleScript.ts           `ScriptRunner`, for Notes and Messages
-│   │   │       └── thunderbird/             `ThunderbirdRelay` (to TabMail's chat) and `EmailClient` (the email app it drives); its native connector goes here (ADR-DESK-037)
-│   │   ├── dictation/               The dictation state machine (`dictationController.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `screenContext.ts`; `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
-│   │   ├── audio/                   Recording, waveform level, WAV and FLAC
-│   │   ├── backend/                 Sign-in (`account.ts`), the transcription/completions clients, HTTP
-│   │   ├── dictionary/              The user's dictionary; the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
-│   │   ├── hotkey/                  The hotkey; the Globe key's own action while fn is it (ADR-DESK-031)
+│   │   │       └── thunderbird/             `ThunderbirdRelay` (`relay.ts`, to TabMail's chat) and `EmailClient` (the email app it drives); its native connector goes here (ADR-DESK-037)
+│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `screenContext.ts`; `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
+│   │   ├── audio/                   Recording (`recorder.ts`), waveform level, WAV and FLAC
+│   │   ├── backend/                 Sign-in (`account.ts`), the transcription and completions clients, their errors, HTTP
+│   │   ├── dictionary/              The user's dictionary (`entries.ts`); the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
+│   │   ├── hotkey/                  The hotkey, the modes and the gesture's actions (`bindings.ts`); the Globe key's own action while fn is it (ADR-DESK-031)
 │   │   ├── onboarding/              The welcome wizard, permissions, tips, VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
 │   │   ├── ui/                      Where the overlay sits; what the tray menu shows
 │   │   └── util/                    observable, keyValueStore, timeout, text, localDateTime (the backend's dates in the local zone)
 │   ├── main/                The main process (Node + Electron)
-│   │   ├── main.ts                  Wires everything: helpers, controller, windows, IPC, tray
+│   │   ├── index.ts                 Wires everything: helpers, controller, windows, IPC, tray
 │   │   ├── audioCapture.ts          The microphone, one session per dictation: through `voice-macos` on macOS, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, installed at the quit, "Restart now?" once ready (ADR-DESK-041)
@@ -73,20 +70,20 @@ apps/desktop/
 │   │   │   ├── macos.ts                 `voice-macos`'s methods, typed
 │   │   │   └── osascript.ts             Notes' and Messages' AppleScripts, run by `/usr/bin/osascript` (arguments after `--`; a cancelled request ends it)
 │   │   └── storage/                 keychainSessionStore.ts (the sign-in), jsonFileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
-│   ├── preload/preload.ts   `window.voice` (sandboxed: imports only electron; channel names written out)
+│   ├── preload/index.ts     `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
-│   └── renderer/            One page per window: `<page>.html` (what Vite builds and the window loads) and `<page>/` (its code and style)
+│   └── renderer/            One folder per window: `<page>/index.html` (what Vite builds and the window loads), `index.tsx` and `index.css`
 │       ├── overlay/                 The pill, waveform, swirl, tips, bubbles and chat window
 │       ├── settings/, welcome/, history/ (the paste history), contextDebug/
 │       ├── audio/                   The microphone off macOS: getUserMedia → captureWorklet
 │       └── shared/                  The bridge to `window.voice`, the brand, icons, the name field, form.css
-└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird), fixtures/ (a fake helper); packaging.test.ts
+└── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper); packaging.test.ts
 ```
 
 ## Flow
 
 `voice-hotkey` (`HotkeyMonitor` → `PushToTalkGesture`) sends each gesture action to the main
-process, which hands it to `DictationController` (`src/core/dictation/dictationController.ts`):
+process, which hands it to `DictationController` (`src/core/dictation/controller.ts`):
 
 1. **start** (key-down; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
    The microphone starts (`SessionAudioCapture` → `voice-macos`'s `MicrophoneCapture`, its engine

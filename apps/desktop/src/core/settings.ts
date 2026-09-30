@@ -3,11 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { DebugAccess } from "./backend/account.js";
-import { type ConnectorId, connectorIds, isConnectorId } from "./agent/connectors/connectors.js";
-import { type AgentToolId, isAgentToolId, offeredAgentToolIds } from "./agent/agentTools.js";
+import { type ConnectorId, connectorIds, isConnectorId } from "./agent/connectors/registry.js";
+import { type AgentToolId, isAgentToolId, offeredAgentToolIds } from "./agent/tools.js";
 import * as config from "./config.js";
-import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/dictionary.js";
-import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/hotkey.js";
+import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/entries.js";
+import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
 import { Observable } from "./util/observable.js";
 

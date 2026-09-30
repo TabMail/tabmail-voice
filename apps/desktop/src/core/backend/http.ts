@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import * as config from "../config.js";
+
 /** One HTTP request as the backend clients build it. `timeout` is the longest the connection may
  * stay silent (a streamed reply's keepalives count), in milliseconds. */
 export interface HTTPRequest {
@@ -95,3 +97,48 @@ export const liveTransport: HTTPTransport = async (request) => {
     request.signal?.removeEventListener("abort", onAbort);
   }
 };
+
+/** The headers of an authorized request to the backend. */
+export function requestHeaders(accessToken: string, clientVersion: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+    "X-Client-Type": config.clientType,
+    "X-Client-Version": clientVersion,
+  };
+}
+
+/** `path` under `base`, with one slash between them. */
+export function joinURL(base: string, path: string): string {
+  return `${base.replace(/\/+$/, "")}/${path}`;
+}
+
+/** How a request to the backend and its reply read in the debug log file (`log.content`,
+ * ADR-DESK-015): everything as sent and as received, except the access token. */
+export const BackendLog = {
+  /** Stands in for the access token in a logged `Authorization` header. */
+  maskedAuthorization: "Bearer <access token, not logged>",
+
+  /** The request as sent: method, URL, headers (the access token masked) and `body`, else the
+   * request's own body. */
+  request(request: HTTPRequest, body?: string): string {
+    const headers = Object.entries(request.headers).map(([name, value]): [string, string] => [
+      name,
+      name.toLowerCase() === "authorization" ? BackendLog.maskedAuthorization : value,
+    ]);
+    return `${request.method} ${request.url}\n${lines(headers)}\n\n${body ?? request.body}`;
+  },
+
+  /** The reply as received: status, headers (Cloudflare's `cf-ray` finds the request in the
+   * backend's logs) and the raw body. */
+  response(response: HTTPResponse): string {
+    return `HTTP ${response.status}\n${lines(Object.entries(response.headers))}\n\n${response.body}`;
+  },
+};
+
+function lines(headers: [string, string][]): string {
+  return [...headers]
+    .sort((a, b) => (a[0].toLowerCase() < b[0].toLowerCase() ? -1 : a[0].toLowerCase() > b[0].toLowerCase() ? 1 : 0))
+    .map(([name, value]) => `${name}: ${value}`)
+    .join("\n");
+}

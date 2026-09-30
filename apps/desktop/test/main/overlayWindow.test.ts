@@ -3,10 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test, vi } from "vitest";
-import { deferred } from "../support/support.js";
+import { deferred } from "../support/stubs.js";
 import type { BrowserWindow } from "electron";
 import * as config from "../../src/core/config.js";
-import type { Phase } from "../../src/core/dictation/dictationController.js";
+import type { Phase } from "../../src/core/dictation/controller.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import { OverlayWindowController } from "../../src/main/overlayWindow.js";
 

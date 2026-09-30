@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { EmailClient } from "../../../../../src/core/agent/connectors/thunderbird/emailClient.js";
 import * as config from "../../../../../src/core/config.js";
 import { nodeProfileFiles } from "../../../../../src/main/storage/profileFiles.js";
-import { Fixtures } from "../../../../support/support.js";
+import { Fixtures } from "../../../../support/stubs.js";
 
 const thunderbird = "org.mozilla.thunderbird";
 const beta = "org.mozilla.thunderbirdbeta";

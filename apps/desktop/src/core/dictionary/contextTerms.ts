@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../config.js";
-import { dictionaryWord } from "./dictionary.js";
+import { dictionaryWord } from "./entries.js";
 
 /**
  * The names and terms in `text`, what was on screen when a dictation started (ADR-DESK-038): sent

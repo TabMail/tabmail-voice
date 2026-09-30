@@ -10,8 +10,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, test, vi } from "vitest";
 import { ScriptError } from "../../../src/core/agent/connectors/appleScript.js";
-import { MessagesScripts } from "../../../src/core/agent/tools/messagesTools.js";
-import { NotesScripts } from "../../../src/core/agent/tools/notesTools.js";
+import { MessagesScripts } from "../../../src/core/agent/connectors/messages.js";
+import { NotesScripts } from "../../../src/core/agent/connectors/notes.js";
 import { sleep } from "../../../src/core/util/timeout.js";
 import { osascript } from "../../../src/main/native/osascript.js";
 

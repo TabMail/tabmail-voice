@@ -4,7 +4,7 @@
 
 import * as config from "../config.js";
 import { trimmed } from "./contextTerms.js";
-import { dictionaryWord, isSameWord } from "./dictionary.js";
+import { dictionaryWord, isSameWord } from "./entries.js";
 
 /**
  * The words to learn from the user's edit of a pasted dictation (ADR-DESK-038): the field's text

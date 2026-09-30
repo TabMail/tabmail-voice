@@ -7,10 +7,10 @@
   "author": "TabMail <hello@tabmail.ai>",
   "homepage": "https://tabmail.ai",
   "private": true,
-  "main": "dist/node/main/main.js",
+  "main": "dist/node/main/index.js",
   "scripts": {
     "compile:native": "node scripts/build-native.mts",
-    "build:main": "tsc -p tsconfig.main.json",
+    "build:main": "node -e \"require('node:fs').rmSync('dist/node', { recursive: true, force: true })\" && tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run compile:native && npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
@@ -19,7 +19,7 @@
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
-    "preview": "npm run build:renderer && electron scripts/preview/preview.mts"
+    "preview": "npm run build:renderer && electron scripts/preview/index.mts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.0.0",

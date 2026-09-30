@@ -3,9 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { BackendError, CompletionsClient, type CompletionsMessage, SSEParser } from "../../../src/core/backend/backend.js";
+import { BackendError } from "../../../src/core/backend/errors.js";
+import { CompletionsClient, type CompletionsMessage, SSEParser } from "../../../src/core/backend/completions.js";
 import * as config from "../../../src/core/config.js";
-import { Fixtures, StubTransport } from "../../support/support.js";
+import { Fixtures, StubTransport } from "../../support/stubs.js";
 
 const baseURL = "https://api.example.com";
 const message: CompletionsMessage = { role: "system", content: "system_prompt_example", vars: { dictation: "hello world", app_name: "Example" } };

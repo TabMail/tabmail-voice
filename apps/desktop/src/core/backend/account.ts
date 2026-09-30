@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { BackendError } from "./backend.js";
+import { BackendError } from "./errors.js";
 import * as config from "../config.js";
 import type { HTTPTransport } from "./http.js";
 import { errorName, log } from "../log.js";

@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AccountModel, AuthClient } from "../../../src/core/backend/account.js";
 import { KeychainSessionStore, saveFailedMessage, savedSignInKeptMessage } from "../../../src/main/storage/keychainSessionStore.js";
-import { Fixtures, StubTransport } from "../../support/support.js";
+import { Fixtures, StubTransport } from "../../support/stubs.js";
 
 /** The system's credential store, in memory: one item, and a switch each to refuse a write or a
  * delete. The real one is never touched. */

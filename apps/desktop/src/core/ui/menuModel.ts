@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { Phase } from "../dictation/dictationController.js";
-import { type DictationHotkey, hotkeyNames } from "../hotkey/hotkey.js";
+import type { Phase } from "../dictation/controller.js";
+import { type DictationHotkey, hotkeyNames } from "../hotkey/bindings.js";
 
 /** What the tray menu shows, from the app's state. */
 export interface MenuState {

@@ -4,8 +4,8 @@
 
 import { describe, expect, test } from "vitest";
 import { alphabetical, bubbleName, bubbleOrder, ranNow, serverToolConnector } from "../../../src/core/agent/bubbleOrder.js";
-import { connectorInfo, connectorIds, connectorServerTools } from "../../../src/core/agent/connectors/connectors.js";
-import { agentToolIds, agentTools } from "../../../src/core/agent/agentTools.js";
+import { connectorInfo, connectorIds, connectorServerTools } from "../../../src/core/agent/connectors/registry.js";
+import { agentToolIds, agentTools } from "../../../src/core/agent/tools.js";
 
 /** The order of agent mode's bubbles under the pill, and of Settings' switches. */
 describe("bubble order", () => {

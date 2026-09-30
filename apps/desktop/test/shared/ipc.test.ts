@@ -11,9 +11,9 @@ import { channels, isAudioReport, isCommand, isWindowName } from "../../src/shar
 /** The channel names the preload script writes out, read from its source: a sandboxed preload
  * can't import them. */
 function preloadChannels(): Record<string, string> {
-  const source = readFileSync(join(__dirname, "../../src/preload/preload.ts"), "utf8");
+  const source = readFileSync(join(__dirname, "../../src/preload/index.ts"), "utf8");
   const literal = /const channels = \{([^}]*)\};/.exec(source)?.[1];
-  if (literal === undefined) throw new Error("no channels in preload.ts");
+  if (literal === undefined) throw new Error("no channels in preload/index.ts");
   return Object.fromEntries([...literal.matchAll(/(\w+): "([^"]+)"/g)].map((match) => [match[1], match[2]]));
 }
 

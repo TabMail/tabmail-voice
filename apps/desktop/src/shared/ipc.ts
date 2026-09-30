@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AgentChat } from "../core/agent/agentChat.js";
+import type { AgentChat } from "../core/agent/chat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
-import { type ConnectorId, isConnectorId } from "../core/agent/connectors/connectors.js";
-import { type AgentToolId, isAgentToolId } from "../core/agent/agentTools.js";
-import type { Phase } from "../core/dictation/dictationController.js";
-import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/hotkey.js";
+import { type ConnectorId, isConnectorId } from "../core/agent/connectors/registry.js";
+import { type AgentToolId, isAgentToolId } from "../core/agent/tools.js";
+import type { Phase } from "../core/dictation/controller.js";
+import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/bindings.js";
 import * as config from "../core/config.js";
-import type { DictionaryEntry } from "../core/dictionary/dictionary.js";
+import type { DictionaryEntry } from "../core/dictionary/entries.js";
 import type { UpdateState } from "../core/ui/menuModel.js";
 import type { PasteEntry } from "../core/dictation/pasteHistory.js";
 import type { ScreenContext } from "../core/dictation/screenContext.js";
