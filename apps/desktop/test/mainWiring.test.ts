@@ -26,8 +26,7 @@ const app = vi.hoisted(() => ({
   refusesDelete: false,
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
-  paste: null as ((text: string, session: number, signal: AbortSignal) => Promise<string>) | null,
-  captureTarget: null as ((session: number) => Promise<void>) | null,
+  paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
   corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
   prewarms: 0,
@@ -251,13 +250,12 @@ vi.mock("../src/main/helperClient.js", () => ({
 vi.mock("../src/core/dictationController.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/core/dictationController.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; captureTarget: (session: number) => Promise<void>; copy: (text: string) => void; paste: (text: string, session: number, signal: AbortSignal) => Promise<string>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal) => Promise<void>; history: NonNullable<typeof app.history>; loopTools: typeof app.loopTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
       app.loopTools = dependencies.loopTools;
       app.paste = dependencies.paste;
-      app.captureTarget = dependencies.captureTarget;
       app.copy = dependencies.copy;
       app.controller = this;
     }
@@ -300,6 +298,7 @@ vi.mock("../src/main/overlayWindow.js", () => ({
     opensUpward = false;
     bubblesFitUnder = true;
     chatPlacement: object | null = null;
+    pillPlace = { pill: { x: 700, y: 600 }, workArea: { x: 0, y: 25, width: 1440, height: 875 }, bubblesUnder: true };
     onPlace: (() => void) | undefined;
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
@@ -345,8 +344,8 @@ vi.mock("../src/main/windows.js", () => ({
       app.historyBlur = onBlur;
       app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
     }
-    setBounds(name: string, bounds: { height: number }) {
-      app.historyWindow.push(`${name} height ${bounds.height}`);
+    fitHistory(bounds: { height: number }) {
+      app.historyWindow.push(`history height ${bounds.height}`);
     }
     close(name: string) {
       if (name === "history") app.historyWindow.push("close");
@@ -371,7 +370,6 @@ afterEach(() => {
   app.helpers.clear();
   app.capture = null;
   app.paste = null;
-  app.captureTarget = null;
   app.copy = null;
   app.corrections = undefined;
   app.prewarms = 0;
@@ -497,24 +495,18 @@ describe("main process wiring", () => {
     await launch("darwin");
     const helper = app.helpers.get("voice-macos");
     const { signal } = new AbortController();
-    helper?.replies.set("insert", { outcome: "pasted" });
 
-    expect(await app.paste?.("Hello.", 4, signal)).toBe("pasted");
+    await app.paste?.("Hello.", signal);
 
     const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
-    expect(inserts[0]?.params).toMatchObject({ text: "Hello.", session: 4 });
+    expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
   });
 
-  /** Key-down keeps the dictation's field and caret in `voice-macos` under its session, which its
-   * paste then asks for (ADR-DESK-042); a text not pasted goes on the clipboard. */
-  test("a dictation's field is kept by voice-macos, and a text not pasted is copied", async () => {
+  /** A text not pasted (ADR-DESK-042) goes on the clipboard. */
+  test("a text not pasted is copied", async () => {
     await launch("darwin");
-    const helper = app.helpers.get("voice-macos");
-
-    await app.captureTarget?.(4);
-    expect(helper?.requests.filter((request) => request.method === "captureTarget").map((request) => request.params)).toEqual([{ session: 4 }]);
 
     app.copy?.("Hello.");
     expect(app.clipboard).toEqual(["Hello."]);
@@ -534,10 +526,10 @@ describe("main process wiring", () => {
     }
   });
 
-  /** A triple tap opens the paste history by the pointer (ADR-DESK-043), which shows the controller's
+  /** A triple tap opens the paste history where the chat window opens, by the pill (ADR-DESK-043), which shows the controller's
    * history and takes its list's height; a click copies the entry, closes the window and gives the
    * user's app its focus back, as Escape does without copying. */
-  test("the paste history opens by the pointer, and a click copies its entry", async () => {
+  test("the paste history opens by the pill, and a click copies its entry", async () => {
     await launch("darwin");
     const states: unknown[] = [];
     app.listeners.set("voice:state", [
@@ -549,8 +541,9 @@ describe("main process wiring", () => {
     expect(states).toEqual([{ entries: [expect.objectContaining({ text: "Hello there." })] }]);
 
     app.controller?.onShowHistory?.();
-    const gap = config.pasteHistoryPointerGap;
-    expect(app.historyWindow).toEqual([`show ${100 + gap},${100 + gap} ${config.pasteHistoryWindowWidth}x${config.pasteHistoryMaxHeight}`]);
+    // Over the pill (its top edge's centre at 700,600, the bubbles under it), the pill's gap clear.
+    const top = 600 - config.chatPillGap - config.pasteHistoryMaxHeight;
+    expect(app.historyWindow).toEqual([`show ${700 - config.pasteHistoryWindowWidth / 2},${top} ${config.pasteHistoryWindowWidth}x${config.pasteHistoryMaxHeight}`]);
     await send({ type: "historyHeight", height: 120 });
     await send({ type: "historyHeight", height: config.pasteHistoryMaxHeight + 100 });
     expect(app.historyWindow.slice(1)).toEqual(["history height 120", `history height ${config.pasteHistoryMaxHeight}`]);
@@ -570,6 +563,10 @@ describe("main process wiring", () => {
     const pushes = states.length;
     app.controller?.onShowHistory?.();
     expect(states.length).toBeGreaterThan(pushes);
+    // It keeps the height its list last measured, never first its tallest (red-verified).
+    await send({ type: "historyHeight", height: 150 });
+    app.controller?.onShowHistory?.();
+    expect(app.historyWindow.at(-1)).toMatch(/ \d+x150$/);
 
     // A click elsewhere closes it, the focus already gone where the user clicked.
     app.controller?.onShowHistory?.();

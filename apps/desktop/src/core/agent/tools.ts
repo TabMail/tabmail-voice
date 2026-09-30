@@ -56,9 +56,8 @@ export interface ToolContext {
   /** The email app mail and calendar requests go to, resolved from the settings the dictation
    * started with (ADR-DESK-017); null when there is none. */
   emailApp: string | null;
-  /** Pastes where the user spoke: the field and caret at key-down, put back if they moved. Where it
-   * can't (the user went to another app, or the caret would not go back), it pastes nothing and throws,
-   * the text copied instead (ADR-DESK-042). */
+  /** Pastes into the app the user spoke over. When the user has gone to another app, it pastes nothing
+   * and throws, the text copied instead (ADR-DESK-042). */
   paste(text: string): Promise<void>;
   thunderbird: ThunderbirdRelay;
   /** Shows a reply in the chat window, opening it if it is closed. */
@@ -66,8 +65,8 @@ export interface ToolContext {
   signal: AbortSignal;
 }
 
-/** Pastes `text` where the user spoke. The request may have taken long enough for the user to move
- * on: the text belongs in that field at that caret, and is pasted nowhere else (`ToolContext.paste`). */
+/** Pastes `text` into the app the user spoke over. The request may have taken long enough for the user
+ * to move on: the text belongs in that app, and is pasted nowhere else (`ToolContext.paste`). */
 async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<void> {
   await context.paste(text);
 }

@@ -42,13 +42,15 @@ const tipSize = { width: 200, height: 73 };
 const tooltipSize = { width: config.bubbleTooltipMaxWidth, height: 64 };
 /** Whether the page has laid a tooltip out yet: until it has, it measures nothing. */
 let tooltipLaidOut = true;
+/** Whether the page has laid the tip by the pill out yet. */
+let tipLaidOut = true;
 const chatSize = { width: 380, height: 146 };
 
 function laidOut(element: HTMLElement): { width: number; height: number } {
   if (element.classList.contains("pill-anchor")) return pillSize;
   if (element.classList.contains("chat")) return chatSize;
   if (element.classList.contains("bubble-tooltip")) return tooltipLaidOut ? tooltipSize : { width: 0, height: 0 };
-  if (element.querySelector(".tip") || element.classList.contains("tip")) return tipSize;
+  if (element.querySelector(".tip") || element.classList.contains("tip")) return tipLaidOut ? tipSize : { width: 0, height: 0 };
   return { width: 0, height: 0 };
 }
 
@@ -124,6 +126,7 @@ async function unmount(): Promise<void> {
 
 afterEach(async () => {
   tooltipLaidOut = true;
+  tipLaidOut = true;
   await unmount();
   vi.unstubAllGlobals();
   document.body.innerHTML = "";
@@ -438,6 +441,23 @@ describe("overlay page", () => {
 
   /** A tip that appears during a hold (the double-tap tip, 20 s in, with the Space tip learned) is
    * placed as one shown from the start is: under the pill, not over it. */
+  /** The tip and its outline are placed and drawn by their size: until measured they are hidden, never
+   * shown for a frame away from the pill or as words without their box (red-verified against each). */
+  test("a tip is hidden until measured", async () => {
+    const page = await overlayPage();
+    tipLaidOut = false;
+    await page.show({ ...listening, tip: "doubleTap" });
+    const tip = () => document.querySelector<HTMLElement>(".tip");
+    expect(tip()?.style.visibility).toBe("hidden");
+    expect(tip()?.closest<HTMLElement>(".centred")?.style.visibility).toBe("hidden");
+    tipLaidOut = true;
+    await act(async () => {
+      for (const observer of observers) observer.changed();
+    });
+    expect(tip()?.style.visibility).toBe("visible");
+    expect(tip()?.closest<HTMLElement>(".centred")?.style.visibility).toBe("visible");
+  });
+
   test("a tip that appears later is placed under the pill, as one shown from the start", async () => {
     const atStart = await overlayPage();
     await atStart.show({ ...listening, tip: "doubleTap" });

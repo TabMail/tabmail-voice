@@ -89,7 +89,8 @@ export class Windows {
 
   /** The paste history (ADR-DESK-043) at `bounds`: a small frameless window over every other, on
    * the Space in front, brought forward with the app so Escape reaches it; `onBlur` as it loses
-   * focus (the user clicked elsewhere). Open already, it moves to `bounds`. */
+   * focus (the user clicked elsewhere). Made hidden: it shows once its list has measured itself
+   * (`fitHistory`), so it never opens at another height. Open already, it moves to `bounds`. */
   showHistory(bounds: Rect, onBlur: () => void): void {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
@@ -102,7 +103,7 @@ export class Windows {
       existing.focus();
       return;
     }
-    const window = this.window("history", {
+    this.window("history", {
       ...bounds,
       ...look,
       type: "panel",
@@ -119,18 +120,19 @@ export class Windows {
       window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
       window.on("blur", onBlur);
     });
-    window.once("ready-to-show", () => {
-      app.focus({ steal: true });
-      window.show();
-    });
+  }
+
+  /** The paste history at `bounds`, its list measured: shown, with the focus, the first time. */
+  fitHistory(bounds: Rect): void {
+    const window = this.open.get("history");
+    if (!window || window.isDestroyed()) return;
+    window.setBounds(bounds);
+    if (window.isVisible()) return;
+    app.focus({ steal: true });
+    window.show();
   }
 
   /** Moves `name`'s window to `bounds`, if it is open. */
-  setBounds(name: WindowName, bounds: Rect): void {
-    const window = this.open.get(name);
-    if (window && !window.isDestroyed()) window.setBounds(bounds);
-  }
-
   isOpen(name: WindowName): boolean {
     const window = this.open.get(name);
     return window !== undefined && !window.isDestroyed();

@@ -33,6 +33,9 @@ export class OverlayWindowController {
    * there for follow-ups, its bubbles under it or over it as they were, on the side of them with room
    * (`chatSide`). */
   private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean } | null = null;
+  /** The chat window opened and its page hasn't measured it yet: the overlay is transparent meanwhile,
+   * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is). */
+  private chatUnmeasured = false;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
 
@@ -48,6 +51,16 @@ export class OverlayWindowController {
 
   get bubblesFitUnder(): boolean {
     return this.placedBubblesFitUnder;
+  }
+
+  /** Where the pill of the hold under way shows, or would: at the caret the request was spoken over,
+   * or the pointer without one (`pillPosition`, its top edge's centre), with its display's work area
+   * and whether agent mode's bubbles go under it. The paste history opens by it, as the chat window
+   * does (ADR-DESK-043). */
+  get pillPlace(): { pill: Point; workArea: Rect; bubblesUnder: boolean } {
+    const anchor = this.anchor ?? this.pointer();
+    const workArea = this.workArea(anchor);
+    return { pill: pillPosition(anchor, workArea), workArea, bubblesUnder: bubblesFitUnder(anchor, config.pillHeight, workArea) };
   }
 
   /** Where the chat window shows, while it does. */
@@ -110,6 +123,9 @@ export class OverlayWindowController {
   fitChat(height: number): void {
     if (this.chat === null) return;
     this.window.setBounds(rounded(this.chatFrame(height)));
+    if (!this.chatUnmeasured) return;
+    this.chatUnmeasured = false;
+    this.window.setOpacity(1);
   }
 
   /** Opens the chat window over the pill, which stays where it is, at the caret the request was
@@ -127,6 +143,8 @@ export class OverlayWindowController {
     const shift = { x: Math.round(origin.x) - origin.x, y: Math.round(origin.y) - origin.y };
     const bubblesUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
     this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder };
+    this.chatUnmeasured = true;
+    this.window.setOpacity(0);
     this.window.setIgnoreMouseEvents(false);
     this.window.setBounds(rounded(this.chatFrame(this.chat.side.maxHeight)));
     this.window.showInactive();
@@ -141,6 +159,10 @@ export class OverlayWindowController {
 
   private hideChat(): void {
     this.chat = null;
+    if (this.chatUnmeasured) {
+      this.chatUnmeasured = false;
+      this.window.setOpacity(1);
+    }
     // Click-through again, the pointer's moves still reaching the page (a bubble's hover).
     this.window.setIgnoreMouseEvents(true, { forward: true });
     this.window.hide();

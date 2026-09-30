@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import * as config from "../src/core/config.js";
-import { historyWindowOrigin } from "../src/core/overlayGeometry.js";
+import { chatSide, chatWindowFrame, historyWindowFrame } from "../src/core/overlayGeometry.js";
 import { PasteHistory, pastedAgo } from "../src/core/pasteHistory.js";
 
 /** The paste history a triple tap shows (ADR-DESK-043). */
@@ -60,31 +60,53 @@ describe("PasteHistory", () => {
   });
 });
 
-/** The window opens by the mouse pointer: right of it and under it, or on its other side where the
- * screen has no room, never off the screen. */
+/** The window opens where the chat window's answer box does (owner, 2026-09-30: "like the answer
+ * tool"): over the pill and its bubbles, or under them where there is more room, never off the screen. */
 describe("the paste history window's place", () => {
   const workArea = { x: 0, y: 25, width: 1440, height: 875 };
   const size = { width: config.pasteHistoryWindowWidth, height: 300 };
-  const gap = config.pasteHistoryPointerGap;
 
-  test("right of and under the pointer where there is room", () => {
-    expect(historyWindowOrigin({ x: 100, y: 100 }, size, workArea)).toEqual({ x: 100 + gap, y: 100 + gap });
+  /** The chat window's answer box, `height` tall, for the pill at `pill`: its frame without the
+   * shadow's margin, the pill and its bubbles. */
+  function answerBox(pill: { x: number; y: number }, height: number, bubblesUnder: boolean): { x: number; y: number; width: number; height: number } {
+    const side = chatSide(pill.y, bubblesUnder, workArea);
+    const frame = chatWindowFrame(pill, height, workArea, side, bubblesUnder);
+    const margin = config.chatShadowMargin;
+    const strip = config.chatPillGap + config.chatStripHeight;
+    return { x: frame.x + margin, y: frame.y + margin + (side.below ? strip : 0), width: frame.width - 2 * margin, height: frame.height - 2 * margin - strip };
+  }
+
+  test.each([
+    ["over the pill", { x: 700, y: 600 }, true],
+    ["over the pill's bubbles", { x: 700, y: 600 }, false],
+    ["under the pill near the screen's top", { x: 700, y: 100 }, true],
+    ["kept inside the screen's left edge", { x: 40, y: 600 }, true],
+    ["kept inside the screen's right edge", { x: 1420, y: 100 }, false],
+  ])("%s, where the answer box goes", (_, pill, bubblesUnder) => {
+    expect(config.pasteHistoryWindowWidth).toBe(config.chatWidth);
+    expect(historyWindowFrame(pill, size, workArea, bubblesUnder)).toEqual(answerBox(pill, size.height, bubblesUnder));
   });
 
-  test("left of and over the pointer by the screen's far corner", () => {
-    const pointer = { x: 1400, y: 880 };
-    expect(historyWindowOrigin(pointer, size, workArea)).toEqual({ x: pointer.x - gap - size.width, y: pointer.y - gap - size.height });
+  test("its edge by the pill stays put as its list measures itself", () => {
+    const pill = { x: 700, y: 600 };
+    const tall = historyWindowFrame(pill, size, workArea, true);
+    const short = historyWindowFrame(pill, { ...size, height: 120 }, workArea, true);
+    expect(short.y + short.height).toBe(tall.y + tall.height);
+    const under = { x: 700, y: 100 };
+    expect(historyWindowFrame(under, { ...size, height: 120 }, workArea, true).y).toBe(historyWindowFrame(under, size, workArea, true).y);
   });
 
-  test("within the screen where neither side has room", () => {
-    const tall = { width: size.width, height: 800 };
-    const origin = historyWindowOrigin({ x: 700, y: 450 }, tall, workArea);
-    expect(origin.y).toBeGreaterThanOrEqual(workArea.y);
-    expect(origin.y + tall.height).toBeLessThanOrEqual(workArea.y + workArea.height);
-
-    const narrow = { x: 100, y: 25, width: size.width + 40, height: 875 };
-    const across = historyWindowOrigin({ x: 100 + narrow.width / 2, y: 450 }, size, narrow);
-    expect(across.x).toBeGreaterThanOrEqual(narrow.x);
-    expect(across.x + size.width).toBeLessThanOrEqual(narrow.x + narrow.width);
+  /** Taller than the answer box may grow, it goes over the pill only where it fits there whole, and is
+   * never taller than the room on its side. */
+  test("no taller than the room on its side", () => {
+    const tallest = { ...size, height: config.pasteHistoryMaxHeight };
+    const middle = historyWindowFrame({ x: 700, y: 380 }, tallest, workArea, true);
+    expect(middle.y).toBeGreaterThanOrEqual(workArea.y);
+    expect(middle.y + middle.height).toBeLessThanOrEqual(workArea.y + workArea.height);
+    const short = { x: 0, y: 25, width: 1440, height: 300 };
+    const squeezed = historyWindowFrame({ x: 700, y: 175 }, tallest, short, true);
+    expect(squeezed.height).toBeLessThan(tallest.height);
+    expect(squeezed.y).toBeGreaterThanOrEqual(short.y);
+    expect(squeezed.y + squeezed.height).toBeLessThanOrEqual(short.y + short.height);
   });
 });

@@ -388,7 +388,9 @@ grants. The privacy policy tells users they can switch screen reading off.
 > back, for hands-free dictation (not agent mode).
 >
 > **Later (ADR-DESK-042):** the "You switched apps, so nothing was pasted" check is gone: every paste
-> goes where the caret was at key-down, or onto the clipboard and into the paste history.
+> goes where the caret was at key-down, or onto the clipboard and into the paste history. Amended the
+> same day: only the app is checked, for dictation and agent mode alike (`focusChanged`), and a text
+> for another app goes onto the clipboard and into the paste history instead of failing.
 
 **Context:** Owner, 2026-09-25: a double tap of the hotkey enters agent mode. Speech is then a
 request to carry out, not text to insert. The first tools are **Edit** (rewrite the selected text
@@ -832,7 +834,9 @@ for agent mode; this one is for dictation, and Space still switches the mode.
   datastore are global state a unit test cannot own.
 - The controller decides which tip shows (`DictationController.tip`); the overlay draws it in the
   same dark tooltip under the pill (`TipTooltip`, formerly `ModeHint`) and shows none over the warm-up
-  swirl. The Space tip is due as the pill starts listening; the double-tap tip once a hold has gone on
+  swirl. The tip is hidden until it has measured itself (`useSize`), so it never shows for a frame
+  at the wrong size or place (owner, 2026-09-30: fix the blink "for the agent answer tool and the
+  tooltips" too). The Space tip is due as the pill starts listening; the double-tap tip once a hold has gone on
   `doubleTapTipHoldDuration` (20 s), shown right then, while the user is holding. One tip at a time,
   each for its display duration (2.5 s, 4 s); a tip that is used (Space) goes away at once.
 - Gesture (`PushToTalkGesture`): a press released within `minimumHoldDuration` is a tap (discarded
@@ -1816,6 +1820,11 @@ the stream was read whole and named its tools only in development builds.
 - Only four bubbles show: with more tools and apps on, the rest show once they run.
 - A server tool's progress needs the backend deployed first; the Voice app tolerates an older one.
 - The reveal starts again for a reply whose turn remounts (it doesn't while the chat stays open).
+- Shown once measured (amended, owner, 2026-09-30: no blink "for the agent answer tool"): the overlay
+  window is transparent (`setOpacity(0)`) from `showChat` until the chat's first measured height
+  (`fitChat`), and opaque again if the chat closes first, so the window resized for the chat never
+  shows the pill out of place for a frame before the page lays the chat out. The pill is not drawn
+  for those few frames.
 
 
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
@@ -2077,6 +2086,26 @@ no user data.
 
 ## ADR-DESK-042: The text goes where the caret was at key-down, or onto the clipboard
 
+> **Amended (owner, 2026-09-30, same day): only the app is checked.** Tested on a dev build in
+> iTerm2, every dictation was copied as "Cursor moved" though nothing had moved: iTerm2's caret is a
+> position in its whole scrollback, which drifts with every line of output (a TUI's spinner), and it
+> accepts a selection set but ignores it, the cursor being the program's. Owner: "just checking if
+> focused app changed should be what we do since that one is robust but not others", with "a 'check
+> if focus changed' function" wired in. So:
+> - The controller keeps the app in front at key-down (`targetApp`, as before this ADR) and, before
+>   each paste, dictation's and agent mode's Edit and Compose alike, asks `focusChanged`: the app in
+>   front now against it (a read that fails counts as none). Changed: nothing is pasted; the text goes
+>   on the clipboard and into the paste history, and the `copied` note ("Switched apps: copied to
+>   clipboard and history") shows at the mouse pointer. Unchanged: the paste of ADR-DESK-002, into
+>   whatever has focus in that app.
+> - Cancelled while the app in front is read: the text goes nowhere, not even the history.
+> - Gone: `captureTarget`, `InsertionTarget`/`InsertionTargets`, the settle poll and its
+>   `HelperConfig` values, the `insert` outcome and `session`, and the `caretMoved` outcome with its
+>   "Cursor moved" note. `insert` is as before this ADR.
+> - Consequences: a caret moved within the same app is not put back (the ADR-DESK-002 behaviour);
+>   a helper restart after key-down no longer copies the text (the restarted helper reads the app in
+>   front as well). The decision below is kept as the record of what was tried.
+
 **Context:** Owner, 2026-09-30: "if I move my cursor or caret while the dictation is still trying to
 go on, I paste it in the wrong place … paste … where the dictation button was pressed". The paste
 (ADR-DESK-002) went to whatever had focus when the text arrived. Asked, the owner chose, both for an
@@ -2137,9 +2166,17 @@ to enter agent mode or triple tap to see history tooltip".
 - Gesture (`PushToTalkGesture`): a press while hands-free that comes within `doubleTapWindow` of the
   double tap's second release is `showHistory`, not `finish`. The hands-free dictation the double tap
   started has heard a moment at most; it is discarded unseen.
-- The history window (`history.html`) opens by the mouse pointer (`historyWindowOrigin`: right of and
-  under it, or on its other side where the screen has no room), `pasteHistoryWindowWidth` wide and as
-  tall as its list up to `pasteHistoryMaxHeight`, each entry clipped to `pasteHistoryEntryLines`
+- The history window (`history.html`) opens where the chat window's answer box does (amended, owner,
+  2026-09-30: "paste history should appear like the answer tool, not near cursor";
+  `historyWindowFrame`): `chatPillGap` over the pill of the hold that asked for it and its bubbles,
+  or under them where there is more room (`chatSide`, with the history's tallest), centred on the
+  pill and kept on screen, the edge by the pill staying put as the list measures itself. The pill's
+  place (`OverlayWindowController.pillPlace`: at the caret, or the pointer without one) is read before
+  the hands-free dictation is discarded, which forgets it. (It first opened by the mouse pointer,
+  `historyWindowOrigin`, now gone.) It is `pasteHistoryWindowWidth` wide (the chat's width) and as
+  tall as its list up to `pasteHistoryMaxHeight`; it opens hidden and shows, focused, once the list
+  has measured itself (`Windows.fitHistory`; owner, 2026-09-30: "a brief flash where the pill renders
+  at full height and shrinks"), a reopening keeping the last measured height. Each entry is clipped to `pasteHistoryEntryLines`
   lines with how long ago it came. It takes focus; a click copies the whole entry to the clipboard and
   closes it; Escape or a click elsewhere closes it. On macOS the app then hides, so focus returns to
   the app the user was in, unless Settings, the welcome window, the context debug window or the chat
