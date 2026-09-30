@@ -19,6 +19,8 @@ and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to com
 
 https://github.com/user-attachments/assets/66857e8f-0757-4faa-b6e0-ad01a4a88244
 
+Can't see the video? [Watch it on YouTube](https://youtu.be/S0otE7WY2VI).
+
 [Get TabMail](https://tabmail.ai)
 
 ## Build
