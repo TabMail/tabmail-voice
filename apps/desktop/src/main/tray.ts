@@ -4,7 +4,7 @@
 
 import { join } from "node:path";
 import { Menu, type MenuItemConstructorOptions, nativeImage, Tray } from "electron";
-import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/menuModel.js";
+import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/ui/menuModel.js";
 
 /** What the menu's items do. */
 export interface TrayActions {

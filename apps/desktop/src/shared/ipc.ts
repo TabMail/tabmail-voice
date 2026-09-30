@@ -2,19 +2,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AgentChat } from "../core/agent/agentChat.js";
+import type { AgentChat } from "../core/agent/chat.js";
 import type { BubbleKey } from "../core/agent/bubbleOrder.js";
-import { type Connector, isConnector } from "../core/agent/connectors.js";
-import { type AgentTool, isAgentTool } from "../core/agent/tools.js";
-import type { Phase } from "../core/dictationController.js";
-import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey.js";
+import { type ConnectorID, isConnectorID } from "../core/agent/connectors/index.js";
+import { type AgentToolID, isAgentToolID } from "../core/agent/tools.js";
+import type { Phase } from "../core/dictation/controller.js";
+import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/bindings.js";
 import * as config from "../core/config.js";
-import type { DictionaryEntry } from "../core/dictionary.js";
-import type { UpdateState } from "../core/menuModel.js";
-import type { PasteEntry } from "../core/pasteHistory.js";
-import type { ScreenContext } from "../core/screenContext.js";
-import type { DictationTip } from "../core/tips.js";
-import type { WelcomeStep } from "../core/welcomeWizard.js";
+import type { DictionaryEntry } from "../core/dictionary/entries.js";
+import type { UpdateState } from "../core/ui/menuModel.js";
+import type { PasteEntry } from "../core/dictation/pasteHistory.js";
+import type { ScreenContext } from "../core/dictation/screenContext.js";
+import type { DictationTip } from "../core/onboarding/tips.js";
+import type { WelcomeStep } from "../core/onboarding/welcomeWizard.js";
 
 /** Between the main process, which owns every model, and the windows, which draw its state and send
  * back what the user did. The preload script exposes `VoiceBridge` as `window.voice`. */
@@ -33,13 +33,13 @@ export interface OverlayState {
   /** Agent mode's row of bubbles fits under the pill (`bubblesFitUnder`); else it goes over it. */
   bubblesFitUnder: boolean;
   hotkey: DictationHotkey;
-  tools: AgentTool[];
+  tools: AgentToolID[];
   /** The apps whose bubbles show beside the tools' (`DictationController.connectors`). */
-  connectors: Connector[];
+  connectors: ConnectorID[];
   /** The bubbles whose tools ran, the most recent first, which the row is ordered by (`bubbleOrder`). */
   recentBubbles: BubbleKey[];
   /** The apps whose tools run now, whose bubbles run too. */
-  runningConnectors: Connector[];
+  runningConnectors: ConnectorID[];
   /** The email app's icon, for the Thunderbird bubble; null without one. */
   emailAppIcon: string | null;
   /** The chat window's conversation while it is open, over the pill. */
@@ -56,7 +56,7 @@ export interface ChatPlacement {
   maxHeight: number;
   /** The bubbles are under the pill, or over it (`bubblesFitUnder`, where the pill opened). */
   bubblesUnder: boolean;
-  /** The pill's centre, across the window. */
+  /** The pill's center, across the window. */
   pillX: number;
 }
 
@@ -77,10 +77,10 @@ export interface SettingsState {
   /** Whether the default email app takes mail requests (`EmailClient.resolve`). */
   defaultEmailAppIsSupported: boolean;
   /** Agent mode's tools switched on. */
-  enabledTools: AgentTool[];
+  enabledTools: AgentToolID[];
   /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
-  connectors: Connector[];
-  enabledConnectors: Connector[];
+  connectors: ConnectorID[];
+  enabledConnectors: ConnectorID[];
   /** The user's name as stored (`AppSettings.userName`): null when never set. */
   userName: string | null;
   /** The computer account's name (`suggestedUserName`), shown where no name is set. */
@@ -119,10 +119,10 @@ export interface WelcomeState {
   hasConsented: boolean;
   readsScreen: boolean;
   /** Agent mode's tools switched on. */
-  enabledTools: AgentTool[];
+  enabledTools: AgentToolID[];
   /** The apps the Answer tool can reach on this computer (none but on macOS), and those switched on. */
-  connectors: Connector[];
-  enabledConnectors: Connector[];
+  connectors: ConnectorID[];
+  enabledConnectors: ConnectorID[];
   /** The user's name as stored: null when never set, and the name step then offers `suggestedName`. */
   userName: string | null;
   suggestedName: string;
@@ -162,8 +162,8 @@ export type Command =
   | { type: "removeDictionaryWord"; word: string }
   | { type: "setLearnsWords"; value: boolean }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
-  | { type: "setAgentToolEnabled"; tool: AgentTool; value: boolean }
-  | { type: "setConnectorEnabled"; connector: Connector; value: boolean }
+  | { type: "setAgentToolEnabled"; tool: AgentToolID; value: boolean }
+  | { type: "setConnectorEnabled"; connector: ConnectorID; value: boolean }
   | { type: "setOpenAtLogin"; value: boolean }
   | { type: "setDebugMode"; value: boolean }
   | { type: "setConsent"; value: boolean }
@@ -273,9 +273,9 @@ export function isCommand(value: unknown): value is Command {
     case "answerConfirmation":
       return typeof command.confirmed === "boolean";
     case "setAgentToolEnabled":
-      return isAgentTool(command.tool) && typeof command.value === "boolean";
+      return isAgentToolID(command.tool) && typeof command.value === "boolean";
     case "setConnectorEnabled":
-      return isConnector(command.connector) && typeof command.value === "boolean";
+      return isConnectorID(command.connector) && typeof command.value === "boolean";
     case "chatHeight":
     case "historyHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;

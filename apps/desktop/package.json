@@ -7,19 +7,24 @@
   "author": "TabMail <hello@tabmail.ai>",
   "homepage": "https://tabmail.ai",
   "private": true,
-  "main": "dist/node/main/main.js",
+  "main": "dist/node/main/index.js",
   "scripts": {
+    "gen:registries": "node scripts/gen-registries.mts",
     "compile:native": "node scripts/build-native.mts",
-    "build:main": "tsc -p tsconfig.main.json",
+    "prebuild:main": "npm run gen:registries",
+    "build:main": "node -e \"require('node:fs').rmSync('dist/node', { recursive: true, force: true })\" && tsc -p tsconfig.main.json",
+    "prebuild:renderer": "npm run gen:registries",
     "build:renderer": "vite build",
     "build": "npm run compile:native && npm run build:main && npm run build:renderer",
     "start": "npm run build && electron .",
+    "pretypecheck": "npm run gen:registries",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p tsconfig.test-renderer.json --noEmit",
     "lint": "eslint --max-warnings 0 .",
+    "pretest": "npm run gen:registries",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
     "dist:dir": "npm run build && electron-builder --dir",
-    "preview": "npm run build:renderer && electron scripts/preview/preview.mts"
+    "preview": "npm run build:renderer && electron scripts/preview/index.mts"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.0.0",

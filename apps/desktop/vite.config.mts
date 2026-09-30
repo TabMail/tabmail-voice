@@ -18,12 +18,12 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        overlay: resolve(root, "overlay.html"),
-        settings: resolve(root, "settings.html"),
-        welcome: resolve(root, "welcome.html"),
-        audio: resolve(root, "audio.html"),
-        contextDebug: resolve(root, "context-debug.html"),
-        history: resolve(root, "history.html"),
+        overlay: resolve(root, "overlay/index.html"),
+        settings: resolve(root, "settings/index.html"),
+        welcome: resolve(root, "welcome/index.html"),
+        audio: resolve(root, "audio/index.html"),
+        contextDebug: resolve(root, "contextDebug/index.html"),
+        history: resolve(root, "history/index.html"),
       },
     },
   },

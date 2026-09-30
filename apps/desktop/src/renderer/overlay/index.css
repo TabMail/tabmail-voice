@@ -1,0 +1,315 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.canvas {
+  position: relative;
+}
+
+.layer,
+.swirl {
+  position: absolute;
+  inset: 0;
+}
+
+.pill-anchor {
+  position: absolute;
+  left: 50%;
+  width: max-content;
+  transform: translateX(-50%);
+}
+
+.centered {
+  position: absolute;
+  width: max-content;
+  transform: translate(-50%, -50%);
+}
+
+.pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  white-space: nowrap;
+}
+
+.center-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pill svg {
+  flex: none;
+}
+
+.message {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  font-weight: 500;
+  /* The pill is light in light and dark mode alike. */
+  color: black;
+}
+
+.badge,
+.bubble {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  border-radius: 50%;
+}
+
+.bubble {
+  transform-origin: center;
+}
+
+.gradient-text {
+  font-weight: 600;
+  background-clip: text;
+  color: transparent;
+}
+
+.waveform {
+  display: flex;
+  align-items: center;
+}
+
+.bar {
+  flex: none;
+}
+
+.rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.spinning {
+  animation-name: spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.bubble-tooltip {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: max-content;
+  pointer-events: none;
+}
+
+.bubble-tooltip-name {
+  font-weight: 600;
+}
+
+.tip {
+  position: relative;
+  white-space: nowrap;
+}
+
+.tip-shape {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.tip-lines {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.tip-line {
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+}
+
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  border-style: solid;
+  font-weight: 500;
+}
+
+/* With the chat window open: the chat over the pill (under it with no room over it), filling the
+ * overlay window inside its shadow margin. The pill's layer overlaps the chat for its bubbles'
+ * tooltips, letting the pointer through to the chat but for the bubbles. */
+.chat-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.chat-canvas .layer {
+  pointer-events: none;
+}
+
+.chat-canvas .bubble {
+  pointer-events: auto;
+}
+
+.chat {
+  position: absolute;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  /* Light in light and dark mode alike, as the pill. */
+  color: black;
+}
+
+.chat-scroll {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-turn,
+.chat-reply {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-request {
+  align-self: flex-end;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-caption {
+  display: flex;
+  align-items: center;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.chat-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-list {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.chat-heading {
+  font-weight: 600;
+}
+
+/* A reply's line or list item as it is revealed, as TabMail's chat in Thunderbird reveals one: fading
+ * in as it rises into place. */
+.reveal {
+  animation-name: reveal;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--reveal-rise));
+  }
+}
+
+.chat-text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.chat-text a {
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-spinner {
+  flex: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: rgba(0, 0, 0, 0.2);
+  border-top-color: rgba(0, 0, 0, 0.55);
+  border-radius: 50%;
+}
+
+.chat-confirmation {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chat-confirmation-buttons {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-cancel,
+.chat-confirm {
+  border: none;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-cancel {
+  background: rgba(0, 0, 0, 0.06);
+  color: black;
+}
+
+.chat-confirm {
+  color: white;
+}
+
+.chat-timeout {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.chat-close {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.5);
+  font-weight: 600;
+  cursor: pointer;
+}

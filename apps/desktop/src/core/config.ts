@@ -29,7 +29,7 @@ export const flacMaxPartitionOrder = 6;
  * envelope below is tuned for (~12 chunks a second). */
 export const audioChunkFrames = 1_365;
 /** Before upload the recording is scaled so its loudest sample sits this far below full scale (peak
- * normalisation, `normalizePeak`), leaving headroom so nothing clips. Quiet microphones deliver
+ * normalization, `normalizePeak`), leaving headroom so nothing clips. Quiet microphones deliver
  * speech peaking 20–30 dB below full scale. Measured 2026-09-29 (`Scripts/stt-compare`, 10
  * recordings peaking at −22 to −29 dBFS, 3 runs each): at −3 dBFS the backend's model
  * (MAI-Transcribe-2) made 9.5 % word errors against 11.0 % unscaled, and a Whisper Large V3 host
@@ -184,9 +184,9 @@ export const agentAnswerPrompt = "system_prompt_desktop_answer";
  * run on the server, read nothing of the user's, and answer "what day is next Friday" right. */
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
 /** What the model reads for a tool call the user declined in the chat window. */
-export const loopToolDeclined = "The user declined, so nothing was done.";
+export const connectorToolDeclined = "The user declined, so nothing was done.";
 /** What the model reads when the user left a tool's question unanswered (`chatConfirmationTimeout`). */
-export const loopToolUnanswered = "The user didn't confirm in time, so nothing was done.";
+export const connectorToolUnanswered = "The user didn't confirm in time, so nothing was done.";
 /** The longest range `calendar_read` reads at once, in days: EventKit reads at most four years of
  * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
 export const calendarReadMaxDays = 4 * 365;
@@ -201,20 +201,20 @@ export const filesSearchMaxResults = 10;
 export const notesSearchMaxResults = 5;
 /** Longest a Notes or Messages script waits for the app to answer one command, in seconds
  * (AppleScript's `with timeout`): past it the request fails rather than hangs. A whole run has no
- * deadline; the user ends it by cancelling. */
+ * deadline; the user ends it by canceling. */
 export const appleScriptTimeoutSeconds = 60;
 /** The most a Notes or Messages script may return, in bytes: every note a search matches comes back
  * in full, and more than this fails the search rather than cutting a note short. */
 export const appleScriptMaxOutputBytes = 64 * 1024 * 1024;
 /** The fewest digits a phone number `messages_send` sends to has. */
 export const phoneNumberMinDigits = 5;
-/** The backend's web search, which the Web switch lists (`connectorServerTools`); while it is listed
+/** The backend's web search, which the Web switch lists (`Connector.serverTools`); while it is listed
  * the request says `web_search_enabled`, without which the backend refuses `web_read` and `web_open`. */
 export const webSearchTool = "search_web";
 /** `web_read`, as the Thunderbird add-on reads a page: the page's and robots.txt's timeouts, the most
  * characters of a page the model gets, and the User-Agent both are asked with. */
-export const webReadTimeoutMs = 30_000;
-export const webReadRobotsTimeoutMs = 5_000;
+export const webReadTimeout = 30_000;
+export const webReadRobotsTimeout = 5_000;
 export const webReadMaxCharacters = 500_000;
 export const webUserAgent = "TabMail/1.0 (macOS; +https://tabmail.app)";
 /** The most of a page's body `web_read` reads, in bytes: enough for `webReadMaxCharacters` in any
@@ -288,7 +288,7 @@ export const helperRestartDelay = 1_000;
 /** Packaged builds look for an update this long after launch, once the helpers and the welcome
  * wizard are up, and then this often (ADR-DESK-041). "Check for Updates…" in the menu looks at once. */
 export const updateFirstCheckDelay = 10_000;
-export const updateCheckInterval = 4 * 60 * 60 * 1000;
+export const updateCheckInterval = 4 * 60 * 60 * 1_000;
 
 // MARK: Welcome wizard
 
@@ -312,13 +312,13 @@ export const welcomeLabelIconSize = 16;
  * Code's own. */
 export const vscodeSettingsIndent = 4;
 /** Settings: a sidebar of sections (frosted on macOS) beside the chosen section's cards (owner,
- * 2026-09-27: "themed and look professional", not the bland grey; chose the branded sidebar). */
+ * 2026-09-27: "themed and look professional", not the bland gray; chose the branded sidebar). */
 export const settingsWindowSize = { width: 700, height: 500 };
 export const settingsSidebarWidth = 200;
 export const settingsAppIconSize = 36;
 export const settingsSectionIconSize = 16;
-/** The window's own colour where macOS's frosted material is not drawn (Windows, Linux). */
-export const settingsWindowColour = { light: "#f4f3f8", dark: "#1f1e24" };
+/** The window's own color where macOS's frosted material is not drawn (Windows, Linux). */
+export const settingsWindowColor = { light: "#f4f3f8", dark: "#1f1e24" };
 export const contextDebugWindowSize = { width: 720, height: 560 };
 
 // MARK: Overlay
@@ -339,17 +339,17 @@ export const pillGlowRadius = 8;
 /** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
  * neon glow very apparent for the pills"): a tight bright glow in a wide one. Red-pink rather than the
  * brand's blue and purple, so it stands apart from dictation's pill (owner, 2026-09-29: "right now it's
- * not as apparent"; chosen from eight colours tried). The bubbles keep the plain glow. */
+ * not as apparent"; chosen from eight colors tried). The bubbles keep the plain glow. */
 export const agentPillGlowInnerRadius = 4;
-/** The glows' colours, red, green and blue (0–255). */
-export const agentPillGlowInnerColour: readonly [number, number, number] = [0xff, 0x2d, 0x55];
-export const agentPillGlowOuterColour: readonly [number, number, number] = [0xff, 0, 0x6e];
+/** The glows' colors, red, green and blue (0–255). */
+export const agentPillGlowInnerColor: readonly [number, number, number] = [0xff, 0x2d, 0x55];
+export const agentPillGlowOuterColor: readonly [number, number, number] = [0xff, 0, 0x6e];
 export const agentPillGlowInnerOpacity = 0.9;
 export const agentPillGlowOuterRadius = 16;
 export const agentPillGlowOuterOpacity = 0.75;
 /** The pill grows out of the swirl from this fraction of its size. */
 export const pillAppearScale = 0.2;
-export const pillSpringResponse = 0.25;
+export const pillSpringResponseSeconds = 0.25;
 /** CSS's stand-in for that spring: a little overshoot. */
 export const pillSpringEasing = "cubic-bezier(0.3, 1.25, 0.5, 1)";
 /** Warm-up swirl: particles spiral from `swirlStartRadius` to `swirlOrbitRadius`. */
@@ -380,9 +380,9 @@ export const waveformGain = 1;
 export const waveformIdleLevel = 0.05;
 /** Each bar's ripple speed differs by up to this fraction, so the motion looks organic. */
 export const waveformSpeedVariance = 0.2;
-/** Outer bars reach this fraction of the centre bar's height. */
+/** Outer bars reach this fraction of the center bar's height. */
 export const overlayMeterEdgeBarWeight = 0.45;
-/** Travelling ripple across the bars (radians per second, radians per bar, share of height). */
+/** Traveling ripple across the bars (radians per second, radians per bar, share of height). */
 export const waveformRippleSpeed = 9;
 export const waveformRipplePhase = 0.7;
 export const waveformRippleDepth = 0.25;
@@ -392,7 +392,7 @@ export const thinkingArcFraction = 0.7;
 export const thinkingRevolutionsPerSecond = 1.2;
 export const thinkingTrackOpacity = 0.2;
 /** The arc runs from blue to this point on the blue → purple gradient. */
-export const thinkingArcEndColour = 0.6;
+export const thinkingArcEndColor = 0.6;
 /** Pill fill: a soft off-white (pure white glared). */
 export const pillFillWhite = 0.96;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
@@ -401,18 +401,18 @@ export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 10
  * slightly smaller than the pill at rest (owner, 2026-09-28), grown to `agentBubbleRunningDiameter`
  * or `agentBubbleHoverDiameter`. */
 export const agentBubbleDiameter = 20;
-/** Gap between the pill and the bubbles: clear of the pill with one grown about its centre. */
+/** Gap between the pill and the bubbles: clear of the pill with one grown about its center. */
 export const agentBubbleGap = 10;
-/** Gap between neighbouring bubbles: wide enough that two running side by side, grown, don't touch. */
+/** Gap between neighboring bubbles: wide enough that two running side by side, grown, don't touch. */
 export const agentBubbleSpacing = 16;
-/** The row shows this many bubbles in full, centred under the pill (`bubbleRow`), and the next
+/** The row shows this many bubbles in full, centered under the pill (`bubbleRow`), and the next
  * `agentBubbleRowFadeCount` fading away to the right: four at most (owner, 2026-09-28: "only show like
  * three or so, and it just fades away to the right"; "we should show 4 entries tops"). */
 export const agentBubbleRowVisibleCount = 3;
 export const agentBubbleRowFadeCount = 1;
 /** A bubble's move along the row as the one that ran moves to its front. */
-export const agentBubbleMoveDuration = 0.35;
-/** A bubble under the mouse pointer grows to this size (about its centre, as a running one does),
+export const agentBubbleMoveDurationSeconds = 0.35;
+/** A bubble under the mouse pointer grows to this size (about its center, as a running one does),
  * and a tooltip says what it is (owner, 2026-09-28: "when mouse hovers over them, make them sort of
  * enlarged and also show tooltips on what this tool is"). */
 export const agentBubbleHoverDiameter = 31;
@@ -477,11 +477,11 @@ export const userNameMaxLength = 100;
 /** A hold this long shows the double-tap tip: this user dictates at length, and need not hold. */
 export const doubleTapTipHoldDuration = 20_000;
 
-/** The tooltip a tip is drawn in: centred under the listening pill (or over it, `tipGoesAbove`), a
+/** The tooltip a tip is drawn in: centered under the listening pill (or over it, `tipGoesAbove`), a
  * few words around keycaps. Dark, as macOS HUDs are, so it reads as the system's hint rather than
  * part of the pill. */
 export const tipFontSize = 13;
-/** A tip is at most `tipLineCount` centred lines of a few words, each `tipLineHeight` tall; its box is
+/** A tip is at most `tipLineCount` centered lines of a few words, each `tipLineHeight` tall; its box is
  * as tall as its lines (`tipBoxHeight`), and the overlay leaves room for the tallest (`tipHeight`). */
 export const tipLineCount = 3;
 export const tipLineHeight = 18;
@@ -519,7 +519,7 @@ export const tipGap = 4;
 /** Room the hint takes beside the pill: the gap, the arrow and the box. */
 export const tipFootprint = tipGap + tipArrowHeight + tipHeight;
 /** Transparent canvas the overlay draws in; the pill sizes itself inside it. The one-line pill sits
- * vertically centred, with room on each side for the listening pill's growth downward, agent mode's
+ * vertically centered, with room on each side for the listening pill's growth downward, agent mode's
  * row of bubbles (under the pill or over it, `bubblesFitUnder`) and a tip (and its shadow) past it. */
 export const overlayCanvasSize = {
   width: 440,
@@ -534,11 +534,11 @@ export const agentBubbleIdleOpacity = 0.45;
 /** The running tool's bubble: a gradient arc circling its border. */
 export const agentBubbleRimWidth = 2;
 export const agentBubbleRevolutionsPerSecond = 1;
-/** The running tool's bubble grows to this size, about its centre, on a bouncy spring that overshoots
+/** The running tool's bubble grows to this size, about its center, on a bouncy spring that overshoots
  * a little ("a genie effect", so the tool in use is obvious). */
 export const agentBubbleRunningDiameter = 34;
 export const agentBubbleRunningScale = agentBubbleRunningDiameter / agentBubbleDiameter;
-export const agentBubbleRunningSpringResponse = 0.35;
+export const agentBubbleRunningSpringResponseSeconds = 0.35;
 /** CSS's stand-in for that spring: a bouncier overshoot than the pill's. */
 export const agentBubbleRunningSpringEasing = "cubic-bezier(0.3, 1.7, 0.5, 1)";
 /** How long an error message stays on the overlay. */
@@ -569,10 +569,10 @@ export const chatPillGap = 10;
 /** The pill, as tall as it gets listening, and its row of bubbles under it: what the chat window
  * leaves room for beside it. */
 export const chatStripHeight = listeningPillHeight + agentBubbleGap + agentBubbleDiameter;
-/** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCentre`). */
+/** Room over the pill's side of the window for a hovered bubble's tooltip (`bubbleTooltipCenter`). */
 export const chatBubbleTooltipRoom = 80;
 /** The chat window appears rising this far, from this scale, fading in. */
-export const chatAppearDuration = 0.25;
+export const chatAppearDurationSeconds = 0.25;
 export const chatAppearRise = 8;
 export const chatAppearScale = 0.98;
 export const chatCornerRadius = 14;

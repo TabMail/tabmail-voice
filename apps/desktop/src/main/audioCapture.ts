@@ -2,19 +2,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AudioCapture } from "../core/audio.js";
+import type { AudioCapture } from "../core/audio/recorder.js";
 import * as config from "../core/config.js";
 import type { AudioCommand, AudioReport } from "../shared/ipc.js";
 
 /** Why the microphone did not start; the message is for the log only. */
-export class MicrophoneFailure extends Error {
+export class MicrophoneError extends Error {
   constructor(readonly reason: string) {
     super("Couldn't start the microphone.");
-    this.name = "MicrophoneFailure";
+    this.name = "MicrophoneError";
   }
 
   get description(): string {
-    return `MicrophoneFailure(${this.reason})`;
+    return `MicrophoneError(${this.reason})`;
   }
 }
 
@@ -49,7 +49,7 @@ export class SessionAudioCapture implements AudioCapture {
     this.onChunk = onChunk;
     this.completion = completion;
     this.onLost = onLost;
-    this.startTimer = setTimeout(() => this.finishStart(session, new MicrophoneFailure("timeout")), this.startTimeout);
+    this.startTimer = setTimeout(() => this.finishStart(session, new MicrophoneError("timeout")), this.startTimeout);
     this.send({ type: "start", session });
   }
 
@@ -78,12 +78,12 @@ export class SessionAudioCapture implements AudioCapture {
       case "started":
         return this.finishStart(report.session, null);
       case "failed":
-        return this.finishStart(report.session, new MicrophoneFailure(report.error));
+        return this.finishStart(report.session, new MicrophoneError(report.error));
       case "chunk":
         this.onChunk?.(report.samples);
         return;
       case "lost":
-        return this.completion !== null ? this.finishStart(report.session, new MicrophoneFailure("lost")) : this.lost();
+        return this.completion !== null ? this.finishStart(report.session, new MicrophoneError("lost")) : this.lost();
     }
   }
 

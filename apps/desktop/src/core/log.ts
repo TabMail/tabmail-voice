@@ -10,7 +10,7 @@
  * content goes through `content`, to the debug log file only (ADR-DESK-015). Nothing logs audio or
  * an access token.
  */
-import { charCount } from "./text.js";
+import { charCount } from "./util/text.js";
 
 export type LogLevel = "debug" | "CONTENT" | "ERROR";
 

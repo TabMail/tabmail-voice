@@ -6,20 +6,20 @@ import { join } from "node:path";
 import { app, BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme } from "electron";
 import * as config from "../core/config.js";
 import { log } from "../core/log.js";
-import type { Rect } from "../core/overlayGeometry.js";
+import type { Rect } from "../core/ui/overlayGeometry.js";
 import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
 
 /** The renderer page of each window, built by Vite into `dist/renderer`. */
 const pages: Record<WindowName | "audio", string> = {
-  overlay: "overlay.html",
-  settings: "settings.html",
-  welcome: "welcome.html",
-  contextDebug: "context-debug.html",
-  history: "history.html",
-  audio: "audio.html",
+  overlay: "overlay/index.html",
+  settings: "settings/index.html",
+  welcome: "welcome/index.html",
+  contextDebug: "contextDebug/index.html",
+  history: "history/index.html",
+  audio: "audio/index.html",
 };
 
-/** Where the built app lives: the main script is `dist/node/main/main.js`. */
+/** Where the built app lives: the main script is `dist/node/main/index.js`. */
 const distDirectory = join(__dirname, "../..");
 
 /** Every window the app opens: at most one of each, locked down (context isolation, a sandboxed
@@ -70,12 +70,12 @@ export class Windows {
   }
 
   /** Settings: on macOS the title bar gives way to the sidebar, which shows the frosted material
-   * behind the window, as System Settings does; elsewhere the window has its own colour. */
+   * behind the window, as System Settings does; elsewhere the window has its own color. */
   showSettings(): void {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { titleBarStyle: "hiddenInset", vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColour.dark : config.settingsWindowColour.light };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColor.dark : config.settingsWindowColor.light };
     this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
   }
 
@@ -95,7 +95,7 @@ export class Windows {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { vibrancy: "popover", visualEffectState: "active", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColour.dark : config.settingsWindowColour.light };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColor.dark : config.settingsWindowColor.light };
     const existing = this.open.get("history");
     if (existing && !existing.isDestroyed()) {
       existing.setBounds(bounds);
@@ -171,7 +171,7 @@ export class Windows {
       ...options,
       webPreferences: {
         ...options.webPreferences,
-        preload: join(distDirectory, "node/preload/preload.js"),
+        preload: join(distDirectory, "node/preload/index.js"),
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,

@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../config.js";
-import type { ScreenContext } from "../screenContext.js";
-import { trimWhitespace } from "../text.js";
-import type { ThunderbirdRelay } from "./thunderbirdRelay.js";
+import type { ScreenContext } from "../dictation/screenContext.js";
+import { trimWhitespace } from "../util/text.js";
+import type { ThunderbirdRelay } from "./connectors/thunderbird/relay.js";
 
 /**
  * What agent mode can do with a spoken request: the registry of its tools, as the Thunderbird
@@ -13,41 +13,41 @@ import type { ThunderbirdRelay } from "./thunderbirdRelay.js";
  * one the agent answers with; a tool that hands the request to another app goes through that app's
  * connector (ADR-DESK-020). Each tool is one backend prompt; its bubble shows above the pill while
  * agent mode listens, and its border circles while it runs. Edit and Compose are never offered
- * together: the selection decides which (`DesktopAgent.writingTool`). Each offered one (`offeredAgentTools`)
+ * together: the selection decides which (`DesktopAgent.writingTool`). Each offered one (`offeredAgentToolIDs`)
  * can be switched off in Settings and the welcome wizard; all are on by default (owner, 2026-09-26).
  */
-export type AgentTool = "edit" | "compose" | "thunderbird" | "answer";
+export type AgentToolID = "edit" | "compose" | "thunderbird" | "answer";
 
-export const agentTools: readonly AgentTool[] = ["edit", "compose", "thunderbird", "answer"];
+export const agentToolIDs: readonly AgentToolID[] = ["edit", "compose", "thunderbird", "answer"];
 
 /** The tools agent mode offers, and Settings and the welcome wizard list. Thunderbird's is left out
  * until the native connector to TabMail's add-on replaces its chat relay (owner, 2026-09-29: "right
  * now it's just clunky"), so the other tools can be tried without it; its code stays for that
  * connector (ADR-DESK-037). Offering it here again brings it back everywhere. */
-export const offeredAgentTools: readonly AgentTool[] = agentTools.filter((tool) => tool !== "thunderbird");
+export const offeredAgentToolIDs: readonly AgentToolID[] = agentToolIDs.filter((tool) => tool !== "thunderbird");
 
-export function isAgentTool(name: unknown): name is AgentTool {
-  return typeof name === "string" && (agentTools as readonly string[]).includes(name);
+export function isAgentToolID(name: unknown): name is AgentToolID {
+  return typeof name === "string" && (agentToolIDs as readonly string[]).includes(name);
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
-export type AgentFailureKind = "noTool" | "noText" | "noToolEnabled";
+export type AgentErrorKind = "noTool" | "noText" | "noToolEnabled";
 
-const failureMessages: Record<AgentFailureKind, string> = {
+const failureMessages: Record<AgentErrorKind, string> = {
   noTool: "Couldn't work out what to do. Try again.",
   noText: "Couldn't write that. Try again.",
   /** Every tool this request could use is switched off in Settings. */
   noToolEnabled: "Turn on an agent tool in Settings.",
 };
 
-export class AgentFailure extends Error {
-  constructor(readonly kind: AgentFailureKind) {
+export class AgentError extends Error {
+  constructor(readonly kind: AgentErrorKind) {
     super(failureMessages[kind]);
-    this.name = "AgentFailure";
+    this.name = "AgentError";
   }
 
   get description(): string {
-    return `AgentFailure.${this.kind}`;
+    return `AgentError.${this.kind}`;
   }
 }
 
@@ -73,7 +73,7 @@ async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<v
 
 /** One of agent mode's tools: the backend prompt that writes its text from the spoken request and
  * the screen, and where that text goes. */
-export interface DesktopTool {
+export interface AgentTool {
   displayName: string;
   /** The icon shown in the tool's bubble (an SF Symbol name on macOS), unless it shows the app's
    * icon (Thunderbird's). */
@@ -142,10 +142,10 @@ export const EditTool = {
     const trailing = leading.length === selection.length ? "" : (trailingSpace.exec(selection)?.[0] ?? "");
     return leading + trimWhitespace(text) + trailing;
   },
-} satisfies DesktopTool & { fittedToSelection(text: string, selection: string): string };
+} satisfies AgentTool & { fittedToSelection(text: string, selection: string): string };
 
 /** Writes new text at the caret, as asked; offered only when nothing is selected. */
-export const ComposeTool: DesktopTool = {
+export const ComposeTool: AgentTool = {
   displayName: "Compose",
   symbolName: "square.and.pencil",
   prompt: config.agentComposePrompt,
@@ -166,7 +166,7 @@ export const ComposeTool: DesktopTool = {
 
 /** Sends a mail or calendar request, restated as a chat message, to TabMail's chat in Thunderbird;
  * offered only when there is an email app for it (ADR-DESK-014). */
-export const ThunderbirdTool: DesktopTool = {
+export const ThunderbirdTool: AgentTool = {
   displayName: "Thunderbird",
   symbolName: "envelope",
   prompt: config.agentThunderbirdPrompt,
@@ -185,7 +185,7 @@ export const ThunderbirdTool: DesktopTool = {
 
 /** Answers the user in the chat window the pill grows into: for requests addressed to TabMail rather
  * than text for the app (a question, an explanation of what is on screen, a follow-up). */
-export const AnswerTool: DesktopTool = {
+export const AnswerTool: AgentTool = {
   displayName: "Answer",
   symbolName: "text.bubble",
   prompt: config.agentAnswerPrompt,
@@ -200,7 +200,7 @@ export const AnswerTool: DesktopTool = {
   },
 };
 
-export const toolImplementations: Record<AgentTool, DesktopTool> = {
+export const agentTools: Record<AgentToolID, AgentTool> = {
   edit: EditTool,
   compose: ComposeTool,
   thunderbird: ThunderbirdTool,

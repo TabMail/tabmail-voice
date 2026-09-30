@@ -29,7 +29,7 @@ public final class HotkeyMonitor {
     public var hotkey: DictationHotkey { gesture.hotkey }
     public var isInstalled: Bool { tap != nil }
 
-    /// A new hotkey or new timings. A hold or hands-free listening under way is cancelled; whether the
+    /// A new hotkey or new timings. A hold or hands-free listening under way is canceled; whether the
     /// chat window is open carries over.
     public func configure(_ newGesture: PushToTalkGesture) {
         guard newGesture.hotkey != gesture.hotkey || newGesture.tapMaxDuration != gesture.tapMaxDuration

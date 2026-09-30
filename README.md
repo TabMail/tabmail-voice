@@ -109,11 +109,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the DCO and development workflow,
 [SECURITY.md](SECURITY.md) for private vulnerability reports, and
 [TRADEMARKS.md](TRADEMARKS.md) for name and logo usage.
 
-## Acknowledgements
+## Acknowledgments
 
 TabMail Voice follows patterns from [OpenWhispr](https://github.com/OpenWhispr/openwhispr) (MIT),
 an open-source dictation app: one Electron app for macOS, Windows and Linux, and the approach of
-its correction learner, which the dictionary's learning from the user's corrections is modelled on.
+its correction learner, which the dictionary's learning from the user's corrections is modeled on.
 It is our own app and code, not a fork of OpenWhispr.
 
 ## License
