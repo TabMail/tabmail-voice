@@ -161,6 +161,7 @@ function launch(): void {
     keyboardLanguage: () => mac.keyboardLanguage(),
     systemEmailApp: () => mac.systemEmailApp(),
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
+    warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport).warmUp(accessToken),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
     // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): the Mac's
     // apps (ADR-DESK-024), Notes and Messages through AppleScript (ADR-DESK-028), the web

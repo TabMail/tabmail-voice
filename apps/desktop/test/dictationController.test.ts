@@ -11,9 +11,10 @@ import { type Connector, connectors } from "../src/core/agent/connectors.js";
 import type { LoopTool } from "../src/core/agent/loopTool.js";
 import { RelayFailure } from "../src/core/agent/thunderbirdRelay.js";
 import { AgentFailure, type AgentTool, agentTools } from "../src/core/agent/tools.js";
+import { AudioRecorder } from "../src/core/audio.js";
 import { BackendError, CompletionsClient, TranscriptionClient } from "../src/core/backend.js";
 import * as config from "../src/core/config.js";
-import { DictationController, type DictationDependencies, nothingHeardMessage, type Phase } from "../src/core/dictationController.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, type Phase, retryingMessage } from "../src/core/dictationController.js";
 import type { DictationMode } from "../src/core/hotkey.js";
 import { MemoryStore } from "../src/core/keyValueStore.js";
 import { configureLog, type LogLevel } from "../src/core/log.js";
@@ -22,11 +23,11 @@ import type { ScreenContext } from "../src/core/screenContext.js";
 import type { DictationSettings } from "../src/core/settings.js";
 import { TipBook, tipDetails } from "../src/core/tips.js";
 import { sleep } from "../src/core/timeout.js";
-import { encodeWAV } from "../src/core/wav.js";
-import { type HTTPTransport, liveTransport } from "../src/core/http.js";
+import { type HTTPTransport, liveTransport, TransportError } from "../src/core/http.js";
 import { FakeThunderbird } from "./fakeThunderbird.js";
 import { screen as blankScreen } from "./screens.js";
-import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport } from "./support.js";
+import { decodeFLAC } from "./flacDecoder.js";
+import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "./support.js";
 
 const transcript = "ask jordan about the road map";
 const cleaned = "Ask Jordan about the roadmap.";
@@ -80,13 +81,15 @@ function settled(controller: DictationController): boolean {
 
 /** The content-log steps of the controller and the agent, without the backend clients' own entries. */
 function steps(entries: { label: string; text: string }[]): { label: string; text: string }[] {
-  return entries.filter((entry) => !entry.label.startsWith("Transcription ") && !entry.label.startsWith("Completions "));
+  return entries.filter((entry) => !entry.label.startsWith("Transcription ") && !entry.label.startsWith("Completions ") && !entry.label.startsWith("Warm-up "));
 }
 
 /** A finished recording through the controller: transcription, cleanup with the screen context, and
  * what gets pasted. A stub paste and never the network. */
 describe("DictationController", { timeout: 20_000 }, () => {
   let transcription: StubTransport;
+  /** The key-down warm-up's backend: with nothing queued it fails, as an unreachable server does. */
+  let warmUps: StubTransport;
   let completions: StubTransport;
   let auth: StubTransport;
   /** The app in front, as the controller sees it: a process id the test changes. */
@@ -100,6 +103,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   beforeEach(() => {
     transcription = new StubTransport();
+    warmUps = new StubTransport();
     completions = new StubTransport();
     auth = new StubTransport();
     front = { pid: 101 };
@@ -137,6 +141,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       keyboardLanguage: async () => keyboard.language,
       systemEmailApp: async () => null,
       makeTranscriptionClient: (url) => new TranscriptionClient(url, "test", options.transcriptionTransport ?? transcription.transport),
+      warmUp: (url, token) => new TranscriptionClient(url, "test", warmUps.transport).warmUp(token),
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
       loopTools: options.loopTools ?? [],
       corrections: options.corrections,
@@ -147,7 +152,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** Runs one recording through the controller; returns what was pasted. */
   async function dictate(account?: AccountModel): Promise<{ pasted: string[]; controller: DictationController }> {
     const { controller, pastes } = makeController({ account });
-    await controller.transcribe(encodeWAV(new Uint8Array([0, 0, 1, 0]), 16_000), 0);
+    await controller.transcribe(new TextEncoder().encode("fLaC-test-audio"), 0);
     return { pasted: pastes, controller };
   }
 
@@ -233,6 +238,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** The names and terms on the screen read at key-down go with the recording after the dictionary's
    * words, none of them twice; the cleanup gets the dictionary alone (it reads the screen itself). */
+  /** The recording goes up as FLAC, and losslessly: the backend hears exactly what was recorded. */
+  test("uploads the recording as FLAC", async () => {
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    const recorder = new AudioRecorder();
+    recorder.append(tone(0.1));
+    const body = transcription.body(0);
+    expect(body.format).toBe("flac");
+    expect(decodeFLAC(new Uint8Array(Buffer.from(String(body.audio), "base64"))).pcm).toEqual(recorder.finish().pcm);
+  });
+
   test("sends the screen's names and terms after the dictionary", async () => {
     prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
     transcription.enqueue(200, cleanedReply);
@@ -386,16 +406,194 @@ describe("DictationController", { timeout: 20_000 }, () => {
   /** The shared backend errors still explain the failure in the overlay, without a cleanup or paste. */
   test.each([
     [402, `{"error":"no_active_subscription"}`, "Dictation needs an active TabMail subscription."],
-    [502, `{"error":"transcription_failed"}`, "Dictation failed. Please try again."],
+    [429, `{"error":"rate_limited"}`, new BackendError("rateLimited").message],
+    [400, `{"error":"invalid_request"}`, "Dictation failed. Please try again."],
+    // The backend's own timeout: it already waited for the speech model.
+    [504, `{"error":"transcription_timeout"}`, "Dictation failed. Please try again."],
     [200, `{"unexpected":true}`, "TabMail returned an unexpected response."],
-  ])("a failed transcription (%i %s) is neither cleaned up nor pasted", async (status, body, message) => {
+  ])("a failed transcription (%i %s) is neither cleaned up nor pasted, nor tried again", async (status, body, message) => {
     transcription.enqueue(status, body);
 
     const { pasted, controller } = await dictate();
 
     expect(pasted).toEqual([]);
     expect(completions.requests).toHaveLength(0);
+    expect(transcription.requests).toHaveLength(1);
     expect(controller.phase).toEqual(failed(message));
+  });
+
+  /** At key-down the backend is warmed (`GET /whoami`) while the user speaks, so the transcription
+   * after the release finds the connection open and the sign-in checked. */
+  describe("the warm-up", () => {
+    test("is sent at key-down, under the signed-in account, before the release", async () => {
+      warmUps.enqueue(200, { logged_in: true });
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+
+      controller.handle("start");
+      expect(await eventually(() => warmUps.requests.length === 1)).toBe(true);
+      expect(controller.phase.kind === "arming" || controller.phase.kind === "listening").toBe(true);
+      expect(transcription.requests).toHaveLength(0);
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      const warmUp = warmUps.requests[0];
+      expect(warmUp?.method).toBe("GET");
+      expect(warmUp?.url).toBe(`${prefs.value.backendURL}/whoami`);
+      expect(warmUp?.headers.Authorization).toBe(transcription.requests[0]?.headers.Authorization);
+      expect(warmUps.requests).toHaveLength(1);
+    });
+
+    /** Best effort: a warm-up that fails, or has not answered, changes nothing for the dictation. */
+    test.each([
+      ["fails", () => warmUps.enqueue(500, "")],
+      ["cannot connect", () => {}],
+      ["never answers", () => {
+        warmUps.gate = () => new Promise(() => {});
+      }],
+    ])("that %s leaves the dictation as it was", async (_, setUp) => {
+      setUp();
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(pastes).toEqual([cleaned]);
+      expect(controller.phase).toEqual(idle);
+      expect(warmUps.requests).toHaveLength(1);
+    });
+  });
+
+  /** A server error (the speech model behind the backend rate limited or failed) or a dropped
+   * connection is tried again, with a note on the pill, so the user need not say it again. */
+  describe("a transcription that fails on the server's side", () => {
+    const dropsConnection = () => {
+      transcription.gate = async () => {
+        if (transcription.requests.length === 1) throw new TransportError("network");
+      };
+    };
+
+    test.each([
+      ["a 500", () => transcription.enqueue(500, "")],
+      ["a 502", () => transcription.enqueue(502, { error: "transcription_failed" })],
+      ["a 503", () => transcription.enqueue(503, { error: "transcription_unavailable" })],
+      ["a dropped connection", dropsConnection],
+    ])("is tried again after %s, and the retry's text pasted", async (_, fail) => {
+      fail();
+      transcription.enqueue(200, cleanedReply);
+      const pastes: string[] = [];
+      const pastedWhile: Phase["kind"][] = [];
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        paste: async (text) => {
+          pastedWhile.push(controller.phase.kind);
+          pastes.push(text);
+        },
+      });
+      controller.transcriptionRetryDelays = [1, 1];
+      const phases: Phase[] = [];
+      controller.onPhaseChange = (phase) => phases.push(phase);
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(pastes).toEqual([cleaned]);
+      // The note goes once the retry answers: nothing is being tried again while the text goes in.
+      expect(pastedWhile).toEqual(["transcribing"]);
+      expect(controller.phase).toEqual(idle);
+      // The same recording, sent again as it was.
+      expect(transcription.requests).toHaveLength(2);
+      expect(transcription.requests[1]?.body).toBe(transcription.requests[0]?.body);
+      expect(phases).toContainEqual({ kind: "retrying", message: retryingMessage });
+    });
+
+    test("fails with the server's error once every retry has failed", async () => {
+      for (let attempt = 0; attempt < 3; attempt += 1) transcription.enqueue(502, { error: "transcription_failed" });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1, 1];
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(transcription.requests).toHaveLength(3);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(failed("Dictation failed. Please try again."));
+    });
+
+    /** Waits `transcriptionRetryDelays` between tries. */
+    test("waits before each retry", async () => {
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [100, 200];
+      const sentAt: number[] = [];
+      transcription.gate = async () => {
+        sentAt.push(performance.now());
+      };
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(sentAt).toHaveLength(3);
+      expect(sentAt[1]! - sentAt[0]!).toBeGreaterThanOrEqual(100 - 5);
+      expect(sentAt[2]! - sentAt[1]!).toBeGreaterThanOrEqual(200 - 5);
+    });
+
+    test("a request that timed out is not tried again", async () => {
+      transcription.gate = async () => {
+        throw new TransportError("timeout");
+      };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1, 1];
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(transcription.requests).toHaveLength(1);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(failed(new TransportError("timeout").message));
+    });
+
+    test("cancelled while it waits to try again, it sends nothing more", async () => {
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [300];
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "retrying")).toBe(true);
+      controller.handle("cancel");
+      await sleep(600);
+
+      expect(transcription.requests).toHaveLength(1);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** The server's error can still arrive after the dictation was cancelled: it is not tried again,
+     * and the pill never says it is. */
+    test("a server error answered after a cancel is not tried again", async () => {
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1, 1];
+      const phases: Phase[] = [];
+      controller.onPhaseChange = (phase) => phases.push(phase);
+      transcription.gate = async () => {
+        if (transcription.requests.length === 1) controller.handle("cancel");
+      };
+
+      await holdAndRelease(controller);
+      await sleep(200);
+
+      expect(transcription.requests).toHaveLength(1);
+      expect(pastes).toEqual([]);
+      expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
+      expect(controller.phase).toEqual(idle);
+    });
   });
 
   /** Cancelled while the request runs, the cleanup with it (another key pressed while the hotkey is
@@ -568,13 +766,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
         const account = signedIn(auth, Fixtures.session({ expiresIn: config.tokenRefreshLeewaySeconds / 2 }));
         auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
         const { controller, pastes } = makeController({ account, capture: new CountingCapture(true), transcriptionTransport: liveTransport });
+        // The key-down warm-up starts the refresh; the upload waits for the same one, and is cancelled
+        // while it does.
         auth.gate = async () => {
+          await eventually(() => controller.phase.kind === "transcribing");
           controller.handle("cancel");
         };
 
         await holdAndRelease(controller);
 
-        expect(await eventually(() => auth.requests.length === 1)).toBe(true);
+        expect(await eventually(() => auth.requests.length === 1 && controller.phase.kind === "idle")).toBe(true);
         await sleep(300);
         expect(uploads).toEqual([]);
         expect(pastes).toEqual([]);

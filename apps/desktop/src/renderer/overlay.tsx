@@ -37,6 +37,8 @@ type Mode =
   | { kind: "transcribing" }
   | { kind: "running"; tool: AgentTool }
   | { kind: "message"; text: string }
+  /** A server error, while the transcription is tried again: the note alone, no warning sign. */
+  | { kind: "retrying"; text: string }
   /** Under the open chat window while nothing runs. */
   | { kind: "resting" };
 
@@ -50,6 +52,8 @@ function modeOf(state: OverlayState): Mode {
       return state.isHearing ? { kind: "listening" } : { kind: "swirl" };
     case "transcribing":
       return { kind: "transcribing" };
+    case "retrying":
+      return { kind: "retrying", text: phase.message };
     case "running":
       return { kind: "running", tool: phase.tool };
     case "failed":
@@ -136,7 +140,7 @@ function Overlay() {
   let anchor: Point = { x: canvas.width / 2, y: (canvas.height - config.pillHeight) / 2 };
   let layer: { size: Size; style?: CSSProperties } = { size: canvas };
   let pillMode: Mode | null = mode.kind === "hidden" || mode.kind === "swirl" ? null : mode;
-  let showsTools = state.mode === "agent" && (mode.kind === "listening" || mode.kind === "transcribing" || mode.kind === "running");
+  let showsTools = state.mode === "agent" && (mode.kind === "listening" || mode.kind === "transcribing" || mode.kind === "retrying" || mode.kind === "running");
   if (placement !== null) {
     // Under the chat window, a follow-up's pill listens from the start, rests while nothing runs, and
     // keeps its bubbles.
@@ -605,7 +609,7 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
 
 function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; language: string | null; isAgent: boolean }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
-  const leadingPadding = isCircle ? 0 : mode.kind === "message" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
+  const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponse * 1000);
   const style: CSSProperties = {
     gap: config.pillContentSpacing,
@@ -639,6 +643,13 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
         <div className="centre-content" style={{ width: circleContent, height: circleContent, opacity: mode.kind === "resting" ? config.agentRestingSymbolOpacity : 1, transition: `opacity ${config.pillSpringResponse}s ease-out` }}>
           <SparklesIcon size={config.agentRunningSymbolSize} />
         </div>
+      );
+      break;
+    case "retrying":
+      content = (
+        <span className="message" style={{ fontSize: config.overlayFontSize, maxWidth: config.pillMaxTextWidth, WebkitLineClamp: config.pillMaxTextLines }}>
+          {mode.text}
+        </span>
       );
       break;
     case "message":
