@@ -96,7 +96,8 @@ enum ScreenContextReader {
     /// The focused element becomes the caret block at its place in that order.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
-    /// A password field is never read, nor anything inside it.
+    /// A password field is never read, nor anything inside it (one above the focused element is
+    /// walked into like any of its ancestors; no app is known to focus inside one).
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], started: Date, into context: inout ScreenContext) {
         // Each element with whether it is inside a web area.

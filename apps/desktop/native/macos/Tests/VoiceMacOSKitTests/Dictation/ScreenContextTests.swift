@@ -285,7 +285,7 @@ struct ScreenContextTests {
             FakeElement("AXTextField", secure, children: [FakeElement("AXStaticText", [kAXValueAttribute: "placeholder-secret"])]),
             FakeElement("AXRow", children: [
                 FakeElement("AXStaticText", [kAXValueAttribute: "Sign in"]),
-                FakeElement("AXTextField", secure),
+                FakeElement("AXTextField", secure, children: [FakeElement("AXStaticText", [kAXValueAttribute: "placeholder-secret"])]),
             ]),
             FakeElement("AXButton", secure.merging([kAXTitleAttribute: "placeholder-secret"]) { $1 }),
         ])
