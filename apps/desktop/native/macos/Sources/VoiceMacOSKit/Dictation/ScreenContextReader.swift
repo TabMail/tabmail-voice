@@ -12,21 +12,20 @@ enum ScreenContextReader {
     /// the window is kept then.
     static func read(pid: pid_t, appName: String, bundleID: String?, excluding exclusions: ScreenExclusions) -> ScreenContext? {
         let started = Date()
-        var context = ScreenContext(appName: appName, bundleID: bundleID)
+        var start = ScreenContext(appName: appName, bundleID: bundleID)
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.contextLookupTimeout)
 
         let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
-        context.focusedRole = focused.flatMap { string($0, kAXRoleAttribute) }
+        start.focusedRole = focused.flatMap { string($0, kAXRoleAttribute) }
         let focusPath = focused.map(ancestors) ?? []
         let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute).map { $0 as! AXUIElement }
         // In a tmux terminal the active pane is read from tmux: the terminal's own text is every
         // pane side by side, and its caret index drifts (iTerm2 drops trailing spaces).
         let isTerminal = bundleID.map(HelperConfig.terminalBundleIDs.contains) ?? false
-        let read = gather(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(), excluding: exclusions,
-                          started: started, into: &context,
-                          terminalPane: isTerminal ? { readTmuxPane(showingIn: focused, into: &$0) } : nil)
-        if !read {
+        guard var context = gather(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(), excluding: exclusions,
+                                   started: started, from: start,
+                                   terminalPane: isTerminal ? { readTmuxPane(showingIn: focused, into: &$0) } : nil) else {
             HelperLog.debug("ScreenContext: the window shows a website excluded from screen reading; not read")
             return nil
         }
@@ -34,27 +33,29 @@ enum ScreenContextReader {
         return context
     }
 
-    /// Reads the text around the caret and the window's visible text into `context`. False when the
-    /// window shows a page of an excluded website: the page in focus is checked before anything is
-    /// read (the caret's text, the window's title), and any other page as the walk reaches it; what
-    /// was gathered must not be used then.
+    /// `start` with the text around the caret and the window's visible text read into it. Nil when
+    /// the window shows a page of an excluded website: the page in focus is checked before anything
+    /// is read (the caret's text, the window's title), and any other page as the walk reaches it;
+    /// nothing gathered is given back then.
     /// `terminalPane` reads a terminal's caret from tmux, and says whether it did.
     static func gather<Tree: ScreenTree>(window: Tree.Element?, focused: Tree.Element?, focusPath: [Tree.Element], in tree: Tree,
-                                         excluding exclusions: ScreenExclusions, started: Date, into context: inout ScreenContext,
-                                         terminalPane: ((inout ScreenContext) -> Bool)? = nil) -> Bool {
+                                         excluding exclusions: ScreenExclusions, started: Date, from start: ScreenContext,
+                                         terminalPane: ((inout ScreenContext) -> Bool)? = nil) -> ScreenContext? {
         let hosts = focused.map { pageHosts(of: $0, above: focusPath, in: tree) } ?? []
-        if hosts.contains(where: exclusions.excludesHost) { return false }
+        if hosts.contains(where: exclusions.excludesHost) { return nil }
+        var context = start
         let paneRead = terminalPane?(&context) ?? false
         if let focused, !paneRead { readCaret(of: focused, in: tree, into: &context) }
         // The page the caret is in: the nearest web area (Notion nests its web page in a local app
         // shell page, which the walk reaches first).
         context.host = hosts.first ?? nil
-        guard let window else { return true }
+        guard let window else { return context }
         context.windowTitle = tree.string(window, kAXTitleAttribute)
         // Without tmux, a terminal's caret window is the end of its scrollback, not what's on
         // screen: keep its visible lines as a plain field instead of placing the caret.
-        return walk(window, in: tree, frame: tree.frame(of: window), focused: terminalPane != nil && !paneRead ? nil : focused,
-                    focusPath: focusPath, excluding: exclusions, started: started, into: &context)
+        let read = walk(window, in: tree, frame: tree.frame(of: window), focused: terminalPane != nil && !paneRead ? nil : focused,
+                        focusPath: focusPath, excluding: exclusions, started: started, into: &context)
+        return read ? context : nil
     }
 
     /// The hosts of the pages the focused element is in, nearest first: the element itself when it

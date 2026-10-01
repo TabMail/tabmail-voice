@@ -254,6 +254,9 @@ function ExcludedSites({ state }: { state: SettingsState }) {
         `Password managers’ websites are always excluded: ${config.builtInExcludedSites.join(", ")}.`,
       ]}
     >
+      <div className="row">
+        <span>Excluded websites</span>
+      </div>
       <form className="row" onSubmit={add}>
         <input
           type="text"

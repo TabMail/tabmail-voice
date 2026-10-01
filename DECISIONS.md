@@ -2511,9 +2511,11 @@ starts alike; case and a trailing dot don't matter.
   caret's text or the window's title is asked for (`ScreenContextReader.gather`): every web area
   above the focused element, and the focused element itself, since a page clicked on or selected in
   has the focus itself. The walk then refuses the whole window at any page of an excluded site, in
-  focus or not, framed in another page or inside a row, a heading or a link: with the caret in the
+  focus or not, framed in another page or inside a row, a heading or a link that has no label of its
+  own (one with a label gives its label, and nothing inside it is looked at): with the caret in the
   browser's address field the page is still on screen. `readScreen` answers null, as for an excluded
-  app, and drops a context whose host is excluded whatever the reader did. `focusedFieldValue`
+  app, and drops a context whose host is excluded whatever the reader did. A refused read gives
+  back nothing of what it had gathered (`gather` answers no context at all). `focusedFieldValue`
   answers no value for a field in a page of an excluded site. A request without either list is an
   error.
 - Which host a site covers is one rule for the app and every helper:

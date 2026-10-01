@@ -24,7 +24,7 @@ describe("excluded websites", () => {
     expect(excludedSite(typed)).toBe(host);
   });
 
-  test.each(["", "   ", "localhost", "example", "exa mple.com", "example..com", ".example.com", "https://", "bücher.example", "exa_mple.com", "*.example.com", 7, null, undefined, ["example.com"]])(
+  test.each(["", "   ", "localhost", "example", "exa mple.com", "example..com", ".example.com", "https://", "bücher.example", "exa_mple.com", "*.example.com", "example.com x", "example.com_", "example.com,example.org", 7, null, undefined, ["example.com"]])(
     "%j is no website",
     (typed) => {
       expect(excludedSite(typed)).toBeNull();

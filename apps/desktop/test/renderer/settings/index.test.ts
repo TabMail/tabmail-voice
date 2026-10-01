@@ -352,7 +352,7 @@ describe("Settings page", () => {
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
-      Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "No websites added yet.", "Password managers’ websites are always excluded"],
+      Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
     };

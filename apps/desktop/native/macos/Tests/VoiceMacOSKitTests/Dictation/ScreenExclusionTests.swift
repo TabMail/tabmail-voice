@@ -241,13 +241,32 @@ struct ScreenExclusionTests {
     private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
 
     private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement], excluding hosts: [String],
+                        started: Date = Date(),
                         terminalPane: ((inout ScreenContext) -> Bool)? = nil) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
-        var context = ScreenContext(appName: "Example")
+        let start = ScreenContext(appName: "Example")
         let tree = RecordingTree()
-        let read = ScreenContextReader.gather(window: window, focused: focused, focusPath: focusPath, in: tree,
-                                              excluding: ScreenExclusions(hosts: hosts), started: Date(), into: &context,
-                                              terminalPane: terminalPane)
-        return (read, context, tree.asked)
+        let context = ScreenContextReader.gather(window: window, focused: focused, focusPath: focusPath, in: tree,
+                                                 excluding: ScreenExclusions(hosts: hosts), started: started, from: start,
+                                                 terminalPane: terminalPane)
+        return (context != nil, context ?? start, tree.asked)
+    }
+
+    /// A window too large or too slow to walk to its end keeps what was read: only a page of an
+    /// excluded website refuses a read, not the budget.
+    @Test func aReadStoppedByItsBudgetIsKept() {
+        let texts = (0 ..< HelperConfig.contextNodeBudget + 10).map { FakeElement("AXStaticText", [kAXValueAttribute: "line \($0)"]) }
+        let large = gather(FakeElement("AXWindow", [kAXTitleAttribute: "Large"], children: texts), focused: nil, focusPath: [], excluding: ["example.com"])
+        #expect(large.read)
+        #expect(large.context.stoppedEarly == "node budget")
+        #expect(large.context.windowTitle == "Large")
+        #expect(large.context.nodesVisited == HelperConfig.contextNodeBudget)
+
+        let window = FakeElement("AXWindow", [kAXTitleAttribute: "Slow"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "line"])])
+        let slow = gather(window, focused: nil, focusPath: [], excluding: ["example.com"], started: .distantPast)
+        #expect(slow.read)
+        #expect(slow.context.stoppedEarly == "time budget")
+        #expect(slow.context.windowTitle == "Slow")
+        #expect(gather(window, focused: nil, focusPath: [], excluding: ["example.com"]).context.stoppedEarly == nil)
     }
 
     /// With the caret in a page of an excluded website, nothing is asked of the app: not the text
