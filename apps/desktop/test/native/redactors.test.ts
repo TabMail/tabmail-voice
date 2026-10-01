@@ -132,6 +132,8 @@ describe("the shared redactors", () => {
     ["a run of token starts", "-eyJ"],
     ["a run of key headers", "-----BEGIN A "],
     ["a run of address starts", "://a:b"],
+    ["a run of addresses with their at sign", "://a:b@"],
+    ["a run of at signs before address starts", "@://a:b"],
     ["a run of the word Bearer", "Bearer "],
     ["a run of key prefixes", "-sk-a"],
     ["a run of spaces after a name", "password" + " ".repeat(64)],

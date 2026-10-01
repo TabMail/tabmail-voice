@@ -243,6 +243,8 @@ struct RedactorTests {
         #expect(Redactor.redact([["one kaaaaaab two"], ["three"]], with: [greedy]) == [["one \(gone) two"], ["three"]])
         let run = "k" + String(repeating: "a", count: 2_000_000)
         #expect(Redactor.redact([["one kaaaaaab two "], [run, "selected"], ["after"]], with: [greedy]) == [["one \(gone)\(gone)"], ["", ""], [""]])
+        // With no match before the run, everything is withheld.
+        #expect(Redactor.redact([["before secretword ", run], ["after"]], with: [greedy]) == [[gone, ""], [""]])
     }
 
     /// A label on screen and the focused field holding its value are one secret: the field's texts
@@ -345,7 +347,7 @@ struct RedactorTests {
         let length = 200_000
         let clock = ContinuousClock()
         let begin = "-----BEGIN "
-        let units = ["a.", "token:", "-eyJ", "-----BEGIN A ", "://a:b", "Bearer ", "-sk-a", "password" + String(repeating: " ", count: 64), "a"].map { ("", $0) }
+        let units = ["a.", "token:", "-eyJ", "-----BEGIN A ", "://a:b", "://a:b@", "@://a:b", "Bearer ", "-sk-a", "password" + String(repeating: " ", count: 64), "a"].map { ("", $0) }
             // A key's header, and its footer, naming its kind over and over.
             + [(begin, "PRIVATE KEY "), (begin + "PRIVATE KEY-----\n-----END ", "PRIVATE KEY ")]
         for (start, unit) in units {

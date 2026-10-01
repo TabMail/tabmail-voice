@@ -2,7 +2,7 @@
   "comment": [
     "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046).",
     "Each redactor is applied to the whole text, in this order, replacing every match with `replacement`, in which {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
-    "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes written out, groups, alternation, counted repeats, \\s and lookahead (\\s differs between engines on rare characters, U+0085 and U+FEFF, and ICU folds a few more letters into ASCII ones when ignoring case: the long s, the Kelvin sign). No \\b, \\w or \\d (ICU counts every script's letters and digits, ECMAScript only ASCII's: a key beside a Japanese word would be kept by one and not the other), no lookbehind, no named groups, no Unicode classes, no inline flags. Where a key must not start inside a word, the pattern takes the character before it as group 1 and the replacement puts it back.",
+    "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes written out, groups, alternation, counted repeats, \\s and lookahead (\\s differs between engines on rare characters, U+0085 and U+FEFF, and ICU folds a few more letters into ASCII ones when ignoring case: the long s, the Kelvin sign, the sharp s). No \\b, \\w or \\d (ICU counts every script's letters and digits, ECMAScript only ASCII's: a key beside a Japanese word would be kept by one and not the other), no lookbehind, no named groups, no Unicode classes, no inline flags. Where a key must not start inside a word, the pattern takes the character before it as group 1 and the replacement puts it back.",
     "`ignoreCase` is the only flag. Every platform's helper is generated from this file (`npm run gen:redactors`) and must pass redaction-cases.json.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
     "No open-ended count ({16,}) and no \\s* or \\s+ outside a class: ICU runs those with a stack frame per repetition, and on a run of some 200,000 characters gives up and matches nothing more. Write [..]{16}[..]* and [\\s]*, which it runs as one loop. The generator refuses the other forms."
@@ -33,7 +33,7 @@
     {
       "name": "address-password",
       "description": "The password in an address (scheme://user:password@host). The rest stays.",
-      "pattern": "(://[^\\s/:@]*:)[^\\s/@]+(@)",
+      "pattern": "(://[^\\s/:@]*:)[^\\s/]+(@)",
       "ignoreCase": false,
       "replacement": "$1{placeholder}$2"
     },

@@ -2401,7 +2401,7 @@ well-structured place for the redactors.
 - What looks like a secret is defined once, in `native/shared/privacy/redactors.json`: an ordered
   list of redactors, each a name, a regex, a case flag and a replacement. They cover private-key
   blocks (whole, or cut off where the window ends), JSON web tokens, `Bearer` tokens, the password in
-  an address (`scheme://user:password@host`, the user name or not), a value given to a name like `password`, `token`,
+  an address (`scheme://user:password@host`, with a user name or not; the password runs to the last `@` before the path, since a password may hold one), a value given to a name like `password`, `token`,
   `secret` or `api_key` (when it has a digit and at least 6 characters), and keys with a provider's
   prefix (`sk-`, `sk_live_`, `whsec_`, `ghp_`, `github_pat_`, `glpat-`, `AKIA`, `AIza`, `xoxb-`,
   `npm_`, `hf_`). A match becomes `[redacted]`; the name, the word `Bearer` and the rest of an

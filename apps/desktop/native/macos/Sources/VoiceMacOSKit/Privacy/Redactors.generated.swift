@@ -18,7 +18,7 @@ extension Redactor {
         // "Bearer <token>", as an Authorization header has it. The word stays.
         Redactor(name: #"bearer-token"#, pattern: #"(^|[^A-Za-z0-9_])(Bearer[\s]+)[A-Za-z0-9._~+/=-]{16}[A-Za-z0-9._~+/=-]*"#, ignoreCase: true, replacement: #"$1$2[redacted]"#),
         // The password in an address (scheme://user:password@host). The rest stays.
-        Redactor(name: #"address-password"#, pattern: #"(://[^\s/:@]*:)[^\s/@]+(@)"#, ignoreCase: false, replacement: #"$1[redacted]$2"#),
+        Redactor(name: #"address-password"#, pattern: #"(://[^\s/:@]*:)[^\s/]+(@)"#, ignoreCase: false, replacement: #"$1[redacted]$2"#),
         // A value given to a name that says it is secret (password=, api_key:, "token": "…"). The name stays. Only a value with a digit and at least 6 characters, so that "Password: required" stays.
         Redactor(name: #"named-value"#, pattern: #"((?:password|passwd|pwd|passphrase|secret[_-]?key|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)["']?[\s]*[=:][\s]*["']?)(?=[^\s"']{0,200}[0-9])[^\s"']{6}[^\s"']*"#, ignoreCase: true, replacement: #"$1[redacted]"#),
         // Keys starting "sk-" (several AI providers).

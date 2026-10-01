@@ -3692,16 +3692,17 @@
    ]
   },
   {
-   "name": "an address password ends at the first at sign",
+   "name": "an address's password holding an at sign goes whole, up to the last one before the host",
    "text": [
     "ftp://alex:",
     "hunter2",
-    "@a@example.com"
+    "@a",
+    "@example.com"
    ],
    "expected": [
     "ftp://alex:",
     "{redacted}",
-    "@a@example.com"
+    "@example.com"
    ]
   },
   {
@@ -4646,6 +4647,51 @@
     "token=",
     "ab1",
     "'cdefgh"
+   ]
+  },
+  {
+   "name": "an address's password ends before the path",
+   "text": [
+    "ftp://alex:",
+    "hunter2",
+    "@example.com/a@b"
+   ],
+   "expected": [
+    "ftp://alex:",
+    "{redacted}",
+    "@example.com/a@b"
+   ]
+  },
+  {
+   "name": "an address's password ends before a space",
+   "text": [
+    "ftp://alex:",
+    "hunter2",
+    "@example.com",
+    " me@example.org"
+   ],
+   "expected": [
+    "ftp://alex:",
+    "{redacted}",
+    "@example.com",
+    " me@example.org"
+   ]
+  },
+  {
+   "name": "two addresses on a line each lose their password",
+   "text": [
+    "a://u:",
+    "pw1",
+    "@h.example b://v:",
+    "pw2",
+    "@i.example"
+   ],
+   "expected": [
+    "a://u:",
+    "{redacted}",
+    "@h.example b://v:",
+    "{redacted}",
+    "@i.example"
    ]
   }
  ],
