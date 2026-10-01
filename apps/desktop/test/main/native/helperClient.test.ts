@@ -190,6 +190,30 @@ describe("HelperClient", () => {
     expect((await written).kind).toBe("timeout");
   });
 
+  test("a cancellable helper calls off a written mutation on abort and on timeout", async () => {
+    const client = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper], cancelRequests: true });
+    clients.push(client);
+    const queued: number[] = [], canceled: number[] = [], actions: unknown[] = [];
+    client.on("queued", (message) => queued.push(message.request as number));
+    client.on("canceled", (message) => canceled.push(message.request as number));
+    client.on("action", (message) => actions.push(message.action));
+    client.start();
+    const operation = new AbortController();
+    const written = client.request("deferred", { delay: 300, action: "aborted" }, 1000, operation.signal);
+    const rejected = expect(written).rejects.toBeInstanceOf(CancellationError);
+    expect(await eventually(() => queued.length === 1)).toBe(true);
+    operation.abort();
+    await rejected;
+    expect((await failure(client.request("deferred", { delay: 300, action: "timed out" }, 100))).kind).toBe("timeout");
+    expect(await eventually(() => canceled.length === 2)).toBe(true);
+    expect(canceled).toEqual(queued);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(actions).toEqual([]);
+    await client.request("deferred", { delay: 1, action: "completed" }, 1000);
+    expect(actions).toEqual(["completed"]);
+    expect(await client.request("echo", { recovery: true })).toEqual({ recovery: true });
+  });
+
   test("a stopped helper is not restarted and answers nothing", async () => {
     const client = helper({ restartDelay: 10 });
     let exits = 0;

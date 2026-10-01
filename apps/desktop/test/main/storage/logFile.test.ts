@@ -4,7 +4,7 @@
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog } from "../../../src/core/log.js";
 import { LogFile } from "../../../src/main/storage/logFile.js";
@@ -43,7 +43,7 @@ describe("LogFile", () => {
   test("a full file is moved aside and a new one started", async () => {
     const path = join(scratch(), "Logs/Test.log");
     const previous = LogFile.previousPath(path);
-    expect(previous.endsWith("/Logs/Test.1.log")).toBe(true);
+    expect(previous).toBe(join(dirname(path), "Test.1.log"));
     await LogFile.write("0123456789\n", path, 10);
     await LogFile.write("second\n", path, 10);
     expect(read(previous)).toBe("0123456789\n");

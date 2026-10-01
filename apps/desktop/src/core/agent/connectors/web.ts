@@ -216,6 +216,7 @@ function decoded(body: Uint8Array, contentType: string): string {
 export const webConnector = defineConnector({
   id: "web",
   order: 80,
+  platforms: ["darwin", "win32", "linux"],
   displayName: "Web",
   settingsDescription: "Searches the web, reads pages, and opens the ones you ask for in your browser.",
   serverTools: [config.webSearchTool],

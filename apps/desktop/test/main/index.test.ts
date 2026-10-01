@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir, userInfo } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
@@ -26,7 +26,7 @@ const app = vi.hoisted(() => ({
   refusesDelete: false,
   helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
-  paste: null as ((text: string, signal: AbortSignal) => Promise<void>) | null,
+  paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
   corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
   prewarms: 0,
@@ -48,6 +48,7 @@ const app = vi.hoisted(() => ({
   stored: new Map<string, unknown>(),
   opened: [] as string[],
   openFailure: null as Error | null,
+  emailHandler: "",
   connectorTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
   scripts: [] as { source: string; args: readonly string[] }[],
   /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
@@ -93,6 +94,7 @@ vi.mock("electron", async () => {
       getPath: (name: string) => (name === "appData" && app.appData !== null ? app.appData : "/nonexistent"),
       getAppPath: () => "/nonexistent",
       getVersion: () => app.version,
+      getApplicationNameForProtocol: () => app.emailHandler,
       dock: { hide() {} },
       on() {},
       quit() {},
@@ -162,6 +164,15 @@ vi.mock("@napi-rs/keyring", () => ({
     getPassword(): string | null {
       return app.credential;
     }
+    getSecret(): number[] | null {
+      const stored = app.credential;
+      if (stored === null) return null;
+      return [...(stored.startsWith("binary:") ? Buffer.from(stored.slice(7), "base64") : Buffer.from(stored, "utf16le"))];
+    }
+    setSecret(value: Uint8Array): void {
+
+      app.credential = `binary:${Buffer.from(value).toString("base64")}`;
+    }
     setPassword(value: string): void {
       app.credential = value;
     }
@@ -191,7 +202,7 @@ vi.mock("../../src/main/storage/jsonFileStore.js", () => ({
     }
   },
 }));
-vi.mock("../../src/main/native/osascript.js", () => ({
+vi.mock("../../src/main/native/macos/osascript.js", () => ({
   osascript: {
     run: async (source: string, args: readonly string[]) => {
       app.scripts.push({ source, args });
@@ -259,7 +270,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
@@ -423,7 +434,7 @@ describe("main process wiring", () => {
   /** Launching prepares the microphone ahead of the first dictation, once, on every platform: the
    * helper's prepared engine on macOS, the audio window's worklet elsewhere (through `onStart`,
    * which runs even where `voice-macos` can't spawn). */
-  test.each(["darwin", "linux"] as const)("launching on %s prepares the microphone once", async (platform) => {
+  test.each(["darwin", "win32", "linux"] as const)("launching on %s prepares the microphone once", async (platform) => {
     await launch(platform);
     expect(app.prewarms).toBe(1);
   });
@@ -444,9 +455,9 @@ describe("main process wiring", () => {
    * `microphoneStart`, for the dictation's session at the recording rate, and its stop the
    * matching `microphoneStop`; the helper's answer and its chunk events reach the dictation, and
    * the helper exiting under it is the dictation's microphone lost. */
-  test("on macOS the capture runs in voice-macos", async () => {
-    await launch("darwin");
-    const helper = app.helpers.get("voice-macos");
+  test.each(["darwin", "win32"] as const)("on %s capture uses its native helper", async (platform) => {
+    await launch(platform);
+    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-macos");
     const capture = app.capture;
     expect(capture).not.toBeNull();
     const completions: (Error | null)[] = [];
@@ -463,6 +474,7 @@ describe("main process wiring", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const samples = new Float32Array([0.25, -0.5]);
     helper?.events.get("microphoneChunk")?.({ event: "microphoneChunk", session: 1, samples: Buffer.from(samples.buffer).toString("base64") });
+    expect(app.audioCommands).toEqual([]);
     expect(completions).toEqual([null]);
     expect(chunks).toEqual([samples]);
     helper?.onExit?.();
@@ -509,12 +521,25 @@ describe("main process wiring", () => {
     const helper = app.helpers.get("voice-macos");
     const { signal } = new AbortController();
 
-    await app.paste?.("Hello.", signal);
+    await app.paste?.("Hello.", signal, 101);
 
     const inserts = helper?.requests.filter((request) => request.method === "insert") ?? [];
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
     expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
+  });
+
+  test("Windows paste keeps its original window and uses the cancellable Windows helper", async () => {
+    await launch("win32");
+    const helper = app.helpers.get("voice-windows");
+    helper?.onStart?.();
+    expect(app.prewarms).toBe(2);
+    await app.paste?.("Synthetic text", signal, 101);
+    expect(helper?.requests.find((request) => request.method === "insert")).toMatchObject({
+      params: { text: "Synthetic text", window: 101, restoreDelay: config.clipboardRestoreDelay }, signal,
+    });
+    expect(helper?.requests.map((request) => request.method)).not.toContain("startActivator");
+    expect(app.helpers.get("voice-macos")?.requests).toEqual([]);
   });
 
   /** A text not pasted (ADR-DESK-042) goes on the clipboard. */
@@ -894,11 +919,11 @@ describe("main process wiring", () => {
   });
 
   /** Settings › Dictionary's commands change the stored dictionary and the learning switch, which the
-   * state shows; learning is offered only on macOS, where the helper reads the field (ADR-DESK-038). */
-  test.each(["darwin", "linux"] as const)("the dictionary's commands and state, on %s", async (platform) => {
+   * state shows; learning is offered where the native helper reads the field (ADR-DESK-038). */
+  test.each(["darwin", "win32", "linux"] as const)("the dictionary's commands and state, on %s", async (platform) => {
     await launch(platform);
     const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { dictionary: unknown; learnsWords: boolean; canLearnWords: boolean };
-    expect(state()).toMatchObject({ dictionary: [], learnsWords: true, canLearnWords: platform === "darwin" });
+    expect(state()).toMatchObject({ dictionary: [], learnsWords: true, canLearnWords: platform !== "linux" });
 
     expect(await send({ type: "addDictionaryWord", word: " Xyvora " })).toEqual({ error: null });
     expect(await send({ type: "addDictionaryWord", word: "TabMail" })).toEqual({ error: null });
@@ -911,19 +936,19 @@ describe("main process wiring", () => {
   });
 
   /** On macOS the correction watch reads the field through `voice-macos` and learns into the stored
-   * dictionary; elsewhere there is none (no helper reads the field yet). */
-  test.each(["darwin", "linux"] as const)("the correction watch's wiring, on %s", async (platform) => {
+   * dictionary; Linux still awaits its native field reader. */
+  test.each(["darwin", "win32", "linux"] as const)("the correction watch's wiring, on %s", async (platform) => {
     await launch(platform);
-    if (platform !== "darwin") {
+    if (platform === "linux") {
       expect(app.corrections).toBeUndefined();
       return;
     }
     // Its two dependencies, as the watch calls them.
     const watch = app.corrections as unknown as { readField: (pid: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null>; learn: (words: string[]) => void };
-    const helper = app.helpers.get("voice-macos");
+    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-macos");
     await watch.readField(42, { apps: ["org.example.vault"], sites: ["example.com"] });
     expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
-      { pid: 42, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
+      { ...(platform === "win32" ? { window: 42 } : { pid: 42 }), maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
     ]);
     watch.learn(["Xyvora"]);
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true }]);
@@ -969,7 +994,7 @@ describe("main process wiring", () => {
 
     // What was picked is no app, or one that can't be stored: the pane is told why.
     helper?.replies.set("appInfo", null);
-    expect(await send({ type: "excludeApp" })).toEqual({ error: "That app can't be excluded: it has no bundle identifier." });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: "That app can't be excluded: its application identifier could not be read." });
     helper?.replies.set("appInfo", { bundleIdentifier: "org.example.notes", name: "", path: app.pickedPath });
     expect(await send({ type: "excludeApp" })).toEqual({ error: "That app can't be excluded." });
     expect(state()).toMatchObject({ excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }] });
@@ -977,6 +1002,28 @@ describe("main process wiring", () => {
     expect(await send({ type: "removeExcludedApp", bundleIdentifier: "ORG.example.bank" })).toEqual({ error: null });
     expect(state()).toMatchObject({ excludedApps: [] });
     expect(app.stored.get("excludedApps")).toEqual([]);
+  });
+
+  test("Windows privacy picks an executable and passes native IDs through screen and correction reads", async () => {
+    await launch("win32");
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { canExcludeApps: boolean; builtInExcludedApps: unknown };
+    expect(state()).toMatchObject({ canExcludeApps: true, builtInExcludedApps: config.windowsBuiltInExcludedApps });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+    expect(app.openDialogs).toEqual([expect.objectContaining({ filters: [{ name: "Applications", extensions: ["exe"] }] })]);
+    const helper = app.helpers.get("voice-windows");
+    expect(helper?.requests.some((request) => request.method === "appInfo")).toBe(false);
+    app.pickedPath = "C:\\Apps\\Example.exe";
+    helper?.replies.set("appInfo", { bundleIdentifier: "Example.exe", name: "Example", path: app.pickedPath });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+    expect(app.stored.get("excludedApps")).toEqual([{ bundleIdentifier: "Example.exe", name: "Example" }]);
+    expect(helper?.requests.filter((request) => request.method === "appInfo").map((request) => request.params)).toEqual([{ path: app.pickedPath }]);
+    const controller = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null };
+    helper?.replies.set("readScreen", null);
+    await controller.captureContext({ apps: ["Example.exe"], sites: ["example.com"] });
+    expect(helper?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toEqual([{ excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }]);
+    expect(await send({ type: "removeExcludedApp", bundleIdentifier: "example.EXE" })).toEqual({ error: null });
+    expect(app.stored.get("excludedApps")).toEqual([]);
+    expect(app.helpers.get("voice-macos")?.requests.some((request) => request.method === "appInfo")).not.toBe(true);
   });
 
   test("no more apps are excluded once the list is full", async () => {
@@ -1051,15 +1098,21 @@ describe("main process wiring", () => {
   /** Files reads the home folder as `~`: a found item's path is given to the model with it, and a
    * `~` path the model gives back opens the item there. */
   test("Files reads the home folder as ~", async () => {
-    await launch("darwin");
-    const home = homedir();
-    const macHelper = app.helpers.get("voice-macos");
-    macHelper?.replies.set("filesSearch", { items: [{ path: `${home}/Documents/Tax return.pdf`, name: "Tax return.pdf", kind: "PDF document", changed: null, subject: null, authors: [], isEmail: false }] });
-    macHelper?.replies.set("fileOpen", { opened: true });
+    // This launch models macOS, even when the test runner itself is on Windows.
+    const home = "/Users/example";
+    vi.doMock("node:os", async () => ({ ...await vi.importActual<typeof import("node:os")>("node:os"), homedir: () => home }));
+    try {
+      await launch("darwin");
+      const macHelper = app.helpers.get("voice-macos");
+      macHelper?.replies.set("filesSearch", { items: [{ path: `${home}/Documents/Tax return.pdf`, name: "Tax return.pdf", kind: "PDF document", changed: null, subject: null, authors: [], isEmail: false }] });
+      macHelper?.replies.set("fileOpen", { opened: true });
 
-    expect(await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal)).toContain(": ~/Documents/Tax return.pdf");
-    expect(await app.connectorTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal)).toBe("Opened Tax return.pdf.");
-    expect(macHelper?.requests.find((request) => request.method === "fileOpen")?.params).toEqual({ path: `${home}/Documents/Tax return.pdf`, reveal: false });
+      expect(await app.connectorTools.find((tool) => tool.name === "files_search")?.run({ query: "tax" }, signal)).toContain(": ~/Documents/Tax return.pdf");
+      expect(await app.connectorTools.find((tool) => tool.name === "file_open")?.run({ path: "~/Documents/Tax return.pdf" }, signal)).toBe("Opened Tax return.pdf.");
+      expect(macHelper?.requests.find((request) => request.method === "fileOpen")?.params).toEqual({ path: `${home}/Documents/Tax return.pdf`, reveal: false });
+    } finally {
+      vi.doUnmock("node:os");
+    }
   });
 
   /** A draft opens with the app macOS opens `mailto:` links with, named in the result; with none, the
@@ -1084,15 +1137,31 @@ describe("main process wiring", () => {
     await expect(compose?.run(args, signal)).rejects.toThrow("Failed to open URL");
   });
 
-  /** Elsewhere the Answer tool reaches no app on the computer, and none has a switch. */
-  test("elsewhere, no app and no switch", async () => {
-    await launch("linux");
+  test.each(["win32", "linux"] as const)("shared Answer tools and switches work on %s", async (platform) => {
+    await launch(platform);
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
-
-    expect(app.connectorTools).toEqual([]);
-    expect(state("settings").connectors).toEqual([]);
-    expect(state("welcome").connectors).toEqual([]);
-    });
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(platform === "win32" ? ["files_search", "file_open", "email_compose", "web_read", "web_open"] : ["email_compose", "web_read", "web_open"]);
+    expect(state("settings").connectors).toEqual(platform === "win32" ? ["files", "email", "web"] : ["email", "web"]);
+    expect(state("welcome").connectors).toEqual(platform === "win32" ? ["files", "email", "web"] : ["email", "web"]);
+    const web = app.connectorTools.find((tool) => tool.name === "web_open");
+    expect(web).toBeDefined();
+    expect(await web?.run({ url: "https://example.com/page" }, signal)).toContain("Opened");
+    const compose = app.connectorTools.find((tool) => tool.name === "email_compose");
+    expect(compose).toBeDefined();
+    const args = { to: ["sam@example.com"], subject: "Lunch", body: "Friday?" };
+    app.emailHandler = "";
+    await expect(compose?.run(args, signal)).rejects.toMatchObject({ name: "NoEmailAppError" });
+    expect(app.opened).toEqual(["https://example.com/page"]);
+    app.emailHandler = "Example Mail";
+    expect(await compose?.run(args, signal)).toContain("Example Mail");
+    expect(app.opened.at(-1)).toBe(mailtoURL({ to: args.to, cc: [], bcc: [], subject: args.subject, body: args.body }));
+    app.openFailure = new Error("Failed to open URL");
+    await expect(compose?.run(args, signal)).rejects.toThrow("Failed to open URL");
+    // These shared tools never invoke AppleScript or the macOS native connector APIs.
+    expect(app.scripts).toEqual([]);
+    const forbidden = ["calendarEvents", "contactsSearch", "filesSearch", "emailApps"];
+    expect(app.helpers.get("voice-macos")?.requests.some((request) => forbidden.includes(request.method))).toBe(false);
+  });
 
   /** On macOS, VS Code settings that hide the caret are offered for fixing in the welcome wizard and
    * Settings: the fix sets `editor.editContext` false in the file, keeping its comments, and both
@@ -1182,6 +1251,17 @@ describe("main process wiring", () => {
       app.autoUpdater?.emit("update-downloaded", { version });
       app.squirrel?.emit("update-downloaded");
     }
+
+    test.each(["win32", "linux"] as const)("a packaged %s build cannot use the Mac update feed or installer", async (platform) => {
+      app.packaged = true;
+      Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
+      await launch(platform);
+      expect(app.trayState?.().update).toBeNull();
+      await send({ type: "checkForUpdates" });
+      expect(app.autoUpdater?.checks ?? 0).toBe(0);
+      await send({ type: "restartToUpdate" });
+      expect(app.autoUpdater?.installs ?? 0).toBe(0);
+    });
 
     test("a debug build has no updater and no update item", async () => {
       await launch("darwin");

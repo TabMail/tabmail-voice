@@ -161,9 +161,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** Runs one recording through the controller; returns what was pasted. */
   async function dictate(account?: AccountModel): Promise<{ pasted: string[]; controller: DictationController }> {
-    // No key-down, so no app in front then: none now either, or the paste would be for another app.
-    const { controller, pastes } = makeController({ account, frontmostApp: async () => null });
-    await controller.transcribe(new TextEncoder().encode("fLaC-test-audio"), 0);
+    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
+    await holdAndRelease(controller);
+    expect(await eventually(() => controller.phase.kind !== "listening" && controller.phase.kind !== "arming" && controller.phase.kind !== "transcribing" && controller.phase.kind !== "retrying" && controller.phase.kind !== "running")).toBe(true);
     return { pasted: pastes, controller };
   }
 
@@ -358,6 +358,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["the app in front can't be read at the paste", async (reads) => (reads === 1 ? 101 : Promise.reject(new Error("helper exited")))],
       ["the app in front couldn't be read at key-down", async (reads) => (reads === 1 ? Promise.reject(new Error("helper exited")) : 101)],
       ["no app was in front at key-down", async (reads) => (reads === 1 ? null : 101)],
+      ["neither foreground read identifies an app", async () => null],
+      ["the helper returns a zero target", async () => 0],
+      ["the helper returns a negative target", async () => -1],
+      ["the helper returns a fractional target", async () => 1.5],
     ])("when %s, the text is copied, not pasted", async (_, frontmost) => {
       transcription.enqueue(200, cleanedReply);
       let reads = 0;
@@ -561,7 +565,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("without an app in front at key-down, nothing is watched", async () => {
       front.pid = null;
       const { calls, corrections } = watcher();
-      expect(await dictateHeld(corrections)).toEqual([cleaned]);
+      const { controller, pastes, copies } = makeController({ capture: new CountingCapture(true), corrections });
+      transcription.enqueue(200, cleanedReply);
+      await holdAndRelease(controller);
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([]);
+      expect(copies).toEqual([cleaned]);
       expect(calls).toEqual(["stop"]);
     });
 

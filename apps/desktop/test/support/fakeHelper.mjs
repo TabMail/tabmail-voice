@@ -7,11 +7,25 @@
 // sends an event, `log` writes a debug and an error line to stderr, `ids` answers its process id.
 import { createInterface } from "node:readline";
 
+const deferred = new Map();
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 
 createInterface({ input: process.stdin }).on("line", (line) => {
   const { id, method, params } = JSON.parse(line);
   switch (method) {
+    case "cancel": {
+      clearTimeout(deferred.get(params.id));
+      deferred.delete(params.id);
+      return send({ event: "canceled", request: params.id });
+    }
+    case "deferred":
+      send({ event: "queued", request: id });
+      deferred.set(id, setTimeout(() => {
+        deferred.delete(id);
+        send({ event: "action", action: params.action });
+        send({ id, result: {} });
+      }, params.delay));
+      return;
     case "echo":
       return send({ id, result: params });
     case "fail":

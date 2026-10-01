@@ -410,3 +410,82 @@ describe("OverlayWindowController", () => {
     expect(overlay.bounds()).toEqual(opened);
   });
 });
+
+test("a shell exclusion region constrains the shared pill and interactive chat", async () => {
+  const area = { x: 0, y: 0, width: 325, height: 900 };
+  const overlay = recordingWindow();
+  const controller = new OverlayWindowController(overlay.window, async () => ({ x: 750, y: 200, width: 1, height: 20 }), () => area);
+  controller.update({ kind: "arming" });
+  controller.update({ kind: "listening" });
+  await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+  expect(controller.pillPlace.workArea).toEqual(area);
+  expect(controller.pillPlace.pill.x).toBe(162.5);
+  controller.update({ kind: "running", tool: "answer" }, true);
+  controller.fitChat(320);
+  expect(controller.chatPlacement?.width).toBe(325);
+  expect(overlay.ignoresMouse()).toBe(false);
+  const bounds = overlay.bounds();
+  expect(bounds.x + config.chatShadowMargin).toBeGreaterThanOrEqual(area.x);
+  expect(bounds.x + bounds.width - config.chatShadowMargin).toBeLessThanOrEqual(area.x + area.width);
+});
+
+test("no usable area never shows an overlay behind the shell", async () => {
+  const overlay = recordingWindow();
+  const locate = vi.fn(async () => ({ x: 750, y: 200, width: 1, height: 20 }));
+  const controller = new OverlayWindowController(overlay.window, locate, () => null);
+  controller.update({ kind: "arming" });
+  controller.update({ kind: "listening" });
+  await vi.waitFor(() => expect(locate).toHaveResolved());
+  expect(overlay.visible()).toBe(false);
+  controller.update({ kind: "running", tool: "answer" }, true);
+  expect(overlay.visible()).toBe(false);
+});
+
+test("placement refresh recovers chat after Search leaves no usable area", () => {
+  let area: Rect | null = null;
+  const overlay = recordingWindow();
+  const controller = new OverlayWindowController(overlay.window, async () => null, () => area);
+  controller.update({ kind: "idle" }, true);
+  expect(overlay.visible()).toBe(false);
+  area = { x: 0, y: 0, width: 325, height: 900 };
+  controller.refreshPlacement();
+  expect(overlay.visible()).toBe(true);
+  expect(controller.chatPlacement?.width).toBe(325);
+  area = { x: 900, y: 0, width: 300, height: 900 };
+  controller.refreshPlacement();
+  controller.fitChat(200);
+  expect(overlay.bounds().x + config.chatShadowMargin).toBeGreaterThanOrEqual(900);
+  expect(overlay.ignoresMouse()).toBe(false);
+  area = null;
+  controller.refreshPlacement();
+  expect(overlay.visible()).toBe(false);
+});
+
+test("placement refresh does not reveal an idle or arming overlay", () => {
+  const overlay = recordingWindow();
+  const controller = new OverlayWindowController(overlay.window, async () => null);
+  controller.refreshPlacement();
+  expect(overlay.visible()).toBe(false);
+  controller.update({ kind: "arming" });
+  controller.refreshPlacement();
+  expect(overlay.visible()).toBe(false);
+});
+
+test("repositioned chat remains opaque without another renderer size notification", () => {
+  let area: Rect | null = { x: 0, y: 0, width: 325, height: 900 };
+  const overlay = recordingWindow();
+  const controller = new OverlayWindowController(overlay.window, async () => null, () => area);
+  controller.update({ kind: "idle" }, true);
+  controller.fitChat(200);
+  area = { x: 900, y: 0, width: 325, height: 900 };
+  controller.refreshPlacement();
+  expect(overlay.opacity()).toBe(1);
+  expect(overlay.visible()).toBe(true);
+  area = null;
+  controller.refreshPlacement();
+  expect(overlay.visible()).toBe(false);
+  area = { x: 0, y: 0, width: 325, height: 900 };
+  controller.refreshPlacement();
+  expect(overlay.visible()).toBe(true);
+  expect(overlay.opacity()).toBe(1);
+});

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { ScriptError } from "../../../../src/core/agent/connectors/appleScript.js";
+import { ScriptError } from "../../../../src/core/agent/connectors/macos/appleScript.js";
 
 /** A script's failure as osascript reports it (from the Swift `NotesMessagesToolsTests`). */
 

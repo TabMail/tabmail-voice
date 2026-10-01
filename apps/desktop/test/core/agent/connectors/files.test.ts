@@ -20,6 +20,7 @@ const home = "/Users/example";
 class FakeFileStore implements FileStore {
   items: FoundItem[] = [];
   opens = true;
+  fileManagerName?: string;
   failure: Error | null = null;
   readonly queries: FileQuery[] = [];
   readonly limits: number[] = [];
@@ -181,5 +182,35 @@ describe("connector", () => {
       ["files", "file_open"],
     ]);
     expect(tools.map((tool) => tool.confirmation({ query: "tax", path: "/tmp/example.pdf" }))).toEqual([null, null]);
+  });
+});
+
+
+describe("Windows file paths", () => {
+  const windowsHome = "C:\\Users\\Example";
+
+  test("search abbreviates case-insensitive home paths without abbreviating siblings", async () => {
+    store.items = [
+      item({ path: "c:\\users\\example\\Documents\\report.pdf", name: "report.pdf", kind: "PDF document" }),
+      item({ path: "C:\\Users\\ExampleOther\\report.pdf", name: "report.pdf", kind: "PDF document" }),
+    ];
+    const result = await new FilesSearchTool(store, windowsHome).run({ query: "report" });
+    expect(result).toContain("~/Documents/report.pdf");
+    expect(result).toContain("C:\\Users\\ExampleOther\\report.pdf");
+  });
+
+  test("expands returned home paths and reports File Explorer reveals", async () => {
+    store.fileManagerName = "File Explorer";
+    const tool = new FileOpenTool(store, windowsHome);
+    expect(await tool.run({ path: "~/Documents/report.pdf" })).toBe("Opened report.pdf.");
+    expect(store.opened[0]?.path).toBe("C:\\Users\\Example\\Documents\\report.pdf");
+    expect(await tool.run({ path: "D:\\Reports\\report.pdf", reveal: true })).toBe("Showed report.pdf in the File Explorer.");
+    store.opens = false;
+    expect(await tool.run({ path: "C:/Downloads/setup.exe" })).toContain("Showed setup.exe in the File Explorer instead of opening it");
+  });
+
+  test.each(["/etc/passwd", "C:report.pdf", "\\\\server\\share\\report.pdf", "\\\\?\\C:\\report.pdf", "C:\\report.pdf:stream", "C:\\report?.pdf", "C:\\report\u0000.pdf"])("rejects unsupported Windows path %j before opening", async (path) => {
+    await expect(new FileOpenTool(store, windowsHome).run({ path })).rejects.toBeInstanceOf(ToolArgumentError);
+    expect(store.opened).toEqual([]);
   });
 });

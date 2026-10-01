@@ -10,7 +10,7 @@ import { app, autoUpdater as squirrel, clipboard, dialog, ipcMain, screen, sessi
 import { autoUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
-import { connectorIDs, connectors } from "../core/agent/connectors/index.js";
+import { connectorsForPlatform } from "../core/agent/connectors/index.js";
 import { EmailClient } from "../core/agent/connectors/thunderbird/emailClient.js";
 import { type EmailOpener, NoEmailAppError } from "../core/agent/connectors/email.js";
 import { liveWebFetch } from "../core/agent/connectors/web.js";
@@ -20,7 +20,7 @@ import { TranscriptionClient } from "../core/backend/transcription.js";
 import * as config from "../core/config.js";
 import { CorrectionWatch } from "../core/dictionary/correctionWatch.js";
 import { DictationController, isResting } from "../core/dictation/controller.js";
-import { GlobeKeyAction } from "../core/hotkey/globeKeyAction.js";
+import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
 import { type DictationHotkey, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
@@ -53,10 +53,15 @@ import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
 import { KeychainSessionStore } from "./storage/keychainSessionStore.js";
 import { LogFile } from "./storage/logFile.js";
-import { type EmailAppInfo, MacSystem } from "./native/macos.js";
+import { type EmailAppInfo, MacSystem } from "./native/macos/system.js";
 import { OverlayWindowController } from "./overlayWindow.js";
-import { macPermissions } from "./permissions.js";
-import { osascript } from "./native/osascript.js";
+import { macPermissions } from "./native/macos/permissions.js";
+import { windowsPermissions } from "./native/windows/permissions.js";
+import { WindowsSystem } from "./native/windows/system.js";
+import { shellPlacementArea } from "./native/windows/overlayArea.js";
+import { ShellGeometry } from "./native/windows/shellGeometry.js";
+import { WindowsFileStore } from "./native/windows/files.js";
+import { osascript } from "./native/macos/osascript.js";
 import { nodeProfileFiles } from "./storage/profileFiles.js";
 import { TrayMenu } from "./tray.js";
 import { Updater } from "./updater.js";
@@ -64,8 +69,9 @@ import { Windows } from "./windows.js";
 
 /** Debug builds are the unpackaged app (`npm start`); a packaged build is a release. */
 const isDebugBuild = !app.isPackaged;
-/** The apps the Answer tool can reach here: the Mac's, through `voice-macos` (ADR-DESK-024). */
-const availableConnectors = process.platform === "darwin" ? [...connectorIDs] : [];
+/** Available tools and Settings switches share the same platform capability selection. */
+const platformConnectors = connectorsForPlatform(process.platform);
+const availableConnectors = platformConnectors.map((connector) => connector.id);
 /** Shown for a failure without a message of its own. */
 const genericError = "Something went wrong. Try again.";
 /** The pages a window may open in the browser. */
@@ -95,7 +101,8 @@ function launch(): void {
 
   const lastRecordingPath = join(tmpdir(), config.debugLastRecordingFileName);
   const thunderbirdDirectory = join(homedir(), config.thunderbirdDataDirectory);
-  const hasTabMail = (): boolean => EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
+  // Native Thunderbird integration on Windows/Linux is deferred by the owner.
+  const hasTabMail = (): boolean => process.platform === "darwin" && EmailClient.hasTabMail(thunderbirdDirectory, nodeProfileFiles);
   const vscodeSettingsFile = join(app.getPath("appData"), ...vscodeSettingsPath);
   /** Whether the welcome wizard or Settings changed VS Code's settings, to say so. */
   let fixedVSCode = false;
@@ -104,14 +111,22 @@ function launch(): void {
   let suggestedName = "";
 
   const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
-  const settings = new AppSettings(store, hasTabMail);
-  const permissions = new PermissionsModel(macPermissions);
+  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
+  const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : macPermissions);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
-  const hotkeyHelper = new HelperClient({ name: "voice-hotkey", executable: join(helpers, "voice-hotkey") });
+  const hotkeyHelper = new HelperClient({ name: "voice-hotkey", executable: join(helpers, process.platform === "win32" ? "voice-hotkey.exe" : "voice-hotkey") });
   const macHelper = new HelperClient({ name: "voice-macos", executable: join(helpers, "voice-macos") });
   const mac = new MacSystem(macHelper);
+  const nativeHelper = process.platform === "win32"
+    ? new HelperClient({ name: "voice-windows", executable: join(helpers, "voice-windows.exe"), cancelRequests: true })
+    : macHelper;
+  const accessibilityActivator = process.platform === "win32"
+    ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
+    : null;
+  const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : mac;
+  const nativeAudio = process.platform === "darwin" || process.platform === "win32";
 
   let wizard: WelcomeWizard | null = null;
   let stopObservingWizard: (() => void) | null = null;
@@ -125,26 +140,25 @@ function launch(): void {
     if (contents.isLoading()) contents.once("did-finish-load", () => contents.send(channels.audioCommand, command));
     else contents.send(channels.audioCommand, command);
   }
-  // On macOS the helper runs the microphone as the Swift app does: Chromium's `getUserMedia` opens
-  // the device afresh for each dictation, about a second slower to the first audio.
-  const capture = new SessionAudioCapture(process.platform === "darwin" ? mac.microphone((report) => capture.receive(report)) : sendAudio);
+  // Native Mac and Windows capture preserve session ownership without opening a renderer device.
+  const capture = new SessionAudioCapture(nativeAudio ? system.microphone((report) => capture.receive(report)) : sendAudio);
   // A helper that exits takes a running microphone with it.
-  if (process.platform === "darwin") macHelper.onExit = () => capture.lost();
+  if (nativeAudio) nativeHelper.onExit = () => capture.lost();
 
   // `email_compose`'s draft (ADR-DESK-027), opened with the app macOS opens `mailto:` links with,
   // which the result names.
   const emailOpener: EmailOpener = {
     open: async (url) => {
-      const { systemDefault } = await mac.emailApps([]);
-      if (!systemDefault) throw new NoEmailAppError();
+      const name = process.platform === "darwin" ? (await mac.emailApps([])).systemDefault?.name : app.getApplicationNameForProtocol("mailto://");
+      if (!name) throw new NoEmailAppError();
       await shell.openExternal(url);
-      return systemDefault.name;
+      return name;
     },
   };
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
-    (exclusions) => mac.readScreen(exclusions),
+    (exclusions) => system.readScreen(exclusions),
     () => windows.push("contextDebug"),
   );
 
@@ -154,37 +168,32 @@ function launch(): void {
     settings: () => settings.dictation(account.email),
     account,
     tips: new TipBook(store),
-    paste: (text, signal) => mac.paste(text, signal),
+    paste: (text, signal, target) => system instanceof WindowsSystem ? system.paste(text, signal, target) : system.paste(text, signal),
     copy: (text) => copyText(text),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
     capture,
-    frontmostApp: () => mac.frontmostApp(),
-    keyboardLanguage: () => mac.keyboardLanguage(),
-    systemEmailApp: () => mac.systemEmailApp(),
+    frontmostApp: () => system.frontmostApp(),
+    keyboardLanguage: () => system.keyboardLanguage(),
+    systemEmailApp: () => process.platform === "darwin" ? mac.systemEmailApp() : Promise.resolve(null),
     makeTranscriptionClient: (baseURL) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport),
     warmUp: (baseURL, accessToken) => new TranscriptionClient(baseURL, app.getVersion(), liveTransport).warmUp(accessToken),
     makeCompletionsClient: (baseURL) => new CompletionsClient(baseURL, app.getVersion(), liveTransport),
-    // The tools that run on this computer, for the Answer prompt's model (ADR-DESK-023): every
-    // connector's, over the Mac's apps (ADR-DESK-024), Notes and Messages through AppleScript
-    // (ADR-DESK-028) and the web (ADR-DESK-030); none elsewhere.
-    connectorTools:
-      process.platform === "darwin"
-        ? connectors.flatMap((connector) =>
-            connector.tools({
-              eventStore: mac.eventStore,
-              contactStore: mac.contactStore,
-              fileStore: mac.fileStore,
-              home: homedir(),
-              emailOpener,
-              scriptRunner: osascript,
-              webFetch: liveWebFetch,
-              webOpener: { open: (url) => shell.openExternal(url) },
-            }),
-          )
-        : [],
-    // The user's corrections are learned where the helper reads the field: macOS (ADR-DESK-038).
-    corrections: process.platform === "darwin" ? new CorrectionWatch((pid, exclusions) => mac.focusedFieldValue(pid, exclusions), (words) => settings.learnWords(words)) : undefined,
+    // Native connectors require a platform implementation; shared web/email tools use Electron.
+    connectorTools: platformConnectors.flatMap((connector) =>
+      connector.tools({
+        eventStore: mac.eventStore,
+        contactStore: mac.contactStore,
+        fileStore: process.platform === "win32" ? new WindowsFileStore(homedir()) : mac.fileStore,
+        home: homedir(),
+        emailOpener,
+        scriptRunner: osascript,
+        webFetch: liveWebFetch,
+        webOpener: { open: (url) => shell.openExternal(url) },
+      }),
+    ),
+    // Learn corrections locally through each supported native field reader (ADR-DESK-038).
+    corrections: nativeAudio ? new CorrectionWatch((target, exclusions) => system.focusedFieldValue(target, exclusions), (words) => settings.learnWords(words)) : undefined,
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -195,13 +204,47 @@ function launch(): void {
   });
   controller.captureContext = (exclusions) => probe.capture(exclusions);
 
+  const shellGeometry = system instanceof WindowsSystem ? new ShellGeometry(() => system.shellExclusionBounds()) : null;
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
-    const pid = await mac.frontmostApp();
-    return pid === null ? null : mac.caretAnchor(pid);
-  });
+    const pid = await system.frontmostApp();
+    if (system instanceof WindowsSystem) {
+      try {
+        await shellGeometry?.refresh();
+      } catch (error: unknown) {
+        // Keep the last known shell exclusion, but do not discard a usable caret.
+        log.debug(`main: shell geometry lookup failed: ${errorName(error)}`);
+      }
+    }
+    return pid === null ? null : system.caretAnchor(pid);
+  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined);
 
-  // Packaged builds keep themselves up to date from cdn.tabmail.ai (ADR-DESK-041).
-  const updater = isDebugBuild ? null : makeUpdater();
+  if (system instanceof WindowsSystem) {
+    let refreshing = false;
+    let refreshAgain = false;
+    nativeHelper.on("shellGeometryChanged", () => {
+      refreshAgain = true;
+      if (refreshing) return;
+      refreshing = true;
+      void (async () => {
+        try {
+          while (refreshAgain) {
+            refreshAgain = false;
+            try {
+              if (await shellGeometry?.refresh()) overlay.refreshPlacement();
+            } catch (error: unknown) {
+              log.debug(`main: shell geometry refresh failed: ${errorName(error)}`);
+            }
+          }
+        } finally {
+          refreshing = false;
+        }
+      })();
+    });
+  }
+
+  // The existing signed update feed and installer are macOS-only (ADR-DESK-041).
+  // Other platforms need their own signed artifacts/feed before enabling updates.
+  const updater = isDebugBuild || process.platform !== "darwin" ? null : makeUpdater();
 
   const tray = new TrayMenu(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), menuState, {
     showWelcome,
@@ -257,6 +300,7 @@ function launch(): void {
   function settingsState(): SettingsState {
     const systemDefault = emailApps.systemDefault;
     return {
+      availableHotkeys: settings.availableHotkeys,
       email: account.email,
       hotkey: settings.hotkey,
       readsScreen: settings.readsScreen,
@@ -272,10 +316,11 @@ function launch(): void {
       suggestedName,
       dictionary: settings.dictionary,
       learnsWords: settings.learnsWords,
-      canLearnWords: process.platform === "darwin",
+      canLearnWords: nativeAudio,
       excludedApps: settings.excludedApps,
+      canExcludeApps: nativeAudio,
+      builtInExcludedApps: settings.builtInExcludedApps,
       excludedSites: settings.excludedSites,
-      canExcludeApps: process.platform === "darwin",
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
@@ -297,6 +342,7 @@ function launch(): void {
       isLastStep: current.isLastStep,
       canAdvance: current.canAdvance,
       hasConsented: settings.hasConsented,
+      canLearnWords: nativeAudio,
       readsScreen: settings.readsScreen,
       enabledTools: settings.enabledTools,
       connectors: availableConnectors,
@@ -374,6 +420,7 @@ function launch(): void {
   function showSettings(): void {
     permissions.refresh();
     windows.showSettings();
+    if (process.platform !== "darwin") return;
     mac.emailApps(config.thunderbirdBundleIdentifiers).then(
       (apps) => {
         emailApps = apps;
@@ -424,7 +471,7 @@ function launch(): void {
   /** The Thunderbird bubble shows the email app's icon: read once per app. */
   function updateEmailAppIcon(): void {
     const path = controller.emailAppPath;
-    if (path === null || path === emailAppIcon.path) return;
+    if (process.platform !== "darwin" || path === null || path === emailAppIcon.path) return;
     emailAppIcon = { path, dataURL: null };
     // Sharp on the densest display the overlay may show on.
     const pixels = Math.ceil(config.agentBubbleAppIconSize * Math.max(...screen.getAllDisplays().map((display) => display.scaleFactor)));
@@ -443,7 +490,7 @@ function launch(): void {
   /** The computer account's full name (macOS's, from `voice-macos`), else its short name
    * (`suggestedUserName`). */
   function readSuggestedName(): void {
-    const fullName = process.platform === "darwin" ? mac.fullUserName() : Promise.resolve("");
+    const fullName = nativeAudio ? system.fullUserName() : Promise.resolve("");
     void fullName
       .catch((error: unknown) => {
         log.error(`main: no full user name: ${errorName(error)}`);
@@ -503,20 +550,18 @@ function launch(): void {
   hotkeyHelper.on("action", (message) => {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
-  // A restarted helper has no microphone prepared. This is also the launch's prewarm, on every
-  // platform: `start()` runs `onStart` even where `voice-macos` can't spawn, preparing the audio
-  // window there (give that its own prewarm when a native helper replaces it).
-  macHelper.onStart = () => {
-    startActivator();
+  // Prepare capture on launch and after each native helper restart.
+  nativeHelper.onStart = () => {
+    if (process.platform === "darwin") startActivator();
     controller.prewarm();
   };
 
   // The hotkey follows Settings, and so does the Globe key's own action: off while fn is the
   // hotkey, the user's choice back at another key and when the app quits (ADR-DESK-031).
-  const globeKey = new GlobeKeyAction(mac.globeKey, store);
+  const globeKey = process.platform === "darwin" ? new GlobeKeyAction(mac.globeKey, store) : null;
   settings.onHotkeyChange = (hotkey) => {
     configureHotkey(hotkey);
-    void globeKey.hotkeyIs(hotkey);
+    void globeKey?.hotkeyIs(hotkey);
   };
 
   // Nothing listens hands-free: the hotkey helper stops keeping Space and Escape from the app in front.
@@ -595,18 +640,18 @@ function launch(): void {
 
   /** Asks the user for an app, and excludes it from screen reading. */
   async function excludePickedApp(): Promise<void> {
-    if (process.platform !== "darwin") return;
+    if (!nativeAudio) return;
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: "Exclude an App",
       buttonLabel: "Exclude",
-      defaultPath: config.applicationsDirectory,
+      defaultPath: process.platform === "win32" ? process.env.ProgramFiles : config.applicationsDirectory,
       properties: ["openFile"],
-      filters: [{ name: "Applications", extensions: ["app"] }],
+      filters: [{ name: "Applications", extensions: [process.platform === "win32" ? "exe" : "app"] }],
     });
     const path = filePaths[0];
     if (canceled || path === undefined) return;
-    const picked = await mac.appInfo(path);
-    if (picked === null) throw new Error("That app can't be excluded: it has no bundle identifier.");
+    const picked = await system.appInfo(path);
+    if (picked === null) throw new Error("That app can't be excluded: its application identifier could not be read.");
     const result = settings.excludeApp({ bundleIdentifier: picked.bundleIdentifier, name: picked.name });
     if (result === "full") throw new Error(`At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.`);
     if (result === "invalid") throw new Error("That app can't be excluded.");
@@ -742,20 +787,21 @@ function launch(): void {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
-    void globeKey
-      .restore()
+    void (globeKey?.restore() ?? Promise.resolve())
       .then(() => {
         hotkeyHelper.stop();
-        macHelper.stop();
+        nativeHelper.stop();
+        accessibilityActivator?.stop();
         return logFile.flush();
       })
       .finally(() => app.quit());
   });
 
   hotkeyHelper.start();
-  macHelper.start();
+  nativeHelper.start();
+  accessibilityActivator?.start();
   readSuggestedName();
-  void globeKey.hotkeyIs(settings.hotkey);
+  void globeKey?.hotkeyIs(settings.hotkey);
   permissions.startPollingAccessibility();
   updater?.start();
 

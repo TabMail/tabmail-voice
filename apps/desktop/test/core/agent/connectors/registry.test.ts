@@ -2,12 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import type { ConnectorServices } from "../../../../src/core/agent/connectors/contract.js";
-import { connectorByID, connectorIDs, connectors, isConnectorID } from "../../../../src/core/agent/connectors/index.js";
+import { connectorByID, connectorIDs, connectors, connectorsForPlatform, isConnectorID } from "../../../../src/core/agent/connectors/index.js";
 import { connectorDeclarations, connectorRegistry } from "../../../../scripts/gen-registries.mjs";
 import { FakeScriptRunner } from "../../../support/stubs.js";
 
@@ -42,6 +42,14 @@ describe("the connector registry", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  test("platform capabilities retain every Mac connector and expose shared tools on both ports", () => {
+    expect(connectorsForPlatform("darwin").map(({ id }) => id)).toEqual(connectorIDs);
+    for (const platform of ["win32", "linux"] as const) {
+      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(platform === "win32" ? ["files", "email", "web"] : ["email", "web"]);
+    }
+    expect(connectorsForPlatform("freebsd")).toEqual([]);
+  });
+
   test("only a connector's id is one", () => {
     expect(connectorIDs.every(isConnectorID)).toBe(true);
     expect(["thunderbird", "Calendar", "", null, 1].some(isConnectorID)).toBe(false);
@@ -57,7 +65,10 @@ describe("the registry generator", () => {
   function folderWith(files: Record<string, string>): string {
     const folder = mkdtempSync(join(tmpdir(), "TabMailVoiceTests-"));
     folders.push(folder);
-    for (const [name, source] of Object.entries(files)) writeFileSync(join(folder, name), source);
+    for (const [name, source] of Object.entries(files)) {
+      mkdirSync(dirname(join(folder, name)), { recursive: true });
+      writeFileSync(join(folder, name), source);
+    }
     return folder;
   }
 
@@ -68,6 +79,14 @@ describe("the registry generator", () => {
     expect(connectorDeclarations(folder).map(({ id, file }) => [id, file])).toEqual([["earlier", "b.ts"], ["later", "a.ts"]]);
     expect(connectorRegistry(folder)).toContain('export type ConnectorID = "earlier" | "later";');
     expect(connectorRegistry(folder)).toContain("export const connectors: readonly Connector[] = [earlierConnector, laterConnector];");
+  });
+
+  test("discovers platform connectors and checks their ids against shared connectors", () => {
+    const folder = folderWith({ "shared.ts": declaration("sharedConnector", "shared", 10), "macos/notes.ts": declaration("notesConnector", "notes", 20) });
+    expect(connectorRegistry(folder)).toContain('from "./macos/notes.js";');
+    expect(connectorDeclarations(folder).map(({ file }) => file)).toEqual(["shared.ts", "macos/notes.ts"]);
+    writeFileSync(join(folder, "macos/notes.ts"), declaration("otherConnector", "shared", 20));
+    expect(() => connectorDeclarations(folder)).toThrow('connector id "shared" is declared twice');
   });
 
   test.each([

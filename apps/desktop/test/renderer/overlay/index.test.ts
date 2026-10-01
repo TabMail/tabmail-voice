@@ -160,6 +160,14 @@ describe("overlay page", () => {
     expect(copiedIcon).toContain("rect");
   });
 
+  test.each([["en-US", "EN"], ["en", "EN"], ["zh-Hant-TW", "ZH"], ["pt-BR", "PT"], ["ko-KR", "KO"]])("language %s uses compact badge %s without losing its full accessible label", async (language, badge) => {
+    const page = await overlayPage();
+    await page.show({ ...listening, language });
+    const element = document.querySelector(".badge");
+    expect(element?.textContent).toBe(badge);
+    expect(element?.getAttribute("aria-label")).toBe(new Intl.DisplayNames(undefined, { type: "language" }).of(language));
+  });
+
   /** The hands-free tip, up the whole time it listens, goes over the pill in an overlay opened above
    * the caret's line, its arrow pointing down at the pill; opened below, it stays under the pill, and
    * a timed tip stays under it either way (owner, 2026-09-27: "above pill when opening up"). */

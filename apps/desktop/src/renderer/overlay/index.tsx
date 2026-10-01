@@ -163,7 +163,7 @@ function Overlay() {
       {chat === null && mode.kind === "hidden" && exiting?.pill && (
         <PillLayout key={`exiting-${exiting.key}`} mode={exiting.pill} state={state} tip={null} showsTools={false} keepsBubbles={false} exiting anchor={anchor} canvas={canvas} bubblesUnder={state.bubblesFitUnder} />
       )}
-      {chat !== null && placement !== null && <ChatBox chat={chat} below={placement.below} maxHeight={placement.maxHeight} />}
+      {chat !== null && placement !== null && <ChatBox chat={chat} below={placement.below} maxHeight={placement.maxHeight} width={placement.width ?? config.chatWidth} />}
       {pillMode !== null && (
         <PillLayout mode={pillMode} state={state} tip={tip} showsTools={showsTools} keepsBubbles={chat !== null} exiting={false} anchor={anchor} canvas={layer.size} bubblesUnder={placement?.bubblesUnder ?? state.bubblesFitUnder} layerStyle={layer.style} />
       )}
@@ -178,7 +178,7 @@ function Overlay() {
 function chatPillLayer(placement: ChatPlacement): { anchor: Point; size: Size; style: CSSProperties } {
   const margin = config.chatShadowMargin;
   const height = config.chatBubbleTooltipRoom + config.chatStripHeight + margin;
-  const size = { width: config.chatWidth + 2 * margin, height };
+  const size = { width: (placement.width ?? config.chatWidth) + 2 * margin, height };
   const overBubbles = placement.bubblesUnder ? 0 : config.agentBubbleGap + config.agentBubbleDiameter;
   if (placement.below) return { anchor: { x: placement.pillX, y: margin + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, top: 0, height } };
   return { anchor: { x: placement.pillX, y: config.chatBubbleTooltipRoom + overBubbles }, size, style: { inset: "auto", left: 0, right: 0, bottom: 0, height } };
@@ -317,7 +317,7 @@ function PillLayout({
  * click or a scroll keeps it open (`keepChatOpen`); Escape or the close button closes it. It reports
  * its height, which the overlay window takes, keeping the pill where it is. Under the pill's bubbles
  * instead when there is no room over it (`below`). Light in light and dark mode alike, as the pill. */
-function ChatBox({ chat, below, maxHeight }: { chat: AgentChat; below: boolean; maxHeight: number }) {
+function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: boolean; maxHeight: number; width: number }) {
   const [sizeRef, boxSize] = useSize<HTMLDivElement>();
   const appearRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -375,7 +375,7 @@ function ChatBox({ chat, below, maxHeight }: { chat: AgentChat; below: boolean; 
         left: margin,
         ...(below ? { top: offset } : { bottom: offset }),
         transformOrigin: below ? "top center" : "bottom center",
-        width: config.chatWidth,
+        width,
         borderRadius: config.chatCornerRadius,
         borderWidth: config.pillBorderWidth,
         background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
@@ -702,7 +702,7 @@ function LanguageBadge({ code }: { code: string }) {
       }}
     >
       <span className="gradient-text" style={{ fontSize: config.languageBadgeFontSize, backgroundImage: brandGradient }}>
-        {code.toUpperCase()}
+        {new Intl.Locale(code).language.toUpperCase()}
       </span>
     </div>
   );

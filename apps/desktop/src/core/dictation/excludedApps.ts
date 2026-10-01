@@ -5,8 +5,8 @@
 import * as config from "../config.js";
 
 /** An app the screen is never read in (owner, 2026-09-30): no screen context, no names and terms
- * from it, no correction learned in it. Dictation itself still works there. Known by its bundle
- * identifier; `name` is what Settings shows. */
+ * from it, no correction learned in it. Dictation itself still works there. Known by its native application
+ * identifier (bundle ID on macOS, executable name on Windows); `name` is what Settings shows. */
 export interface ExcludedApp {
   bundleIdentifier: string;
   name: string;
@@ -19,8 +19,8 @@ export function isSameApp(first: string, second: string): boolean {
 
 /** Whether `bundleIdentifier` is one of the password managers excluded in every installation
  * (`config.builtInExcludedApps`). */
-export function isBuiltInExcludedApp(bundleIdentifier: string): boolean {
-  return config.builtInExcludedApps.some((app) => isSameApp(app.bundleIdentifier, bundleIdentifier));
+export function isBuiltInExcludedApp(bundleIdentifier: string, builtIns: readonly ExcludedApp[] = config.builtInExcludedApps): boolean {
+  return builtIns.some((app) => isSameApp(app.bundleIdentifier, bundleIdentifier));
 }
 
 /** `value` as an app to exclude; null when it has no bundle identifier or name, or either is too long. */
@@ -34,13 +34,13 @@ export function excludedApp(value: unknown): ExcludedApp | null {
 
 /** A stored list read back: valid apps only, the first of any two that are the same app, none of the
  * built-in ones, at most `config.excludedAppsMax`. */
-export function storedExcludedApps(stored: unknown): ExcludedApp[] {
+export function storedExcludedApps(stored: unknown, builtIns: readonly ExcludedApp[] = config.builtInExcludedApps): ExcludedApp[] {
   if (!Array.isArray(stored)) return [];
   const apps: ExcludedApp[] = [];
   for (const item of stored) {
     if (apps.length === config.excludedAppsMax) break;
     const app = excludedApp(item);
-    if (app === null || isBuiltInExcludedApp(app.bundleIdentifier)) continue;
+    if (app === null || isBuiltInExcludedApp(app.bundleIdentifier, builtIns)) continue;
     if (apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) continue;
     apps.push(app);
   }

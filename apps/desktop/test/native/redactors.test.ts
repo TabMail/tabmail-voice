@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { generatedRedactors, redactorDefinitions, swiftRedactors } from "../../scripts/gen-redactors.mjs";
+import { generatedRedactors, redactorDefinitions, swiftRedactors, windowsRedactors } from "../../scripts/gen-redactors.mjs";
 
 const shared = join(__dirname, "../../native/shared/privacy");
 
@@ -182,6 +182,13 @@ describe("the shared redactors", () => {
 describe("the redactor generator", () => {
   const one = (overrides: Record<string, unknown>) =>
     JSON.stringify({ placeholder: "[redacted]", redactors: [{ name: "example", description: "An example.", pattern: "abc[0-9]{4}", ignoreCase: false, replacement: "{placeholder}", ...overrides }] });
+
+  test("writes Windows UTF-16 rules from the same definitions, escaping raw-string delimiters", () => {
+    const cpp = windowsRedactors(one({ pattern: '(a)tm"b', replacement: "{placeholder}" }));
+    expect(cpp).toContain('uR"tmx((a)tm"b)tmx"');
+    expect(cpp).toContain('uR"tm([redacted])tm"');
+    expect(cpp).toContain('"example"');
+  });
 
   test("writes each redactor as a Swift raw string, the placeholder filled in", () => {
     const swift = swiftRedactors(one({ pattern: '(a"b)\\s', replacement: "$1{placeholder}" }));

@@ -52,6 +52,7 @@ export class ContactStoreError extends Error {
 export const contactsConnector = defineConnector({
   id: "contacts",
   order: 30,
+  platforms: ["darwin"],
   displayName: "Contacts",
   settingsDescription: "Finds people’s details in your contacts, and adds ones you ask for once you confirm.",
   tools: ({ contactStore }: Pick<ConnectorServices, "contactStore">): ConnectorTool[] => [new ContactsSearchTool(contactStore), new ContactsAddTool(contactStore)],

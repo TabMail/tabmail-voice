@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { DictationHotkey } from "./bindings.js";
-import { type KeyValueStore, storedInteger } from "../util/keyValueStore.js";
-import { errorName, log } from "../log.js";
+import type { DictationHotkey } from "../bindings.js";
+import { type KeyValueStore, storedInteger } from "../../util/keyValueStore.js";
+import { errorName, log } from "../../log.js";
 
 /** The system's Globe-key setting, through the macOS helper (`globeRead`/`globeUpdate`, HIToolbox's
  * private `TISGetFnUsageType`/`TISUpdateFnUsageType`, what System Settings itself calls). */

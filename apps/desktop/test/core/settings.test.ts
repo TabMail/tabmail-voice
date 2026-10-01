@@ -88,6 +88,32 @@ describe("AppSettings", () => {
     expect(app.emailClient).toBeNull();
   });
 
+  test("platform hotkeys reject a migrated Mac preference and unsupported changes", () => {
+    const store = new MemoryStore({ dictationHotkey: "function" });
+    const app = new AppSettings(store, () => false, ["rightControl"]);
+    const heard: string[] = [];
+    app.onHotkeyChange = (hotkey) => heard.push(hotkey);
+    expect(app.hotkey).toBe("rightControl");
+    app.hotkey = "rightOption";
+    expect(store.get("dictationHotkey")).toBe("function");
+    expect(heard).toEqual([]);
+    app.hotkey = "rightControl";
+    expect(new AppSettings(store, () => false, ["rightControl"]).hotkey).toBe("rightControl");
+    expect(heard).toEqual(["rightControl"]);
+  });
+
+  test("Windows defaults to right Alt, retains a selected right Control, and excludes Mac Fn", () => {
+    const store = new MemoryStore();
+    const windows = () => new AppSettings(store, () => false, ["rightAlt", "rightControl"]);
+    expect(windows().hotkey).toBe("rightAlt");
+    windows().hotkey = "rightControl";
+    expect(windows().hotkey).toBe("rightControl");
+    windows().hotkey = "rightAlt";
+    expect(windows().dictation(null).hotkey).toBe("rightAlt");
+    windows().hotkey = "function";
+    expect(windows().hotkey).toBe("rightAlt");
+  });
+
   /** Every setting survives a relaunch; the email app choice is forgotten when set back to the
    * default. */
   test("every setting is persisted", () => {
@@ -246,6 +272,23 @@ describe("apps excluded from screen reading", () => {
   const builtIn = config.builtInExcludedApps.map((app) => app.bundleIdentifier);
   const bank = { bundleIdentifier: "org.example.bank", name: "Example Bank" };
   const notes = { bundleIdentifier: "org.example.notes", name: "Example Notes" };
+
+  test("Windows uses its native built-ins in storage and key-down policy", () => {
+    const store = new MemoryStore();
+    const app = new AppSettings(store, () => false, ["rightAlt", "rightControl"], config.windowsBuiltInExcludedApps);
+    const ids = config.windowsBuiltInExcludedApps.map((entry) => entry.bundleIdentifier);
+    expect(app.dictation(null).excludedApps).toEqual(ids);
+    expect(app.excludeApp({ bundleIdentifier: "KEEPASSXC.EXE", name: "Renamed display" })).toBe("added");
+    expect(app.excludedApps).toEqual([]);
+    app.removeExcludedApp("KeePassXC.exe");
+    expect(app.dictation(null).excludedApps).toContain("KeePassXC.exe");
+    app.excludeApp({ bundleIdentifier: "Example.exe", name: "Example" });
+    const snapshot = app.dictation(null);
+    app.removeExcludedApp("Example.exe");
+    expect(snapshot.excludedApps).toEqual([...ids, "Example.exe"]);
+    expect(app.dictation(null).excludedApps).toEqual(ids);
+    expect(app.dictation(null).excludedApps).not.toContain("com.apple.Passwords");
+  });
 
   test("the password managers are excluded from the start, and the user's list is empty", () => {
     const app = settings();
