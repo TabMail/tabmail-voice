@@ -52,7 +52,7 @@ struct RedactorTests {
     /// Several texts redacted together, each keeping its share: the shared cases every helper passes.
     @Test func everySharedCaseOfSeveralTextsIsRedactedAsExpected() throws {
         let cases = try Self.sharedFile().lineCases
-        #expect(cases.count >= 15)
+        #expect(cases.count >= 19)
         for item in cases {
             #expect(Redactor.redact(item.lines.map { $0.map(Self.joined) }) == item.expected.map { $0.map(Self.joined) }, "\(item.name)")
         }

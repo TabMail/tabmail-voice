@@ -2471,7 +2471,9 @@ well-structured place for the redactors.
   label ending in `token:` above an unrelated word with a digit).
 - A private key written on one line with escaped line breaks, or one with header lines after its
   first (an encrypted PEM key, a PGP key with a `Version:` line), keeps its body unless a name beside it marks it as a secret; a key header with nothing
-  after it takes the letters that follow, up to the first punctuation.
+  after it takes the letters that follow, up to the first punctuation. The key block's redactor is
+  the last in the list for that reason: first, it took a later secret's name or prefix with those
+  letters, and that secret's own redactor no longer knew it.
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept.

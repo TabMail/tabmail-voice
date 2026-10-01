@@ -5,17 +5,11 @@
     "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes written out, groups, alternation, counted repeats, \\s and lookahead (\\s differs between engines on rare characters, U+0085 and U+FEFF, and ICU folds a few more letters into ASCII ones when ignoring case: the long s, the Kelvin sign, the sharp s). No \\b, \\w or \\d (ICU counts every script's letters and digits, ECMAScript only ASCII's: a key beside a Japanese word would be kept by one and not the other), no lookbehind, no named groups, no Unicode classes, no inline flags. Where a key must not start inside a word, the pattern takes the character before it as group 1 and the replacement puts it back.",
     "`ignoreCase` is the only flag. Every platform's helper is generated from this file (`npm run gen:redactors`) and must pass redaction-cases.json.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
-    "No open-ended count ({16,}) and no \\s* or \\s+ outside a class: ICU runs those with a stack frame per repetition, and on a run of some 200,000 characters gives up and matches nothing more. Write [..]{16}[..]* and [\\s]*, which it runs as one loop. The generator refuses the other forms."
+    "No open-ended count ({16,}) and no \\s* or \\s+ outside a class: ICU runs those with a stack frame per repetition, and on a run of some 200,000 characters gives up and matches nothing more. Write [..]{16}[..]* and [\\s]*, which it runs as one loop. The generator refuses the other forms.",
+    "private-key-block is last: its cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
   ],
   "placeholder": "[redacted]",
   "redactors": [
-    {
-      "name": "private-key-block",
-      "description": "A private-key block, whole or cut off where the window ends.",
-      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s]*)",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
-    },
     {
       "name": "json-web-token",
       "description": "A JSON web token: three base64url parts, the first two JSON objects.",
@@ -120,6 +114,13 @@
       "pattern": "(^|[^A-Za-z0-9_])hf_[A-Za-z0-9]{16}[A-Za-z0-9]*",
       "ignoreCase": false,
       "replacement": "$1{placeholder}"
+    },
+    {
+      "name": "private-key-block",
+      "description": "A private-key block, whole or cut off where the window ends.",
+      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s]*)",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
     }
   ]
 }

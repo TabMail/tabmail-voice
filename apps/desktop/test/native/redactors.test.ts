@@ -106,7 +106,7 @@ describe("the shared redactors", () => {
   });
 
   test("the cases of several texts are there, their names unlike", () => {
-    expect(lineCases.length).toBeGreaterThanOrEqual(15);
+    expect(lineCases.length).toBeGreaterThanOrEqual(19);
     expect(new Set(lineCases.map((item) => item.name)).size).toBe(lineCases.length);
   });
 
