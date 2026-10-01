@@ -33,6 +33,8 @@ import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
 import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
 
+vi.mock("electron", () => ({ screen: {} }));
+
 const transcript = "ask jordan about the road map";
 const cleaned = "Ask Jordan about the roadmap.";
 const request = "make this friendlier";
@@ -197,6 +199,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** One request: the recording with the cleanup's variables, and the backend's cleanup back with the
    * transcript (backend ADR-027). */
+  test("the original window reaches the Windows insertion boundary without copy fallback", async () => {
+    transcription.enqueue(200, cleanedReply);
+    const inserts: { text: string; window: number }[] = [];
+    const { WindowsSystem } = await import("../../../src/main/native/windows/system.js");
+    const system = new WindowsSystem({ request: async (_method: string, params: { text: string; window: number }) => { inserts.push(params); } } as never);
+    const { controller, copies } = makeController({ capture: new CountingCapture(true), paste: system.paste.bind(system) });
+    await holdAndRelease(controller);
+    expect(await eventually(() => settled(controller))).toBe(true);
+    expect(inserts.map(({ text, window }) => ({ text, window }))).toEqual([{ text: cleaned, window: 101 }]);
+    expect(copies).toEqual([]);
+    expect(controller.phase).toEqual(idle);
+  });
+
   test("pastes the cleaned-up transcript", async () => {
     transcription.enqueue(200, cleanedReply);
 

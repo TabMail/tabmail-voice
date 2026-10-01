@@ -238,6 +238,8 @@ export const builtInExcludedApps: readonly { bundleIdentifier: string; name: str
 ];
 /** Windows executable identities, verified with the installed vendor package. */
 export const windowsBuiltInExcludedApps: readonly { bundleIdentifier: string; name: string }[] = [
+  { bundleIdentifier: "1Password.exe", name: "1Password" },
+  { bundleIdentifier: "Bitwarden.exe", name: "Bitwarden" },
   { bundleIdentifier: "KeePassXC.exe", name: "KeePassXC" },
 ];
 /** The most apps the user can exclude, and the longest bundle identifier and name kept for one. */

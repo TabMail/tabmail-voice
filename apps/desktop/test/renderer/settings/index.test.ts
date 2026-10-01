@@ -218,7 +218,7 @@ describe("Settings page", () => {
 
     test("names only the password managers supported by this platform", async () => {
       await open({ ...signedIn, builtInExcludedApps: config.windowsBuiltInExcludedApps });
-      expect(visibleText()).toContain("KeePassXC");
+      for (const name of ["1Password", "Bitwarden", "KeePassXC"]) expect(visibleText()).toContain(name);
       expect(visibleText()).not.toContain("Keychain Access");
       expect(visibleText()).not.toContain("1Password 7");
     });

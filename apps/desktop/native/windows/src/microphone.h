@@ -48,6 +48,22 @@ inline std::string base64(const std::vector<float>& samples) {
     return result;
 }
 
+// Event-driven shared streams let the audio engine choose both timing values.
+// Keep the actual call shared with the native contract test's recording client.
+template <typename AudioClient>
+HRESULT initializeCapture(AudioClient& client, unsigned rate) {
+    WAVEFORMATEX format{};
+    format.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
+    format.nChannels = 1;
+    format.nSamplesPerSec = rate;
+    format.wBitsPerSample = 32;
+    format.nBlockAlign = 4;
+    format.nAvgBytesPerSec = rate * 4;
+    return client.Initialize(AUDCLNT_SHAREMODE_SHARED,
+        AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+        0, 0, &format, nullptr);
+}
+
 // WASAPI's shared engine converts to the app's float mono recording rate. Each start owns
 // a fresh audio client; prepare only checks endpoint availability, never starts capture.
 // Control stays on the stdin thread, separate from potentially blocking UI Automation calls.
@@ -79,16 +95,7 @@ public:
                 require(enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &device));
                 ComPtr<IAudioClient> client;
                 require(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(client.GetAddressOf())));
-                WAVEFORMATEX format{};
-                format.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
-                format.nChannels = 1;
-                format.nSamplesPerSec = rate;
-                format.wBitsPerSample = 32;
-                format.nBlockAlign = 4;
-                format.nAvgBytesPerSec = rate * 4;
-                require(client->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                    AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-                    1'000'000, 0, &format, nullptr));
+                require(initializeCapture(*client.Get(), rate));
                 Handle audioEvent;
                 require(client->SetEventHandle(audioEvent.value));
                 ComPtr<IAudioCaptureClient> capture;

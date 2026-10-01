@@ -51,3 +51,19 @@ test("a new dictation cannot inherit the previous session's partial meter interv
   next.append(new Float32Array(config.audioChunkFrames - 1), (reading) => readings.push(reading));
   expect(readings).toEqual([config.silenceDecibels]);
 });
+
+
+test("meter intervals have exact boundaries and independent RMS", () => {
+  const meter = new LevelSampler();
+  const readings: number[] = [];
+  const emit = (reading: number) => readings.push(reading);
+  meter.append(new Float32Array(config.audioChunkFrames).fill(1), emit);
+  expect(readings).toEqual([0]);
+  meter.append(new Float32Array(config.audioChunkFrames - 1), emit);
+  expect(readings).toEqual([0]);
+  meter.append(new Float32Array(1), emit);
+  expect(readings).toEqual([0, config.silenceDecibels]);
+  meter.append(new Float32Array(config.audioChunkFrames).fill(0.5), emit);
+  expect(readings).toHaveLength(3);
+  expect(readings[2]).toBeCloseTo(20 * Math.log10(0.5), 10);
+});

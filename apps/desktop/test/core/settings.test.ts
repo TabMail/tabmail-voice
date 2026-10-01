@@ -426,6 +426,12 @@ describe("apps excluded from screen reading", () => {
     const store = new MemoryStore();
     const app = new AppSettings(store, () => false, ["rightAlt", "rightControl"], config.windowsBuiltInExcludedApps);
     const ids = config.windowsBuiltInExcludedApps.map((entry) => entry.bundleIdentifier);
+    expect(ids).toEqual(["1Password.exe", "Bitwarden.exe", "KeePassXC.exe"]);
+    for (const id of ids) {
+      app.excludeApp({ bundleIdentifier: id.toUpperCase(), name: "Renamed" });
+      app.removeExcludedApp(id.toLowerCase());
+    }
+    expect(app.excludedApps).toEqual([]);
     expect(app.dictation(null).excludedApps).toEqual(ids);
     expect(app.excludeApp({ bundleIdentifier: "KEEPASSXC.EXE", name: "Renamed display" })).toBe("added");
     expect(app.excludedApps).toEqual([]);

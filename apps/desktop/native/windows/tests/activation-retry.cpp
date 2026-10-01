@@ -30,5 +30,14 @@ int main() {
     retry.enter(0, 1000003); retry.complete(*current, false, 1000004);
     check(!retry.next());
     retry.enter(20, 1000005); check(retry.take(1000005).has_value());
+    retry.enter(10, 2000000);
+    auto previousVisit = retry.take(2000000); check(previousVisit.has_value());
+    retry.enter(20, 2000001);
+    retry.enter(10, 2000002);
+    retry.complete(*previousVisit, false, 2000003);
+    check(retry.next() == 2000002);
+    auto newVisit = retry.take(2000003);
+    check(newVisit && newVisit->target == 10 && newVisit->generation != previousVisit->generation);
+    retry.complete(*newVisit, true, 2000004); check(!retry.next());
     std::cout << "foreground retry bounds, cancellation and revisit checks passed\n";
 }

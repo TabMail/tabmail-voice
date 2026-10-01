@@ -28,6 +28,12 @@ test("home scoped query ANDs words with filename/content and applies kind and ex
   expect(sql).toContain("System.DateModified >= '2026-01-01 00:00:00'");
   expect(sql).toContain("System.DateModified < '2026-02-01 00:00:00'");
   expect(sql).toMatch(/ORDER BY System.DateModified DESC$/u);
+  expect(sql.split(" WHERE ")[1]).toBe(
+    "SCOPE='file:C:/Users/Example' AND " +
+    "(System.ItemNameDisplay LIKE '%tax%' OR System.Subject LIKE '%tax%' OR CONTAINS(System.Author, '\"tax*\"') OR CONTAINS(System.Search.Contents, '\"tax*\"')) AND " +
+    "(System.ItemNameDisplay LIKE '%report%' OR System.Subject LIKE '%report%' OR CONTAINS(System.Author, '\"report*\"') OR CONTAINS(System.Search.Contents, '\"report*\"')) AND " +
+    "System.FileExtension='.pdf' AND System.DateModified >= '2026-01-01 00:00:00' AND System.DateModified < '2026-02-01 00:00:00' ORDER BY System.DateModified DESC",
+  );
 });
 
 test("literal words escape SQL quotes, LIKE wildcards, and full text phrase quotes", () => {

@@ -6,6 +6,7 @@
 #include "modifier.h"
 #include <iostream>
 #include <stdexcept>
+#include <string>
 
 using voice::Action;
 using voice::Gesture;
@@ -100,7 +101,34 @@ int main() {
             check(keys.bypass(0xa5, true, true), "injected modifier never triggers or steals a key");
             check(!keys.bypass(0xa5, true, false), "injected right Alt does not poison the physical gesture");
         }
-        std::cout << "8 gesture scenarios and right Alt/AltGr policy checks passed\n";
+        {
+            auto g = gesture();
+            g.modifier(true, 1); g.modifier(false, 1.1);
+            check(g.modifier(true, 1.401) == Action::start, "expired second tap starts an ordinary hold");
+            check(g.modifier(false, 1.5) == Action::finish, "expired tap release finishes");
+        }
+        {
+            auto g = gesture(); doubleTap(g);
+            check(!g.keyPressed(65, false), "typing during hands free is allowed");
+            check(g.modifier(true, 1.4) == Action::finish, "typing clears triple-tap history");
+        }
+        for (unsigned control : {0xa2u, voice::ModifierChoice::rightControl}) {
+            voice::ModifierChoice keys;
+            keys.selected = voice::ModifierChoice::rightAlt;
+            keys.bypass(control, true, false);
+            check(keys.bypass(0xa5, true, false), "either Control plus right Alt stays with the app");
+            keys.bypass(control, false, false);
+            check(keys.bypass(0xa5, false, false), "chord release remains with the app");
+            check(!keys.bypass(0xa5, true, false), "standalone right Alt works after chord release");
+        }
+        for (const auto& [action, name] : {
+            std::pair{Action::start, "start"}, {Action::startHandsFree, "startHandsFree"},
+            {Action::listenHandsFree, "listenHandsFree"}, {Action::finish, "finish"},
+            {Action::cancel, "cancel"}, {Action::toggleMode, "toggleMode"},
+            {Action::closeChat, "closeChat"}, {Action::showHistory, "showHistory"}}) {
+            check(std::string(voice::actionName(action)) == name, "action serialization preserves its meaning");
+        }
+        std::cout << "gesture timing, typing, emitted names and both Control-key policies passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
