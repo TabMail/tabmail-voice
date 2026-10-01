@@ -10,6 +10,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
+import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import { channels } from "../../src/shared/ipc.js";
 import { eventually } from "../support/stubs.js";
 
@@ -43,6 +44,7 @@ const app = vi.hoisted(() => ({
   /** What the history window does when it loses the focus. */
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
+  placementAreas: [] as (Rect | null | undefined)[],
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
@@ -111,7 +113,7 @@ vi.mock("electron", async () => {
         app.clipboard.push(text);
       },
     },
-    screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
+    screen: { screenToDipRect: (_window: unknown, rect: Rect) => rect, getCursorScreenPoint: () => ({ x: 100, y: 100 }), getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }) },
     session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
     shell: {
       openExternal: async (url: string) => {
@@ -325,8 +327,11 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     onPlace: (() => void) | undefined;
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
-    constructor() {
+    constructor(_window: unknown, _locate: unknown, readonly place?: (area: Rect) => Rect | null) {
       app.overlay = this;
+    }
+    refreshPlacement() {
+      app.placementAreas.push(this.place?.({ x: 0, y: 0, width: 1440, height: 900 }));
     }
     update(phase: { kind: string }, chatOpen = false) {
       this.updates.push([phase.kind, chatOpen]);
@@ -404,6 +409,7 @@ afterEach(() => {
   app.openWindows = [];
   app.historyBlur = null;
   app.audioCommands = [];
+  app.placementAreas = [];
   app.overlay = null;
   app.controller = null;
   app.stored.clear();
@@ -435,6 +441,29 @@ function send(command: unknown): Promise<unknown> {
 }
 
 describe("main process wiring", () => {
+  test("shell geometry events move, hide and restore active overlay placement", async () => {
+    await launch("win32");
+    const helper = app.helpers.get("voice-windows")!;
+    const emit = () => helper.events.get("shellGeometryChanged")?.({ event: "shellGeometryChanged" });
+    helper.replies.set("shellExclusionBounds", [{ x: 0, y: 0, width: 700, height: 900 }]);
+    emit();
+    await vi.waitFor(() => expect(app.placementAreas).toEqual([{ x: 724, y: 0, width: 716, height: 900 }]));
+    helper.replies.set("shellExclusionBounds", [{ x: 0, y: 0, width: 1440, height: 900 }]);
+    emit();
+    await vi.waitFor(() => expect(app.placementAreas.at(-1)).toBeNull());
+    helper.replies.set("shellExclusionBounds", []);
+    emit();
+    await vi.waitFor(() => expect(app.placementAreas).toEqual([
+      { x: 724, y: 0, width: 716, height: 900 }, null, { x: 0, y: 0, width: 1440, height: 900 },
+    ]));
+    const queries = () => helper.requests.filter((request) => request.method === "shellExclusionBounds").length;
+    const before = queries();
+    emit();
+    await vi.waitFor(() => expect(queries()).toBe(before + 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(app.placementAreas).toHaveLength(3);
+  });
+
   /** Launching prepares the microphone ahead of the first dictation, once, on every platform: the
    * helper's prepared engine on macOS, the audio window's worklet elsewhere (through `onStart`,
    * which runs even where `voice-macos` can't spawn). */

@@ -67,7 +67,7 @@ try {
   assert.ok(third && third.x < second.x, "new-line caret returns toward the left margin");
   // At the viewport bottom Terminal scrolls instead of increasing screen Y.
   assert.ok(third.y >= second.y, "new line advances or scrolls at the viewport edge");
-  assert.equal(await request("focusedFieldValue", { ...target, maxLength: 20_000 }), null,
+  assert.equal(await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] }), null,
     "geometry support does not opt terminal output into correction learning");
   assert.deepEqual(await request("frontmostApp"), target, "helper never activates a different window");
   process.stdout.write("\nTERMINAL_CARET_PASS\n");
