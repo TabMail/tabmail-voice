@@ -56,7 +56,7 @@ try {
     const refused = mode.startsWith("page-") && mode !== "page-no-address";
     if (refused && context !== null) {
       fixture.child.stdin.write("stats\n");
-      console.error(mode, await fixture.next(), helper.errors());
+      process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}`);
     }
     if (refused) assert.equal(context, null, `${mode}: entire reply refused`);
     else {

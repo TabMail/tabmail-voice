@@ -47,7 +47,10 @@ enum FocusedField {
             HelperLog.debug("FocusedField: the window shows a page of an excluded website, or one whose address is unknown; not read")
             return nil
         }
-        return readable(subrole: tree.string(element, kAXSubroleAttribute), value: tree.string(element, kAXValueAttribute), maxLength: maxLength)
+        // The value is asked for only once the field is known not to be a password field.
+        let subrole = tree.string(element, kAXSubroleAttribute)
+        return readable(subrole: subrole, value: subrole == kAXSecureTextFieldSubrole ? nil : tree.string(element, kAXValueAttribute),
+                        maxLength: maxLength)
     }
 
     /// `value`, unless it is a password field's (`subrole`), missing, or longer than `maxLength`.

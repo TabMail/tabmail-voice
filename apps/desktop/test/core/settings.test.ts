@@ -2,6 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../../src/core/backend/account.js";
 import { agentToolIDs, offeredAgentToolIDs } from "../../src/core/agent/tools.js";
@@ -9,6 +12,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
 import { AppSettings } from "../../src/core/settings.js";
+import { JSONFileStore } from "../../src/main/storage/jsonFileStore.js";
 
 function settings(store = new MemoryStore(), hasTabMail = false): AppSettings {
   return new AppSettings(store, () => hasTabMail);
@@ -188,6 +192,114 @@ describe("AppSettings", () => {
     expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
+  });
+});
+
+/** A store whose file can't be written: values are held, and reported unsaved. */
+class UnsavedStore extends MemoryStore {
+  override set(key: string, value: unknown): boolean {
+    super.set(key, value);
+    return false;
+  }
+}
+
+/** An exclusion is a privacy choice that must last: one held only until the app quits is reported,
+ * so Settings can say so. */
+describe("an exclusion that could not be saved", () => {
+  const bank = { bundleIdentifier: "org.example.bank", name: "Example Bank" };
+
+  test("is reported unsaved, and holds for this run", () => {
+    const store = new UnsavedStore();
+    const app = settings(store);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+
+    expect(app.excludeSite("example.org")).toBe("unsaved");
+    expect(app.excludeApp(bank)).toBe("unsaved");
+    expect(changes).toBe(2);
+    expect(app.dictation(null).excludedSites).toContain("example.org");
+    expect(app.dictation(null).excludedApps).toContain(bank.bundleIdentifier);
+    // Adding it again is still unsaved, and tells no one of a change: the list is as it was.
+    expect(app.excludeSite("example.org")).toBe("unsaved");
+    expect(app.excludeApp({ ...bank, bundleIdentifier: "ORG.EXAMPLE.BANK" })).toBe("unsaved");
+    expect(changes).toBe(2);
+    expect(app.excludedSites).toEqual(["example.org"]);
+    expect(app.excludedApps).toEqual([bank]);
+    // Nothing is unsaved for one built in or invalid.
+    expect(app.excludeSite(config.builtInExcludedSites[0])).toBe("added");
+    expect(app.excludeApp(config.builtInExcludedApps[0])).toBe("added");
+    expect(app.excludeSite("not a site")).toBe("invalid");
+    expect(app.excludeApp({ bundleIdentifier: "", name: "" })).toBe("invalid");
+
+    expect(app.removeExcludedSite("example.org")).toBe(false);
+    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(false);
+    expect(changes).toBe(4);
+    expect(app.excludedSites).toEqual([]);
+    expect(app.excludedApps).toEqual([]);
+    // Nothing is written for one that is not there.
+    expect(app.removeExcludedSite("example.org")).toBe(true);
+    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
+  });
+
+  /** The message says to add it again: doing so writes the list held, so it lasts once the file can
+   * be written. */
+  test("added again once the file can be written, it is saved", () => {
+    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
+    try {
+      const path = join(folder, "settings.json");
+      const app = settings(new JSONFileStore(path));
+      mkdirSync(`${path}.tmp`);
+      expect(app.excludeSite("example.org")).toBe("unsaved");
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(app.excludeSite("example.org")).toBe("unsaved");
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(settings(new JSONFileStore(path)).excludedSites).toEqual([]);
+
+      rmSync(`${path}.tmp`, { recursive: true });
+      expect(app.excludeSite("example.org")).toBe("added");
+      expect(settings(new JSONFileStore(path)).excludedSites).toEqual(["example.org"]);
+      rmSync(path);
+      expect(app.excludeApp(bank)).toBe("added");
+      const relaunched = settings(new JSONFileStore(path));
+      expect(relaunched.excludedSites).toEqual(["example.org"]);
+      expect(relaunched.excludedApps).toEqual([bank]);
+    } finally {
+      rmSync(folder, { recursive: true });
+    }
+  });
+
+  /** The last place in a full list is no different: the one held is saved by adding it again, and
+   * a new one is still refused. */
+  test("the last app of a full list, unsaved, is saved by adding it again", () => {
+    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
+    try {
+      const path = join(folder, "settings.json");
+      const app = settings(new JSONFileStore(path));
+      for (let index = 1; index < config.excludedAppsMax; index += 1) expect(app.excludeApp({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })).toBe("added");
+      mkdirSync(`${path}.tmp`);
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(app.excludedApps).toHaveLength(config.excludedAppsMax);
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(settings(new JSONFileStore(path)).excludedApps).toHaveLength(config.excludedAppsMax - 1);
+
+      rmSync(`${path}.tmp`, { recursive: true });
+      expect(app.excludeApp({ bundleIdentifier: "org.example.another", name: "Another" })).toBe("full");
+      expect(settings(new JSONFileStore(path)).excludedApps).toHaveLength(config.excludedAppsMax - 1);
+      expect(app.excludeApp(bank)).toBe("added");
+      const relaunched = settings(new JSONFileStore(path)).excludedApps;
+      expect(relaunched).toHaveLength(config.excludedAppsMax);
+      expect(relaunched.at(-1)).toEqual(bank);
+    } finally {
+      rmSync(folder, { recursive: true });
+    }
+  });
+
+  test("a saved one is reported added, and removed", () => {
+    const app = settings();
+    expect(app.excludeSite("example.org")).toBe("added");
+    expect(app.excludeApp(bank)).toBe("added");
+    expect(app.removeExcludedSite("example.org")).toBe(true);
+    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
   });
 });
 

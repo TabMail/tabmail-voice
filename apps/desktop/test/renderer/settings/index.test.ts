@@ -244,17 +244,26 @@ describe("Settings page", () => {
       expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("That app can't be excluded.");
     });
 
-    test("a full list takes no more apps, saying so", async () => {
+    /** Add App… stays usable on a full list: picking one already listed is how one that could not
+     * be saved is saved, and the main process refuses a new one. */
+    test("a full list says so, and still asks for an app", async () => {
       const full = Array.from({ length: config.excludedAppsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` }));
-      const page = await open({ ...signedIn, excludedApps: full });
-      expect(button("Add App…").disabled).toBe(true);
+      const page = await open({ ...signedIn, excludedApps: full }, { error: "Remove one to add another." });
+      expect(button("Add App…").disabled).toBe(false);
       expect(visibleText()).toContain(`At most ${config.excludedAppsMax} apps can be excluded.`);
       await act(async () => button("Add App…").click());
-      expect(page.commands).toEqual([]);
+      expect(page.commands).toEqual([{ type: "excludeApp" }]);
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("Remove one to add another.");
 
       await open({ ...signedIn, excludedApps: full.slice(1) });
       expect(button("Add App…").disabled).toBe(false);
       expect(visibleText()).not.toContain("At most");
+    });
+
+    test("a removal that could not be saved shows why", async () => {
+      await open({ ...signedIn, excludedApps: excluded }, { error: "Removed for now, but this couldn't be saved." });
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Example Notes"]')?.click());
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("Removed for now, but this couldn't be saved.");
     });
 
     /** The websites the screen is never read on (ADR-DESK-047). */
@@ -281,6 +290,39 @@ describe("Settings page", () => {
         await act(async () => field().form?.requestSubmit());
         expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.com" }]);
         expect(field().value).toBe("");
+      });
+
+      test("shows why a website could not be added or removed, until the next try or what is typed has its own problem", async () => {
+        const reply = { error: "Excluded for now, but this couldn't be saved." as string | null };
+        await open({ ...signedIn, excludedSites: ["mail.example.org"] }, reply);
+        expect(problem()).toBeNull();
+        await act(async () => type(field(), "example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
+        expect(field().value).toBe("");
+
+        await act(async () => type(field(), "not a site"));
+        expect(problem()).toBe("A website’s address, like example.com.");
+
+        reply.error = "Removed for now, but this couldn't be saved.";
+        await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove mail.example.org"]')?.click());
+        await act(async () => type(field(), ""));
+        expect(problem()).toBe("Removed for now, but this couldn't be saved.");
+
+        reply.error = null;
+        await act(async () => type(field(), "example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problem()).toBeNull();
+      });
+
+      /** The way to save a site that could not be: the pane sends one already listed. */
+      test("a website already listed can be added again", async () => {
+        const page = await open({ ...signedIn, excludedSites: ["mail.example.org"] }, { error: "Excluded for now, but this couldn't be saved." });
+        await act(async () => type(field(), "mail.example.org"));
+        expect(problem()).toBeNull();
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.org" }]);
+        expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
       });
 
       test.each(["not a site", "localhost"])("refuses %j, saying why", async (typed) => {

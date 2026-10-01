@@ -243,6 +243,10 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   longer relies on the app hiding the field's value; the focused one still gets its caret block,
   empty. A password an app shows in an ordinary field or as text is still read: excluding apps is
   issue #5.)*
+- *(Amended 2026-10-01: the refusal comes before anything is asked of the field. A focused password
+  field is given neither to the terminal's pane reader nor to the caret read, and the field read for
+  correction learning asks for its subrole before its value and never asks a password field for
+  one.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
@@ -2368,6 +2372,14 @@ Apps are known by bundle identifier, compared without regard to case.
 - Settings › Privacy (macOS, where the screen is read): the built-in ones named in a note, the user's
   apps with a Remove button each, and Add App…, which opens a picker on the Applications folder; the
   helper's `appInfo` gives the picked app's identifier and name. At most `excludedAppsMax` (100).
+- An exclusion that could not be written to the preferences file is said so in Settings (owner,
+  2026-10-01): it holds until the app quits, and the app would be read again after a restart with
+  nothing having told the user. `KeyValueStore.set` answers whether the value was kept, `excludeApp`
+  and `excludeSite` answer `unsaved`, and a removal that could not be written is said the same way. Adding one already in the user's
+  list writes the list again and answers from that, so adding it again, as the message says to,
+  saves it once the file can be written. Add App… is therefore not disabled on a full list: the
+  note says the list is full, and a new app picked then is refused with the reason.
+  Other settings still fail to save silently, logged only.
 
 **Consequences:**
 - A deny-list: every other app is read as before. Websites are excluded one by one since ADR-DESK-047
@@ -2530,6 +2542,8 @@ starts alike; case and a trailing dot don't matter.
 - Settings › Privacy: a field takes a site by its address (`https://mail.example.com/inbox` is kept
   as `mail.example.com`: `excludedSite` drops the scheme, sign-in, port and path), the user's sites
   with a Remove button each, and the built-in ones named in a note. At most `excludedSitesMax` (100).
+  A site that could not be saved, or a removal that could not, is said so, as for an app
+  (ADR-DESK-045).
 
 **Consequences:**
 - A window showing an excluded site gives no screen context at all, not the rest of the window
