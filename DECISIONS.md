@@ -2377,7 +2377,8 @@ Apps are known by bundle identifier, compared without regard to case.
   nothing having told the user. `KeyValueStore.set` answers whether the value was kept, `excludeApp`
   and `excludeSite` answer `unsaved`, and a removal that could not be written is said the same way. Adding one already in the user's
   list writes the list again and answers from that, so adding it again, as the message says to,
-  saves it once the file can be written.
+  saves it once the file can be written. Add App… is therefore not disabled on a full list: the
+  note says the list is full, and a new app picked then is refused with the reason.
   Other settings still fail to save silently, logged only.
 
 **Consequences:**

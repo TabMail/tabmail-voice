@@ -235,13 +235,16 @@ describe("Settings page", () => {
       expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("That app can't be excluded.");
     });
 
-    test("a full list takes no more apps, saying so", async () => {
+    /** Add App… stays usable on a full list: picking one already listed is how one that could not
+     * be saved is saved, and the main process refuses a new one. */
+    test("a full list says so, and still asks for an app", async () => {
       const full = Array.from({ length: config.excludedAppsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` }));
-      const page = await open({ ...signedIn, excludedApps: full });
-      expect(button("Add App…").disabled).toBe(true);
+      const page = await open({ ...signedIn, excludedApps: full }, { error: "Remove one to add another." });
+      expect(button("Add App…").disabled).toBe(false);
       expect(visibleText()).toContain(`At most ${config.excludedAppsMax} apps can be excluded.`);
       await act(async () => button("Add App…").click());
-      expect(page.commands).toEqual([]);
+      expect(page.commands).toEqual([{ type: "excludeApp" }]);
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("Remove one to add another.");
 
       await open({ ...signedIn, excludedApps: full.slice(1) });
       expect(button("Add App…").disabled).toBe(false);

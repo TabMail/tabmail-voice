@@ -242,6 +242,32 @@ describe("an exclusion that could not be saved", () => {
     }
   });
 
+  /** The last place in a full list is no different: the one held is saved by adding it again, and
+   * a new one is still refused. */
+  test("the last app of a full list, unsaved, is saved by adding it again", () => {
+    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
+    try {
+      const path = join(folder, "settings.json");
+      const app = settings(new JSONFileStore(path));
+      for (let index = 1; index < config.excludedAppsMax; index += 1) expect(app.excludeApp({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })).toBe("added");
+      mkdirSync(`${path}.tmp`);
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(app.excludedApps).toHaveLength(config.excludedAppsMax);
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(settings(new JSONFileStore(path)).excludedApps).toHaveLength(config.excludedAppsMax - 1);
+
+      rmSync(`${path}.tmp`, { recursive: true });
+      expect(app.excludeApp({ bundleIdentifier: "org.example.another", name: "Another" })).toBe("full");
+      expect(settings(new JSONFileStore(path)).excludedApps).toHaveLength(config.excludedAppsMax - 1);
+      expect(app.excludeApp(bank)).toBe("added");
+      const relaunched = settings(new JSONFileStore(path)).excludedApps;
+      expect(relaunched).toHaveLength(config.excludedAppsMax);
+      expect(relaunched.at(-1)).toEqual(bank);
+    } finally {
+      rmSync(folder, { recursive: true });
+    }
+  });
+
   test("a saved one is reported added, and removed", () => {
     const app = settings();
     expect(app.excludeSite("example.org")).toBe("added");

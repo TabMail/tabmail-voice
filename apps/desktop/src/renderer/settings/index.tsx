@@ -323,7 +323,7 @@ function PrivacyPane({ state }: { state: SettingsState }) {
       >
         <div className="row">
           <span>Excluded apps</span>
-          <button disabled={isFull} onClick={() => void run({ type: "excludeApp" })}>
+          <button onClick={() => void run({ type: "excludeApp" })}>
             Add App…
           </button>
         </div>
