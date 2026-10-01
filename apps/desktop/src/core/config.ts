@@ -221,6 +221,27 @@ export const webUserAgent = "TabMail/1.0 (macOS; +https://tabmail.app)";
  * encoding (at most 4 bytes a character), so an endless page never fills the memory. */
 export const webReadMaxBytes = webReadMaxCharacters * 4;
 
+// MARK: Apps excluded from screen reading
+
+/** The password managers the screen is never read in, in every installation (owner, 2026-09-30), by
+ * bundle identifier, in the order Settings names them. The user adds any other app in Settings ›
+ * Privacy. */
+export const builtInExcludedApps: readonly { bundleIdentifier: string; name: string }[] = [
+  { bundleIdentifier: "com.apple.Passwords", name: "Passwords" },
+  { bundleIdentifier: "com.apple.keychainaccess", name: "Keychain Access" },
+  { bundleIdentifier: "com.1password.1password", name: "1Password" },
+  { bundleIdentifier: "com.agilebits.onepassword7", name: "1Password 7" },
+  { bundleIdentifier: "com.bitwarden.desktop", name: "Bitwarden" },
+  { bundleIdentifier: "org.keepassxc.keepassxc", name: "KeePassXC" },
+  { bundleIdentifier: "com.nordsec.nordpass", name: "NordPass" },
+];
+/** The most apps the user can exclude, and the longest bundle identifier and name kept for one. */
+export const excludedAppsMax = 100;
+export const bundleIdentifierMaxLength = 255;
+export const excludedAppNameMaxLength = 255;
+/** Where the app picker for an excluded app opens (macOS). */
+export const applicationsDirectory = "/Applications";
+
 // MARK: Thunderbird connector (drives TabMail's chat window from outside)
 
 /** The email apps the Thunderbird tool can drive (TabMail's add-on runs in them), in the order

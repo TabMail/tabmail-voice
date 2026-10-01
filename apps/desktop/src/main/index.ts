@@ -144,7 +144,7 @@ function launch(): void {
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
-    () => mac.readScreen(),
+    (excludedApps) => mac.readScreen(excludedApps),
     () => windows.push("contextDebug"),
   );
 
@@ -184,7 +184,7 @@ function launch(): void {
           )
         : [],
     // The user's corrections are learned where the helper reads the field: macOS (ADR-DESK-038).
-    corrections: process.platform === "darwin" ? new CorrectionWatch((pid) => mac.focusedFieldValue(pid), (words) => settings.learnWords(words)) : undefined,
+    corrections: process.platform === "darwin" ? new CorrectionWatch((pid, excludedApps) => mac.focusedFieldValue(pid, excludedApps), (words) => settings.learnWords(words)) : undefined,
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -193,7 +193,7 @@ function launch(): void {
         }
       : undefined,
   });
-  controller.captureContext = () => probe.capture();
+  controller.captureContext = (excludedApps) => probe.capture(excludedApps);
 
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
     const pid = await mac.frontmostApp();
@@ -273,6 +273,8 @@ function launch(): void {
       dictionary: settings.dictionary,
       learnsWords: settings.learnsWords,
       canLearnWords: process.platform === "darwin",
+      excludedApps: settings.excludedApps,
+      canExcludeApps: process.platform === "darwin",
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
@@ -590,6 +592,25 @@ function launch(): void {
     if (windows.isAudioWindow(event.sender) && isAudioReport(report)) capture.receive(report);
   });
 
+  /** Asks the user for an app, and excludes it from screen reading. */
+  async function excludePickedApp(): Promise<void> {
+    if (process.platform !== "darwin") return;
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: "Exclude an App",
+      buttonLabel: "Exclude",
+      defaultPath: config.applicationsDirectory,
+      properties: ["openFile"],
+      filters: [{ name: "Applications", extensions: ["app"] }],
+    });
+    const path = filePaths[0];
+    if (canceled || path === undefined) return;
+    const picked = await mac.appInfo(path);
+    if (picked === null) throw new Error("That app can't be excluded: it has no bundle identifier.");
+    const result = settings.excludeApp({ bundleIdentifier: picked.bundleIdentifier, name: picked.name });
+    if (result === "full") throw new Error(`At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.`);
+    if (result === "invalid") throw new Error("That app can't be excluded.");
+  }
+
   async function run(command: Command): Promise<void> {
     switch (command.type) {
       case "sendCode":
@@ -616,6 +637,11 @@ function launch(): void {
         return;
       case "setLearnsWords":
         settings.learnsWords = command.value;
+        return;
+      case "excludeApp":
+        return excludePickedApp();
+      case "removeExcludedApp":
+        settings.removeExcludedApp(command.bundleIdentifier);
         return;
       case "setAgentToolEnabled":
         settings.setEnabled(command.tool, command.value);

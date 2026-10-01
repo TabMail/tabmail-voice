@@ -10,6 +10,7 @@ import type { Phase } from "../core/dictation/controller.js";
 import { type DictationHotkey, type DictationMode, isDictationHotkey } from "../core/hotkey/bindings.js";
 import * as config from "../core/config.js";
 import type { DictionaryEntry } from "../core/dictionary/entries.js";
+import type { ExcludedApp } from "../core/dictation/excludedApps.js";
 import type { UpdateState } from "../core/ui/menuModel.js";
 import type { PasteEntry } from "../core/dictation/pasteHistory.js";
 import type { ScreenContext } from "../core/dictation/screenContext.js";
@@ -90,6 +91,10 @@ export interface SettingsState {
   dictionary: DictionaryEntry[];
   learnsWords: boolean;
   canLearnWords: boolean;
+  /** The apps the user excludes from screen reading, besides the built-in ones
+   * (`config.builtInExcludedApps`); shown only where the screen is read (`canExcludeApps`, macOS). */
+  excludedApps: ExcludedApp[];
+  canExcludeApps: boolean;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
@@ -161,6 +166,9 @@ export type Command =
   | { type: "addDictionaryWord"; word: string }
   | { type: "removeDictionaryWord"; word: string }
   | { type: "setLearnsWords"; value: boolean }
+  /** Asks the user to pick an app, and excludes it from screen reading. */
+  | { type: "excludeApp" }
+  | { type: "removeExcludedApp"; bundleIdentifier: string }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
   | { type: "setAgentToolEnabled"; tool: AgentToolID; value: boolean }
   | { type: "setConnectorEnabled"; connector: ConnectorID; value: boolean }
@@ -243,7 +251,10 @@ export function isCommand(value: unknown): value is Command {
     case "keepChatOpen":
     case "closeChat":
     case "closeHistory":
+    case "excludeApp":
       return true;
+    case "removeExcludedApp":
+      return typeof command.bundleIdentifier === "string" && command.bundleIdentifier.length <= config.bundleIdentifierMaxLength;
     case "copyHistoryEntry":
       return Number.isInteger(command.id);
     case "sendCode":

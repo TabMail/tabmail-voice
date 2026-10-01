@@ -54,7 +54,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [] };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -268,6 +268,28 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(peak).toBe(Math.round(0x7fff * 10 ** (config.normalizedPeakDecibels / 20)));
   });
 
+  /** The screen read is asked with the apps excluded at key-down; when the app in front is one of
+   * them the read is null, and the dictation goes through with no screen context and no terms. */
+  test("a dictation in an excluded app is pasted with no screen context and no screen terms", async () => {
+    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"], excludedApps: ["org.example.vault"] };
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    const asked: (readonly string[])[] = [];
+    const inFront = "org.example.vault";
+    controller.captureContext = async (excludedApps) => {
+      asked.push(excludedApps);
+      return excludedApps.includes(inFront) ? null : blankScreen({ appName: "Example Vault", windowTitle: "Brevalle Labs", renderedText: "Kaelthorne Drake" });
+    };
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(asked).toEqual([["org.example.vault"]]);
+    expect(pastes).toEqual([cleaned]);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora"]);
+    expect(JSON.stringify(transcription.body(0))).not.toMatch(/Example Vault|Brevalle|Kaelthorne/);
+  });
+
   test("sends the screen's names and terms after the dictionary", async () => {
     prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
     transcription.enqueue(200, cleanedReply);
@@ -469,6 +491,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { calls, corrections } = watcher();
       await dictateHeld(corrections, 2);
       expect(calls).toEqual(["stop", `watch 101 ${cleaned}`, "stop", `watch 101 ${cleaned}`]);
+    });
+
+    /** The apps excluded from screen reading at key-down go with the watch, which never reads one. */
+    test("the watch is told the apps excluded as the dictation started", async () => {
+      prefs.value = { ...defaultSettings(), excludedApps: ["org.example.vault"] };
+      const excluded: (readonly string[])[] = [];
+      const corrections: NonNullable<DictationDependencies["corrections"]> = { watch: (_pid, _pasted, excludedApps) => excluded.push(excludedApps), stop: () => {} };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
+      controller.onPhaseChange = (phase) => {
+        if (phase.kind === "listening") prefs.value = { ...defaultSettings(), excludedApps: ["org.example.other"] };
+      };
+      transcription.enqueue(200, cleanedReply);
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(excluded).toEqual([["org.example.vault"]]);
     });
 
     test("nothing is watched with learning switched off", async () => {
@@ -1451,12 +1488,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [] };
         };
         const read = controller.captureContext;
-        controller.captureContext = () => {
+        controller.captureContext = (excludedApps) => {
           reads += 1;
-          return read?.() ?? null;
+          return read?.(excludedApps) ?? null;
         };
       });
 

@@ -25,18 +25,19 @@ export class CorrectionWatch {
 
   constructor(
     /** The text of the focused field of the app `pid`; null when there is none to read (a password
-     * field, one too long, or no field). */
-    private readonly readField: (pid: number) => Promise<string | null>,
+     * field, one too long, no field, or an app among `excludedApps`, which is never read). */
+    private readonly readField: (pid: number, excludedApps: readonly string[]) => Promise<string | null>,
     /** Adds the words to the dictionary. */
     private readonly learn: (words: string[]) => void,
     private readonly interval = config.correctionPollInterval,
     private readonly duration = config.correctionWatchDuration,
   ) {}
 
-  /** Watches the app `pid`, into which `pasted` was just pasted. */
-  watch(pid: number, pasted: string): void {
+  /** Watches the app `pid`, into which `pasted` was just pasted, unless it is among `excludedApps`,
+   * the apps excluded from screen reading as the dictation started. */
+  watch(pid: number, pasted: string, excludedApps: readonly string[]): void {
     this.stop();
-    void this.run(this.generation, pid, pasted);
+    void this.run(this.generation, pid, pasted, excludedApps);
   }
 
   /** Ends the watch, learning what its last settled edit teaches. */
@@ -50,14 +51,14 @@ export class CorrectionWatch {
     this.learn(words);
   }
 
-  private async run(generation: number, pid: number, pasted: string): Promise<void> {
+  private async run(generation: number, pid: number, pasted: string, excludedApps: readonly string[]): Promise<void> {
     const isCurrent = () => this.generation === generation;
     let before: string | null = null;
     let previous: string | null = null;
     for (let elapsed = this.interval; elapsed <= this.duration; elapsed += this.interval) {
       await sleep(this.interval);
       if (!isCurrent()) return;
-      const field = await this.readField(pid).catch((error: unknown) => {
+      const field = await this.readField(pid, excludedApps).catch((error: unknown) => {
         log.debug(`CorrectionWatch: read failed: ${errorName(error)}`);
         return null;
       });

@@ -34,15 +34,27 @@ describe("ScreenContextProbe", () => {
       return Promise.resolve(screen());
     });
 
-    expect(probe.capture()).toBeNull();
+    expect(probe.capture([])).toBeNull();
     expect(reads).toBe(0);
+  });
+
+  /** The apps the dictation excludes reach the read as given, so the helper never reads one. */
+  test("the read is asked with the dictation's excluded apps", async () => {
+    const asked: (readonly string[])[] = [];
+    const probe = new ScreenContextProbe(() => true, (excludedApps) => {
+      asked.push(excludedApps);
+      return Promise.resolve(null);
+    });
+
+    expect(await probe.capture(["org.example.vault", "org.example.bank"])).toBeNull();
+    expect(asked).toEqual([["org.example.vault", "org.example.bank"]]);
   });
 
   /** A failed or empty read is no context, never an error for the dictation. */
   test("a failed read is no context", async () => {
     const probe = new ScreenContextProbe(() => true, () => Promise.reject(new Error("helper gone")));
-    expect(await probe.capture()).toBeNull();
-    expect(await new ScreenContextProbe(() => true, () => Promise.resolve(null)).capture()).toBeNull();
+    expect(await probe.capture([])).toBeNull();
+    expect(await new ScreenContextProbe(() => true, () => Promise.resolve(null)).capture([])).toBeNull();
   });
 
   /** Debug builds keep the newest capture for the debug window; an older read finishing later
@@ -52,8 +64,8 @@ describe("ScreenContextProbe", () => {
     const reads: ((context: ScreenContext) => void)[] = [];
     const probe = new ScreenContextProbe(() => true, () => new Promise((resolve) => reads.push(resolve)));
 
-    const older = probe.capture();
-    const newer = probe.capture();
+    const older = probe.capture([]);
+    const newer = probe.capture([]);
     reads[1]?.(screen({ appName: "Newer" }));
     await newer;
     reads[0]?.(screen({ appName: "Older" }));
@@ -64,7 +76,7 @@ describe("ScreenContextProbe", () => {
 
   test("release builds keep no capture", async () => {
     const probe = new ScreenContextProbe(() => true, () => Promise.resolve(screen()));
-    await probe.capture();
+    await probe.capture([]);
     expect(probe.lastContext).toBeNull();
   });
 });
