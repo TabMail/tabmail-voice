@@ -70,6 +70,9 @@ const app = vi.hoisted(() => ({
   /** The message boxes shown, and the button each is answered with. */
   dialogs: [] as Record<string, unknown>[],
   dialogResponse: 1,
+  /** The open dialogs shown, and what the user picks in the next one (null: canceled). */
+  openDialogs: [] as Record<string, unknown>[],
+  pickedPath: null as string | null,
 }));
 
 vi.mock("electron", async () => {
@@ -117,6 +120,10 @@ vi.mock("electron", async () => {
       showMessageBox: async (options: Record<string, unknown>) => {
         app.dialogs.push(options);
         return { response: app.dialogResponse };
+      },
+      showOpenDialog: async (options: Record<string, unknown>) => {
+        app.openDialogs.push(options);
+        return app.pickedPath === null ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [app.pickedPath] };
       },
     },
     ipcMain: {
@@ -245,7 +252,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
       this.requests.push({ method, params, ...(signal && { signal }) });
       if (this.hold) await new Promise<void>((resolve, reject) => this.unanswered.push({ method, params, answer: (error) => (error ? reject(error) : resolve()) }));
       if (method === "fullUserName" && app.fullName !== null) return { name: app.fullName };
-      return this.replies.get(method) ?? { value: null, events: [], contacts: [], items: [] };
+      return this.replies.has(method) ? this.replies.get(method) : { value: null, events: [], contacts: [], items: [] };
     }
   },
 }));
@@ -403,6 +410,8 @@ afterEach(() => {
   app.trayUpdates = 0;
   app.dialogs = [];
   app.dialogResponse = 1;
+  app.openDialogs = [];
+  app.pickedPath = null;
 });
 
 /** Sends `command` to the main process as a window would. */
@@ -910,12 +919,85 @@ describe("main process wiring", () => {
       return;
     }
     // Its two dependencies, as the watch calls them.
-    const watch = app.corrections as unknown as { readField: (pid: number) => Promise<string | null>; learn: (words: string[]) => void };
+    const watch = app.corrections as unknown as { readField: (pid: number, excludedApps: readonly string[]) => Promise<string | null>; learn: (words: string[]) => void };
     const helper = app.helpers.get("voice-macos");
-    await watch.readField(42);
-    expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength }]);
+    await watch.readField(42, ["org.example.vault"]);
+    expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
+      { pid: 42, maxLength: config.correctionMaxFieldLength, excludedBundleIdentifiers: ["org.example.vault"] },
+    ]);
     watch.learn(["Xyvora"]);
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true }]);
+  });
+
+  /** The apps a dictation excludes from screen reading reach `voice-macos` with the screen read, as
+   * the controller hands them over (ADR-DESK-045): dropped anywhere on the way, the helper would read
+   * a password manager in front. */
+  test("the screen read carries the dictation's excluded apps to voice-macos", async () => {
+    await launch("darwin");
+    const controller = app.controller as unknown as { captureContext: (excludedApps: readonly string[]) => Promise<unknown> | null };
+    const helper = app.helpers.get("voice-macos");
+    helper?.replies.set("readScreen", null);
+
+    expect(await controller.captureContext(["com.example.vault", "org.example.bank"])).toBeNull();
+
+    expect(helper?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toStrictEqual([
+      { excludedBundleIdentifiers: ["com.example.vault", "org.example.bank"] },
+    ]);
+  });
+
+  /** Settings › Privacy's commands (ADR-DESK-045): Add App… asks for an app in the Applications
+   * folder and excludes the one picked, by the identifier and name `voice-macos` gives for it; an app
+   * is removed by its identifier; the state lists the user's apps. Offered on macOS only. */
+  test("the excluded apps' commands and state, on macOS", async () => {
+    await launch("darwin");
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { excludedApps: unknown; canExcludeApps: boolean };
+    const helper = app.helpers.get("voice-macos");
+    expect(state()).toMatchObject({ excludedApps: [], canExcludeApps: true });
+
+    // Canceled: nothing asked of the helper, nothing stored.
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+    expect(app.openDialogs).toEqual([expect.objectContaining({ defaultPath: config.applicationsDirectory, properties: ["openFile"], filters: [{ name: "Applications", extensions: ["app"] }] })]);
+    expect(helper?.requests.some((request) => request.method === "appInfo")).toBe(false);
+    expect(state()).toMatchObject({ excludedApps: [] });
+
+    app.pickedPath = "/Applications/Example Bank.app";
+    helper?.replies.set("appInfo", { bundleIdentifier: "org.example.bank", name: "Example Bank", path: app.pickedPath });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+    expect(helper?.requests.filter((request) => request.method === "appInfo").map((request) => request.params)).toEqual([{ path: "/Applications/Example Bank.app" }]);
+    expect(state()).toMatchObject({ excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }] });
+    expect(app.stored.get("excludedApps")).toEqual([{ bundleIdentifier: "org.example.bank", name: "Example Bank" }]);
+
+    // What was picked is no app, or one that can't be stored: the pane is told why.
+    helper?.replies.set("appInfo", null);
+    expect(await send({ type: "excludeApp" })).toEqual({ error: "That app can't be excluded: it has no bundle identifier." });
+    helper?.replies.set("appInfo", { bundleIdentifier: "org.example.notes", name: "", path: app.pickedPath });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: "That app can't be excluded." });
+    expect(state()).toMatchObject({ excludedApps: [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }] });
+
+    expect(await send({ type: "removeExcludedApp", bundleIdentifier: "ORG.example.bank" })).toEqual({ error: null });
+    expect(state()).toMatchObject({ excludedApps: [] });
+    expect(app.stored.get("excludedApps")).toEqual([]);
+  });
+
+  test("no more apps are excluded once the list is full", async () => {
+    app.stored.set("excludedApps", Array.from({ length: config.excludedAppsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
+    await launch("darwin");
+    app.pickedPath = "/Applications/Example Bank.app";
+    app.helpers.get("voice-macos")?.replies.set("appInfo", { bundleIdentifier: "org.example.bank", name: "Example Bank", path: app.pickedPath });
+
+    expect(await send({ type: "excludeApp" })).toEqual({ error: `At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.` });
+    expect((app.stored.get("excludedApps") as unknown[]).length).toBe(config.excludedAppsMax);
+  });
+
+  test("elsewhere, apps can't be excluded: nothing is asked", async () => {
+    await launch("linux");
+    app.pickedPath = "/Applications/Example Bank.app";
+    const state = app.handlers.get(channels.getState)?.({}, "settings") as { canExcludeApps: boolean };
+    expect(state.canExcludeApps).toBe(false);
+
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+    expect(app.openDialogs).toEqual([]);
+    expect(app.stored.has("excludedApps")).toBe(false);
   });
 
   /** On macOS the name offered is the account's full name from `voice-macos`, and Next on the

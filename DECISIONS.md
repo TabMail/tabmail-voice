@@ -2356,4 +2356,6 @@ Apps are known by bundle identifier, compared without regard to case.
 - The check is in the helper, not the Electron app (owner, 2026-10-01): the helper is small and
   ours, so an excluded app's text never reaches the app's main process. Every platform's helper
   takes the same list and refuses the same way.
+- The Thunderbird relay's `focusedElement` (the email app's focused role and window title) is not
+  gated by the list: it reads only the email app, and its tool is off (ADR-DESK-037).
 - Windows and Linux get the list with their helpers' screen read.

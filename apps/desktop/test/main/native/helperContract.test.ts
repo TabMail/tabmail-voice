@@ -416,6 +416,18 @@ describe("MacSystem.focusedFieldValue", () => {
     expect(params).toEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength, excludedBundleIdentifiers: ["org.example.vault"] }]);
   });
 
+  /** The apps excluded from screen reading go to the helper as given, which reads none of them
+   * (ADR-DESK-045). */
+  test("the screen read carries the excluded apps, and the picked app is asked by its path", async () => {
+    const screen = replying(null);
+    expect(await screen.mac.readScreen(["org.example.vault", "org.example.bank"])).toBeNull();
+    expect(screen.params).toStrictEqual([{ excludedBundleIdentifiers: ["org.example.vault", "org.example.bank"] }]);
+
+    const picked = replying({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
+    expect(await picked.mac.appInfo("/Applications/Example Bank.app")).toEqual({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
+    expect(picked.params).toStrictEqual([{ path: "/Applications/Example Bank.app" }]);
+  });
+
   test.each([{ value: null }, {}, null, { value: 3 }])("no text in %j is none", async (reply) => {
     expect(await replying(reply).mac.focusedFieldValue(42, [])).toBeNull();
   });
