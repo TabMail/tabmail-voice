@@ -2411,15 +2411,31 @@ well-structured place for the redactors.
   connectors' registry is (ADR-DESK-044): macOS gets `Privacy/Redactors.generated.swift`, and a
   platform's helper adds its emitter there. No helper copies a pattern by hand. The generator
   refuses regex syntax ICU, ECMAScript and PCRE don't read alike (lookbehind, named groups, Unicode
-  classes, inline flags, possessive and atomic groups, backreferences).
+  classes, inline flags, possessive and atomic groups, backreferences, and `\b`, `\w` and `\d`), and
+  a replacement naming a group its pattern lacks.
+- No pattern uses a word boundary. ICU counts every script's letters as word characters and
+  ECMAScript only ASCII's, so a key written straight after a Japanese, Korean or accented word was
+  kept by the Mac helper and redacted by the same pattern in JavaScript. Where a key must not start
+  inside a word, the pattern takes the character before it (`(^|[^A-Za-z0-9_])`) and the replacement
+  puts it back; where it must not run on, a lookahead says so.
+- Every pattern takes time in proportion to the text. Screen text has no length limit, may be
+  anyone's (a web page, a message), and is redacted with no deadline, so a repeat scanned again from
+  every position is refused in review: it is bounded, or the pattern begins where a run begins. Both
+  suites time each pattern on hostile text.
 - `native/shared/privacy/redaction-cases.json` is what every helper must do with them: each case's
   text and what it becomes. Every helper runs the cases in its own suite, on its own regex engine;
   that is what shows the helpers agree. The texts are split into fragments, so the file holds
   nothing shaped like a real key.
-- `voice-macos` redacts every text of the screen read before replying (`ScreenContext.redacted`:
-  the window's title, the text before, in and after the selection, each block's text, so the rendered
-  screen and the log description are built from redacted text) and the focused field's value for
-  correction learning (`Redactor.redact`). The helper's screen-privacy code lives in
+- `voice-macos` redacts every text of the screen read as it replies (`ScreenContext.json`, the one
+  way a read leaves the helper): the window's title and the text before, in and after the selection
+  (`redacted`), and the visible text as rendered (`redactedVisibleText`), which the log description
+  is built from. The visible text is redacted joined, not block by block: a secret spread over
+  several elements (a key's lines, one each; `Bearer` and its token) only shows once they are
+  joined. The focused field's value for correction learning is redacted too (`Redactor.redact`).
+- The reply says when the selection had a secret taken out (`selectionRedacted`). Agent mode's Edit
+  then refuses (`AgentError.secretInSelection`), asking the backend nothing: its rewrite of the
+  redacted selection, pasted over the real one, would put `[redacted]` where the secret was. The
+  other tools still get the redacted selection. The helper's screen-privacy code lives in
   `Sources/VoiceMacOSKit/Privacy/`.
 - Always on; not a setting, like the password-field skip.
 
@@ -2430,7 +2446,15 @@ well-structured place for the redactors.
 - A password without a digit after a name (`Password: correcthorse`) stays, so that a form's
   `Password: required` does.
 - A secret the caret sits inside is split between the text before and after it, and each half alone
-  may not match.
+  may not match: the halves then reach the app and the backend as read. In the visible text the
+  caret's marker splits it the same way.
+- A selection holding a secret can't be rewritten by voice (Edit refuses, saying why); a plain
+  dictation over it replaces it as always.
+- A redacted value that ran up to the caret takes the caret's marker with it, and the dictation's
+  cleanup then places the caret from the text around it, as it does when the marker is missing.
+- A private key written on one line with escaped line breaks, or an encrypted one with header
+  lines, keeps its body unless a name beside it marks it as a secret; a key header with nothing
+  after it takes the letters that follow, up to the first punctuation.
 - A correction of a word into something secret-looking is not learned: the field is redacted before
   the core compares it.
 - The Windows and Linux helpers redact once they add their emitter and run the shared cases.

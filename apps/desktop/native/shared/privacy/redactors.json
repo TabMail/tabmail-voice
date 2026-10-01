@@ -2,8 +2,9 @@
   "comment": [
     "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046).",
     "Each redactor is applied to the whole text, in this order, replacing every match with `replacement`, in which {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
-    "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes, groups, alternation, counted repeats, \\b, \\s and lookahead. No lookbehind, no named groups, no Unicode classes, no inline flags.",
-    "`ignoreCase` is the only flag. Every platform's helper is generated from this file (`npm run gen:redactors`) and must pass redaction-cases.json."
+    "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes written out, groups, alternation, counted repeats, \\s and lookahead. No \\b, \\w or \\d (ICU counts every script's letters and digits, ECMAScript only ASCII's: a key beside a Japanese word would be kept by one and not the other), no lookbehind, no named groups, no Unicode classes, no inline flags. Where a key must not start inside a word, the pattern takes the character before it as group 1 and the replacement puts it back.",
+    "`ignoreCase` is the only flag. Every platform's helper is generated from this file (`npm run gen:redactors`) and must pass redaction-cases.json.",
+    "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text."
   ],
   "placeholder": "[redacted]",
   "redactors": [
@@ -17,107 +18,107 @@
     {
       "name": "json-web-token",
       "description": "A JSON web token: three base64url parts, the first two JSON objects.",
-      "pattern": "\\beyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
+      "pattern": "(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "bearer-token",
       "description": "\"Bearer <token>\", as an Authorization header has it. The word stays.",
-      "pattern": "\\b(Bearer\\s+)[A-Za-z0-9._~+/=-]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])(Bearer\\s+)[A-Za-z0-9._~+/=-]{16,}",
       "ignoreCase": true,
-      "replacement": "$1{placeholder}"
+      "replacement": "$1$2{placeholder}"
     },
     {
       "name": "address-password",
       "description": "The password in an address (scheme://user:password@host). The rest stays.",
-      "pattern": "(\\b[a-z][a-z0-9+.-]*://[^\\s/:@]+:)[^\\s/@]+(@)",
-      "ignoreCase": true,
+      "pattern": "(://[^\\s/:@]+:)[^\\s/@]+(@)",
+      "ignoreCase": false,
       "replacement": "$1{placeholder}$2"
     },
     {
       "name": "named-value",
       "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"…\"). The name stays. Only a value with a digit and at least 6 characters, so that \"Password: required\" stays.",
-      "pattern": "((?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)[\"']?\\s*[=:]\\s*[\"']?)(?=[^\\s\"']*[0-9])[^\\s\"']{6,}",
+      "pattern": "((?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)[\"']?\\s*[=:]\\s*[\"']?)(?=[^\\s\"']{0,200}[0-9])[^\\s\"']{6,}",
       "ignoreCase": true,
       "replacement": "$1{placeholder}"
     },
     {
       "name": "api-key-sk",
       "description": "Keys starting \"sk-\" (several AI providers).",
-      "pattern": "\\bsk-[A-Za-z0-9_-]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "payment-key",
       "description": "Payment provider keys (secret, restricted, publishable; live or test).",
-      "pattern": "\\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "webhook-secret",
       "description": "Webhook signing secrets.",
-      "pattern": "\\bwhsec_[A-Za-z0-9]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])whsec_[A-Za-z0-9]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "github-token",
       "description": "GitHub tokens.",
-      "pattern": "\\bgh[pousr]_[A-Za-z0-9]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "github-fine-grained-token",
       "description": "GitHub fine-grained tokens.",
-      "pattern": "\\bgithub_pat_[A-Za-z0-9_]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])github_pat_[A-Za-z0-9_]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "gitlab-token",
       "description": "GitLab tokens.",
-      "pattern": "\\bglpat-[A-Za-z0-9_-]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])glpat-[A-Za-z0-9_-]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "aws-access-key-id",
       "description": "AWS access key ids.",
-      "pattern": "\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b",
+      "pattern": "(^|[^A-Za-z0-9_])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9_])",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "google-api-key",
       "description": "Google API keys.",
-      "pattern": "\\bAIza[0-9A-Za-z_-]{35}",
+      "pattern": "(^|[^A-Za-z0-9_])AIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "slack-token",
       "description": "Slack tokens.",
-      "pattern": "\\bxox[abeprs]-[A-Za-z0-9-]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])xox[abeprs]-[A-Za-z0-9-]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "npm-token",
       "description": "npm tokens.",
-      "pattern": "\\bnpm_[A-Za-z0-9]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])npm_[A-Za-z0-9]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "hugging-face-token",
       "description": "Hugging Face tokens.",
-      "pattern": "\\bhf_[A-Za-z0-9]{16,}",
+      "pattern": "(^|[^A-Za-z0-9_])hf_[A-Za-z0-9]{16,}",
       "ignoreCase": false,
-      "replacement": "{placeholder}"
+      "replacement": "$1{placeholder}"
     }
   ]
 }

@@ -30,19 +30,20 @@ struct Redactor: Sendable {
 }
 
 extension ScreenContext {
-    /// The context with secret-looking text taken out of everything read off the screen, before it
-    /// leaves the helper.
+    /// The context with secret-looking text taken out of the window's title and the text around the
+    /// caret. The visible text is redacted as rendered (`redactedVisibleText`), not block by block.
     var redacted: ScreenContext {
         var context = self
         context.windowTitle = windowTitle.map(Redactor.redact)
         context.textBeforeCaret = Redactor.redact(textBeforeCaret)
         context.selectedText = Redactor.redact(selectedText)
         context.textAfterCaret = Redactor.redact(textAfterCaret)
-        context.blocks = blocks.map { block in
-            var block = block
-            block.text = Redactor.redact(block.text)
-            return block
-        }
         return context
     }
+
+    /// The visible text as rendered, with secret-looking text taken out. Redacted joined, not block
+    /// by block: a secret spread over several elements (a key's lines, one each; `Bearer` and its
+    /// token) only shows once they are joined, and redacting a key's header alone would hide the
+    /// rest of the key from the pattern.
+    var redactedVisibleText: String { Redactor.redact(renderedText()) }
 }

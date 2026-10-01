@@ -14,34 +14,34 @@ extension Redactor {
         // A private-key block, whole or cut off where the window ends.
         Redactor(name: #"private-key-block"#, pattern: #"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[A-Za-z0-9+/=\s]*-----END [A-Z0-9 ]*PRIVATE KEY-----|[A-Za-z0-9+/=\s]*)"#, ignoreCase: false, replacement: #"[redacted]"#),
         // A JSON web token: three base64url parts, the first two JSON objects.
-        Redactor(name: #"json-web-token"#, pattern: #"\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"json-web-token"#, pattern: #"(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // "Bearer <token>", as an Authorization header has it. The word stays.
-        Redactor(name: #"bearer-token"#, pattern: #"\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}"#, ignoreCase: true, replacement: #"$1[redacted]"#),
+        Redactor(name: #"bearer-token"#, pattern: #"(^|[^A-Za-z0-9_])(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}"#, ignoreCase: true, replacement: #"$1$2[redacted]"#),
         // The password in an address (scheme://user:password@host). The rest stays.
-        Redactor(name: #"address-password"#, pattern: #"(\b[a-z][a-z0-9+.-]*://[^\s/:@]+:)[^\s/@]+(@)"#, ignoreCase: true, replacement: #"$1[redacted]$2"#),
+        Redactor(name: #"address-password"#, pattern: #"(://[^\s/:@]+:)[^\s/@]+(@)"#, ignoreCase: false, replacement: #"$1[redacted]$2"#),
         // A value given to a name that says it is secret (password=, api_key:, "token": "…"). The name stays. Only a value with a digit and at least 6 characters, so that "Password: required" stays.
-        Redactor(name: #"named-value"#, pattern: #"((?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)["']?\s*[=:]\s*["']?)(?=[^\s"']*[0-9])[^\s"']{6,}"#, ignoreCase: true, replacement: #"$1[redacted]"#),
+        Redactor(name: #"named-value"#, pattern: #"((?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)["']?\s*[=:]\s*["']?)(?=[^\s"']{0,200}[0-9])[^\s"']{6,}"#, ignoreCase: true, replacement: #"$1[redacted]"#),
         // Keys starting "sk-" (several AI providers).
-        Redactor(name: #"api-key-sk"#, pattern: #"\bsk-[A-Za-z0-9_-]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"api-key-sk"#, pattern: #"(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // Payment provider keys (secret, restricted, publishable; live or test).
-        Redactor(name: #"payment-key"#, pattern: #"\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"payment-key"#, pattern: #"(^|[^A-Za-z0-9_])(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // Webhook signing secrets.
-        Redactor(name: #"webhook-secret"#, pattern: #"\bwhsec_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"webhook-secret"#, pattern: #"(^|[^A-Za-z0-9_])whsec_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // GitHub tokens.
-        Redactor(name: #"github-token"#, pattern: #"\bgh[pousr]_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"github-token"#, pattern: #"(^|[^A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // GitHub fine-grained tokens.
-        Redactor(name: #"github-fine-grained-token"#, pattern: #"\bgithub_pat_[A-Za-z0-9_]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"github-fine-grained-token"#, pattern: #"(^|[^A-Za-z0-9_])github_pat_[A-Za-z0-9_]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // GitLab tokens.
-        Redactor(name: #"gitlab-token"#, pattern: #"\bglpat-[A-Za-z0-9_-]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"gitlab-token"#, pattern: #"(^|[^A-Za-z0-9_])glpat-[A-Za-z0-9_-]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // AWS access key ids.
-        Redactor(name: #"aws-access-key-id"#, pattern: #"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"aws-access-key-id"#, pattern: #"(^|[^A-Za-z0-9_])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9_])"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // Google API keys.
-        Redactor(name: #"google-api-key"#, pattern: #"\bAIza[0-9A-Za-z_-]{35}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"google-api-key"#, pattern: #"(^|[^A-Za-z0-9_])AIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // Slack tokens.
-        Redactor(name: #"slack-token"#, pattern: #"\bxox[abeprs]-[A-Za-z0-9-]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"slack-token"#, pattern: #"(^|[^A-Za-z0-9_])xox[abeprs]-[A-Za-z0-9-]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // npm tokens.
-        Redactor(name: #"npm-token"#, pattern: #"\bnpm_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"npm-token"#, pattern: #"(^|[^A-Za-z0-9_])npm_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // Hugging Face tokens.
-        Redactor(name: #"hugging-face-token"#, pattern: #"\bhf_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"hugging-face-token"#, pattern: #"(^|[^A-Za-z0-9_])hf_[A-Za-z0-9]{16,}"#, ignoreCase: false, replacement: #"$1[redacted]"#),
     ]
 }

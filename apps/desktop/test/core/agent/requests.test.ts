@@ -205,6 +205,31 @@ describe("DesktopAgent", () => {
     expect(completions.message(0)?.content).toBe("system_prompt_desktop_thunderbird");
   });
 
+  /** A selection the helper took a secret out of is not the user's text (ADR-DESK-046): Edit's
+   * rewrite of it, pasted over the selection, would put the placeholder where the secret was.
+   * Nothing is asked of the backend. */
+  test("Edit refuses a selection that reached the app redacted", async () => {
+    const { completions, client, account } = setup();
+    const redacted = { ...selectionScreen("connect with postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
+
+    const error = await thrown(DesktopAgent.write("edit", request, redacted, "", "", client, account, Fixtures.userID));
+
+    expect(error).toBeInstanceOf(AgentError);
+    expect((error as AgentError).kind).toBe("secretInSelection");
+    expect((error as AgentError).message).toBe("The selection holds what looks like a password or key, so it wasn't rewritten.");
+    expect(completions.requests).toHaveLength(0);
+  });
+
+  /** Only Edit replaces the selection: a tool that doesn't still answers, from the redacted text. */
+  test("a tool that doesn't replace the selection still writes with a redacted one", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply("It connects to the database."));
+    const redacted = { ...selectionScreen("postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
+
+    expect(await DesktopAgent.write("answer", "what is this", redacted, "", "", client, account, Fixtures.userID)).toBe("It connects to the database.");
+    expect(completions.requests).toHaveLength(1);
+  });
+
   test("a tool that writes nothing fails", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply("  "));

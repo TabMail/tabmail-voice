@@ -13,7 +13,7 @@ import VoiceHelperSupport
 /// - `readScreen {excludedBundleIdentifiers}` → the screen context of the app in front
 ///   (`ScreenContext.json`); null without one, or when it is an app the user excludes from screen
 ///   reading (`Apps.isExcluded`), which is not read. Secret-looking text is taken out of it
-///   before it is sent (`Redactor`).
+///   before it is sent (`Redactor`), and `selectionRedacted` says whether any was in the selection.
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
 /// - `focusedFieldValue {pid, maxLength, excludedBundleIdentifiers}` → `{value}`: the text of the
 ///   app's focused field, null for none, a password field, one longer than `maxLength` UTF-16 code
@@ -107,7 +107,7 @@ public enum MacService {
                 return .null
             }
             // Blocking Accessibility calls: off the main thread, where the activator's notifications run.
-            return await Task.detached { screen.read(pid, name, bundleID).redacted.json }.value
+            return await Task.detached { screen.read(pid, name, bundleID).json }.value
         }
         channel.on("caretAnchor") { params in
             guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else { throw HelperError("caretAnchor needs pid") }
@@ -322,8 +322,14 @@ struct ScreenAccess: Sendable {
 }
 
 extension ScreenContext {
-    /// What the app receives: the fields, and the text already rendered for the prompts and the logs.
+    /// What the app receives: the fields, and the text already rendered for the prompts and the logs,
+    /// all of it with secret-looking text taken out (`redacted`, `redactedVisibleText`: ADR-DESK-046).
     var json: JSON {
+        let context = redacted
+        return context.json(visibleText: redactedVisibleText, selectionRedacted: context.selectedText != selectedText)
+    }
+
+    private func json(visibleText: String, selectionRedacted: Bool) -> JSON {
         func optional(_ value: String?) -> JSON { value.map(JSON.string) ?? .null }
         return [
             "appName": .string(appName),
@@ -334,10 +340,13 @@ extension ScreenContext {
             "focusedRole": optional(focusedRole),
             "textBeforeCaret": .string(textBeforeCaret),
             "selectedText": .string(selectedText),
+            // The selection as sent is not the user's text: the app must not paste a rewrite of it
+            // over the real one.
+            "selectionRedacted": .bool(selectionRedacted),
             "textAfterCaret": .string(textAfterCaret),
-            "renderedText": .string(renderedText()),
+            "renderedText": .string(visibleText),
             "summary": .string(summary),
-            "logDescription": .string(logDescription),
+            "logDescription": .string(logDescription(visibleText: visibleText)),
         ]
     }
 }

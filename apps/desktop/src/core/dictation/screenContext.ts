@@ -17,6 +17,9 @@ export interface ScreenContext {
   focusedRole: string | null;
   textBeforeCaret: string;
   selectedText: string;
+  /** Whether the helper took secret-looking text out of the selection (ADR-DESK-046): `selectedText`
+   * is then not what the user selected, and a rewrite of it must not replace the selection. */
+  selectionRedacted: boolean;
   textAfterCaret: string;
   /** The screen as the prompts get it: headings, blocks, the focused field with the caret marked. */
   renderedText: string;

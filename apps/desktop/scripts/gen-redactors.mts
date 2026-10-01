@@ -40,9 +40,14 @@ export function redactorDefinitions(json = readFileSync(redactorsPath, "utf8")):
       throw new Error(`redactors.json: "${name}" needs pattern, ignoreCase and replacement`);
     }
     // Lookbehind, named groups, Unicode classes, inline flags, possessive and atomic groups, and
-    // backreferences are not read alike by ICU, ECMAScript and PCRE.
-    if (/\(\?<|\(\?P|\\[pPkKGAzZ]|\(\?[a-zA-Z]|\(\?>|[*+?}]\+|\\[1-9]/.test(pattern)) throw new Error(`redactors.json: "${name}" uses regex syntax the helpers don't share`);
-    new RegExp(pattern, ignoreCase ? "gi" : "g");
+    // backreferences are not read alike by ICU, ECMAScript and PCRE. Nor are \b, \w and \d: ICU
+    // counts every script's letters and digits, ECMAScript only ASCII's.
+    if (/\(\?<|\(\?P|\\[pPkKGAzZbBwWdD]|\(\?[a-zA-Z]|\(\?>|[*+?}]\+|\\[1-9]/.test(pattern)) throw new Error(`redactors.json: "${name}" uses regex syntax the helpers don't share`);
+    // An empty alternative matches the empty text, which shows how many groups the pattern has.
+    const groups = (new RegExp(`${pattern}|`, ignoreCase ? "i" : "").exec("")?.length ?? 1) - 1;
+    for (const [, group] of replacement.matchAll(/\$([0-9]+)/g)) {
+      if (Number(group) < 1 || Number(group) > groups) throw new Error(`redactors.json: "${name}"'s replacement names group ${group}, and its pattern has ${groups}`);
+    }
     if (!replacement.includes("{placeholder}")) throw new Error(`redactors.json: "${name}"'s replacement must hold {placeholder}`);
     return { name, description, pattern, ignoreCase, replacement: replacement.replaceAll("{placeholder}", placeholder) };
   });

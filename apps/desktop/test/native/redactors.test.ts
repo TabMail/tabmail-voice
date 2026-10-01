@@ -19,6 +19,11 @@ const { placeholder, redactors } = redactorDefinitions();
 const cases = (JSON.parse(readFileSync(join(shared, "redaction-cases.json"), "utf8")) as { cases: Case[] }).cases;
 const joined = (fragments: string[]) => fragments.map((fragment) => (fragment === "{redacted}" ? placeholder : fragment)).join("");
 
+/** The length of the hostile texts, and how long redacting one may take: a pattern scanned again from
+ * every position needs minutes at this length, a linear one milliseconds. */
+const hostileLength = 200_000;
+const hostileMilliseconds = 2_000;
+
 /** redactors.json as this platform's regex engine applies it: every redactor, in order. */
 function redact(text: string, applied = redactors): string {
   return applied.reduce((current, redactor) => current.replace(new RegExp(redactor.pattern, redactor.ignoreCase ? "gi" : "g"), redactor.replacement), text);
@@ -49,6 +54,33 @@ describe("the shared redactors", () => {
     expect(cases.some((item) => redact(joined(item.text), others) !== joined(item.expected))).toBe(true);
   });
 
+  /** A case flag no case needs is one a helper could get wrong unseen. (The address's pattern has no
+   * letters, so its flag changes nothing.) */
+  test.each(redactors.filter((redactor) => /[A-Za-z]/.test(redactor.pattern.replaceAll(/\\s|\[[^\]]*\]/g, ""))).map((redactor) => redactor.name))("with %s's case flag flipped, a case fails", (name) => {
+    const flipped = redactors.map((redactor) => (redactor.name === name ? { ...redactor, ignoreCase: !redactor.ignoreCase } : redactor));
+    expect(cases.some((item) => redact(joined(item.text), flipped) !== joined(item.expected))).toBe(true);
+  });
+
+  /** Text read off the screen has no length limit and may be anyone's (a web page, a message), and
+   * the helper redacts it with no deadline: each pattern must take time in proportion to the text.
+   * A pattern scanned again from every position took minutes on these. */
+  test.each([
+    ["a dotted run", "a."],
+    ["a run of secret names", "token:"],
+    ["a run of token starts", "-eyJ"],
+    ["a run of key headers", "-----BEGIN A "],
+    ["a run of address starts", "://a:b"],
+    ["a run of the word Bearer", "Bearer "],
+    ["a run of key prefixes", "-sk-a"],
+    ["a run of spaces after a name", "password" + " ".repeat(64)],
+    ["one long word", "a"],
+  ])("%s is redacted in time proportional to its length", (_what, unit) => {
+    const text = unit.repeat(Math.ceil(hostileLength / unit.length));
+    const started = performance.now();
+    redact(text);
+    expect(performance.now() - started).toBeLessThan(hostileMilliseconds);
+  });
+
   test("the cases include text that changes and text that stays", () => {
     expect(cases.some((item) => joined(item.text) !== joined(item.expected))).toBe(true);
     expect(cases.some((item) => joined(item.text) === joined(item.expected) && joined(item.text) !== "")).toBe(true);
@@ -67,8 +99,8 @@ describe("the redactor generator", () => {
     JSON.stringify({ placeholder: "[redacted]", redactors: [{ name: "example", description: "An example.", pattern: "abc[0-9]{4,}", ignoreCase: false, replacement: "{placeholder}", ...overrides }] });
 
   test("writes each redactor as a Swift raw string, the placeholder filled in", () => {
-    const swift = swiftRedactors(one({ pattern: 'a"b\\s', replacement: "$1{placeholder}" }));
-    expect(swift).toContain('Redactor(name: #"example"#, pattern: #"a"b\\s"#, ignoreCase: false, replacement: #"$1[redacted]"#),');
+    const swift = swiftRedactors(one({ pattern: '(a"b)\\s', replacement: "$1{placeholder}" }));
+    expect(swift).toContain('Redactor(name: #"example"#, pattern: #"(a"b)\\s"#, ignoreCase: false, replacement: #"$1[redacted]"#),');
     expect(swift).toContain('static let placeholder = #"[redacted]"#');
   });
 
@@ -84,6 +116,13 @@ describe("the redactor generator", () => {
     ["a possessive repeat", { pattern: "a++" }],
     ["an atomic group", { pattern: "(?>a)" }],
     ["a backreference", { pattern: "(a)\\1" }],
+    ["a word boundary", { pattern: "\\babc" }],
+    ["a not-a-word-boundary", { pattern: "\\Babc" }],
+    ["the word class", { pattern: "\\w+" }],
+    ["the digit class", { pattern: "abc\\d+" }],
+    ["a replacement naming a group the pattern lacks", { replacement: "$1{placeholder}" }],
+    ["a replacement naming a group past the pattern's last", { pattern: "(a)bc", replacement: "$1{placeholder}$2" }],
+    ["a replacement naming group zero", { pattern: "(a)bc", replacement: "$0{placeholder}" }],
     ["a pattern that doesn't compile", { pattern: "a(" }],
     ["a replacement without the placeholder", { replacement: "$1" }],
     ["a name with capitals", { name: "Example" }],
