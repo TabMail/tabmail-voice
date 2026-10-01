@@ -46,6 +46,8 @@ const app = vi.hoisted(() => ({
   overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
+  /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
+  savesFail: false,
   opened: [] as string[],
   openFailure: null as Error | null,
   connectorTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
@@ -185,6 +187,7 @@ vi.mock("../../src/main/storage/jsonFileStore.js", () => ({
     }
     set(key: string, value: unknown) {
       app.stored.set(key, value);
+      return !app.savesFail;
     }
     remove(key: string) {
       app.stored.delete(key);
@@ -393,6 +396,7 @@ afterEach(() => {
   app.overlay = null;
   app.controller = null;
   app.stored.clear();
+  app.savesFail = false;
   app.opened = [];
   app.openFailure = null;
   app.connectorTools = [];
@@ -1007,6 +1011,33 @@ describe("main process wiring", () => {
     expect(await send({ type: "removeExcludedSite", host: "Mail.Example.com" })).toEqual({ error: null });
     expect(state()).toMatchObject({ excludedSites: ["example.org"] });
     expect(app.stored.get("excludedSites")).toEqual(["example.org"]);
+  });
+
+  /** A list that could not be written to disk holds until the app quits: the command says so, where
+   * it would otherwise pass for an exclusion that lasts. */
+  test("an exclusion that could not be saved says so, added or removed", async () => {
+    await launch("darwin");
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { excludedSites: unknown; excludedApps: unknown };
+    const unsaved = "Excluded for now, but this couldn't be saved: it will be read again after TabMail Voice restarts. Check the disk and add it again.";
+    const unremoved = "Removed for now, but this couldn't be saved: it will be excluded again after TabMail Voice restarts.";
+    app.pickedPath = "/Applications/Example Bank.app";
+    app.helpers.get("voice-macos")?.replies.set("appInfo", { bundleIdentifier: "org.example.bank", name: "Example Bank", path: app.pickedPath });
+    app.savesFail = true;
+
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: unsaved });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: unsaved });
+    expect(state()).toMatchObject({ excludedSites: ["example.org"], excludedApps: [{ bundleIdentifier: "org.example.bank" }] });
+    // One already there changes nothing, so there is nothing unsaved.
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: null });
+
+    expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: unremoved });
+    expect(await send({ type: "removeExcludedApp", bundleIdentifier: "org.example.bank" })).toEqual({ error: unremoved });
+    expect(state()).toMatchObject({ excludedSites: [], excludedApps: [] });
+    expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: null });
+
+    app.savesFail = false;
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: null });
+    expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: null });
   });
 
   test("no more websites are excluded once the list is full", async () => {

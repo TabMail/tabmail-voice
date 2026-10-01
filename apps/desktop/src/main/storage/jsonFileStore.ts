@@ -14,9 +14,9 @@ export class JSONFileStore extends MemoryStore {
     super(read(path));
   }
 
-  override set(key: string, value: unknown): void {
+  override set(key: string, value: unknown): boolean {
     super.set(key, value);
-    this.save();
+    return this.save();
   }
 
   override remove(key: string): void {
@@ -24,15 +24,18 @@ export class JSONFileStore extends MemoryStore {
     this.save();
   }
 
-  private save(): void {
+  /** Whether the file was written. */
+  private save(): boolean {
     try {
       mkdirSync(dirname(this.path), { recursive: true });
       // Written beside it, then moved over it: a crash mid-write never leaves half a file.
       const temporary = `${this.path}.tmp`;
       writeFileSync(temporary, JSON.stringify(this.snapshot(), null, 2));
       renameSync(temporary, this.path);
+      return true;
     } catch (error) {
       log.error(`FileStore: save failed: ${errorName(error)}`);
+      return false;
     }
   }
 }

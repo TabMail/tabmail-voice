@@ -217,22 +217,30 @@ struct ScreenExclusionTests {
     /// A fake tree that counts what was asked of it: the text around the caret, and any element's
     /// title, value or field text.
     private struct RecordingTree: ScreenTree {
-        final class Asked { var caret = 0; var texts = 0 }
+        final class Asked {
+            var caret = 0
+            var texts = 0
+            /// The elements a text was asked of: a title, a description, a value, a field's text, the caret's.
+            var elements: Set<ObjectIdentifier> = []
+        }
         let asked = Asked()
         private let tree = FakeScreenTree()
         func children(of element: FakeElement) -> [FakeElement] { tree.children(of: element) }
         func frame(of element: FakeElement) -> CGRect? { tree.frame(of: element) }
         func string(_ element: FakeElement, _ name: String) -> String? {
             if name == kAXTitleAttribute || name == kAXValueAttribute { asked.texts += 1 }
+            if name == kAXTitleAttribute || name == kAXValueAttribute || name == kAXDescriptionAttribute { asked.elements.insert(ObjectIdentifier(element)) }
             return tree.string(element, name)
         }
         func page(of webArea: FakeElement) -> PageHost { tree.page(of: webArea) }
         func fieldText(of element: FakeElement, windowFrame: CGRect?) -> String? {
             asked.texts += 1
+            asked.elements.insert(ObjectIdentifier(element))
             return tree.fieldText(of: element, windowFrame: windowFrame)
         }
         func caretWindow(of element: FakeElement) -> (String, String, String)? {
             asked.caret += 1
+            asked.elements.insert(ObjectIdentifier(element))
             return tree.caretWindow(of: element)
         }
         func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { tree.isSame(first, second) }
@@ -376,6 +384,63 @@ struct ScreenExclusionTests {
         #expect(none.read && none.asked.caret == 1)
         #expect(none.context.textBeforeCaret == "account 1234 ")
         #expect(none.context.renderedText() == "> $ ls")
+    }
+
+    /// A password field is asked for no text, and neither is anything inside it: in the window, in
+    /// a row, as a control with a title, and with the focus. What is beside it is asked and read.
+    @Test func noTextIsAskedOfAPasswordField() {
+        let secure = [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "placeholder-secret", kAXTitleAttribute: "placeholder-secret"]
+        func field() -> FakeElement {
+            FakeElement("AXTextField", secure, children: [FakeElement("AXStaticText", [kAXValueAttribute: "placeholder-secret"])])
+        }
+        let focused = FakeElement("AXTextField", secure.merging(Self.caret) { $1 })
+        let passwords = [field(), field(), FakeElement("AXButton", secure), FakeElement("AXTextArea", secure), focused]
+        let name = FakeElement("AXTextField", [kAXValueAttribute: "name1"])
+        let label = FakeElement("AXStaticText", [kAXValueAttribute: "Sign in"])
+        let window = FakeElement("AXWindow", children: [
+            name, passwords[0], FakeElement("AXRow", children: [label, passwords[1]]),
+            FakeElement("AXWebArea", ["host": "example.org"], children: [passwords[2], passwords[3]]), focused,
+        ])
+        let read = gather(window, focused: focused, focusPath: [window], excluding: [])
+        #expect(read.read && read.asked.caret == 0)
+        for password in passwords {
+            #expect(!read.asked.elements.contains(ObjectIdentifier(password)))
+            for child in password.children { #expect(!read.asked.elements.contains(ObjectIdentifier(child))) }
+        }
+        #expect(read.asked.elements.contains(ObjectIdentifier(name)) && read.asked.elements.contains(ObjectIdentifier(label)))
+        #expect(read.context.renderedText().contains("name1") && read.context.renderedText().contains("Sign in"))
+        #expect(!read.context.renderedText().contains("placeholder") && read.context.selectedText.isEmpty)
+    }
+
+    /// A terminal's own password prompt is a password field: the terminal's reader, which asks for
+    /// the focused field's value, is not run for it.
+    @Test func aTerminalsPasswordPromptIsNotGivenToItsReader() {
+        func paneReads(_ attributes: [String: String]) -> (count: Int, caret: Int, before: String) {
+            let field = FakeElement("AXTextField", Self.caret.merging(attributes) { $1 })
+            let window = FakeElement("AXWindow", children: [field])
+            var count = 0
+            let read = gather(window, focused: field, focusPath: [window], excluding: []) { context in
+                count += 1
+                context.textBeforeCaret = "from the pane"
+                return true
+            }
+            return (count, read.asked.caret, read.context.textBeforeCaret)
+        }
+        #expect(paneReads([kAXSubroleAttribute: kAXSecureTextFieldSubrole as String]) == (0, 0, ""))
+        #expect(paneReads([:]) == (1, 0, "from the pane"))
+    }
+
+    /// The field read for correction learning: a password field's value is never asked for.
+    @Test func aPasswordFieldsValueIsNotAskedForCorrections() {
+        func value(_ attributes: [String: String]) -> (value: String?, asked: Int) {
+            let field = FakeElement("AXTextField", attributes.merging([kAXValueAttribute: "hunter2x"]) { $1 })
+            let tree = RecordingTree()
+            let value = FocusedField.value(of: field, above: [FakeElement("AXWindow", children: [field])], in: tree, maxLength: 100,
+                                           excluding: ScreenExclusions())
+            return (value, tree.asked.texts)
+        }
+        #expect(value([kAXSubroleAttribute: kAXSecureTextFieldSubrole as String]) == (nil, 0))
+        #expect(value([:]) == ("hunter2x", 1))
     }
 
     /// A page that frames an excluded one and has the focus itself, or a focused group that holds

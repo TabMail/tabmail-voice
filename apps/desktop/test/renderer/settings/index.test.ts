@@ -248,6 +248,12 @@ describe("Settings page", () => {
       expect(visibleText()).not.toContain("At most");
     });
 
+    test("a removal that could not be saved shows why", async () => {
+      await open({ ...signedIn, excludedApps: excluded }, { error: "Removed for now, but this couldn't be saved." });
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Example Notes"]')?.click());
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("Removed for now, but this couldn't be saved.");
+    });
+
     /** The websites the screen is never read on (ADR-DESK-047). */
     describe("websites", () => {
       const sites = (): string[] => [...document.querySelectorAll('ul[aria-label="Excluded websites"] li')].map((item) => item.textContent ?? "");
@@ -272,6 +278,29 @@ describe("Settings page", () => {
         await act(async () => field().form?.requestSubmit());
         expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.com" }]);
         expect(field().value).toBe("");
+      });
+
+      test("shows why a website could not be added or removed, until the next try or what is typed has its own problem", async () => {
+        const reply = { error: "Excluded for now, but this couldn't be saved." as string | null };
+        await open({ ...signedIn, excludedSites: ["mail.example.org"] }, reply);
+        expect(problem()).toBeNull();
+        await act(async () => type(field(), "example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
+        expect(field().value).toBe("");
+
+        await act(async () => type(field(), "not a site"));
+        expect(problem()).toBe("A website’s address, like example.com.");
+
+        reply.error = "Removed for now, but this couldn't be saved.";
+        await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove mail.example.org"]')?.click());
+        await act(async () => type(field(), ""));
+        expect(problem()).toBe("Removed for now, but this couldn't be saved.");
+
+        reply.error = null;
+        await act(async () => type(field(), "example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problem()).toBeNull();
       });
 
       test.each(["not a site", "localhost"])("refuses %j, saying why", async (typed) => {

@@ -165,6 +165,56 @@ describe("AppSettings", () => {
   });
 });
 
+/** A store whose file can't be written: values are held, and reported unsaved. */
+class UnsavedStore extends MemoryStore {
+  override set(key: string, value: unknown): boolean {
+    super.set(key, value);
+    return false;
+  }
+}
+
+/** An exclusion is a privacy choice that must last: one held only until the app quits is reported,
+ * so Settings can say so. */
+describe("an exclusion that could not be saved", () => {
+  const bank = { bundleIdentifier: "org.example.bank", name: "Example Bank" };
+
+  test("is reported unsaved, and holds for this run", () => {
+    const store = new UnsavedStore();
+    const app = settings(store);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+
+    expect(app.excludeSite("example.org")).toBe("unsaved");
+    expect(app.excludeApp(bank)).toBe("unsaved");
+    expect(changes).toBe(2);
+    expect(app.dictation(null).excludedSites).toContain("example.org");
+    expect(app.dictation(null).excludedApps).toContain(bank.bundleIdentifier);
+    // Nothing is written for one already there, built in, invalid, or refused by a full list.
+    expect(app.excludeSite("example.org")).toBe("added");
+    expect(app.excludeApp(bank)).toBe("added");
+    expect(app.excludeSite(config.builtInExcludedSites[0])).toBe("added");
+    expect(app.excludeSite("not a site")).toBe("invalid");
+    expect(app.excludeApp({ bundleIdentifier: "", name: "" })).toBe("invalid");
+
+    expect(app.removeExcludedSite("example.org")).toBe(false);
+    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(false);
+    expect(changes).toBe(4);
+    expect(app.excludedSites).toEqual([]);
+    expect(app.excludedApps).toEqual([]);
+    // Nothing is written for one that is not there.
+    expect(app.removeExcludedSite("example.org")).toBe(true);
+    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
+  });
+
+  test("a saved one is reported added, and removed", () => {
+    const app = settings();
+    expect(app.excludeSite("example.org")).toBe("added");
+    expect(app.excludeApp(bank)).toBe("added");
+    expect(app.removeExcludedSite("example.org")).toBe(true);
+    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
+  });
+});
+
 /** The websites the screen is never read on (ADR-DESK-047): the built-in web vaults in every
  * installation, and the sites the user adds in Settings › Privacy. */
 describe("websites excluded from screen reading", () => {

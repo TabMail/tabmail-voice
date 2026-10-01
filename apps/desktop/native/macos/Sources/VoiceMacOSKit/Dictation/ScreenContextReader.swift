@@ -47,7 +47,10 @@ enum ScreenContextReader {
             return nil
         }
         var context = start
-        let paneRead = terminalPane?(&context) ?? false
+        // A focused password field is asked for no text: not by the terminal's reader either (a
+        // terminal's own password prompt is one), which asks for the field's value.
+        let isPassword = focused.map { isPasswordField($0, in: tree) } ?? false
+        let paneRead = isPassword ? false : terminalPane?(&context) ?? false
         if let focused, !paneRead { readCaret(of: focused, in: tree, into: &context) }
         // The page the caret is in: the nearest web area (Notion nests its web page in a local app
         // shell page, which the walk reaches first).

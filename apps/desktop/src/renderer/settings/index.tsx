@@ -13,7 +13,7 @@ import { excludedSite, isBuiltInExcludedSite } from "../../core/dictation/exclud
 import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
-import type { SettingsState } from "../../shared/ipc.js";
+import type { Command, SettingsState } from "../../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
@@ -235,6 +235,13 @@ function DictionaryPane({ state }: { state: SettingsState }) {
  * remove button. */
 function ExcludedSites({ state }: { state: SettingsState }) {
   const [draft, setDraft] = useState("");
+  /** What the last add or remove was refused for (a list that could not be saved), until the next. */
+  const [failure, setFailure] = useState<string | null>(null);
+  const run = async (command: Command) => {
+    setFailure(null);
+    const { error } = await send(command);
+    setFailure(error);
+  };
   const site = excludedSite(draft);
   const isThere = site !== null && (isBuiltInExcludedSite(site) || state.excludedSites.includes(site));
   const isFull = state.excludedSites.length >= config.excludedSitesMax;
@@ -244,7 +251,7 @@ function ExcludedSites({ state }: { state: SettingsState }) {
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (site === null || problem !== null) return;
-    void send({ type: "excludeSite", site });
+    void run({ type: "excludeSite", site });
     setDraft("");
   };
   return (
@@ -271,9 +278,9 @@ function ExcludedSites({ state }: { state: SettingsState }) {
           Add
         </button>
       </form>
-      {problem && (
+      {(problem ?? failure) !== null && (
         <div className="row">
-          <span className="error">{problem}</span>
+          <span className="error">{problem ?? failure}</span>
         </div>
       )}
       {state.excludedSites.length === 0 ? (
@@ -285,7 +292,7 @@ function ExcludedSites({ state }: { state: SettingsState }) {
           {state.excludedSites.map((host) => (
             <li key={host} className="row">
               <span>{host}</span>
-              <button className="link" aria-label={`Remove ${host}`} onClick={() => void send({ type: "removeExcludedSite", host })}>
+              <button className="link" aria-label={`Remove ${host}`} onClick={() => void run({ type: "removeExcludedSite", host })}>
                 Remove
               </button>
             </li>
@@ -301,9 +308,9 @@ function ExcludedSites({ state }: { state: SettingsState }) {
 function PrivacyPane({ state }: { state: SettingsState }) {
   const [problem, setProblem] = useState<string | null>(null);
   const isFull = state.excludedApps.length >= config.excludedAppsMax;
-  const add = async () => {
+  const run = async (command: Command) => {
     setProblem(null);
-    const { error } = await send({ type: "excludeApp" });
+    const { error } = await send(command);
     setProblem(error);
   };
   return (
@@ -316,7 +323,7 @@ function PrivacyPane({ state }: { state: SettingsState }) {
       >
         <div className="row">
           <span>Excluded apps</span>
-          <button disabled={isFull} onClick={() => void add()}>
+          <button disabled={isFull} onClick={() => void run({ type: "excludeApp" })}>
             Add App…
           </button>
         </div>
@@ -339,7 +346,7 @@ function PrivacyPane({ state }: { state: SettingsState }) {
             {state.excludedApps.map((app) => (
               <li key={app.bundleIdentifier} className="row">
                 <span>{app.name}</span>
-                <button className="link" aria-label={`Remove ${app.name}`} onClick={() => void send({ type: "removeExcludedApp", bundleIdentifier: app.bundleIdentifier })}>
+                <button className="link" aria-label={`Remove ${app.name}`} onClick={() => void run({ type: "removeExcludedApp", bundleIdentifier: app.bundleIdentifier })}>
                   Remove
                 </button>
               </li>
