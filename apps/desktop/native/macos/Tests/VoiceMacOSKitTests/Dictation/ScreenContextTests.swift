@@ -277,6 +277,49 @@ struct ScreenContextTests {
         #expect(context.renderedText() == "Shown")
     }
 
+    /// A password field is never read, whether or not the app hides its value: not in the window, not
+    /// in a row, not its child text, not when it is a web control.
+    @Test func walkNeverReadsAPasswordField() {
+        let secure = [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "placeholder-secret"]
+        let area = FakeElement("AXWebArea", children: [
+            FakeElement("AXTextField", secure, children: [FakeElement("AXStaticText", [kAXValueAttribute: "placeholder-secret"])]),
+            FakeElement("AXRow", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Sign in"]),
+                FakeElement("AXTextField", secure, children: [FakeElement("AXStaticText", [kAXValueAttribute: "placeholder-secret"])]),
+            ]),
+            FakeElement("AXButton", secure.merging([kAXTitleAttribute: "placeholder-secret"]) { $1 }),
+        ])
+        let window = FakeElement("AXWindow", children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Account"]),
+            FakeElement("AXTextField", secure),
+            FakeElement("AXTextArea", secure),
+            area,
+        ])
+        let text = walk(window).renderedText()
+        #expect(text == "Account\n| Sign in")
+        #expect(!text.contains("placeholder-secret"))
+    }
+
+    /// The focused field's text is read around the caret, unless it is a password field; the caret
+    /// still marks its place.
+    @Test func theFocusedPasswordFieldIsNeverRead() {
+        let caret = ["caretBefore": "placeholder-", "caretSelected": "sec", "caretAfter": "ret"]
+        var plain = ScreenContext(appName: "Example")
+        ScreenContextReader.readCaret(of: FakeElement("AXTextField", caret), in: FakeScreenTree(), into: &plain)
+        #expect(plain.textBeforeCaret == "placeholder-")
+        #expect(plain.selectedText == "sec")
+        #expect(plain.textAfterCaret == "ret")
+
+        let field = FakeElement("AXTextField", caret.merging([kAXSubroleAttribute: kAXSecureTextFieldSubrole as String]) { $1 })
+        let window = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Password"]), field])
+        var context = ScreenContext(appName: "Example")
+        ScreenContextReader.readCaret(of: field, in: FakeScreenTree(), into: &context)
+        ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: field, focusPath: [], started: Date(), into: &context)
+        #expect(context.textBeforeCaret.isEmpty && context.selectedText.isEmpty && context.textAfterCaret.isEmpty)
+        #expect(context.renderedText() == "Password\n» ‸")
+        #expect(!context.logDescription.contains("placeholder"))
+    }
+
     /// An app that reports no frames is read in full, as before frames were read: no frame counts
     /// as shown, in the walk and in a row's text.
     @Test func walkReadsElementsWithoutFrames() {
@@ -647,5 +690,10 @@ struct FakeScreenTree: ScreenTree {
     func string(_ element: FakeElement, _ name: String) -> String? { name == kAXRoleAttribute ? element.role : element.attributes[name] }
     func host(of webArea: FakeElement) -> String? { webArea.attributes["host"] }
     func fieldText(of element: FakeElement, windowFrame: CGRect?) -> String? { element.attributes[kAXValueAttribute] }
+    func caretWindow(of element: FakeElement) -> (String, String, String)? {
+        guard let before = element.attributes["caretBefore"], let selected = element.attributes["caretSelected"],
+              let after = element.attributes["caretAfter"] else { return nil }
+        return (before, selected, after)
+    }
     func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
 }

@@ -211,6 +211,11 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 - OCR stays a possible later fallback for apps whose tree is thin, as an owner decision.
 - *(Amended by ADR-DESK-016, 2026-09-26: the visible text is laid out in lines from the elements'
   frames, web controls and toolbars are read, and text in point-thin boxes is left out.)*
+- *(Amended 2026-09-30, owner: a password field (`kAXSecureTextFieldSubrole`) is never read, focused
+  or not, nor anything inside it, as correction learning already does (ADR-DESK-038). The read no
+  longer relies on the app hiding the field's value; the focused one still gets its caret block,
+  empty. A password an app shows in an ordinary field or as text is still read: excluding apps is
+  issue #5.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

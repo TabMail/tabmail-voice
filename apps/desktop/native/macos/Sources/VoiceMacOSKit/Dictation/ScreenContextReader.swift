@@ -20,7 +20,7 @@ enum ScreenContextReader {
         // pane side by side, and its caret index drifts (iTerm2 drops trailing spaces).
         let isTerminal = bundleID.map(HelperConfig.terminalBundleIDs.contains) ?? false
         let paneRead = isTerminal && readTmuxPane(showingIn: focused, into: &context)
-        if let focused, !paneRead { readCaret(of: focused, into: &context) }
+        if let focused, !paneRead { readCaret(of: focused, in: LiveScreenTree(), into: &context) }
         let focusPath = focused.map(ancestors) ?? []
         // The page the caret is in: the nearest web area above it (Notion nests its web page in a
         // local app shell page, which the walk reaches first).
@@ -38,13 +38,21 @@ enum ScreenContextReader {
 
     // MARK: Caret
 
+    /// The text around the caret in the focused field, never a password field's.
+    static func readCaret<Tree: ScreenTree>(of element: Tree.Element, in tree: Tree, into context: inout ScreenContext) {
+        if isPasswordField(element, in: tree) {
+            HelperLog.debug("ScreenContext: the focused field is a password field; not read")
+            return
+        }
+        guard let window = tree.caretWindow(of: element) else { return }
+        (context.textBeforeCaret, context.selectedText, context.textAfterCaret) = window
+    }
+
     /// Web-based editors (Chromium, WebKit, Gecko) report the caret as a text-marker range and
     /// often give rich-text fields no plain value, so markers are asked first; plain fields
     /// answer with their value and selected range.
-    private static func readCaret(of element: AXUIElement, into context: inout ScreenContext) {
-        let window = markerCaretWindow(of: element) ?? valueCaretWindow(of: element)
-        guard let window else { return }
-        (context.textBeforeCaret, context.selectedText, context.textAfterCaret) = window
+    fileprivate static func caretWindow(of element: AXUIElement) -> (String, String, String)? {
+        markerCaretWindow(of: element) ?? valueCaretWindow(of: element)
     }
 
     private static func markerCaretWindow(of element: AXUIElement) -> (String, String, String)? {
@@ -88,6 +96,8 @@ enum ScreenContextReader {
     /// The focused element becomes the caret block at its place in that order.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
+    /// A password field is never read, nor anything inside it (one above the focused element is
+    /// walked into like any of its ancestors; no app is known to focus inside one).
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], started: Date, into context: inout ScreenContext) {
         // Each element with whether it is inside a web area.
@@ -106,6 +116,7 @@ enum ScreenContextReader {
                 stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, childrenInWeb) })
                 continue
             }
+            if isPasswordField(element, in: tree) { continue }
             let frame = tree.frame(of: element)
             if let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
             let role = tree.string(element, kAXRoleAttribute) ?? ""
@@ -145,6 +156,12 @@ enum ScreenContextReader {
         HelperConfig.contextSkippedRoles.contains(role) && !(inWeb && HelperConfig.contextWebReadRoles.contains(role))
     }
 
+    /// Whether the element is a password field, which is never read: the screen read doesn't rely on
+    /// the app hiding the field's value.
+    static func isPasswordField<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree) -> Bool {
+        tree.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole
+    }
+
     /// The element's parents up to (not including) the application.
     private static func ancestors(of element: AXUIElement) -> [AXUIElement] {
         var chain: [AXUIElement] = []
@@ -167,7 +184,7 @@ enum ScreenContextReader {
               context.nodesVisited < HelperConfig.contextNodeBudget {
             context.nodesVisited += 1
             let role = tree.string(element, kAXRoleAttribute) ?? ""
-            if isSkipped(role, inWeb: inWeb) { continue }
+            if isSkipped(role, inWeb: inWeb) || isPasswordField(element, in: tree) { continue }
             let title = inWeb && HelperConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
             if role == "AXStaticText" || role == "AXTextField" || title != nil {
                 let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
@@ -324,6 +341,8 @@ protocol ScreenTree {
     func host(of webArea: Element) -> String?
     /// A text field's visible text.
     func fieldText(of element: Element, windowFrame: CGRect?) -> String?
+    /// The focused field's text before the caret, selected, and after it.
+    func caretWindow(of element: Element) -> (String, String, String)?
     func isSame(_ first: Element, _ second: Element) -> Bool
 }
 
@@ -341,6 +360,8 @@ struct LiveScreenTree: ScreenTree {
     func fieldText(of element: AXUIElement, windowFrame: CGRect?) -> String? {
         ScreenContextReader.visibleText(of: element, windowFrame: windowFrame)
     }
+
+    func caretWindow(of element: AXUIElement) -> (String, String, String)? { ScreenContextReader.caretWindow(of: element) }
 
     func isSame(_ first: AXUIElement, _ second: AXUIElement) -> Bool { CFEqual(first, second) }
 }
