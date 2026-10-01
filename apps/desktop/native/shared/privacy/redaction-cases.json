@@ -1,0 +1,765 @@
+{
+ "comment": [
+  "What every helper's redaction must do, whatever its language and regex engine: for each case, `text` joined becomes `expected` joined, where {redacted} stands for redactors.json's `placeholder`.",
+  "Texts are split into fragments so that no line of this file holds anything shaped like a real key; the bodies are made up."
+ ],
+ "cases": [
+  {
+   "name": "an API key, alone",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key, inside a line",
+   "text": [
+    "export KEY ",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a project API key, alone",
+   "text": [
+    "sk",
+    "-proj-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a project API key, inside a line",
+   "text": [
+    "export KEY ",
+    "sk",
+    "-proj-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a payment secret key, alone",
+   "text": [
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment secret key, inside a line",
+   "text": [
+    "export KEY ",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a payment restricted test key, alone",
+   "text": [
+    "rk",
+    "_test_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment restricted test key, inside a line",
+   "text": [
+    "export KEY ",
+    "rk",
+    "_test_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a webhook secret, alone",
+   "text": [
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a webhook secret, inside a line",
+   "text": [
+    "export KEY ",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a GitHub token, alone",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token, inside a line",
+   "text": [
+    "export KEY ",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token, alone",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token, inside a line",
+   "text": [
+    "export KEY ",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a GitLab token, alone",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitLab token, inside a line",
+   "text": [
+    "export KEY ",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "an AWS access key id, alone",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id, inside a line",
+   "text": [
+    "export KEY ",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a Google API key, alone",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google API key, inside a line",
+   "text": [
+    "export KEY ",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a Slack token, alone",
+   "text": [
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token, inside a line",
+   "text": [
+    "export KEY ",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "an npm token, alone",
+   "text": [
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an npm token, inside a line",
+   "text": [
+    "export KEY ",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a Hugging Face token, alone",
+   "text": [
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Hugging Face token, inside a line",
+   "text": [
+    "export KEY ",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a JSON web token, alone",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token, inside a line",
+   "text": [
+    "export KEY ",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a private-key block, whole",
+   "text": [
+    "before\n",
+    "-----BEGIN OPENSSH ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "\n",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "before\n",
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a private-key block the window cuts off, up to where it ends",
+   "text": [
+    "before\n",
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6=="
+   ],
+   "expected": [
+    "before\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key block with no algorithm",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token goes, the word stays",
+   "text": [
+    "Authorization: Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+   ],
+   "expected": [
+    "Authorization: Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token in lower case",
+   "text": [
+    "authorization: bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+   ],
+   "expected": [
+    "authorization: bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word bearer in a sentence stays",
+   "text": [
+    "the bearer of good news arrives"
+   ],
+   "expected": [
+    "the bearer of good news arrives"
+   ]
+  },
+  {
+   "name": "the password in an address goes, the rest stays",
+   "text": [
+    "postgres://admin:",
+    "hunter2",
+    "@db.example.com:5432/app"
+   ],
+   "expected": [
+    "postgres://admin:",
+    "{redacted}",
+    "@db.example.com:5432/app"
+   ]
+  },
+  {
+   "name": "an address with a port and an at sign later stays",
+   "text": [
+    "https://example.com:8080/path?at=@home"
+   ],
+   "expected": [
+    "https://example.com:8080/path?at=@home"
+   ]
+  },
+  {
+   "name": "an address with only a user stays",
+   "text": [
+    "ssh://alex@example.com/repo"
+   ],
+   "expected": [
+    "ssh://alex@example.com/repo"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: password=",
+   "text": [
+    "password=",
+    "hunter22",
+    ""
+   ],
+   "expected": [
+    "password=",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: PASSWORD:",
+   "text": [
+    "PASSWORD: ",
+    "s3cr3t-value",
+    ""
+   ],
+   "expected": [
+    "PASSWORD: ",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: \"api_key\": \"",
+   "text": [
+    "\"api_key\": \"",
+    "abc123def456",
+    "\""
+   ],
+   "expected": [
+    "\"api_key\": \"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: API-KEY = '",
+   "text": [
+    "API-KEY = '",
+    "abc123def456",
+    "'"
+   ],
+   "expected": [
+    "API-KEY = '",
+    "{redacted}",
+    "'"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: DB_PASSWORD=",
+   "text": [
+    "DB_PASSWORD=",
+    "pa55word!",
+    ""
+   ],
+   "expected": [
+    "DB_PASSWORD=",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: client_secret:",
+   "text": [
+    "client_secret: ",
+    "0123456789abcdef",
+    ""
+   ],
+   "expected": [
+    "client_secret: ",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: passphrase=",
+   "text": [
+    "passphrase=",
+    "correct4horse",
+    ""
+   ],
+   "expected": [
+    "passphrase=",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a named value takes the rest of its word",
+   "text": [
+    "access_token=",
+    "abcdef123456&next=1",
+    " then"
+   ],
+   "expected": [
+    "access_token=",
+    "{redacted}",
+    " then"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Password: required",
+   "text": [
+    "Password: required"
+   ],
+   "expected": [
+    "Password: required"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Enter your password below",
+   "text": [
+    "Enter your password below"
+   ],
+   "expected": [
+    "Enter your password below"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: token: abc12",
+   "text": [
+    "token: abc12"
+   ],
+   "expected": [
+    "token: abc12"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: The token count was 4096 for this request",
+   "text": [
+    "The token count was 4096 for this request"
+   ],
+   "expected": [
+    "The token count was 4096 for this request"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: commit 9fceb02d0ae598e95dc970b74767f19372d61af8",
+   "text": [
+    "commit 9fceb02d0ae598e95dc970b74767f19372d61af8"
+   ],
+   "expected": [
+    "commit 9fceb02d0ae598e95dc970b74767f19372d61af8"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Ask Alex about the sk-learn import",
+   "text": [
+    "Ask Alex about the sk-learn import"
+   ],
+   "expected": [
+    "Ask Alex about the sk-learn import"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Invoice 2026-0042 is due on the 14th",
+   "text": [
+    "Invoice 2026-0042 is due on the 14th"
+   ],
+   "expected": [
+    "Invoice 2026-0042 is due on the 14th"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Dear Alex,",
+   "text": [
+    "Dear Alex,\nSee you at 10:30."
+   ],
+   "expected": [
+    "Dear Alex,\nSee you at 10:30."
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: empty",
+   "text": [
+    ""
+   ],
+   "expected": [
+    ""
+   ]
+  },
+  {
+   "name": "a key one character short of the least length stays",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a key of exactly the least length goes",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value one character short stays",
+   "text": [
+    "token=",
+    "a1b2c"
+   ],
+   "expected": [
+    "token=",
+    "a1b2c"
+   ]
+  },
+  {
+   "name": "a named value of exactly the least length goes",
+   "text": [
+    "token=",
+    "a1b2c3"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "several secrets in one text all go",
+   "text": [
+    "A ",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " and B ",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    ", password=",
+    "hunter22",
+    " end"
+   ],
+   "expected": [
+    "A ",
+    "{redacted}",
+    " and B ",
+    "{redacted}",
+    ", password=",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "text already redacted is left as it is",
+   "text": [
+    "key ",
+    "{redacted}",
+    " and password=",
+    "{redacted}"
+   ],
+   "expected": [
+    "key ",
+    "{redacted}",
+    " and password=",
+    "{redacted}"
+   ]
+  }
+ ]
+}

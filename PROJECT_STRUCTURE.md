@@ -25,8 +25,10 @@ apps/desktop/
 ├── scripts/
 │   ├── build-native.mts         Builds the platform's helpers into dist/helpers (macOS: SwiftPM, arm64)
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
+│   ├── gen-redactors.mts        Writes each helper's list of redactors from native/shared/privacy/redactors.json (run with the registries)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
+├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests (ADR-DESK-044)
 │   ├── Package.swift            Products `voice-hotkey` and `voice-macos`, the executables the app spawns
 │   ├── Sources/

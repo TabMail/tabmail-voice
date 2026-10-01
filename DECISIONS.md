@@ -2386,3 +2386,51 @@ Apps are known by bundle identifier, compared without regard to case.
 - The Thunderbird relay's `focusedElement` (the email app's focused role and window title) is not
   gated by the list: it reads only the email app, and its tool is off (ADR-DESK-037).
 - Windows and Linux get the list with their helpers' screen read.
+
+## ADR-DESK-046: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
+
+**Context:** The screen read skips password fields (ADR-DESK-007, amended 2026-09-30) and excluded
+apps (ADR-DESK-045), but a secret shown as plain text is read like any other text and sent with the
+dictation: an API key printed in a terminal, a token on a dashboard, a private key open in an
+editor. Owner, 2026-09-30 and 10-01: the context should not capture secrets; simple heuristics are
+good enough (#78); it belongs in the helper, which is small and ours, so that a secret never reaches
+the Electron process; and the three platforms' helpers must share the same logic, with a
+well-structured place for the redactors.
+
+**Decision:**
+- What looks like a secret is defined once, in `native/shared/privacy/redactors.json`: an ordered
+  list of redactors, each a name, a regex, a case flag and a replacement. They cover private-key
+  blocks (whole, or cut off where the window ends), JSON web tokens, `Bearer` tokens, the password in
+  an address (`scheme://user:password@host`), a value given to a name like `password`, `token`,
+  `secret` or `api_key` (when it has a digit and at least 6 characters), and keys with a provider's
+  prefix (`sk-`, `sk_live_`, `whsec_`, `ghp_`, `github_pat_`, `glpat-`, `AKIA`, `AIza`, `xoxb-`,
+  `npm_`, `hf_`). A match becomes `[redacted]`; the name, the word `Bearer` and the rest of an
+  address stay, so the text still reads.
+- Each helper's list is generated from that file (`scripts/gen-redactors.mts`,
+  `npm run gen:redactors`, run with the registries before every build, typecheck and test), as the
+  connectors' registry is (ADR-DESK-044): macOS gets `Privacy/Redactors.generated.swift`, and a
+  platform's helper adds its emitter there. No helper copies a pattern by hand. The generator
+  refuses regex syntax ICU, ECMAScript and PCRE don't read alike (lookbehind, named groups, Unicode
+  classes, inline flags, possessive and atomic groups, backreferences).
+- `native/shared/privacy/redaction-cases.json` is what every helper must do with them: each case's
+  text and what it becomes. Every helper runs the cases in its own suite, on its own regex engine;
+  that is what shows the helpers agree. The texts are split into fragments, so the file holds
+  nothing shaped like a real key.
+- `voice-macos` redacts every text of the screen read before replying (`ScreenContext.redacted`:
+  the window's title, the text before, in and after the selection, each block's text, so the rendered
+  screen and the log description are built from redacted text) and the focused field's value for
+  correction learning (`Redactor.redact`). The helper's screen-privacy code lives in
+  `Sources/VoiceMacOSKit/Privacy/`.
+- Always on; not a setting, like the password-field skip.
+
+**Consequences:**
+- A safety net, not a guarantee: a secret in a shape the patterns don't know (a bare random string, a
+  password with no name beside it) is still read. Long random strings are not matched by entropy,
+  which would also take out hashes and identifiers.
+- A password without a digit after a name (`Password: correcthorse`) stays, so that a form's
+  `Password: required` does.
+- A secret the caret sits inside is split between the text before and after it, and each half alone
+  may not match.
+- A correction of a word into something secret-looking is not learned: the field is redacted before
+  the core compares it.
+- The Windows and Linux helpers redact once they add their emitter and run the shared cases.

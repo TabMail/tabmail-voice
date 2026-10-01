@@ -1,0 +1,123 @@
+{
+  "comment": [
+    "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046).",
+    "Each redactor is applied to the whole text, in this order, replacing every match with `replacement`, in which {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
+    "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes, groups, alternation, counted repeats, \\b, \\s and lookahead. No lookbehind, no named groups, no Unicode classes, no inline flags.",
+    "`ignoreCase` is the only flag. Every platform's helper is generated from this file (`npm run gen:redactors`) and must pass redaction-cases.json."
+  ],
+  "placeholder": "[redacted]",
+  "redactors": [
+    {
+      "name": "private-key-block",
+      "description": "A private-key block, whole or cut off where the window ends.",
+      "pattern": "-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[A-Za-z0-9+/=\\s]*-----END [A-Z0-9 ]*PRIVATE KEY-----|[A-Za-z0-9+/=\\s]*)",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "json-web-token",
+      "description": "A JSON web token: three base64url parts, the first two JSON objects.",
+      "pattern": "\\beyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "bearer-token",
+      "description": "\"Bearer <token>\", as an Authorization header has it. The word stays.",
+      "pattern": "\\b(Bearer\\s+)[A-Za-z0-9._~+/=-]{16,}",
+      "ignoreCase": true,
+      "replacement": "$1{placeholder}"
+    },
+    {
+      "name": "address-password",
+      "description": "The password in an address (scheme://user:password@host). The rest stays.",
+      "pattern": "(\\b[a-z][a-z0-9+.-]*://[^\\s/:@]+:)[^\\s/@]+(@)",
+      "ignoreCase": true,
+      "replacement": "$1{placeholder}$2"
+    },
+    {
+      "name": "named-value",
+      "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"…\"). The name stays. Only a value with a digit and at least 6 characters, so that \"Password: required\" stays.",
+      "pattern": "((?:password|passwd|pwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)[\"']?\\s*[=:]\\s*[\"']?)(?=[^\\s\"']*[0-9])[^\\s\"']{6,}",
+      "ignoreCase": true,
+      "replacement": "$1{placeholder}"
+    },
+    {
+      "name": "api-key-sk",
+      "description": "Keys starting \"sk-\" (several AI providers).",
+      "pattern": "\\bsk-[A-Za-z0-9_-]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "payment-key",
+      "description": "Payment provider keys (secret, restricted, publishable; live or test).",
+      "pattern": "\\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "webhook-secret",
+      "description": "Webhook signing secrets.",
+      "pattern": "\\bwhsec_[A-Za-z0-9]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "github-token",
+      "description": "GitHub tokens.",
+      "pattern": "\\bgh[pousr]_[A-Za-z0-9]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "github-fine-grained-token",
+      "description": "GitHub fine-grained tokens.",
+      "pattern": "\\bgithub_pat_[A-Za-z0-9_]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "gitlab-token",
+      "description": "GitLab tokens.",
+      "pattern": "\\bglpat-[A-Za-z0-9_-]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "aws-access-key-id",
+      "description": "AWS access key ids.",
+      "pattern": "\\b(?:AKIA|ASIA)[0-9A-Z]{16}\\b",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "google-api-key",
+      "description": "Google API keys.",
+      "pattern": "\\bAIza[0-9A-Za-z_-]{35}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "slack-token",
+      "description": "Slack tokens.",
+      "pattern": "\\bxox[abeprs]-[A-Za-z0-9-]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "npm-token",
+      "description": "npm tokens.",
+      "pattern": "\\bnpm_[A-Za-z0-9]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "hugging-face-token",
+      "description": "Hugging Face tokens.",
+      "pattern": "\\bhf_[A-Za-z0-9]{16,}",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    }
+  ]
+}
