@@ -14,7 +14,7 @@ enum FocusedField {
     /// longer than `maxLength` UTF-16 code units.
     /// Blocking cross-process Accessibility calls: call off the main thread. Those on the focused
     /// element are bounded by `HelperConfig.focusedFieldTimeout`; those on what is above and inside
-    /// it (looked at for pages only) by the app-wide timeout.
+    /// it (looked at for pages only) by the system-wide default.
     static func value(inApp pid: pid_t, maxLength: Int, excluding exclusions: ScreenExclusions) -> String? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.focusedFieldTimeout)
@@ -44,7 +44,7 @@ enum FocusedField {
         let window = focusPath.last { tree.string($0, kAXRoleAttribute) == kAXWindowRole as String }
         if ScreenContextReader.pageHosts(of: element, above: focusPath, in: tree).contains(where: exclusions.excludes)
             || holdsExcludedPage(element, intoPages: true) || window.map({ holdsExcludedPage($0, intoPages: false) }) ?? false {
-            HelperLog.debug("FocusedField: the window shows a page of a website excluded from screen reading; not read")
+            HelperLog.debug("FocusedField: the window shows a page of an excluded website, or one whose address is unknown; not read")
             return nil
         }
         return readable(subrole: tree.string(element, kAXSubroleAttribute), value: tree.string(element, kAXValueAttribute), maxLength: maxLength)

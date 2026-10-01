@@ -26,7 +26,7 @@ enum ScreenContextReader {
         guard var context = gather(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(), excluding: exclusions,
                                    started: started, from: start,
                                    terminalPane: isTerminal ? { readTmuxPane(showingIn: focused, into: &$0) } : nil) else {
-            HelperLog.debug("ScreenContext: the window shows a website excluded from screen reading; not read")
+            HelperLog.debug("ScreenContext: the window shows a page of an excluded website, or one whose address is unknown; not read")
             return nil
         }
         context.seconds = Date().timeIntervalSince(started)
