@@ -85,6 +85,10 @@ enum HelperConfig {
     /// Cap on asking an app to build its accessibility tree (seconds). Off the main thread, and Gecko
     /// may be slow to answer while it starts its accessibility service.
     static let accessibilityActivationTimeout: Float = 1
+    /// An app that doesn't answer in time is asked again after this long, up to
+    /// `accessibilityActivationAttempts` requests in all, while it stays in front.
+    static let accessibilityActivationRetryDelay: Duration = .seconds(1)
+    static let accessibilityActivationAttempts = 5
 
     // MARK: Focused field
 
