@@ -2375,7 +2375,9 @@ Apps are known by bundle identifier, compared without regard to case.
 - An exclusion that could not be written to the preferences file is said so in Settings (owner,
   2026-10-01): it holds until the app quits, and the app would be read again after a restart with
   nothing having told the user. `KeyValueStore.set` answers whether the value was kept, `excludeApp`
-  and `excludeSite` answer `unsaved`, and a removal that could not be written is said the same way.
+  and `excludeSite` answer `unsaved`, and a removal that could not be written is said the same way. Adding one already in the user's
+  list writes the list again and answers from that, so adding it again, as the message says to,
+  saves it once the file can be written.
   Other settings still fail to save silently, logged only.
 
 **Consequences:**

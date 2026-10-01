@@ -235,7 +235,9 @@ export class AppSettings extends Observable {
     const app = excludedApp(value);
     if (app === null) return "invalid";
     const apps = this.excludedApps;
-    if (isBuiltInExcludedApp(app.bundleIdentifier) || apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return "added";
+    if (isBuiltInExcludedApp(app.bundleIdentifier)) return "added";
+    // One already there is written again: it may be held from an add that could not be saved.
+    if (apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return this.store.set(Key.excludedApps, apps) ? "added" : "unsaved";
     if (apps.length >= config.excludedAppsMax) return "full";
     const saved = this.store.set(Key.excludedApps, [...apps, app]);
     this.changed();
@@ -264,7 +266,9 @@ export class AppSettings extends Observable {
     const site = excludedSite(value);
     if (site === null) return "invalid";
     const sites = this.excludedSites;
-    if (isBuiltInExcludedSite(site) || sites.includes(site)) return "added";
+    if (isBuiltInExcludedSite(site)) return "added";
+    // Written again, as an app already there is.
+    if (sites.includes(site)) return this.store.set(Key.excludedSites, sites) ? "added" : "unsaved";
     if (sites.length >= config.excludedSitesMax) return "full";
     const saved = this.store.set(Key.excludedSites, [...sites, site]);
     this.changed();

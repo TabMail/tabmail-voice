@@ -1027,8 +1027,10 @@ describe("main process wiring", () => {
     expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: unsaved });
     expect(await send({ type: "excludeApp" })).toEqual({ error: unsaved });
     expect(state()).toMatchObject({ excludedSites: ["example.org"], excludedApps: [{ bundleIdentifier: "org.example.bank" }] });
-    // One already there changes nothing, so there is nothing unsaved.
-    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: null });
+    // Added again, it is still unsaved.
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: unsaved });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: unsaved });
+    expect(state()).toMatchObject({ excludedSites: ["example.org"], excludedApps: [{ bundleIdentifier: "org.example.bank" }] });
 
     expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: unremoved });
     expect(await send({ type: "removeExcludedApp", bundleIdentifier: "org.example.bank" })).toEqual({ error: unremoved });

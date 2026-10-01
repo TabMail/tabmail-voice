@@ -2,6 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { DebugAccess } from "../../src/core/backend/account.js";
 import { agentToolIDs, offeredAgentToolIDs } from "../../src/core/agent/tools.js";
@@ -9,6 +12,7 @@ import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import * as config from "../../src/core/config.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
 import { AppSettings } from "../../src/core/settings.js";
+import { JSONFileStore } from "../../src/main/storage/jsonFileStore.js";
 
 function settings(store = new MemoryStore(), hasTabMail = false): AppSettings {
   return new AppSettings(store, () => hasTabMail);
@@ -189,9 +193,13 @@ describe("an exclusion that could not be saved", () => {
     expect(changes).toBe(2);
     expect(app.dictation(null).excludedSites).toContain("example.org");
     expect(app.dictation(null).excludedApps).toContain(bank.bundleIdentifier);
-    // Nothing is written for one already there, built in, invalid, or refused by a full list.
-    expect(app.excludeSite("example.org")).toBe("added");
-    expect(app.excludeApp(bank)).toBe("added");
+    // Adding it again is still unsaved, and tells no one of a change: the list is as it was.
+    expect(app.excludeSite("example.org")).toBe("unsaved");
+    expect(app.excludeApp({ ...bank, bundleIdentifier: "ORG.EXAMPLE.BANK" })).toBe("unsaved");
+    expect(changes).toBe(2);
+    expect(app.excludedSites).toEqual(["example.org"]);
+    expect(app.excludedApps).toEqual([bank]);
+    // Nothing is unsaved for one built in or invalid.
     expect(app.excludeSite(config.builtInExcludedSites[0])).toBe("added");
     expect(app.excludeSite("not a site")).toBe("invalid");
     expect(app.excludeApp({ bundleIdentifier: "", name: "" })).toBe("invalid");
@@ -204,6 +212,33 @@ describe("an exclusion that could not be saved", () => {
     // Nothing is written for one that is not there.
     expect(app.removeExcludedSite("example.org")).toBe(true);
     expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
+  });
+
+  /** The message says to add it again: doing so writes the list held, so it lasts once the file can
+   * be written. */
+  test("added again once the file can be written, it is saved", () => {
+    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
+    try {
+      const path = join(folder, "settings.json");
+      const app = settings(new JSONFileStore(path));
+      mkdirSync(`${path}.tmp`);
+      expect(app.excludeSite("example.org")).toBe("unsaved");
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(app.excludeSite("example.org")).toBe("unsaved");
+      expect(app.excludeApp(bank)).toBe("unsaved");
+      expect(settings(new JSONFileStore(path)).excludedSites).toEqual([]);
+
+      rmSync(`${path}.tmp`, { recursive: true });
+      expect(app.excludeSite("example.org")).toBe("added");
+      expect(settings(new JSONFileStore(path)).excludedSites).toEqual(["example.org"]);
+      rmSync(path);
+      expect(app.excludeApp(bank)).toBe("added");
+      const relaunched = settings(new JSONFileStore(path));
+      expect(relaunched.excludedSites).toEqual(["example.org"]);
+      expect(relaunched.excludedApps).toEqual([bank]);
+    } finally {
+      rmSync(folder, { recursive: true });
+    }
   });
 
   test("a saved one is reported added, and removed", () => {
