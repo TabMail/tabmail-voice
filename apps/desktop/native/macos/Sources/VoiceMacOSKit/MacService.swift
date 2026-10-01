@@ -323,13 +323,13 @@ struct ScreenAccess: Sendable {
 
 extension ScreenContext {
     /// What the app receives: the fields, and the text already rendered for the prompts and the logs,
-    /// all of it with secret-looking text taken out (`redacted`, `redactedVisibleText`: ADR-DESK-046).
+    /// all of it with secret-looking text taken out (`redacted`: ADR-DESK-046).
     var json: JSON {
         let context = redacted
-        return context.json(visibleText: redactedVisibleText, selectionRedacted: context.selectedText != selectedText)
+        return context.json(selectionRedacted: context.selectedText != selectedText)
     }
 
-    private func json(visibleText: String, selectionRedacted: Bool) -> JSON {
+    private func json(selectionRedacted: Bool) -> JSON {
         func optional(_ value: String?) -> JSON { value.map(JSON.string) ?? .null }
         return [
             "appName": .string(appName),
@@ -344,9 +344,9 @@ extension ScreenContext {
             // over the real one.
             "selectionRedacted": .bool(selectionRedacted),
             "textAfterCaret": .string(textAfterCaret),
-            "renderedText": .string(visibleText),
+            "renderedText": .string(renderedText()),
             "summary": .string(summary),
-            "logDescription": .string(logDescription(visibleText: visibleText)),
+            "logDescription": .string(logDescription),
         ]
     }
 }

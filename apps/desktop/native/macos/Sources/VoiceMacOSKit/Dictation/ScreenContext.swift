@@ -113,17 +113,14 @@ struct ScreenContext: Sendable, Equatable {
 
     /// Everything read, for the debug log file (`Log.content`): the fields, the text around the caret
     /// and the visible text as the prompts receive it.
-    var logDescription: String { logDescription(visibleText: renderedText()) }
-
-    /// `logDescription` with the visible text as given (the helper's reply redacts it as a whole).
-    func logDescription(visibleText: String) -> String {
+    var logDescription: String {
         "app \(appName) (\(bundleID ?? "-")), window title \(windowTitle ?? "-"), host \(host ?? "-"), "
             + "terminal program \(terminalProgram ?? "-"), focused \(focusedRole ?? "-")"
             + (stoppedEarly.map { ", stopped: \($0)" } ?? "") + "\n"
             + "--- text before the caret ---\n\(textBeforeCaret)\n"
             + "--- selected text ---\n\(selectedText)\n"
             + "--- text after the caret ---\n\(textAfterCaret)\n"
-            + "--- visible text ---\n\(visibleText)"
+            + "--- visible text ---\n\(renderedText())"
     }
 
     /// Up to `maxChars` on each side of the selection. Accessibility ranges count UTF-16 units;

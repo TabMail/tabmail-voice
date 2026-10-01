@@ -42,7 +42,7 @@ export function redactorDefinitions(json = readFileSync(redactorsPath, "utf8")):
     // Lookbehind, named groups, Unicode classes, inline flags, possessive and atomic groups, and
     // backreferences are not read alike by ICU, ECMAScript and PCRE. Nor are \b, \w and \d: ICU
     // counts every script's letters and digits, ECMAScript only ASCII's.
-    if (/\(\?<|\(\?P|\\[pPkKGAzZbBwWdD]|\(\?[a-zA-Z]|\(\?>|[*+?}]\+|\\[1-9]/.test(pattern)) throw new Error(`redactors.json: "${name}" uses regex syntax the helpers don't share`);
+    if (/\(\?<|\\[pPkKGAzZbBwWdD]|\(\?[a-zA-Z]|\(\?>|[*+?}]\+|\\[1-9]/.test(pattern)) throw new Error(`redactors.json: "${name}" uses regex syntax the helpers don't share`);
     // An empty alternative matches the empty text, which shows how many groups the pattern has.
     const groups = (new RegExp(`${pattern}|`, ignoreCase ? "i" : "").exec("")?.length ?? 1) - 1;
     for (const [, group] of replacement.matchAll(/\$([0-9]+)/g)) {

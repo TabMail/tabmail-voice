@@ -2427,11 +2427,20 @@ well-structured place for the redactors.
   that is what shows the helpers agree. The texts are split into fragments, so the file holds
   nothing shaped like a real key.
 - `voice-macos` redacts every text of the screen read as it replies (`ScreenContext.json`, the one
-  way a read leaves the helper): the window's title and the text before, in and after the selection
-  (`redacted`), and the visible text as rendered (`redactedVisibleText`), which the log description
-  is built from. The visible text is redacted joined, not block by block: a secret spread over
-  several elements (a key's lines, one each; `Bearer` and its token) only shows once they are
-  joined. The focused field's value for correction learning is redacted too (`Redactor.redact`).
+  way a read leaves the helper; `ScreenContext.redacted`): the window's title, the visible blocks,
+  and the text before, in and after the selection. The rendered text and the log description are
+  built from the redacted blocks. The focused field's value for correction learning is redacted too.
+- The texts of a read are redacted together, not one by one (`Redactor.redact` of several lines):
+  as the one text they make, a line break between the blocks, and nothing between the three texts
+  around the caret. A secret spread over several elements (a key's lines, one each; `Bearer` and its
+  token) or one the caret or the selection is inside only shows once they are joined. Each text then
+  keeps its share of the result: what replaces a secret goes to the text the secret began in, what
+  the replacement keeps of the match's start and end stays where it was, and a text wholly inside a
+  secret comes back empty (such a block is dropped; a selection becomes `[redacted]`, so it is still
+  a selection). The blocks are redacted before they are rendered, because the marks the rendering
+  puts before a field's, a row's and the focused field's lines would break a key of several lines.
+  The rule is the helpers' to share like the patterns: its cases are `lineCases` in
+  `redaction-cases.json`, which every helper's suite runs.
 - The reply says when the selection had a secret taken out (`selectionRedacted`). Agent mode's Edit
   then refuses (`AgentError.secretInSelection`), asking the backend nothing: its rewrite of the
   redacted selection, pasted over the real one, would put `[redacted]` where the secret was. The
@@ -2445,15 +2454,16 @@ well-structured place for the redactors.
   which would also take out hashes and identifiers.
 - A password without a digit after a name (`Password: correcthorse`) stays, so that a form's
   `Password: required` does.
-- A secret the caret sits inside is split between the text before and after it, and each half alone
-  may not match: the halves then reach the app and the backend as read. In the visible text the
-  caret's marker splits it the same way.
+- A secret cut by the edge of what is read (the focused field's text is read 2,000 characters each
+  side of the caret; a terminal's from its first visible line) is only found when the part read
+  still has its shape: a private key's header and what follows are, its last lines alone are not.
 - A selection holding a secret can't be rewritten by voice (Edit refuses, saying why); a plain
   dictation over it replaces it as always.
-- A redacted value that ran up to the caret takes the caret's marker with it, and the dictation's
-  cleanup then places the caret from the text around it, as it does when the marker is missing.
-- A private key written on one line with escaped line breaks, or an encrypted one with header
-  lines, keeps its body unless a name beside it marks it as a secret; a key header with nothing
+- Texts that sit side by side on screen are still joined by a line break here, so a name and its
+  value in two elements are found together, and so are two elements that only look like one (a
+  label ending in `token:` above an unrelated word with a digit).
+- A private key written on one line with escaped line breaks, or one with header lines after its
+  first (an encrypted PEM key, a PGP key with a `Version:` line), keeps its body unless a name beside it marks it as a secret; a key header with nothing
   after it takes the letters that follow, up to the first punctuation.
 - A correction of a word into something secret-looking is not learned: the field is redacted before
   the core compares it.

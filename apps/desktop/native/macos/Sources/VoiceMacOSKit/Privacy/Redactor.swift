@@ -23,27 +23,112 @@ struct Redactor: Sendable {
     /// `text` with what looks like a secret replaced: every redactor, in order. A safety net for
     /// text read off the screen: it catches the common shapes, not every secret.
     static func redact(_ text: String) -> String {
-        all.reduce(text) { text, redactor in
-            redactor.regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: redactor.replacement)
+        redact([[text]])[0][0]
+    }
+
+    /// Each text of `lines` with what looks like a secret replaced. A line is one or more texts that
+    /// follow one another with nothing between them (the text before the caret, the selection, the
+    /// text after it); the lines are redacted as the one text they make together, a line break
+    /// between them. So a secret is found whether one text holds it whole (a key in a terminal) or it
+    /// is spread over several (a key's lines, one element each; `Bearer` and its token; a name and its
+    /// value in two cells; a key the caret is inside).
+    ///
+    /// Each text keeps its share of the result. Of a match, what the replacement starts with as the
+    /// match does (the character before a key, a name, the word Bearer) stays in the texts that held
+    /// it. The rest of the replacement, up to what it ends with as the match does (the `@` after an
+    /// address's password), goes to the text the rest of the match began in; every later boundary
+    /// between texts in the match lands before that kept end, so a text wholly inside the secret
+    /// comes back empty.
+    static func redact(_ lines: [[String]]) -> [[String]] {
+        var text = lines.map { $0.joined() }.joined(separator: "\n") as NSString
+        // Where each text starts and ends in `text`, in UTF-16 units.
+        var ranges: [[(start: Int, end: Int)]] = []
+        var position = 0
+        for line in lines {
+            var places: [(start: Int, end: Int)] = []
+            for item in line {
+                let length = (item as NSString).length
+                places.append((position, position + length))
+                position += length
+            }
+            ranges.append(places)
+            position += 1
         }
+        for redactor in all {
+            let matches = redactor.regex.matches(in: text as String, range: NSRange(location: 0, length: text.length))
+            if matches.isEmpty { continue }
+            let result = NSMutableString()
+            // Each match's place in the old text, its replacement's place in the new one, and how
+            // much of the match the replacement starts and ends with.
+            var edits: [(start: Int, end: Int, newStart: Int, newEnd: Int, kept: (start: Int, end: Int))] = []
+            var copied = 0
+            for match in matches {
+                result.append(text.substring(with: NSRange(location: copied, length: match.range.location - copied)))
+                let newStart = result.length
+                let replacement = redactor.regex.replacementString(for: match, in: text as String, offset: 0, template: redactor.replacement)
+                result.append(replacement)
+                edits.append((match.range.location, NSMaxRange(match.range), newStart, result.length, kept(of: text.substring(with: match.range), in: replacement)))
+                copied = NSMaxRange(match.range)
+            }
+            result.append(text.substring(from: copied))
+            func moved(_ place: Int) -> Int {
+                var shift = 0
+                for edit in edits {
+                    if place <= edit.start { break }
+                    if place < edit.end {
+                        if place - edit.start <= edit.kept.start { return edit.newStart + place - edit.start }
+                        return edit.newEnd - edit.kept.end
+                    }
+                    shift = edit.newEnd - edit.end
+                }
+                return place + shift
+            }
+            ranges = ranges.map { $0.map { (moved($0.start), moved($0.end)) } }
+            text = result
+        }
+        return ranges.map { $0.map { text.substring(with: NSRange(location: $0.start, length: $0.end - $0.start)) } }
+    }
+
+    /// How many UTF-16 units `replacement` starts with as `match` does, and ends with as it does,
+    /// the two not overlapping in either.
+    static func kept(of match: String, in replacement: String) -> (start: Int, end: Int) {
+        let old = Array(match.utf16), new = Array(replacement.utf16)
+        let shorter = min(old.count, new.count)
+        var start = 0
+        while start < shorter, old[start] == new[start] { start += 1 }
+        var end = 0
+        while end < shorter - start, old[old.count - 1 - end] == new[new.count - 1 - end] { end += 1 }
+        return (start, end)
     }
 }
 
 extension ScreenContext {
-    /// The context with secret-looking text taken out of the window's title and the text around the
-    /// caret. The visible text is redacted as rendered (`redactedVisibleText`), not block by block.
+    /// The context with secret-looking text taken out of everything read off the screen: the
+    /// window's title, and the visible blocks and the text around the caret, redacted together
+    /// (`Redactor.redact(_:)` of several lines). The focused field's block is its three texts, put
+    /// together again with the caret marked. A block left empty (a line inside a key) is dropped; the
+    /// caret's block stays.
     var redacted: ScreenContext {
         var context = self
         context.windowTitle = windowTitle.map(Redactor.redact)
-        context.textBeforeCaret = Redactor.redact(textBeforeCaret)
-        context.selectedText = Redactor.redact(selectedText)
-        context.textAfterCaret = Redactor.redact(textAfterCaret)
+        let caret = [textBeforeCaret, selectedText, textAfterCaret]
+        let hasCaretBlock = blocks.contains { $0.kind == .caret }
+        // Without a block for the focused field (a walk that stopped before it), its texts follow
+        // the blocks.
+        let lines = Redactor.redact(blocks.map { $0.kind == .caret ? caret : [$0.text] } + (hasCaretBlock ? [] : [caret]))
+        let around = hasCaretBlock ? zip(blocks, lines).first { $0.0.kind == .caret }!.1 : lines[blocks.count]
+        context.textBeforeCaret = around[0]
+        // A selection wholly inside a secret is still a selection (`selectionRedacted`).
+        context.selectedText = around[1].isEmpty && !selectedText.isEmpty ? Redactor.placeholder : around[1]
+        context.textAfterCaret = around[2]
+        context.blocks = []
+        for (block, line) in zip(blocks, lines) {
+            if block.kind == .caret {
+                context.appendCaret(frame: block.frame)
+            } else if !line[0].isEmpty {
+                context.blocks.append(Block(kind: block.kind, text: line[0], frame: block.frame))
+            }
+        }
         return context
     }
-
-    /// The visible text as rendered, with secret-looking text taken out. Redacted joined, not block
-    /// by block: a secret spread over several elements (a key's lines, one each; `Bearer` and its
-    /// token) only shows once they are joined, and redacting a key's header alone would hide the
-    /// rest of the key from the pattern.
-    var redactedVisibleText: String { Redactor.redact(renderedText()) }
 }

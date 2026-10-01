@@ -16,26 +16,55 @@ struct RedactorTests {
             var text: [String]
             var expected: [String]
         }
+        /// Several texts redacted together: each line's texts, in fragments as a case's text is.
+        struct LineCase: Decodable {
+            var name: String
+            var lines: [[[String]]]
+            var expected: [[[String]]]
+        }
         var cases: [Case]
+        var lineCases: [LineCase]
     }
+
+    private static func sharedFile() throws -> Cases {
+        let native = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return try JSONDecoder().decode(Cases.self, from: Data(contentsOf: native.appendingPathComponent("shared/privacy/redaction-cases.json")))
+    }
+
+    private static func joined(_ fragments: [String]) -> String { fragments.map { $0 == "{redacted}" ? Redactor.placeholder : $0 }.joined() }
 
     /// The shared cases, with `{redacted}` standing for the placeholder.
     private static func sharedCases() throws -> [(name: String, text: String, expected: String)] {
-        let native = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-        let data = try Data(contentsOf: native.appendingPathComponent("shared/privacy/redaction-cases.json"))
-        func joined(_ fragments: [String]) -> String { fragments.map { $0 == "{redacted}" ? Redactor.placeholder : $0 }.joined() }
-        return try JSONDecoder().decode(Cases.self, from: data).cases.map { ($0.name, joined($0.text), joined($0.expected)) }
+        try sharedFile().cases.map { ($0.name, joined($0.text), joined($0.expected)) }
     }
 
     @Test func everySharedCaseIsRedactedAsExpected() throws {
         let cases = try Self.sharedCases()
-        #expect(cases.count >= 150)
+        #expect(cases.count >= 270)
         #expect(cases.contains { $0.text != $0.expected })
         #expect(cases.contains { $0.text == $0.expected && !$0.text.isEmpty })
         for (name, text, expected) in cases {
             #expect(Redactor.redact(text) == expected, "\(name)")
         }
+    }
+
+    /// Several texts redacted together, each keeping its share: the shared cases every helper passes.
+    @Test func everySharedCaseOfSeveralTextsIsRedactedAsExpected() throws {
+        let cases = try Self.sharedFile().lineCases
+        #expect(cases.count >= 13)
+        for item in cases {
+            #expect(Redactor.redact(item.lines.map { $0.map(Self.joined) }) == item.expected.map { $0.map(Self.joined) }, "\(item.name)")
+        }
+    }
+
+    /// What a replacement keeps of its match's start and end never overlaps, so a text's share never
+    /// ends before it starts.
+    @Test func whatAReplacementKeepsOfItsMatchDoesNotOverlap() {
+        #expect(Redactor.kept(of: "aa", in: "a") == (1, 0))
+        #expect(Redactor.kept(of: "a", in: "aa") == (1, 0))
+        #expect(Redactor.kept(of: "://u:secret@", in: "://u:[redacted]@") == (5, 1))
+        #expect(Redactor.kept(of: "secret", in: "[redacted]") == (0, 0))
     }
 
     /// Redacting what is already redacted changes nothing.
@@ -55,9 +84,9 @@ struct RedactorTests {
         context.host = "example.com"
         context.terminalProgram = "zsh"
         context.focusedRole = "AXTextArea"
-        context.textBeforeCaret = "key \(secret)"
+        context.textBeforeCaret = "key \(secret) "
         context.selectedText = secret
-        context.textAfterCaret = "\(secret) end"
+        context.textAfterCaret = " \(secret) end"
         context.append(.heading, "Keys \(secret)")
         context.append(.row, "name | \(secret)")
         context.append(.field, "export KEY=\(secret)")
@@ -67,12 +96,12 @@ struct RedactorTests {
         let reply = context.json
 
         #expect(reply["windowTitle"]?.string == "deploy \(gone)")
-        #expect(reply["textBeforeCaret"]?.string == "key \(gone)")
+        #expect(reply["textBeforeCaret"]?.string == "key \(gone) ")
         #expect(reply["selectedText"]?.string == gone)
-        #expect(reply["textAfterCaret"]?.string == "\(gone) end")
-        #expect(reply["renderedText"]?.string == "## Keys \(gone)\n| name | \(gone)\n> export KEY=\(gone)\n» key \(gone)‸\(gone)‸\(gone) end")
+        #expect(reply["textAfterCaret"]?.string == " \(gone) end")
+        #expect(reply["renderedText"]?.string == "## Keys \(gone)\n| name | \(gone)\n> export KEY=\(gone)\n» key \(gone) ‸\(gone)‸ \(gone) end")
         #expect(reply["logDescription"]?.string?.contains(secret) == false)
-        #expect(reply["logDescription"]?.string?.contains("--- text before the caret ---\nkey \(gone)\n") == true)
+        #expect(reply["logDescription"]?.string?.contains("--- text before the caret ---\nkey \(gone) \n") == true)
         // What isn't text read off the screen is left as read.
         #expect(reply["appName"]?.string == "Example Terminal")
         #expect(reply["bundleID"]?.string == "org.example.terminal")
@@ -82,8 +111,8 @@ struct RedactorTests {
         #expect(reply["summary"]?.string?.contains(secret) == false)
     }
 
-    /// What leaves the helper (`json`) has the visible text redacted joined as well: a secret spread
-    /// over several elements, one line or one word each, only shows once they are joined.
+    /// The visible text is redacted as the one text its elements make: a secret spread over several
+    /// elements, one line or one word each, only shows once they are joined.
     @Test func aSecretSpreadOverSeveralElementsIsRedactedInWhatLeavesTheHelper() {
         let body = ["a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0", "u1V2w3X4y5Z6a7B8c9D0e1F2g3H4i5J6k7L8m9N0"]
         let token = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
@@ -103,6 +132,104 @@ struct RedactorTests {
         let log = reply["logDescription"]?.string ?? ""
         #expect(log.hasSuffix("--- visible text ---\nYour key:\n\(gone)\nAuthorization: Bearer\n\(gone)\nDone"))
         for secret in body + [token] { #expect(!log.contains(secret)) }
+        // The blocks left empty are gone, the others are where they were.
+        #expect(context.redacted.blocks.map(\.text) == ["Your key:", gone, "Authorization: Bearer", gone, "Done"])
+    }
+
+    /// A secret of several lines is redacted whatever kind of element shows it: the marks the
+    /// rendering puts before a field's, a row's and the focused field's lines are no part of it.
+    @Test func aSecretOfSeveralLinesIsRedactedInAFieldInRowsAndInTheFocusedField() {
+        let begin = "-----BEGIN " + "PRIVATE KEY-----", end = "-----END " + "PRIVATE KEY-----"
+        let body = ["a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0", "u1V2w3X4y5Z6a7B8c9D0e1F2g3H4i5J6k7L8m9N0"]
+        let token = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+        let key = ([begin] + body + [end]).joined(separator: "\n")
+        let gone = Redactor.placeholder
+        var context = ScreenContext(appName: "Example Editor")
+        context.append(.field, "first\n\(key)\nlast")
+        context.append(.field, "Authorization: Bearer\n\(token)\nsent")
+        for line in ["id_example"] + [begin] + body + [end] + ["id_other"] { context.append(.row, line) }
+        context.textBeforeCaret = "mine\n\(key)\nthen "
+        context.textAfterCaret = "after"
+        context.appendCaret()
+
+        let reply = context.json
+        #expect(reply["renderedText"]?.string == """
+        > first
+        > \(gone)
+        > last
+        > Authorization: Bearer
+        > \(gone)
+        > sent
+        | id_example
+        | \(gone)
+        | id_other
+        » mine
+        » \(gone)
+        » then ‸after
+        """)
+        #expect(reply["textBeforeCaret"]?.string == "mine\n\(gone)\nthen ")
+        #expect(reply["textAfterCaret"]?.string == "after")
+        let log = reply["logDescription"]?.string ?? ""
+        for secret in body + [token] { #expect(!log.contains(secret)) }
+    }
+
+    /// A secret the caret is inside, or the selection is part of, is found: the focused field's texts
+    /// are redacted as the one text they are, and its block is made of them again.
+    @Test func aSecretTheCaretOrTheSelectionIsInsideIsRedacted() {
+        let gone = Redactor.placeholder
+        var context = ScreenContext(appName: "Example Terminal")
+        context.textBeforeCaret = "export KEY=" + "sk" + "-" + "a1B2c3"
+        context.textAfterCaret = "D4e5F6g7H8i9J0k1L2 next"
+        context.append(.text, "Shell")
+        context.appendCaret()
+        context.append(.text, "Below")
+
+        var reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == "export KEY=\(gone)")
+        #expect(reply["selectedText"]?.string == "")
+        #expect(reply["textAfterCaret"]?.string == " next")
+        #expect(reply["renderedText"]?.string == "Shell\n» export KEY=\(gone)‸ next\nBelow")
+        #expect(reply["selectionRedacted"] == .bool(false))
+        #expect(reply["logDescription"]?.string?.contains("a1B2c3") == false)
+        #expect(reply["logDescription"]?.string?.contains("D4e5F6") == false)
+
+        // A selection wholly inside the secret is still a selection, and one the app must not rewrite.
+        context = ScreenContext(appName: "Example Terminal")
+        context.textBeforeCaret = "sk" + "-" + "a1B2"
+        context.selectedText = "c3D4e5F6"
+        context.textAfterCaret = "g7H8i9J0k1L2"
+        context.appendCaret()
+        reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == gone)
+        #expect(reply["selectedText"]?.string == gone)
+        #expect(reply["textAfterCaret"]?.string == "")
+        #expect(reply["renderedText"]?.string == "» \(gone)‸\(gone)‸")
+        #expect(reply["selectionRedacted"] == .bool(true))
+    }
+
+    /// The focused field's block stays though nothing is left in it, and the focused field's texts
+    /// are redacted when the walk placed no block for it.
+    @Test func theFocusedFieldIsRedactedWithOrWithoutItsBlock() {
+        let secret = "sk" + "-" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+        let gone = Redactor.placeholder
+        var context = ScreenContext(appName: "Example Editor")
+        context.append(.text, "Above")
+        context.appendCaret()
+        context.append(.text, "Below")
+        #expect(context.json["renderedText"]?.string == "Above\n» ‸\nBelow")
+
+        context = ScreenContext(appName: "Example Terminal")
+        context.textBeforeCaret = "key \(secret) "
+        context.selectedText = "plain"
+        context.textAfterCaret = " \(secret)"
+        context.append(.field, "echo \(secret)")
+        let reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == "key \(gone) ")
+        #expect(reply["selectedText"]?.string == "plain")
+        #expect(reply["textAfterCaret"]?.string == " \(gone)")
+        #expect(reply["renderedText"]?.string == "> echo \(gone)")
+        #expect(reply["selectionRedacted"] == .bool(false))
+        #expect(context.redacted.blocks.count == 1)
     }
 
     /// The reply says when the selection had secret-looking text taken out, so the app never pastes a
