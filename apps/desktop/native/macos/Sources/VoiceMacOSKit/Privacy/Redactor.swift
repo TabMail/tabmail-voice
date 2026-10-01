@@ -32,7 +32,7 @@ struct Redactor: Sendable {
     /// text after it); the lines are redacted as the one text they make together, a line break
     /// between them. So a secret is found whether one text holds it whole (a key in a terminal) or it
     /// is spread over several (a key's lines, one element each; `Bearer` and its token; a name and its
-    /// value in two cells; a key the caret is inside).
+    /// value, the name ending in its `=` or `:`, in two elements; a key the caret is inside).
     ///
     /// Each text keeps its share of the result. Of a match, what the replacement starts with as the
     /// match does (the character before a key, a name, the word Bearer) stays in the texts that held
@@ -134,8 +134,10 @@ extension ScreenContext {
         let lines = Redactor.redact(blocks.map { $0.kind == .caret ? caret : [$0.text] } + (hasCaretBlock ? [] : [caret]))
         let around = hasCaretBlock ? zip(blocks, lines).first { $0.0.kind == .caret }!.1 : lines[blocks.count]
         context.textBeforeCaret = around[0]
-        // A selection wholly inside a secret is still a selection (`selectionRedacted`).
-        context.selectedText = around[1].isEmpty && !selectedText.isEmpty ? Redactor.placeholder : around[1]
+        // A selection the redaction left empty or blank is still a selection (`selectionRedacted`):
+        // the app takes a blank one for none, and would paste over the real one.
+        let blank = around[1].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        context.selectedText = blank && around[1] != selectedText ? Redactor.placeholder : around[1]
         context.textAfterCaret = around[2]
         context.blocks = []
         for (block, line) in zip(blocks, lines) {

@@ -2443,8 +2443,8 @@ well-structured place for the redactors.
   token) or one the caret or the selection is inside only shows once they are joined. Each text then
   keeps its share of the result: what replaces a secret goes to the text the secret began in, what
   the replacement keeps of the match's start and end stays where it was, and a text wholly inside a
-  secret comes back empty (such a block is dropped; a selection becomes `[redacted]`, so it is still
-  a selection). The blocks are redacted before they are rendered, because the marks the rendering
+  secret comes back empty (such a block is dropped; a selection left empty or blank becomes
+  `[redacted]`, so it is still a selection, and Edit refuses it). The blocks are redacted before they are rendered, because the marks the rendering
   puts before a field's, a row's and the focused field's lines would break a key of several lines.
   The rule is the helpers' to share like the patterns: its cases are `lineCases` in
   `redaction-cases.json`, which every helper's suite runs.
@@ -2478,5 +2478,8 @@ well-structured place for the redactors.
 - Edit's refusal asks the backend for no rewrite. When several tools are offered, the pick of the
   tool has already been asked, with the redacted screen.
 - A correction of a word into something secret-looking is not learned: the field is redacted before
-  the core compares it.
+  the core compares it. When the heard word is close to the placeholder's own (`rejected`), the
+  word `redacted` is learned in its place.
+- A table row is one text, its cells joined by ` | `: a name in one cell and its value in the next
+  stay, as a label with no `=` or `:` above its value does.
 - The Windows and Linux helpers redact once they add their emitter and run the shared cases.

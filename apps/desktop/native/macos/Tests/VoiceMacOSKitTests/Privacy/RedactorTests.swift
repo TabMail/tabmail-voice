@@ -293,6 +293,38 @@ struct RedactorTests {
         #expect(context.redacted.blocks.map(\.frame) == context.blocks.map(\.frame))
     }
 
+    /// A selection that begins inside a secret and ends in blank space keeps only the blank: the app
+    /// would take that for no selection and paste over the real one, so it is the placeholder too.
+    @Test func aSelectionLeftBlankByTheRedactionIsStillASelection() {
+        let gone = Redactor.placeholder
+        var context = ScreenContext(appName: "Example Terminal")
+        context.textBeforeCaret = "export K=" + "sk" + "-" + "a1B2c3D4e5F6g7H8"
+        context.selectedText = "i9J0k1L2 "
+        context.textAfterCaret = "next"
+        var reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == "export K=\(gone)")
+        #expect(reply["selectedText"]?.string == gone)
+        #expect(reply["selectionRedacted"] == .bool(true))
+
+        // The lower lines of a key block, selected with their line break.
+        context = ScreenContext(appName: "Example Editor")
+        context.textBeforeCaret = "-----BEGIN " + "PRIVATE KEY-----\na1B2c3D4e5F6g7H8\n"
+        context.selectedText = "i9J0k1L2m3N4o5P6\n-----END " + "PRIVATE KEY-----\n"
+        context.textAfterCaret = "next"
+        reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == gone)
+        #expect(reply["selectedText"]?.string == gone)
+        #expect(reply["selectionRedacted"] == .bool(true))
+
+        // Blank space the user selected, with no secret in it, is left as it is.
+        context = ScreenContext(appName: "Example Editor")
+        context.textBeforeCaret = "token=abc" + "123def"
+        context.selectedText = " \n"
+        reply = context.json
+        #expect(reply["selectedText"]?.string == " \n")
+        #expect(reply["selectionRedacted"] == .bool(false))
+    }
+
     /// The focused field's block stays though nothing is left in it, and the focused field's texts
     /// are redacted when the walk placed no block for it.
     @Test func theFocusedFieldIsRedactedWithOrWithoutItsBlock() {
