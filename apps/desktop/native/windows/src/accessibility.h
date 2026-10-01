@@ -262,6 +262,20 @@ private:
             SysFreeString(address);
             if (!value.empty()) return hostOfAddress(value);
         } else if (FAILED(status) && status != UIA_E_NOTSUPPORTED) return PageHost{};
+        // A property-cache query can turn a provider's failed Value read into
+        // NotSupported; even the pattern getter can return a default empty string.
+        // An advertised address therefore needs an actual string property value
+        // to establish emptiness. Missing data is unknown, not an addressless page.
+        ComPtr<IUIAutomationValuePattern> addressPattern;
+        const HRESULT patternStatus = element->GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&addressPattern));
+        if (SUCCEEDED(patternStatus) && addressPattern) {
+            BSTR address = nullptr;
+            if (FAILED(addressPattern->get_CurrentValue(&address))) return PageHost{};
+            const std::wstring value(address ? address : L"", address ? SysStringLen(address) : 0);
+            SysFreeString(address);
+            if (!value.empty()) return hostOfAddress(value);
+        }
+        if (FAILED(patternStatus) && patternStatus != UIA_E_NOTSUPPORTED) return PageHost{};
         VARIANT value;
         VariantInit(&value);
         const HRESULT result = element->GetCurrentPropertyValueEx(UIA_ValueValuePropertyId, TRUE, &value);
@@ -270,10 +284,11 @@ private:
             if (value.vt == VT_BSTR) page = hostOfAddress(std::wstring(value.bstrVal ? value.bstrVal : L"", value.bstrVal ? SysStringLen(value.bstrVal) : 0));
             else {
                 BOOL unsupported = FALSE;
-                if (value.vt == VT_EMPTY || (SUCCEEDED(automation->CheckNotSupported(value, &unsupported)) && unsupported))
+                if (!addressPattern && (value.vt == VT_EMPTY ||
+                    (SUCCEEDED(automation->CheckNotSupported(value, &unsupported)) && unsupported)))
                     page = {PageHost::Kind::noHost, {}};
             }
-        } else if (result == UIA_E_NOTSUPPORTED) page = {PageHost::Kind::noHost, {}};
+        } else if (result == UIA_E_NOTSUPPORTED && !addressPattern) page = {PageHost::Kind::noHost, {}};
         VariantClear(&value);
         return page;
     }

@@ -11,7 +11,7 @@ using JSON = nlohmann::json;
 static void expect(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
-int main(int argc, char** argv) {
+static int run(int argc, char** argv) {
     unsigned lookups = 0, reads = 0;
     std::wstring app = L"Notes.exe";
     const auto identity = [&](int target) {
@@ -34,9 +34,13 @@ int main(int argc, char** argv) {
         expect(lookups == 2 && reads == 0, "exclusion never invokes accessibility or title read");
         expect(log.str() == "debug screen access: excluded app not read\ndebug screen access: excluded app not read\n", "logs contain only categories");
         expect(voice::screenAccess(allowed, 0, identity, read).is_null(), "no foreground target refused");
+        expect(voice::screenAccess(allowed, 0, identity, read, true).is_null(), "no correction target refused");
         expect(lookups == 2 && reads == 0, "no foreground performs no lookup or read");
         for (const auto& policy : {JSON::object(), JSON{{"excludedAppIDs", nullptr}},
-             JSON{{"excludedAppIDs", "Notes.exe"}}, JSON{{"excludedAppIDs", {"Notes.exe", 1}}}}) {
+             JSON{{"excludedAppIDs", "Notes.exe"}}, JSON{{"excludedAppIDs", {"Notes.exe", 1}}},
+             JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", nullptr}},
+             JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", "example.com"}},
+             JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", {"example.com", 1}}}}) {
             for (const bool field : {false, true}) {
                 bool threw = false;
                 try { voice::screenAccess(policy, 42, identity, read, field); }
@@ -102,4 +106,12 @@ int main(int argc, char** argv) {
     frame.childReads = 0;
     expect(!voice::privacy::holdsExcludedPage(frame, 0, policy, false) && frame.childReads == 0, "bounded correction window scan stops at safe page");
     std::cout << "Screen handlers refuse excluded and malformed requests before any read\n";
+    return 0;
+}
+int main(int argc, char** argv) {
+    try { return run(argc, argv); }
+    catch (const std::exception& error) {
+        std::cerr << "Screen access assertion: " << error.what() << '\n';
+        return 1;
+    }
 }

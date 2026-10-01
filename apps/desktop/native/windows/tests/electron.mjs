@@ -24,6 +24,8 @@ let activatorErrors = "";
 let lines;
 let window;
 let stderr = "";
+let stage = "initialization";
+const startedAt = Date.now();
 function request(method, params = {}) {
   if (method === "readScreen" || method === "focusedFieldValue") params = { excludedAppIDs: [], excludedHosts: [], ...params };
   const requestID = ++id;
@@ -59,7 +61,13 @@ async function anchor(target, field = "editor", fieldFallback = false) {
   assert.ok(rect.height > 0 && rect.height <= (fieldFallback ? frame.height + 2 : 32), `nonempty text exposes text-sized geometry: ${JSON.stringify(rect)}`);
   return rect;
 }
-const timeout = setTimeout(() => { process.stderr.write("Windows Electron integration timed out\n"); helper?.kill(); app.exit(1); }, 60_000);
+// The full matrix makes hundreds of separately bounded UIA calls; x64 runs
+// under emulation on ARM64 developer VMs. Keep each request capped at four
+// seconds while allowing the complete matrix two minutes.
+const timeout = setTimeout(() => {
+  process.stderr.write(`Windows Electron integration timed out at ${stage}; ${id} requests in ${Date.now() - startedAt} ms\n`);
+  activator?.kill(); helper?.kill(); app.exit(1);
+}, privacyOnly ? 60_000 : 120_000);
 async function main() {
   try {
     await app.whenReady();
@@ -106,6 +114,7 @@ async function main() {
       window.focus();
       await delay(50);
     }
+    stage = "field and privacy checks";
     await focus("editor", 7, 15);
     // No accessibility override or preliminary caret/context request: the foreground
     // observer must initiate activation before the first dictation's native lookup.
@@ -203,6 +212,7 @@ async function main() {
       })()`);
       await delay(500);
       for (const offset of Array.from({ length: text.length + 1 }, (_, index) => index)) {
+        stage = `caret matrix ${direction}/${width}, offset ${offset}/${text.length}`;
         const expected = await window.webContents.executeJavaScript(`(() => {
           const field = document.getElementById("rich");
           const range = document.createRange();
@@ -232,7 +242,8 @@ async function main() {
           `${direction} caret at ${offset} matches a rendered insertion position: ${JSON.stringify({actual, expected, content})}`);
       }
     }
-    process.stdout.write("Windows Electron field/context/caret/refusal/recovery checks passed\n");
+    stage = "insertion and shutdown";
+    process.stdout.write(`Windows Electron field/context/caret/refusal/recovery checks passed after ${id} requests in ${Date.now() - startedAt} ms\n`);
     await window.webContents.executeJavaScript('document.getElementById("editor").value = "Before selected after. 🙂"');
     await focus("editor", 7, 15);
     assert.deepEqual(await request("insert", { window: target, text: "inserted", restoreDelay: 200, deadline: Date.now() + 2000 }), {});
