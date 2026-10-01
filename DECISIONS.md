@@ -2508,8 +2508,10 @@ starts alike; case and a trailing dot don't matter.
   `excludedBundleIdentifiers`, so that every platform's helper uses one name) and `excludedHosts`.
 - `voice-macos` refuses (`Privacy/ScreenExclusions.swift`, which holds both matches and the
   fail-closed reading of the two lists). The page the caret is in is checked first, before the
-  caret's text or the window's title is read. The walk then refuses the whole window at any page
-  of an excluded site, in focus or not, framed in another page or not: with the caret in the
+  caret's text or the window's title is asked for (`ScreenContextReader.gather`): every web area
+  above the focused element, and the focused element itself, since a page clicked on or selected in
+  has the focus itself. The walk then refuses the whole window at any page of an excluded site, in
+  focus or not, framed in another page or inside a row, a heading or a link: with the caret in the
   browser's address field the page is still on screen. `readScreen` answers null, as for an excluded
   app, and drops a context whose host is excluded whatever the reader did. `focusedFieldValue`
   answers no value for a field in a page of an excluded site. A request without either list is an
@@ -2528,6 +2530,11 @@ starts alike; case and a trailing dot don't matter.
   browser that doesn't report one, or a site inside an app that hides its pages' addresses, is read.
   A page in a background tab is not on screen and doesn't count.
 - A page that frames an excluded site (a payment form from an excluded host) is not read either.
+- A page whose address the browser fails to give in time (the lookup's timeout) has no host for
+  that read and is read, as a page with no address is.
+- A walk that runs out of its node or time budget before reaching a page out of focus never saw
+  that page: what it gathered before, and the window's title, are kept. The page's own text is not
+  among it.
 - Only `http` and `https` pages have a host; an extension's page (a password manager's browser
   extension) can't be excluded by host, and its password fields are skipped as everywhere.
 - Hosts are ASCII: a site with an internationalized name is added in its `xn--` form.

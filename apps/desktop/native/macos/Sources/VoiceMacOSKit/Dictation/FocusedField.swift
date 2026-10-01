@@ -24,15 +24,19 @@ enum FocusedField {
         }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, HelperConfig.focusedFieldTimeout)
-        if ScreenContextReader.isInExcludedSite(ScreenContextReader.ancestors(of: element), excluding: exclusions) {
+        return value(of: element, above: ScreenContextReader.ancestors(of: element), in: LiveScreenTree(), maxLength: maxLength,
+                     excluding: exclusions)
+    }
+
+    /// The focused element's text, as `value(inApp:maxLength:excluding:)` has it; `focusPath` is what
+    /// is above the element. A page of an excluded website is checked before the text is asked for.
+    static func value<Tree: ScreenTree>(of element: Tree.Element, above focusPath: [Tree.Element], in tree: Tree, maxLength: Int,
+                                        excluding exclusions: ScreenExclusions) -> String? {
+        if ScreenContextReader.pageHosts(of: element, above: focusPath, in: tree).contains(where: exclusions.excludesHost) {
             HelperLog.debug("FocusedField: in a page of a website excluded from screen reading; not read")
             return nil
         }
-        return readable(
-            subrole: CaretLocator.attribute(element, kAXSubroleAttribute) as? String,
-            value: CaretLocator.attribute(element, kAXValueAttribute) as? String,
-            maxLength: maxLength
-        )
+        return readable(subrole: tree.string(element, kAXSubroleAttribute), value: tree.string(element, kAXValueAttribute), maxLength: maxLength)
     }
 
     /// `value`, unless it is a password field's (`subrole`), missing, or longer than `maxLength`.

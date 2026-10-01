@@ -7,6 +7,7 @@
     { "name": "another case", "site": "example.com", "host": "Mail.EXAMPLE.com", "excluded": true },
     { "name": "an excluded host in another case", "site": "Example.COM", "host": "example.com", "excluded": true },
     { "name": "a trailing dot", "site": "example.com", "host": "example.com.", "excluded": true },
+    { "name": "a trailing dot on the excluded host", "site": "example.com.", "host": "mail.example.com", "excluded": true },
     { "name": "a host that only ends alike", "site": "example.com", "host": "notexample.com", "excluded": false },
     { "name": "a host that only starts alike", "site": "example.com", "host": "example.com.example.org", "excluded": false },
     { "name": "the parent of an excluded subdomain", "site": "vault.example.com", "host": "example.com", "excluded": false },

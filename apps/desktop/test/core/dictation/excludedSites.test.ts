@@ -16,6 +16,8 @@ describe("excluded websites", () => {
     ["https://user:pass@example.com/path", "example.com"],
     ["example.com.", "example.com"],
     ["example.com/sign-in", "example.com"],
+    ["example.com?next=/inbox", "example.com"],
+    ["example.com#top", "example.com"],
     ["xn--bcher-kva.example", "xn--bcher-kva.example"],
     ["a.b.c.example.co.uk", "a.b.c.example.co.uk"],
   ])("%j is the host %j", (typed, host) => {

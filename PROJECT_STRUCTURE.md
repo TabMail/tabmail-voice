@@ -38,7 +38,7 @@ apps/desktop/
 │   │   ├── VoiceMacOS/              `voice-macos`'s `main.swift`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
 │   │       ├── Dictation/               Paste and clipboard restore, the microphone, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
-│   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor`, its list generated from `native/shared/privacy/redactors.json`)
+│   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor`, its list generated from `native/shared/privacy/redactors.json`); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
 │   └── Tests/                   One test target per library; `VoiceMacOSKitTests` in the same folders
