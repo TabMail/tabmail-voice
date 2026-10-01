@@ -268,6 +268,43 @@ describe("an exclusion that could not be saved", () => {
     }
   });
 
+  /** A removal answered as saved is gone from the file, the last one too; one that could not be
+   * written is still in it. */
+  test("a removal is in the file a relaunch reads, or reported unsaved", () => {
+    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
+    try {
+      const path = join(folder, "settings.json");
+      const app = settings(new JSONFileStore(path));
+      const relaunched = () => settings(new JSONFileStore(path));
+      for (const site of ["example.org", "example.net"]) expect(app.excludeSite(site)).toBe("added");
+      const notes = { bundleIdentifier: "org.example.notes", name: "Example Notes" };
+      for (const one of [bank, notes]) expect(app.excludeApp(one)).toBe("added");
+
+      expect(app.removeExcludedSite("example.org")).toBe(true);
+      expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
+      expect(relaunched().excludedSites).toEqual(["example.net"]);
+      expect(relaunched().excludedApps).toEqual([notes]);
+
+      mkdirSync(`${path}.tmp`);
+      expect(app.removeExcludedSite("example.net")).toBe(false);
+      expect(app.removeExcludedApp(notes.bundleIdentifier)).toBe(false);
+      expect([app.excludedSites, app.excludedApps]).toEqual([[], []]);
+      expect(relaunched().excludedSites).toEqual(["example.net"]);
+      expect(relaunched().excludedApps).toEqual([notes]);
+
+      // The last one of each list, removed where the file can be written.
+      rmSync(`${path}.tmp`, { recursive: true });
+      const next = relaunched();
+      expect(next.removeExcludedSite("example.net")).toBe(true);
+      expect(relaunched().excludedSites).toEqual([]);
+      expect(relaunched().excludedApps).toEqual([notes]);
+      expect(next.removeExcludedApp(notes.bundleIdentifier)).toBe(true);
+      expect(relaunched().excludedApps).toEqual([]);
+    } finally {
+      rmSync(folder, { recursive: true });
+    }
+  });
+
   test("a saved one is reported added, and removed", () => {
     const app = settings();
     expect(app.excludeSite("example.org")).toBe("added");
