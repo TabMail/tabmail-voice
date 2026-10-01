@@ -9,7 +9,7 @@ import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
-import { excludedSite, isBuiltInExcludedSite } from "../../core/dictation/excludedSites.js";
+import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
@@ -243,11 +243,7 @@ function ExcludedSites({ state }: { state: SettingsState }) {
     setFailure(error);
   };
   const site = excludedSite(draft);
-  const isThere = site !== null && (isBuiltInExcludedSite(site) || state.excludedSites.includes(site));
-  const isFull = state.excludedSites.length >= config.excludedSitesMax;
-  let problem: string | null = null;
-  if (draft.trim() !== "" && site === null) problem = "A website’s address, like example.com.";
-  else if (isFull && !isThere) problem = `At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`;
+  const problem = draft.trim() !== "" && site === null ? "A website’s address, like example.com." : null;
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (site === null || problem !== null) return;
@@ -312,7 +308,6 @@ function ExcludedSites({ state }: { state: SettingsState }) {
  * installation, named, and the apps the user adds, each with a remove button. */
 function PrivacyPane({ state }: { state: SettingsState }) {
   const [problem, setProblem] = useState<string | null>(null);
-  const isFull = state.excludedApps.length >= config.excludedAppsMax;
   const run = async (command: Command) => {
     setProblem(null);
     const { error } = await send(command);
@@ -335,11 +330,6 @@ function PrivacyPane({ state }: { state: SettingsState }) {
         {problem !== null && (
           <div className="row">
             <span className="error">{problem}</span>
-          </div>
-        )}
-        {isFull && (
-          <div className="row">
-            <span className="caption">{`At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.`}</span>
           </div>
         )}
         {state.excludedApps.length === 0 ? (

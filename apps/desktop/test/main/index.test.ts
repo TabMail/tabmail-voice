@@ -983,14 +983,18 @@ describe("main process wiring", () => {
     expect(app.stored.get("excludedApps")).toEqual([]);
   });
 
-  test("no more apps are excluded once the list is full", async () => {
-    app.stored.set("excludedApps", Array.from({ length: config.excludedAppsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
+  test("no more apps are excluded once the list is full, and one short of it takes one", async () => {
+    app.stored.set("excludedApps", Array.from({ length: config.exclusionsMax - 1 }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
     await launch("darwin");
     app.pickedPath = "/Applications/Example Bank.app";
     app.helpers.get("voice-macos")?.replies.set("appInfo", { bundleIdentifier: "org.example.bank", name: "Example Bank", path: app.pickedPath });
 
-    expect(await send({ type: "excludeApp" })).toEqual({ error: `At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.` });
-    expect((app.stored.get("excludedApps") as unknown[]).length).toBe(config.excludedAppsMax);
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+    app.pickedPath = "/Applications/Example Notes.app";
+    app.helpers.get("voice-macos")?.replies.set("appInfo", { bundleIdentifier: "org.example.notes", name: "Example Notes", path: app.pickedPath });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: `At most ${config.exclusionsMax} apps can be excluded. Remove one to add another.` });
+    expect((app.stored.get("excludedApps") as { bundleIdentifier: string }[]).map((one) => one.bundleIdentifier).slice(-1)).toEqual(["org.example.bank"]);
+    expect((app.stored.get("excludedApps") as unknown[]).length).toBe(config.exclusionsMax);
   });
 
   /** Settings › Privacy's website commands (ADR-DESK-047): a site is added by its address and kept by
@@ -1013,41 +1017,46 @@ describe("main process wiring", () => {
     expect(app.stored.get("excludedSites")).toEqual(["example.org"]);
   });
 
-  /** A list that could not be written to disk holds until the app quits: the command says so, where
-   * it would otherwise pass for an exclusion that lasts. */
-  test("an exclusion that could not be saved says so, added or removed", async () => {
+  /** An exclusion or a removal that could not be written to disk did not happen: the command says
+   * so, and the state is as it was. */
+  test("an exclusion that could not be saved says so, added or removed, and the lists are as they were", async () => {
     await launch("darwin");
     const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { excludedSites: unknown; excludedApps: unknown };
-    const unsaved = "Excluded for now, but this couldn't be saved: it will be read again after TabMail Voice restarts. Check the disk and add it again.";
-    const unremoved = "Removed for now, but this couldn't be saved: it will be excluded again after TabMail Voice restarts.";
+    const unsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
+    const unremoved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
     app.pickedPath = "/Applications/Example Bank.app";
     app.helpers.get("voice-macos")?.replies.set("appInfo", { bundleIdentifier: "org.example.bank", name: "Example Bank", path: app.pickedPath });
     app.savesFail = true;
 
     expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: unsaved });
     expect(await send({ type: "excludeApp" })).toEqual({ error: unsaved });
-    expect(state()).toMatchObject({ excludedSites: ["example.org"], excludedApps: [{ bundleIdentifier: "org.example.bank" }] });
-    // Added again, it is still unsaved.
-    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: unsaved });
-    expect(await send({ type: "excludeApp" })).toEqual({ error: unsaved });
-    expect(state()).toMatchObject({ excludedSites: ["example.org"], excludedApps: [{ bundleIdentifier: "org.example.bank" }] });
-
-    expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: unremoved });
-    expect(await send({ type: "removeExcludedApp", bundleIdentifier: "org.example.bank" })).toEqual({ error: unremoved });
     expect(state()).toMatchObject({ excludedSites: [], excludedApps: [] });
-    expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: null });
 
     app.savesFail = false;
     expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: null });
+    expect(await send({ type: "excludeApp" })).toEqual({ error: null });
+
+    app.savesFail = true;
+    expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: unremoved });
+    expect(await send({ type: "removeExcludedApp", bundleIdentifier: "org.example.bank" })).toEqual({ error: unremoved });
+    expect(state()).toMatchObject({ excludedSites: ["example.org"], excludedApps: [{ bundleIdentifier: "org.example.bank" }] });
+    // Nothing is unsaved for one that is not there.
+    expect(await send({ type: "removeExcludedSite", host: "example.net" })).toEqual({ error: null });
+
+    app.savesFail = false;
     expect(await send({ type: "removeExcludedSite", host: "example.org" })).toEqual({ error: null });
+    expect(await send({ type: "removeExcludedApp", bundleIdentifier: "org.example.bank" })).toEqual({ error: null });
+    expect(state()).toMatchObject({ excludedSites: [], excludedApps: [] });
   });
 
-  test("no more websites are excluded once the list is full", async () => {
-    app.stored.set("excludedSites", Array.from({ length: config.excludedSitesMax }, (_, index) => `site${index}.example.com`));
+  test("no more websites are excluded once the list is full, and one short of it takes one", async () => {
+    app.stored.set("excludedSites", Array.from({ length: config.exclusionsMax - 1 }, (_, index) => `site${index}.example.com`));
     await launch("darwin");
 
-    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: `At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.` });
-    expect((app.stored.get("excludedSites") as unknown[]).length).toBe(config.excludedSitesMax);
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: null });
+    expect(await send({ type: "excludeSite", site: "example.net" })).toEqual({ error: `At most ${config.exclusionsMax} websites can be excluded. Remove one to add another.` });
+    expect((app.stored.get("excludedSites") as string[]).slice(-1)).toEqual(["example.org"]);
+    expect((app.stored.get("excludedSites") as unknown[]).length).toBe(config.exclusionsMax);
   });
 
   test("elsewhere, apps can't be excluded: nothing is asked", async () => {

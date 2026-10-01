@@ -169,7 +169,8 @@ describe("AppSettings", () => {
   });
 });
 
-/** A store whose file can't be written: values are held, and reported unsaved. */
+/** A store whose file can't be written, as `JSONFileStore` is then: a value set is held, and
+ * reported unsaved. */
 class UnsavedStore extends MemoryStore {
   override set(key: string, value: unknown): boolean {
     super.set(key, value);
@@ -177,132 +178,96 @@ class UnsavedStore extends MemoryStore {
   }
 }
 
-/** An exclusion is a privacy choice that must last: one held only until the app quits is reported,
- * so Settings can say so. */
+/** What is excluded is what is saved (owner, 2026-10-01): an exclusion or a removal that could not
+ * be written did not happen, and is reported so Settings can say so. Nothing is excluded only until
+ * the app quits. */
 describe("an exclusion that could not be saved", () => {
   const bank = { bundleIdentifier: "org.example.bank", name: "Example Bank" };
+  const notes = { bundleIdentifier: "org.example.notes", name: "Example Notes" };
 
-  test("is reported unsaved, and holds for this run", () => {
-    const store = new UnsavedStore();
-    const app = settings(store);
+  test("is reported unsaved, and is not excluded", () => {
+    const app = settings(new UnsavedStore());
     let changes = 0;
     app.observe(() => (changes += 1));
 
     expect(app.excludeSite("example.org")).toBe("unsaved");
     expect(app.excludeApp(bank)).toBe("unsaved");
-    expect(changes).toBe(2);
-    expect(app.dictation(null).excludedSites).toContain("example.org");
-    expect(app.dictation(null).excludedApps).toContain(bank.bundleIdentifier);
-    // Adding it again is still unsaved, and tells no one of a change: the list is as it was.
-    expect(app.excludeSite("example.org")).toBe("unsaved");
-    expect(app.excludeApp({ ...bank, bundleIdentifier: "ORG.EXAMPLE.BANK" })).toBe("unsaved");
-    expect(changes).toBe(2);
-    expect(app.excludedSites).toEqual(["example.org"]);
-    expect(app.excludedApps).toEqual([bank]);
+    expect(changes).toBe(0);
+    expect(app.excludedSites).toEqual([]);
+    expect(app.excludedApps).toEqual([]);
+    expect(app.dictation(null).excludedSites).not.toContain("example.org");
+    expect(app.dictation(null).excludedApps).not.toContain(bank.bundleIdentifier);
     // Nothing is unsaved for one built in or invalid.
     expect(app.excludeSite(config.builtInExcludedSites[0])).toBe("added");
     expect(app.excludeApp(config.builtInExcludedApps[0])).toBe("added");
     expect(app.excludeSite("not a site")).toBe("invalid");
     expect(app.excludeApp({ bundleIdentifier: "", name: "" })).toBe("invalid");
+  });
+
+  test("a removal is reported unsaved, and the list is as it was", () => {
+    const store = new UnsavedStore();
+    store.set("excludedSites", ["example.org", "example.net"]);
+    store.set("excludedApps", [bank, notes]);
+    const app = settings(store);
+    let changes = 0;
+    app.observe(() => (changes += 1));
 
     expect(app.removeExcludedSite("example.org")).toBe(false);
     expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(false);
-    expect(changes).toBe(4);
-    expect(app.excludedSites).toEqual([]);
-    expect(app.excludedApps).toEqual([]);
-    // Nothing is written for one that is not there.
-    expect(app.removeExcludedSite("example.org")).toBe(true);
-    expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
+    expect(changes).toBe(0);
+    expect(app.excludedSites).toEqual(["example.org", "example.net"]);
+    expect(app.excludedApps).toEqual([bank, notes]);
+    // One added to a list that is there is not excluded either, and the list is as it was.
+    expect(app.excludeSite("example.com")).toBe("unsaved");
+    expect(app.excludedSites).toEqual(["example.org", "example.net"]);
+    // Nothing is written for one that is not there, or one already there.
+    expect(app.removeExcludedSite("example.com")).toBe(true);
+    expect(app.removeExcludedApp("org.example.absent")).toBe(true);
+    expect(app.excludeSite("example.net")).toBe("added");
+    expect(app.excludeApp(notes)).toBe("added");
   });
 
-  /** The message says to add it again: doing so writes the list held, so it lasts once the file can
-   * be written. */
-  test("added again once the file can be written, it is saved", () => {
-    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
-    try {
-      const path = join(folder, "settings.json");
-      const app = settings(new JSONFileStore(path));
-      mkdirSync(`${path}.tmp`);
-      expect(app.excludeSite("example.org")).toBe("unsaved");
-      expect(app.excludeApp(bank)).toBe("unsaved");
-      expect(app.excludeSite("example.org")).toBe("unsaved");
-      expect(app.excludeApp(bank)).toBe("unsaved");
-      expect(settings(new JSONFileStore(path)).excludedSites).toEqual([]);
-
-      rmSync(`${path}.tmp`, { recursive: true });
-      expect(app.excludeSite("example.org")).toBe("added");
-      expect(settings(new JSONFileStore(path)).excludedSites).toEqual(["example.org"]);
-      rmSync(path);
-      expect(app.excludeApp(bank)).toBe("added");
-      const relaunched = settings(new JSONFileStore(path));
-      expect(relaunched.excludedSites).toEqual(["example.org"]);
-      expect(relaunched.excludedApps).toEqual([bank]);
-    } finally {
-      rmSync(folder, { recursive: true });
-    }
-  });
-
-  /** The last place in a full list is no different: the one held is saved by adding it again, and
-   * a new one is still refused. */
-  test("the last app of a full list, unsaved, is saved by adding it again", () => {
-    const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
-    try {
-      const path = join(folder, "settings.json");
-      const app = settings(new JSONFileStore(path));
-      for (let index = 1; index < config.excludedAppsMax; index += 1) expect(app.excludeApp({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })).toBe("added");
-      mkdirSync(`${path}.tmp`);
-      expect(app.excludeApp(bank)).toBe("unsaved");
-      expect(app.excludedApps).toHaveLength(config.excludedAppsMax);
-      expect(app.excludeApp(bank)).toBe("unsaved");
-      expect(settings(new JSONFileStore(path)).excludedApps).toHaveLength(config.excludedAppsMax - 1);
-
-      rmSync(`${path}.tmp`, { recursive: true });
-      expect(app.excludeApp({ bundleIdentifier: "org.example.another", name: "Another" })).toBe("full");
-      expect(settings(new JSONFileStore(path)).excludedApps).toHaveLength(config.excludedAppsMax - 1);
-      expect(app.excludeApp(bank)).toBe("added");
-      const relaunched = settings(new JSONFileStore(path)).excludedApps;
-      expect(relaunched).toHaveLength(config.excludedAppsMax);
-      expect(relaunched.at(-1)).toEqual(bank);
-    } finally {
-      rmSync(folder, { recursive: true });
-    }
-  });
-
-  /** A removal answered as saved is gone from the file, the last one too; one that could not be
-   * written is still in it. */
-  test("a removal is in the file a relaunch reads, or reported unsaved", () => {
+  /** Over a real preferences file: after a failed write the list in the app and the list a relaunch
+   * reads are the same one, and the same try saves once the file can be written. */
+  test("the list and the file agree after a failed write, and the next try saves", () => {
     const folder = mkdtempSync(join(tmpdir(), "voice-settings-"));
     try {
       const path = join(folder, "settings.json");
       const app = settings(new JSONFileStore(path));
       const relaunched = () => settings(new JSONFileStore(path));
-      for (const site of ["example.org", "example.net"]) expect(app.excludeSite(site)).toBe("added");
-      const notes = { bundleIdentifier: "org.example.notes", name: "Example Notes" };
-      for (const one of [bank, notes]) expect(app.excludeApp(one)).toBe("added");
-
-      expect(app.removeExcludedSite("example.org")).toBe(true);
-      expect(app.removeExcludedApp(bank.bundleIdentifier)).toBe(true);
-      expect(relaunched().excludedSites).toEqual(["example.net"]);
-      expect(relaunched().excludedApps).toEqual([notes]);
+      const lists = (from: AppSettings) => [from.excludedSites, from.excludedApps];
+      expect(app.excludeSite("example.net")).toBe("added");
+      expect(app.excludeApp(notes)).toBe("added");
 
       mkdirSync(`${path}.tmp`);
+      expect(app.excludeSite("example.org")).toBe("unsaved");
+      expect(app.excludeApp(bank)).toBe("unsaved");
       expect(app.removeExcludedSite("example.net")).toBe(false);
       expect(app.removeExcludedApp(notes.bundleIdentifier)).toBe(false);
-      expect([app.excludedSites, app.excludedApps]).toEqual([[], []]);
-      expect(relaunched().excludedSites).toEqual(["example.net"]);
-      expect(relaunched().excludedApps).toEqual([notes]);
+      expect(lists(app)).toEqual([["example.net"], [notes]]);
+      expect(lists(relaunched())).toEqual([["example.net"], [notes]]);
 
-      // The last one of each list, removed where the file can be written.
       rmSync(`${path}.tmp`, { recursive: true });
-      const next = relaunched();
-      expect(next.removeExcludedSite("example.net")).toBe(true);
-      expect(relaunched().excludedSites).toEqual([]);
-      expect(relaunched().excludedApps).toEqual([notes]);
-      expect(next.removeExcludedApp(notes.bundleIdentifier)).toBe(true);
-      expect(relaunched().excludedApps).toEqual([]);
+      expect(app.excludeSite("example.org")).toBe("added");
+      expect(app.excludeApp(bank)).toBe("added");
+      expect(lists(relaunched())).toEqual([["example.net", "example.org"], [notes, bank]]);
+      // A removal answered as saved is gone from the file, the last of a list too.
+      for (const site of ["example.net", "example.org"]) expect(app.removeExcludedSite(site)).toBe(true);
+      for (const one of [notes, bank]) expect(app.removeExcludedApp(one.bundleIdentifier)).toBe(true);
+      expect(lists(relaunched())).toEqual([[], []]);
     } finally {
       rmSync(folder, { recursive: true });
     }
+  });
+
+  /** The first exclusion of an installation: there is no list to put back, and none is left. */
+  test("a first exclusion that could not be saved leaves no list", () => {
+    const store = new UnsavedStore();
+    const app = settings(store);
+    expect(app.excludeSite("example.org")).toBe("unsaved");
+    expect(app.excludeApp(bank)).toBe("unsaved");
+    expect(store.get("excludedSites")).toBeUndefined();
+    expect(store.get("excludedApps")).toBeUndefined();
   });
 
   test("a saved one is reported added, and removed", () => {
@@ -361,13 +326,17 @@ describe("websites excluded from screen reading", () => {
     expect(app.excludedSites).toEqual([]);
   });
 
-  test("at most excludedSitesMax sites, and one already there is still taken when full", () => {
-    const app = settings();
-    for (let index = 0; index < config.excludedSitesMax; index += 1) expect(app.excludeSite(`site${index}.example.com`)).toBe("added");
+  test("at most exclusionsMax sites, one already there or built in still answered added", () => {
+    const store = new MemoryStore();
+    store.set("excludedSites", Array.from({ length: config.exclusionsMax - 1 }, (_, index) => `site${index}.example.com`));
+    const app = settings(store);
+    expect(app.excludeSite("example.net")).toBe("added");
     expect(app.excludeSite("example.org")).toBe("full");
     expect(app.excludeSite("site3.example.com")).toBe("added");
-    expect(app.excludedSites).toHaveLength(config.excludedSitesMax);
+    expect(app.excludeSite(config.builtInExcludedSites[0])).toBe("added");
+    expect(app.excludedSites).toHaveLength(config.exclusionsMax);
     expect(app.excludedSites).not.toContain("example.org");
+    expect(app.dictation(null).excludedSites.at(-1)).toBe("example.net");
   });
 
   test("removing takes the user's site off the list, whatever the case; a built-in one stays", () => {
@@ -441,13 +410,17 @@ describe("apps excluded from screen reading", () => {
     expect(app.excludedApps).toEqual([longest]);
   });
 
-  test("at most excludedAppsMax apps, and one already there is still taken when full", () => {
-    const app = settings();
-    for (let index = 0; index < config.excludedAppsMax; index += 1) expect(app.excludeApp({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })).toBe("added");
+  test("at most exclusionsMax apps, one already there or built in still answered added", () => {
+    const store = new MemoryStore();
+    store.set("excludedApps", Array.from({ length: config.exclusionsMax - 1 }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
+    const app = settings(store);
+    expect(app.excludeApp(notes)).toBe("added");
     expect(app.excludeApp(bank)).toBe("full");
     expect(app.excludeApp({ bundleIdentifier: "org.example.app3", name: "App 3" })).toBe("added");
-    expect(app.excludedApps).toHaveLength(config.excludedAppsMax);
+    expect(app.excludeApp(config.builtInExcludedApps[0])).toBe("added");
+    expect(app.excludedApps).toHaveLength(config.exclusionsMax);
     expect(app.excludedApps.some((excluded) => excluded.bundleIdentifier === bank.bundleIdentifier)).toBe(false);
+    expect(app.dictation(null).excludedApps.at(-1)).toBe(notes.bundleIdentifier);
   });
 
   test("an app is removed by its identifier, whatever its case; a built-in one stays excluded", () => {
@@ -466,13 +439,10 @@ describe("apps excluded from screen reading", () => {
     expect(app.dictation(null).excludedApps).toEqual([...builtIn, notes.bundleIdentifier]);
   });
 
-  test("only valid apps are read back: none twice, none built in, at most excludedAppsMax", () => {
+  test("only valid apps are read back: none twice, none built in", () => {
     const store = new MemoryStore();
     store.set("excludedApps", [bank, "junk", { bundleIdentifier: "ORG.example.bank", name: "Again" }, { bundleIdentifier: "com.apple.Passwords", name: "Passwords" }, { name: "No identifier" }, notes]);
     expect(settings(store).excludedApps).toEqual([bank, notes]);
-
-    store.set("excludedApps", Array.from({ length: config.excludedAppsMax + 5 }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
-    expect(settings(store).excludedApps).toHaveLength(config.excludedAppsMax);
 
     store.set("excludedApps", "junk");
     expect(settings(store).excludedApps).toEqual([]);

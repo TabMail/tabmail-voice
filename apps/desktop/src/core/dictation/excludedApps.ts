@@ -33,12 +33,11 @@ export function excludedApp(value: unknown): ExcludedApp | null {
 }
 
 /** A stored list read back: valid apps only, the first of any two that are the same app, none of the
- * built-in ones, at most `config.excludedAppsMax`. */
+ * built-in ones. */
 export function storedExcludedApps(stored: unknown): ExcludedApp[] {
   if (!Array.isArray(stored)) return [];
   const apps: ExcludedApp[] = [];
   for (const item of stored) {
-    if (apps.length === config.excludedAppsMax) break;
     const app = excludedApp(item);
     if (app === null || isBuiltInExcludedApp(app.bundleIdentifier)) continue;
     if (apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) continue;
