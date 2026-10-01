@@ -239,6 +239,25 @@ export const builtInExcludedApps: readonly { bundleIdentifier: string; name: str
 export const excludedAppsMax = 100;
 export const bundleIdentifierMaxLength = 255;
 export const excludedAppNameMaxLength = 255;
+/** The password managers' web vaults excluded from screen reading in every installation, by host;
+ * a host covers its subdomains. */
+export const builtInExcludedSites: readonly string[] = [
+  "1password.com",
+  "1password.ca",
+  "1password.eu",
+  "vault.bitwarden.com",
+  "vault.bitwarden.eu",
+  "passwords.google.com",
+  "lastpass.com",
+  "app.dashlane.com",
+  "pass.proton.me",
+];
+/** The most websites the user can exclude. */
+export const excludedSitesMax = 100;
+/** The longest a host name can be (DNS). */
+export const hostMaxLength = 253;
+/** The longest text taken as a website to exclude: an address pasted whole. */
+export const excludedSiteInputMaxLength = 2_000;
 /** Where the app picker for an excluded app opens (macOS). */
 export const applicationsDirectory = "/Applications";
 

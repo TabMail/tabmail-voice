@@ -7,6 +7,7 @@ import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connector
 import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/tools.js";
 import * as config from "./config.js";
 import { type ExcludedApp, excludedApp, isBuiltInExcludedApp, isSameApp, storedExcludedApps } from "./dictation/excludedApps.js";
+import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
@@ -25,6 +26,7 @@ const Key = {
   dictionary: "dictionary",
   learnsWords: "learnsWords",
   excludedApps: "excludedApps",
+  excludedSites: "excludedSites",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -39,6 +41,9 @@ export interface DictationSettings {
   /** The bundle identifiers of the apps the screen is never read in: the built-in password managers
    * and those the user excludes (`ExcludedApp`). */
   excludedApps: string[];
+  /** The hosts of the websites the screen is never read on: the built-in web vaults and those the
+   * user excludes. A host covers its subdomains. */
+  excludedSites: string[];
   /** Agent mode's tools the user has on. */
   enabledTools: AgentToolID[];
   /** The apps the Answer tool's tools may reach (`ConnectorTool.connector`) the user has on. */
@@ -65,6 +70,10 @@ export type AddWordResult = "added" | "invalid" | "full";
 /** What excluding an app did: `invalid` for one without a bundle identifier or name, `full` at
  * `config.excludedAppsMax`. One already excluded, built in or by the user, is `added`. */
 export type ExcludeAppResult = "added" | "invalid" | "full";
+
+/** What excluding a website did: `invalid` for text that is no host name, `full` at
+ * `config.excludedSitesMax`. One already excluded, built in or by the user, is `added`. */
+export type ExcludeSiteResult = "added" | "invalid" | "full";
 
 /** The name the welcome wizard offers (owner, 2026-09-28: "the macOS full name or the username"): the
  * computer account's full name, else its short name. */
@@ -239,6 +248,33 @@ export class AppSettings extends Observable {
     this.changed();
   }
 
+  /** The websites the user excludes from screen reading, by host, in the order they were added; the
+   * built-in ones (`config.builtInExcludedSites`) are not among them. */
+  get excludedSites(): string[] {
+    return storedExcludedSites(this.store.get(Key.excludedSites));
+  }
+
+  /** Excludes a website from screen reading: `value` is its host, or its address. */
+  excludeSite(value: unknown): ExcludeSiteResult {
+    const site = excludedSite(value);
+    if (site === null) return "invalid";
+    const sites = this.excludedSites;
+    if (isBuiltInExcludedSite(site) || sites.includes(site)) return "added";
+    if (sites.length >= config.excludedSitesMax) return "full";
+    this.store.set(Key.excludedSites, [...sites, site]);
+    this.changed();
+    return "added";
+  }
+
+  /** Lets the screen be read on a website the user excluded again. A built-in one stays excluded. */
+  removeExcludedSite(host: string): void {
+    const sites = this.excludedSites;
+    const kept = sites.filter((site) => site !== host.toLowerCase());
+    if (kept.length === sites.length) return;
+    this.store.set(Key.excludedSites, kept);
+    this.changed();
+  }
+
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
   private get disabledAgentTools(): AgentToolID[] {
     const stored = this.store.get(Key.disabledAgentTools);
@@ -305,6 +341,7 @@ export class AppSettings extends Observable {
       backendURL: this.backendURL(email),
       readsScreen: this.readsScreen,
       excludedApps: [...config.builtInExcludedApps, ...this.excludedApps].map((app) => app.bundleIdentifier),
+      excludedSites: [...config.builtInExcludedSites, ...this.excludedSites],
       enabledTools: this.enabledTools,
       enabledConnectors: this.enabledConnectors,
       emailClient: this.emailClient,

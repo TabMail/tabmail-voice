@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import * as config from "../config.js";
+import type { ScreenExclusions } from "../dictation/excludedSites.js";
 import { learnedCorrections } from "./corrections.js";
 import { errorName, log } from "../log.js";
 import { sleep } from "../util/timeout.js";
@@ -25,19 +26,19 @@ export class CorrectionWatch {
 
   constructor(
     /** The text of the focused field of the app `pid`; null when there is none to read (a password
-     * field, one too long, no field, or an app among `excludedApps`, which is never read). */
-    private readonly readField: (pid: number, excludedApps: readonly string[]) => Promise<string | null>,
+     * field, one too long, no field, or an app or website among `exclusions`, which is never read). */
+    private readonly readField: (pid: number, exclusions: ScreenExclusions) => Promise<string | null>,
     /** Adds the words to the dictionary. */
     private readonly learn: (words: string[]) => void,
     private readonly interval = config.correctionPollInterval,
     private readonly duration = config.correctionWatchDuration,
   ) {}
 
-  /** Watches the app `pid`, into which `pasted` was just pasted, unless it is among `excludedApps`,
-   * the apps excluded from screen reading as the dictation started. */
-  watch(pid: number, pasted: string, excludedApps: readonly string[]): void {
+  /** Watches the app `pid`, into which `pasted` was just pasted, unless it or the website the field is on
+   * is among `exclusions`, what was excluded from screen reading as the dictation started. */
+  watch(pid: number, pasted: string, exclusions: ScreenExclusions): void {
     this.stop();
-    void this.run(this.generation, pid, pasted, excludedApps);
+    void this.run(this.generation, pid, pasted, exclusions);
   }
 
   /** Ends the watch, learning what its last settled edit teaches. */
@@ -51,14 +52,14 @@ export class CorrectionWatch {
     this.learn(words);
   }
 
-  private async run(generation: number, pid: number, pasted: string, excludedApps: readonly string[]): Promise<void> {
+  private async run(generation: number, pid: number, pasted: string, exclusions: ScreenExclusions): Promise<void> {
     const isCurrent = () => this.generation === generation;
     let before: string | null = null;
     let previous: string | null = null;
     for (let elapsed = this.interval; elapsed <= this.duration; elapsed += this.interval) {
       await sleep(this.interval);
       if (!isCurrent()) return;
-      const field = await this.readField(pid, excludedApps).catch((error: unknown) => {
+      const field = await this.readField(pid, exclusions).catch((error: unknown) => {
         log.debug(`CorrectionWatch: read failed: ${errorName(error)}`);
         return null;
       });

@@ -29,8 +29,10 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
 - **What looks like a secret is defined once, in `apps/desktop/native/shared/privacy/redactors.json`**
   (ADR-DESK-046). Every helper's list is AUTO-GENERATED from it (`npm run gen:redactors`): never edit
   a `Redactors.generated.*` file or copy a pattern into a helper by hand, and add a case to
-  `redaction-cases.json` with every pattern. What must not be read (password fields, excluded apps,
-  secret-looking text) is refused or removed in the helper, never in the Electron app.
+  `redaction-cases.json` with every pattern. What must not be read (password fields, excluded apps
+  and websites, secret-looking text) is refused or removed in the helper, never in the Electron app;
+  a rule the app and the helpers both apply (which hosts a site covers) has its cases in
+  `native/shared/privacy/` and every side runs them.
 - **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-macos` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary

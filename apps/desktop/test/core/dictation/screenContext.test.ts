@@ -4,7 +4,10 @@
 
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog } from "../../../src/core/log.js";
+import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { type ScreenContext, ScreenContextProbe } from "../../../src/core/dictation/screenContext.js";
+
+const none: ScreenExclusions = { apps: [], sites: [] };
 
 function screen(overrides: Partial<ScreenContext> = {}): ScreenContext {
   return {
@@ -35,27 +38,29 @@ describe("ScreenContextProbe", () => {
       return Promise.resolve(screen());
     });
 
-    expect(probe.capture([])).toBeNull();
+    expect(probe.capture(none)).toBeNull();
     expect(reads).toBe(0);
   });
 
-  /** The apps the dictation excludes reach the read as given, so the helper never reads one. */
-  test("the read is asked with the dictation's excluded apps", async () => {
-    const asked: (readonly string[])[] = [];
-    const probe = new ScreenContextProbe(() => true, (excludedApps) => {
-      asked.push(excludedApps);
+  /** The apps and websites the dictation excludes reach the read as given, so the helper never
+   * reads one. */
+  test("the read is asked with the dictation's excluded apps and websites", async () => {
+    const asked: ScreenExclusions[] = [];
+    const probe = new ScreenContextProbe(() => true, (exclusions) => {
+      asked.push(exclusions);
       return Promise.resolve(null);
     });
 
-    expect(await probe.capture(["org.example.vault", "org.example.bank"])).toBeNull();
-    expect(asked).toEqual([["org.example.vault", "org.example.bank"]]);
+    const exclusions = { apps: ["org.example.vault", "org.example.bank"], sites: ["example.com"] };
+    expect(await probe.capture(exclusions)).toBeNull();
+    expect(asked).toEqual([{ apps: ["org.example.vault", "org.example.bank"], sites: ["example.com"] }]);
   });
 
   /** A failed or empty read is no context, never an error for the dictation. */
   test("a failed read is no context", async () => {
     const probe = new ScreenContextProbe(() => true, () => Promise.reject(new Error("helper gone")));
-    expect(await probe.capture([])).toBeNull();
-    expect(await new ScreenContextProbe(() => true, () => Promise.resolve(null)).capture([])).toBeNull();
+    expect(await probe.capture(none)).toBeNull();
+    expect(await new ScreenContextProbe(() => true, () => Promise.resolve(null)).capture(none)).toBeNull();
   });
 
   /** Debug builds keep the newest capture for the debug window; an older read finishing later
@@ -65,8 +70,8 @@ describe("ScreenContextProbe", () => {
     const reads: ((context: ScreenContext) => void)[] = [];
     const probe = new ScreenContextProbe(() => true, () => new Promise((resolve) => reads.push(resolve)));
 
-    const older = probe.capture([]);
-    const newer = probe.capture([]);
+    const older = probe.capture(none);
+    const newer = probe.capture(none);
     reads[1]?.(screen({ appName: "Newer" }));
     await newer;
     reads[0]?.(screen({ appName: "Older" }));
@@ -77,7 +82,7 @@ describe("ScreenContextProbe", () => {
 
   test("release builds keep no capture", async () => {
     const probe = new ScreenContextProbe(() => true, () => Promise.resolve(screen()));
-    await probe.capture([]);
+    await probe.capture(none);
     expect(probe.lastContext).toBeNull();
   });
 });

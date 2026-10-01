@@ -28,7 +28,7 @@ apps/desktop/
 │   ├── gen-redactors.mts        Writes each helper's list of redactors from native/shared/privacy/redactors.json (run with the registries)
 │   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
-├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046
+├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046; `host-exclusion-cases.json` (which hosts an excluded website covers, for the app and every helper): ADR-DESK-047
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests (ADR-DESK-044)
 │   ├── Package.swift            Products `voice-hotkey` and `voice-macos`, the executables the app spawns
 │   ├── Sources/
@@ -38,7 +38,7 @@ apps/desktop/
 │   │   ├── VoiceMacOS/              `voice-macos`'s `main.swift`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
 │   │       ├── Dictation/               Paste and clipboard restore, the microphone, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
-│   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor`, its list generated from `native/shared/privacy/redactors.json`)
+│   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor`, its list generated from `native/shared/privacy/redactors.json`); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
 │   └── Tests/                   One test target per library; `VoiceMacOSKitTests` in the same folders
@@ -56,7 +56,7 @@ apps/desktop/
 │   │   │       ├── index.ts                 What the app reads: `connectors`, `connectorIDs`, `isConnectorID`, `connectorByID`
 │   │   │       ├── appleScript.ts           `ScriptRunner`, for Notes and Messages
 │   │   │       └── thunderbird/             `ThunderbirdRelay` (`relay.ts`, to TabMail's chat) and `EmailClient` (the email app it drives); its native connector goes here (ADR-DESK-037)
-│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `screenContext.ts`; `excludedApps.ts` (the apps the screen is never read in: ADR-DESK-045); `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
+│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `screenContext.ts`; `excludedApps.ts` (the apps the screen is never read in: ADR-DESK-045); `excludedSites.ts` (the websites it is never read on, and `ScreenExclusions`, both lists as a dictation takes them: ADR-DESK-047); `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
 │   │   ├── audio/                   Recording (`recorder.ts`), waveform level, WAV and FLAC
 │   │   ├── backend/                 Sign-in (`account.ts`), the transcription and completions clients, their errors, HTTP
 │   │   ├── dictionary/              The user's dictionary (`entries.ts`); the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)

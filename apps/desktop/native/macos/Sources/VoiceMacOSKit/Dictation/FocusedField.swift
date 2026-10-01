@@ -6,13 +6,16 @@ import ApplicationServices
 import VoiceHelperSupport
 
 /// The text of an app's focused field, read after a dictation's paste so the app can learn the user's
-/// corrections to it (ADR-DESK-038). Never a password field's, and nothing past `maxLength`.
+/// corrections to it (ADR-DESK-038). Never a password field's, never one in a page of an excluded
+/// website, and nothing past `maxLength`.
 enum FocusedField {
     /// The focused field's whole text in the app `pid`, or nil when there is no focused element, it
-    /// has no text, it is a password field, or its text is longer than `maxLength` UTF-16 code units.
-    /// Blocking cross-process Accessibility calls, each bounded by `HelperConfig.focusedFieldTimeout`:
-    /// call off the main thread.
-    static func value(inApp pid: pid_t, maxLength: Int) -> String? {
+    /// has no text, it is a password field, its window shows a page of an excluded website, or its text is
+    /// longer than `maxLength` UTF-16 code units.
+    /// Blocking cross-process Accessibility calls: call off the main thread. Those on the focused
+    /// element are bounded by `HelperConfig.focusedFieldTimeout`; those on what is above and inside
+    /// it (looked at for pages only) by the system-wide default.
+    static func value(inApp pid: pid_t, maxLength: Int, excluding exclusions: ScreenExclusions) -> String? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.focusedFieldTimeout)
         guard let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute),
@@ -22,11 +25,29 @@ enum FocusedField {
         }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, HelperConfig.focusedFieldTimeout)
-        return readable(
-            subrole: CaretLocator.attribute(element, kAXSubroleAttribute) as? String,
-            value: CaretLocator.attribute(element, kAXValueAttribute) as? String,
-            maxLength: maxLength
-        )
+        return value(of: element, above: ScreenContextReader.ancestors(of: element), in: LiveScreenTree(), maxLength: maxLength,
+                     excluding: exclusions)
+    }
+
+    /// The focused element's text, as `value(inApp:maxLength:excluding:)` has it; `focusPath` is what
+    /// is above the element. A page of an excluded website in the element's window is looked for before
+    /// the text is asked for.
+    static func value<Tree: ScreenTree>(of element: Tree.Element, above focusPath: [Tree.Element], in tree: Tree, maxLength: Int,
+                                        excluding exclusions: ScreenExclusions) -> String? {
+        let started = Date()
+        func holdsExcludedPage(_ element: Tree.Element, intoPages: Bool) -> Bool {
+            ScreenContextReader.holdsExcludedPage(element, in: tree, excluding: exclusions, intoPages: intoPages,
+                                                  within: HelperConfig.focusedFieldPageScanBudget, since: started)
+        }
+        // The field's own pages, what it holds, then the rest of its window: with the caret in a
+        // browser's address field, the page it shows is beside the field, not above it.
+        let window = focusPath.last { tree.string($0, kAXRoleAttribute) == kAXWindowRole as String }
+        if ScreenContextReader.pageHosts(of: element, above: focusPath, in: tree).contains(where: exclusions.excludes)
+            || holdsExcludedPage(element, intoPages: true) || window.map({ holdsExcludedPage($0, intoPages: false) }) ?? false {
+            HelperLog.debug("FocusedField: the window shows a page of an excluded website, or one whose address is unknown; not read")
+            return nil
+        }
+        return readable(subrole: tree.string(element, kAXSubroleAttribute), value: tree.string(element, kAXValueAttribute), maxLength: maxLength)
     }
 
     /// `value`, unless it is a password field's (`subrole`), missing, or longer than `maxLength`.
