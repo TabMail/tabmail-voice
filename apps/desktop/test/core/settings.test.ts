@@ -201,6 +201,7 @@ describe("an exclusion that could not be saved", () => {
     expect(app.excludedApps).toEqual([bank]);
     // Nothing is unsaved for one built in or invalid.
     expect(app.excludeSite(config.builtInExcludedSites[0])).toBe("added");
+    expect(app.excludeApp(config.builtInExcludedApps[0])).toBe("added");
     expect(app.excludeSite("not a site")).toBe("invalid");
     expect(app.excludeApp({ bundleIdentifier: "", name: "" })).toBe("invalid");
 

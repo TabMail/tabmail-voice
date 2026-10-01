@@ -303,6 +303,16 @@ describe("Settings page", () => {
         expect(problem()).toBeNull();
       });
 
+      /** The way to save a site that could not be: the pane sends one already listed. */
+      test("a website already listed can be added again", async () => {
+        const page = await open({ ...signedIn, excludedSites: ["mail.example.org"] }, { error: "Excluded for now, but this couldn't be saved." });
+        await act(async () => type(field(), "mail.example.org"));
+        expect(problem()).toBeNull();
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.org" }]);
+        expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
+      });
+
       test.each(["not a site", "localhost"])("refuses %j, saying why", async (typed) => {
         const page = await open(signedIn);
         await act(async () => type(field(), typed));
