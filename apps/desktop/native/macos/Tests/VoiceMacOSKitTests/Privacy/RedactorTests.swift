@@ -52,7 +52,7 @@ struct RedactorTests {
     /// Several texts redacted together, each keeping its share: the shared cases every helper passes.
     @Test func everySharedCaseOfSeveralTextsIsRedactedAsExpected() throws {
         let cases = try Self.sharedFile().lineCases
-        #expect(cases.count >= 13)
+        #expect(cases.count >= 15)
         for item in cases {
             #expect(Redactor.redact(item.lines.map { $0.map(Self.joined) }) == item.expected.map { $0.map(Self.joined) }, "\(item.name)")
         }
@@ -207,6 +207,21 @@ struct RedactorTests {
         #expect(reply["selectionRedacted"] == .bool(true))
     }
 
+    /// Each block keeps its place on screen through the redaction, the focused field's too: the
+    /// visible text is laid out from them (side by side on a line, a blank line at a jump back up).
+    @Test func redactedBlocksKeepTheirPlaceOnScreen() {
+        let secret = "sk" + "-" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+        var context = ScreenContext(appName: "Example Browser")
+        context.append(.text, "key", frame: CGRect(x: 0, y: 100, width: 30, height: 20))
+        context.append(.text, secret, frame: CGRect(x: 40, y: 100, width: 200, height: 20))
+        context.textBeforeCaret = "note "
+        context.appendCaret(frame: CGRect(x: 0, y: 200, width: 300, height: 20))
+        context.append(.text, "sidebar", frame: CGRect(x: 400, y: 0, width: 80, height: 20))
+
+        #expect(context.json["renderedText"]?.string == "key \(Redactor.placeholder)\n» note ‸\n\nsidebar")
+        #expect(context.redacted.blocks.map(\.frame) == context.blocks.map(\.frame))
+    }
+
     /// The focused field's block stays though nothing is left in it, and the focused field's texts
     /// are redacted when the walk placed no block for it.
     @Test func theFocusedFieldIsRedactedWithOrWithoutItsBlock() {
@@ -260,10 +275,14 @@ struct RedactorTests {
     @Test func hostileTextIsRedactedInTimeProportionalToItsLength() {
         let length = 200_000
         let clock = ContinuousClock()
-        for unit in ["a.", "token:", "-eyJ", "-----BEGIN A ", "://a:b", "Bearer ", "-sk-a", "password" + String(repeating: " ", count: 64), "a"] {
-            let text = String(repeating: unit, count: length / unit.count + 1)
+        let begin = "-----BEGIN "
+        let units = ["a.", "token:", "-eyJ", "-----BEGIN A ", "://a:b", "Bearer ", "-sk-a", "password" + String(repeating: " ", count: 64), "a"].map { ("", $0) }
+            // A key's header, and its footer, naming its kind over and over.
+            + [(begin, "PRIVATE KEY "), (begin + "PRIVATE KEY-----\n-----END ", "PRIVATE KEY ")]
+        for (start, unit) in units {
+            let text = start + String(repeating: unit, count: length / unit.count + 1)
             let elapsed = clock.measure { _ = Redactor.redact(text) }
-            #expect(elapsed < .seconds(5), "\(unit.prefix(16)): \(elapsed)")
+            #expect(elapsed < .seconds(5), "\(start.prefix(16))\(unit.prefix(16)): \(elapsed)")
         }
     }
 }

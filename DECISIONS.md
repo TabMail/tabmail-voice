@@ -2420,8 +2420,9 @@ well-structured place for the redactors.
   puts it back; where it must not run on, a lookahead says so.
 - Every pattern takes time in proportion to the text. Screen text has no length limit, may be
   anyone's (a web page, a message), and is redacted with no deadline, so a repeat scanned again from
-  every position is refused in review: it is bounded, or the pattern begins where a run begins. Both
-  suites time each pattern on hostile text.
+  every position is refused in review: it is bounded, or the pattern begins where a run begins (a
+  key block's kind, before and after `PRIVATE KEY`, is at most 40 characters). Both suites time
+  each pattern on hostile text.
 - `native/shared/privacy/redaction-cases.json` is what every helper must do with them: each case's
   text and what it becomes. Every helper runs the cases in its own suite, on its own regex engine;
   that is what shows the helpers agree. The texts are split into fragments, so the file holds
@@ -2465,6 +2466,12 @@ well-structured place for the redactors.
 - A private key written on one line with escaped line breaks, or one with header lines after its
   first (an encrypted PEM key, a PGP key with a `Version:` line), keeps its body unless a name beside it marks it as a secret; a key header with nothing
   after it takes the letters that follow, up to the first punctuation.
+- What a replacement keeps of its match is told by comparing the two texts. A secret that itself
+  ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
+  last character in the second text; if that text is the selection, Edit refuses it. Nothing of the
+  secret is kept.
+- Edit's refusal asks the backend for no rewrite. When several tools are offered, the pick of the
+  tool has already been asked, with the redacted screen.
 - A correction of a word into something secret-looking is not learned: the field is redacted before
   the core compares it.
 - The Windows and Linux helpers redact once they add their emitter and run the shared cases.

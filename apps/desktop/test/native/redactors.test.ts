@@ -106,7 +106,7 @@ describe("the shared redactors", () => {
   });
 
   test("the cases of several texts are there, their names unlike", () => {
-    expect(lineCases.length).toBeGreaterThanOrEqual(13);
+    expect(lineCases.length).toBeGreaterThanOrEqual(15);
     expect(new Set(lineCases.map((item) => item.name)).size).toBe(lineCases.length);
   });
 
@@ -136,8 +136,10 @@ describe("the shared redactors", () => {
     ["a run of key prefixes", "-sk-a"],
     ["a run of spaces after a name", "password" + " ".repeat(64)],
     ["one long word", "a"],
-  ])("%s is redacted in time proportional to its length", (_what, unit) => {
-    const text = unit.repeat(Math.ceil(hostileLength / unit.length));
+    ["a key header naming its kind over and over", "PRIVATE KEY ", "-----BEGIN "],
+    ["a key footer naming its kind over and over", "PRIVATE KEY ", "-----BEGIN PRIVATE KEY-----\n-----END "],
+  ])("%s is redacted in time proportional to its length", (_what, unit, start = "") => {
+    const text = start + unit.repeat(Math.ceil(hostileLength / unit.length));
     const started = performance.now();
     redact(text);
     expect(performance.now() - started).toBeLessThan(hostileMilliseconds);

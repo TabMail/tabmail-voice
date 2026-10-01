@@ -3745,6 +3745,114 @@
    "expected": [
     "password='letmein'2x"
    ]
+  },
+  {
+   "name": "a private-key block whose kind is 40 characters goes",
+   "text": [
+    "-----BEGIN ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 1234 ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 1234 ",
+    "PRIVATE KEY",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key header whose kind is 41 characters is none",
+   "text": [
+    "-----BEGIN ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "-----BEGIN ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ]
+  },
+  {
+   "name": "a private-key block with 40 characters after its name goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEF",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEF",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key header with 41 characters after its name is none",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ]
+  },
+  {
+   "name": "a private-key footer whose kind is 41 characters stays after the key",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "-----END ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----"
+   ]
+  },
+  {
+   "name": "a private-key footer with 41 characters after its name stays after the key",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "-----END ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----"
+   ]
   }
  ],
  "lineCases": [
@@ -4223,6 +4331,72 @@
      [],
      [
       "\nnext"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a text that ends where an address's password does keeps the sign after it",
+   "lines": [
+    [
+     [
+      "db://u:",
+      "hunter2",
+      "@"
+     ],
+     [
+      "host/x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "db://u:",
+      "{redacted}",
+      "@"
+     ],
+     [
+      "host/x"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "lines are joined by a line break, not a space: a key's header in two texts is none",
+   "lines": [
+    [
+     [
+      "-----BEGIN"
+     ]
+    ],
+    [
+     [
+      "PRIVATE ",
+      "KEY-----"
+     ]
+    ],
+    [
+     [
+      "a1B2c3D4e5F6g7H8"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "-----BEGIN"
+     ]
+    ],
+    [
+     [
+      "PRIVATE ",
+      "KEY-----"
+     ]
+    ],
+    [
+     [
+      "a1B2c3D4e5F6g7H8"
      ]
     ]
    ]

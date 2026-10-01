@@ -12,7 +12,7 @@ extension Redactor {
     /// Every redactor, in the order they are applied.
     static let all: [Redactor] = [
         // A private-key block, whole or cut off where the window ends.
-        Redactor(name: #"private-key-block"#, pattern: #"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----(?:[A-Za-z0-9+/=\s]*-----END [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|[A-Za-z0-9+/=\s]*)"#, ignoreCase: false, replacement: #"[redacted]"#),
+        Redactor(name: #"private-key-block"#, pattern: #"-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\s]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\s]*)"#, ignoreCase: false, replacement: #"[redacted]"#),
         // A JSON web token: three base64url parts, the first two JSON objects.
         Redactor(name: #"json-web-token"#, pattern: #"(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"#, ignoreCase: false, replacement: #"$1[redacted]"#),
         // "Bearer <token>", as an Authorization header has it. The word stays.
