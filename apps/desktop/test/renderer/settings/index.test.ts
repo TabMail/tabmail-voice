@@ -235,17 +235,41 @@ describe("Settings page", () => {
       expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("That app can't be excluded.");
     });
 
-    test("a full list takes no more apps, saying so", async () => {
+    /** Add App… stays usable on a full list: picking one already listed is how one that could not
+     * be saved is saved, and the main process refuses a new one. */
+    test("a full list says so, and still asks for an app", async () => {
       const full = Array.from({ length: config.excludedAppsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` }));
-      const page = await open({ ...signedIn, excludedApps: full });
-      expect(button("Add App…").disabled).toBe(true);
+      const page = await open({ ...signedIn, excludedApps: full }, { error: "Remove one to add another." });
+      expect(button("Add App…").disabled).toBe(false);
       expect(visibleText()).toContain(`At most ${config.excludedAppsMax} apps can be excluded.`);
       await act(async () => button("Add App…").click());
-      expect(page.commands).toEqual([]);
+      expect(page.commands).toEqual([{ type: "excludeApp" }]);
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("Remove one to add another.");
 
       await open({ ...signedIn, excludedApps: full.slice(1) });
       expect(button("Add App…").disabled).toBe(false);
       expect(visibleText()).not.toContain("At most");
+    });
+
+    /** The warning goes once the app is saved, by picking it again. */
+    test("an app's warning is gone once a later try is saved", async () => {
+      const reply = { error: "Excluded for now, but this couldn't be saved." as string | null };
+      const page = await open({ ...signedIn, excludedApps: excluded }, reply);
+      const warning = () => document.querySelector("main > div:not([hidden]) .error")?.textContent ?? null;
+      await act(async () => button("Add App…").click());
+      expect(warning()).toBe("Excluded for now, but this couldn't be saved.");
+
+      reply.error = null;
+      await act(async () => button("Add App…").click());
+      expect(page.commands).toEqual([{ type: "excludeApp" }, { type: "excludeApp" }]);
+      expect(warning()).toBeNull();
+      expect(visibleText()).toContain("Example Bank");
+    });
+
+    test("a removal that could not be saved shows why", async () => {
+      await open({ ...signedIn, excludedApps: excluded }, { error: "Removed for now, but this couldn't be saved." });
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Example Notes"]')?.click());
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("Removed for now, but this couldn't be saved.");
     });
 
     /** The websites the screen is never read on (ADR-DESK-047). */
@@ -253,7 +277,8 @@ describe("Settings page", () => {
       const sites = (): string[] => [...document.querySelectorAll('ul[aria-label="Excluded websites"] li')].map((item) => item.textContent ?? "");
       const field = (): HTMLInputElement => document.querySelector<HTMLInputElement>('input[aria-label="Website"]') as HTMLInputElement;
       const add = (): HTMLButtonElement => field().form?.querySelector<HTMLButtonElement>('button[type="submit"]') as HTMLButtonElement;
-      const problem = (): string | null => field().closest(".group, section, div")?.parentElement?.querySelector(".error")?.textContent ?? null;
+      const problems = (): string[] => [...(field().closest(".group, section, div")?.parentElement?.querySelectorAll(".error") ?? [])].map((error) => error.textContent ?? "");
+      const problem = (): string | null => problems()[0] ?? null;
 
       test("names every built-in web vault, and says what excluding does", async () => {
         await open(signedIn);
@@ -272,6 +297,58 @@ describe("Settings page", () => {
         await act(async () => field().form?.requestSubmit());
         expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.com" }]);
         expect(field().value).toBe("");
+      });
+
+      test("shows why a website could not be added or removed, until the next try, beside what is wrong with what is typed", async () => {
+        const reply = { error: "Excluded for now, but this couldn't be saved." as string | null };
+        await open({ ...signedIn, excludedSites: ["mail.example.org"] }, reply);
+        expect(problem()).toBeNull();
+        await act(async () => type(field(), "example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
+        expect(field().value).toBe("");
+
+        await act(async () => type(field(), "not a site"));
+        expect(problems()).toEqual(["A website’s address, like example.com.", "Excluded for now, but this couldn't be saved."]);
+
+        reply.error = "Removed for now, but this couldn't be saved.";
+        await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove mail.example.org"]')?.click());
+        expect(problems()).toEqual(["A website’s address, like example.com.", "Removed for now, but this couldn't be saved."]);
+        await act(async () => type(field(), ""));
+        expect(problems()).toEqual(["Removed for now, but this couldn't be saved."]);
+
+        reply.error = null;
+        await act(async () => type(field(), "example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problem()).toBeNull();
+      });
+
+      /** The way to save a site that could not be: the pane sends one already listed. */
+      test("a website already listed can be added again", async () => {
+        const page = await open({ ...signedIn, excludedSites: ["mail.example.org"] }, { error: "Excluded for now, but this couldn't be saved." });
+        await act(async () => type(field(), "mail.example.org"));
+        expect(problem()).toBeNull();
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.org" }]);
+        expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
+      });
+
+      /** The site that takes the last place fills the list, whose own message must not stand in for
+       * the warning; nor when it is added again. */
+      test("a website that fills the list unsaved still shows why", async () => {
+        const full = Array.from({ length: config.excludedSitesMax }, (_, index) => `site${index}.example.com`);
+        const atMost = `At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`;
+        const page = await settingsPage({ error: "Excluded for now, but this couldn't be saved." }, { ...signedIn, excludedSites: full }, { ...signedIn, excludedSites: full.slice(1) });
+        await act(async () => button("Privacy").click());
+        await act(async () => type(field(), "site0.example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problems()).toEqual([atMost, "Excluded for now, but this couldn't be saved."]);
+
+        await act(async () => type(field(), "site0.example.com"));
+        expect(problems()).toEqual(["Excluded for now, but this couldn't be saved."]);
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([{ type: "excludeSite", site: "site0.example.com" }, { type: "excludeSite", site: "site0.example.com" }]);
+        expect(problems()).toEqual([atMost, "Excluded for now, but this couldn't be saved."]);
       });
 
       test.each(["not a site", "localhost"])("refuses %j, saying why", async (typed) => {

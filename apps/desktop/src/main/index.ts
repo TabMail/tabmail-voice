@@ -593,6 +593,11 @@ function launch(): void {
     if (windows.isAudioWindow(event.sender) && isAudioReport(report)) capture.receive(report);
   });
 
+  /** An exclusion that could not be written to disk holds until the app quits, and must not pass
+   * for one that lasts. */
+  const exclusionUnsaved = "Excluded for now, but this couldn't be saved: it will be read again after TabMail Voice restarts. Check the disk and add it again.";
+  const removalUnsaved = "Removed for now, but this couldn't be saved: it will be excluded again after TabMail Voice restarts.";
+
   /** Asks the user for an app, and excludes it from screen reading. */
   async function excludePickedApp(): Promise<void> {
     if (process.platform !== "darwin") return;
@@ -610,6 +615,7 @@ function launch(): void {
     const result = settings.excludeApp({ bundleIdentifier: picked.bundleIdentifier, name: picked.name });
     if (result === "full") throw new Error(`At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.`);
     if (result === "invalid") throw new Error("That app can't be excluded.");
+    if (result === "unsaved") throw new Error(exclusionUnsaved);
   }
 
   async function run(command: Command): Promise<void> {
@@ -642,16 +648,17 @@ function launch(): void {
       case "excludeApp":
         return excludePickedApp();
       case "removeExcludedApp":
-        settings.removeExcludedApp(command.bundleIdentifier);
+        if (!settings.removeExcludedApp(command.bundleIdentifier)) throw new Error(removalUnsaved);
         return;
       case "excludeSite": {
         const result = settings.excludeSite(command.site);
         if (result === "full") throw new Error(`At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`);
         if (result === "invalid") throw new Error("That isn't a website's address.");
+        if (result === "unsaved") throw new Error(exclusionUnsaved);
         return;
       }
       case "removeExcludedSite":
-        settings.removeExcludedSite(command.host);
+        if (!settings.removeExcludedSite(command.host)) throw new Error(removalUnsaved);
         return;
       case "setAgentToolEnabled":
         settings.setEnabled(command.tool, command.value);

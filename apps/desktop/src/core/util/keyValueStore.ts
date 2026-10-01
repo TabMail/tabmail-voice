@@ -6,7 +6,9 @@
  * main process keeps them in a JSON file under the app's data folder. */
 export interface KeyValueStore {
   get(key: string): unknown;
-  set(key: string, value: unknown): void;
+  /** False when the value could not be kept past this run (the file could not be written): it is
+   * held until the app quits. */
+  set(key: string, value: unknown): boolean;
   remove(key: string): void;
 }
 
@@ -22,8 +24,9 @@ export class MemoryStore implements KeyValueStore {
     return this.values.get(key);
   }
 
-  set(key: string, value: unknown): void {
+  set(key: string, value: unknown): boolean {
     this.values.set(key, value);
+    return true;
   }
 
   remove(key: string): void {
