@@ -23,6 +23,7 @@ function screen(overrides: Partial<ScreenContext> = {}): ScreenContext {
     focusedRole: null,
     textBeforeCaret: "Dear Alex,",
     selectedText: "",
+    selectionRedacted: false,
     textAfterCaret: "",
     renderedText: "» Dear Alex,‸",
     summary: "1 block",

@@ -1,0 +1,5653 @@
+{
+ "comment": [
+  "What every helper's redaction must do, whatever its language and regex engine: for each case, `text` joined becomes `expected` joined, where {redacted} stands for redactors.json's `placeholder`.",
+  "Texts are split into fragments so that no line of this file holds anything shaped like a real key; the bodies are made up.",
+  "`lineCases` are for redacting several texts together, each keeping its share. A line is one or more texts that follow one another with nothing between (the text before the caret, the selection, the text after it); the lines are redacted as the one text they make, a line break between them. Of a match, what its replacement starts with as the match does stays in the texts that held it. The rest of the replacement, up to what it ends with as the match does, goes to the text the rest of the match began in; every later boundary between texts in the match lands before that kept end, so a text wholly inside the secret comes back empty. The two kept parts never overlap."
+ ],
+ "cases": [
+  {
+   "name": "an API key, alone",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key, inside a line",
+   "text": [
+    "export KEY ",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a project API key, alone",
+   "text": [
+    "sk",
+    "-proj-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a project API key, inside a line",
+   "text": [
+    "export KEY ",
+    "sk",
+    "-proj-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a payment secret key, alone",
+   "text": [
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment secret key, inside a line",
+   "text": [
+    "export KEY ",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a payment restricted test key, alone",
+   "text": [
+    "rk",
+    "_test_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment restricted test key, inside a line",
+   "text": [
+    "export KEY ",
+    "rk",
+    "_test_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a webhook secret, alone",
+   "text": [
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a webhook secret, inside a line",
+   "text": [
+    "export KEY ",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a GitHub token, alone",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token, inside a line",
+   "text": [
+    "export KEY ",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token, alone",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token, inside a line",
+   "text": [
+    "export KEY ",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a GitLab token, alone",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitLab token, inside a line",
+   "text": [
+    "export KEY ",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "an AWS access key id, alone",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id, inside a line",
+   "text": [
+    "export KEY ",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a Google API key, alone",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google API key, inside a line",
+   "text": [
+    "export KEY ",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a Slack token, alone",
+   "text": [
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token, inside a line",
+   "text": [
+    "export KEY ",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "an npm token, alone",
+   "text": [
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an npm token, inside a line",
+   "text": [
+    "export KEY ",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a Hugging Face token, alone",
+   "text": [
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Hugging Face token, inside a line",
+   "text": [
+    "export KEY ",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a JSON web token, alone",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token, inside a line",
+   "text": [
+    "export KEY ",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    " # for the build\nnext line"
+   ],
+   "expected": [
+    "export KEY ",
+    "{redacted}",
+    " # for the build\nnext line"
+   ]
+  },
+  {
+   "name": "a private-key block, whole",
+   "text": [
+    "before\n",
+    "-----BEGIN OPENSSH ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "\n",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "before\n",
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a private-key block the window cuts off, up to where it ends",
+   "text": [
+    "before\n",
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6=="
+   ],
+   "expected": [
+    "before\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key block with no algorithm",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token goes, the word stays",
+   "text": [
+    "Authorization: Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+   ],
+   "expected": [
+    "Authorization: Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token in lower case",
+   "text": [
+    "authorization: bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+   ],
+   "expected": [
+    "authorization: bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word bearer in a sentence stays",
+   "text": [
+    "the bearer of good news arrives"
+   ],
+   "expected": [
+    "the bearer of good news arrives"
+   ]
+  },
+  {
+   "name": "the password in an address goes, the rest stays",
+   "text": [
+    "postgres://admin:",
+    "hunter2",
+    "@db.example.com:5432/app"
+   ],
+   "expected": [
+    "postgres://admin:",
+    "{redacted}",
+    "@db.example.com:5432/app"
+   ]
+  },
+  {
+   "name": "an address with a port and an at sign later stays",
+   "text": [
+    "https://example.com:8080/path?at=@home"
+   ],
+   "expected": [
+    "https://example.com:8080/path?at=@home"
+   ]
+  },
+  {
+   "name": "an address with only a user stays",
+   "text": [
+    "ssh://alex@example.com/repo"
+   ],
+   "expected": [
+    "ssh://alex@example.com/repo"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: password=",
+   "text": [
+    "password=",
+    "hunter22",
+    ""
+   ],
+   "expected": [
+    "password=",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: PASSWORD:",
+   "text": [
+    "PASSWORD: ",
+    "s3cr3t-value",
+    ""
+   ],
+   "expected": [
+    "PASSWORD: ",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: \"api_key\": \"",
+   "text": [
+    "\"api_key\": \"",
+    "abc123def456",
+    "\""
+   ],
+   "expected": [
+    "\"api_key\": \"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: API-KEY = '",
+   "text": [
+    "API-KEY = '",
+    "abc123def456",
+    "'"
+   ],
+   "expected": [
+    "API-KEY = '",
+    "{redacted}",
+    "'"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: DB_PASSWORD=",
+   "text": [
+    "DB_PASSWORD=",
+    "pa55word!",
+    ""
+   ],
+   "expected": [
+    "DB_PASSWORD=",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: client_secret:",
+   "text": [
+    "client_secret: ",
+    "0123456789abcdef",
+    ""
+   ],
+   "expected": [
+    "client_secret: ",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: passphrase=",
+   "text": [
+    "passphrase=",
+    "correct4horse",
+    ""
+   ],
+   "expected": [
+    "passphrase=",
+    "{redacted}",
+    ""
+   ]
+  },
+  {
+   "name": "a named value takes the rest of its word",
+   "text": [
+    "access_token=",
+    "abcdef123456&next=1",
+    " then"
+   ],
+   "expected": [
+    "access_token=",
+    "{redacted}",
+    " then"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Password: required",
+   "text": [
+    "Password: required"
+   ],
+   "expected": [
+    "Password: required"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Enter your password below",
+   "text": [
+    "Enter your password below"
+   ],
+   "expected": [
+    "Enter your password below"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: token: abc12",
+   "text": [
+    "token: abc12"
+   ],
+   "expected": [
+    "token: abc12"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: The token count was 4096 for this request",
+   "text": [
+    "The token count was 4096 for this request"
+   ],
+   "expected": [
+    "The token count was 4096 for this request"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: commit 9fceb02d0ae598e95dc970b74767f19372d61af8",
+   "text": [
+    "commit 9fceb02d0ae598e95dc970b74767f19372d61af8"
+   ],
+   "expected": [
+    "commit 9fceb02d0ae598e95dc970b74767f19372d61af8"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Ask Alex about the sk-learn import",
+   "text": [
+    "Ask Alex about the sk-learn import"
+   ],
+   "expected": [
+    "Ask Alex about the sk-learn import"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Invoice 2026-0042 is due on the 14th",
+   "text": [
+    "Invoice 2026-0042 is due on the 14th"
+   ],
+   "expected": [
+    "Invoice 2026-0042 is due on the 14th"
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: Dear Alex,",
+   "text": [
+    "Dear Alex,\nSee you at 10:30."
+   ],
+   "expected": [
+    "Dear Alex,\nSee you at 10:30."
+   ]
+  },
+  {
+   "name": "text that only resembles a secret stays: empty",
+   "text": [
+    ""
+   ],
+   "expected": [
+    ""
+   ]
+  },
+  {
+   "name": "a key one character short of the least length stays",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a key of exactly the least length goes",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value one character short stays",
+   "text": [
+    "token=",
+    "a1b2c"
+   ],
+   "expected": [
+    "token=",
+    "a1b2c"
+   ]
+  },
+  {
+   "name": "a named value of exactly the least length goes",
+   "text": [
+    "token=",
+    "a1b2c3"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "several secrets in one text all go",
+   "text": [
+    "A ",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    " and B ",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+    ", password=",
+    "hunter22",
+    " end"
+   ],
+   "expected": [
+    "A ",
+    "{redacted}",
+    " and B ",
+    "{redacted}",
+    ", password=",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "text already redacted is left as it is",
+   "text": [
+    "key ",
+    "{redacted}",
+    " and password=",
+    "{redacted}"
+   ],
+   "expected": [
+    "key ",
+    "{redacted}",
+    " and password=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key one character short of the least length stays",
+   "text": [
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a payment key of exactly the least length goes",
+   "text": [
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key in the wrong case stays",
+   "text": [
+    "SK",
+    "_LIVE_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "SK",
+    "_LIVE_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a payment key begun inside a word stays",
+   "text": [
+    "x",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a webhook secret one character short of the least length stays",
+   "text": [
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a webhook secret of exactly the least length goes",
+   "text": [
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a webhook secret in the wrong case stays",
+   "text": [
+    "WH",
+    "SEC_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "WH",
+    "SEC_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a webhook secret begun inside a word stays",
+   "text": [
+    "x",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub token one character short of the least length stays",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a GitHub token of exactly the least length goes",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token in the wrong case stays",
+   "text": [
+    "GH",
+    "P_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "GH",
+    "P_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub token begun inside a word stays",
+   "text": [
+    "x",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token one character short of the least length stays",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token of exactly the least length goes",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token in the wrong case stays",
+   "text": [
+    "GITHUB",
+    "_PAT_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "GITHUB",
+    "_PAT_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token begun inside a word stays",
+   "text": [
+    "x",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitLab token one character short of the least length stays",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a GitLab token of exactly the least length goes",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitLab token in the wrong case stays",
+   "text": [
+    "GL",
+    "PAT-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "GL",
+    "PAT-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitLab token begun inside a word stays",
+   "text": [
+    "x",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Slack token one character short of the least length stays",
+   "text": [
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a Slack token of exactly the least length goes",
+   "text": [
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token in the wrong case stays",
+   "text": [
+    "XO",
+    "XB-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "XO",
+    "XB-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Slack token begun inside a word stays",
+   "text": [
+    "x",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an npm token one character short of the least length stays",
+   "text": [
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "an npm token of exactly the least length goes",
+   "text": [
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an npm token in the wrong case stays",
+   "text": [
+    "NP",
+    "M_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "NP",
+    "M_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an npm token begun inside a word stays",
+   "text": [
+    "x",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Hugging Face token one character short of the least length stays",
+   "text": [
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a Hugging Face token of exactly the least length goes",
+   "text": [
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Hugging Face token in the wrong case stays",
+   "text": [
+    "H",
+    "F_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "H",
+    "F_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Hugging Face token begun inside a word stays",
+   "text": [
+    "x",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key in the wrong case stays",
+   "text": [
+    "SK",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "SK",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key begun inside a word stays",
+   "text": [
+    "x",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key after an underscore stays",
+   "text": [
+    "_",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key after punctuation goes",
+   "text": [
+    "key:",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "key:",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token one character short of the least length stays",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H"
+   ],
+   "expected": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H"
+   ]
+  },
+  {
+   "name": "a bearer token of exactly the least length goes",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word bearer ending another word stays",
+   "text": [
+    "xBearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "xBearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an AWS access key id one character short stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNO"
+   ],
+   "expected": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNO"
+   ]
+  },
+  {
+   "name": "an AWS access key id one character long stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOPQ"
+   ],
+   "expected": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOPQ"
+   ]
+  },
+  {
+   "name": "an AWS temporary access key id goes",
+   "text": [
+    "AS",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id in lower case stays",
+   "text": [
+    "ak",
+    "ia",
+    "abcdefghijklmnop"
+   ],
+   "expected": [
+    "ak",
+    "ia",
+    "abcdefghijklmnop"
+   ]
+  },
+  {
+   "name": "an AWS access key id begun inside a word stays",
+   "text": [
+    "X",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "X",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ]
+  },
+  {
+   "name": "a Google API key one character short stays",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"
+   ],
+   "expected": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"
+   ]
+  },
+  {
+   "name": "a Google API key one character long stays",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
+   ],
+   "expected": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
+   ]
+  },
+  {
+   "name": "a Google API key in the wrong case stays",
+   "text": [
+    "ai",
+    "ZA",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "ai",
+    "ZA",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ]
+  },
+  {
+   "name": "a Google API key begun inside a word stays",
+   "text": [
+    "x",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "x",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ]
+  },
+  {
+   "name": "a JSON web token in the wrong case stays",
+   "text": [
+    "EY",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "EY",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "EY",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "EY",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "a JSON web token begun inside a word stays",
+   "text": [
+    "x",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "x",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "a JSON web token with only two parts stays",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a private-key header in lower case stays",
+   "text": [
+    "-----begin ",
+    "private key-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "-----begin ",
+    "private key-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ]
+  },
+  {
+   "name": "a payment key: pk_live_",
+   "text": [
+    "pk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key: pk_test_",
+   "text": [
+    "pk",
+    "_test_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key: sk_test_",
+   "text": [
+    "sk",
+    "_test_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key: rk_live_",
+   "text": [
+    "rk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token: gho_",
+   "text": [
+    "gh",
+    "o_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token: ghu_",
+   "text": [
+    "gh",
+    "u_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token: ghs_",
+   "text": [
+    "gh",
+    "s_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token: ghr_",
+   "text": [
+    "gh",
+    "r_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token: xoxa-",
+   "text": [
+    "xo",
+    "xa-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token: xoxe-",
+   "text": [
+    "xo",
+    "xe-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token: xoxp-",
+   "text": [
+    "xo",
+    "xp-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token: xoxr-",
+   "text": [
+    "xo",
+    "xr-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token: xoxs-",
+   "text": [
+    "xo",
+    "xs-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: passwd= (another name)",
+   "text": [
+    "passwd=",
+    "hunter22x"
+   ],
+   "expected": [
+    "passwd=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: pwd= (another name)",
+   "text": [
+    "pwd=",
+    "hunter22x"
+   ],
+   "expected": [
+    "pwd=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: access_key= (another name)",
+   "text": [
+    "access_key=",
+    "hunter22x"
+   ],
+   "expected": [
+    "access_key=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: access-key: (another name)",
+   "text": [
+    "access-key: ",
+    "hunter22x"
+   ],
+   "expected": [
+    "access-key: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: accesskey= (another name)",
+   "text": [
+    "accesskey=",
+    "hunter22x"
+   ],
+   "expected": [
+    "accesskey=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: private_key= (another name)",
+   "text": [
+    "private_key=",
+    "hunter22x"
+   ],
+   "expected": [
+    "private_key=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: privatekey: (another name)",
+   "text": [
+    "privatekey: ",
+    "hunter22x"
+   ],
+   "expected": [
+    "privatekey: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: credential= (another name)",
+   "text": [
+    "credential=",
+    "hunter22x"
+   ],
+   "expected": [
+    "credential=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: credentials: (another name)",
+   "text": [
+    "credentials: ",
+    "hunter22x"
+   ],
+   "expected": [
+    "credentials: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: apikey= (another name)",
+   "text": [
+    "apikey=",
+    "hunter22x"
+   ],
+   "expected": [
+    "apikey=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: secret= (another name)",
+   "text": [
+    "secret=",
+    "hunter22x"
+   ],
+   "expected": [
+    "secret=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: token: (another name)",
+   "text": [
+    "token: ",
+    "hunter22x"
+   ],
+   "expected": [
+    "token: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value whose digit comes late goes",
+   "text": [
+    "token=",
+    "abcdefghijklmnopqrstuvwxyz7"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value begun inside a longer name goes",
+   "text": [
+    "MY_API_TOKEN=",
+    "abc123def"
+   ],
+   "expected": [
+    "MY_API_TOKEN=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an address password after a port-like user stays",
+   "text": [
+    "http://example.com:8080/a@b"
+   ],
+   "expected": [
+    "http://example.com:8080/a@b"
+   ]
+  },
+  {
+   "name": "the password in an address with another scheme goes",
+   "text": [
+    "redis://default:",
+    "hunter2",
+    "@cache.example.com:6379"
+   ],
+   "expected": [
+    "redis://default:",
+    "{redacted}",
+    "@cache.example.com:6379"
+   ]
+  },
+  {
+   "name": "an API key between Japanese words goes",
+   "text": [
+    "は",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "です"
+   ],
+   "expected": [
+    "は",
+    "{redacted}",
+    "です"
+   ]
+  },
+  {
+   "name": "an API key after a Korean word goes",
+   "text": [
+    "키",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "키",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key after an accented letter goes",
+   "text": [
+    "clé",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "clé",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id before Japanese goes",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "です"
+   ],
+   "expected": [
+    "{redacted}",
+    "です"
+   ]
+  },
+  {
+   "name": "an AWS access key id after Chinese goes",
+   "text": [
+    "密钥",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "密钥",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token after Japanese goes",
+   "text": [
+    "キーは",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "キーは",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after Japanese goes",
+   "text": [
+    "認証はBearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "認証はBearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the password in an address after Japanese goes",
+   "text": [
+    "接続先はpostgres://admin:",
+    "hunter2",
+    "@db.example.com/app"
+   ],
+   "expected": [
+    "接続先はpostgres://admin:",
+    "{redacted}",
+    "@db.example.com/app"
+   ]
+  },
+  {
+   "name": "a JSON web token after Japanese goes",
+   "text": [
+    "トークンは",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "トークンは",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after a no-break space goes",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value after an ideographic space goes",
+   "text": [
+    "password:　",
+    "hunter22"
+   ],
+   "expected": [
+    "password:　",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value whose only digit comes first goes",
+   "text": [
+    "token=",
+    "1abcdef"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value whose first digit is its 201st character goes",
+   "text": [
+    "token=",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "7"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value whose first digit is its 202nd character stays",
+   "text": [
+    "token=",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "7"
+   ],
+   "expected": [
+    "token=",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "7"
+   ]
+  },
+  {
+   "name": "a private-key body with plus and slash goes whole",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2+c3D4/e5F6+g7H8/i9J0\nk1L2+m3N4/o5P6==",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    " after"
+   ],
+   "expected": [
+    "{redacted}",
+    " after"
+   ]
+  },
+  {
+   "name": "a private-key body ends at what is no key text",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "\n(copied)"
+   ],
+   "expected": [
+    "{redacted}",
+    "(copied)"
+   ]
+  },
+  {
+   "name": "a PGP private-key block goes",
+   "text": [
+    "-----BEGIN PGP ",
+    "PRIVATE KEY BLOCK-----",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n=a1B2",
+    "\n",
+    "-----END PGP ",
+    "PRIVATE KEY BLOCK-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a public-key block stays",
+   "text": [
+    "-----BEGIN PUBLIC KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n-----END PUBLIC KEY-----"
+   ],
+   "expected": [
+    "-----BEGIN PUBLIC KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6\n-----END PUBLIC KEY-----"
+   ]
+  },
+  {
+   "name": "a bearer token holding . goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4.e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding _ goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4_e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding ~ goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4~e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding + goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4+e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding / goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4/e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding = goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4=e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding - goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4-e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token ends at what is no token text",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8",
+    ",next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    ",next"
+   ]
+  },
+  {
+   "name": "a digit in a later word does not make a named value",
+   "text": [
+    "Password: required (8 characters)"
+   ],
+   "expected": [
+    "Password: required (8 characters)"
+   ]
+  },
+  {
+   "name": "a digit after a quote does not make a named value",
+   "text": [
+    "password=\"letmein\" and 4 more"
+   ],
+   "expected": [
+    "password=\"letmein\" and 4 more"
+   ]
+  },
+  {
+   "name": "a digit after an apostrophe does not make a named value",
+   "text": [
+    "password='letmein' and 4 more"
+   ],
+   "expected": [
+    "password='letmein' and 4 more"
+   ]
+  },
+  {
+   "name": "a named value ends at a quote",
+   "text": [
+    "secret=\"",
+    "abc123def",
+    "\" # 12"
+   ],
+   "expected": [
+    "secret=\"",
+    "{redacted}",
+    "\" # 12"
+   ]
+  },
+  {
+   "name": "a payment key straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key in quotes goes",
+   "text": [
+    "\"",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a webhook secret straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a webhook secret in quotes goes",
+   "text": [
+    "\"",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a GitHub token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token in quotes goes",
+   "text": [
+    "\"",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token in quotes goes",
+   "text": [
+    "\"",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a GitLab token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitLab token in quotes goes",
+   "text": [
+    "\"",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a Slack token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token in quotes goes",
+   "text": [
+    "\"",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "an npm token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an npm token in quotes goes",
+   "text": [
+    "\"",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a Hugging Face token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Hugging Face token in quotes goes",
+   "text": [
+    "\"",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a JSON web token straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token in quotes goes",
+   "text": [
+    "\"",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "an AWS access key id straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id in quotes goes",
+   "text": [
+    "\"",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "an AWS access key id before a full stop goes",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "."
+   ],
+   "expected": [
+    "{redacted}",
+    "."
+   ]
+  },
+  {
+   "name": "a Google API key straight after an equals sign goes",
+   "text": [
+    "KEY=",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google API key in quotes goes",
+   "text": [
+    "\"",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a Google API key before a full stop goes",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "."
+   ],
+   "expected": [
+    "{redacted}",
+    "."
+   ]
+  },
+  {
+   "name": "a Google API key followed by a hyphen and more stays",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "-x"
+   ],
+   "expected": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "-x"
+   ]
+  },
+  {
+   "name": "an AWS access key id followed by an underscore stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "_x"
+   ],
+   "expected": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "_x"
+   ]
+  },
+  {
+   "name": "an address password holding a colon goes",
+   "text": [
+    "https://alex:",
+    "pa:ss",
+    "@example.com/"
+   ],
+   "expected": [
+    "https://alex:",
+    "{redacted}",
+    "@example.com/"
+   ]
+  },
+  {
+   "name": "an address with a space before the at sign stays",
+   "text": [
+    "see https://example.com:8080 or mail alex@example.com"
+   ],
+   "expected": [
+    "see https://example.com:8080 or mail alex@example.com"
+   ]
+  },
+  {
+   "name": "an address whose user holds an at sign stays",
+   "text": [
+    "https://a@b:c@example.com"
+   ],
+   "expected": [
+    "https://a@b:c@example.com"
+   ]
+  },
+  {
+   "name": "a secret at the end of text that begins with an emoji goes",
+   "text": [
+    "😀 key ",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "😀 key ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a secret after a Windows line break goes",
+   "text": [
+    "first\r\ntoken=",
+    "abc123def",
+    "\r\nlast"
+   ],
+   "expected": [
+    "first\r\ntoken=",
+    "{redacted}",
+    "\r\nlast"
+   ]
+  },
+  {
+   "name": "an API key straight after a capital stays",
+   "text": [
+    "X",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key straight after a small letter stays",
+   "text": [
+    "x",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key straight after a digit stays",
+   "text": [
+    "7",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an API key straight after an underscore stays",
+   "text": [
+    "_",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a payment key straight after a capital stays",
+   "text": [
+    "X",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a payment key straight after a small letter stays",
+   "text": [
+    "x",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a payment key straight after a digit stays",
+   "text": [
+    "7",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a payment key straight after an underscore stays",
+   "text": [
+    "_",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a webhook secret straight after a capital stays",
+   "text": [
+    "X",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a webhook secret straight after a small letter stays",
+   "text": [
+    "x",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a webhook secret straight after a digit stays",
+   "text": [
+    "7",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a webhook secret straight after an underscore stays",
+   "text": [
+    "_",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub token straight after a capital stays",
+   "text": [
+    "X",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub token straight after a small letter stays",
+   "text": [
+    "x",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub token straight after a digit stays",
+   "text": [
+    "7",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub token straight after an underscore stays",
+   "text": [
+    "_",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token straight after a capital stays",
+   "text": [
+    "X",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token straight after a small letter stays",
+   "text": [
+    "x",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token straight after a digit stays",
+   "text": [
+    "7",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token straight after an underscore stays",
+   "text": [
+    "_",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitLab token straight after a capital stays",
+   "text": [
+    "X",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitLab token straight after a small letter stays",
+   "text": [
+    "x",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitLab token straight after a digit stays",
+   "text": [
+    "7",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a GitLab token straight after an underscore stays",
+   "text": [
+    "_",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Slack token straight after a capital stays",
+   "text": [
+    "X",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Slack token straight after a small letter stays",
+   "text": [
+    "x",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Slack token straight after a digit stays",
+   "text": [
+    "7",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Slack token straight after an underscore stays",
+   "text": [
+    "_",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an npm token straight after a capital stays",
+   "text": [
+    "X",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an npm token straight after a small letter stays",
+   "text": [
+    "x",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an npm token straight after a digit stays",
+   "text": [
+    "7",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an npm token straight after an underscore stays",
+   "text": [
+    "_",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Hugging Face token straight after a capital stays",
+   "text": [
+    "X",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Hugging Face token straight after a small letter stays",
+   "text": [
+    "x",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Hugging Face token straight after a digit stays",
+   "text": [
+    "7",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a Hugging Face token straight after an underscore stays",
+   "text": [
+    "_",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "an AWS access key id straight after a capital stays",
+   "text": [
+    "X",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "X",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ]
+  },
+  {
+   "name": "an AWS access key id straight after a small letter stays",
+   "text": [
+    "x",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "x",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ]
+  },
+  {
+   "name": "an AWS access key id straight after a digit stays",
+   "text": [
+    "7",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "7",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ]
+  },
+  {
+   "name": "an AWS access key id straight after an underscore stays",
+   "text": [
+    "_",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "_",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ]
+  },
+  {
+   "name": "a Google API key straight after a capital stays",
+   "text": [
+    "X",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "X",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ]
+  },
+  {
+   "name": "a Google API key straight after a small letter stays",
+   "text": [
+    "x",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "x",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ]
+  },
+  {
+   "name": "a Google API key straight after a digit stays",
+   "text": [
+    "7",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "7",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ]
+  },
+  {
+   "name": "a Google API key straight after an underscore stays",
+   "text": [
+    "_",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "_",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ]
+  },
+  {
+   "name": "a JSON web token straight after a capital stays",
+   "text": [
+    "X",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "X",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "a JSON web token straight after a small letter stays",
+   "text": [
+    "x",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "x",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "a JSON web token straight after a digit stays",
+   "text": [
+    "7",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "7",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "a JSON web token straight after an underscore stays",
+   "text": [
+    "_",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "_",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "the word Bearer straight after a capital stays",
+   "text": [
+    "X",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "X",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "the word Bearer straight after a small letter stays",
+   "text": [
+    "x",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "x",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "the word Bearer straight after a digit stays",
+   "text": [
+    "7",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "7",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "the word Bearer straight after an underscore stays",
+   "text": [
+    "_",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "_",
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ]
+  },
+  {
+   "name": "a JSON web token straight after a hyphen stays",
+   "text": [
+    "-",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "-",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ]
+  },
+  {
+   "name": "a JSON web token with underscores and hyphens goes whole",
+   "text": [
+    "ey",
+    "J",
+    "a1_B2-c3",
+    ".",
+    "ey",
+    "J",
+    "a1_B2-c3D4",
+    ".",
+    "a1_B2-c3D4e5F6",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a private-key block cut off, its body with plus and slash, goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2+c3D4/e5F6+g7H8/i9J0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key block named with a digit goes",
+   "text": [
+    "-----BEGIN EC2 ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "\n",
+    "-----END EC2 ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token of small letters goes",
+   "text": [
+    "Bearer ",
+    "abcdefghijklmnopqrst"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token of capitals goes",
+   "text": [
+    "Bearer ",
+    "ABCDEFGHIJKLMNOPQRST"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key holding an underscore goes whole",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4_e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token holding an underscore goes whole",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4_e5F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitLab token holding an underscore and a hyphen goes whole",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3_D4e5-F6g7H8",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a Slack token holding hyphens goes whole",
+   "text": [
+    "xo",
+    "xb-",
+    "a1B2c3D4-e5F6g7H8-i9J0",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a Google API key holding an underscore and a hyphen goes",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4_e5F6g7H8-i9J0k1L2m3N4o5P6q"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id holding digits goes",
+   "text": [
+    "AK",
+    "IA",
+    "ABCD2345EFGH6789"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id followed by a small letter stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "x"
+   ],
+   "expected": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "x"
+   ]
+  },
+  {
+   "name": "an AWS access key id followed by a digit stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNO",
+    "P7x"
+   ],
+   "expected": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNO",
+    "P7x"
+   ]
+  },
+  {
+   "name": "a Google API key followed by a capital stays",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "X"
+   ],
+   "expected": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "X"
+   ]
+  },
+  {
+   "name": "a Google API key followed by a digit stays",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "7"
+   ],
+   "expected": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "7"
+   ]
+  },
+  {
+   "name": "a Google API key followed by an underscore stays",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "_"
+   ],
+   "expected": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "_"
+   ]
+  },
+  {
+   "name": "an address with a space after the scheme stays",
+   "text": [
+    "see :// a:b@example.com"
+   ],
+   "expected": [
+    "see :// a:b@example.com"
+   ]
+  },
+  {
+   "name": "an address whose path holds a colon and an at sign stays",
+   "text": [
+    "https://example.com/a:b@c"
+   ],
+   "expected": [
+    "https://example.com/a:b@c"
+   ]
+  },
+  {
+   "name": "an address's password holding an at sign goes whole, up to the last one before the host",
+   "text": [
+    "ftp://alex:",
+    "hunter2",
+    "@a",
+    "@example.com"
+   ],
+   "expected": [
+    "ftp://alex:",
+    "{redacted}",
+    "@example.com"
+   ]
+  },
+  {
+   "name": "a value given to a secret's name goes: private-key=",
+   "text": [
+    "private-key=",
+    "hunter22x"
+   ],
+   "expected": [
+    "private-key=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to a quoted name in apostrophes goes",
+   "text": [
+    "'api_key': '",
+    "abc123def456",
+    "'"
+   ],
+   "expected": [
+    "'api_key': '",
+    "{redacted}",
+    "'"
+   ]
+  },
+  {
+   "name": "a digit straight after a closing quote does not make a named value",
+   "text": [
+    "password=\"letmein\"2x"
+   ],
+   "expected": [
+    "password=\"letmein\"2x"
+   ]
+  },
+  {
+   "name": "a digit straight after a closing apostrophe does not make a named value",
+   "text": [
+    "password='letmein'2x"
+   ],
+   "expected": [
+    "password='letmein'2x"
+   ]
+  },
+  {
+   "name": "a private-key block whose kind is 40 characters goes",
+   "text": [
+    "-----BEGIN ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 1234 ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 1234 ",
+    "PRIVATE KEY",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key header whose kind is 41 characters is none",
+   "text": [
+    "-----BEGIN ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "-----BEGIN ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ]
+  },
+  {
+   "name": "a private-key block with 40 characters after its name goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEF",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEF",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key header with 41 characters after its name is none",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8"
+   ]
+  },
+  {
+   "name": "a private-key footer whose kind is 41 characters stays after the key",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "-----END ",
+    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
+    "PRIVATE KEY",
+    "-----"
+   ]
+  },
+  {
+   "name": "a private-key footer with 41 characters after its name stays after the key",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY",
+    "-----\n",
+    "a1B2c3D4e5F6g7H8",
+    "\n-----END ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "-----END ",
+    "PRIVATE KEY",
+    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
+    "-----"
+   ]
+  },
+  {
+   "name": "the word Bearer and its token two spaces apart",
+   "text": [
+    "Bearer  ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "Bearer  ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word Bearer and its token on two lines ended by a carriage return",
+   "text": [
+    "Authorization: Bearer\r\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "Authorization: Bearer\r\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word Bearer run into what follows is no bearer token",
+   "text": [
+    "Bearerabcdefghijklmnopqrstuvwx"
+   ],
+   "expected": [
+    "Bearerabcdefghijklmnopqrstuvwx"
+   ]
+  },
+  {
+   "name": "a key inside a named value: the value goes whole, the earlier redactor first",
+   "text": [
+    "password=",
+    "hunter/",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "password=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token that is a JSON web token is replaced once",
+   "text": [
+    "Bearer ",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an address's password with no user name",
+   "text": [
+    "redis://:",
+    "hunter2x",
+    "@example.com:6379"
+   ],
+   "expected": [
+    "redis://:",
+    "{redacted}",
+    "@example.com:6379"
+   ]
+  },
+  {
+   "name": "an address with a user name and an empty password stays",
+   "text": [
+    "ftp://alex:@example.com"
+   ],
+   "expected": [
+    "ftp://alex:@example.com"
+   ]
+  },
+  {
+   "name": "an address without its colon after the scheme stays",
+   "text": [
+    "see http//alex:",
+    "hunter2",
+    "@example.com"
+   ],
+   "expected": [
+    "see http//alex:",
+    "hunter2",
+    "@example.com"
+   ]
+  },
+  {
+   "name": "a value given to SECRET_KEY",
+   "text": [
+    "SECRET_KEY=",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "SECRET_KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to secret-key",
+   "text": [
+    "secret-key: ",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "secret-key: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to secretkey",
+   "text": [
+    "secretkey = ",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "secretkey = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a name and its value several spaces apart",
+   "text": [
+    "password   :   ",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "password   :   ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key ends before :",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "an API key ends before ;",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ";next"
+   ],
+   "expected": [
+    "{redacted}",
+    ";next"
+   ]
+  },
+  {
+   "name": "an API key ends before @",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "@next"
+   ],
+   "expected": [
+    "{redacted}",
+    "@next"
+   ]
+  },
+  {
+   "name": "an API key ends before ^",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "^next"
+   ],
+   "expected": [
+    "{redacted}",
+    "^next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before :",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before ;",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ";next"
+   ],
+   "expected": [
+    "{redacted}",
+    ";next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before @",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "@next"
+   ],
+   "expected": [
+    "{redacted}",
+    "@next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before ^",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "^next"
+   ],
+   "expected": [
+    "{redacted}",
+    "^next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before :",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before ;",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ";next"
+   ],
+   "expected": [
+    "{redacted}",
+    ";next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before @",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "@next"
+   ],
+   "expected": [
+    "{redacted}",
+    "@next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before ^",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "^next"
+   ],
+   "expected": [
+    "{redacted}",
+    "^next"
+   ]
+  },
+  {
+   "name": "a JSON web token ends before a colon",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a JSON web token whose first part holds a colon is none",
+   "text": [
+    "ey",
+    "J",
+    "a1:B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1:B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "two parts joined by a colon are no JSON web token",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ":",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ":",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token whose third part is joined by a colon is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ":",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ":",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token with an empty first part is none",
+   "text": [
+    "ey",
+    "J",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token with an empty second part is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token with an empty third part is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    "."
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    "."
+   ]
+  },
+  {
+   "name": "a JSON web token whose first part starts otherwise is none",
+   "text": [
+    "ey",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token whose second part starts otherwise is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "an AWS access key id ends before a colon",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a Google API key ends before a colon",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a private-key header with nothing after it goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key block with nothing between header and footer goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token holding . past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2.m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding _ past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding ~ past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2~m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding + past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2+m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding / past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2/m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding = past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2=m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding - past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a long named value ends at a space",
+   "text": [
+    "token=",
+    "abc123def456",
+    " next"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a long named value ends at a quote",
+   "text": [
+    "token=\"",
+    "abc123def456",
+    "\" next"
+   ],
+   "expected": [
+    "token=\"",
+    "{redacted}",
+    "\" next"
+   ]
+  },
+  {
+   "name": "a long named value ends at an apostrophe",
+   "text": [
+    "token='",
+    "abc123def456",
+    "' next"
+   ],
+   "expected": [
+    "token='",
+    "{redacted}",
+    "' next"
+   ]
+  },
+  {
+   "name": "an API key holding _ past its sixteenth character goes whole",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "an API key holding - past its sixteenth character goes whole",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token holding _ past its sixteenth character goes whole",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitLab token holding _ past its sixteenth character goes whole",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitLab token holding - past its sixteenth character goes whole",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a short named value before a space stays",
+   "text": [
+    "token=",
+    "ab1",
+    " cdefgh"
+   ],
+   "expected": [
+    "token=",
+    "ab1",
+    " cdefgh"
+   ]
+  },
+  {
+   "name": "a short named value before a quote stays",
+   "text": [
+    "token=",
+    "ab1",
+    "\"cdefgh"
+   ],
+   "expected": [
+    "token=",
+    "ab1",
+    "\"cdefgh"
+   ]
+  },
+  {
+   "name": "a short named value before an apostrophe stays",
+   "text": [
+    "token=",
+    "ab1",
+    "'cdefgh"
+   ],
+   "expected": [
+    "token=",
+    "ab1",
+    "'cdefgh"
+   ]
+  },
+  {
+   "name": "an address's password ends before the path",
+   "text": [
+    "ftp://alex:",
+    "hunter2",
+    "@example.com/a@b"
+   ],
+   "expected": [
+    "ftp://alex:",
+    "{redacted}",
+    "@example.com/a@b"
+   ]
+  },
+  {
+   "name": "an address's password ends before a space",
+   "text": [
+    "ftp://alex:",
+    "hunter2",
+    "@example.com",
+    " me@example.org"
+   ],
+   "expected": [
+    "ftp://alex:",
+    "{redacted}",
+    "@example.com",
+    " me@example.org"
+   ]
+  },
+  {
+   "name": "two addresses on a line each lose their password",
+   "text": [
+    "a://u:",
+    "pw1",
+    "@h.example b://v:",
+    "pw2",
+    "@i.example"
+   ],
+   "expected": [
+    "a://u:",
+    "{redacted}",
+    "@h.example b://v:",
+    "{redacted}",
+    "@i.example"
+   ]
+  },
+  {
+   "name": "a named value after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6q7R8s9T0",
+    "\n",
+    "API token: ",
+    "abc123",
+    "def456"
+   ],
+   "expected": [
+    "{redacted}",
+    ": ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6q7R8s9T0",
+    "\n",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6q7R8s9T0",
+    "\n",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6q7R8s9T0",
+    "\n",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Hugging Face token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "h",
+    "f_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an npm token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "np",
+    "m_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitLab token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a webhook secret after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "wh",
+    "sec_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a payment key after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token after a key block cut off is still redacted",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\n",
+    "m3N4o5P6",
+    "\n",
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, as a JSON file holds it",
+   "text": [
+    "\"private_key\": \"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "i9J0k1L2m3N4o5P6",
+    "\\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "\","
+   ],
+   "expected": [
+    "\"private_key\": \"",
+    "{redacted}",
+    "\\n",
+    "\","
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, in a quoted value",
+   "text": [
+    "PRIVATE_KEY=\"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "i9J0k1L2m3N4o5P6",
+    "\\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\""
+   ],
+   "expected": [
+    "PRIVATE_KEY=\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, cut off",
+   "text": [
+    "\"private_key\": \"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "i9J0k1L2m3N4o5P6"
+   ],
+   "expected": [
+    "\"private_key\": \"",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, under no name",
+   "text": [
+    "key ",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    " end"
+   ],
+   "expected": [
+    "key ",
+    "{redacted}",
+    " end"
+   ]
+  }
+ ],
+ "lineCases": [
+  {
+   "name": "a key's lines, a text each: the first holds what replaces it, the others are empty",
+   "lines": [
+    [
+     [
+      "Your key:"
+     ]
+    ],
+    [
+     [
+      "-----BEGIN ",
+      "PRIVATE KEY-----"
+     ]
+    ],
+    [
+     [
+      "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6"
+     ]
+    ],
+    [
+     [
+      "q7R8s9T0u1V2w3X4y5Z6a7B8c9D0e1F2"
+     ]
+    ],
+    [
+     [
+      "-----END ",
+      "PRIVATE KEY-----"
+     ]
+    ],
+    [
+     [
+      "Done"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "Your key:"
+     ]
+    ],
+    [
+     [
+      "{redacted}"
+     ]
+    ],
+    [
+     []
+    ],
+    [
+     []
+    ],
+    [
+     []
+    ],
+    [
+     [
+      "Done"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "the word Bearer in one text and its token in the next: the token is replaced where it was",
+   "lines": [
+    [
+     [
+      "Authorization: Bearer"
+     ]
+    ],
+    [
+     [
+      "a1B2c3D4e5F6g7H8i9J0k1L2"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "Authorization: Bearer"
+     ]
+    ],
+    [
+     [
+      "{redacted}"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a name in one text and its value in the next",
+   "lines": [
+    [
+     [
+      "password:"
+     ]
+    ],
+    [
+     [
+      "hunter",
+      "22x"
+     ]
+    ],
+    [
+     [
+      "next"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "password:"
+     ]
+    ],
+    [
+     [
+      "{redacted}"
+     ]
+    ],
+    [
+     [
+      "next"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "the caret inside a key: the text before it holds what replaces the key",
+   "lines": [
+    [
+     [
+      "export KEY=",
+      "sk",
+      "-",
+      "a1B2c3"
+     ],
+     [],
+     [
+      "D4e5F6g7H8i9J0k1L2",
+      " next"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "export KEY=",
+      "{redacted}"
+     ],
+     [],
+     [
+      " next"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a selection inside a key comes back empty",
+   "lines": [
+    [
+     [
+      "sk",
+      "-",
+      "a1B2"
+     ],
+     [
+      "c3D4e5F6"
+     ],
+     [
+      "g7H8i9J0k1L2"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "{redacted}"
+     ],
+     [],
+     []
+    ]
+   ]
+  },
+  {
+   "name": "a selection that is an address's password",
+   "lines": [
+    [
+     [
+      "ftp://alex:"
+     ],
+     [
+      "hunter2"
+     ],
+     [
+      "@example.com/x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "ftp://alex:"
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      "@example.com/x"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a selection that starts inside an address's password",
+   "lines": [
+    [
+     [
+      "ftp://alex:",
+      "hun"
+     ],
+     [
+      "ter2"
+     ],
+     [
+      "@example.com"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "ftp://alex:",
+      "{redacted}"
+     ],
+     [],
+     [
+      "@example.com"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a selection that ends inside an address's password",
+   "lines": [
+    [
+     [
+      "ftp://al"
+     ],
+     [
+      "ex:",
+      "hun"
+     ],
+     [
+      "ter2",
+      "@example.com"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "ftp://al"
+     ],
+     [
+      "ex:",
+      "{redacted}"
+     ],
+     [
+      "@example.com"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "the character before a key stays in the text that held it",
+   "lines": [
+    [
+     [
+      "key "
+     ],
+     [
+      "sk",
+      "-",
+      "a1B2c3D4e5F6g7H8i9J0k1L2"
+     ],
+     [
+      " end"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "key "
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      " end"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "several secrets: each text keeps its own, and the texts after them are whole",
+   "lines": [
+    [
+     [
+      "a ",
+      "sk",
+      "-",
+      "a1B2c3D4e5F6g7H8i9J0k1L2",
+      " b"
+     ]
+    ],
+    [
+     [
+      "c ",
+      "sk",
+      "-",
+      "a1B2c3D4e5F6g7H8i9J0k1L2"
+     ]
+    ],
+    [
+     [
+      "d"
+     ],
+     [
+      "e"
+     ]
+    ],
+    [
+     [
+      "f"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "a ",
+      "{redacted}",
+      " b"
+     ]
+    ],
+    [
+     [
+      "c ",
+      "{redacted}"
+     ]
+    ],
+    [
+     [
+      "d"
+     ],
+     [
+      "e"
+     ]
+    ],
+    [
+     [
+      "f"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "characters outside the basic plane before a secret",
+   "lines": [
+    [
+     [
+      "🙂🙂"
+     ]
+    ],
+    [
+     [
+      "🙂 ",
+      "sk",
+      "-",
+      "a1B2c3D4e5F6g7H8i9J0k1L2",
+      " 🙂"
+     ]
+    ],
+    [
+     [
+      "🙂"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "🙂🙂"
+     ]
+    ],
+    [
+     [
+      "🙂 ",
+      "{redacted}",
+      " 🙂"
+     ]
+    ],
+    [
+     [
+      "🙂"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "nothing secret: every text as it was, the empty ones too",
+   "lines": [
+    [
+     [
+      "a"
+     ],
+     []
+    ],
+    [
+     []
+    ],
+    [
+     [
+      "b c"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "a"
+     ],
+     []
+    ],
+    [
+     []
+    ],
+    [
+     [
+      "b c"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a key with the caret after its first line",
+   "lines": [
+    [
+     [
+      "-----BEGIN ",
+      "PRIVATE KEY-----",
+      "\n",
+      "a1B2c3D4"
+     ],
+     [],
+     [
+      "e5F6g7H8",
+      "\n",
+      "-----END ",
+      "PRIVATE KEY-----",
+      "\nnext"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "{redacted}"
+     ],
+     [],
+     [
+      "\nnext"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a text that ends where an address's password does keeps the sign after it",
+   "lines": [
+    [
+     [
+      "db://u:",
+      "hunter2",
+      "@"
+     ],
+     [
+      "host/x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "db://u:",
+      "{redacted}",
+      "@"
+     ],
+     [
+      "host/x"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "lines are joined by a line break, not a space: a key's header in two texts is none",
+   "lines": [
+    [
+     [
+      "-----BEGIN"
+     ]
+    ],
+    [
+     [
+      "PRIVATE ",
+      "KEY-----"
+     ]
+    ],
+    [
+     [
+      "a1B2c3D4e5F6g7H8"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "-----BEGIN"
+     ]
+    ],
+    [
+     [
+      "PRIVATE ",
+      "KEY-----"
+     ]
+    ],
+    [
+     [
+      "a1B2c3D4e5F6g7H8"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a named value in the text after a key block cut off is still redacted",
+   "lines": [
+    [
+     [
+      "-----BEGIN ",
+      "PRIVATE KEY-----",
+      "\n",
+      "m3N4o5P6q7R8s9T0"
+     ]
+    ],
+    [
+     [
+      "API token: ",
+      "abc123",
+      "def456"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "{redacted}"
+     ]
+    ],
+    [
+     [
+      ": ",
+      "{redacted}"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "an API key in the text after a key block cut off is still redacted",
+   "lines": [
+    [
+     [
+      "-----BEGIN ",
+      "PRIVATE KEY-----",
+      "\n",
+      "m3N4o5P6q7R8s9T0"
+     ]
+    ],
+    [
+     [
+      "sk",
+      "-",
+      "a1B2c3D4e5F6g7H8i9J0k1L2"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "{redacted}"
+     ]
+    ],
+    [
+     [
+      "{redacted}"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a GitHub token in the text after a key block cut off is still redacted",
+   "lines": [
+    [
+     [
+      "-----BEGIN ",
+      "PRIVATE KEY-----",
+      "\n",
+      "m3N4o5P6q7R8s9T0"
+     ]
+    ],
+    [
+     [
+      "gh",
+      "p_",
+      "a1B2c3D4e5F6g7H8i9J0k1L2"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "{redacted}"
+     ]
+    ],
+    [
+     [
+      "{redacted}"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "a JSON web token in the text after a key block cut off is still redacted",
+   "lines": [
+    [
+     [
+      "-----BEGIN ",
+      "PRIVATE KEY-----",
+      "\n",
+      "m3N4o5P6q7R8s9T0"
+     ]
+    ],
+    [
+     [
+      "ey",
+      "J",
+      "a1B2c3D4e5F6",
+      ".",
+      "ey",
+      "J",
+      "a1B2c3D4e5F6g7H8",
+      ".",
+      "a1B2c3D4e5F6g7H8i9J0"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "{redacted}"
+     ]
+    ],
+    [
+     [
+      "{redacted}"
+     ]
+    ]
+   ]
+  }
+ ]
+}

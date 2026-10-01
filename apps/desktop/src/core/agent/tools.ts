@@ -31,13 +31,16 @@ export function isAgentToolID(name: unknown): name is AgentToolID {
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
-export type AgentErrorKind = "noTool" | "noText" | "noToolEnabled";
+export type AgentErrorKind = "noTool" | "noText" | "noToolEnabled" | "secretInSelection";
 
 const failureMessages: Record<AgentErrorKind, string> = {
   noTool: "Couldn't work out what to do. Try again.",
   noText: "Couldn't write that. Try again.",
   /** Every tool this request could use is switched off in Settings. */
   noToolEnabled: "Turn on an agent tool in Settings.",
+  /** The selection reached the app with secret-looking text taken out (ADR-DESK-046): a rewrite of
+   * it, pasted over the selection, would put the placeholder where the secret was. */
+  secretInSelection: "The selection holds what looks like a password or key, so it wasn't rewritten.",
 };
 
 export class AgentError extends Error {

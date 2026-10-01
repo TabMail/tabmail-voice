@@ -16,6 +16,7 @@ export function screen(fields: Partial<ScreenContext> = {}): ScreenContext {
     focusedRole: null,
     textBeforeCaret: "",
     selectedText: "",
+    selectionRedacted: false,
     textAfterCaret: "",
     renderedText: "",
     summary: "",

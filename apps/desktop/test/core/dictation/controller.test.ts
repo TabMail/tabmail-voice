@@ -1189,6 +1189,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
+    /** A selection that holds a secret reaches the app redacted (ADR-DESK-046). Edit's rewrite of it
+     * would replace the user's text, secret included, with the placeholder: nothing is written or
+     * pasted, and the overlay says why. */
+    test("agent mode doesn't rewrite a selection the helper redacted", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("edit"));
+      completions.enqueue(200, reply("connect with postgres://app:[redacted]@db.example.com, please"));
+
+      const { controller, pastes } = await carryOut({ ...selectionScreen("connect with postgres://app:[redacted]@db.example.com"), selectionRedacted: true }, new FakeThunderbird());
+
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(failed(new AgentError("secretInSelection").message));
+      expect(completions.requests).toHaveLength(1);
+    });
+
     /** Whatever goes wrong, agent mode pastes nothing: the spoken request is not text for the document. */
     test.each<[[number, string][], string]>([
       [[[200, "rewrite"]], new AgentError("noTool").message],

@@ -73,6 +73,8 @@ export const DesktopAgent = {
     userID: string | null,
     signal?: AbortSignal,
   ): Promise<string> {
+    // The selection as read is not the user's text: nothing is asked for, and nothing replaces it.
+    if (tool === "edit" && context?.selectionRedacted === true) throw new AgentError("secretInSelection");
     const text = await complete(DesktopAgent.toolMessage(tool, request, context, conversation, userName), client, account, userID, signal);
     if (text === "") throw new AgentError("noText");
     const written = agentTools[tool].fitted(text, context);

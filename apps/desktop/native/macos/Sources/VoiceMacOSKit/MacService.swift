@@ -12,11 +12,13 @@ import VoiceHelperSupport
 /// - `frontmostApp` → `{pid, name, bundleIdentifier, path}` or null.
 /// - `readScreen {excludedBundleIdentifiers}` → the screen context of the app in front
 ///   (`ScreenContext.json`); null without one, or when it is an app the user excludes from screen
-///   reading (`Apps.isExcluded`), which is not read.
+///   reading (`Apps.isExcluded`), which is not read. Secret-looking text is taken out of it
+///   before it is sent (`Redactor`), and `selectionRedacted` says whether any was in the selection.
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
 /// - `focusedFieldValue {pid, maxLength, excludedBundleIdentifiers}` → `{value}`: the text of the
 ///   app's focused field, null for none, a password field, one longer than `maxLength` UTF-16 code
-///   units (`FocusedField`), or an app the user excludes from screen reading, which is not read.
+///   units (`FocusedField`), or an app the user excludes from screen reading, which is not read. Secret-looking text
+///   is taken out of it (`Redactor`).
 /// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
 ///   clipboard after `restoreDelay` seconds.
 /// - `keyboardLanguage` → `{code}`: the active keyboard input source's language, or null.
@@ -105,7 +107,7 @@ public enum MacService {
                 return .null
             }
             // Blocking Accessibility calls: off the main thread, where the activator's notifications run.
-            return await Task.detached { screen.read(pid, name, bundleID) }.value
+            return await Task.detached { screen.read(pid, name, bundleID).json }.value
         }
         channel.on("caretAnchor") { params in
             guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else { throw HelperError("caretAnchor needs pid") }
@@ -126,7 +128,7 @@ public enum MacService {
                 HelperLog.debug("FocusedField: the app is excluded from screen reading; not read")
                 return ["value": .null]
             }
-            return await Task.detached { ["value": screen.focusedField(pid, maxLength).map(JSON.string) ?? .null] }.value
+            return await Task.detached { ["value": screen.focusedField(pid, maxLength).map { .string(Redactor.redact($0)) } ?? .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,
@@ -306,22 +308,28 @@ struct ScreenAccess: Sendable {
     var frontmost: @MainActor @Sendable () -> (pid_t, String, String?)?
     /// The bundle identifier of the app `pid`.
     var bundleIdentifier: @Sendable (pid_t) -> String?
-    /// The screen context of the app (`ScreenContext.json`).
-    var read: @Sendable (pid_t, String, String?) -> JSON
+    /// The screen context of the app, as read.
+    var read: @Sendable (pid_t, String, String?) -> ScreenContext
     /// The text of the app's focused field, up to a length (`FocusedField`).
     var focusedField: @Sendable (pid_t, Int) -> String?
 
     static let accessibility = ScreenAccess(
         frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
         bundleIdentifier: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
-        read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2).json },
+        read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2) },
         focusedField: { FocusedField.value(inApp: $0, maxLength: $1) }
     )
 }
 
 extension ScreenContext {
-    /// What the app receives: the fields, and the text already rendered for the prompts and the logs.
+    /// What the app receives: the fields, and the text already rendered for the prompts and the logs,
+    /// all of it with secret-looking text taken out (`redacted`: ADR-DESK-046).
     var json: JSON {
+        let context = redacted
+        return context.json(selectionRedacted: context.selectedText != selectedText)
+    }
+
+    private func json(selectionRedacted: Bool) -> JSON {
         func optional(_ value: String?) -> JSON { value.map(JSON.string) ?? .null }
         return [
             "appName": .string(appName),
@@ -332,6 +340,9 @@ extension ScreenContext {
             "focusedRole": optional(focusedRole),
             "textBeforeCaret": .string(textBeforeCaret),
             "selectedText": .string(selectedText),
+            // The selection as sent is not the user's text: the app must not paste a rewrite of it
+            // over the real one.
+            "selectionRedacted": .bool(selectionRedacted),
             "textAfterCaret": .string(textAfterCaret),
             "renderedText": .string(renderedText()),
             "summary": .string(summary),

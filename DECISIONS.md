@@ -2386,3 +2386,104 @@ Apps are known by bundle identifier, compared without regard to case.
 - The Thunderbird relay's `focusedElement` (the email app's focused role and window title) is not
   gated by the list: it reads only the email app, and its tool is off (ADR-DESK-037).
 - Windows and Linux get the list with their helpers' screen read.
+
+## ADR-DESK-046: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
+
+**Context:** The screen read skips password fields (ADR-DESK-007, amended 2026-09-30) and excluded
+apps (ADR-DESK-045), but a secret shown as plain text is read like any other text and sent with the
+dictation: an API key printed in a terminal, a token on a dashboard, a private key open in an
+editor. Owner, 2026-09-30 and 10-01: the context should not capture secrets; simple heuristics are
+good enough (#78); it belongs in the helper, which is small and ours, so that a secret never reaches
+the Electron process; and the three platforms' helpers must share the same logic, with a
+well-structured place for the redactors.
+
+**Decision:**
+- What looks like a secret is defined once, in `native/shared/privacy/redactors.json`: an ordered
+  list of redactors, each a name, a regex, a case flag and a replacement. They cover private-key
+  blocks (whole, or cut off where the window ends), JSON web tokens, `Bearer` tokens, the password in
+  an address (`scheme://user:password@host`, with a user name or not; the password runs to the last `@` before the path, since a password may hold one), a value given to a name like `password`, `token`,
+  `secret` or `api_key` (when it has a digit and at least 6 characters), and keys with a provider's
+  prefix (`sk-`, `sk_live_`, `whsec_`, `ghp_`, `github_pat_`, `glpat-`, `AKIA`, `AIza`, `xoxb-`,
+  `npm_`, `hf_`). A match becomes `[redacted]`; the name, the word `Bearer` and the rest of an
+  address stay, so the text still reads.
+- Each helper's list is generated from that file (`scripts/gen-redactors.mts`,
+  `npm run gen:redactors`, run with the registries before every build, typecheck and test), as the
+  connectors' registry is (ADR-DESK-044): macOS gets `Privacy/Redactors.generated.swift`, and a
+  platform's helper adds its emitter there. No helper copies a pattern by hand. The generator
+  refuses regex syntax ICU, ECMAScript and PCRE don't read alike (lookbehind, named groups, Unicode
+  classes, inline flags, possessive and atomic groups, backreferences, and `\b`, `\w` and `\d`), and
+  a replacement naming a group its pattern lacks.
+- No pattern uses a word boundary. ICU counts every script's letters as word characters and
+  ECMAScript only ASCII's, so a key written straight after a Japanese, Korean or accented word was
+  kept by the Mac helper and redacted by the same pattern in JavaScript. Where a key must not start
+  inside a word, the pattern takes the character before it (`(^|[^A-Za-z0-9_])`) and the replacement
+  puts it back; where it must not run on, a lookahead says so.
+- Every pattern takes time in proportion to the text. Screen text has no length limit, may be
+  anyone's (a web page, a message), and is redacted with no deadline, so a repeat scanned again from
+  every position is refused in review: it is bounded, or the pattern begins where a run begins (a
+  key block's kind, before and after `PRIVATE KEY`, is at most 40 characters). Both suites time
+  each pattern on hostile text.
+- No run stops a redactor short. ICU runs an open-ended count (`{16,}`) and a repeated `\s` outside
+  a class with a stack frame per repetition, and on a run of some 200,000 characters gave up,
+  silently matching nothing after it: every later secret of that read was sent. The patterns use
+  the forms it runs as one loop (`[..]{16}[..]*`, `[\s]*`), the generator refuses the others, and
+  `Redactor.redact` asks the engine whether it finished: a redactor that did not withholds
+  everything after its last match (`[redacted]` in its place).
+- `native/shared/privacy/redaction-cases.json` is what every helper must do with them: each case's
+  text and what it becomes. Every helper runs the cases in its own suite, on its own regex engine;
+  that is what shows the helpers agree. The texts are split into fragments, so the file holds
+  nothing shaped like a real key.
+- `voice-macos` redacts every text of the screen read as it replies (`ScreenContext.json`, the one
+  way a read leaves the helper; `ScreenContext.redacted`): the window's title, the visible blocks,
+  and the text before, in and after the selection. The rendered text and the log description are
+  built from the redacted blocks. The focused field's value for correction learning is redacted too.
+- The texts of a read are redacted together, not one by one (`Redactor.redact` of several lines):
+  as the one text they make, a line break between the blocks, and nothing between the three texts
+  around the caret. A secret spread over several elements (a key's lines, one each; `Bearer` and its
+  token) or one the caret or the selection is inside only shows once they are joined. Each text then
+  keeps its share of the result: what replaces a secret goes to the text the secret began in, what
+  the replacement keeps of the match's start and end stays where it was, and a text wholly inside a
+  secret comes back empty (such a block is dropped; a selection left empty or blank becomes
+  `[redacted]`, so it is still a selection, and Edit refuses it). The blocks are redacted before they are rendered, because the marks the rendering
+  puts before a field's, a row's and the focused field's lines would break a key of several lines.
+  The rule is the helpers' to share like the patterns: its cases are `lineCases` in
+  `redaction-cases.json`, which every helper's suite runs.
+- The reply says when the selection had a secret taken out (`selectionRedacted`). Agent mode's Edit
+  then refuses (`AgentError.secretInSelection`), asking the backend nothing: its rewrite of the
+  redacted selection, pasted over the real one, would put `[redacted]` where the secret was. The
+  other tools still get the redacted selection. The helper's screen-privacy code lives in
+  `Sources/VoiceMacOSKit/Privacy/`.
+- Always on; not a setting, like the password-field skip.
+
+**Consequences:**
+- A safety net, not a guarantee: a secret in a shape the patterns don't know (a bare random string, a
+  password with no name beside it) is still read. Long random strings are not matched by entropy,
+  which would also take out hashes and identifiers.
+- A password without a digit after a name (`Password: correcthorse`) stays, so that a form's
+  `Password: required` does.
+- A secret cut by the edge of what is read (the focused field's text is read 2,000 characters each
+  side of the caret; a terminal's from its first visible line) is only found when the part read
+  still has its shape: a private key's header and what follows are, its last lines alone are not.
+- A selection holding a secret can't be rewritten by voice (Edit refuses, saying why); a plain
+  dictation over it replaces it as always.
+- Texts that sit side by side on screen are still joined by a line break here, so a name and its
+  value in two elements are found together, and so are two elements that only look like one (a
+  label ending in `token:` above an unrelated word with a digit).
+- A private key written on one line with its line breaks escaped (`\n` as two characters, as a JSON
+  file or a quoted value holds it) is taken whole: the key's body may hold a backslash. One with
+  header lines after its first (an encrypted PEM key, a PGP key with a `Version:` line) keeps its
+  body, whatever name is beside it; a key header with nothing
+  after it takes the letters that follow, up to the first punctuation. The key block's redactor is
+  the last in the list for that reason: first, it took a later secret's name or prefix with those
+  letters, and that secret's own redactor no longer knew it.
+- What a replacement keeps of its match is told by comparing the two texts. A secret that itself
+  ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
+  last character in the second text. Nothing of the secret is kept.
+- Edit's refusal asks the backend for no rewrite. When several tools are offered, the pick of the
+  tool has already been asked, with the redacted screen.
+- A correction of a word into something secret-looking is not learned: the field is redacted before
+  the core compares it. When the heard word is close to the placeholder's own (`rejected`), the
+  word `redacted` is learned in its place.
+- A table row is one text, its cells joined by ` | `: a name in one cell and its value in the next
+  stay, as a label with no `=` or `:` above its value does.
+- The Windows and Linux helpers redact once they add their emitter and run the shared cases.

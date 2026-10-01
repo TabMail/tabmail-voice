@@ -23,7 +23,7 @@ struct ScreenExclusionTests {
     /// The replies to `requests`, with `frontmost` in front and `apps` running (pid to bundle identifier).
     private func replies(
         to requests: [String], frontmost: (pid_t, String, String?)? = (7, "Example Vault", "org.example.vault"),
-        apps: [pid_t: String] = [7: "org.example.vault", 8: "org.example.notes"]
+        apps: [pid_t: String] = [7: "org.example.vault", 8: "org.example.notes"], shown: String = "field text"
     ) async throws -> (replies: [[String: Any]], reads: Reads) {
         let reads = Reads()
         let screen = ScreenAccess(
@@ -31,11 +31,13 @@ struct ScreenExclusionTests {
             bundleIdentifier: { apps[$0] },
             read: { pid, name, bundleID in
                 reads.screens.withLock { $0.append("\(pid) \(name) \(bundleID ?? "-")") }
-                return ["appName": .string(name)]
+                var context = ScreenContext(appName: name, bundleID: bundleID)
+                context.append(.text, shown)
+                return context
             },
             focusedField: { pid, _ in
                 reads.fields.withLock { $0.append(pid) }
-                return "field text"
+                return shown
             }
         )
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
@@ -135,5 +137,23 @@ struct ScreenExclusionTests {
         #expect((finder?["name"] as? String)?.hasPrefix("Finder") == true)
         #expect(replies[1]["result"] is NSNull)
         #expect(replies[2]["error"] != nil)
+    }
+
+    /// What the helper sends of an app that is read has secret-looking text taken out (ADR-DESK-046):
+    /// the screen read and the focused field alike.
+    @Test func secretLookingTextNeverLeavesTheHelper() async throws {
+        let secret = "sk" + "-" + "a1B2c3D4e5F6g7H8i9J0k1L2"
+        let (replies, reads) = try await replies(to: [
+            #"{"id":1,"method":"readScreen","params":{"excludedBundleIdentifiers":[]}}"#,
+            #"{"id":2,"method":"focusedFieldValue","params":{"pid":8,"maxLength":100,"excludedBundleIdentifiers":[]}}"#,
+        ], shown: "export KEY=\(secret) # build")
+        #expect(replies.count == 2)
+        guard replies.count == 2 else { return }
+        #expect(reads.screens.withLock { $0 }.count == 1)
+        #expect(reads.fields.withLock { $0 } == [8])
+        let screen = try #require(replies[0]["result"] as? [String: Any])
+        #expect(screen["renderedText"] as? String == "export KEY=[redacted] # build")
+        #expect((screen["logDescription"] as? String)?.contains(secret) == false)
+        #expect((replies[1]["result"] as? [String: Any])?["value"] as? String == "export KEY=[redacted] # build")
     }
 }
