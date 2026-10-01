@@ -180,6 +180,33 @@ crash inside that single write could shorten it. Only the default profile's `Cod
 is read: VS Code profiles (`User/profiles/<id>/`), language-specific and workspace settings, VS Code
 Insiders and other VS Code-based editors are not checked yet.
 
+**Amendment 2026-09-30 — asked every time the app comes to the front, retried while it doesn't
+answer.** Owner: in an Electron chat app the pill opened at the mouse pointer. The debug log showed
+`AccessibilityActivator` asking the freshly launched app, which didn't answer within
+`accessibilityActivationTimeout` (`kAXErrorCannotComplete`, -25204), then lookups in it with no
+focused element: its tree was never built. The activator remembered the process as asked before
+sending, so it never asked again and the caret stayed lost until the app restarted. An app can also
+turn a built tree off again: Electron resets the mode `AXManualAccessibility` turned on once
+VoiceOver goes off (`voiceOverStateChanged:`), and Chromium turns accessibility off for a page hidden
+for a while. macOS has no system-wide switch a third-party app can
+set to say an assistive app is running (Windows has `SPI_SETSCREENREADER`); VoiceOver's own state is
+the only global signal, and it is read-only.
+
+Now nothing is remembered between activations: each such app is asked every time it comes to the
+front (asking an app whose tree is on changes nothing but Electron's `accessibility-support-changed`
+event, sent again unchanged; Electron builds the tree about 2 s after the last request). An app that doesn't answer in time is asked
+again every `accessibilityActivationRetryDelay`, up to `accessibilityActivationAttempts` requests,
+while it stays in front; another app coming to the front stops that. Any other answer counts,
+Gecko's "unsupported" included. Asking at key-down was tried and rejected: the lookup runs at once
+and the pill shows at `minimumHoldDuration` (250 ms), while the tree comes a second or two after the
+request, so it could only help the next dictation. A timer asking the app in front every few seconds was
+rejected by the owner as needless background work.
+
+Consequences: a tree an app turns off while it stays in front comes back the next time the app comes
+to the front (switching away and back is the user's way to restart the asking); dictations until then
+open at the pointer. An app that never answers within the attempts is left until it next comes to the
+front.
+
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
 **Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the
