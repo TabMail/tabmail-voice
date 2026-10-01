@@ -142,6 +142,7 @@ describe("AppSettings", () => {
     app.addWord("Xyvora");
     app.learnsWords = false;
     app.excludeApp({ bundleIdentifier: "org.example.bank", name: "Example Bank" });
+    app.excludeSite("example.com");
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -149,6 +150,7 @@ describe("AppSettings", () => {
       backendURL: config.productionBackendURL,
       readsScreen: true,
       excludedApps: config.builtInExcludedApps.map((excluded) => excluded.bundleIdentifier),
+      excludedSites: [...config.builtInExcludedSites],
       enabledTools: [...offeredAgentToolIDs],
       enabledConnectors: [...connectorIDs],
       emailClient: null,
@@ -159,6 +161,82 @@ describe("AppSettings", () => {
     });
     expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
+    expect(app.dictation(null).excludedSites).toContain("example.com");
+  });
+});
+
+/** The websites the screen is never read on (ADR-DESK-047): the built-in web vaults in every
+ * installation, and the sites the user adds in Settings › Privacy. */
+describe("websites excluded from screen reading", () => {
+  const builtIn = [...config.builtInExcludedSites];
+
+  test("the web vaults are excluded from the start, and the user's list is empty", () => {
+    const app = settings();
+    expect(app.excludedSites).toEqual([]);
+    expect(app.dictation(null).excludedSites).toEqual(builtIn);
+  });
+
+  test("sites the user adds are kept by host, in order, across a relaunch, and a dictation excludes them too", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    let changes = 0;
+    app.observe(() => {
+      changes += 1;
+    });
+    expect(app.excludeSite("https://Mail.Example.com/inbox")).toBe("added");
+    expect(app.excludeSite("example.org")).toBe("added");
+    expect(changes).toBe(2);
+    expect(store.get("excludedSites")).toEqual(["mail.example.com", "example.org"]);
+
+    const relaunched = settings(store);
+    expect(relaunched.excludedSites).toEqual(["mail.example.com", "example.org"]);
+    expect(relaunched.dictation(null).excludedSites).toEqual([...builtIn, "mail.example.com", "example.org"]);
+  });
+
+  test("a site already excluded, by the user or built in, is taken without a second entry", () => {
+    const app = settings();
+    app.excludeSite("example.com");
+    let changes = 0;
+    app.observe(() => {
+      changes += 1;
+    });
+    expect(app.excludeSite("EXAMPLE.com/")).toBe("added");
+    expect(app.excludeSite(`https://my.${builtIn[0] ?? ""}`)).toBe("added");
+    expect(app.excludedSites).toEqual(["example.com"]);
+    expect(changes).toBe(0);
+  });
+
+  test.each([null, 7, "", "localhost", "not a site", {}])("%j is not a website", (value) => {
+    const app = settings();
+    expect(app.excludeSite(value)).toBe("invalid");
+    expect(app.excludedSites).toEqual([]);
+  });
+
+  test("at most excludedSitesMax sites, and one already there is still taken when full", () => {
+    const app = settings();
+    for (let index = 0; index < config.excludedSitesMax; index += 1) expect(app.excludeSite(`site${index}.example.com`)).toBe("added");
+    expect(app.excludeSite("example.org")).toBe("full");
+    expect(app.excludeSite("site3.example.com")).toBe("added");
+    expect(app.excludedSites).toHaveLength(config.excludedSitesMax);
+    expect(app.excludedSites).not.toContain("example.org");
+  });
+
+  test("removing takes the user's site off the list, whatever the case; a built-in one stays", () => {
+    const app = settings();
+    app.excludeSite("example.com");
+    app.excludeSite("example.org");
+    let changes = 0;
+    app.observe(() => {
+      changes += 1;
+    });
+    app.removeExcludedSite("EXAMPLE.com");
+    expect(app.excludedSites).toEqual(["example.org"]);
+    expect(changes).toBe(1);
+
+    app.removeExcludedSite(builtIn[0] ?? "");
+    app.removeExcludedSite("example.net");
+    expect(changes).toBe(1);
+    expect(app.dictation(null).excludedSites).toEqual([...builtIn, "example.org"]);
   });
 });
 

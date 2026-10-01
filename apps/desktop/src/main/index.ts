@@ -144,7 +144,7 @@ function launch(): void {
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
-    (excludedApps) => mac.readScreen(excludedApps),
+    (exclusions) => mac.readScreen(exclusions),
     () => windows.push("contextDebug"),
   );
 
@@ -184,7 +184,7 @@ function launch(): void {
           )
         : [],
     // The user's corrections are learned where the helper reads the field: macOS (ADR-DESK-038).
-    corrections: process.platform === "darwin" ? new CorrectionWatch((pid, excludedApps) => mac.focusedFieldValue(pid, excludedApps), (words) => settings.learnWords(words)) : undefined,
+    corrections: process.platform === "darwin" ? new CorrectionWatch((pid, exclusions) => mac.focusedFieldValue(pid, exclusions), (words) => settings.learnWords(words)) : undefined,
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {
@@ -193,7 +193,7 @@ function launch(): void {
         }
       : undefined,
   });
-  controller.captureContext = (excludedApps) => probe.capture(excludedApps);
+  controller.captureContext = (exclusions) => probe.capture(exclusions);
 
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
     const pid = await mac.frontmostApp();
@@ -274,6 +274,7 @@ function launch(): void {
       learnsWords: settings.learnsWords,
       canLearnWords: process.platform === "darwin",
       excludedApps: settings.excludedApps,
+      excludedSites: settings.excludedSites,
       canExcludeApps: process.platform === "darwin",
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
@@ -642,6 +643,15 @@ function launch(): void {
         return excludePickedApp();
       case "removeExcludedApp":
         settings.removeExcludedApp(command.bundleIdentifier);
+        return;
+      case "excludeSite": {
+        const result = settings.excludeSite(command.site);
+        if (result === "full") throw new Error(`At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`);
+        if (result === "invalid") throw new Error("That isn't a website's address.");
+        return;
+      }
+      case "removeExcludedSite":
+        settings.removeExcludedSite(command.host);
         return;
       case "setAgentToolEnabled":
         settings.setEnabled(command.tool, command.value);

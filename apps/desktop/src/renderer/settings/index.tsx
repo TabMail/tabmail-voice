@@ -9,6 +9,7 @@ import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
+import { excludedSite, isBuiltInExcludedSite } from "../../core/dictation/excludedSites.js";
 import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
@@ -229,6 +230,69 @@ function DictionaryPane({ state }: { state: SettingsState }) {
   );
 }
 
+/** The websites the screen is never read on (owner, 2026-10-01): the web vaults excluded in every
+ * installation, named, a field to add a site by its address, and the user's sites, each with a
+ * remove button. */
+function ExcludedSites({ state }: { state: SettingsState }) {
+  const [draft, setDraft] = useState("");
+  const site = excludedSite(draft);
+  const isThere = site !== null && (isBuiltInExcludedSite(site) || state.excludedSites.includes(site));
+  const isFull = state.excludedSites.length >= config.excludedSitesMax;
+  let problem: string | null = null;
+  if (draft.trim() !== "" && site === null) problem = "A website’s address, like example.com.";
+  else if (isFull && !isThere) problem = `At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`;
+  const add = (event: FormEvent) => {
+    event.preventDefault();
+    if (site === null || problem !== null) return;
+    void send({ type: "excludeSite", site });
+    setDraft("");
+  };
+  return (
+    <Group
+      captions={[
+        "On these websites, and their subdomains, TabMail Voice never reads the screen, whichever browser they are open in.",
+        `Password managers’ websites are always excluded: ${config.builtInExcludedSites.join(", ")}.`,
+      ]}
+    >
+      <form className="row" onSubmit={add}>
+        <input
+          type="text"
+          className="dictionary-input"
+          placeholder="Add a website, like example.com"
+          aria-label="Website"
+          maxLength={config.excludedSiteInputMaxLength}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button type="submit" disabled={site === null || problem !== null}>
+          Add
+        </button>
+      </form>
+      {problem && (
+        <div className="row">
+          <span className="error">{problem}</span>
+        </div>
+      )}
+      {state.excludedSites.length === 0 ? (
+        <div className="row">
+          <span className="caption">No websites added yet.</span>
+        </div>
+      ) : (
+        <ul className="dictionary" aria-label="Excluded websites">
+          {state.excludedSites.map((host) => (
+            <li key={host} className="row">
+              <span>{host}</span>
+              <button className="link" aria-label={`Remove ${host}`} onClick={() => void send({ type: "removeExcludedSite", host })}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Group>
+  );
+}
+
 /** The apps the screen is never read in (owner, 2026-09-30): the password managers excluded in every
  * installation, named, and the apps the user adds, each with a remove button. */
 function PrivacyPane({ state }: { state: SettingsState }) {
@@ -280,6 +344,7 @@ function PrivacyPane({ state }: { state: SettingsState }) {
           </ul>
         )}
       </Group>
+      <ExcludedSites state={state} />
     </>
   );
 }

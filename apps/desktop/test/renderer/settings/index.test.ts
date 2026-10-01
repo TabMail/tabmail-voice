@@ -25,6 +25,7 @@ const signedIn: SettingsState = {
   learnsWords: true,
   canLearnWords: true,
   excludedApps: [],
+  excludedSites: [],
   canExcludeApps: true,
   emailClient: null,
   systemEmailApp: null,
@@ -247,6 +248,72 @@ describe("Settings page", () => {
       expect(visibleText()).not.toContain("At most");
     });
 
+    /** The websites the screen is never read on (ADR-DESK-047). */
+    describe("websites", () => {
+      const sites = (): string[] => [...document.querySelectorAll('ul[aria-label="Excluded websites"] li')].map((item) => item.textContent ?? "");
+      const field = (): HTMLInputElement => document.querySelector<HTMLInputElement>('input[aria-label="Website"]') as HTMLInputElement;
+      const add = (): HTMLButtonElement => field().form?.querySelector<HTMLButtonElement>('button[type="submit"]') as HTMLButtonElement;
+      const problem = (): string | null => field().closest(".group, section, div")?.parentElement?.querySelector(".error")?.textContent ?? null;
+
+      test("names every built-in web vault, and says what excluding does", async () => {
+        await open(signedIn);
+        const text = visibleText();
+        for (const site of config.builtInExcludedSites) expect(text).toContain(site);
+        expect(text).toContain("On these websites, and their subdomains, TabMail Voice never reads the screen");
+        expect(text).toContain("No websites added yet.");
+        expect(add().disabled).toBe(true);
+        expect(field().maxLength).toBe(config.excludedSiteInputMaxLength);
+      });
+
+      test("adds the host of what was typed, and clears the field", async () => {
+        const page = await open(signedIn);
+        await act(async () => type(field(), "https://Mail.Example.com/inbox"));
+        expect(add().disabled).toBe(false);
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.com" }]);
+        expect(field().value).toBe("");
+      });
+
+      test.each(["not a site", "localhost"])("refuses %j, saying why", async (typed) => {
+        const page = await open(signedIn);
+        await act(async () => type(field(), typed));
+        expect(add().disabled).toBe(true);
+        expect(problem()).toBe("A website’s address, like example.com.");
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([]);
+        expect(field().value).toBe(typed);
+      });
+
+      test("lists the sites the user added, each with a remove button that sends its host", async () => {
+        const page = await open({ ...signedIn, excludedSites: ["example.com", "mail.example.org"] });
+        expect(sites()).toEqual(["example.comRemove", "mail.example.orgRemove"]);
+        expect(visibleText()).not.toContain("No websites added yet.");
+
+        await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove mail.example.org"]')?.click());
+
+        expect(page.commands).toEqual([{ type: "removeExcludedSite", host: "mail.example.org" }]);
+      });
+
+      /** Full: a new site is refused with the reason; one already there can still be typed. */
+      test("a full list takes no new website, saying so", async () => {
+        const full = Array.from({ length: config.excludedSitesMax }, (_, index) => `site${index}.example.com`);
+        const page = await open({ ...signedIn, excludedSites: full });
+        await act(async () => type(field(), "example.org"));
+        expect(add().disabled).toBe(true);
+        expect(problem()).toBe(`At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`);
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([]);
+
+        await act(async () => type(field(), "site3.example.com"));
+        expect(add().disabled).toBe(false);
+        expect(problem()).toBeNull();
+
+        await open({ ...signedIn, excludedSites: full.slice(1) });
+        await act(async () => type(field(), "example.org"));
+        expect(add().disabled).toBe(false);
+      });
+    });
+
     test("the section shows only where apps can be excluded", async () => {
       await settingsPage({ error: null }, signedIn, { ...signedIn, canExcludeApps: false });
       expect([...document.querySelectorAll("button.nav")].map((nav) => nav.textContent)).not.toContain("Privacy");
@@ -285,7 +352,7 @@ describe("Settings page", () => {
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
-      Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded"],
+      Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "No websites added yet.", "Password managers’ websites are always excluded"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
     };
@@ -649,6 +716,10 @@ describe("Settings page", () => {
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
       `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,
       "No apps added yet.",
+      // The websites', which the Swift app never had either (owner, 2026-10-01).
+      "On these websites, and their subdomains, TabMail Voice never reads the screen, whichever browser they are open in.",
+      `Password managers’ websites are always excluded: ${config.builtInExcludedSites.join(", ")}.`,
+      "No websites added yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],

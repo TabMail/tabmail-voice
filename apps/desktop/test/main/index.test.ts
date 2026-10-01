@@ -919,29 +919,29 @@ describe("main process wiring", () => {
       return;
     }
     // Its two dependencies, as the watch calls them.
-    const watch = app.corrections as unknown as { readField: (pid: number, excludedApps: readonly string[]) => Promise<string | null>; learn: (words: string[]) => void };
+    const watch = app.corrections as unknown as { readField: (pid: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null>; learn: (words: string[]) => void };
     const helper = app.helpers.get("voice-macos");
-    await watch.readField(42, ["org.example.vault"]);
+    await watch.readField(42, { apps: ["org.example.vault"], sites: ["example.com"] });
     expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
-      { pid: 42, maxLength: config.correctionMaxFieldLength, excludedBundleIdentifiers: ["org.example.vault"] },
+      { pid: 42, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
     ]);
     watch.learn(["Xyvora"]);
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true }]);
   });
 
-  /** The apps a dictation excludes from screen reading reach `voice-macos` with the screen read, as
-   * the controller hands them over (ADR-DESK-045): dropped anywhere on the way, the helper would read
-   * a password manager in front. */
-  test("the screen read carries the dictation's excluded apps to voice-macos", async () => {
+  /** The apps and websites a dictation excludes from screen reading reach `voice-macos` with the screen read, as
+   * the controller hands them over (ADR-DESK-045, ADR-DESK-047): dropped anywhere on the way, the helper
+   * would read a password manager in front. */
+  test("the screen read carries the dictation's excluded apps and websites to voice-macos", async () => {
     await launch("darwin");
-    const controller = app.controller as unknown as { captureContext: (excludedApps: readonly string[]) => Promise<unknown> | null };
+    const controller = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null };
     const helper = app.helpers.get("voice-macos");
     helper?.replies.set("readScreen", null);
 
-    expect(await controller.captureContext(["com.example.vault", "org.example.bank"])).toBeNull();
+    expect(await controller.captureContext({ apps: ["com.example.vault", "org.example.bank"], sites: ["example.com"] })).toBeNull();
 
     expect(helper?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toStrictEqual([
-      { excludedBundleIdentifiers: ["com.example.vault", "org.example.bank"] },
+      { excludedAppIDs: ["com.example.vault", "org.example.bank"], excludedHosts: ["example.com"] },
     ]);
   });
 
@@ -987,6 +987,34 @@ describe("main process wiring", () => {
 
     expect(await send({ type: "excludeApp" })).toEqual({ error: `At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.` });
     expect((app.stored.get("excludedApps") as unknown[]).length).toBe(config.excludedAppsMax);
+  });
+
+  /** Settings › Privacy's website commands (ADR-DESK-047): a site is added by its address and kept by
+   * its host, removed by its host, and the pane is told why one couldn't be added. */
+  test("the excluded websites' commands and state", async () => {
+    await launch("darwin");
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { excludedSites: unknown };
+    expect(state()).toMatchObject({ excludedSites: [] });
+
+    expect(await send({ type: "excludeSite", site: "https://Mail.Example.com/inbox" })).toEqual({ error: null });
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: null });
+    expect(state()).toMatchObject({ excludedSites: ["mail.example.com", "example.org"] });
+    expect(app.stored.get("excludedSites")).toEqual(["mail.example.com", "example.org"]);
+
+    expect(await send({ type: "excludeSite", site: "not a site" })).toEqual({ error: "That isn't a website's address." });
+    expect(state()).toMatchObject({ excludedSites: ["mail.example.com", "example.org"] });
+
+    expect(await send({ type: "removeExcludedSite", host: "Mail.Example.com" })).toEqual({ error: null });
+    expect(state()).toMatchObject({ excludedSites: ["example.org"] });
+    expect(app.stored.get("excludedSites")).toEqual(["example.org"]);
+  });
+
+  test("no more websites are excluded once the list is full", async () => {
+    app.stored.set("excludedSites", Array.from({ length: config.excludedSitesMax }, (_, index) => `site${index}.example.com`));
+    await launch("darwin");
+
+    expect(await send({ type: "excludeSite", site: "example.org" })).toEqual({ error: `At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.` });
+    expect((app.stored.get("excludedSites") as unknown[]).length).toBe(config.excludedSitesMax);
   });
 
   test("elsewhere, apps can't be excluded: nothing is asked", async () => {

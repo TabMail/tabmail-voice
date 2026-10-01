@@ -94,6 +94,9 @@ export interface SettingsState {
   /** The apps the user excludes from screen reading, besides the built-in ones
    * (`config.builtInExcludedApps`); shown only where the screen is read (`canExcludeApps`, macOS). */
   excludedApps: ExcludedApp[];
+  /** The websites the user excludes from screen reading, by host, beside the built-in web vaults
+   * (`config.builtInExcludedSites`). */
+  excludedSites: string[];
   canExcludeApps: boolean;
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
@@ -169,6 +172,9 @@ export type Command =
   /** Asks the user to pick an app, and excludes it from screen reading. */
   | { type: "excludeApp" }
   | { type: "removeExcludedApp"; bundleIdentifier: string }
+  /** Excludes a website from screen reading: `site` is its host or its address, as typed. */
+  | { type: "excludeSite"; site: string }
+  | { type: "removeExcludedSite"; host: string }
   | { type: "setEmailClient"; bundleIdentifier: string | null }
   | { type: "setAgentToolEnabled"; tool: AgentToolID; value: boolean }
   | { type: "setConnectorEnabled"; connector: ConnectorID; value: boolean }
@@ -255,6 +261,10 @@ export function isCommand(value: unknown): value is Command {
       return true;
     case "removeExcludedApp":
       return typeof command.bundleIdentifier === "string" && command.bundleIdentifier.length <= config.bundleIdentifierMaxLength;
+    case "excludeSite":
+      return typeof command.site === "string" && command.site.length <= config.excludedSiteInputMaxLength;
+    case "removeExcludedSite":
+      return typeof command.host === "string" && command.host.length <= config.hostMaxLength;
     case "copyHistoryEntry":
       return Number.isInteger(command.id);
     case "sendCode":

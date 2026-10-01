@@ -241,8 +241,9 @@ struct ScreenContextTests {
 
     private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = []) -> ScreenContext {
         var context = ScreenContext(appName: "Example")
-        ScreenContextReader.walk(window, in: FakeScreenTree(), frame: window.frame, focused: focused,
-                                 focusPath: focusPath, started: Date(), into: &context)
+        let read = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: window.frame, focused: focused,
+                                            focusPath: focusPath, excluding: ScreenExclusions(), started: Date(), into: &context)
+        #expect(read)
         return context
     }
 
@@ -314,7 +315,8 @@ struct ScreenContextTests {
         let window = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Password"]), field])
         var context = ScreenContext(appName: "Example")
         ScreenContextReader.readCaret(of: field, in: FakeScreenTree(), into: &context)
-        ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: field, focusPath: [], started: Date(), into: &context)
+        #expect(ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: field, focusPath: [],
+                                         excluding: ScreenExclusions(), started: Date(), into: &context))
         #expect(context.textBeforeCaret.isEmpty && context.selectedText.isEmpty && context.textAfterCaret.isEmpty)
         #expect(context.renderedText() == "Password\n» ‸")
         #expect(!context.logDescription.contains("placeholder"))

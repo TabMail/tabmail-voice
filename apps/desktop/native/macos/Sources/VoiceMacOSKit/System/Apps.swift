@@ -63,13 +63,6 @@ enum Apps {
         return App(bundleIdentifier: id, name: FileManager.default.displayName(atPath: url.path), path: url.path)
     }
 
-    /// Whether the app is one the user excludes from screen reading. Bundle identifiers are compared
-    /// without regard to case, as macOS does; an app without one can't be excluded.
-    static func isExcluded(_ bundleIdentifier: String?, by excluded: [String]) -> Bool {
-        guard let id = bundleIdentifier?.lowercased() else { return false }
-        return excluded.contains { $0.lowercased() == id }
-    }
-
     static func running(_ bundleIdentifier: String) -> NSRunningApplication? {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first { !$0.isTerminated }
     }

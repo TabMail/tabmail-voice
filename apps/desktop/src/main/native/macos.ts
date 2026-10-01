@@ -10,6 +10,7 @@ import * as config from "../../core/config.js";
 import type { GlobeKeySystem } from "../../core/hotkey/globeKeyAction.js";
 import type { Rect } from "../../core/ui/overlayGeometry.js";
 import { errorName, log } from "../../core/log.js";
+import type { ScreenExclusions } from "../../core/dictation/excludedSites.js";
 import type { ScreenContext } from "../../core/dictation/screenContext.js";
 import type { AudioCommand, AudioReport } from "../../shared/ipc.js";
 import { HelperError, type HelperClient } from "./helperClient.js";
@@ -61,10 +62,10 @@ export class MacSystem {
     return png === null ? null : `data:image/png;base64,${png}`;
   }
 
-  /** The screen context of the app in front; null without one, or when it is one of
-   * `excludedBundleIdentifiers`, which the helper doesn't read. */
-  readScreen(excludedBundleIdentifiers: readonly string[]): Promise<ScreenContext | null> {
-    return this.helper.request<ScreenContext | null>("readScreen", { excludedBundleIdentifiers }, config.screenReadTimeout);
+  /** The screen context of the app in front; null without one, or when the app, or the website it
+   * shows, is among `exclusions`, which the helper doesn't read. */
+  readScreen(exclusions: ScreenExclusions): Promise<ScreenContext | null> {
+    return this.helper.request<ScreenContext | null>("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, config.screenReadTimeout);
   }
 
   /** The app at `path` (an `.app` the user picked); null when it is none. */
@@ -79,13 +80,14 @@ export class MacSystem {
   }
 
   /** The text of the focused field of `pid`, for learning the user's corrections (ADR-DESK-038); null
-   * for none, a password field, one longer than `config.correctionMaxFieldLength`, or an app among
-   * `excludedBundleIdentifiers`, which the helper doesn't read. */
-  async focusedFieldValue(pid: number, excludedBundleIdentifiers: readonly string[]): Promise<string | null> {
+   * for none, a password field, one longer than `config.correctionMaxFieldLength`, or an app or a
+   * website among `exclusions`, which the helper doesn't read. */
+  async focusedFieldValue(pid: number, exclusions: ScreenExclusions): Promise<string | null> {
     const reply = await this.helper.request<{ value?: unknown } | null>("focusedFieldValue", {
       pid,
       maxLength: config.correctionMaxFieldLength,
-      excludedBundleIdentifiers,
+      excludedAppIDs: exclusions.apps,
+      excludedHosts: exclusions.sites,
     });
     return typeof reply?.value === "string" ? reply.value : null;
   }

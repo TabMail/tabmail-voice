@@ -26,6 +26,7 @@ import { Observable } from "../util/observable.js";
 import type { PasteHistory } from "./pasteHistory.js";
 import type { MicrophoneStatus } from "../onboarding/permissions.js";
 import type { ScreenContext } from "./screenContext.js";
+import type { ScreenExclusions } from "./excludedSites.js";
 import type { DictationSettings } from "../settings.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 import { type DictationTip, type TipBook, tipDetails } from "../onboarding/tips.js";
@@ -98,7 +99,7 @@ export interface DictationDependencies {
   keepRecording?: (wav: Uint8Array) => void;
   /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`); none where the field
    * can't be read (no helper on Windows and Linux yet). */
-  corrections?: { watch(pid: number, pasted: string, excludedApps: readonly string[]): void; stop(): void };
+  corrections?: { watch(pid: number, pasted: string, exclusions: ScreenExclusions): void; stop(): void };
 }
 
 /** Shown when the recording had no words in it. Kept to one line of the pill. */
@@ -154,7 +155,7 @@ export class DictationController extends Observable {
   onShowHistory: (() => void) | undefined;
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
    * with the target app still frontmost. Null: no context (the cleanup runs without it). */
-  captureContext: ((excludedApps: readonly string[]) => Promise<ScreenContext | null> | null) | undefined;
+  captureContext: ((exclusions: ScreenExclusions) => Promise<ScreenContext | null> | null) | undefined;
   /** How long a dictation's upload waits for that read, which its cleanup variables travel with
    * (agent mode waits for all of it, once its transcript is ready). Settable for tests. */
   contextWait = config.contextWait;
@@ -374,7 +375,7 @@ export class DictationController extends Observable {
     if (isFollowUp) void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
-    this.contextRead = settings.readsScreen ? (this.captureContext?.(settings.excludedApps) ?? null) : null;
+    this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
     const read = this.contextRead;
     if (read) {
       void read.then((context) => {
@@ -544,7 +545,7 @@ export class DictationController extends Observable {
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
           const pid = await targetApp;
-          if (pid !== null && isCurrent()) corrections.watch(pid, text, settings.excludedApps);
+          if (pid !== null && isCurrent()) corrections.watch(pid, text, { apps: settings.excludedApps, sites: settings.excludedSites });
         }
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.

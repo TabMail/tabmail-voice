@@ -10,15 +10,16 @@ import VoiceHelperSupport
 /// primary screen's top-left and y down: Accessibility's coordinates and Electron's alike.
 ///
 /// - `frontmostApp` → `{pid, name, bundleIdentifier, path}` or null.
-/// - `readScreen {excludedBundleIdentifiers}` → the screen context of the app in front
-///   (`ScreenContext.json`); null without one, or when it is an app the user excludes from screen
-///   reading (`Apps.isExcluded`), which is not read. Secret-looking text is taken out of it
-///   before it is sent (`Redactor`), and `selectionRedacted` says whether any was in the selection.
+/// - `readScreen {excludedAppIDs, excludedHosts}` → the screen context of the app in front
+///   (`ScreenContext.json`); null without one, or when it is an app, or shows a website, the user
+///   excludes from screen reading (`ScreenExclusions`), which is not read. Secret-looking text is
+///   taken out of it before it is sent (`Redactor`), and `selectionRedacted` says whether any was in
+///   the selection.
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
-/// - `focusedFieldValue {pid, maxLength, excludedBundleIdentifiers}` → `{value}`: the text of the
-///   app's focused field, null for none, a password field, one longer than `maxLength` UTF-16 code
-///   units (`FocusedField`), or an app the user excludes from screen reading, which is not read. Secret-looking text
-///   is taken out of it (`Redactor`).
+/// - `focusedFieldValue {pid, maxLength, excludedAppIDs, excludedHosts}` → `{value}`: the text of
+///   the app's focused field, null for none, a password field, one longer than `maxLength` UTF-16
+///   code units (`FocusedField`), or one in an app or on a website the user excludes from screen
+///   reading, which is not read. Secret-looking text is taken out of it (`Redactor`).
 /// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
 ///   clipboard after `restoreDelay` seconds.
 /// - `keyboardLanguage` → `{code}`: the active keyboard input source's language, or null.
@@ -100,14 +101,22 @@ public enum MacService {
 
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
         channel.on("readScreen") { params in
-            let excluded = try excludedBundleIdentifiers(params, "readScreen")
+            let exclusions = try ScreenExclusions(params: params, method: "readScreen")
             guard let (pid, name, bundleID) = await MainActor.run(body: screen.frontmost) else { return .null }
-            if Apps.isExcluded(bundleID, by: excluded) {
+            if exclusions.excludesApp(bundleID) {
                 HelperLog.debug("ScreenContext: the app in front is excluded from screen reading; not read")
                 return .null
             }
             // Blocking Accessibility calls: off the main thread, where the activator's notifications run.
-            return await Task.detached { screen.read(pid, name, bundleID).json }.value
+            return await Task.detached { () -> JSON in
+                guard let context = screen.read(pid, name, bundleID, exclusions) else { return .null }
+                // The reader refuses an excluded website itself; a context on one never leaves the helper.
+                if exclusions.excludesHost(context.host) {
+                    HelperLog.debug("ScreenContext: the page read is on a website excluded from screen reading; dropped")
+                    return .null
+                }
+                return context.json
+            }.value
         }
         channel.on("caretAnchor") { params in
             guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else { throw HelperError("caretAnchor needs pid") }
@@ -123,12 +132,12 @@ public enum MacService {
                   let maxLength = params["maxLength"]?.integer, maxLength >= 0 else {
                 throw HelperError("focusedFieldValue needs pid and maxLength")
             }
-            let excluded = try excludedBundleIdentifiers(params, "focusedFieldValue")
-            if Apps.isExcluded(screen.bundleIdentifier(pid), by: excluded) {
+            let exclusions = try ScreenExclusions(params: params, method: "focusedFieldValue")
+            if exclusions.excludesApp(screen.bundleIdentifier(pid)) {
                 HelperLog.debug("FocusedField: the app is excluded from screen reading; not read")
                 return ["value": .null]
             }
-            return await Task.detached { ["value": screen.focusedField(pid, maxLength).map { .string(Redactor.redact($0)) } ?? .null] }.value
+            return await Task.detached { ["value": screen.focusedField(pid, maxLength, exclusions).map { .string(Redactor.redact($0)) } ?? .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,
@@ -286,15 +295,6 @@ public enum MacService {
         return [activator, microphone, eventStore, contactStore] as NSArray
     }
 
-    /// The apps the user excludes from screen reading, as the request carries them. A request without
-    /// them is refused, so nothing is read by mistake.
-    private static func excludedBundleIdentifiers(_ params: JSON, _ method: String) throws -> [String] {
-        guard let values = params["excludedBundleIdentifiers"]?.array else { throw HelperError("\(method) needs excludedBundleIdentifiers") }
-        let identifiers = values.compactMap(\.string)
-        guard identifiers.count == values.count else { throw HelperError("\(method) needs excludedBundleIdentifiers as strings") }
-        return identifiers
-    }
-
     private static func bundleIdentifier(_ params: JSON) throws -> String {
         guard let id = params["bundleIdentifier"]?.string else { throw HelperError("bundleIdentifier missing") }
         return id
@@ -308,16 +308,16 @@ struct ScreenAccess: Sendable {
     var frontmost: @MainActor @Sendable () -> (pid_t, String, String?)?
     /// The bundle identifier of the app `pid`.
     var bundleIdentifier: @Sendable (pid_t) -> String?
-    /// The screen context of the app, as read.
-    var read: @Sendable (pid_t, String, String?) -> ScreenContext
-    /// The text of the app's focused field, up to a length (`FocusedField`).
-    var focusedField: @Sendable (pid_t, Int) -> String?
+    /// The screen context of the app, as read; none when an excluded website is showing.
+    var read: @Sendable (pid_t, String, String?, ScreenExclusions) -> ScreenContext?
+    /// The text of the app's focused field, up to a length (`FocusedField`); none in an excluded website.
+    var focusedField: @Sendable (pid_t, Int, ScreenExclusions) -> String?
 
     static let accessibility = ScreenAccess(
         frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
         bundleIdentifier: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
-        read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2) },
-        focusedField: { FocusedField.value(inApp: $0, maxLength: $1) }
+        read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2, excluding: $3) },
+        focusedField: { FocusedField.value(inApp: $0, maxLength: $1, excluding: $2) }
     )
 }
 

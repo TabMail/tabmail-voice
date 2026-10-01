@@ -8,7 +8,9 @@ import VoiceHelperSupport
 
 /// Reads a `ScreenContext` from an app through Accessibility. Blocking: call off the main thread.
 enum ScreenContextReader {
-    static func read(pid: pid_t, appName: String, bundleID: String?) -> ScreenContext {
+    /// The screen context of the app, or nil when a website the user excludes is showing: nothing of
+    /// the window is kept then.
+    static func read(pid: pid_t, appName: String, bundleID: String?, excluding exclusions: ScreenExclusions) -> ScreenContext? {
         let started = Date()
         var context = ScreenContext(appName: appName, bundleID: bundleID)
         let app = AXUIElementCreateApplication(pid)
@@ -16,12 +18,17 @@ enum ScreenContextReader {
 
         let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute).map { $0 as! AXUIElement }
         context.focusedRole = focused.flatMap { string($0, kAXRoleAttribute) }
+        let focusPath = focused.map(ancestors) ?? []
+        // Before anything of the page is read: the caret's text, the window's title.
+        if isInExcludedSite(focusPath, excluding: exclusions) {
+            HelperLog.debug("ScreenContext: the page in focus is on a website excluded from screen reading; not read")
+            return nil
+        }
         // In a tmux terminal the active pane is read from tmux: the terminal's own text is every
         // pane side by side, and its caret index drifts (iTerm2 drops trailing spaces).
         let isTerminal = bundleID.map(HelperConfig.terminalBundleIDs.contains) ?? false
         let paneRead = isTerminal && readTmuxPane(showingIn: focused, into: &context)
         if let focused, !paneRead { readCaret(of: focused, in: LiveScreenTree(), into: &context) }
-        let focusPath = focused.map(ancestors) ?? []
         // The page the caret is in: the nearest web area above it (Notion nests its web page in a
         // local app shell page, which the walk reaches first).
         context.host = focusPath.first { string($0, kAXRoleAttribute) == "AXWebArea" }.flatMap(host)
@@ -29,11 +36,21 @@ enum ScreenContextReader {
             context.windowTitle = string(window, kAXTitleAttribute)
             // Without tmux, a terminal's caret window is the end of its scrollback, not what's on
             // screen: keep its visible lines as a plain field instead of placing the caret.
-            walk(window, in: LiveScreenTree(), frame: CaretLocator.frame(of: window),
-                 focused: isTerminal && !paneRead ? nil : focused, focusPath: focusPath, started: started, into: &context)
+            let read = walk(window, in: LiveScreenTree(), frame: CaretLocator.frame(of: window),
+                            focused: isTerminal && !paneRead ? nil : focused, focusPath: focusPath, excluding: exclusions,
+                            started: started, into: &context)
+            if !read {
+                HelperLog.debug("ScreenContext: the window shows a website excluded from screen reading; not read")
+                return nil
+            }
         }
         context.seconds = Date().timeIntervalSince(started)
         return context
+    }
+
+    /// Whether the focused element is in a page of an excluded website: the web areas above it.
+    static func isInExcludedSite(_ focusPath: [AXUIElement], excluding exclusions: ScreenExclusions) -> Bool {
+        focusPath.contains { string($0, kAXRoleAttribute) == "AXWebArea" && exclusions.excludesHost(host(of: $0)) }
     }
 
     // MARK: Caret
@@ -98,13 +115,16 @@ enum ScreenContextReader {
     /// Notion row), skipped or pruned, so the caret block lands at its place.
     /// A password field is never read, nor anything inside it (one above the focused element is
     /// walked into like any of its ancestors; no app is known to focus inside one).
+    /// False when the window shows a page of an excluded website, in focus or not: the walk stops
+    /// there, and what it gathered must not be used.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
-                                       focusPath: [Tree.Element], started: Date, into context: inout ScreenContext) {
+                                       focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
+                                       into context: inout ScreenContext) -> Bool {
         // Each element with whether it is inside a web area.
         var stack = [(window, false)]
         while let (element, inWeb) = stack.popLast() {
-            if context.nodesVisited >= HelperConfig.contextNodeBudget { context.stoppedEarly = "node budget"; return }
-            if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; return }
+            if context.nodesVisited >= HelperConfig.contextNodeBudget { context.stoppedEarly = "node budget"; return true }
+            if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; return true }
             context.nodesVisited += 1
 
             if let focused, tree.isSame(element, focused) {
@@ -112,7 +132,9 @@ enum ScreenContextReader {
                 continue
             }
             if focusPath.contains(where: { tree.isSame($0, element) }) {
-                let childrenInWeb = inWeb || tree.string(element, kAXRoleAttribute) == "AXWebArea"
+                let isWebArea = tree.string(element, kAXRoleAttribute) == "AXWebArea"
+                if isWebArea, exclusions.excludesHost(tree.host(of: element)) { return false }
+                let childrenInWeb = inWeb || isWebArea
                 stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, childrenInWeb) })
                 continue
             }
@@ -125,7 +147,9 @@ enum ScreenContextReader {
 
             switch role {
             case "AXWebArea":
-                if context.host == nil { context.host = tree.host(of: element) }
+                let host = tree.host(of: element)
+                if exclusions.excludesHost(host) { return false }
+                if context.host == nil { context.host = host }
             case "AXStaticText":
                 if shown { context.append(.text, tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame) }
                 continue
@@ -150,6 +174,7 @@ enum ScreenContextReader {
             }
             stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, inWeb || role == "AXWebArea") })
         }
+        return true
     }
 
     static func isSkipped(_ role: String, inWeb: Bool) -> Bool {
@@ -163,7 +188,7 @@ enum ScreenContextReader {
     }
 
     /// The element's parents up to (not including) the application.
-    private static func ancestors(of element: AXUIElement) -> [AXUIElement] {
+    static func ancestors(of element: AXUIElement) -> [AXUIElement] {
         var chain: [AXUIElement] = []
         var current = CaretLocator.attribute(element, kAXParentAttribute).map { $0 as! AXUIElement }
         while let parent = current, chain.count < HelperConfig.contextMaxFocusDepth,

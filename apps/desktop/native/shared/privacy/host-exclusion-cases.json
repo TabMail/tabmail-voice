@@ -1,0 +1,20 @@
+{
+  "description": "Whether excluding a website (site) excludes a page's host. Every helper's host matching, and the app's, must agree with every case.",
+  "cases": [
+    { "name": "the site itself", "site": "example.com", "host": "example.com", "excluded": true },
+    { "name": "a subdomain", "site": "example.com", "host": "mail.example.com", "excluded": true },
+    { "name": "a deeper subdomain", "site": "example.com", "host": "a.b.example.com", "excluded": true },
+    { "name": "another case", "site": "example.com", "host": "Mail.EXAMPLE.com", "excluded": true },
+    { "name": "an excluded host in another case", "site": "Example.COM", "host": "example.com", "excluded": true },
+    { "name": "a trailing dot", "site": "example.com", "host": "example.com.", "excluded": true },
+    { "name": "a host that only ends alike", "site": "example.com", "host": "notexample.com", "excluded": false },
+    { "name": "a host that only starts alike", "site": "example.com", "host": "example.com.example.org", "excluded": false },
+    { "name": "the parent of an excluded subdomain", "site": "vault.example.com", "host": "example.com", "excluded": false },
+    { "name": "a sibling of an excluded subdomain", "site": "vault.example.com", "host": "mail.example.com", "excluded": false },
+    { "name": "under an excluded subdomain", "site": "vault.example.com", "host": "eu.vault.example.com", "excluded": true },
+    { "name": "another top-level domain", "site": "example.com", "host": "example.org", "excluded": false },
+    { "name": "a page's scheme in place of a host", "site": "example.com", "host": "file", "excluded": false },
+    { "name": "no host", "site": "example.com", "host": "", "excluded": false },
+    { "name": "an empty excluded host", "site": "", "host": "example.com", "excluded": false }
+  ]
+}

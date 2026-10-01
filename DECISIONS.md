@@ -2370,8 +2370,8 @@ Apps are known by bundle identifier, compared without regard to case.
   helper's `appInfo` gives the picked app's identifier and name. At most `excludedAppsMax` (100).
 
 **Consequences:**
-- A deny-list: every other app is read as before. Websites are not excluded one by one yet (#77); a
-  bank or a web vault in a browser is read unless the whole browser is excluded.
+- A deny-list: every other app is read as before. Websites are excluded one by one since ADR-DESK-047
+  (#77).
 - A password manager not in the built-in list is read until the user adds it. Only identifiers
   checked against the app itself or its Homebrew cask are built in.
 - An app without a bundle identifier (a bare process) can't be excluded.
@@ -2487,3 +2487,51 @@ well-structured place for the redactors.
 - A table row is one text, its cells joined by ` | `: a name in one cell and its value in the next
   stay, as a label with no `=` or `:` above its value does.
 - The Windows and Linux helpers redact once they add their emitter and run the shared cases.
+
+## ADR-DESK-047: Websites the screen is never read on, with the password managers' web vaults built in
+
+**Context:** An excluded app (ADR-DESK-045) is the whole app. A bank or a password manager's web
+vault open in a browser was read unless the whole browser was excluded. Owner, 2026-09-30 and
+10-01: websites can be treated as an app is, excluded one by one (#77), and the check stays in the
+helper, the same in every platform's helper.
+
+**Decision:** An excluded website is never read. The list is the built-in web vaults
+(`config.builtInExcludedSites`: 1Password's, Bitwarden's, Google Password Manager's, LastPass's,
+Dashlane's and Proton Pass's), excluded in every installation and not removable, plus the sites the
+user adds (`AppSettings.excludedSites`, kept on this computer). A site is known by its host
+(`example.com`), which covers its subdomains (`mail.example.com`) and no host that only ends or
+starts alike; case and a trailing dot don't matter.
+
+- The key-down snapshot (ADR-DESK-017) carries the hosts (`DictationSettings.excludedSites`) beside
+  the apps, as one `ScreenExclusions`. Both go with the screen read and with every read of the
+  pasted-into field: `readScreen` and `focusedFieldValue` take `excludedAppIDs` (renamed from
+  `excludedBundleIdentifiers`, so that every platform's helper uses one name) and `excludedHosts`.
+- `voice-macos` refuses (`Privacy/ScreenExclusions.swift`, which holds both matches and the
+  fail-closed reading of the two lists). The page the caret is in is checked first, before the
+  caret's text or the window's title is read. The walk then refuses the whole window at any page
+  of an excluded site, in focus or not, framed in another page or not: with the caret in the
+  browser's address field the page is still on screen. `readScreen` answers null, as for an excluded
+  app, and drops a context whose host is excluded whatever the reader did. `focusedFieldValue`
+  answers no value for a field in a page of an excluded site. A request without either list is an
+  error.
+- Which host a site covers is one rule for the app and every helper:
+  `native/shared/privacy/host-exclusion-cases.json`, which the app's `coversHost` and each helper's
+  match are tested against, as the redactors' cases are (ADR-DESK-046).
+- Settings › Privacy: a field takes a site by its address (`https://mail.example.com/inbox` is kept
+  as `mail.example.com`: `excludedSite` drops the scheme, sign-in, port and path), the user's sites
+  with a Remove button each, and the built-in ones named in a note. At most `excludedSitesMax` (100).
+
+**Consequences:**
+- A window showing an excluded site gives no screen context at all, not the rest of the window
+  either: a dictation there is as one in an excluded app.
+- The host is the page's as the browser reports it through Accessibility (a web area's URL). A
+  browser that doesn't report one, or a site inside an app that hides its pages' addresses, is read.
+  A page in a background tab is not on screen and doesn't count.
+- A page that frames an excluded site (a payment form from an excluded host) is not read either.
+- Only `http` and `https` pages have a host; an extension's page (a password manager's browser
+  extension) can't be excluded by host, and its password fields are skipped as everywhere.
+- Hosts are ASCII: a site with an internationalized name is added in its `xn--` form.
+- The built-in hosts are the vaults' addresses as known when this was written; one that moves is
+  read until the list is updated or the user adds it.
+- Windows and Linux take the same two lists with their helpers' screen read, and run the shared
+  host cases.

@@ -6,13 +6,15 @@ import ApplicationServices
 import VoiceHelperSupport
 
 /// The text of an app's focused field, read after a dictation's paste so the app can learn the user's
-/// corrections to it (ADR-DESK-038). Never a password field's, and nothing past `maxLength`.
+/// corrections to it (ADR-DESK-038). Never a password field's, never one in a page of an excluded
+/// website, and nothing past `maxLength`.
 enum FocusedField {
     /// The focused field's whole text in the app `pid`, or nil when there is no focused element, it
-    /// has no text, it is a password field, or its text is longer than `maxLength` UTF-16 code units.
+    /// has no text, it is a password field, it is in a page of an excluded website, or its text is
+    /// longer than `maxLength` UTF-16 code units.
     /// Blocking cross-process Accessibility calls, each bounded by `HelperConfig.focusedFieldTimeout`:
     /// call off the main thread.
-    static func value(inApp pid: pid_t, maxLength: Int) -> String? {
+    static func value(inApp pid: pid_t, maxLength: Int, excluding exclusions: ScreenExclusions) -> String? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.focusedFieldTimeout)
         guard let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute),
@@ -22,6 +24,10 @@ enum FocusedField {
         }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, HelperConfig.focusedFieldTimeout)
+        if ScreenContextReader.isInExcludedSite(ScreenContextReader.ancestors(of: element), excluding: exclusions) {
+            HelperLog.debug("FocusedField: in a page of a website excluded from screen reading; not read")
+            return nil
+        }
         return readable(
             subrole: CaretLocator.attribute(element, kAXSubroleAttribute) as? String,
             value: CaretLocator.attribute(element, kAXValueAttribute) as? String,

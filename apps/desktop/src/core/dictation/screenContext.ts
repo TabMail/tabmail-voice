@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { errorName, isDebugLogging, log } from "../log.js";
+import type { ScreenExclusions } from "./excludedSites.js";
 
 /** What was on screen in the app in front when a dictation started, as the platform helper read it
  * (macOS: `readScreen`). The helper renders the text for the prompts and the logs itself. */
@@ -40,22 +41,22 @@ export class ScreenContextProbe {
 
   constructor(
     private readonly isTrusted: () => boolean,
-    /** Null when no app is in front, or the one in front is among `excludedApps` (bundle
-     * identifiers), which is never read. */
-    private readonly read: (excludedApps: readonly string[]) => Promise<ScreenContext | null>,
+    /** Null when no app is in front, or what is in front is among `exclusions` (an app, or the
+     * website in a browser), which the helper doesn't read. */
+    private readonly read: (exclusions: ScreenExclusions) => Promise<ScreenContext | null>,
     private readonly onCapture: () => void = () => {},
   ) {}
 
   /** Null without the Accessibility grant. (Whether to read at all is the dictation's
    * screen-reading setting, `DictationSettings.readsScreen`.) The promise yields the screen of the
    * app in front when this was called, even if a newer capture has started since; null without an
-   * app in front, with one the dictation excludes from screen reading (`excludedApps`), or when the
+   * app in front, with an app or a website the dictation excludes from screen reading (`exclusions`), or when the
    * read failed. */
-  capture(excludedApps: readonly string[]): Promise<ScreenContext | null> | null {
+  capture(exclusions: ScreenExclusions): Promise<ScreenContext | null> | null {
     if (!this.isTrusted()) return null;
     this.generation += 1;
     const current = this.generation;
-    return this.read(excludedApps).then(
+    return this.read(exclusions).then(
       (context) => {
         if (!context) return null;
         log.debug(`ScreenContext: ${context.summary}`);
