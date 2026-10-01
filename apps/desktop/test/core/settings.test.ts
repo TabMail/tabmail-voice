@@ -141,12 +141,14 @@ describe("AppSettings", () => {
     app.userName = "Alex Example";
     app.addWord("Xyvora");
     app.learnsWords = false;
+    app.excludeApp({ bundleIdentifier: "org.example.bank", name: "Example Bank" });
 
     expect(snapshot).toEqual({
       hasConsented: true,
       hotkey: "rightOption",
       backendURL: config.productionBackendURL,
       readsScreen: true,
+      excludedApps: config.builtInExcludedApps.map((excluded) => excluded.bundleIdentifier),
       enabledTools: [...offeredAgentToolIDs],
       enabledConnectors: [...connectorIDs],
       emailClient: null,
@@ -156,6 +158,97 @@ describe("AppSettings", () => {
       learnsWords: true,
     });
     expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false });
+    expect(app.dictation(null).excludedApps).toContain("org.example.bank");
+  });
+});
+
+/** The apps the screen is never read in (owner, 2026-09-30): the built-in password managers in every
+ * installation, and the apps the user adds in Settings › Privacy. */
+describe("apps excluded from screen reading", () => {
+  const builtIn = config.builtInExcludedApps.map((app) => app.bundleIdentifier);
+  const bank = { bundleIdentifier: "org.example.bank", name: "Example Bank" };
+  const notes = { bundleIdentifier: "org.example.notes", name: "Example Notes" };
+
+  test("the password managers are excluded from the start, and the user's list is empty", () => {
+    const app = settings();
+    expect(app.excludedApps).toEqual([]);
+    expect(builtIn).toEqual(expect.arrayContaining(["com.apple.Passwords", "com.apple.keychainaccess", "com.1password.1password", "com.bitwarden.desktop"]));
+    expect(app.dictation(null).excludedApps).toEqual(builtIn);
+  });
+
+  test("apps the user adds are kept in order across a relaunch, and a dictation excludes them too", () => {
+    const store = new MemoryStore();
+    const app = settings(store);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    expect(app.excludeApp(bank)).toBe("added");
+    expect(app.excludeApp(notes)).toBe("added");
+    expect(changes).toBe(2);
+
+    const relaunched = settings(store);
+    expect(relaunched.excludedApps).toEqual([bank, notes]);
+    expect(relaunched.dictation(null).excludedApps).toEqual([...builtIn, bank.bundleIdentifier, notes.bundleIdentifier]);
+  });
+
+  test("an app already excluded, by the user or built in, is not added twice, whatever its case", () => {
+    const app = settings();
+    app.excludeApp(bank);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    expect(app.excludeApp({ bundleIdentifier: "ORG.EXAMPLE.BANK", name: "Bank" })).toBe("added");
+    expect(app.excludeApp({ bundleIdentifier: "com.apple.passwords", name: "Passwords" })).toBe("added");
+    expect(app.excludedApps).toEqual([bank]);
+    expect(changes).toBe(0);
+  });
+
+  test.each([null, "org.example.bank", {}, { bundleIdentifier: "", name: "Bank" }, { bundleIdentifier: "org.example.bank", name: "" }, { bundleIdentifier: 1, name: "Bank" }, { bundleIdentifier: "org.example.bank" }, { bundleIdentifier: "x".repeat(config.bundleIdentifierMaxLength + 1), name: "Bank" }, { bundleIdentifier: "org.example.bank", name: "x".repeat(config.excludedAppNameMaxLength + 1) }])("refuses %j", (value) => {
+    const app = settings();
+    expect(app.excludeApp(value)).toBe("invalid");
+    expect(app.excludedApps).toEqual([]);
+  });
+
+  test("an identifier and a name of exactly the most characters are taken", () => {
+    const app = settings();
+    const longest = { bundleIdentifier: "x".repeat(config.bundleIdentifierMaxLength), name: "y".repeat(config.excludedAppNameMaxLength) };
+    expect(app.excludeApp(longest)).toBe("added");
+    expect(app.excludedApps).toEqual([longest]);
+  });
+
+  test("at most excludedAppsMax apps, and one already there is still taken when full", () => {
+    const app = settings();
+    for (let index = 0; index < config.excludedAppsMax; index += 1) expect(app.excludeApp({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })).toBe("added");
+    expect(app.excludeApp(bank)).toBe("full");
+    expect(app.excludeApp({ bundleIdentifier: "org.example.app3", name: "App 3" })).toBe("added");
+    expect(app.excludedApps).toHaveLength(config.excludedAppsMax);
+    expect(app.excludedApps.some((excluded) => excluded.bundleIdentifier === bank.bundleIdentifier)).toBe(false);
+  });
+
+  test("an app is removed by its identifier, whatever its case; a built-in one stays excluded", () => {
+    const app = settings();
+    app.excludeApp(bank);
+    app.excludeApp(notes);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    app.removeExcludedApp("ORG.EXAMPLE.BANK");
+    expect(app.excludedApps).toEqual([notes]);
+    expect(changes).toBe(1);
+
+    app.removeExcludedApp("com.apple.Passwords");
+    app.removeExcludedApp("org.example.absent");
+    expect(changes).toBe(1);
+    expect(app.dictation(null).excludedApps).toEqual([...builtIn, notes.bundleIdentifier]);
+  });
+
+  test("only valid apps are read back: none twice, none built in, at most excludedAppsMax", () => {
+    const store = new MemoryStore();
+    store.set("excludedApps", [bank, "junk", { bundleIdentifier: "ORG.example.bank", name: "Again" }, { bundleIdentifier: "com.apple.Passwords", name: "Passwords" }, { name: "No identifier" }, notes]);
+    expect(settings(store).excludedApps).toEqual([bank, notes]);
+
+    store.set("excludedApps", Array.from({ length: config.excludedAppsMax + 5 }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
+    expect(settings(store).excludedApps).toHaveLength(config.excludedAppsMax);
+
+    store.set("excludedApps", "junk");
+    expect(settings(store).excludedApps).toEqual([]);
   });
 });
 

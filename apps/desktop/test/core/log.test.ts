@@ -200,7 +200,7 @@ describe("content log", () => {
     const probe = new ScreenContextProbe(() => true, () => Promise.resolve(captured));
 
     const entries = await loggedContent(async () => {
-      await probe.capture();
+      await probe.capture([]);
     });
 
     expect(entries).toEqual([{ label: "ScreenContext", text: captured.logDescription }]);

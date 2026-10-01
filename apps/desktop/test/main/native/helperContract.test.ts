@@ -30,6 +30,7 @@ function registered(source: string): Map<string, Set<string>> {
     const method = section.slice(0, section.indexOf('"'));
     const params = new Set([...section.matchAll(/params\["(\w+)"\]/g)].map((match) => match[1] ?? ""));
     if (/bundleIdentifier\(params\)/.test(section)) params.add("bundleIdentifier");
+    if (/excludedBundleIdentifiers\(params,/.test(section)) params.add("excludedBundleIdentifiers");
     handlers.set(method, params);
   }
   return handlers;
@@ -59,10 +60,11 @@ describe("helper wire contract", () => {
     await mac.fullUserName();
     await mac.systemEmailApp();
     await mac.emailApps([app]);
-    await mac.readScreen();
+    await mac.readScreen([app]);
+    await mac.appInfo("/Applications/Example.app");
     await mac.appIcon("/Applications/Example.app", config.agentBubbleAppIconSize);
     await mac.caretAnchor(1);
-    await mac.focusedFieldValue(1);
+    await mac.focusedFieldValue(1, [app]);
     await mac.startActivator();
     await mac.globeKey.read();
     await mac.globeKey.update(0);
@@ -410,11 +412,23 @@ describe("MacSystem.focusedFieldValue", () => {
 
   test("asks for the app's field, capped, and returns its text", async () => {
     const { mac, params } = replying({ value: "Meet Xyvora." });
-    expect(await mac.focusedFieldValue(42)).toBe("Meet Xyvora.");
-    expect(params).toEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength }]);
+    expect(await mac.focusedFieldValue(42, ["org.example.vault"])).toBe("Meet Xyvora.");
+    expect(params).toEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength, excludedBundleIdentifiers: ["org.example.vault"] }]);
+  });
+
+  /** The apps excluded from screen reading go to the helper as given, which reads none of them
+   * (ADR-DESK-045). */
+  test("the screen read carries the excluded apps, and the picked app is asked by its path", async () => {
+    const screen = replying(null);
+    expect(await screen.mac.readScreen(["org.example.vault", "org.example.bank"])).toBeNull();
+    expect(screen.params).toStrictEqual([{ excludedBundleIdentifiers: ["org.example.vault", "org.example.bank"] }]);
+
+    const picked = replying({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
+    expect(await picked.mac.appInfo("/Applications/Example Bank.app")).toEqual({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
+    expect(picked.params).toStrictEqual([{ path: "/Applications/Example Bank.app" }]);
   });
 
   test.each([{ value: null }, {}, null, { value: 3 }])("no text in %j is none", async (reply) => {
-    expect(await replying(reply).mac.focusedFieldValue(42)).toBeNull();
+    expect(await replying(reply).mac.focusedFieldValue(42, [])).toBeNull();
   });
 });

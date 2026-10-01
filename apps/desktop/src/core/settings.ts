@@ -6,6 +6,7 @@ import { DebugAccess } from "./backend/account.js";
 import { type ConnectorID, connectorIDs, isConnectorID } from "./agent/connectors/index.js";
 import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/tools.js";
 import * as config from "./config.js";
+import { type ExcludedApp, excludedApp, isBuiltInExcludedApp, isSameApp, storedExcludedApps } from "./dictation/excludedApps.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
 import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
@@ -23,6 +24,7 @@ const Key = {
   userName: "userName",
   dictionary: "dictionary",
   learnsWords: "learnsWords",
+  excludedApps: "excludedApps",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -34,6 +36,9 @@ export interface DictationSettings {
   hotkey: DictationHotkey;
   backendURL: string;
   readsScreen: boolean;
+  /** The bundle identifiers of the apps the screen is never read in: the built-in password managers
+   * and those the user excludes (`ExcludedApp`). */
+  excludedApps: string[];
   /** Agent mode's tools the user has on. */
   enabledTools: AgentToolID[];
   /** The apps the Answer tool's tools may reach (`ConnectorTool.connector`) the user has on. */
@@ -56,6 +61,10 @@ export interface DictationSettings {
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
  * `config.dictionaryMaxEntries`. A word already there is `added`, spelled as typed now (and typed, if it was learned). */
 export type AddWordResult = "added" | "invalid" | "full";
+
+/** What excluding an app did: `invalid` for one without a bundle identifier or name, `full` at
+ * `config.excludedAppsMax`. One already excluded, built in or by the user, is `added`. */
+export type ExcludeAppResult = "added" | "invalid" | "full";
 
 /** The name the welcome wizard offers (owner, 2026-09-28: "the macOS full name or the username"): the
  * computer account's full name, else its short name. */
@@ -203,6 +212,33 @@ export class AppSettings extends Observable {
     this.write(Key.learnsWords, value);
   }
 
+  /** The apps the user excludes from screen reading, in the order they were added; the built-in ones
+   * (`config.builtInExcludedApps`) are not among them. */
+  get excludedApps(): ExcludedApp[] {
+    return storedExcludedApps(this.store.get(Key.excludedApps));
+  }
+
+  /** Excludes an app from screen reading. */
+  excludeApp(value: unknown): ExcludeAppResult {
+    const app = excludedApp(value);
+    if (app === null) return "invalid";
+    const apps = this.excludedApps;
+    if (isBuiltInExcludedApp(app.bundleIdentifier) || apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return "added";
+    if (apps.length >= config.excludedAppsMax) return "full";
+    this.store.set(Key.excludedApps, [...apps, app]);
+    this.changed();
+    return "added";
+  }
+
+  /** Lets the screen be read in an app the user excluded again. A built-in one stays excluded. */
+  removeExcludedApp(bundleIdentifier: string): void {
+    const apps = this.excludedApps;
+    const kept = apps.filter((app) => !isSameApp(app.bundleIdentifier, bundleIdentifier));
+    if (kept.length === apps.length) return;
+    this.store.set(Key.excludedApps, kept);
+    this.changed();
+  }
+
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
   private get disabledAgentTools(): AgentToolID[] {
     const stored = this.store.get(Key.disabledAgentTools);
@@ -268,6 +304,7 @@ export class AppSettings extends Observable {
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),
       readsScreen: this.readsScreen,
+      excludedApps: [...config.builtInExcludedApps, ...this.excludedApps].map((app) => app.bundleIdentifier),
       enabledTools: this.enabledTools,
       enabledConnectors: this.enabledConnectors,
       emailClient: this.emailClient,

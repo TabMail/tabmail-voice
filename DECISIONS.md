@@ -2340,3 +2340,49 @@ that Thunderbird counts as a connector; a reorganization only, with no change to
 - Verified against `main` at 0.1.2: the same suites pass in the same numbers, the build gives the
   same pages and helpers, and `npm run preview` renders every window as before (the frames that
   differ are the animated ones, which differ between two renders of `main` too).
+
+## ADR-DESK-045: Apps the screen is never read in, with the password managers built in
+
+**Context:** Screen reading (ADR-DESK-008, ADR-DESK-010) was on for every app or off for all. A
+password manager shows revealed passwords, one-time codes and notes as plain text, and its window
+was read like any other. Owner, 2026-09-30: the password apps should be excluded from the capture,
+with a Privacy section in Settings for the excluded apps: built-in exclusions, and additional apps
+the user adds (issue #5).
+
+**Decision:** An excluded app is never read. The list is the built-in password managers
+(`config.builtInExcludedApps`: Passwords, Keychain Access, 1Password 8 and 7, Bitwarden, KeePassXC,
+NordPass), excluded in every installation and not removable, plus the apps the user adds
+(`AppSettings.excludedApps`, kept on this computer; `ExcludedApp` in `dictation/excludedApps.ts`).
+Apps are known by bundle identifier, compared without regard to case.
+
+- The dictation's key-down snapshot (ADR-DESK-017) carries the identifiers
+  (`DictationSettings.excludedApps`). They go with the screen read (`readScreen`) and with every
+  read of the pasted-into field for correction learning (`focusedFieldValue`, ADR-DESK-038).
+- `voice-macos` refuses: `readScreen` finds the app in front and, if it is excluded, answers null
+  without reading it, the same lookup deciding both; `focusedFieldValue` answers no value for an
+  excluded app's process. A request that doesn't carry the list is an error, so nothing is read by
+  mistake. `ScreenAccess` is what those two requests read through, or a test's stand-ins.
+- With no screen read, a dictation in an excluded app is as one with screen reading off: pasted,
+  cleaned up without the screen, no screen terms in the vocabulary, no selection for agent mode's
+  Edit, nothing kept for the debug window or the debug log, no correction learned.
+- Settings › Privacy (macOS, where the screen is read): the built-in ones named in a note, the user's
+  apps with a Remove button each, and Add App…, which opens a picker on the Applications folder; the
+  helper's `appInfo` gives the picked app's identifier and name. At most `excludedAppsMax` (100).
+
+**Consequences:**
+- A deny-list: every other app is read as before. Websites are not excluded one by one yet (#77); a
+  bank or a web vault in a browser is read unless the whole browser is excluded.
+- A password manager not in the built-in list is read until the user adds it. Only identifiers
+  checked against the app itself or its Homebrew cask are built in.
+- An app without a bundle identifier (a bare process) can't be excluded.
+- A secret shown in an app that isn't excluded (a key in a terminal) is still read; redacting
+  secret-looking text is a follow-up (#78). Password fields are skipped in every app (ADR-DESK-007,
+  amended 2026-09-30).
+- "Read the screen while dictating" stays under Dictation and "Learn from my corrections" under
+  Dictionary.
+- The check is in the helper, not the Electron app (owner, 2026-10-01): the helper is small and
+  ours, so an excluded app's text never reaches the app's main process. Every platform's helper
+  takes the same list and refuses the same way.
+- The Thunderbird relay's `focusedElement` (the email app's focused role and window title) is not
+  gated by the list: it reads only the email app, and its tool is off (ADR-DESK-037).
+- Windows and Linux get the list with their helpers' screen read.

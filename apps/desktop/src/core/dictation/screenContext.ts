@@ -37,20 +37,22 @@ export class ScreenContextProbe {
 
   constructor(
     private readonly isTrusted: () => boolean,
-    /** Null when no app is in front. */
-    private readonly read: () => Promise<ScreenContext | null>,
+    /** Null when no app is in front, or the one in front is among `excludedApps` (bundle
+     * identifiers), which is never read. */
+    private readonly read: (excludedApps: readonly string[]) => Promise<ScreenContext | null>,
     private readonly onCapture: () => void = () => {},
   ) {}
 
   /** Null without the Accessibility grant. (Whether to read at all is the dictation's
    * screen-reading setting, `DictationSettings.readsScreen`.) The promise yields the screen of the
    * app in front when this was called, even if a newer capture has started since; null without an
-   * app in front, or when the read failed. */
-  capture(): Promise<ScreenContext | null> | null {
+   * app in front, with one the dictation excludes from screen reading (`excludedApps`), or when the
+   * read failed. */
+  capture(excludedApps: readonly string[]): Promise<ScreenContext | null> | null {
     if (!this.isTrusted()) return null;
     this.generation += 1;
     const current = this.generation;
-    return this.read().then(
+    return this.read(excludedApps).then(
       (context) => {
         if (!context) return null;
         log.debug(`ScreenContext: ${context.summary}`);

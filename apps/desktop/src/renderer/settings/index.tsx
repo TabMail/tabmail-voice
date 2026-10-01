@@ -15,12 +15,12 @@ import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { SettingsState } from "../../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
-import { BookIcon, ConnectorIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
+import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
 import "../shared/form.css";
 import "./index.css";
 
-type SectionName = "account" | "dictation" | "dictionary" | "agent" | "permissions" | "general";
+type SectionName = "account" | "dictation" | "dictionary" | "agent" | "privacy" | "permissions" | "general";
 
 /** The sidebar's sections, in order, each with its title and icon. */
 const sections: { name: SectionName; title: string; icon: (size: number) => ReactNode }[] = [
@@ -28,6 +28,7 @@ const sections: { name: SectionName; title: string; icon: (size: number) => Reac
   { name: "dictation", title: "Dictation", icon: (size) => <MicrophoneIcon size={size} /> },
   { name: "dictionary", title: "Dictionary", icon: (size) => <BookIcon size={size} /> },
   { name: "agent", title: "Agent mode", icon: (size) => <SparklesLineIcon size={size} /> },
+  { name: "privacy", title: "Privacy", icon: (size) => <EyeOffIcon size={size} /> },
   { name: "permissions", title: "Permissions", icon: (size) => <LockShieldIcon size={size} /> },
   { name: "general", title: "General", icon: (size) => <GearIcon size={size} /> },
 ];
@@ -43,6 +44,12 @@ const colors = {
   "--window-light": config.settingsWindowColor.light,
   "--window-dark": config.settingsWindowColor.dark,
 } as CSSProperties;
+
+/** Whether the sidebar offers `name`'s section: Privacy only where apps can be excluded from screen
+ * reading (`canExcludeApps`, macOS). */
+function isOffered(name: SectionName, state: SettingsState): boolean {
+  return name !== "privacy" || state.canExcludeApps;
+}
 
 /** Whether `name`'s section wants the user's attention: signed out, no name for agent mode, a
  * permission missing, or VS Code's settings hiding the caret. */
@@ -71,7 +78,7 @@ function Settings() {
             <div className="caption identity-account">{state.email ?? "Not signed in"}</div>
           </div>
         </div>
-        {sections.map(({ name, title, icon: sectionIcon }) => (
+        {sections.filter(({ name }) => isOffered(name, state)).map(({ name, title, icon: sectionIcon }) => (
           <button key={name} className={name === shown ? "nav selected" : "nav"} aria-current={name === shown ? "page" : undefined} onClick={() => setShown(name)}>
             {sectionIcon(config.settingsSectionIconSize)}
             <span>{title}</span>
@@ -95,6 +102,11 @@ function Settings() {
         <div hidden={shown !== "agent"}>
           <AgentPane state={state} />
         </div>
+        {isOffered("privacy", state) && (
+          <div hidden={shown !== "privacy"}>
+            <PrivacyPane state={state} />
+          </div>
+        )}
         <div hidden={shown !== "permissions"}>
           <PermissionsPane state={state} />
         </div>
@@ -213,6 +225,61 @@ function DictionaryPane({ state }: { state: SettingsState }) {
           </Toggle>
         </Group>
       )}
+    </>
+  );
+}
+
+/** The apps the screen is never read in (owner, 2026-09-30): the password managers excluded in every
+ * installation, named, and the apps the user adds, each with a remove button. */
+function PrivacyPane({ state }: { state: SettingsState }) {
+  const [problem, setProblem] = useState<string | null>(null);
+  const isFull = state.excludedApps.length >= config.excludedAppsMax;
+  const add = async () => {
+    setProblem(null);
+    const { error } = await send({ type: "excludeApp" });
+    setProblem(error);
+  };
+  return (
+    <>
+      <Group
+        captions={[
+          "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
+          `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,
+        ]}
+      >
+        <div className="row">
+          <span>Excluded apps</span>
+          <button disabled={isFull} onClick={() => void add()}>
+            Add App…
+          </button>
+        </div>
+        {problem !== null && (
+          <div className="row">
+            <span className="error">{problem}</span>
+          </div>
+        )}
+        {isFull && (
+          <div className="row">
+            <span className="caption">{`At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.`}</span>
+          </div>
+        )}
+        {state.excludedApps.length === 0 ? (
+          <div className="row">
+            <span className="caption">No apps added yet.</span>
+          </div>
+        ) : (
+          <ul className="dictionary" aria-label="Excluded apps">
+            {state.excludedApps.map((app) => (
+              <li key={app.bundleIdentifier} className="row">
+                <span>{app.name}</span>
+                <button className="link" aria-label={`Remove ${app.name}`} onClick={() => void send({ type: "removeExcludedApp", bundleIdentifier: app.bundleIdentifier })}>
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Group>
     </>
   );
 }

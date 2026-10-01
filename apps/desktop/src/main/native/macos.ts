@@ -61,9 +61,15 @@ export class MacSystem {
     return png === null ? null : `data:image/png;base64,${png}`;
   }
 
-  /** The screen context of the app in front; null without one. */
-  readScreen(): Promise<ScreenContext | null> {
-    return this.helper.request<ScreenContext | null>("readScreen", {}, config.screenReadTimeout);
+  /** The screen context of the app in front; null without one, or when it is one of
+   * `excludedBundleIdentifiers`, which the helper doesn't read. */
+  readScreen(excludedBundleIdentifiers: readonly string[]): Promise<ScreenContext | null> {
+    return this.helper.request<ScreenContext | null>("readScreen", { excludedBundleIdentifiers }, config.screenReadTimeout);
+  }
+
+  /** The app at `path` (an `.app` the user picked); null when it is none. */
+  async appInfo(path: string): Promise<EmailAppInfo | null> {
+    return this.helper.request<EmailAppInfo | null>("appInfo", { path });
   }
 
   /** The caret's (or the focused field's) rect in `pid`, in top-left screen points; null when it
@@ -73,9 +79,14 @@ export class MacSystem {
   }
 
   /** The text of the focused field of `pid`, for learning the user's corrections (ADR-DESK-038); null
-   * for none, a password field, or one longer than `config.correctionMaxFieldLength`. */
-  async focusedFieldValue(pid: number): Promise<string | null> {
-    const reply = await this.helper.request<{ value?: unknown } | null>("focusedFieldValue", { pid, maxLength: config.correctionMaxFieldLength });
+   * for none, a password field, one longer than `config.correctionMaxFieldLength`, or an app among
+   * `excludedBundleIdentifiers`, which the helper doesn't read. */
+  async focusedFieldValue(pid: number, excludedBundleIdentifiers: readonly string[]): Promise<string | null> {
+    const reply = await this.helper.request<{ value?: unknown } | null>("focusedFieldValue", {
+      pid,
+      maxLength: config.correctionMaxFieldLength,
+      excludedBundleIdentifiers,
+    });
     return typeof reply?.value === "string" ? reply.value : null;
   }
 

@@ -24,6 +24,8 @@ const signedIn: SettingsState = {
   dictionary: [],
   learnsWords: true,
   canLearnWords: true,
+  excludedApps: [],
+  canExcludeApps: true,
   emailClient: null,
   systemEmailApp: null,
   installedEmailApps: [],
@@ -191,6 +193,70 @@ describe("Settings page", () => {
     });
   });
 
+  /** Settings › Privacy: the apps the screen is never read in (owner, 2026-09-30). */
+  describe("privacy", () => {
+    const apps = (): string[] => [...document.querySelectorAll('ul[aria-label="Excluded apps"] li')].map((item) => item.textContent ?? "");
+    const excluded = [{ bundleIdentifier: "org.example.bank", name: "Example Bank" }, { bundleIdentifier: "org.example.notes", name: "Example Notes" }];
+
+    async function open(initial: SettingsState, reply: CommandResult = { error: null }): Promise<{ commands: Command[] }> {
+      const page = await settingsPage(reply, initial, initial);
+      await act(async () => button("Privacy").click());
+      return page;
+    }
+
+    test("names every built-in password manager, and says what excluding does", async () => {
+      await open(signedIn);
+      const text = visibleText();
+      for (const app of config.builtInExcludedApps) expect(text).toContain(app.name);
+      expect(text).toContain("never reads the screen");
+      expect(text).toContain("Dictation still works there.");
+      expect(text).toContain("No apps added yet.");
+    });
+
+    test("lists the apps the user added, each with a remove button that sends its identifier", async () => {
+      const page = await open({ ...signedIn, excludedApps: excluded });
+      expect(apps()).toEqual(["Example BankRemove", "Example NotesRemove"]);
+      expect(visibleText()).not.toContain("No apps added yet.");
+
+      await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Example Notes"]')?.click());
+
+      expect(page.commands).toEqual([{ type: "removeExcludedApp", bundleIdentifier: "org.example.notes" }]);
+    });
+
+    test("Add App… asks the main process to pick one, and shows why it couldn't be added", async () => {
+      const page = await open(signedIn);
+      await act(async () => button("Add App…").click());
+      expect(page.commands).toEqual([{ type: "excludeApp" }]);
+      expect(document.querySelector(".error")).toBeNull();
+
+      await open(signedIn, { error: "That app can't be excluded." });
+      await act(async () => button("Add App…").click());
+      expect(document.querySelector("main > div:not([hidden]) .error")?.textContent).toBe("That app can't be excluded.");
+    });
+
+    test("a full list takes no more apps, saying so", async () => {
+      const full = Array.from({ length: config.excludedAppsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` }));
+      const page = await open({ ...signedIn, excludedApps: full });
+      expect(button("Add App…").disabled).toBe(true);
+      expect(visibleText()).toContain(`At most ${config.excludedAppsMax} apps can be excluded.`);
+      await act(async () => button("Add App…").click());
+      expect(page.commands).toEqual([]);
+
+      await open({ ...signedIn, excludedApps: full.slice(1) });
+      expect(button("Add App…").disabled).toBe(false);
+      expect(visibleText()).not.toContain("At most");
+    });
+
+    test("the section shows only where apps can be excluded", async () => {
+      await settingsPage({ error: null }, signedIn, { ...signedIn, canExcludeApps: false });
+      expect([...document.querySelectorAll("button.nav")].map((nav) => nav.textContent)).not.toContain("Privacy");
+      expect(document.body.textContent).not.toContain("Excluded apps");
+
+      await settingsPage({ error: null }, signedIn, signedIn);
+      expect([...document.querySelectorAll("button.nav")].map((nav) => nav.textContent)).toContain("Privacy");
+    });
+  });
+
   /** A sign-out the credential store only half did is said, not swallowed (owner, 2026-09-27). */
   test("Sign Out shows what the sign-out reply says", async () => {
     const warning = "Signed out, but your saved sign-in couldn't be removed.";
@@ -219,6 +285,7 @@ describe("Settings page", () => {
       Dictation: ["Hold to dictate", "Read the screen while dictating"],
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
+      Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded"],
       Permissions: ["Microphone", "Accessibility"],
       General: ["Open at login", "Debug mode", "Version", "1.2.3", "Check for Updates…"],
     };
@@ -578,6 +645,10 @@ describe("Settings page", () => {
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
       `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. The field’s text stays on this Mac, and a password field is never read.`,
+      // Privacy's, which the Swift app never had (owner, 2026-09-30).
+      "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
+      `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,
+      "No apps added yet.",
     ];
     const cases: [Partial<SettingsState>, string][] = [
       [{ hasTabMail: false }, "TabMail’s add-on isn’t installed in Thunderbird, so mail and calendar requests aren’t offered."],
