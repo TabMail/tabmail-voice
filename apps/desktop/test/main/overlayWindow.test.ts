@@ -9,6 +9,7 @@ import * as config from "../../src/core/config.js";
 import type { Phase } from "../../src/core/dictation/controller.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import { OverlayWindowController } from "../../src/main/overlayWindow.js";
+import { shellPlacementArea } from "../../src/main/native/windows/overlayArea.js";
 
 /** One display, and the mouse pointer in its middle; a test may move the pointer or use another
  * display, and puts them back. */
@@ -73,6 +74,35 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
 }
 
 describe("OverlayWindowController", () => {
+  test("a listening pill moves, hides and returns as shell coverage changes", async () => {
+    let exclusions: Rect[] = [];
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window,
+      async () => ({ x: 100, y: 300, width: 1, height: 20 }),
+      (area) => shellPlacementArea(area, exclusions));
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+    const original = { ...overlay.bounds() };
+
+    exclusions = [{ x: 0, y: 0, width: 700, height: 900 }];
+    controller.refreshPlacement();
+    expect(overlay.visible()).toBe(true);
+    expect(overlay.bounds().x).toBeGreaterThan(original.x);
+    expect(pillOnScreen(overlay.bounds()).x).toBeGreaterThanOrEqual(724);
+    expect(overlay.ignoresMouse()).toBe(true);
+
+    exclusions = [workArea];
+    controller.refreshPlacement();
+    expect(overlay.visible()).toBe(false);
+
+    exclusions = [];
+    controller.refreshPlacement();
+    expect(overlay.visible()).toBe(true);
+    expect(overlay.bounds()).toEqual(original);
+    expect(overlay.ignoresMouse()).toBe(true);
+  });
+
   /** Where the overlay opens reaches its view: at a caret near the screen's bottom it opens upward
    * (so the hands-free tip goes above the pill), mid-screen downward, and each placing says so
    * (`onPlace`), for the view's state to be pushed afresh. */
