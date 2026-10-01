@@ -2469,8 +2469,10 @@ well-structured place for the redactors.
 - Texts that sit side by side on screen are still joined by a line break here, so a name and its
   value in two elements are found together, and so are two elements that only look like one (a
   label ending in `token:` above an unrelated word with a digit).
-- A private key written on one line with escaped line breaks, or one with header lines after its
-  first (an encrypted PEM key, a PGP key with a `Version:` line), keeps its body unless a name beside it marks it as a secret; a key header with nothing
+- A private key written on one line with its line breaks escaped (`\n` as two characters, as a JSON
+  file or a quoted value holds it) is taken whole: the key's body may hold a backslash. One with
+  header lines after its first (an encrypted PEM key, a PGP key with a `Version:` line) keeps its
+  body, whatever name is beside it; a key header with nothing
   after it takes the letters that follow, up to the first punctuation. The key block's redactor is
   the last in the list for that reason: first, it took a later secret's name or prefix with those
   letters, and that secret's own redactor no longer knew it.

@@ -4887,6 +4887,85 @@
     "{redacted}",
     "{redacted}"
    ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, as a JSON file holds it",
+   "text": [
+    "\"private_key\": \"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "i9J0k1L2m3N4o5P6",
+    "\\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "\","
+   ],
+   "expected": [
+    "\"private_key\": \"",
+    "{redacted}",
+    "\\n",
+    "\","
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, in a quoted value",
+   "text": [
+    "PRIVATE_KEY=\"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "i9J0k1L2m3N4o5P6",
+    "\\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\""
+   ],
+   "expected": [
+    "PRIVATE_KEY=\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, cut off",
+   "text": [
+    "\"private_key\": \"",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "i9J0k1L2m3N4o5P6"
+   ],
+   "expected": [
+    "\"private_key\": \"",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private key with its line breaks escaped, under no name",
+   "text": [
+    "key ",
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "\\n",
+    "a1B2c3D4e5F6g7H8",
+    "\\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    " end"
+   ],
+   "expected": [
+    "key ",
+    "{redacted}",
+    " end"
+   ]
   }
  ],
  "lineCases": [

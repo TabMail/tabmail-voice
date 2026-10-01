@@ -218,10 +218,19 @@ struct RedactorTests {
             "Bearer " + String(repeating: "a", count: length),
             "password:" + String(repeating: " ", count: length) + "x",
             "Bearer" + String(repeating: " ", count: length) + "x",
+            "ey" + "J" + String(repeating: "a", count: length),
+            "ey" + "Ja.ey" + "J" + String(repeating: "a", count: length),
+            "ey" + "Ja.ey" + "Ja." + String(repeating: "a", count: length),
+            "://u:" + String(repeating: "a", count: length),
+            "-----BEGIN " + "PRIVATE KEY-----\n" + String(repeating: "a", count: length),
+            "sk" + "_live_" + String(repeating: "a", count: length),
+            "gl" + "pat-" + String(repeating: "a", count: length),
+            "xo" + "xb-" + String(repeating: "a", count: length),
         ]
         for run in runs {
             let redacted = Redactor.redact("\(run)\npassword: hunter" + "2x\n")
-            #expect(redacted.hasSuffix("\npassword: \(Redactor.placeholder)\n"), "\(run.prefix(16))")
+            // (A key block cut off takes the letters after it, the name with them.)
+            #expect(redacted.hasSuffix(": \(Redactor.placeholder)\n") && !redacted.contains("hunter"), "\(run.prefix(16))")
             var context = ScreenContext(appName: "Example Browser")
             context.append(.text, run)
             context.append(.text, "password: hunter" + "2x")

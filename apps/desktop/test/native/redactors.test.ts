@@ -153,8 +153,17 @@ describe("the shared redactors", () => {
     ["a key's characters", "sk-"],
     ["a named value", "data token=7"],
     ["a bearer token", "Bearer "],
+    ["a web token's first part", "eyJ"],
+    ["a web token's second part", "eyJa.eyJ"],
+    ["a web token's third part", "eyJa.eyJa."],
+    ["an address's password", "://u:"],
+    ["a key block's body", "-----BEGIN PRIVATE KEY-----\n"],
+    ["a payment key", "sk_live_"],
+    ["a GitLab token", "glpat-"],
+    ["a Slack token", "xoxb-"],
   ])("a very long run of %s does not stop the redaction of what follows", (_what, start) => {
-    expect(redact(`${start}${"a".repeat(400_000)}\npassword: hunter${"2x"}\n`).endsWith(`\npassword: ${placeholder}\n`)).toBe(true);
+    // (A key block cut off takes the letters after it, the name with them.)
+    expect(redact(`${start}${"a".repeat(400_000)}\npassword: hunter${"2x"}\n`).endsWith(`: ${placeholder}\n`)).toBe(true);
   });
 
   test("the cases include text that changes and text that stays", () => {

@@ -118,7 +118,7 @@
     {
       "name": "private-key-block",
       "description": "A private-key block, whole or cut off where the window ends.",
-      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s]*)",
+      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s\\\\]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s\\\\]*)",
       "ignoreCase": false,
       "replacement": "{placeholder}"
     }
