@@ -2510,14 +2510,20 @@ starts alike; case and a trailing dot don't matter.
   fail-closed reading of the two lists). The page the caret is in is checked first, before the
   caret's text or the window's title is asked for (`ScreenContextReader.gather`): every web area
   above the focused element, and the focused element itself, since a page clicked on or selected in
-  has the focus itself. The walk then refuses the whole window at any page of an excluded site, in
+  has the focus itself, and any page inside the focused element (a page that frames an excluded
+  one, a focused group holding one: `holdsExcludedPage`), which the walk never goes into. The walk then refuses the whole window at any page of an excluded site, in
   focus or not, framed in another page or inside a row, a heading or a link that has no label of its
   own (one with a label gives its label, and nothing inside it is looked at): with the caret in the
   browser's address field the page is still on screen. `readScreen` answers null, as for an excluded
   app, and drops a context whose host is excluded whatever the reader did. A refused read gives
   back nothing of what it had gathered (`gather` answers no context at all). `focusedFieldValue`
-  answers no value for a field in a page of an excluded site. A request without either list is an
+  answers no value for a field whose window shows a page of an excluded site: the field's own
+  pages, what the field holds, and the rest of its window, so the address field of a browser showing
+  an excluded page is not read either (owner, 2026-10-01). A request without either list is an
   error.
+- Read only what can be told safe (owner, 2026-10-01): a page whose address the app fails to give
+  (the lookup timed out, the app gone) is treated as excluded, wherever it is (`PageHost.unknown`).
+  Only the app's answer that the page has no address makes it a page with no host, which is read.
 - Which host a site covers is one rule for the app and every helper:
   `native/shared/privacy/host-exclusion-cases.json`, which the app's `coversHost` and each helper's
   match are tested against, as the redactors' cases are (ADR-DESK-046).
@@ -2532,11 +2538,16 @@ starts alike; case and a trailing dot don't matter.
   browser that doesn't report one, or a site inside an app that hides its pages' addresses, is read.
   A page in a background tab is not on screen and doesn't count.
 - A page that frames an excluded site (a payment form from an excluded host) is not read either.
-- A page whose address the browser fails to give in time (the lookup's timeout) has no host for
-  that read and is read, as a page with no address is.
+- A window with a page whose address lookup fails gives no screen context for that dictation, and
+  ends the watch for corrections, whatever the page is.
 - A walk that runs out of its node or time budget before reaching a page out of focus never saw
   that page: what it gathered before, and the window's title, are kept. The page's own text is not
-  among it.
+  among it. The look inside the focused element keeps to the same budgets. Kept as it is (owner,
+  2026-10-01): failing closed would drop the context of every large window.
+- Before a field is read for corrections its window is looked through for pages, every half second
+  while the watch runs, so for at most `focusedFieldPageScanBudget` (0.2 s) and without going into a
+  page that is not excluded: a page framed in another one beside the field, or one not reached in
+  that time, does not stop the read. The field's text stays on this computer.
 - Only `http` and `https` pages have a host; an extension's page (a password manager's browser
   extension) can't be excluded by host, and its password fields are skipped as everywhere.
 - Hosts are ASCII: a site with an internationalized name is added in its `xn--` form.

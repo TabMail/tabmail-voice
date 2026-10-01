@@ -226,7 +226,7 @@ struct ScreenExclusionTests {
             if name == kAXTitleAttribute || name == kAXValueAttribute { asked.texts += 1 }
             return tree.string(element, name)
         }
-        func host(of webArea: FakeElement) -> String? { tree.host(of: webArea) }
+        func page(of webArea: FakeElement) -> PageHost { tree.page(of: webArea) }
         func fieldText(of element: FakeElement, windowFrame: CGRect?) -> String? {
             asked.texts += 1
             return tree.fieldText(of: element, windowFrame: windowFrame)
@@ -378,6 +378,145 @@ struct ScreenExclusionTests {
         #expect(none.context.renderedText() == "> $ ls")
     }
 
+    /// A page that frames an excluded one and has the focus itself, or a focused group that holds
+    /// one: the walk never goes into the focused element, so it is looked into before anything is
+    /// read.
+    @Test func anExcludedPageInsideTheFocusedElementIsNotRead() {
+        let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
+        let outer = FakeElement("AXWebArea", Self.caret.merging(["host": "example.org"]) { $1 }, children: [FakeElement("AXGroup", children: [frame])])
+        let window = FakeElement("AXWindow", [kAXTitleAttribute: "Checkout"], children: [outer])
+        let refused = gather(window, focused: outer, focusPath: [window], excluding: ["example.com"])
+        #expect(!refused.read)
+        #expect(refused.asked.caret == 0 && refused.asked.texts == 0)
+        let read = gather(window, focused: outer, focusPath: [window], excluding: ["example.net"])
+        #expect(read.read && read.context.selectedText == "balance" && read.context.windowTitle == "Checkout")
+
+        let group = FakeElement("AXGroup", Self.caret, children: [FakeElement("AXGroup", children: [frame])])
+        let page = FakeElement("AXWebArea", ["host": "example.org"], children: [group])
+        let other = FakeElement("AXWindow", children: [page])
+        #expect(!gather(other, focused: group, focusPath: [page, other], excluding: ["example.com"]).read)
+        #expect(gather(other, focused: group, focusPath: [page, other], excluding: ["example.net"]).read)
+    }
+
+    /// Past the walk's budgets the focused element is taken to hold no excluded page, as a walk
+    /// stopped by them keeps its read.
+    @Test func theLookInsideTheFocusedElementKeepsToTheBudgets() {
+        let frame = FakeElement("AXWebArea", ["host": "pay.example.com"])
+        func holds(_ element: FakeElement, intoPages: Bool = true, since started: Date = Date()) -> Bool {
+            ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
+                                                  intoPages: intoPages, within: HelperConfig.contextTimeBudget, since: started)
+        }
+        // The last child is looked at first: the page is reached after every other child.
+        let fillers = (0 ..< HelperConfig.contextNodeBudget).map { _ in FakeElement("AXGroup") }
+        #expect(!holds(FakeElement("AXGroup", children: [frame] + fillers)))
+        #expect(holds(FakeElement("AXGroup", children: [frame] + fillers.dropLast())))
+        #expect(!holds(FakeElement("AXGroup", children: [frame]), since: .distantPast))
+        #expect(holds(FakeElement("AXGroup", children: [frame])))
+        #expect(!holds(frame))
+        // A page framed in one that is not excluded is found, unless pages are not looked into.
+        let outer = FakeElement("AXGroup", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [frame])])
+        #expect(holds(outer))
+        #expect(!holds(outer, intoPages: false))
+        #expect(holds(FakeElement("AXGroup", children: [FakeElement("AXGroup", children: [frame])]), intoPages: false))
+    }
+
+    /// A page whose address the app failed to give can't be told safe: it is treated as excluded,
+    /// wherever it is. A page that has no address is read.
+    @Test func aPageWhoseAddressIsUnknownIsNotRead() {
+        func window(_ attributes: [String: String]) -> (window: FakeElement, area: FakeElement, field: FakeElement) {
+            let field = FakeElement("AXTextField", Self.caret.merging([kAXValueAttribute: "typed"]) { $1 })
+            let area = FakeElement("AXWebArea", attributes, children: [FakeElement("AXStaticText", [kAXValueAttribute: "Page"]), field])
+            return (FakeElement("AXWindow", children: [FakeElement("AXTextField", [kAXValueAttribute: "address"]), area]), area, field)
+        }
+        let unknown = window(["hostUnknown": "1"]), plain = window([:])
+        // In focus, with the focus itself, out of focus, and with nothing excluded at all.
+        let inFocus = gather(unknown.window, focused: unknown.field, focusPath: [unknown.area, unknown.window], excluding: ["example.com"])
+        #expect(!inFocus.read && inFocus.asked.caret == 0 && inFocus.asked.texts == 0)
+        #expect(!gather(unknown.window, focused: unknown.area, focusPath: [unknown.window], excluding: ["example.com"]).read)
+        #expect(!gather(unknown.window, focused: nil, focusPath: [], excluding: ["example.com"]).read)
+        #expect(!gather(unknown.window, focused: nil, focusPath: [], excluding: []).read)
+        let read = gather(plain.window, focused: plain.field, focusPath: [plain.area, plain.window], excluding: ["example.com"])
+        #expect(read.read && read.context.host == nil && read.context.renderedText().contains("Page"))
+        // Inside a row with no label of its own, and inside the focused element.
+        let row = FakeElement("AXWindow", children: [FakeElement("AXRow", children: [FakeElement("AXWebArea", ["hostUnknown": "1"])])])
+        #expect(!gather(row, focused: nil, focusPath: [], excluding: []).read)
+        let group = FakeElement("AXGroup", children: [FakeElement("AXWebArea", ["hostUnknown": "1"])])
+        let holding = FakeElement("AXWindow", children: [group])
+        #expect(!gather(holding, focused: group, focusPath: [holding], excluding: []).read)
+        // The focused field read for correction learning.
+        #expect(FocusedField.value(of: unknown.field, above: [unknown.area, unknown.window], in: FakeScreenTree(), maxLength: 100,
+                                   excluding: ScreenExclusions()) == nil)
+        #expect(FocusedField.value(of: plain.field, above: [plain.area, plain.window], in: FakeScreenTree(), maxLength: 100,
+                                   excluding: ScreenExclusions()) == "typed")
+
+        let exclusions = ScreenExclusions(hosts: ["example.com"])
+        #expect(exclusions.excludes(.unknown) && ScreenExclusions().excludes(.unknown))
+        #expect(!exclusions.excludes(.noHost))
+        #expect(exclusions.excludes(.host("Vault.Example.com")) && !exclusions.excludes(.host("example.org")))
+        #expect(PageHost.host("example.org").name == "example.org" && PageHost.noHost.name == nil && PageHost.unknown.name == nil)
+    }
+
+    /// What the app's answer says of a page: only an answer that it has no address is no host; any
+    /// other failure (the app too slow, or gone) leaves the page unknown.
+    @Test func aFailedAddressLookupLeavesThePageUnknown() {
+        let address = URL(string: "https://vault.example.com/login")! as CFURL
+        #expect(ScreenContextReader.page(.success, address: address) == .host("vault.example.com"))
+        #expect(ScreenContextReader.page(.success, address: nil) == .noHost)
+        #expect(ScreenContextReader.page(.success, address: "" as CFString) == .noHost)
+        #expect(ScreenContextReader.page(.noValue, address: nil) == .noHost)
+        #expect(ScreenContextReader.page(.attributeUnsupported, address: nil) == .noHost)
+        for failure in [AXError.cannotComplete, .failure, .invalidUIElement, .apiDisabled, .notImplemented, .illegalArgument] {
+            #expect(ScreenContextReader.page(failure, address: nil) == .unknown)
+            #expect(ScreenContextReader.page(failure, address: address) == .unknown)
+        }
+    }
+
+    /// A page's address as the app gives it (a URL or its text) to the host that is matched.
+    @Test func aPagesHostComesFromItsAddress() {
+        func host(_ address: String) -> String? { ScreenContextReader.host(ofAddress: address as CFString) }
+        #expect(host("https://vault.example.com/login?next=a@b#c") == "vault.example.com")
+        #expect(host("http://user:secret@example.com:8443/") == "example.com")
+        #expect(host("HTTPS://Example.COM/") == "Example.COM")
+        // The match drops a trailing dot and the case; a name outside ASCII comes in its `xn--` form.
+        #expect(ScreenExclusions(hosts: ["example.com"]).excludesHost(host("https://Vault.Example.COM./")))
+        #expect(host("https://b\u{FC}cher.example/") == "xn--bcher-kva.example")
+        // A page that is not a web page gives its scheme, never the random name in its address.
+        #expect(host("chrome-extension://abcdefghijklmnop/page.html") == "chrome-extension")
+        #expect(host("file:///Users/name1/page.html") == "file")
+        #expect(host("about:blank") == "about")
+        #expect(host("") == nil)
+        #expect(host("no scheme") == nil)
+        #expect(ScreenContextReader.host(ofAddress: URL(string: "https://example.org/a")! as CFURL) == "example.org")
+        #expect(ScreenContextReader.host(ofAddress: 7 as CFNumber) == nil)
+    }
+
+    /// With the caret in a browser's address field, the page the window shows is beside the field,
+    /// not above it: the field is not read when its window shows a page of an excluded website.
+    @Test func aFieldInAWindowShowingAnExcludedWebsiteIsNotRead() {
+        func value(_ page: FakeElement, excluding hosts: [String]) -> (value: String?, asked: Int) {
+            let address = FakeElement("AXTextField", [kAXValueAttribute: "vault.example.com/items"])
+            let toolbar = FakeElement("AXToolbar", children: [address])
+            let window = FakeElement("AXWindow", children: [toolbar, FakeElement("AXGroup", children: [page])])
+            let tree = RecordingTree()
+            let value = FocusedField.value(of: address, above: [toolbar, window], in: tree, maxLength: 100, excluding: ScreenExclusions(hosts: hosts))
+            return (value, tree.asked.texts)
+        }
+        let vault = FakeElement("AXWebArea", ["host": "vault.example.com"])
+        #expect(value(vault, excluding: ["example.com"]) == (nil, 0))
+        #expect(value(vault, excluding: ["example.org"]).value == "vault.example.com/items")
+        // A page framed in the one shown is not looked for here: the window is looked through every
+        // half second, and the frame is not what the address field shows.
+        let framing = FakeElement("AXWebArea", ["host": "example.org"], children: [vault])
+        #expect(value(framing, excluding: ["example.com"]).value == "vault.example.com/items")
+        // A field that itself holds an excluded page is not read, however deep the page.
+        let holder = FakeElement("AXTextArea", [kAXValueAttribute: "text"], children: [FakeElement("AXWebArea", ["host": "example.org"], children: [vault])])
+        let window = FakeElement("AXWindow", children: [holder])
+        #expect(FocusedField.value(of: holder, above: [window], in: FakeScreenTree(), maxLength: 100, excluding: ScreenExclusions(hosts: ["example.com"])) == nil)
+        #expect(FocusedField.value(of: holder, above: [window], in: FakeScreenTree(), maxLength: 100, excluding: ScreenExclusions(hosts: ["example.net"])) == "text")
+        // A field with no window above it is read by its own pages alone.
+        #expect(FocusedField.value(of: holder, above: [], in: FakeScreenTree(), maxLength: 100, excluding: ScreenExclusions(hosts: ["example.net"])) == "text")
+    }
+
     /// The focused field read for correction learning: in a page of an excluded website, or that
     /// page itself, its text is never asked for.
     @Test func theFocusedFieldOfAnExcludedWebsiteIsNotRead() {
@@ -391,6 +530,9 @@ struct ScreenExclusionTests {
         }
         #expect(value(of: field, above: [area, window], excluding: ["example.com"]) == (nil, 0))
         #expect(value(of: area, above: [window], excluding: ["example.com"]) == (nil, 0))
+        // The field's own page is told from what is above it, with no window to look through.
+        #expect(value(of: field, above: [area], excluding: ["example.com"]) == (nil, 0))
+        #expect(value(of: field, above: [area], excluding: ["example.org"]).value == "account 1234")
         #expect(value(of: field, above: [area, window], excluding: ["example.org"]).value == "account 1234")
         #expect(value(of: area, above: [window], excluding: ["example.org"]).value == "page text")
         // A password field is still never read, and nothing past the limit.

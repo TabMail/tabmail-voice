@@ -690,7 +690,10 @@ struct FakeScreenTree: ScreenTree {
     func children(of element: FakeElement) -> [FakeElement] { element.children }
     func frame(of element: FakeElement) -> CGRect? { element.frame }
     func string(_ element: FakeElement, _ name: String) -> String? { name == kAXRoleAttribute ? element.role : element.attributes[name] }
-    func host(of webArea: FakeElement) -> String? { webArea.attributes["host"] }
+    /// "hostUnknown" stands for an app that failed to give the page's address.
+    func page(of webArea: FakeElement) -> PageHost {
+        webArea.attributes["hostUnknown"] != nil ? .unknown : webArea.attributes["host"].map(PageHost.host) ?? .noHost
+    }
     func fieldText(of element: FakeElement, windowFrame: CGRect?) -> String? { element.attributes[kAXValueAttribute] }
     func caretWindow(of element: FakeElement) -> (String, String, String)? {
         guard let before = element.attributes["caretBefore"], let selected = element.attributes["caretSelected"],

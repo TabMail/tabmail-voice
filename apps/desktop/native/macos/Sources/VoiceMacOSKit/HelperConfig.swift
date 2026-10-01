@@ -94,6 +94,9 @@ enum HelperConfig {
 
     /// Per-call cap on Accessibility calls reading the focused field after a paste (seconds).
     static let focusedFieldTimeout: Float = 0.25
+    /// Longest the window is looked through for a page of an excluded website before the focused
+    /// field is read (seconds): the field is read every half second while corrections are watched.
+    static let focusedFieldPageScanBudget: Double = 0.2
 
     // MARK: Email apps
 

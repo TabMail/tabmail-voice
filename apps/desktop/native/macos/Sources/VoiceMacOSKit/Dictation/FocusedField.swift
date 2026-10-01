@@ -10,10 +10,11 @@ import VoiceHelperSupport
 /// website, and nothing past `maxLength`.
 enum FocusedField {
     /// The focused field's whole text in the app `pid`, or nil when there is no focused element, it
-    /// has no text, it is a password field, it is in a page of an excluded website, or its text is
+    /// has no text, it is a password field, its window shows a page of an excluded website, or its text is
     /// longer than `maxLength` UTF-16 code units.
-    /// Blocking cross-process Accessibility calls, each bounded by `HelperConfig.focusedFieldTimeout`:
-    /// call off the main thread.
+    /// Blocking cross-process Accessibility calls: call off the main thread. Those on the focused
+    /// element are bounded by `HelperConfig.focusedFieldTimeout`; those on what is above and inside
+    /// it (looked at for pages only) by the app-wide timeout.
     static func value(inApp pid: pid_t, maxLength: Int, excluding exclusions: ScreenExclusions) -> String? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.focusedFieldTimeout)
@@ -29,11 +30,21 @@ enum FocusedField {
     }
 
     /// The focused element's text, as `value(inApp:maxLength:excluding:)` has it; `focusPath` is what
-    /// is above the element. A page of an excluded website is checked before the text is asked for.
+    /// is above the element. A page of an excluded website in the element's window is looked for before
+    /// the text is asked for.
     static func value<Tree: ScreenTree>(of element: Tree.Element, above focusPath: [Tree.Element], in tree: Tree, maxLength: Int,
                                         excluding exclusions: ScreenExclusions) -> String? {
-        if ScreenContextReader.pageHosts(of: element, above: focusPath, in: tree).contains(where: exclusions.excludesHost) {
-            HelperLog.debug("FocusedField: in a page of a website excluded from screen reading; not read")
+        let started = Date()
+        func holdsExcludedPage(_ element: Tree.Element, intoPages: Bool) -> Bool {
+            ScreenContextReader.holdsExcludedPage(element, in: tree, excluding: exclusions, intoPages: intoPages,
+                                                  within: HelperConfig.focusedFieldPageScanBudget, since: started)
+        }
+        // The field's own pages, what it holds, then the rest of its window: with the caret in a
+        // browser's address field, the page it shows is beside the field, not above it.
+        let window = focusPath.last { tree.string($0, kAXRoleAttribute) == kAXWindowRole as String }
+        if ScreenContextReader.pageHosts(of: element, above: focusPath, in: tree).contains(where: exclusions.excludes)
+            || holdsExcludedPage(element, intoPages: true) || window.map({ holdsExcludedPage($0, intoPages: false) }) ?? false {
+            HelperLog.debug("FocusedField: the window shows a page of a website excluded from screen reading; not read")
             return nil
         }
         return readable(subrole: tree.string(element, kAXSubroleAttribute), value: tree.string(element, kAXValueAttribute), maxLength: maxLength)

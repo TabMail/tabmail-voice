@@ -308,6 +308,11 @@ describe("Settings page", () => {
         expect(add().disabled).toBe(false);
         expect(problem()).toBeNull();
 
+        // A built-in host is already excluded, so the full list is not what is in its way.
+        await act(async () => type(field(), `my.${config.builtInExcludedSites[0]}`));
+        expect(add().disabled).toBe(false);
+        expect(problem()).toBeNull();
+
         await open({ ...signedIn, excludedSites: full.slice(1) });
         await act(async () => type(field(), "example.org"));
         expect(add().disabled).toBe(false);

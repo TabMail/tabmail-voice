@@ -48,8 +48,28 @@ struct ScreenExclusions: Sendable, Equatable {
         }
     }
 
+    /// Whether a page is excluded: one on an excluded host, and one whose address the app did not
+    /// give when asked. What can't be told safe is not read.
+    func excludes(_ page: PageHost) -> Bool {
+        switch page {
+        case .unknown: true
+        case .noHost: false
+        case let .host(name): excludesHost(name)
+        }
+    }
+
     private static func normalized(_ host: String) -> String {
         let name = host.lowercased()
         return name.hasSuffix(".") ? String(name.dropLast()) : name
+    }
+}
+
+/// What a web area says of its page's address: its host (for a page that is not a web page, its
+/// scheme), no host when the page has no address, or unknown when the app failed to answer.
+enum PageHost: Sendable, Equatable {
+    case host(String), noHost, unknown
+
+    var name: String? {
+        if case let .host(name) = self { name } else { nil }
     }
 }
