@@ -278,9 +278,14 @@ function ExcludedSites({ state }: { state: SettingsState }) {
           Add
         </button>
       </form>
-      {(problem ?? failure) !== null && (
+      {problem !== null && (
         <div className="row">
-          <span className="error">{problem ?? failure}</span>
+          <span className="error">{problem}</span>
+        </div>
+      )}
+      {failure !== null && (
+        <div className="row">
+          <span className="error">{failure}</span>
         </div>
       )}
       {state.excludedSites.length === 0 ? (

@@ -271,7 +271,8 @@ describe("Settings page", () => {
       const sites = (): string[] => [...document.querySelectorAll('ul[aria-label="Excluded websites"] li')].map((item) => item.textContent ?? "");
       const field = (): HTMLInputElement => document.querySelector<HTMLInputElement>('input[aria-label="Website"]') as HTMLInputElement;
       const add = (): HTMLButtonElement => field().form?.querySelector<HTMLButtonElement>('button[type="submit"]') as HTMLButtonElement;
-      const problem = (): string | null => field().closest(".group, section, div")?.parentElement?.querySelector(".error")?.textContent ?? null;
+      const problems = (): string[] => [...(field().closest(".group, section, div")?.parentElement?.querySelectorAll(".error") ?? [])].map((error) => error.textContent ?? "");
+      const problem = (): string | null => problems()[0] ?? null;
 
       test("names every built-in web vault, and says what excluding does", async () => {
         await open(signedIn);
@@ -292,7 +293,7 @@ describe("Settings page", () => {
         expect(field().value).toBe("");
       });
 
-      test("shows why a website could not be added or removed, until the next try or what is typed has its own problem", async () => {
+      test("shows why a website could not be added or removed, until the next try, beside what is wrong with what is typed", async () => {
         const reply = { error: "Excluded for now, but this couldn't be saved." as string | null };
         await open({ ...signedIn, excludedSites: ["mail.example.org"] }, reply);
         expect(problem()).toBeNull();
@@ -302,12 +303,13 @@ describe("Settings page", () => {
         expect(field().value).toBe("");
 
         await act(async () => type(field(), "not a site"));
-        expect(problem()).toBe("A website’s address, like example.com.");
+        expect(problems()).toEqual(["A website’s address, like example.com.", "Excluded for now, but this couldn't be saved."]);
 
         reply.error = "Removed for now, but this couldn't be saved.";
         await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove mail.example.org"]')?.click());
+        expect(problems()).toEqual(["A website’s address, like example.com.", "Removed for now, but this couldn't be saved."]);
         await act(async () => type(field(), ""));
-        expect(problem()).toBe("Removed for now, but this couldn't be saved.");
+        expect(problems()).toEqual(["Removed for now, but this couldn't be saved."]);
 
         reply.error = null;
         await act(async () => type(field(), "example.com"));
@@ -323,6 +325,24 @@ describe("Settings page", () => {
         await act(async () => field().form?.requestSubmit());
         expect(page.commands).toEqual([{ type: "excludeSite", site: "mail.example.org" }]);
         expect(problem()).toBe("Excluded for now, but this couldn't be saved.");
+      });
+
+      /** The site that takes the last place fills the list, whose own message must not stand in for
+       * the warning; nor when it is added again. */
+      test("a website that fills the list unsaved still shows why", async () => {
+        const full = Array.from({ length: config.excludedSitesMax }, (_, index) => `site${index}.example.com`);
+        const atMost = `At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`;
+        const page = await settingsPage({ error: "Excluded for now, but this couldn't be saved." }, { ...signedIn, excludedSites: full }, { ...signedIn, excludedSites: full.slice(1) });
+        await act(async () => button("Privacy").click());
+        await act(async () => type(field(), "site0.example.com"));
+        await act(async () => field().form?.requestSubmit());
+        expect(problems()).toEqual([atMost, "Excluded for now, but this couldn't be saved."]);
+
+        await act(async () => type(field(), "site0.example.com"));
+        expect(problems()).toEqual(["Excluded for now, but this couldn't be saved."]);
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([{ type: "excludeSite", site: "site0.example.com" }, { type: "excludeSite", site: "site0.example.com" }]);
+        expect(problems()).toEqual([atMost, "Excluded for now, but this couldn't be saved."]);
       });
 
       test.each(["not a site", "localhost"])("refuses %j, saying why", async (typed) => {
