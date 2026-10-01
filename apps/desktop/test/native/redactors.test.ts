@@ -145,13 +145,23 @@ describe("the shared redactors", () => {
     expect(performance.now() - started).toBeLessThan(hostileMilliseconds);
   });
 
+  /** A run far longer than any real text never stops a redactor short: what follows is still redacted
+   * (the Mac helper's engine gave up on a repeat it runs a stack frame for per character). */
+  test.each([
+    ["a key's characters", "sk-"],
+    ["a named value", "data token=7"],
+    ["a bearer token", "Bearer "],
+  ])("a very long run of %s does not stop the redaction of what follows", (_what, start) => {
+    expect(redact(`${start}${"a".repeat(400_000)}\npassword: hunter${"2x"}\n`).endsWith(`\npassword: ${placeholder}\n`)).toBe(true);
+  });
+
   test("the cases include text that changes and text that stays", () => {
     expect(cases.some((item) => joined(item.text) !== joined(item.expected))).toBe(true);
     expect(cases.some((item) => joined(item.text) === joined(item.expected) && joined(item.text) !== "")).toBe(true);
     expect(new Set(cases.map((item) => item.name)).size).toBe(cases.length);
   });
 
-  /** No line of the shared files, or of a generated one, is shaped like a key a scanner would flag. */
+  /** No line of the cases file is shaped like a key a scanner would flag. */
   test("no case holds a whole secret on one line of the file", () => {
     const raw = readFileSync(join(shared, "redaction-cases.json"), "utf8");
     for (const line of raw.split("\n")) expect(redact(line)).toBe(line);
@@ -160,7 +170,7 @@ describe("the shared redactors", () => {
 
 describe("the redactor generator", () => {
   const one = (overrides: Record<string, unknown>) =>
-    JSON.stringify({ placeholder: "[redacted]", redactors: [{ name: "example", description: "An example.", pattern: "abc[0-9]{4,}", ignoreCase: false, replacement: "{placeholder}", ...overrides }] });
+    JSON.stringify({ placeholder: "[redacted]", redactors: [{ name: "example", description: "An example.", pattern: "abc[0-9]{4}", ignoreCase: false, replacement: "{placeholder}", ...overrides }] });
 
   test("writes each redactor as a Swift raw string, the placeholder filled in", () => {
     const swift = swiftRedactors(one({ pattern: '(a"b)\\s', replacement: "$1{placeholder}" }));
@@ -205,6 +215,9 @@ describe("the redactor generator", () => {
     ["the not-a-word class", { pattern: "\\W" }, unshared],
     ["the digit class", { pattern: "abc\\d" }, unshared],
     ["the not-a-digit class", { pattern: "abc\\D" }, unshared],
+    ["an open-ended count", { pattern: "[a-z]{16,}" }, /gives up on/],
+    ["a repeated space class outside a class", { pattern: "a\\s*b" }, /gives up on/],
+    ["a space class repeated at least once outside a class", { pattern: "a\\s+b" }, /gives up on/],
     ["a replacement naming a group the pattern lacks", { replacement: "$1{placeholder}" }, group],
     ["a replacement naming a group past the pattern's last", { pattern: "(a)bc", replacement: "$1{placeholder}$2" }, group],
     ["a replacement naming group zero", { pattern: "(a)bc", replacement: "$0{placeholder}" }, group],
@@ -221,7 +234,7 @@ describe("the redactor generator", () => {
   });
 
   test("reads the syntax the helpers share", () => {
-    const pattern = "(^|[^A-Za-z0-9_])(?:ab|cd)[a-z]{2,}\\s+x*y?(?=z)(?!q)";
+    const pattern = "(^|[^A-Za-z0-9_])(?:ab|cd)[a-z]{2}[a-z]*[\\s]+\\sx*y?(?=z)(?!q)";
     expect(redactorDefinitions(one({ pattern, replacement: "$1{placeholder}" })).redactors[0]).toMatchObject({ pattern, replacement: "$1[redacted]" });
   });
 

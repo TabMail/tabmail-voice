@@ -3853,6 +3853,800 @@
     " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
     "-----"
    ]
+  },
+  {
+   "name": "the word Bearer and its token two spaces apart",
+   "text": [
+    "Bearer  ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "Bearer  ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word Bearer and its token on two lines ended by a carriage return",
+   "text": [
+    "Authorization: Bearer\r\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "Authorization: Bearer\r\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "the word Bearer run into what follows is no bearer token",
+   "text": [
+    "Bearerabcdefghijklmnopqrstuvwx"
+   ],
+   "expected": [
+    "Bearerabcdefghijklmnopqrstuvwx"
+   ]
+  },
+  {
+   "name": "a key inside a named value: the value goes whole, the earlier redactor first",
+   "text": [
+    "password=",
+    "hunter/",
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "password=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token that is a JSON web token is replaced once",
+   "text": [
+    "Bearer ",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an address's password with no user name",
+   "text": [
+    "redis://:",
+    "hunter2x",
+    "@example.com:6379"
+   ],
+   "expected": [
+    "redis://:",
+    "{redacted}",
+    "@example.com:6379"
+   ]
+  },
+  {
+   "name": "an address with a user name and an empty password stays",
+   "text": [
+    "ftp://alex:@example.com"
+   ],
+   "expected": [
+    "ftp://alex:@example.com"
+   ]
+  },
+  {
+   "name": "an address without its colon after the scheme stays",
+   "text": [
+    "see http//alex:",
+    "hunter2",
+    "@example.com"
+   ],
+   "expected": [
+    "see http//alex:",
+    "hunter2",
+    "@example.com"
+   ]
+  },
+  {
+   "name": "a value given to SECRET_KEY",
+   "text": [
+    "SECRET_KEY=",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "SECRET_KEY=",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to secret-key",
+   "text": [
+    "secret-key: ",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "secret-key: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a value given to secretkey",
+   "text": [
+    "secretkey = ",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "secretkey = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a name and its value several spaces apart",
+   "text": [
+    "password   :   ",
+    "abc123",
+    "def"
+   ],
+   "expected": [
+    "password   :   ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an API key ends before :",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "an API key ends before ;",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ";next"
+   ],
+   "expected": [
+    "{redacted}",
+    ";next"
+   ]
+  },
+  {
+   "name": "an API key ends before @",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "@next"
+   ],
+   "expected": [
+    "{redacted}",
+    "@next"
+   ]
+  },
+  {
+   "name": "an API key ends before ^",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "^next"
+   ],
+   "expected": [
+    "{redacted}",
+    "^next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before :",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before ;",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ";next"
+   ],
+   "expected": [
+    "{redacted}",
+    ";next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before @",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "@next"
+   ],
+   "expected": [
+    "{redacted}",
+    "@next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token ends before ^",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "^next"
+   ],
+   "expected": [
+    "{redacted}",
+    "^next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before :",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before ;",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    ";next"
+   ],
+   "expected": [
+    "{redacted}",
+    ";next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before @",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "@next"
+   ],
+   "expected": [
+    "{redacted}",
+    "@next"
+   ]
+  },
+  {
+   "name": "a GitLab token ends before ^",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2",
+    "^next"
+   ],
+   "expected": [
+    "{redacted}",
+    "^next"
+   ]
+  },
+  {
+   "name": "a JSON web token ends before a colon",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a JSON web token whose first part holds a colon is none",
+   "text": [
+    "ey",
+    "J",
+    "a1:B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1:B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "two parts joined by a colon are no JSON web token",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ":",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ":",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token whose third part is joined by a colon is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ":",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ":",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token with an empty first part is none",
+   "text": [
+    "ey",
+    "J",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token with an empty second part is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token with an empty third part is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    "."
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    "."
+   ]
+  },
+  {
+   "name": "a JSON web token whose first part starts otherwise is none",
+   "text": [
+    "ey",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "a1B2c3",
+    ".",
+    "ey",
+    "J",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "a JSON web token whose second part starts otherwise is none",
+   "text": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ],
+   "expected": [
+    "ey",
+    "J",
+    "a1B2c3",
+    ".",
+    "ey",
+    "d4E5f6",
+    ".",
+    "g7H8i9J0"
+   ]
+  },
+  {
+   "name": "an AWS access key id ends before a colon",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a Google API key ends before a colon",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    ":next"
+   ],
+   "expected": [
+    "{redacted}",
+    ":next"
+   ]
+  },
+  {
+   "name": "a private-key header with nothing after it goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a private-key block with nothing between header and footer goes",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token holding . past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2.m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding _ past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding ~ past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2~m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding + past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2+m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding / past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2/m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding = past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2=m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a bearer token holding - past its sixteenth character goes whole",
+   "text": [
+    "Bearer ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    " next"
+   ],
+   "expected": [
+    "Bearer ",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a long named value ends at a space",
+   "text": [
+    "token=",
+    "abc123def456",
+    " next"
+   ],
+   "expected": [
+    "token=",
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a long named value ends at a quote",
+   "text": [
+    "token=\"",
+    "abc123def456",
+    "\" next"
+   ],
+   "expected": [
+    "token=\"",
+    "{redacted}",
+    "\" next"
+   ]
+  },
+  {
+   "name": "a long named value ends at an apostrophe",
+   "text": [
+    "token='",
+    "abc123def456",
+    "' next"
+   ],
+   "expected": [
+    "token='",
+    "{redacted}",
+    "' next"
+   ]
+  },
+  {
+   "name": "an API key holding _ past its sixteenth character goes whole",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "an API key holding - past its sixteenth character goes whole",
+   "text": [
+    "sk",
+    "-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitHub fine-grained token holding _ past its sixteenth character goes whole",
+   "text": [
+    "github",
+    "_pat_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitLab token holding _ past its sixteenth character goes whole",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2_m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a GitLab token holding - past its sixteenth character goes whole",
+   "text": [
+    "gl",
+    "pat-",
+    "a1B2c3D4e5F6g7H8i9J0k1L2-m3N4",
+    " next"
+   ],
+   "expected": [
+    "{redacted}",
+    " next"
+   ]
+  },
+  {
+   "name": "a short named value before a space stays",
+   "text": [
+    "token=",
+    "ab1",
+    " cdefgh"
+   ],
+   "expected": [
+    "token=",
+    "ab1",
+    " cdefgh"
+   ]
+  },
+  {
+   "name": "a short named value before a quote stays",
+   "text": [
+    "token=",
+    "ab1",
+    "\"cdefgh"
+   ],
+   "expected": [
+    "token=",
+    "ab1",
+    "\"cdefgh"
+   ]
+  },
+  {
+   "name": "a short named value before an apostrophe stays",
+   "text": [
+    "token=",
+    "ab1",
+    "'cdefgh"
+   ],
+   "expected": [
+    "token=",
+    "ab1",
+    "'cdefgh"
+   ]
   }
  ],
  "lineCases": [

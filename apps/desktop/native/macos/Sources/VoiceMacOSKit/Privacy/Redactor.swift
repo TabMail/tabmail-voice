@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import Foundation
+import VoiceHelperSupport
 
 /// One kind of secret-looking text and what replaces it (ADR-DESK-046). The list (`Redactor.all`)
 /// is generated from `native/shared/privacy/redactors.json`, the one definition every platform's
@@ -39,7 +40,10 @@ struct Redactor: Sendable {
     /// address's password), goes to the text the rest of the match began in; every later boundary
     /// between texts in the match lands before that kept end, so a text wholly inside the secret
     /// comes back empty.
-    static func redact(_ lines: [[String]]) -> [[String]] {
+    ///
+    /// A redactor the regex engine could not finish (it reports an internal error, and without the
+    /// asking would stop silently) withholds everything after its last match.
+    static func redact(_ lines: [[String]], with redactors: [Redactor] = all) -> [[String]] {
         var text = lines.map { $0.joined() }.joined(separator: "\n") as NSString
         // Where each text starts and ends in `text`, in UTF-16 units.
         var ranges: [[(start: Int, end: Int)]] = []
@@ -54,9 +58,14 @@ struct Redactor: Sendable {
             ranges.append(places)
             position += 1
         }
-        for redactor in all {
-            let matches = redactor.regex.matches(in: text as String, range: NSRange(location: 0, length: text.length))
-            if matches.isEmpty { continue }
+        for redactor in redactors {
+            var matches: [NSTextCheckingResult] = []
+            var finished = true
+            redactor.regex.enumerateMatches(in: text as String, options: [.reportCompletion], range: NSRange(location: 0, length: text.length)) { match, flags, _ in
+                if let match { matches.append(match) }
+                if flags.contains(.internalError) { finished = false }
+            }
+            if matches.isEmpty, finished { continue }
             let result = NSMutableString()
             // Each match's place in the old text, its replacement's place in the new one, and how
             // much of the match the replacement starts and ends with.
@@ -70,7 +79,14 @@ struct Redactor: Sendable {
                 edits.append((match.range.location, NSMaxRange(match.range), newStart, result.length, kept(of: text.substring(with: match.range), in: replacement)))
                 copied = NSMaxRange(match.range)
             }
-            result.append(text.substring(from: copied))
+            if finished {
+                result.append(text.substring(from: copied))
+            } else {
+                HelperLog.debug("Redactor: \(redactor.name) could not finish; the text after its last match is withheld")
+                let newStart = result.length
+                result.append(placeholder)
+                edits.append((copied, text.length, newStart, result.length, (0, 0)))
+            }
             func moved(_ place: Int) -> Int {
                 var shift = 0
                 for edit in edits {

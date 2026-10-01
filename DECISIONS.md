@@ -2401,7 +2401,7 @@ well-structured place for the redactors.
 - What looks like a secret is defined once, in `native/shared/privacy/redactors.json`: an ordered
   list of redactors, each a name, a regex, a case flag and a replacement. They cover private-key
   blocks (whole, or cut off where the window ends), JSON web tokens, `Bearer` tokens, the password in
-  an address (`scheme://user:password@host`), a value given to a name like `password`, `token`,
+  an address (`scheme://user:password@host`, the user name or not), a value given to a name like `password`, `token`,
   `secret` or `api_key` (when it has a digit and at least 6 characters), and keys with a provider's
   prefix (`sk-`, `sk_live_`, `whsec_`, `ghp_`, `github_pat_`, `glpat-`, `AKIA`, `AIza`, `xoxb-`,
   `npm_`, `hf_`). A match becomes `[redacted]`; the name, the word `Bearer` and the rest of an
@@ -2423,6 +2423,12 @@ well-structured place for the redactors.
   every position is refused in review: it is bounded, or the pattern begins where a run begins (a
   key block's kind, before and after `PRIVATE KEY`, is at most 40 characters). Both suites time
   each pattern on hostile text.
+- No run stops a redactor short. ICU runs an open-ended count (`{16,}`) and a repeated `\s` outside
+  a class with a stack frame per repetition, and on a run of some 200,000 characters gave up,
+  silently matching nothing after it: every later secret of that read was sent. The patterns use
+  the forms it runs as one loop (`[..]{16}[..]*`, `[\s]*`), the generator refuses the others, and
+  `Redactor.redact` asks the engine whether it finished: a redactor that did not withholds
+  everything after its last match (`[redacted]` in its place).
 - `native/shared/privacy/redaction-cases.json` is what every helper must do with them: each case's
   text and what it becomes. Every helper runs the cases in its own suite, on its own regex engine;
   that is what shows the helpers agree. The texts are split into fragments, so the file holds
@@ -2468,8 +2474,7 @@ well-structured place for the redactors.
   after it takes the letters that follow, up to the first punctuation.
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
-  last character in the second text; if that text is the selection, Edit refuses it. Nothing of the
-  secret is kept.
+  last character in the second text. Nothing of the secret is kept.
 - Edit's refusal asks the backend for no rewrite. When several tools are offered, the pick of the
   tool has already been asked, with the redacted screen.
 - A correction of a word into something secret-looking is not learned: the field is redacted before

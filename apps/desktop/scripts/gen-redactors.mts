@@ -43,6 +43,9 @@ export function redactorDefinitions(json = readFileSync(redactorsPath, "utf8")):
     // backreferences are not read alike by ICU, ECMAScript and PCRE. Nor are \b, \w and \d: ICU
     // counts every script's letters and digits, ECMAScript only ASCII's.
     if (/\(\?<|\\[pPkKGAzZbBwWdD]|\(\?[a-zA-Z]|\(\?>|[*+?}]\+|\\[1-9]/.test(pattern)) throw new Error(`redactors.json: "${name}" uses regex syntax the helpers don't share`);
+    // ICU runs these with a stack frame per repetition, and gives up on a long run, matching nothing
+    // after it: `[..]{16}[..]*` and `[\\s]*` are run as one loop.
+    if (/\{[0-9]+,\}|\\s[*+]/.test(pattern)) throw new Error(`redactors.json: "${name}" uses an open-ended count or a repeated \\s outside a class, which the helpers' engine gives up on`);
     // An empty alternative matches the empty text, which shows how many groups the pattern has.
     const groups = (new RegExp(`${pattern}|`, ignoreCase ? "i" : "").exec("")?.length ?? 1) - 1;
     for (const [, group] of replacement.matchAll(/\$([0-9]+)/g)) {

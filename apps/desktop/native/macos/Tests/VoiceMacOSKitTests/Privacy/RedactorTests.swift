@@ -207,6 +207,75 @@ struct RedactorTests {
         #expect(reply["selectionRedacted"] == .bool(true))
     }
 
+    /// A run far longer than any real text never stops a redactor short: what follows it is still
+    /// redacted. (The engine gives up on a repeat it runs a stack frame for per character, and
+    /// giving up is fast and silent.)
+    @Test func aVeryLongRunDoesNotStopTheRedactionOfWhatFollows() {
+        let length = 400_000
+        let runs = [
+            "sk" + "-" + String(repeating: "a", count: length),
+            "data token=7" + String(repeating: "a", count: length),
+            "Bearer " + String(repeating: "a", count: length),
+            "password:" + String(repeating: " ", count: length) + "x",
+            "Bearer" + String(repeating: " ", count: length) + "x",
+        ]
+        for run in runs {
+            let redacted = Redactor.redact("\(run)\npassword: hunter" + "2x\n")
+            #expect(redacted.hasSuffix("\npassword: \(Redactor.placeholder)\n"), "\(run.prefix(16))")
+            var context = ScreenContext(appName: "Example Browser")
+            context.append(.text, run)
+            context.append(.text, "password: hunter" + "2x")
+            context.textBeforeCaret = "pwd=hunter" + "3y "
+            context.selectedText = "token=abc" + "123def"
+            let reply = context.json
+            #expect(reply["renderedText"]?.string?.contains("hunter") == false, "\(run.prefix(16))")
+            #expect(reply["textBeforeCaret"]?.string == "pwd=\(Redactor.placeholder) ")
+            #expect(reply["selectionRedacted"] == .bool(true))
+        }
+    }
+
+    /// A redactor the engine could not finish withholds everything after its last match: nothing it
+    /// did not look at is sent.
+    @Test func aRedactorThatCouldNotFinishWithholdsTheRest() {
+        // One stack frame per character: the engine gives up on a long enough run.
+        let greedy = Redactor(name: "example", pattern: "k(?:a|b){6,}", ignoreCase: false, replacement: Redactor.placeholder)
+        let gone = Redactor.placeholder
+        #expect(Redactor.redact([["one kaaaaaab two"], ["three"]], with: [greedy]) == [["one \(gone) two"], ["three"]])
+        let run = "k" + String(repeating: "a", count: 2_000_000)
+        #expect(Redactor.redact([["one kaaaaaab two "], [run, "selected"], ["after"]], with: [greedy]) == [["one \(gone)\(gone)"], ["", ""], [""]])
+    }
+
+    /// A label on screen and the focused field holding its value are one secret: the field's texts
+    /// are redacted with the blocks around them, not by themselves.
+    @Test func aSecretSplitBetweenALabelAndTheFocusedFieldIsRedacted() {
+        let gone = Redactor.placeholder
+        var context = ScreenContext(appName: "Example Browser")
+        context.append(.text, "API token:")
+        context.textBeforeCaret = "abc123" + "def456"
+        context.appendCaret()
+        var reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == gone)
+        #expect(reply["renderedText"]?.string == "API token:\n» \(gone)‸")
+
+        // The token selected under its label: the selection is a secret's.
+        context = ScreenContext(appName: "Example Browser")
+        context.append(.text, "Authorization: Bearer")
+        context.selectedText = "a1B2c3D4e5F6g7H8" + "i9J0k1L2"
+        context.appendCaret()
+        reply = context.json
+        #expect(reply["selectedText"]?.string == gone)
+        #expect(reply["selectionRedacted"] == .bool(true))
+        #expect(reply["renderedText"]?.string == "Authorization: Bearer\n» ‸\(gone)‸")
+
+        // No block for the focused field: its texts follow the last block.
+        context = ScreenContext(appName: "Example Browser")
+        context.append(.text, "password:")
+        context.textBeforeCaret = "hunter" + "22x"
+        reply = context.json
+        #expect(reply["textBeforeCaret"]?.string == gone)
+        #expect(reply["renderedText"]?.string == "password:")
+    }
+
     /// Each block keeps its place on screen through the redaction, the focused field's too: the
     /// visible text is laid out from them (side by side on a line, a blank line at a jump back up).
     @Test func redactedBlocksKeepTheirPlaceOnScreen() {
