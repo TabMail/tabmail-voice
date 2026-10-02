@@ -192,7 +192,7 @@ describe("the cleanup's screen text", () => {
   });
 
   test("leaves agent mode the whole screen", () => {
-    expect(screenVariables("summarize this", screen({ renderedText: rendered })).screen_text).toBe(rendered);
+    expect(screenVariables("summarize this", screen({ renderedText: rendered }), false).screen_text).toBe(rendered);
   });
 });
 

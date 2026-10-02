@@ -2362,13 +2362,26 @@ Apps are known by bundle identifier, compared without regard to case.
 - The dictation's key-down snapshot (ADR-DESK-017) carries the identifiers
   (`DictationSettings.excludedApps`). They go with the screen read (`readScreen`) and with every
   read of the pasted-into field for correction learning (`focusedFieldValue`, ADR-DESK-038).
-- `voice-macos` refuses: `readScreen` finds the app in front and, if it is excluded, answers null
+- `voice-macos` refuses: `readScreen` finds the app in front and, if it is excluded, answers that it is hidden
   without reading it, the same lookup deciding both; `focusedFieldValue` answers no value for an
   excluded app's process. A request that doesn't carry the list is an error, so nothing is read by
   mistake. `ScreenAccess` is what those two requests read through, or a test's stand-ins.
 - With no screen read, a dictation in an excluded app is as one with screen reading off: pasted,
   cleaned up without the screen, no screen terms in the vocabulary, no selection for agent mode's
   Edit, nothing kept for the debug window or the debug log, no correction learned.
+- Agent mode is told the screen is hidden (owner, 2026-10-01). A screen that is not read for
+  privacy (an excluded app, a page of an excluded website or of an unknown address: ADR-DESK-047)
+  is answered by the helper as `{hidden: true}`, with nothing of the screen, not as null, which
+  stays the answer for no app in front and for a read that failed. The app keeps treating it as
+  no screen everywhere (`screenShown`), and agent mode's tools get `screenHiddenNote` as the
+  screen's text (`screenVariables`), with the app, host, window title and selection empty. Without
+  it a question asked in the kept-open chat after moving to an excluded page was answered from the
+  earlier page, since an empty screen and a hidden one looked the same to the model. The note says
+  only that the screen is hidden, not which app or site: naming it would send what the user chose
+  to keep out. The dictation cleanup and the agent's choice of tool get no note (the first needs
+  none, the second has no screen text). The note is the app's text in an existing prompt variable,
+  so the backend prompts are unchanged. A helper that still answers null there is as before: no
+  screen, and no note.
 - Settings › Privacy (macOS, where the screen is read): the built-in ones named in a note, the user's
   apps with a Remove button each, and Add App…, which opens a picker on the Applications folder; the
   helper's `appInfo` gives the picked app's identifier and name.
@@ -2528,7 +2541,7 @@ starts alike; case and a trailing dot don't matter.
   one, a focused group holding one: `holdsExcludedPage`), which the walk never goes into. The walk then refuses the whole window at any page of an excluded site, in
   focus or not, framed in another page or inside a row, a heading or a link that has no label of its
   own (one with a label gives its label, and nothing inside it is looked at): with the caret in the
-  browser's address field the page is still on screen. `readScreen` answers null, as for an excluded
+  browser's address field the page is still on screen. `readScreen` answers that the screen is hidden, as for an excluded
   app, and drops a context whose host is excluded whatever the reader did. A refused read gives
   back nothing of what it had gathered (`gather` answers no context at all). `focusedFieldValue`
   answers no value for a field whose window shows a page of an excluded site: the field's own

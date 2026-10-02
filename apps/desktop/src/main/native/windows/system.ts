@@ -6,7 +6,7 @@ import { screen } from "electron";
 import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
 import * as config from "../../../core/config.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
-import type { ScreenContext } from "../../../core/dictation/screenContext.js";
+import type { ScreenRead } from "../../../core/dictation/screenContext.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { NativeMicrophone } from "../microphone.js";
@@ -48,7 +48,7 @@ export class WindowsSystem {
     return typeof reply?.value === "string" && reply.value.length <= config.correctionMaxFieldLength ? reply.value : null;
   }
 
-  readScreen(exclusions: ScreenExclusions): Promise<ScreenContext | null> {
+  readScreen(exclusions: ScreenExclusions): Promise<ScreenRead | null> {
     return this.helper.request("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, config.screenReadTimeout);
   }
 
