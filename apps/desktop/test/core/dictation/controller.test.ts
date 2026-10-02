@@ -859,6 +859,38 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
     });
 
+    /** From the first server error until a retry answers, the controller says it is retrying, the note
+     * or not, so the thinking circle can turn purple before the note shows (owner, 2026-10-02). */
+    test("says it is retrying from the first server error until a retry answers", async () => {
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [300];
+      controller.transcriptionRetryNoticeDelay = 10_000;
+      expect(controller.isRetrying).toBe(false);
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => controller.isRetrying)).toBe(true);
+      expect(controller.phase.kind).toBe("transcribing");
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(controller.isRetrying).toBe(false);
+    });
+
+    /** A dictation that fails with no retry left stops saying it is retrying. */
+    test("stops saying it is retrying when the retries run out", async () => {
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1];
+      controller.transcriptionRetryNoticeDelay = 10_000;
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
+      expect(controller.isRetrying).toBe(false);
+    });
+
     /** The note comes up once the retries have gone on for `transcriptionRetryNoticeDelay` since the
      * first failure, not at the failure, and stays until a retry answers. */
     test("shows the note once the notice delay has passed since the first failure", async () => {
@@ -4135,6 +4167,39 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await throughout(300, () => controller.tip === null)).toBe(true);
       controller.handle("cancel");
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
+    });
+
+    /** The waveform turns purple once a voice stands `waveformVoiceAboveNoiseDecibels` above the room's
+     * noise as it stood before it, and stays so for the dictation; each dictation starts blue
+     * (owner, 2026-10-02). A reading just under that is not a voice. */
+    test("a voice above the room's noise turns the waveform purple", async () => {
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      const noise = 0.01;
+      const louder = (decibels: number) => noise * 10 ** (decibels / 20);
+      const listenTo = async (amplitude: number) => {
+        const starts = capture.starts;
+        controller.handle("start");
+        expect(await eventually(() => capture.starts === starts + 1)).toBe(true);
+        for (let reading = 0; reading < 10; reading += 1) capture.hearWindow(noise);
+        expect(controller.isHearing).toBe(true);
+        expect(controller.hasVoice).toBe(false);
+        capture.hearWindow(amplitude);
+      };
+
+      await listenTo(louder(config.waveformVoiceAboveNoiseDecibels - 0.2));
+      expect(controller.hasVoice).toBe(false);
+      controller.handle("cancel");
+
+      await listenTo(louder(config.waveformVoiceAboveNoiseDecibels + 0.2));
+      expect(controller.hasVoice).toBe(true);
+      capture.hearWindow(noise);
+      expect(controller.hasVoice).toBe(true);
+      controller.handle("cancel");
+
+      await listenTo(noise);
+      expect(controller.hasVoice).toBe(false);
+      controller.handle("cancel");
     });
 
     /** With no name set, switching to agent mode shows the tip inviting one, until it switches back;

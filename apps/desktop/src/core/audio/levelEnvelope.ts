@@ -20,6 +20,11 @@ export class LevelEnvelope {
   private peak: number | undefined;
   private count = 0;
 
+  /** The floor before the next reading, in dB: the room's noise. Undefined before any reading. */
+  get floorDecibels(): number | undefined {
+    return this.floor;
+  }
+
   level(decibels: number): number {
     this.count += 1;
     const floor = LevelEnvelope.follow(this.floor ?? decibels, decibels, true, this.count);

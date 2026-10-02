@@ -54,7 +54,7 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
+const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
 const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent" };
@@ -784,6 +784,32 @@ describe("the chat window", () => {
     await page.show({ ...idle, ...agent });
     expect(pillCircles()).toBe(false);
     expect(circling()).toEqual([]);
+  });
+
+  /** The waveform is blue until a voice is heard, then purple, a sign the dictation is listening;
+   * while a server error is tried again, the thinking circle's arc and track turn toward purple too
+   * (owner, 2026-10-02). */
+  test("the waveform turns purple once a voice is heard, and the circle while a retry runs", async () => {
+    const page = await overlayPage();
+    // A color's red, green and blue, however the page writes it.
+    const rgb = (css: string) => [...css.replace(/\s/g, "").matchAll(/(\d+),(\d+),(\d+)/g)].map((match) => match.slice(1, 4).join(","));
+    const barColors = () => [...document.querySelectorAll<HTMLElement>(".pill .bar")].flatMap((bar) => rgb(bar.style.backgroundColor));
+    const rimColors = () => [...document.querySelectorAll<HTMLElement>(".pill .rim")].map((rim) => rgb(rim.getAttribute("style") ?? ""));
+    const blue = rgb(brandColor(0))[0] ?? "";
+    const voiced = rgb(brandColor(config.waveformVoicedColor))[0] ?? "";
+    const shifted = rgb(brandColor(config.thinkingRetryColorShift))[0] ?? "";
+
+    await page.show({ ...listening, hasVoice: false });
+    expect(barColors()).toEqual(Array(config.overlayMeterBarCount).fill(blue));
+    await page.show({ ...listening, hasVoice: true });
+    expect(barColors()).toEqual(Array(config.overlayMeterBarCount).fill(voiced));
+
+    const transcribing: OverlayState = { ...listening, phase: { kind: "transcribing" } };
+    await page.show({ ...transcribing, isRetrying: false });
+    expect(rimColors()).toHaveLength(2);
+    expect(rimColors().every((colors) => colors.includes(blue) && !colors.includes(shifted))).toBe(true);
+    await page.show({ ...transcribing, isRetrying: true });
+    expect(rimColors().every((colors) => colors.includes(shifted) && !colors.includes(blue))).toBe(true);
   });
 
   /** A new turn scrolls the conversation to it. */

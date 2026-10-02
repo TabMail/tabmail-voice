@@ -293,6 +293,8 @@ function launch(): void {
       mode: controller.mode,
       level: controller.level,
       isHearing: controller.isHearing,
+      hasVoice: controller.hasVoice,
+      isRetrying: controller.isRetrying,
       language: controller.language,
       tip: controller.tip,
       opensUpward: overlay.opensUpward,

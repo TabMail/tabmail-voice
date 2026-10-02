@@ -207,6 +207,22 @@ to the front (switching away and back is the user's way to restart the asking); 
 open at the pointer. An app that never answers within the attempts is left until it next comes to the
 front.
 
+**Amendment 2026-10-02 — the waveform turns purple once a voice is heard (owner).** "When it actually
+starts to listen, the waveform color could turn from blue to a little bit more purple, our theme
+color", as a sign it is listening properly, on TabMail Voice and iOS alike. TabMail Voice has no
+wait for speech (a held key says someone is speaking), so the owner chose a loudness cue: the bars
+are the brand blue when the pill replaces the swirl and ease (`waveformColorTransitionSeconds`,
+0.4 s) to `waveformVoicedColor` (the brand purple) once a reading stands
+`waveformVoiceAboveNoiseDecibels` (6 dB) above `LevelEnvelope`'s floor as it stood before that
+reading; `DictationController.hasVoice` stays true for the rest of the dictation. Before, each bar
+was the blue → purple gradient throughout.
+- Loudness only (ADR-DESK-005 found no level that tells quiet speech from a room's noise): a loud
+  noise turns it purple too, and a very quiet microphone's speech (2–5 dB above its noise) may leave
+  it blue. Tunable in `config.ts`.
+- Tests: `controller.test.ts` › a voice above the room's noise turns the waveform purple (just under
+  and just over the 6 dB, reset each dictation); `overlay/index.test.ts` › the waveform turns purple
+  once a voice is heard.
+
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
 **Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the
@@ -2317,6 +2333,10 @@ time; measured first (below).
   nothing but a dictation taking a moment longer. The retries themselves are unchanged. A note that
   has not come up by the time a retry answers, the last fails or the dictation is canceled never
   does.)*
+  *(Later still, owner 2026-10-02: from the first server error until a retry answers or the
+  dictation ends, `DictationController.isRetrying` is true, and the thinking circle's arc and track
+  move `thinkingRetryColorShift` (0.3) along the blue → purple gradient: a hint of the retry while the
+  note waits its 2 s.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
 **Consequences:**
