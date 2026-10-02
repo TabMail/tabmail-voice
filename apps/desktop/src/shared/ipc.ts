@@ -28,6 +28,7 @@ export interface OverlayState {
   isHearing: boolean;
   language: string | null;
   tip: DictationTip | null;
+  gnomeRecordingKeys?: boolean;
   /** The overlay opened above the caret's line, so a tip that stays up goes over the pill
    * (`tipGoesAbove`). */
   opensUpward: boolean;
@@ -68,6 +69,8 @@ export interface EmailAppChoice {
   name: string;
 }
 
+export type GnomeIntegrationState = "checking" | "ready" | "available" | "restart" | "unsupported" | "unavailable";
+
 export interface SettingsState {
   availableHotkeys: readonly DictationHotkey[];
   email: string | null;
@@ -105,6 +108,9 @@ export interface SettingsState {
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
+  /** Platform-specific wording for the permission needed to type into other apps. */
+  keyboardPermission?: { title: string; description: string; button: string; instructions: string; agentShortcut?: string };
+  gnomeIntegration?: GnomeIntegrationState;
   openAtLogin: boolean;
   /** Whether this account may switch debug mode on (`DebugAccess`). */
   debugAllowed: boolean;
@@ -143,6 +149,8 @@ export interface WelcomeState {
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
+  /** Platform-specific wording for the permission needed to type into other apps. */
+  keyboardPermission?: { title: string; description: string; button: string; instructions: string; agentShortcut?: string };
 }
 
 /** The paste history a triple tap shows (ADR-DESK-043), the newest first. */
@@ -189,6 +197,7 @@ export type Command =
   | { type: "setConsent"; value: boolean }
   | { type: "requestMicrophone" }
   | { type: "requestAccessibility" }
+  | { type: "enableGnomeIntegration" }
   | { type: "checkForUpdates" }
   | { type: "restartToUpdate" }
   | { type: "welcomeNext" }
@@ -255,6 +264,7 @@ export function isCommand(value: unknown): value is Command {
     case "signOut":
     case "requestMicrophone":
     case "requestAccessibility":
+    case "enableGnomeIntegration":
     case "checkForUpdates":
     case "restartToUpdate":
     case "welcomeNext":

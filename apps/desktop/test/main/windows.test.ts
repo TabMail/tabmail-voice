@@ -62,19 +62,23 @@ const electron = vi.hoisted(() => {
     setVisibleOnAllWorkspaces(): void {}
   }
   const focuses: unknown[] = [];
-  return { BrowserWindow: FakeBrowserWindow, app: { focus: (options: unknown) => focuses.push(options), focuses }, nativeTheme: { shouldUseDarkColors: false } };
+  return { BrowserWindow: FakeBrowserWindow, app: { isPackaged: false, getAppPath: () => "/voice", focus: (options: unknown) => focuses.push(options), focuses }, nativeTheme: { shouldUseDarkColors: false } };
 });
 
 // Hoisted above the imports by Vitest, so `Windows` gets the fake.
 vi.mock("electron", () => electron);
 
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+const resourcesDescriptor = Object.getOwnPropertyDescriptor(process, "resourcesPath");
 
 afterEach(() => {
   if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
   electron.BrowserWindow.made = [];
   electron.BrowserWindow.instances = [];
   electron.app.focuses.length = 0;
+  electron.app.isPackaged = false;
+  if (resourcesDescriptor) Object.defineProperty(process, "resourcesPath", resourcesDescriptor);
+  else Reflect.deleteProperty(process, "resourcesPath");
   electron.nativeTheme.shouldUseDarkColors = false;
 });
 
@@ -86,6 +90,17 @@ function settingsWindow(platform: NodeJS.Platform): Record<string, unknown> | un
 }
 
 describe("Windows", () => {
+  test("Linux Settings supplies the application icon to its actual window", () => {
+    expect(settingsWindow("linux")?.icon).toBe("/voice/resources/icon.png");
+    expect(settingsWindow("darwin")?.icon).toBeUndefined();
+  });
+
+  test("packaged Linux Settings uses the icon shipped outside the app archive", () => {
+    electron.app.isPackaged = true;
+    Object.defineProperty(process, "resourcesPath", { value: "/opt/TabMail Voice/resources", configurable: true });
+    expect(settingsWindow("linux")?.icon).toBe("/opt/TabMail Voice/resources/icon.png");
+  });
+
   /** The paste history (ADR-DESK-043): a frameless panel over every other window, shown with the
    * focus (the list takes clicks and Escape) only once its list has measured itself, at that height,
    * never first at another; closed by the caller when it loses it; a second triple tap moves the open

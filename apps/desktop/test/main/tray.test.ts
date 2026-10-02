@@ -9,12 +9,15 @@ import { type TrayActions, TrayMenu } from "../../src/main/tray.js";
 type Item = { label?: string; type?: string; enabled?: boolean; click?: () => void };
 
 /** The menu as the tray last got it. */
-const tray = vi.hoisted(() => ({ items: [] as Item[] }));
+const tray = vi.hoisted(() => ({ items: [] as Item[], icons: [] as unknown[] }));
 
 vi.mock("electron", () => ({
   Menu: { buildFromTemplate: (items: Item[]) => items },
-  nativeImage: { createFromPath: () => ({ setTemplateImage() {} }) },
+  nativeImage: { createFromPath: () => ({ setTemplateImage() {}, toBitmap: () => Buffer.from([10, 20, 30, 128]), getSize: () => ({ width: 1, height: 1 }) }), createFromBitmap: (bitmap: Buffer) => ({ bitmap }) },
+  nativeTheme: { shouldUseDarkColors: false, on() {} },
   Tray: class {
+    constructor(icon: unknown) { tray.icons.push(icon); }
+    setImage(icon: unknown) { tray.icons.push(icon); }
     setToolTip() {}
     setContextMenu(items: Item[]) {
       tray.items = items;
@@ -73,4 +76,21 @@ describe("TrayMenu's update item", () => {
 
     expect(item("Downloading Version 1.2.3…")?.enabled).toBe(false);
   });
+});
+
+
+test.each([
+  ["ubuntu:GNOME", [128, 128, 128, 128]],
+  ["KDE", [0, 0, 0, 128]],
+])("%s uses the panel-appropriate glyph with a light application theme", (desktop, pixels) => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
+  vi.stubEnv("XDG_CURRENT_DESKTOP", desktop);
+  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+  try {
+    menu(null);
+    expect(tray.icons.at(-1)).toEqual({ bitmap: Buffer.from(pixels) });
+  } finally {
+    Object.defineProperty(process, "platform", descriptor);
+    vi.unstubAllEnvs();
+  }
 });

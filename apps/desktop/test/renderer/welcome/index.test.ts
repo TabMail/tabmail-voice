@@ -84,6 +84,20 @@ describe("welcome wizard", () => {
     expect(document.querySelector(".sends")?.textContent).toContain("That text stays on this computer.");
   });
 
+  test("Ubuntu offers keyboard control with the portal instructions", async () => {
+    const { commands } = await welcomePage({ ...accessibility, accessibilityTrusted: false, keyboardPermission: {
+      title: "Keyboard control", description: "Lets TabMail Voice type your dictation.",
+      button: "Allow Keyboard Control", instructions: "Turn on Allow Remote Interaction, then choose Share.",
+    } });
+    expect(document.querySelector("h1")?.textContent).toBe("Keyboard control");
+    expect(document.body.textContent).toContain("Allow Remote Interaction");
+    expect(document.body.textContent).not.toContain("System Settings");
+    const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Allow Keyboard Control");
+    expect(button).toBeDefined();
+    await act(async () => button?.click());
+    expect(commands).toContainEqual({ type: "requestAccessibility" });
+  });
+
   test("the consent step says what dictation sends", async () => {
     await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false });
     const sent = [...document.querySelectorAll(".sends li")].map((item) => item.textContent ?? "");

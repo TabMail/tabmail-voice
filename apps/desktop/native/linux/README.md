@@ -1,0 +1,157 @@
+# Ubuntu / GNOME native helpers
+
+The first Linux target is Ubuntu 26.04 with GNOME 50, on ARM64 or x64. Build on
+that target architecture: the helpers link to its system AT-SPI, GLib, PulseAudio
+and ICU libraries. KDE support is deferred to [issue #100](https://github.com/TabMail/tabmail-voice/issues/100).
+
+`voice-hotkey` uses the GlobalShortcuts portal and the shared gesture state machine.
+F8 is the default, with F9 available as an alternative. Hold to dictate, double-tap
+for hands-free, or triple-tap for history. Shift plus the selected key starts agent
+mode or switches mode during hands-free listening; Ctrl+Shift plus the key cancels
+or closes chat. Startup binds the selected shortcuts; GNOME restores previously
+approved IDs without a dialog and requests approval when bindings are new.
+The helper reports installation only after the portal accepts every binding.
+GNOME's AT-SPI keyboard monitor is restricted, so no raw keyboard watcher is used.
+Unrelated typing does not cancel a held dictation on this portal backend.
+`voice-linux`
+provides microphone capture, focused-window identity, screen context, correction
+learning and clipboard insertion through the common newline JSON helper protocol.
+
+Install Node.js 24, CMake, Ninja, a C++20 compiler and the development packages for
+AT-SPI (2.56 or later), GLib/GIO, PulseAudio, IBus (`libibus-1.0-dev`), ICU and nlohmann-json. From the app:
+
+```sh
+npm run build
+npx electron-builder --linux deb --publish never
+```
+
+For a source run, use `npm run start:linux`. Direct executable launches must include
+`--ozone-platform=x11`; Electron selects the backend before the app's main script.
+The packaged desktop launcher and login launcher include this option. A late
+`app.commandLine.appendSwitch` does not reliably select XWayland.
+
+Native tests additionally need Python GObject introspection with the TinySPARQL
+3.0 typelib (`python3-gi`, `gir1.2-tinysparql-3.0`) and `pulseaudio-utils`.
+The microphone fixture creates a temporary null sink, feeds it a synthetic tone,
+and selects its monitor only for the test child. It removes the sink afterward;
+it does not change the desktop's default audio devices.
+
+For native tests, from the repository root:
+
+```sh
+cmake -S apps/desktop/native/linux -B apps/desktop/native/linux/build/test -G Ninja -DBUILD_TESTING=ON
+cmake --build apps/desktop/native/linux/build/test --parallel 2
+ctest --test-dir apps/desktop/native/linux/build/test --output-on-failure
+```
+
+Run desktop tests as the normal signed-in user with the session's D-Bus and display
+environment, including `XDG_CURRENT_DESKTOP`. Prefer the installed desktop entry;
+a guest-agent shell does not inherit the graphical session. Omitting its desktop
+identity makes panel-theme detection fall back to the application theme, which
+can produce black lettering on GNOME's dark panel even in light mode.
+The accessibility fixture opens a GTK window and takes focus; omit
+`voice-accessibility` when the desktop is being used. The private D-Bus portal
+fixture exercises the real asynchronous helper code without requesting desktop
+permissions. Passing that fixture does not prove a live compositor permission,
+hotkey or paste interaction. The file-search fixture uses an in-memory TinySPARQL
+index on its own D-Bus session, so it neither reads nor changes the user's index.
+
+Both long-lived helpers watch the portal's D-Bus owner using GIO name notifications.
+Losing an observed owner ends the helper and uses the existing client restart path
+to clear permissions and establish fresh sessions and registration. Initial absence
+is tolerated, preventing a restart loop while the portal is unavailable. This also
+covers portal crashes that cannot emit `Session::Closed`.
+See [GIO name watching](https://docs.gtk.org/gio/dbus-name-watching.html).
+
+Insertion requires a keyboard-only RemoteDesktop session with the Clipboard
+portal enabled. It takes no screen capture or pointer-control permission. The
+installed desktop identity is `ai.tabmail.voice`. The helper requests persistence
+and stores the opaque, single-use restore token in a private file under the user's
+state directory, consuming it on restoration and saving its replacement after a
+successful grant. Startup attempts restoration only when a saved token exists;
+first-time authorization remains an explicit permission-button action. Revoked grants or a compositor that refuses restoration can
+still require consent again. Tokens are never logged. The
+helper snapshots advertised clipboard formats before publishing text, validates
+the original app/window before sending the paste chord, releases its injected
+keys, and restores the snapshot only if no newer clipboard owner was observed.
+Unsupported clipboard file-transfer capabilities are refused. Clipboard portal
+version 1 has no atomic owner-check-and-restore operation, so the final check and
+restoration have a compositor race. An uncertain paste is never retried. The terminal paste chord uses the provider's terminal role (Ctrl+Shift+V); ordinary
+fields use Ctrl+V. Live GNOME clipboard behavior still requires runtime testing.
+
+Clipboard state starts unknown. GNOME's explicit empty `SelectionOwnerChanged`
+dictionary clears the snapshot, but its ownerless startup can emit no event at
+all. The public Clipboard v1 API has no initial-state query or synchronization
+barrier: neither a timeout nor a failed read proves emptiness. Automatic insertion
+therefore refuses an unknown snapshot instead of overwriting it. A later valid
+owner event establishes state. See the [portal contract](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Clipboard.html)
+and [Mutter clipboard implementation](https://gitlab.gnome.org/GNOME/mutter/-/blob/main/src/backends/meta-clipboard-session.c).
+The private-bus fixture covers silent startup, explicit clears, malformed owner
+events, insertion with a known empty snapshot, and ordinary snapshot restoration.
+
+Foreground and focus events drive accessibility lookup. Failed window lookups
+retry at most five times, a second apart, and stop when the window is left. There
+is no permanent polling or accessibility warm-up at hotkey press. Screen context
+uses the shared redactors and reading-order formatter; password and excluded-page
+checks precede content access.
+The helper enables the standard `org.a11y.Status.IsEnabled` bridge at startup;
+connecting an AT-SPI client alone does not enable application accessibility.
+It does not enable screen narration or disable the bridge when it exits, since
+other assistive clients may depend on it.
+
+The Debian package uses electron-builder's custom AppArmor profile option. It
+uses a named profile with explicit `allow all` and Electron's user-namespace allowance, and
+executes only `voice-linux` with the ordinary unconfined desktop label (`Ux`, with
+loader environment cleanup). Otherwise the helper inherits the Electron label,
+which Snap's AT-SPI peer rules reject even though the parent profile itself is
+unconfined. The explicit allow-all form honors this transition on the target kernel; its
+`unconfined` and `default_allow` modes retained the inherited label in guest testing.
+The profile does not change Firefox's confinement or disable AppArmor.
+See [electron-builder's profile rationale](https://github.com/electron-userland/electron-builder/issues/8635),
+[Ubuntu's execution-mode documentation](https://manpages.ubuntu.com/manpages/resolute/man5/apparmor.d.5.html),
+and [Snap's accessibility peer rules](https://github.com/canonical/snapd/blob/master/interfaces/builtin/desktop_legacy.go).
+
+The app uses the shared Electron UI under XWayland. Until reliable global caret
+coordinates are available, the overlay uses a stable position in the display work
+area rather than surface-local provider coordinates; see
+[issue #89](https://github.com/TabMail/tabmail-voice/issues/89). The tray uses the
+existing text glyph with light lettering on GNOME's dark panel. This is not a KDE
+runtime compatibility claim.
+
+The development Debian package includes only the Linux helpers, declares the
+Ubuntu runtime dependencies, and has no automatic update feed. Mac-only native
+connectors remain unavailable. Thunderbird connectivity is outside this work.
+
+## Upstream implementation references
+
+[OpenWhispr's hotkey manager](https://github.com/OpenWhispr/openwhispr/blob/main/src/helpers/hotkeyManager.js)
+rejects standalone right-side modifiers on its GNOME shortcut backend and uses a
+regular-key fallback such as F8. Its
+[GlobalShortcuts portal implementation](https://github.com/OpenWhispr/openwhispr/blob/main/src/helpers/gnomeGlobalShortcutsPortal.js)
+receives activation and deactivation events, while the older GNOME custom-shortcut
+path only toggles recording. Its separate evdev listener reads keyboard devices;
+that requires device access and is not the GNOME shortcut backend. The supported
+portal is the preferred direction here; the owner accepted standard keys, and F8 is the default here. Do not claim
+modifier-only parity from portal setup.
+
+[OpenWhispr's paste helper](https://github.com/OpenWhispr/openwhispr/blob/main/resources/linux-fast-paste.c)
+uses the RemoteDesktop portal and restore tokens on GNOME Wayland. Our clipboard
+snapshot and target-validation contract remains shared with the other platforms.
+
+OpenWhispr's [Linux clipboard path](https://github.com/OpenWhispr/openwhispr/blob/196937c489bf700688f0cadc48211ba2570bb775/src/helpers/clipboard.js)
+also permits a Wayland paste with no identified window. TabMail retains its
+original-window check, matching the Mac contract; an unavailable identity must
+not be mistaken for evidence that the original window is still focused.
+
+## GNOME file tools
+
+`voice-files` queries the existing LocalSearch index through TinySPARQL. It runs
+as a separate, bounded process so index queries cannot block audio or insertion.
+Build with `libtinysparql-dev`; packages depend on the runtime library and
+LocalSearch. Values use prepared statement bindings, including typed dates.
+Search is limited to indexed locations in the user's home; unindexed files are
+not discovered by a secondary crawler. Potentially executable items and symlinks
+are revealed in Files rather than opened.
+
+References: [LocalSearch endpoint](https://gnome.pages.gitlab.gnome.org/localsearch/endpoint.html)
+and [TinySPARQL connection API](https://tracker.api.gnome.org/class.SparqlConnection.html).
