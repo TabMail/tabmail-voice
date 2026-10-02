@@ -629,7 +629,7 @@ function launch(): void {
     switch (phase.kind) {
       case "arming":
       case "listening":
-        if (process.platform === "linux") hotkeyHelper.request("setRecording", { active: true }).catch((error: unknown) => {
+        gnomeIntegration?.recordingStarted().catch((error: unknown) => {
           log.error(`main: recording shortcut setup failed: ${errorName(error)}`);
         });
         return;

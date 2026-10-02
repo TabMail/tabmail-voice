@@ -37,7 +37,7 @@ test.each([null, {}, { x: NaN, y: 1, width: 1, height: 20 }, { x: 1, y: 1, width
   const request = vi.fn().mockResolvedValue(rect);
   const system = new LinuxSystem({ request } as unknown as HelperClient);
   expect(await system.caretAnchor()).toBeNull();
-  expect(request).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 50);
+  expect(request).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
 });
 
 test("compositor coordinates stay logical and transport timeout reaches the overlay fallback", async () => {
@@ -58,5 +58,5 @@ test("caret lookup uses the hotkey transport independently of blocked screen rea
   const system = new LinuxSystem({ request } as unknown as HelperClient, { request: geometry } as unknown as HelperClient);
   expect(await system.caretAnchor()).toEqual(rect);
   expect(request).not.toHaveBeenCalled();
-  expect(geometry).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 50);
+  expect(geometry).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
 });

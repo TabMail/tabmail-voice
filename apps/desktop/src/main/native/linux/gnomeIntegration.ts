@@ -46,6 +46,10 @@ export class GnomeIntegration {
     finally { this.busy = false; this.onChange?.(); }
   }
 
+  async recordingStarted(): Promise<void> {
+    await this.helper.request("setRecording", { active: true });
+  }
+
   private async ready(): Promise<boolean> {
     try { return await this.helper.request("gnomeIntegration", {}, 1000) === true; }
     catch { return false; }

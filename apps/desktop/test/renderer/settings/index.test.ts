@@ -804,7 +804,7 @@ describe("Settings page", () => {
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
-      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this Mac, and a password field is never read.`,
+      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,
       // Privacy's, which the Swift app never had (owner, 2026-09-30).
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
       `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,

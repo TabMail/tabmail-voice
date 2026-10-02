@@ -42,3 +42,10 @@ test("a missing newly installed extension requests login, but command failures d
   f.command.mockRejectedValue(new Error("permission denied"));
   await f.integration.enable(); expect(f.integration.state).toBe("unavailable");
 });
+
+test("recording notification crosses the hotkey helper without shell commands", async () => {
+  const f = fixture();
+  await f.integration.recordingStarted();
+  expect(f.request).toHaveBeenCalledExactlyOnceWith("setRecording", { active: true });
+  expect(f.command).not.toHaveBeenCalled();
+});

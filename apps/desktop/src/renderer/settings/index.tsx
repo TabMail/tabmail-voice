@@ -227,7 +227,7 @@ function DictionaryPane({ state }: { state: SettingsState }) {
       {state.canLearnWords && (
         <Group>
           <Toggle label="Learn from my corrections" checked={state.learnsWords} onChange={(value) => send({ type: "setLearnsWords", value })}>
-            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to {config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this Mac, and a password field is never read.
+            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to {config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.
           </Toggle>
         </Group>
       )}
