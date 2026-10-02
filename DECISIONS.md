@@ -2382,7 +2382,6 @@ Apps are known by bundle identifier, compared without regard to case.
   `exclusionsMax` (1,000) apps, or websites, one more is refused with the reason. Nothing is
   disabled or noted before that, and a stored list is read back whole. *(Was 100, with Add App…
   disabled and a note when full.)*
-  Other settings still fail to save silently, logged only.
 
 **Consequences:**
 - A deny-list: every other app is read as before. Websites are excluded one by one since ADR-DESK-047

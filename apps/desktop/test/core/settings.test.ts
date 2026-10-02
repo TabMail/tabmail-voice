@@ -444,6 +444,10 @@ describe("apps excluded from screen reading", () => {
     store.set("excludedApps", [bank, "junk", { bundleIdentifier: "ORG.example.bank", name: "Again" }, { bundleIdentifier: "com.apple.Passwords", name: "Passwords" }, { name: "No identifier" }, notes]);
     expect(settings(store).excludedApps).toEqual([bank, notes]);
 
+    // However many: a list is never cut short on the way back.
+    store.set("excludedApps", Array.from({ length: config.exclusionsMax + 5 }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` })));
+    expect(settings(store).excludedApps).toHaveLength(config.exclusionsMax + 5);
+
     store.set("excludedApps", "junk");
     expect(settings(store).excludedApps).toEqual([]);
   });

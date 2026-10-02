@@ -40,7 +40,9 @@ describe("excluded websites", () => {
   });
 
   test("the built-in web vaults cover their subdomains, and are themselves valid hosts", () => {
-    expect(config.builtInExcludedSites.length).toBeGreaterThan(0);
+    expect(config.builtInExcludedSites).toEqual(expect.arrayContaining(["1password.com", "vault.bitwarden.com", "lastpass.com", "lastpass.eu", "app.nordpass.com"]));
+    // The lists' bound (owner, 2026-10-01).
+    expect(config.exclusionsMax).toBe(1_000);
     for (const site of config.builtInExcludedSites) {
       expect(excludedSite(site)).toBe(site);
       expect(isBuiltInExcludedSite(site)).toBe(true);

@@ -241,6 +241,7 @@ describe("Settings page", () => {
       const full = Array.from({ length: config.exclusionsMax }, (_, index) => ({ bundleIdentifier: `org.example.app${index}`, name: `App ${index}` }));
       const page = await open({ ...signedIn, excludedApps: full }, { error: "Remove one to add another." });
       expect(apps()).toHaveLength(config.exclusionsMax);
+      expect(visibleText()).not.toContain("At most");
       expect(button("Add App…").disabled).toBe(false);
       await act(async () => button("Add App…").click());
       expect(page.commands).toEqual([{ type: "excludeApp" }]);
