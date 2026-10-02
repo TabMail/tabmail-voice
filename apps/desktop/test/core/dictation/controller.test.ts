@@ -718,6 +718,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         },
       });
       controller.transcriptionRetryDelays = [1, 1];
+      controller.transcriptionRetryNoticeDelay = 0;
       const phases: Phase[] = [];
       controller.onPhaseChange = (phase) => phases.push(phase);
 
@@ -787,6 +788,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.transcriptionRetryDelays = [300];
+      controller.transcriptionRetryNoticeDelay = 0;
 
       await holdAndRelease(controller);
       expect(await eventually(() => controller.phase.kind === "retrying")).toBe(true);
@@ -796,6 +798,91 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.requests).toHaveLength(1);
       expect(pastes).toEqual([]);
       expect(controller.phase).toEqual(idle);
+    });
+
+    /** A brief rate limit only makes the dictation take a moment longer: the pill says nothing of a
+     * retry that answers before `transcriptionRetryNoticeDelay`. */
+    test("a retry that answers before the notice delay never shows the note", async () => {
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1, 1];
+      controller.transcriptionRetryNoticeDelay = 10_000;
+      const phases: Phase[] = [];
+      controller.onPhaseChange = (phase) => phases.push(phase);
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(transcription.requests).toHaveLength(3);
+      expect(pastes).toEqual([cleaned]);
+      expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
+    });
+
+    /** The note comes up once the retries have gone on for `transcriptionRetryNoticeDelay` since the
+     * first failure, not at the failure, and stays until a retry answers. */
+    test("shows the note once the notice delay has passed since the first failure", async () => {
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(200, cleanedReply);
+      const pastes: string[] = [];
+      const pastedWhile: Phase["kind"][] = [];
+      const { controller } = makeController({
+        capture: new CountingCapture(true),
+        paste: async (text) => {
+          pastedWhile.push(controller.phase.kind);
+          pastes.push(text);
+        },
+      });
+      controller.transcriptionRetryDelays = [100, 300];
+      controller.transcriptionRetryNoticeDelay = 200;
+      const sentAt: number[] = [];
+      transcription.gate = async () => {
+        sentAt.push(performance.now());
+      };
+      const retryingAt: number[] = [];
+      controller.onPhaseChange = (phase) => {
+        if (phase.kind === "retrying") retryingAt.push(performance.now());
+      };
+
+      await holdAndRelease(controller);
+
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(sentAt).toHaveLength(3);
+      // Shown once, the notice delay after the first failure: during the second wait, not at either failure.
+      expect(retryingAt).toHaveLength(1);
+      expect(retryingAt[0]! - sentAt[0]!).toBeGreaterThanOrEqual(200 - 5);
+      expect(retryingAt[0]!).toBeGreaterThan(sentAt[1]!);
+      expect(retryingAt[0]!).toBeLessThan(sentAt[2]!);
+      expect(pastedWhile).toEqual(["transcribing"]);
+    });
+
+    /** Answered, failed or canceled before the notice delay, the note never comes up over what follows. */
+    test.each([
+      ["every retry failed", "fails"],
+      ["canceled while it waits", "cancel"],
+    ] as const)("the note never comes up later once %s", async (_, ending) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) transcription.enqueue(502, { error: "transcription_failed" });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = ending === "fails" ? [1, 1] : [300];
+      controller.transcriptionRetryNoticeDelay = 150;
+      const phases: Phase[] = [];
+      controller.onPhaseChange = (phase) => phases.push(phase);
+
+      await holdAndRelease(controller);
+      if (ending === "cancel") {
+        expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+        controller.handle("cancel");
+      }
+      expect(await eventually(() => settled(controller))).toBe(true);
+      const ended = controller.phase;
+      await sleep(300);
+
+      expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
+      expect(controller.phase).toEqual(ended);
+      expect(ended).toEqual(ending === "fails" ? failed("Dictation failed. Please try again.") : idle);
+      expect(pastes).toEqual([]);
     });
 
     /** The server's error can still arrive after the dictation was canceled: it is not tried again,
@@ -3260,6 +3347,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")], (controller) => {
               controller.transcriptionRetryDelays = [300];
+              controller.transcriptionRetryNoticeDelay = 0;
             });
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
             transcription.enqueue(502, { error: "transcription_failed" });
