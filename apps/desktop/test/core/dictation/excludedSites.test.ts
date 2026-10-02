@@ -40,7 +40,9 @@ describe("excluded websites", () => {
   });
 
   test("the built-in web vaults cover their subdomains, and are themselves valid hosts", () => {
-    expect(config.builtInExcludedSites.length).toBeGreaterThan(0);
+    expect(config.builtInExcludedSites).toEqual(expect.arrayContaining(["1password.com", "vault.bitwarden.com", "lastpass.com", "lastpass.eu", "app.nordpass.com"]));
+    // The lists' bound (owner, 2026-10-01).
+    expect(config.exclusionsMax).toBe(1_000);
     for (const site of config.builtInExcludedSites) {
       expect(excludedSite(site)).toBe(site);
       expect(isBuiltInExcludedSite(site)).toBe(true);
@@ -50,12 +52,12 @@ describe("excluded websites", () => {
     expect(isBuiltInExcludedSite("example.com")).toBe(false);
   });
 
-  test("only valid hosts are read back: none twice, none built in, at most excludedSitesMax", () => {
+  test("only valid hosts are read back: none twice, none built in, however many", () => {
     const builtIn = config.builtInExcludedSites[0] ?? "";
     expect(storedExcludedSites(["example.com", "junk", "Example.com", "https://example.org", 7, builtIn, `my.${builtIn}`, "example.com", "mail.example.net"])).toEqual(["example.com", "mail.example.net"]);
     expect(storedExcludedSites("example.com")).toEqual([]);
     expect(storedExcludedSites(undefined)).toEqual([]);
-    const many = Array.from({ length: config.excludedSitesMax + 5 }, (_, index) => `site${index}.example.com`);
-    expect(storedExcludedSites(many)).toEqual(many.slice(0, config.excludedSitesMax));
+    const many = Array.from({ length: config.exclusionsMax + 5 }, (_, index) => `site${index}.example.com`);
+    expect(storedExcludedSites(many)).toEqual(many);
   });
 });

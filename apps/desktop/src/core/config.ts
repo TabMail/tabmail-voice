@@ -242,8 +242,10 @@ export const windowsBuiltInExcludedApps: readonly { bundleIdentifier: string; na
   { bundleIdentifier: "Bitwarden.exe", name: "Bitwarden" },
   { bundleIdentifier: "KeePassXC.exe", name: "KeePassXC" },
 ];
-/** The most apps the user can exclude, and the longest bundle identifier and name kept for one. */
-export const excludedAppsMax = 100;
+/** The most apps, and the most websites, the user can exclude: a bound far past any real list, so a
+ * list never grows without end (owner, 2026-10-01). One more is refused with the reason. */
+export const exclusionsMax = 1_000;
+/** The longest bundle identifier and name kept for an excluded app. */
 export const bundleIdentifierMaxLength = 255;
 export const excludedAppNameMaxLength = 255;
 /** The password managers' web vaults excluded from screen reading in every installation, by host;
@@ -256,11 +258,11 @@ export const builtInExcludedSites: readonly string[] = [
   "vault.bitwarden.eu",
   "passwords.google.com",
   "lastpass.com",
+  "lastpass.eu",
   "app.dashlane.com",
   "pass.proton.me",
+  "app.nordpass.com",
 ];
-/** The most websites the user can exclude. */
-export const excludedSitesMax = 100;
 /** The longest a host name can be (DNS). */
 export const hostMaxLength = 253;
 /** The longest text taken as a website to exclude: an address pasted whole. */

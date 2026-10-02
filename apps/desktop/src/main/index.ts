@@ -638,10 +638,10 @@ function launch(): void {
     if (windows.isAudioWindow(event.sender) && isAudioReport(report)) capture.receive(report);
   });
 
-  /** An exclusion that could not be written to disk holds until the app quits, and must not pass
-   * for one that lasts. */
-  const exclusionUnsaved = "Excluded for now, but this couldn't be saved: it will be read again after TabMail Voice restarts. Check the disk and add it again.";
-  const removalUnsaved = "Removed for now, but this couldn't be saved: it will be excluded again after TabMail Voice restarts.";
+  /** An exclusion or a removal that could not be written to disk did not happen, and the user is
+   * told. */
+  const exclusionUnsaved = "This couldn't be saved, so it is not excluded. Check the disk and try again.";
+  const removalUnsaved = "This couldn't be saved, so it is still excluded. Check the disk and try again.";
 
   /** Asks the user for an app, and excludes it from screen reading. */
   async function excludePickedApp(): Promise<void> {
@@ -658,7 +658,7 @@ function launch(): void {
     const picked = await system.appInfo(path);
     if (picked === null) throw new Error("That app can't be excluded: its application identifier could not be read.");
     const result = settings.excludeApp({ bundleIdentifier: picked.bundleIdentifier, name: picked.name });
-    if (result === "full") throw new Error(`At most ${config.excludedAppsMax} apps can be excluded. Remove one to add another.`);
+    if (result === "full") throw new Error(`At most ${config.exclusionsMax} apps can be excluded. Remove one to add another.`);
     if (result === "invalid") throw new Error("That app can't be excluded.");
     if (result === "unsaved") throw new Error(exclusionUnsaved);
   }
@@ -697,7 +697,7 @@ function launch(): void {
         return;
       case "excludeSite": {
         const result = settings.excludeSite(command.site);
-        if (result === "full") throw new Error(`At most ${config.excludedSitesMax} websites can be excluded. Remove one to add another.`);
+        if (result === "full") throw new Error(`At most ${config.exclusionsMax} websites can be excluded. Remove one to add another.`);
         if (result === "invalid") throw new Error("That isn't a website's address.");
         if (result === "unsaved") throw new Error(exclusionUnsaved);
         return;

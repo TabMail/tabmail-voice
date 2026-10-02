@@ -2371,15 +2371,17 @@ Apps are known by bundle identifier, compared without regard to case.
   Edit, nothing kept for the debug window or the debug log, no correction learned.
 - Settings › Privacy (macOS, where the screen is read): the built-in ones named in a note, the user's
   apps with a Remove button each, and Add App…, which opens a picker on the Applications folder; the
-  helper's `appInfo` gives the picked app's identifier and name. At most `excludedAppsMax` (100).
-- An exclusion that could not be written to the preferences file is said so in Settings (owner,
-  2026-10-01): it holds until the app quits, and the app would be read again after a restart with
-  nothing having told the user. `KeyValueStore.set` answers whether the value was kept, `excludeApp`
-  and `excludeSite` answer `unsaved`, and a removal that could not be written is said the same way. Adding one already in the user's
-  list writes the list again and answers from that, so adding it again, as the message says to,
-  saves it once the file can be written. Add App… is therefore not disabled on a full list: the
-  note says the list is full, and a new app picked then is refused with the reason.
-  Other settings still fail to save silently, logged only.
+  helper's `appInfo` gives the picked app's identifier and name.
+- What is excluded is what is saved (owner, 2026-10-01): an exclusion or a removal that could not be
+  written to the preferences file did not happen. The list is put back as it was
+  (`AppSettings.saveExclusions`), `excludeApp` and `excludeSite` answer `unsaved`, and Settings says
+  why. Nothing is excluded only until the app quits. *(This replaces the same day's first form, in
+  which an unsaved exclusion was held for the run and saved by adding it again.)* Other settings
+  still fail to save silently, logged only.
+- The lists are bounded only so they can't grow without end (owner, 2026-10-01): at
+  `exclusionsMax` (1,000) apps, or websites, one more is refused with the reason. Nothing is
+  disabled or noted before that, and a stored list is read back whole. *(Was 100, with Add App…
+  disabled and a note when full.)*
 
 **Consequences:**
 - A deny-list: every other app is read as before. Websites are excluded one by one since ADR-DESK-047
@@ -2541,9 +2543,10 @@ starts alike; case and a trailing dot don't matter.
   match are tested against, as the redactors' cases are (ADR-DESK-046).
 - Settings › Privacy: a field takes a site by its address (`https://mail.example.com/inbox` is kept
   as `mail.example.com`: `excludedSite` drops the scheme, sign-in, port and path), the user's sites
-  with a Remove button each, and the built-in ones named in a note. At most `excludedSitesMax` (100).
-  A site that could not be saved, or a removal that could not, is said so, as for an app
-  (ADR-DESK-045).
+  with a Remove button each, and the built-in ones named in a note. At most `exclusionsMax`, as for
+  apps (ADR-DESK-045).
+  A site that could not be saved, or a removal that could not, did not happen and is said so, as
+  for an app (ADR-DESK-045).
 
 **Consequences:**
 - A window showing an excluded site gives no screen context at all, not the rest of the window

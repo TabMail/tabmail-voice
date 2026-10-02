@@ -39,13 +39,11 @@ export function isBuiltInExcludedSite(host: string): boolean {
   return config.builtInExcludedSites.some((site) => coversHost(site, host));
 }
 
-/** A stored list read back: valid hosts only, none twice or built in, at most
- * `config.excludedSitesMax`. */
+/** A stored list read back: valid hosts only, none twice or built in. */
 export function storedExcludedSites(stored: unknown): string[] {
   if (!Array.isArray(stored)) return [];
   const sites: string[] = [];
   for (const item of stored) {
-    if (sites.length === config.excludedSitesMax) break;
     const site = excludedSite(item);
     if (site === null || site !== item || isBuiltInExcludedSite(site) || sites.includes(site)) continue;
     sites.push(site);

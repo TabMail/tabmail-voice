@@ -68,14 +68,14 @@ export interface DictationSettings {
 export type AddWordResult = "added" | "invalid" | "full";
 
 /** What excluding an app did: `invalid` for one without a bundle identifier or name, `full` at
- * `config.excludedAppsMax`. One already excluded, built in or by the user, is `added`. `unsaved`
- * when the list could not be written to disk: the app is excluded until TabMail Voice quits, and
- * the user must be told, or it is read again after a restart with nothing having said so. */
+ * `config.exclusionsMax`. One already excluded, built in or by the user, is `added`. `unsaved`
+ * when the list could not be written to disk: the app is not excluded, the list being what is
+ * saved (owner, 2026-10-01), and the user must be told. */
 export type ExcludeAppResult = "added" | "invalid" | "full" | "unsaved";
 
 /** What excluding a website did: `invalid` for text that is no host name, `full` at
- * `config.excludedSitesMax`. One already excluded, built in or by the user, is `added`; `unsaved`
- * as for an app. */
+ * `config.exclusionsMax`. One already excluded, built in or by the user, is `added`; `unsaved` as
+ * for an app. */
 export type ExcludeSiteResult = "added" | "invalid" | "full" | "unsaved";
 
 /** The name the welcome wizard offers (owner, 2026-09-28: "the macOS full name or the username"): the
@@ -238,24 +238,31 @@ export class AppSettings extends Observable {
     const app = excludedApp(value);
     if (app === null) return "invalid";
     const apps = this.excludedApps;
-    if (isBuiltInExcludedApp(app.bundleIdentifier, this.builtInExcludedApps)) return "added";
-    // One already there is written again: it may be held from an add that could not be saved.
-    if (apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return this.store.set(Key.excludedApps, apps) ? "added" : "unsaved";
-    if (apps.length >= config.excludedAppsMax) return "full";
-    const saved = this.store.set(Key.excludedApps, [...apps, app]);
-    this.changed();
-    return saved ? "added" : "unsaved";
+    if (isBuiltInExcludedApp(app.bundleIdentifier, this.builtInExcludedApps) || apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return "added";
+    if (apps.length >= config.exclusionsMax) return "full";
+    return this.saveExclusions(Key.excludedApps, [...apps, app]) ? "added" : "unsaved";
   }
 
   /** Lets the screen be read in an app the user excluded again. A built-in one stays excluded.
-   * False when the list could not be written to disk: the app is excluded again after a restart. */
+   * False when the list could not be written to disk: the app is still excluded. */
   removeExcludedApp(bundleIdentifier: string): boolean {
     const apps = this.excludedApps;
     const kept = apps.filter((app) => !isSameApp(app.bundleIdentifier, bundleIdentifier));
-    if (kept.length === apps.length) return true;
-    const saved = this.store.set(Key.excludedApps, kept);
-    this.changed();
-    return saved;
+    return kept.length === apps.length || this.saveExclusions(Key.excludedApps, kept);
+  }
+
+  /** Writes a list of exclusions and tells of the change. When the file could not be written the
+   * list is put back as it was and false is returned: what is excluded is what is saved, so nothing
+   * is excluded only until the app quits (owner, 2026-10-01). */
+  private saveExclusions(key: string, list: unknown[]): boolean {
+    const before = this.store.get(key);
+    if (this.store.set(key, list)) {
+      this.changed();
+      return true;
+    }
+    if (before === undefined) this.store.remove(key);
+    else this.store.set(key, before);
+    return false;
   }
 
   /** The websites the user excludes from screen reading, by host, in the order they were added; the
@@ -269,13 +276,9 @@ export class AppSettings extends Observable {
     const site = excludedSite(value);
     if (site === null) return "invalid";
     const sites = this.excludedSites;
-    if (isBuiltInExcludedSite(site)) return "added";
-    // Written again, as an app already there is.
-    if (sites.includes(site)) return this.store.set(Key.excludedSites, sites) ? "added" : "unsaved";
-    if (sites.length >= config.excludedSitesMax) return "full";
-    const saved = this.store.set(Key.excludedSites, [...sites, site]);
-    this.changed();
-    return saved ? "added" : "unsaved";
+    if (isBuiltInExcludedSite(site) || sites.includes(site)) return "added";
+    if (sites.length >= config.exclusionsMax) return "full";
+    return this.saveExclusions(Key.excludedSites, [...sites, site]) ? "added" : "unsaved";
   }
 
   /** Lets the screen be read on a website the user excluded again. A built-in one stays excluded.
@@ -283,10 +286,7 @@ export class AppSettings extends Observable {
   removeExcludedSite(host: string): boolean {
     const sites = this.excludedSites;
     const kept = sites.filter((site) => site !== host.toLowerCase());
-    if (kept.length === sites.length) return true;
-    const saved = this.store.set(Key.excludedSites, kept);
-    this.changed();
-    return saved;
+    return kept.length === sites.length || this.saveExclusions(Key.excludedSites, kept);
   }
 
   /** Agent mode's tools the user switched off, stored by name so a tool added later starts on. */
