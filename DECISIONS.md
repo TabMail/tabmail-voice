@@ -1680,7 +1680,7 @@ branches, which remain the reference for porting agent mode. The docs describe t
 only; code comments that name the Swift app record what a port matches.
 
 **Amendment 2026-10-01 (owner: the microphone "not working and hanging" with AirPods): no engine is
-built or released while the input device changes.** The helper's log and crash reports gave three
+released on the capture queue, and none is prepared while the helper sees the input device changing.** The helper's log and crash reports gave three
 failures, all in `MicrophoneCapture`'s default-input listener, which released the prepared engine
 and built the next one on the spot: `installTap` raising an Objective-C exception (the helper
 aborts: Swift cannot catch it); AVFAudio's own listener for the engine just released crashing; and
@@ -1699,8 +1699,8 @@ the microphone", nothing recorded) and then ran all at once.
   in can differ from the device's by the time it is installed, which raises that exception. The
   device's own format is checked for a sample rate and channels before.
 - The start path is unchanged: a prepared engine for the current device is started as before
-  (measured through the helper on a USB microphone: the first chunk 553–560 ms after the request,
-  554–580 ms before this change). A key-down inside the settle window builds its own engine, as a
+  (measured through the helper on a USB microphone, 16 starts each: the first chunk 553–568 ms after
+  the request, 550–576 ms before this change). A key-down inside the settle window builds its own engine, as a
   start always did when none was prepared for the current device.
 - A change while a dictation is listening ends it as its release would (the owner, 2026-10-01:
   *"force dictation to terminate as if user stopped dictating"*): this is `microphoneLost` as
@@ -1709,7 +1709,10 @@ the microphone", nothing recorded) and then ran all at once.
   never the device's name), its sample rate and channels and how long preparing took, and when the
   default input changed.
 - Not closed: an exception from `installTap` in a start made inside the settle window, were the
-  device to lose its format between the check and the tap; and what the audio system itself takes
+  device to lose its format between the check and the tap; the engine prepared right after a stop,
+  which is built at once and so can fall in a change the helper does not see (a headset leaving its
+  microphone mode); a release `microphoneDeviceSettleDelay` later that still falls in a longer
+  change (off the capture queue, so it holds up no start); and what the audio system itself takes
   to start a Bluetooth headset's microphone, which is the system's.
 - Windows needs none of this (`native/windows/src/microphone.h`): each start opens the default
   endpoint afresh on its own thread and nothing is prepared or kept between dictations, so there is
