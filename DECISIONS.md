@@ -257,7 +257,7 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   mode's Edit and as the caret block before the page's text. A focused web area that can be edited
   (its value is settable: a mail's compose window, an editor whose whole document is editable) is
   not such a page: it stays the field the caret is in, read by its caret and not walked into, as
-  before (`isPageInFocus`). The Windows helper applies the same rule: it walks a focused document
+  before (`isPageInFocus`, since renamed `isFieldInFocus`). The Windows helper applies the same rule: it walks a focused document
   that is no editable field.)*
 - *(Amended 2026-10-01, owner: the Windows helper reads as the Mac one does, "unless impossible".
   The two were read side by side and the Windows helper changed where they differed:*
@@ -288,13 +288,28 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
     full-sized there and walking in would read text that is not on screen.*
   - *A focused element that is neither a field nor a page (a list, a button) is read like any
     other on Windows; the Mac puts an empty caret block in its place and reads nothing under it.
-    Matching the Mac would make Windows read less: left for the owner.*
+    Matching the Mac would make Windows read less: left for the owner. (Settled the same day, in
+    the next amendment: the Mac changed.)*
   - *The Windows helper refuses a window for an excluded page it finds before checking that the
     page is inside the window, and looks through a link, row or control for one before reading
     its name. The Mac skips an element outside the window first. Windows is the stricter; matching
-    the Mac would loosen it: left for the owner.*
+    the Mac would loosen it: left for the owner. (Settled the same day, in ADR-DESK-047's
+    amendments: the Mac looks through such an element too, and Windows is to skip a page outside
+    the window as the Mac does.)*
 
   *The Windows changes were written and reviewed by reading: they were not built or run when made.)*
+- *(Amended 2026-10-01, owner: where the two helpers differ, the read is to be the larger of the
+  two, so the Mac helper now reads a focused element that is no field as Windows does. With a list,
+  a row or a group in focus (a mail list, a chat's message list), the Mac put an empty caret block
+  in its place and read nothing under it. The walk now reads it like any element (`walk`): its
+  rows, text and fields at their place, its password fields and framed excluded pages refused as
+  anywhere, a button skipped outside web content as any button is. The rule for a page in focus is
+  this rule: the text around the caret is dropped, since it is the element's own, and what is
+  selected is kept as the caret block before it. The field the caret is in (`isFieldInFocus`) is a
+  text field, text area or combo box (`contextFieldRoles`), or an element whose value can be set
+  (an editor's document); it stays the caret block and is not walked into. A text area that can't
+  be edited (a terminal, a read-only view) is still such a field and keeps the text around its
+  caret, which Windows reads only from a field that can be edited or a terminal's pane.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
@@ -2672,7 +2687,8 @@ starts alike; case and a trailing dot don't matter.
   has the focus itself, and any page inside the focused element (a page that frames an excluded
   one, a focused group holding one: `holdsExcludedPage`), looked into before the caret's text is asked for. The walk then refuses the whole window at any page of an excluded site, in
   focus or not, framed in another page or inside a row, a heading or a link that has no label of its
-  own (one with a label gives its label, and nothing inside it is looked at): with the caret in the
+  own (one with a label gave its label, and nothing inside it was looked at; amended below,
+  2026-10-01: it is looked through first): with the caret in the
   browser's address field the page is still on screen. `readScreen` answers that the screen is hidden, as for an excluded
   app, and drops a context whose host is excluded whatever the reader did. A refused read gives
   back nothing of what it had gathered (`gather` answers no context at all). `focusedFieldValue`
@@ -2717,3 +2733,28 @@ starts alike; case and a trailing dot don't matter.
   read until the list is updated or the user adds it.
 - Windows and Linux take the same two lists with their helpers' screen read, and run the shared
   host cases.
+
+*(Amended 2026-10-01, owner: an element the Mac helper reads in one piece is looked through for an
+excluded page first, as the Windows helper does. A row, a heading or a link with a label of its own,
+a piece of text, and a web control with a title are read by that label and never walked into, so a
+page inside one was not seen, and a label can be made of what the element holds. The walk now looks
+through each such element that is shown (`holdsExcludedPage`, for pages only) and refuses the whole
+window when it holds a page of an excluded website or one whose address is unknown, the same answer
+as for a page the walk reaches itself: a page in a row is a page the window shows. So for a piece
+of text or a titled control inside a row whose text is gathered. A field that frames such a page is
+the other case and keeps its own answer, the marker in its place, in the window and in a row with
+no label (#94; Windows: #96); inside a row, heading or link read by its label, where the field is
+never reached, it refuses the window like any page there. Only a control with a title is
+looked through: one without is walked into, and what is in it gets its own answer. The look keeps
+to the walk's budgets; an element it could not look through whole (more elements than the read's
+element budget, or the read's time running out mid-look) is not read, and the marker stands in its
+place, as for a field (`lookForExcludedPage`), since a page the look did not reach might be an
+excluded one. It asks every such element for its children, which the walk did not before; what
+that costs on a large page was not measured on a live app (on a made-up tree of labelled rows,
+texts and buttons, about twice as many questions to the app).)*
+
+*(Amended 2026-10-01, owner: an excluded page that lies wholly outside the window is skipped
+without hiding the window, which is what the Mac helper does. The Windows helper answers "hidden"
+for it, before checking that the page is inside the window and shown; neither helper reads that
+page, so the Mac's answer loses nothing and reads more. The Windows helper is to follow: #97.)*
+

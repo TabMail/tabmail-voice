@@ -83,8 +83,8 @@ export function textAroundCaret(context: ScreenContext | null): string {
  * The screen with one caret marker where the dictation goes, and where it is. A selection is left
  * out: the dictation replaces it (owner, 2026-09-28). The caret is, in order:
  * - the helper's marker on the focused field's lines;
- * - else, when the helper placed none (a terminal without tmux, or a walk that stopped before the
- *   field), on the caret's line as the helper read it around the caret, selection included as the
+ * - else, when the helper placed none (a terminal without tmux, a focused element that is
+ *   no field, or a walk that stopped before the field), on the caret's line as the helper read it around the caret, selection included as the
  *   screen still shows it, found on screen as whole field lines (`> `), the last such; the selection
  *   is then cut from the screen;
  * - else, after the screen, the field as the helper read it around the caret, as a focused field.

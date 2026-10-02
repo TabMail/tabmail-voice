@@ -53,10 +53,11 @@ enum ScreenContextReader {
         let paneRead = isPassword ? false : terminalPane?(&context) ?? false
         if let focused, !paneRead {
             readCaret(of: focused, in: tree, into: &context)
-            // A page that has the focus itself (clicked on, not a field in it) is no field: the
-            // text around its caret is the page's own, which the walk reads as it is laid out
-            // (Safari and Chrome give none there at all). Only what is selected in it is kept.
-            if isPageInFocus(focused, in: tree) {
+            // A focused element that is no field (a page clicked on, a list, a row) is read by the
+            // walk like any element: the text around its caret is its own, which the walk reads as
+            // it is laid out (Safari and Chrome give none there at all). Only what is selected in
+            // it is kept.
+            if !isFieldInFocus(focused, in: tree) {
                 context.textBeforeCaret = ""
                 context.textAfterCaret = ""
             }
@@ -73,11 +74,12 @@ enum ScreenContextReader {
         return read ? context : nil
     }
 
-    /// Whether the focused element is a page that is read, not written in: a web area that can't
-    /// be edited. One that can (a mail's compose window, a rich-text editor's document) is the
-    /// field the caret is in, as any text field.
-    static func isPageInFocus<Tree: ScreenTree>(_ focused: Tree.Element, in tree: Tree) -> Bool {
-        tree.string(focused, kAXRoleAttribute) == "AXWebArea" && !tree.isEditable(focused)
+    /// Whether the focused element is the field the caret is in: a text field or text area, or an
+    /// element whose text can be changed (a web area that is a mail's compose window or a
+    /// rich-text editor's document). Anything else in focus (a page clicked on, a list, a row, a
+    /// button) is read, not written in, and the walk reads it like any element.
+    static func isFieldInFocus<Tree: ScreenTree>(_ focused: Tree.Element, in tree: Tree) -> Bool {
+        HelperConfig.contextFieldRoles.contains(tree.string(focused, kAXRoleAttribute) ?? "") || tree.isEditable(focused)
     }
 
     /// The hosts of the pages the focused element is in, nearest first: the element itself when it
@@ -87,9 +89,9 @@ enum ScreenContextReader {
     }
 
     /// Whether a page of an excluded website is inside `element`: a page that frames it has the
-    /// focus itself, or a focused group holds it. The walk reads a focused element that is no page
-    /// by its caret and never goes into it, and goes into a focused page only after the text around
-    /// its caret was asked for, so it is looked into here first, for pages only: no text is asked for.
+    /// focus itself, or a focused group holds it. The walk never goes into a focused field, and
+    /// goes into any other focused element only after the text around its caret was asked for, so
+    /// it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
     /// element is taken to hold none, or, with `unlessSeenWhole`, to hold one: a field is read only
@@ -97,18 +99,32 @@ enum ScreenContextReader {
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
                                                     intoPages: Bool = true, unlessSeenWhole: Bool = false,
                                                     within seconds: Double, since started: Date) -> Bool {
+        switch lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) {
+        case .excluded: return true
+        case .none: return false
+        case .notSeenWhole: return unlessSeenWhole
+        }
+    }
+
+    /// What a look inside an element for a page of an excluded website found.
+    enum PageLook { case none, excluded, notSeenWhole }
+
+    /// The look behind `holdsExcludedPage`, which also says when it gave up at a budget before
+    /// the element was seen whole.
+    static func lookForExcludedPage<Tree: ScreenTree>(in element: Tree.Element, _ tree: Tree, excluding exclusions: ScreenExclusions,
+                                                      intoPages: Bool = true, within seconds: Double, since started: Date) -> PageLook {
         var stack = tree.children(of: element)
         var visited = 0
         while let next = stack.popLast() {
-            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return unlessSeenWhole }
+            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return .notSeenWhole }
             visited += 1
             if tree.string(next, kAXRoleAttribute) == "AXWebArea" {
-                if exclusions.excludes(tree.page(of: next)) { return true }
+                if exclusions.excludes(tree.page(of: next)) { return .excluded }
                 if !intoPages { continue }
             }
             stack.append(contentsOf: tree.children(of: next))
         }
-        return false
+        return .none
     }
 
     // MARK: Caret
@@ -168,9 +184,9 @@ enum ScreenContextReader {
     /// content controls and toolbars are read (`contextWebReadRoles`): a control adds the text
     /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (`isShown`) is left
     /// out, but its box is still walked into: Slack keeps its message list in one.
-    /// The focused element becomes the caret block at its place in that order; a page that has the
-    /// focus itself and can't be edited (`isPageInFocus`) is walked into like any page, after its
-    /// selection, if any, as the caret block.
+    /// The focused field becomes the caret block at its place in that order; a focused element that
+    /// is no field (`isFieldInFocus`: a page clicked on, a list, a row) is read like any element,
+    /// after its selection, if any, as the caret block.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
     /// A password field is never read, nor anything inside it (one above the focused element is
@@ -178,6 +194,10 @@ enum ScreenContextReader {
     /// False when the window shows a page of an excluded website, in focus or not: the walk stops
     /// there, and what it gathered must not be used. A field that frames such a page (a field is read
     /// by its value, never walked into) is not read, and `contextHiddenMarker` stands in its place.
+    /// An element read in one piece by a label of its own and not walked into (a piece of text, a
+    /// heading, a link, a row, a web control with its title) is looked through for such a page
+    /// (`lookForExcludedPage`): its label can be made of what it holds. One that holds such a page
+    /// refuses the window; one too large to look through is not read, and the marker stands in its place.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
                                        into context: inout ScreenContext) -> Bool {
@@ -188,17 +208,15 @@ enum ScreenContextReader {
             if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; return true }
             context.nodesVisited += 1
 
-            if let focused, tree.isSame(element, focused) {
+            let isFocus = focused.map { tree.isSame(element, $0) } ?? false
+            if isFocus {
                 if tree.string(element, kAXRoleAttribute) == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return false }
-                guard isPageInFocus(element, in: tree) else {
+                if isFieldInFocus(element, in: tree) {
                     context.appendCaret(frame: tree.frame(of: element))
                     continue
                 }
                 if !context.selectedText.isEmpty { context.appendCaret(frame: tree.frame(of: element)) }
-                stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, true) })
-                continue
-            }
-            if focusPath.contains(where: { tree.isSame($0, element) }) {
+            } else if focusPath.contains(where: { tree.isSame($0, element) }) {
                 let isWebArea = tree.string(element, kAXRoleAttribute) == "AXWebArea"
                 if isWebArea, exclusions.excludes(tree.page(of: element)) { return false }
                 let childrenInWeb = inWeb || isWebArea
@@ -211,6 +229,9 @@ enum ScreenContextReader {
             let role = tree.string(element, kAXRoleAttribute) ?? ""
             if isSkipped(role, inWeb: inWeb) { continue }
             let shown = frame.map(ScreenContext.isShown) ?? true
+            func look() -> PageLook {
+                lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+            }
 
             switch role {
             case "AXWebArea":
@@ -218,12 +239,25 @@ enum ScreenContextReader {
                 if exclusions.excludes(page) { return false }
                 if context.host == nil { context.host = page.name }
             case "AXStaticText":
-                if shown { context.append(.text, tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame) }
+                if shown {
+                    let held = look()
+                    if held == .excluded { return false }
+                    context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker
+                        : tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
+                }
                 continue
             case "AXHeading", "AXLink", "AXRow":
                 if shown {
                     let kind: ScreenContext.Block.Kind = role == "AXHeading" ? .heading : role == "AXLink" ? .link : .row
                     var text = label(of: element, in: tree)
+                    // Read by its label, nothing inside it is reached: a page in it is looked for.
+                    // Without a label its text is gathered, which finds a page on its way and
+                    // marks a field that frames one.
+                    if text != nil {
+                        let held = look()
+                        if held == .excluded { return false }
+                        if held == .notSeenWhole { text = HelperConfig.contextHiddenMarker }
+                    }
                     if text == nil {
                         text = subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb,
                                            excluding: exclusions, started: started, context: &context)
@@ -247,7 +281,11 @@ enum ScreenContextReader {
                 continue
             case _ where inWeb && HelperConfig.contextWebControlRoles.contains(role):
                 if let title = drawnTitle(of: element, in: tree) {
-                    if shown { context.append(.text, title, frame: frame) }
+                    if shown {
+                        let held = look()
+                        if held == .excluded { return false }
+                        context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker : title, frame: frame)
+                    }
                     continue
                 }
             default:
@@ -300,9 +338,19 @@ enum ScreenContextReader {
                 let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
                 // A field is read by its value and not walked into, so a page framed in it is looked
                 // for: a field holding one is not read, and the row says that something there is hidden.
-                let hidden = shown && (role == "AXTextField" || role == "AXTextArea")
-                    && holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
-                                         within: HelperConfig.contextTimeBudget, since: started)
+                // A piece of text or a titled control that holds one refuses the window, as in the
+                // walk, and one too large to look through is hidden like such a field.
+                var hidden = false
+                if shown, role == "AXTextField" || role == "AXTextArea" {
+                    hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
+                                               within: HelperConfig.contextTimeBudget, since: started)
+                } else if shown {
+                    switch lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
+                    case .excluded: return nil
+                    case .notSeenWhole: hidden = true
+                    case .none: break
+                    }
+                }
                 let text = hidden ? HelperConfig.contextHiddenMarker
                     : (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

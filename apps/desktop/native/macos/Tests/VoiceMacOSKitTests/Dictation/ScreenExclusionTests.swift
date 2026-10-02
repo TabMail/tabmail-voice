@@ -387,6 +387,68 @@ struct ScreenExclusionTests {
         #expect(typed.context.textBeforeCaret == "account 1234 ")
     }
 
+    /// A focused element that is no field (a list, a row, a group, a button) is read like any
+    /// element, where it is: it is no empty caret block with nothing under it read.
+    @Test func aFocusedElementThatIsNoFieldIsReadLikeAnyElement() {
+        let secret = FakeElement("AXTextField", [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "placeholder-secret"])
+        func mail(_ attributes: [String: String] = [:]) -> (window: FakeElement, list: FakeElement, row: FakeElement) {
+            let row = FakeElement("AXRow", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Sender One"]), FakeElement("AXStaticText", [kAXValueAttribute: "Quarterly plan"]),
+            ])
+            let list = FakeElement("AXList", attributes, children: [row, FakeElement("AXGroup", children: [secret])])
+            let window = FakeElement("AXWindow", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Inbox"]), list, FakeElement("AXTextField", [kAXValueAttribute: "search"]),
+            ])
+            return (window, list, row)
+        }
+        let whole = "Inbox\n| Sender One | Quarterly plan\n> search"
+        // The list in focus, and a row of it in focus: what the window shows, and no caret block.
+        let plain = mail()
+        for (focused, path) in [(plain.list, [plain.window]), (plain.row, [plain.list, plain.window])] {
+            let read = gather(plain.window, focused: focused, focusPath: path, excluding: [])
+            #expect(read.read)
+            #expect(read.context.renderedText() == whole)
+            #expect(!read.context.blocks.contains { $0.kind == .caret })
+            // A password field inside the focused element is asked for nothing.
+            #expect(!read.asked.elements.contains(ObjectIdentifier(secret)))
+        }
+        // The same with no focus at all: the focus takes nothing away.
+        #expect(gather(plain.window, focused: nil, focusPath: [], excluding: []).context.renderedText() == whole)
+
+        // Something selected in it is kept, as the caret block before it; the text around the
+        // selection is the element's own, read once, by the walk.
+        let selected = mail(Self.caret)
+        let chosen = gather(selected.window, focused: selected.list, focusPath: [selected.window], excluding: [])
+        #expect(chosen.context.selectedText == "balance")
+        #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
+        #expect(chosen.context.renderedText() == "Inbox\n» ‸balance‸\n| Sender One | Quarterly plan\n> search")
+
+        // A focused button is skipped outside web content like any button, and read inside it.
+        let button = FakeElement("AXButton", [kAXTitleAttribute: "Send"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Inner"])])
+        let native = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
+        let skipped = gather(native, focused: button, focusPath: [native], excluding: [])
+        #expect(skipped.context.renderedText() == "Draft")
+        let area = FakeElement("AXWebArea", ["host": "example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
+        let web = FakeElement("AXWindow", children: [area])
+        #expect(gather(web, focused: button, focusPath: [area, web], excluding: []).context.renderedText() == "Draft\nSend")
+
+        // Outside the window it is not read, as any element there.
+        let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let away = FakeElement("AXStaticText", [kAXValueAttribute: "Elsewhere"], frame: CGRect(x: 0, y: 900, width: 100, height: 16))
+        let framed = FakeElement("AXWindow", frame: frame, children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: CGRect(x: 0, y: 10, width: 100, height: 16)), away,
+        ])
+        #expect(gather(framed, focused: away, focusPath: [framed], excluding: []).context.renderedText() == "Draft")
+
+        // A field in focus is still the caret block and is not walked into, whatever its role.
+        for role in ["AXComboBox", "AXTextArea", "AXTextField"] {
+            let field = FakeElement(role, Self.caret, children: [FakeElement("AXStaticText", [kAXValueAttribute: "inner"])])
+            let window = FakeElement("AXWindow", children: [field])
+            let typed = gather(window, focused: field, focusPath: [window], excluding: [])
+            #expect(typed.context.renderedText() == "» account 1234 ‸balance‸ 99")
+        }
+    }
+
     /// The walk into a page that has the focus refuses an excluded page framed in it, on its own,
     /// and reads nothing inside a password field there.
     @Test func theWalkIntoAFocusedPageRefusesAnExcludedPageFramedInIt() {
@@ -530,6 +592,118 @@ struct ScreenExclusionTests {
         #expect(read(fillers: budget, behind: nil) == "Outer\n\(mark)Field words\nAfter")
     }
 
+    /// The same with a label of its own, and for a piece of text and a web control with a title:
+    /// such an element is read in one piece and never walked into, and its label can be made of
+    /// what it holds, so it is looked through and the window refused.
+    @Test(arguments: ["AXRow", "AXHeading", "AXLink", "AXStaticText", "AXButton"])
+    func anExcludedWebsiteInsideALabelledElementIsNotRead(role: String) {
+        func window(frame: CGRect? = nil) -> (window: FakeElement, holder: FakeElement) {
+            let holder = FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"], frame: frame,
+                                     children: [FakeElement("AXGroup", children: [page("pay.example.com", "card 4242")])])
+            let area = FakeElement("AXWebArea", ["host": "example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]), holder])
+            return (FakeElement("AXWindow", children: [area]), holder)
+        }
+        let shown = window()
+        let refused = gather(shown.window, focused: nil, focusPath: [], excluding: ["example.com"])
+        #expect(!refused.read && refused.context.blocks.isEmpty)
+        #expect(!walk(shown.window, excluding: ["example.com"]).read)
+
+        // Not excluded: it is read by its label, as before, and not walked into.
+        let read = walk(shown.window, excluding: ["example.net"])
+        #expect(read.read)
+        #expect(read.text.contains("Pay now") && !read.text.contains("card 4242"))
+
+        // One too thin to show anything is not read and not looked through, as before.
+        let thin = window(frame: CGRect(x: 0, y: 0, width: 200, height: 1))
+        let hidden = walk(thin.window, excluding: ["example.com"])
+        #expect(hidden.read && hidden.text == "Outer")
+
+        // Inside a row with no label, whose text is gathered: a piece of text or a titled control
+        // that holds the page refuses the window there too.
+        if role == "AXStaticText" || role == "AXButton" {
+            let row = FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "10:15"]), shown.holder])
+            let area = FakeElement("AXWebArea", ["host": "example.org"], children: [row])
+            let inRow = FakeElement("AXWindow", children: [area])
+            #expect(!walk(inRow, excluding: ["example.com"]).read)
+            #expect(walk(inRow, excluding: ["example.net"]).text == "| 10:15 | Pay now")
+            // Too thin to show, it is neither read nor looked through there either.
+            let thinRow = FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "10:15"]), thin.holder])
+            let thinInRow = walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [thinRow])]),
+                                 excluding: ["example.com"])
+            #expect(thinInRow.read && thinInRow.text == "| 10:15")
+        }
+
+        // The page framed in another website's page inside it is found too.
+        let framed = FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"], children: [
+            FakeElement("AXWebArea", ["host": "news.example.org"], children: [page("pay.example.com", "card 4242")]),
+        ])
+        let outer = FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [framed])])
+        #expect(!walk(outer, excluding: ["example.com"]).read)
+
+        // A page whose address the app failed to give can't be told safe: held by such an
+        // element it refuses the window with nothing excluded at all. A page with no address is read.
+        func holding(_ attributes: [String: String]) -> FakeElement {
+            FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"], children: [FakeElement("AXWebArea", attributes)])
+        }
+        func inWindow(_ element: FakeElement) -> FakeElement {
+            FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [element])])
+        }
+        #expect(!walk(inWindow(holding(["hostUnknown": "1"])), excluding: []).read)
+        let noAddress = walk(inWindow(holding([:])), excluding: ["example.com"])
+        #expect(noAddress.read && noAddress.text.contains("Pay now"))
+        // Both, the framed page and the unknown one, inside a row with no label.
+        if role == "AXStaticText" || role == "AXButton" {
+            #expect(!walk(inWindow(FakeElement("AXRow", children: [framed])), excluding: ["example.com"]).read)
+            #expect(!walk(inWindow(FakeElement("AXRow", children: [holding(["hostUnknown": "1"])])), excluding: []).read)
+            #expect(walk(inWindow(FakeElement("AXRow", children: [holding([:])])), excluding: ["example.com"]).text == "| Pay now")
+        }
+    }
+
+    /// Such an element too large to look through is not read: the look gives up at the element
+    /// budget, and a page it did not reach might be an excluded one. The marker stands in its
+    /// place and the rest is read. One element fewer, and it is looked through whole.
+    @Test(arguments: ["AXRow", "AXHeading", "AXLink", "AXStaticText", "AXButton"], [true, false])
+    func aLabelledElementTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) {
+        func read(fillers: Int, behind host: String?) -> (read: Bool, text: String) {
+            // The look takes the last child first: the page, when there is one, is reached last.
+            let page = host.map { [self.page($0, "card 4242")] } ?? []
+            let holder = FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"],
+                                     children: page + (0..<fillers).map { _ in FakeElement("AXGroup") })
+            let area = FakeElement("AXWebArea", ["host": "example.org"], children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
+                inRow ? FakeElement("AXRow", children: [holder]) : holder,
+                FakeElement("AXStaticText", [kAXValueAttribute: "After"]),
+            ])
+            return walk(FakeElement("AXWindow", children: [area]), excluding: ["example.com"])
+        }
+        // Inside a row with no label only a piece of text and a titled control are read in one
+        // piece; a row, heading or link there is walked into.
+        guard !inRow || role == "AXStaticText" || role == "AXButton" else { return }
+        let marker = HelperConfig.contextHiddenMarker
+        let budget = HelperConfig.contextNodeBudget
+        for hidden in [read(fillers: budget, behind: "pay.example.com"), read(fillers: budget + 1, behind: nil)] {
+            #expect(hidden.read)
+            #expect(hidden.text.contains(marker) && !hidden.text.contains("Pay now"))
+            #expect(hidden.text.hasPrefix("Outer\n") && hidden.text.hasSuffix("\nAfter"))
+        }
+        // Looked through whole: the excluded page is found, and an element without one is read.
+        #expect(!read(fillers: budget - 1, behind: "pay.example.com").read)
+        let whole = read(fillers: budget, behind: nil)
+        #expect(whole.read && whole.text.contains("Pay now") && !whole.text.contains(marker))
+    }
+
+    /// A web control with no title of its own is walked into, not read in one piece: a field in
+    /// it that frames an excluded page keeps its marker, and the rest of the window is read.
+    @Test(arguments: [[kAXDescriptionAttribute: "Copy"], [:]])
+    func aWebControlWithoutATitleIsWalkedIntoNotLookedThrough(attributes: [String: String]) {
+        let field = FakeElement("AXTextField", [kAXValueAttribute: "Field words"], children: [page("pay.example.com", "card 4242")])
+        let area = FakeElement("AXWebArea", ["host": "example.org"], children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]), FakeElement("AXButton", attributes, children: [field]),
+        ])
+        let read = walk(FakeElement("AXWindow", children: [area]), excluding: ["example.com"])
+        #expect(read.read && read.text == "Outer\n> \(HelperConfig.contextHiddenMarker)")
+    }
+
     /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
     /// read around the caret and its visible lines kept as a plain field.
     @Test func aTerminalsCaretComesFromItsPaneWhenThereIsOne() {
@@ -606,8 +780,8 @@ struct ScreenExclusionTests {
     }
 
     /// A page that frames an excluded one and has the focus itself, or a focused group that holds
-    /// one: the walk never goes into a focused element that is no page, and into a focused page only
-    /// after its caret's text was asked for, so it is looked into before anything is read.
+    /// one: the walk goes into a focused element that is no field only after its caret's text was
+    /// asked for, so it is looked into before anything is read.
     @Test func anExcludedPageInsideTheFocusedElementIsNotRead() {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
         let outer = FakeElement("AXWebArea", Self.caret.merging(["host": "example.org"]) { $1 }, children: [FakeElement("AXGroup", children: [frame])])

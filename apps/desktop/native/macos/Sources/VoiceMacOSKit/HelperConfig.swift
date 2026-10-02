@@ -46,7 +46,8 @@ enum HelperConfig {
     /// Longest text gathered for one heading, link or table row.
     static let contextMaxBlockChars = 1_000
     /// What the screen read puts in place of a part of the window it does not read for privacy
-    /// (a field that frames a page of an excluded website), so the reader knows something is there.
+    /// (a field that frames a page of an excluded website, or an element read in one piece that is
+    /// too large to look through for one), so the reader knows something is there.
     static let contextHiddenMarker = "[hidden for privacy]"
     /// Roles whose text is interface chrome, not content: skipped with their subtree.
     static let contextSkippedRoles: Set<String> = [
@@ -61,6 +62,9 @@ enum HelperConfig {
     /// Skipped roles read after all in web content: its controls, and toolbars, which there hold
     /// content (a chat's header with the conversation's name).
     static let contextWebReadRoles: Set<String> = contextWebControlRoles.union(["AXToolbar"])
+    /// Roles the caret is in when focused: the text around it is read, and the walk never goes
+    /// into them. Any other focused element is read like the rest of the window.
+    static let contextFieldRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox"]
     /// Elements at most this thin (points) show nothing: web apps keep screen-reader-only text,
     /// list items scrolled out of view and hover-only actions in 1-point boxes.
     static let contextHiddenMaxThickness: CGFloat = 1
