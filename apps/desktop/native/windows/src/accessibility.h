@@ -198,21 +198,24 @@ public:
                 return nullptr;
             }
             if (refusedPages(window, logical->metadata(), exclusions, 1500, false)) return hiddenScreen();
-            if (!safeTextSubtree(logical->metadata(), started, 1500)) {
-                std::cerr << "debug accessible text: protected or incomplete subtree\n";
-                return nullptr;
-            }
-            parts = logical->parts();
+            // A field that can't be shown safe gives no caret text, and the rest of the
+            // window is still read, as for a field read through UI Automation below.
+            if (safeTextSubtree(logical->metadata(), started, 1500)) parts = logical->parts();
+            else std::cerr << "debug accessible text: protected or incomplete subtree\n";
         } else if (isEditable && safeTextSubtree(element.Get(), started, 1500)) parts = textParts(element.Get());
+        // A page that has the focus itself and can't be edited is no field: the walk reads
+        // it as it is laid out, and only what is selected in it is kept, as on the Mac.
+        const std::string pageSelection = !protectedFocus && !isEditable ? selectedInPage(element.Get(), exclusions) : "";
         const std::string left = parts ? (*parts)[0] : "";
-        const std::string selection = parts ? (*parts)[1] : "";
+        const std::string selection = parts ? (*parts)[1] : pageSelection;
         const std::string right = parts ? (*parts)[2] : "";
         VisibleContext context;
         const std::string caretText = left + "‸" + selection + (selection.empty() ? "" : "‸") + right;
         // Only a page that is excluded, or whose address is unknown, is reported as hidden;
         // a read that stopped because the window lost the foreground is no context.
         bool hiddenPage = false;
-        if (!readVisible(window, element.Get(), protectedFocus || parts.has_value(), caretText, started, context, exclusions, hiddenPage)) {
+        std::optional<std::wstring> walkedHost;
+        if (!readVisible(window, element.Get(), protectedFocus || parts.has_value(), !pageSelection.empty(), caretText, started, context, exclusions, hiddenPage, walkedHost)) {
             return hiddenPage ? hiddenScreen() : JSON(nullptr);
         }
         wchar_t title[513]{};
@@ -244,8 +247,10 @@ public:
             std::to_string(context.count()) + " blocks, " + std::to_string(rendered.size()) + " bytes, " +
             std::to_string(GetTickCount64() - started) + " ms" +
             (context.stopped.empty() ? "" : ", stopped: " + context.stopped);
+        // The page the focus is in; without one, the first page the walk reached, as on the Mac.
+        const auto pageName = focusedPage && focusedPage->kind == PageHost::Kind::host ? std::optional<std::wstring>(focusedPage->name) : walkedHost;
         return {{"appName", utf8(app)}, {"bundleID", nullptr}, {"windowTitle", privacy::ScreenPrivacy::redact(utf8(title))},
-            {"host", focusedPage && focusedPage->kind == PageHost::Kind::host ? JSON(utf8(focusedPage->name)) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", isEditable ? "editable text" : "control"},
+            {"host", pageName ? JSON(utf8(*pageName)) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", isEditable ? "editable text" : "control"},
             {"textBeforeCaret", caret[0]}, {"selectedText", caret[1]}, {"textAfterCaret", caret[2]},
             {"selectionRedacted", selectionRedacted},
             {"renderedText", rendered}, {"summary", summary}, {"logDescription", rendered}};
@@ -447,8 +452,41 @@ private:
         // An embedded-object marker is not a visible caption.
         return result == "\xEF\xBF\xBC" ? "" : result;
     }
-    bool readVisible(HWND window, IUIAutomationElement* focus, bool hasParts, const std::string& caretText,
-                     ULONGLONG started, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage) {
+    // What is selected in a page that has the focus itself. Empty when nothing is, when the
+    // provider gives no single text selection, or when what holds it can't be shown safe.
+    std::string selectedInPage(IUIAutomationElement* page, const ScreenExclusions& exclusions) {
+        CONTROLTYPEID type = 0;
+        if (FAILED(page->get_CurrentControlType(&type)) || type != UIA_DocumentControlTypeId) return {};
+        ComPtr<IUIAutomationTextPattern> pattern;
+        if (FAILED(page->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) || !pattern) return {};
+        ComPtr<IUIAutomationTextRangeArray> selections;
+        if (FAILED(pattern->GetSelection(&selections)) || !selections) return {};
+        int count = 0;
+        if (FAILED(selections->get_Length(&count)) || count != 1) return {};
+        ComPtr<IUIAutomationTextRange> selected, whole;
+        if (FAILED(selections->GetElement(0, &selected)) || !selected) return {};
+        if (FAILED(pattern->get_DocumentRange(&whole)) || !whole) return {};
+        // A caret alone selects nothing, and is asked for no text.
+        int extent = 0;
+        if (FAILED(selected->CompareEndpoints(TextPatternRangeEndpoint_Start, selected.Get(), TextPatternRangeEndpoint_End, &extent)) || extent == 0) return {};
+        // A range's text takes in everything under it, so what encloses the selection is
+        // looked through first. Its own short budget leaves the walk its time.
+        ComPtr<IUIAutomationElement> enclosing;
+        if (FAILED(selected->GetEnclosingElement(&enclosing)) || !enclosing) return {};
+        try {
+            PageTree tree{this, {}, GetTickCount64(), 200};
+            require(automation->get_RawViewWalker(&tree.walker));
+            if (privacy::holdsExcludedPage(tree, enclosing, exclusions, true)) return {};
+            if (!privacy::safeTextSubtree(tree, enclosing)) return {};
+            clampRange(selected.Get(), whole.Get());
+            return rangeText(selected.Get());
+        } catch (const std::exception&) {
+            return {};
+        }
+    }
+    bool readVisible(HWND window, IUIAutomationElement* focus, bool hasParts, bool pageSelected, const std::string& caretText,
+                     ULONGLONG started, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
+                     std::optional<std::wstring>& walkedHost) {
         ComPtr<IUIAutomationElement> root;
         require(automation->ElementFromHandle(window, &root));
         if (!root) return true;
@@ -487,10 +525,13 @@ private:
                 if (same(node, focus) && hasParts) context.append(ContextKind::caret, "‸");
                 continue; // No name, value, text pattern, or child access.
             }
-            if (const auto page = pageHost(node); page && exclusions.excludes(*page)) {
-                std::cerr << "debug screen access: excluded or unknown page not read\n";
-                hiddenPage = true;
-                return false;
+            if (const auto page = pageHost(node); page) {
+                if (exclusions.excludes(*page)) {
+                    std::cerr << "debug screen access: excluded or unknown page not read\n";
+                    hiddenPage = true;
+                    return false;
+                }
+                if (!walkedHost && page->kind == PageHost::Kind::host) walkedHost = page->name;
             }
             if (FAILED(node->get_CurrentIsOffscreen(&offscreen))) continue;
             RECT frame{};
@@ -515,6 +556,8 @@ private:
                 context.append(ContextKind::caret, caretText, geometry);
                 continue;
             }
+            // A page in focus with a selection: the selection, then the page like any page.
+            if (isFocus && pageSelected) context.append(ContextKind::caret, caretText, geometry);
             CONTROLTYPEID type = 0;
             if (FAILED(node->get_CurrentControlType(&type))) continue;
             const bool web = entry.web || type == UIA_DocumentControlTypeId;
@@ -586,7 +629,7 @@ private:
         }
         // A provider may omit the focus node from its tree. Retain the independently
         // bounded caret context rather than dropping it from a partial screen read.
-        if (hasParts && !context.hasCaret) context.append(ContextKind::caret, caretText);
+        if ((hasParts || pageSelected) && !context.hasCaret) context.append(ContextKind::caret, caretText);
         return true;
     }
     static JSON rectangle(double x, double y, double width, double height) {

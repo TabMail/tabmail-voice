@@ -47,7 +47,8 @@ const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); p
 let checks = 0;
 try {
   for (const mode of ["password-window", "password-row", "password-link", "password-web-control", "password-focus",
-    "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar"]) {
+    "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
+    "open-page", "open-page-focus"]) {
     fixture = client(process.argv[3], [mode]);
     const initial = await fixture.next();
     assert.deepEqual(await request("frontmostApp"), { window: initial.window }, `${mode}: fixture owns foreground`);
@@ -66,6 +67,15 @@ try {
         assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);
         assert.ok(context.renderedText.includes("» ‸"), "protected focus is marker only");
       } else assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
+      if (mode.startsWith("open-page")) {
+        assert.equal(context.host, "open.example", `${mode}: the page's host is reported, in focus or reached by the walk`);
+        assert.ok(context.renderedText.includes("Synthetic page text"), `${mode}: the page is walked into`);
+      }
+      if (mode === "open-page-focus") {
+        assert.equal(context.focusedRole, "control", "a page that can't be edited is no field");
+        assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);
+        assert.ok(!context.renderedText.includes("‸"), "a page in focus with nothing selected has no caret block");
+      }
     }
     fixture.child.stdin.write("stats\n");
     const stats = await fixture.next();

@@ -26,7 +26,7 @@ std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -121,7 +121,7 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
         } else { read(); *result = SysAllocString(text.c_str()); }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* result) override { *result = FALSE; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* result) override { *result = readOnly ? TRUE : FALSE; return S_OK; }
 };
 int add(int parent, CONTROLTYPEID type, bool password = false) {
     const int id = static_cast<int>(nodes.size());
@@ -156,13 +156,19 @@ void configure(const std::string& mode) {
         if (mode == "page-in-focus") parent = 1;
         const int page = add(parent, UIA_DocumentControlTypeId);
         nodes.at(page)->address = L"https://blocked.example/synthetic";
+        // A page that may be read: with the focus outside it, and as the focus itself (a
+        // page that can't be edited, as a browser gives one that was clicked on).
+        const bool open = mode.starts_with("open-page");
+        if (open) nodes.at(page)->address = L"https://open.example/synthetic";
         if (mode == "page-no-address") nodes.at(page)->address.clear();
         if (mode == "page-unknown") nodes.at(page)->unknownAddress = true;
         // Querying a refused page's address is permitted; its contents are not.
-        nodes.at(page)->forbidden = mode != "page-no-address";
+        nodes.at(page)->forbidden = mode != "page-no-address" && !open;
         const int child = add(page, mode == "page-focus-child" ? UIA_EditControlTypeId : UIA_TextControlTypeId);
-        nodes.at(child)->forbidden = mode != "page-no-address";
-        if (mode == "page-focus") focus = page;
+        nodes.at(child)->forbidden = mode != "page-no-address" && !open;
+        if (open) nodes.at(child)->text = L"Synthetic page text";
+        if (mode == "page-focus" || mode == "open-page-focus") focus = page;
+        if (mode == "open-page-focus") nodes.at(page)->readOnly = true;
         if (mode == "page-focus-child" || mode == "page-no-address" || mode == "page-unknown") focus = child;
         if (mode == "page-address-bar") nodes.at(1)->type = UIA_EditControlTypeId;
     }

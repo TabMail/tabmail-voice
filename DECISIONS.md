@@ -259,6 +259,19 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   not such a page: it stays the field the caret is in, read by its caret and not walked into, as
   before (`isPageInFocus`). The Windows helper applies the same rule: it walks a focused document
   that is no editable field.)*
+- *(Amended 2026-10-01, owner: the Windows helper matches the Mac one here. Three differences were
+  found by reading the two side by side. A focused page that can't be edited lost its selection on
+  Windows, where the caret text was read from an editable field only: the selection is now kept
+  (`selectedInPage`), and marked as the caret block before the page's text. It is asked for only
+  when something is selected, after what encloses the selection was looked through for a password
+  field and an excluded page, within its own short budget so the walk keeps its time. The page's
+  host was reported only for a page the focus is in: without one, it is now the first page the walk
+  reaches. And a field read through IAccessible2 (Firefox) that could not be shown safe ended the
+  whole read with nothing; it now gives no caret text and the window is still read, as the same
+  case already did through UI Automation. Left as they are, each Windows' own choice or a feature
+  not built there: the Windows walk does not go into a hidden container, and a terminal's pane is
+  not read. The Windows changes were written and reviewed by reading: they were not built or run
+  when made.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

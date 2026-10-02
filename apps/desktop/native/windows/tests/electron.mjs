@@ -190,6 +190,26 @@ async function main() {
       }
       assert.equal(await request("caretAnchor", { window: target }), null);
     }
+    // A page that has the focus itself is walked like any page; only what is selected in it is kept.
+    await window.webContents.executeJavaScript(`(() => {
+      document.activeElement.blur();
+      getSelection().selectAllChildren(document.querySelector("h1"));
+    })()`);
+    await delay(150);
+    const selectedPage = await request("readScreen");
+    assert.equal(selectedPage.focusedRole, "control", "a page in focus is no field");
+    assert.equal(selectedPage.host, "data", "a page in focus reports its host");
+    assert.deepEqual([selectedPage.textBeforeCaret, selectedPage.selectedText, selectedPage.textAfterCaret],
+      ["", "Unrelated heading outside focused field", ""], "a page in focus keeps its selection and no text around a caret");
+    assert.ok(selectedPage.renderedText.includes("‸Unrelated heading outside focused field‸"), "the selection is marked in the read");
+    assert.ok(selectedPage.renderedText.includes("Unrelated footer outside focused field") && !selectedPage.renderedText.includes("synthetic-secret"),
+      "a page in focus is still walked, without its password field");
+    await window.webContents.executeJavaScript("getSelection().removeAllRanges()");
+    await delay(150);
+    const plainPage = await request("readScreen");
+    assert.equal(plainPage.selectedText, "");
+    assert.ok(plainPage.renderedText.includes("Unrelated heading outside focused field") && !plainPage.renderedText.includes("‸"),
+      "a page in focus with nothing selected is read without a caret block");
     await focus("rich");
     assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Rich selected text." });
     const rich = await request("readScreen");
