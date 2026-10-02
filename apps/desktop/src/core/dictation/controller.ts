@@ -215,11 +215,11 @@ export class DictationController extends Observable {
   private spokenAnswer: { id: number; recorder: AudioRecorder; abort: AbortController; startedAt: number; handsFree: boolean; resume: Phase } | null = null;
   private spokenAnswers = 0;
   /** The call whose question the user answered aloud: the model, having read the answer, confirms or
-   * declines it for them (`config.confirmationTool`). Dropped by any other call, and with its request. */
-  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown>; round: number } | null = null;
-  /** A round of the request in which a call came after a question answered aloud: the model's
-   * confirmation could not say which of that round's questions it answers, so none waits for one. */
-  private unsettledRound: number | null = null;
+   * declines it for them (`config.confirmationTool`), naming the question by its `id`. Dropped by any
+   * other call, and with its request. */
+  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown>; round: number; id: string } | null = null;
+  /** How many questions have been answered aloud, for each its own id. */
+  private questionsAnsweredAloud = 0;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
@@ -673,28 +673,29 @@ export class DictationController extends Observable {
    * window opens (if the request was not a follow-up) to show which tool runs and, for one that
    * sends or creates, to ask first. An answer spoken to the question goes to the model, which reads
    * whether it agrees and answers the question for the user (`config.confirmationTool`): confirmed,
-   * the call that asked runs as the user was shown it. Any other call drops the waiting one and is
-   * asked about as usual; a question answered aloud after it in the same round does not wait, as the
-   * model's confirmation could not say which question it answers. */
+   * the call that asked runs as the user was shown it. The confirmation names the question it answers
+   * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
+   * about as usual. */
   private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     const waiting = this.answeredAloud;
-    // A confirmation the model wrote in the round that asked was written before the user answered:
-    // it answers nothing, and the answer waits for the next round, where the model has read it.
-    if (call.function.name === config.confirmationTool && waiting !== null && round <= waiting.round) {
-      log.error(`DictationController: ${config.confirmationTool} called in the round that asked`);
-      return config.confirmationToolNothingWaiting;
-    }
-    // Otherwise the call the user answered aloud waits for the model's very next call only.
-    this.answeredAloud = null;
-    // A later call of the answer's own round may ask a second question, which the model answers in
-    // the same next round: a confirmation names neither, so no answer from this round waits.
-    if (waiting !== null && round === waiting.round) this.unsettledRound = round;
     if (call.function.name === config.confirmationTool) {
       const answer = parsedJSON(call.function.arguments);
       if (waiting === null) {
         log.error(`DictationController: ${config.confirmationTool} called with no spoken answer waiting`);
         return config.confirmationToolNothingWaiting;
       }
+      // One written in the round that asked was written before the user answered, and one naming
+      // another question answers it nothing: the answer waits on, for a confirmation that names it.
+      if (round <= waiting.round) {
+        log.error(`DictationController: ${config.confirmationTool} called in the round that asked`);
+        return config.confirmationToolNothingWaiting;
+      }
+      if (isJSONObject(answer) && answer.question_id !== waiting.id) {
+        log.error(`DictationController: ${config.confirmationTool} called for another question`);
+        return config.confirmationToolNothingWaiting;
+      }
+      // Otherwise the call the user answered aloud is answered by the model's very next call only.
+      this.answeredAloud = null;
       if (!isJSONObject(answer) || typeof answer.confirmed !== "boolean") {
         log.error(`DictationController: ${config.confirmationTool} called without true or false`);
         return config.confirmationToolNoAnswer;
@@ -702,6 +703,8 @@ export class DictationController extends Observable {
       log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
       return answer.confirmed ? this.runTool(waiting.tool, waiting.args, isCurrent, signal) : config.connectorToolDeclined;
     }
+    // Any other call drops the call answered aloud: the answer covered only what its question showed.
+    this.answeredAloud = null;
     const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
@@ -719,9 +722,10 @@ export class DictationController extends Observable {
       const answer = await this.confirm(question);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
-        if (round === this.unsettledRound) return config.connectorToolAnsweredAloudAmongOthers(question, answer.spoken);
-        if (isCurrent()) this.answeredAloud = { tool, args, round };
-        return config.connectorToolAnsweredAloud(question, answer.spoken);
+        this.questionsAnsweredAloud += 1;
+        const id = `q${this.questionsAnsweredAloud}`;
+        if (isCurrent()) this.answeredAloud = { tool, args, round, id };
+        return config.connectorToolAnsweredAloud(question, answer.spoken, id);
       }
       if (answer !== "confirmed") {
         log.debug(`DictationController: ${tool.name} ${answer}`);
@@ -1268,7 +1272,6 @@ export class DictationController extends Observable {
     if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
     this.replyToConfirmation("declined");
     this.answeredAloud = null;
-    this.unsettledRound = null;
     // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
     // canceled or ended with the account: the pill says what failed, and the next hold dictates.
     if (this.currentChat?.turns.length === 0) this.dropChat();

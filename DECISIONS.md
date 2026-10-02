@@ -1243,17 +1243,21 @@ the hotkey answers it (it still starts no new request).
   this computer's tools): `confirmed` true runs the call that asked, exactly as the user was shown
   it; false declines it.
 - **The tool does nothing unless a spoken answer is waiting.** One waits only after the user
-  actually spoke while the question showed, for the model's very next call in a later round of the
-  same request: a confirmation written in the round that asked was written before the user answered,
-  and answers nothing (found in review: one round of `[create, confirm true]` ran the tool on a
-  spoken "no"); any other call (a changed one, another tool's, the same one again) drops it and is
-  asked about as before; and a click, a timeout or the request ending leaves none.
-- **A confirmation names no question, so only a round's one spoken answer waits.** A round can ask
-  two questions (`[create, send]`), which the model answers together in its next round: once a
-  call follows a spoken answer in its own round, no answer spoken later in that round waits, and the
-  model reads that it must ask that question again (found in review: "yes" to the event and "no" to
-  the message, answered `[true, false]`, sent the message). Either answer then needs one more
-  question; a question clicked earlier in the round leaves the later spoken one waiting.
+  actually spoke while the question showed, for a confirmation in a later round of the same
+  request: one written in the round that asked was written before the user answered, and answers
+  nothing (found in review: one round of `[create, confirm true]` ran the tool on a spoken "no");
+  any other call (a changed one, another tool's, the same one again) drops it and is asked about as
+  before; and a click, a timeout or the request ending leaves none.
+- **The confirmation names its question.** Each spoken answer gets its own id, which the model reads
+  with the answer (`question_id`, minted by the app: the model's own call ids need not be unique
+  across rounds), and `confirmation_answer {question_id, confirmed}` runs the waiting call only when
+  it names that id. One naming no question or another answers nothing, and the waiting answer waits
+  on. Found in review twice: `{confirmed}` alone said nothing of which question it answered, so with
+  two questions answered aloud (in one round, or one after the other) the model's "yes" to the
+  event ran the message the user had declined aloud. A first fix (only a round's one spoken answer
+  waits) closed the one-round case and missed the other; naming the question closes both by
+  construction. A question dropped by a later call (the model asked another before confirming it)
+  is asked again.
 - A spoken answer has its own abort: dropped (another key, a click on the question, the paste
   history), its upload is canceled and not tried again, and words that arrive anyway answer nothing. So the model cannot confirm for
   a user who said nothing, cannot confirm twice, cannot run something the user was not shown, and
@@ -1267,7 +1271,8 @@ the hotkey answers it (it still starts no new request).
   with its whole time again. A click on the card while speaking answers it and drops the recording.
 - Trade-off: an agreeing answer costs one more model round than a click, and rests on the model
   reading the answer rightly; a wrong reading can only decline, ask again, or run exactly what the
-  card showed.
+  card it names showed. Text the model read earlier in the request (a page, search results) could
+  steer it to confirm once the user has said anything; the damage is still bounded by that card.
 
 ## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
 

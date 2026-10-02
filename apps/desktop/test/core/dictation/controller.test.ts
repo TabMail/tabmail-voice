@@ -2858,9 +2858,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         describe("a question answered aloud", () => {
           const sameCall = ["example_create", '{"title":"Launch review","day":"friday"}'] as [string, string];
-          /** The model answering the question for the user. */
-          const confirming = [config.confirmationTool, '{"confirmed":true}'] as [string, string];
-          const declining = [config.confirmationTool, '{"confirmed":false}'] as [string, string];
+          /** The model answering, for the user, the question answered aloud under `id` (the first a
+           * controller hears is "q1"). */
+          const answering = (id: string, confirmed: boolean) => [config.confirmationTool, JSON.stringify({ question_id: id, confirmed })] as [string, string];
+          const confirming = answering("q1", true);
+          const declining = answering("q1", false);
 
           /** Holds the hotkey while the question shows, past a tap, and releases it: `words` is what
            * the backend hears. */
@@ -2888,7 +2890,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await sayAloud(controller, "Yes, go ahead.");
             await done;
 
-            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes, go ahead.")]);
+            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes, go ahead.", "q1")]);
             expect(told(1)[0]).toContain("Yes, go ahead.");
             expect(told(1)[0]).toContain("Launch review");
             expect(told(1)[0]).toContain(config.confirmationTool);
@@ -2949,7 +2951,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
 
           /** A confirmation that says neither true nor false runs nothing, and uses up the answer. */
-          test.each(["{}", '{"confirmed":"yes"}', "not json"])("the model's confirmation without true or false runs nothing (%s)", async (args) => {
+          test.each(['{"question_id":"q1"}', '{"question_id":"q1","confirmed":"yes"}', "not json"])("the model's confirmation without true or false runs nothing (%s)", async (args) => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const { controller, done } = await ask([tool], [calling(sameCall), calling([config.confirmationTool, args]), calling(confirming), reply("Nothing was added.")]);
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
@@ -2962,6 +2964,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(told(3).at(-1)).toBe(config.confirmationToolNothingWaiting);
           });
 
+          /** A confirmation that names no question, or another one, answers nothing: it runs nothing,
+           * and the answer waits on for the confirmation that names it. */
+          test.each(['{"confirmed":true}', '{"question_id":"q2","confirmed":true}', '{"question_id":1,"confirmed":true}'])("the model's confirmation without this question's id runs nothing (%s)", async (args) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling([config.confirmationTool, args]), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Yes.");
+            await done;
+
+            expect(told(2)).toEqual([config.confirmationToolNothingWaiting]);
+            expect(told(3)).toEqual(["Added."]);
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+          });
+
           /** Without the model confirming, an answer aloud runs nothing: the app never reads "yes" itself. */
           test("the tool does not run unless the model confirms", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
@@ -2972,7 +2989,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
 
             expect(tool.runs).toEqual([]);
-            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "No, leave it.")]);
+            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "No, leave it.", "q1")]);
             expect(controller.chat?.confirmation).toBeNull();
             expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Nothing was added."]);
           });
@@ -3026,43 +3043,56 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(told(4).at(-1)).toBe(config.confirmationToolNothingWaiting);
           });
 
-          /** Two questions asked in one round and both answered aloud: the model answers them in its
-           * next round, and its confirmation names neither, so none runs, whatever the user said to
-           * each. The model reads that the second must be asked again. The next request's question
-           * answered aloud waits as usual. */
+          /** Two questions answered aloud, in one round or one after the other, each with its own id:
+           * the model's confirmation runs only the question it names, and only while that one is still
+           * waiting (another call drops it). What the user declined aloud never runs, whatever the model
+           * confirms. */
           test.each([
-            ["confirms the first and declines the second", confirming, declining],
-            ["declines the first and confirms the second", declining, confirming],
-          ] as const)("two questions answered aloud in one round run nothing (the model %s)", async (_, first, second) => {
+            ["one round", "confirms the first, declines the second", [answering("q1", true), answering("q2", false)], []],
+            ["one round", "declines the first, confirms the second", [answering("q1", false), answering("q2", true)], [{ to: "x" }]],
+            ["two rounds", "confirms the first, declines the second", [answering("q1", true), answering("q2", false)], []],
+            ["two rounds", "confirms only the first", [answering("q1", true)], []],
+          ] as const)("two questions answered aloud in %s: the model %s", async (rounds, _, confirmations, sent) => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const other = Object.assign(new FakeLoopTool("example_send"), { question: "Send it?" });
-            const { controller, done } = await ask([tool, other], [calling(sameCall, ["example_send", '{"to":"x"}']), calling(first, second), reply("Nothing was done.")]);
+            const send = ["example_send", '{"to":"x"}'] as [string, string];
+            const asking = rounds === "one round" ? [calling(sameCall, send)] : [calling(sameCall), calling(send)];
+            const { controller, done } = await ask([tool, other], [...asking, calling(...confirmations), reply("Done.")]);
             expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
 
-            await sayAloud(controller, first === confirming ? "Yes, add it." : "No, don't add it.");
+            const [first, second] = confirmations.map(([, args]) => (JSON.parse(args) as { confirmed: boolean }).confirmed);
+            await sayAloud(controller, first === true ? "Yes, add it." : "No, don't add it.");
             expect(await eventually(() => controller.chat?.confirmation === "Send it?")).toBe(true);
-            await sayAloud(controller, second === confirming ? "Yes, send it." : "No, don't send that.");
+            await sayAloud(controller, second === true ? "Yes, send it." : "No, don't send that.");
             await done;
 
             expect(tool.runs).toEqual([]);
-            expect(other.runs).toEqual([]);
-            expect(told(1)[1]).toBe(config.connectorToolAnsweredAloudAmongOthers("Send it?", second === confirming ? "Yes, send it." : "No, don't send that."));
-            expect(told(2)).toEqual([config.confirmationToolNothingWaiting, config.confirmationToolNothingWaiting]);
-            expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
-
-            transcription.enqueue(200, { text: "add the review" });
-            completions.enqueue(200, calling(sameCall));
-            completions.enqueue(200, calling(confirming));
-            completions.enqueue(200, reply(answer));
-            await holdAndRelease(controller, "agent");
-            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
-            await sayAloud(controller, "Yes.");
-            expect(await eventually(() => completions.requests.length === 6 && controller.phase.kind === "idle")).toBe(true);
-            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+            expect(other.runs).toEqual(sent);
+            const last = told(asking.length + 1);
+            expect(last[0]).toBe(config.confirmationToolNothingWaiting);
+            if (second !== undefined) expect(last[1]).toBe(second ? "Added." : config.connectorToolDeclined);
           });
 
-          /** A question answered aloud after another of its round was clicked is the round's only
-           * spoken answer: it waits, and the model's confirmation runs it. */
+          /** A spoken change asks again, with its own id; the spoken "yes" to it runs the changed call
+           * once, and a confirmation of the first question, which the change replaced, runs nothing. */
+          test("a spoken change then a spoken yes runs the changed call", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const monday = ["example_create", '{"title":"Launch review","day":"monday"}'] as [string, string];
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(monday), calling(answering("q1", true), answering("q2", true)), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Make it Monday.");
+            expect(await eventually(() => completions.requests.length === 2 && controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            await sayAloud(controller, "Yes.");
+            await done;
+
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "monday" }]);
+            expect(told(2)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes.", "q2")]);
+            expect(told(3)).toEqual([config.confirmationToolNothingWaiting, "Added."]);
+          });
+
+          /** A question answered aloud after another of its round was clicked waits, and the model's
+           * confirmation runs it. */
           test("a question answered aloud after one clicked in its round waits for the model", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const other = Object.assign(new FakeLoopTool("example_send"), { question: "Send it?" });
@@ -3076,7 +3106,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
             expect(tool.runs).toHaveLength(1);
             expect(other.runs).toEqual([{ to: "x" }]);
-            expect(told(1)).toEqual(["Added.", config.connectorToolAnsweredAloud("Send it?", "Yes, send it.")]);
+            expect(told(1)).toEqual(["Added.", config.connectorToolAnsweredAloud("Send it?", "Yes, send it.", "q1")]);
           });
 
           /** The question's clock stops while its answer is spoken and transcribed: it is not declined
@@ -3098,7 +3128,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
 
             expect(tool.runs).toHaveLength(1);
-            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes.")]);
+            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "Yes.", "q1")]);
           });
 
           /** An answer that comes to nothing (a tap, another key, no words heard, a transcription
@@ -3198,7 +3228,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await sayAloud(controller, "No, leave it. Do not add that.");
             await done;
 
-            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "No, leave it. Do not add that."), config.confirmationToolNothingWaiting]);
+            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "No, leave it. Do not add that.", "q1"), config.confirmationToolNothingWaiting]);
             expect(tool.runs).toEqual(runs);
           });
 
@@ -3390,21 +3420,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const stops = capture.stops;
 
             transcription.enqueue(200, { text: "Yes." });
-            vi.useFakeTimers();
+            // The cap's two minutes run at once. (Fake timers can't stand in: the request's own wait,
+            // `eventually` in `carryOut`, polls throughout, so two fake minutes either run out its
+            // deadline or step through every poll.)
+            const delays: (number | undefined)[] = [];
+            const realSetTimeout = globalThis.setTimeout;
+            const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((action: () => void, delay?: number) => {
+              delays.push(delay);
+              return realSetTimeout(action, delay === config.maxRecordingDuration ? 0 : delay);
+            }) as unknown as typeof setTimeout);
             try {
               controller.handle("startHandsFree");
               controller.handle("listenHandsFree");
-              await vi.advanceTimersByTimeAsync(config.maxRecordingDuration - 1);
-              expect(controller.phase).toEqual({ kind: "listening" });
-              expect(transcription.requests).toHaveLength(1);
-
-              await vi.advanceTimersByTimeAsync(1 + config.releaseTailDuration);
-              expect(controller.phase.kind).not.toBe("listening");
-              expect(capture.stops).toBeGreaterThan(stops);
             } finally {
-              vi.useRealTimers();
+              timers.mockRestore();
             }
+            expect(delays).toContain(config.maxRecordingDuration);
+            expect(controller.phase).toEqual({ kind: "listening" });
+
+            expect(await eventually(() => controller.phase.kind !== "listening")).toBe(true);
             await done;
+            expect(capture.stops).toBeGreaterThan(stops);
             expect(transcription.requests).toHaveLength(2);
             expect(tool.runs).toHaveLength(1);
           });
