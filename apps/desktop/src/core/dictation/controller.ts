@@ -131,10 +131,10 @@ export class DictationController extends Observable {
   private currentLevel = 0;
   private hearing = false;
   /** The transcription that has hit a server error and not yet answered or ended, with the dictation
-   * it belongs to (`isRetrying`): only it clears the hint, and only while its dictation is the current
-   * one does it show, so one that ends late, from a canceled dictation, neither shows on nor clears a
-   * newer one's. */
-  private retrying: { generation: number } | null = null;
+   * it belongs to and its signal (`isRetrying`): only it clears the hint, and it shows only while its
+   * dictation is the current one and it is not canceled, so one that ends late, from a canceled
+   * dictation or a dropped spoken answer, neither shows on nor clears a newer one's. */
+  private retrying: { generation: number; signal: AbortSignal } | null = null;
   private currentLanguage: string | null = null;
   private currentTip: DictationTip | null = null;
   private emailApp: EmailApp | null = null;
@@ -297,7 +297,7 @@ export class DictationController extends Observable {
    * thinking circle's arc turns purple, a hint of the retry before the note shows (owner,
    * 2026-10-02). */
   get isRetrying(): boolean {
-    return this.retrying?.generation === this.generation;
+    return this.retrying?.generation === this.generation && !this.retrying.signal.aborted;
   }
 
   /** The language this dictation is transcribed in: the keyboard's at key-down, read once so the
@@ -683,7 +683,7 @@ export class DictationController extends Observable {
   private async transcribeRetrying(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal): Promise<Transcription> {
     let notice: ReturnType<typeof setTimeout> | null = null;
     let noticeShown = false;
-    let attempt: { generation: number } | null = null;
+    let attempt: { generation: number; signal: AbortSignal } | null = null;
     try {
       for (let retry = 0; ; retry += 1) {
         try {
@@ -694,7 +694,7 @@ export class DictationController extends Observable {
           const delay = this.transcriptionRetryDelays[retry];
           if (delay === undefined || !isServerError(error) || !isCurrent()) throw error;
           log.debug(`DictationController: transcription failed (${errorName(error)}); retrying in ${delay}ms`);
-          attempt ??= { generation: this.generation };
+          attempt ??= { generation: this.generation, signal };
           if (this.retrying !== attempt) {
             this.retrying = attempt;
             this.changed();

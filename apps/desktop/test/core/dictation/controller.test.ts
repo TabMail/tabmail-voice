@@ -878,6 +878,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.isRetrying).toBe(true);
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(controller.isRetrying).toBe(false);
+      // Told when the retry answers, not only when the dictation ends.
+      expect(told.slice(told.indexOf("transcribing:true"))).toContain("transcribing:false");
       expect(told.at(-1)?.endsWith(":false")).toBe(true);
     });
 
@@ -3629,6 +3631,58 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
             expect(transcription.requests).toHaveLength(2);
             expect(tool.runs).toEqual([]);
+          });
+
+          /** Each answer spoken aloud starts blue: a voice heard in one the user dropped does not
+           * turn the next one's waveform purple (owner, 2026-10-02). */
+          test("each answer spoken aloud starts with no voice heard", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+
+            controller.handle("start");
+            expect(controller.phase).toEqual({ kind: "listening" });
+            expect(controller.hasVoice).toBe(false);
+            for (let reading = 0; reading < 10; reading += 1) capture.hearWindow(0.01);
+            capture.hearWindow(0.1);
+            expect(controller.hasVoice).toBe(true);
+            controller.handle("cancel");
+
+            controller.handle("start");
+            expect(controller.phase).toEqual({ kind: "listening" });
+            expect(controller.hasVoice).toBe(false);
+            controller.handle("cancel");
+            controller.answerConfirmation(false);
+            await done;
+          });
+
+          /** The circle is purple only while this answer is being tried again: dropped, its retry still
+           * in flight, it is not (owner, 2026-10-02: purple only for a server error of its own). */
+          test("a dropped answer's retry still in flight stops saying it is retrying", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")], (controller) => {
+              controller.transcriptionRetryDelays = [1];
+              controller.transcriptionRetryNoticeDelay = 10_000;
+            });
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            transcription.enqueue(502, { error: "transcription_failed" });
+            transcription.enqueue(200, { text: "Yes." });
+            const retry = deferred<void>();
+            transcription.gate = async () => {
+              if (transcription.requests.length === 3) await retry.promise;
+            };
+            controller.handle("start");
+            await sleep(config.minimumHoldDuration + 50);
+            controller.handle("finish");
+            expect(await eventually(() => transcription.requests.length === 3 && controller.isRetrying)).toBe(true);
+
+            controller.handle("cancel");
+            expect(controller.isRetrying).toBe(false);
+            retry.resolve();
+            controller.answerConfirmation(false);
+            await done;
+            expect(controller.isRetrying).toBe(false);
           });
 
           test("a dropped answer is not tried again", async () => {
