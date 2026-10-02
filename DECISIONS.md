@@ -1229,22 +1229,28 @@ up as an event confirmed after its time had passed.)
 - Each question has its own clock, stopped by any answer (the user's, the window closing, the request
   ending), so one answered in time never declines the next.
 
-**Amendment 2026-10-01: a question can be answered aloud.** Owner: "we can just also allow voice
-confirmations. Agents are smart enough to do that, so to force a confirmation, a user can click yes,
-but they can also just answer yes." This supersedes "the hotkey starts nothing" above: while a
-question shows, the hotkey answers it (it still starts no new request).
+**Amendment 2026-10-01: a question can be answered aloud, and the agent clicks for the user.**
+Owner: "we can just also allow voice confirmations. Agents are smart enough to do that, so to force a
+confirmation, a user can click yes, but they can also just answer yes", and: "pose this as a tool
+that the agent executes … the agent has a confirmation tool which either says yes or no … the agent
+is clicking for the user." This supersedes "the hotkey starts nothing" above: while a question shows,
+the hotkey answers it (it still starts no new request).
 - Holding the hotkey (or the hands-free double tap) while a question shows records an answer, which
   is transcribed as the request was, with no cleanup. The tool's call returns to the model
   `config.connectorToolAnsweredAloud`: nothing was done, the question, and the user's words.
-- **The app never reads "yes" itself; the model does.** If the answer agrees, the model makes the
-  same call again and the app runs it without a second question. The app allows that for exactly one
-  call: the same tool with the same arguments (compared whatever their order), made in the same
-  request, after the user actually spoke while that question showed. Any other call (another tool,
-  changed arguments, the same call a second time, the next request's) is asked about as before. So a
-  model cannot confirm for a user who said nothing, and cannot run something the user was not shown.
-- Rejected: the app matching "yes"/"no" words itself (every language, and "yes, but on Monday"); a
-  confirming tool the model calls (it could call it with nothing said); starting a follow-up request
-  from the answer (the model would then ask its question a second time).
+- **The app never reads "yes" itself; the model does**, and answers the question for the user with
+  the `confirmation_answer` tool (`config.confirmationTool`, defined in the backend, offered with
+  this computer's tools): `confirmed` true runs the call that asked, exactly as the user was shown
+  it; false declines it.
+- **The tool does nothing unless a spoken answer is waiting.** One waits only after the user
+  actually spoke while the question showed, for the model's very next call in the same request: any
+  other call (a changed one, another tool's, the same one again) drops it and is asked about as
+  before, and a click, a timeout or the request ending leaves none. So the model cannot confirm for
+  a user who said nothing, cannot confirm twice, and cannot run something the user was not shown.
+- Rejected: the app matching "yes"/"no" words itself (every language, and "yes, but on Monday");
+  starting a follow-up request from the answer (the model would ask its question a second time);
+  and, tried first, letting the same call made again run unasked (the model had to reproduce its
+  arguments exactly, and the click had no name).
 - The question's clock stops while the answer is spoken and transcribed. An answer that comes to
   nothing (a tap, another key, no words heard, a failed transcription) leaves the question asking
   with its whole time again. A click on the card while speaking answers it and drops the recording.

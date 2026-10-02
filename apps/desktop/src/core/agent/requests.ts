@@ -85,10 +85,12 @@ export const DesktopAgent = {
 
   /** The tools the Answer prompt's model may call (`available_tools`): the backend's date tools, the
    * backend tools their apps bring (web search), and `connectorTools`, those of the apps switched on that
-   * run on this computer. An app with no tools here (none off macOS) brings no backend tools either. */
+   * run on this computer, with the tool that answers their questions for the user (`confirmationTool`)
+   * when there are any. An app with no tools here (none off macOS) brings no backend tools either. */
   answerTools(connectorTools: readonly ConnectorTool[]): string[] {
     const serverTools = connectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector.id)).flatMap((connector) => connector.serverTools ?? []);
-    return [...config.answerServerTools, ...serverTools, ...connectorTools.map((tool) => tool.name)];
+    const answering = connectorTools.length > 0 ? [config.confirmationTool] : [];
+    return [...config.answerServerTools, ...serverTools, ...answering, ...connectorTools.map((tool) => tool.name)];
   },
 
   /** The answer to `request`, from the backend's tool loop: each round either replies, or calls

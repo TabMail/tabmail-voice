@@ -213,9 +213,9 @@ export class DictationController extends Observable {
    * and the phase the request it interrupts goes back to. */
   private spokenAnswer: { id: number; recorder: AudioRecorder; startedAt: number; handsFree: boolean; resume: Phase } | null = null;
   private spokenAnswers = 0;
-  /** The calls the user answered aloud (`spokenCallKey`): the model, having read the answer, may make
-   * one again as it was asked, and it runs without asking a second time. For this request only. */
-  private spokenCalls = new Set<string>();
+  /** The call whose question the user answered aloud: the model, having read the answer, confirms or
+   * declines it for them (`config.confirmationTool`). Dropped by any other call, and with its request. */
+  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown> } | null = null;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
@@ -668,9 +668,26 @@ export class DictationController extends Observable {
    * result, that the user declined, what the user answered aloud, or why it could not run. The chat
    * window opens (if the request was not a follow-up) to show which tool runs and, for one that
    * sends or creates, to ask first. An answer spoken to the question goes to the model, which reads
-   * whether it agrees: the same call made again then runs without a second question, and any other
-   * call is asked about as usual. */
+   * whether it agrees and answers the question for the user (`config.confirmationTool`): confirmed,
+   * the call that asked runs as the user was shown it. Any other call drops the waiting one and is
+   * asked about as usual. */
   private async runConnectorTool(call: ToolCall, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+    // The call the user answered aloud waits for the model's very next call only.
+    const waiting = this.answeredAloud;
+    this.answeredAloud = null;
+    if (call.function.name === config.confirmationTool) {
+      const answer = parsedJSON(call.function.arguments);
+      if (waiting === null) {
+        log.error(`DictationController: ${config.confirmationTool} called with no spoken answer waiting`);
+        return config.confirmationToolNothingWaiting;
+      }
+      if (!isJSONObject(answer) || typeof answer.confirmed !== "boolean") {
+        log.error(`DictationController: ${config.confirmationTool} called without true or false`);
+        return config.confirmationToolNoAnswer;
+      }
+      log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
+      return answer.confirmed ? this.runTool(waiting.tool, waiting.args, isCurrent, signal) : config.connectorToolDeclined;
+    }
     const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
@@ -683,15 +700,12 @@ export class DictationController extends Observable {
     }
     this.setChat({ ...(this.currentChat ?? this.newChat()), pendingRequest: request });
     const question = tool.confirmation(args);
-    // A call the user answered aloud, made again as it was asked, was confirmed by that answer.
-    const key = spokenCallKey(tool.name, args);
-    const answeredAloud = this.spokenCalls.delete(key);
     // Closing the window or ending the request declines the question (`teardown`).
-    if (question !== null && !answeredAloud) {
+    if (question !== null) {
       const answer = await this.confirm(question);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
-        this.spokenCalls.add(key);
+        if (isCurrent()) this.answeredAloud = { tool, args };
         return config.connectorToolAnsweredAloud(question, answer.spoken);
       }
       if (answer !== "confirmed") {
@@ -699,6 +713,11 @@ export class DictationController extends Observable {
         return answer === "declined" ? config.connectorToolDeclined : config.connectorToolUnanswered;
       }
     }
+    return this.runTool(tool, args, isCurrent, signal);
+  }
+
+  /** Runs `tool`, confirmed if it asks: the chat window says what it does, and its app's bubble runs. */
+  private async runTool(tool: ConnectorTool, args: Record<string, unknown>, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     log.debug(`DictationController: running ${tool.name}`);
     this.updateChat({ activity: tool.progressLabel });
     this.appStarted(tool.connector);
@@ -1231,7 +1250,7 @@ export class DictationController extends Observable {
     const chat = this.currentChat;
     if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
     this.replyToConfirmation("declined");
-    this.spokenCalls.clear();
+    this.answeredAloud = null;
     // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
     // canceled or ended with the account: the pill says what failed, and the next hold dictates.
     if (this.currentChat?.turns.length === 0) this.dropChat();
@@ -1276,21 +1295,6 @@ type Timer = ReturnType<typeof setTimeout>;
 /** How the chat window's question ended: the user confirmed or declined it, answered it aloud
  * (`spoken`, the words), or it went unanswered for `confirmationTimeout`. */
 type ConfirmationAnswer = "confirmed" | "declined" | "unanswered" | { spoken: string };
-
-/** A tool's call, the same for the same tool and arguments however the model orders their keys. */
-function spokenCallKey(tool: string, args: unknown): string {
-  const ordered = (value: unknown): unknown =>
-    Array.isArray(value)
-      ? value.map(ordered)
-      : isJSONObject(value)
-        ? Object.fromEntries(
-            Object.keys(value)
-              .sort()
-              .map((name) => [name, ordered(value[name])]),
-          )
-        : value;
-  return `${tool}\n${JSON.stringify(ordered(args))}`;
-}
 
 /** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. Not a 504:
  * the backend gave up waiting for the speech model, and like a request that timed out here, it
