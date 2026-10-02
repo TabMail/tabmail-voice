@@ -2263,6 +2263,16 @@ good, silently, once 100 words were in.
 - The dictionary file is rewritten after a dictation that holds a dictionary word.
 - Fewer screen terms (50, was 100): the most frequent on screen are kept.
 
+**Amendment 2026-10-02 (later) — the screen's terms fill what the dictionary leaves.** Owner: "if the
+user dictionaries and the learn dictionary is less than the 150, we should definitely send more than
+the 50 bound … we send basically as many phrases or words as possible." The fixed `contextTermsMax`
+(50) is gone: `vocabularyMaxTerms` (200, the backend's limit) less the dictionary's words at key-down
+is how many screen terms `contextTerms` may pick, so a dictation sends up to 200 words whatever the
+dictionary holds: all 200 from the screen with no dictionary, at least 50 beside a full one
+(`dictionaryMaxEntries` stays 150, all of it always sent, first).
+- Consequence: a screen read with many names sends a longer list than before; the measured 200 real
+  words or names did not blunt the speech model, and fewer terms on screen send just those.
+
 ## ADR-DESK-039: A shorter wait between the release and the text
 
 **Context:** Owner, 2026-09-29: two to three seconds passed between letting go of the key and the

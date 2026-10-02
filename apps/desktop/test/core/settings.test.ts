@@ -590,12 +590,11 @@ describe("dictionary", () => {
     expect(app.dictionary).toEqual([{ word: "Xyvora", learned: false, lastUsed: 3 }, { word: "TabMail", learned: true, lastUsed: 2 }]);
   });
 
-  /** Owner, 2026-10-02: of the 200 words the backend takes with a dictation, 50 are the screen's
-   * terms and 150 the dictionary's, at most 100 of them typed; learned words fill the rest, all 150
-   * when none is typed. */
+  /** Owner, 2026-10-02: of the 200 words the backend takes with a dictation, the dictionary's come
+   * first, at most 150, at most 100 of them typed; learned words fill the rest, all 150 when none is
+   * typed; the screen's terms fill what the dictionary leaves. */
   test("holds the words sent beside the screen's, at most 100 typed", () => {
-    expect([config.dictionaryMaxEntries, config.dictionaryMaxTypedWords, config.contextTermsMax]).toEqual([150, 100, 50]);
-    expect(config.dictionaryMaxEntries + config.contextTermsMax).toBe(200);
+    expect([config.vocabularyMaxTerms, config.dictionaryMaxEntries, config.dictionaryMaxTypedWords]).toEqual([200, 150, 100]);
     const app = settings();
     const learned = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `learned${index}`);
     expect(app.learnWords(learned)).toHaveLength(config.dictionaryMaxEntries);
