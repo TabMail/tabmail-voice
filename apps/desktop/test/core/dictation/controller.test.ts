@@ -358,6 +358,22 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(cleanupVars(0)?.dictionary).toBe("Xyvora");
   });
 
+  /** The screen's terms fill what the dictionary leaves of the 200 words a dictation sends: all 200
+   * with no dictionary, the rest beside a full one (owner, 2026-10-02). */
+  test.each([0, 1, 150])("with %i dictionary words the screen's terms fill the rest of the vocabulary", async (count) => {
+    const dictionary = Array.from({ length: count }, (_, index) => `Xyvora${index}`);
+    const names = Array.from({ length: config.vocabularyMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
+    prefs.value = { ...defaultSettings(), dictionary };
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    controller.captureContext = async () => blankScreen({ appName: "Example Mail", renderedText: `ask ${names.join(", ")}` });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(transcription.body(0).vocabulary).toEqual([...dictionary, ...names.slice(0, config.vocabularyMaxTerms - count)]);
+  });
+
   /** The recording waits at most `contextWait` for the screen read: one not done by then adds no terms. */
   test("a screen read not done yet adds no terms", async () => {
     prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
