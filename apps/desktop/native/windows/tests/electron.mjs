@@ -94,6 +94,7 @@ async function main() {
       <h1>Unrelated heading outside focused field</h1>
       <textarea id="editor">Before selected after. 🙂</textarea>
       <div id="rich" contenteditable="true">Rich selected text.</div>
+      <div id="guarded" contenteditable="true">Guarded text <input type="password" value="synthetic-secret"></div>
       <input id="secret" type="password" value="synthetic-secret">
       <input id="readonly" readonly value="synthetic-readonly">
       <button id="button" aria-label="undrawn-button-secret">Non-text</button>
@@ -210,6 +211,21 @@ async function main() {
     assert.equal(plainPage.selectedText, "");
     assert.ok(plainPage.renderedText.includes("Unrelated heading outside focused field") && !plainPage.renderedText.includes("‸"),
       "a page in focus with nothing selected is read without a caret block");
+    // A selection that takes in the password field is not kept: a range that holds one is asked for no text.
+    await window.webContents.executeJavaScript("getSelection().selectAllChildren(document.body)");
+    await delay(150);
+    const guardedPage = await request("readScreen");
+    assert.equal(guardedPage.selectedText, "", "a selection over a password field is not kept");
+    assert.ok(!guardedPage.renderedText.includes("‸") && guardedPage.renderedText.includes("Unrelated footer outside focused field") &&
+      !JSON.stringify(guardedPage).includes("synthetic-secret"), "the page is still read, without that selection or the password");
+    await window.webContents.executeJavaScript("getSelection().removeAllRanges()");
+    // A field that can't be shown safe (it holds a password field) gives no caret text; the window is still read.
+    await focus("guarded");
+    const guarded = await request("readScreen");
+    assert.ok(guarded, "a field that can't be shown safe still leaves the window read");
+    assert.deepEqual([guarded.textBeforeCaret, guarded.selectedText, guarded.textAfterCaret], ["", "", ""], "no caret text is read from it");
+    assert.ok(guarded.renderedText.includes("Unrelated heading outside focused field") &&
+      !JSON.stringify(guarded).includes("synthetic-secret"), "the window around it is read, the password not");
     await focus("rich");
     assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Rich selected text." });
     const rich = await request("readScreen");
@@ -271,7 +287,7 @@ async function main() {
     const exited = once(helper, "exit"); helper.stdin.end();
     assert.deepEqual(await exited, [0, null]);
     assert.equal(pending.size, 0);
-    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug screen access: excluded or unknown page not read\ndebug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
+    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug screen access: excluded or unknown page not read\ndebug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");
     if (activator) {
       const stopped = once(activator, "exit"); activator.stdin.end();

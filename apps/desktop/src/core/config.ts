@@ -236,11 +236,13 @@ export const builtInExcludedApps: readonly { bundleIdentifier: string; name: str
   { bundleIdentifier: "org.keepassxc.keepassxc", name: "KeePassXC" },
   { bundleIdentifier: "com.nordsec.nordpass", name: "NordPass" },
 ];
-/** Windows executable identities, verified with the installed vendor package. */
+/** Windows executable identities, verified with the installed vendor package; NordPass's, there to
+ * match the Mac list, is its executable's usual name and was not checked against an installation. */
 export const windowsBuiltInExcludedApps: readonly { bundleIdentifier: string; name: string }[] = [
   { bundleIdentifier: "1Password.exe", name: "1Password" },
   { bundleIdentifier: "Bitwarden.exe", name: "Bitwarden" },
   { bundleIdentifier: "KeePassXC.exe", name: "KeePassXC" },
+  { bundleIdentifier: "NordPass.exe", name: "NordPass" },
 ];
 /** The most apps, and the most websites, the user can exclude: a bound far past any real list, so a
  * list never grows without end (owner, 2026-10-01). One more is refused with the reason. */

@@ -67,6 +67,8 @@ try {
         assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);
         assert.ok(context.renderedText.includes("» ‸"), "protected focus is marker only");
       } else assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
+      if (mode === "password-row") assert.ok(context.renderedText.includes("| Synthetic safe label"), "a row is one block of its cells, without its password field");
+      if (mode === "password-link") assert.ok(context.renderedText.includes("[Synthetic safe label]"), "a link that can't give its name is the text under it, without its password field");
       if (mode.startsWith("open-page")) {
         assert.equal(context.host, "open.example", `${mode}: the page's host is reported, in focus or reached by the walk`);
         assert.ok(context.renderedText.includes("Synthetic page text"), `${mode}: the page is walked into`);

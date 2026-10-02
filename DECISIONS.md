@@ -259,19 +259,42 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   not such a page: it stays the field the caret is in, read by its caret and not walked into, as
   before (`isPageInFocus`). The Windows helper applies the same rule: it walks a focused document
   that is no editable field.)*
-- *(Amended 2026-10-01, owner: the Windows helper matches the Mac one here. Three differences were
-  found by reading the two side by side. A focused page that can't be edited lost its selection on
-  Windows, where the caret text was read from an editable field only: the selection is now kept
-  (`selectedInPage`), and marked as the caret block before the page's text. It is asked for only
-  when something is selected, after what encloses the selection was looked through for a password
-  field and an excluded page, within its own short budget so the walk keeps its time. The page's
-  host was reported only for a page the focus is in: without one, it is now the first page the walk
-  reaches. And a field read through IAccessible2 (Firefox) that could not be shown safe ended the
-  whole read with nothing; it now gives no caret text and the window is still read, as the same
-  case already did through UI Automation. Left as they are, each Windows' own choice or a feature
-  not built there: the Windows walk does not go into a hidden container, and a terminal's pane is
-  not read. The Windows changes were written and reviewed by reading: they were not built or run
-  when made.)*
+- *(Amended 2026-10-01, owner: the Windows helper reads as the Mac one does, "unless impossible".
+  The two were read side by side and the Windows helper changed where they differed:*
+  - *A focused page that can't be edited keeps its selection (`selectedInPage`), marked as the
+    caret block before the page's text. It is asked for only when something is selected, after
+    what encloses the selection was looked through for a password field and an excluded page.*
+  - *The page's host, without a page the focus is in, is the first page the walk reaches.*
+  - *A field read through IAccessible2 (Firefox, Chromium) that can't be shown safe gives no caret
+    text and the window is still read; it used to end the whole read with nothing.*
+  - *A window with no focused element in it (none, or the focus in another of the app's windows)
+    is read without a caret; it used to be no read at all.*
+  - *A terminal (`HelperConfig::terminalApps`) has its focused pane read as a field of the lines in
+    view, with the text around its caret in the reply and no caret block, as the Mac does without
+    tmux. The tmux pane read itself is not on Windows: tmux runs there only inside WSL.*
+  - *A table row, and a row of an app's own list, is one block of its cells joined by " | "; a
+    heading or link that gives no name is the text under it as one block (`subtreeText`).*
+  - *A field is read whole up to `contextMaxFieldChars`, and only a longer one by the lines in
+    view; a piece of text is no longer cut at 1,000 characters.*
+  - *The walk stops at 5,000 elements visited or 1.5 s, as on the Mac: elements waiting to be
+    visited no longer count against it (a wide tree stopped early), and there is no depth stop.*
+  - *NordPass is in the Windows built-in excluded apps, as in the Mac list.*
+
+  *Three differences stay, on purpose:*
+  - *A box that shows nothing is not walked into on Windows. The Mac walks in because Slack keeps
+    its message list in such a box (ADR-DESK-016), and can, because a Mac element's frame is what
+    is left of it after clipping. Chromium on Windows reports frames unclipped
+    (`AXPlatformNodeWin::get_BoundingRectangle`), so the text of a screen-reader-only label looks
+    full-sized there and walking in would read text that is not on screen.*
+  - *A focused element that is neither a field nor a page (a list, a button) is read like any
+    other on Windows; the Mac puts an empty caret block in its place and reads nothing under it.
+    Matching the Mac would make Windows read less: left for the owner.*
+  - *The Windows helper refuses a window for an excluded page it finds before checking that the
+    page is inside the window, and looks through a link, row or control for one before reading
+    its name. The Mac skips an element outside the window first. Windows is the stricter; matching
+    the Mac would loosen it: left for the owner.*
+
+  *The Windows changes were written and reviewed by reading: they were not built or run when made.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
