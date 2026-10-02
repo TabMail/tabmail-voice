@@ -29,6 +29,24 @@ struct MicrophoneServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
+    /// A stop for a session that is not running (the app's stop reaching the helper started afresh
+    /// after an input change) is answered, and the process goes on with its prepared engine.
+    @Test func aStopWithNothingRunningKeepsTheProcess() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let ended = OSAllocatedUnfairLock(initialState: false)
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MicrophoneService.register(on: channel, end: { ended.withLock { $0 = true } })
+
+        await channel.handle(line: Data(#"{"id":1,"method":"microphoneStop","params":{"session":1}}"#.utf8))
+        // Anything ending the process would be on the chunk queue by now; let it run.
+        try await Task.sleep(for: .milliseconds(100))
+
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == 1 && replies.first?["result"] != nil)
+        #expect(!ended.withLock { $0 })
+        withExtendedLifetime(service) {}
+    }
+
     /// The code the process ends itself with to be started afresh is the one the app restarts it at
     /// once for without calling it a failure (`microphoneHelperRestartExitCode` in the app's config,
     /// which `helperContract.test.ts` holds to this).

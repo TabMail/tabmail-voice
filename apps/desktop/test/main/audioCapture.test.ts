@@ -150,7 +150,10 @@ describe("SessionAudioCapture", () => {
     await sleep(60);
     expect(sent).toEqual([{ type: "start", session: 1 }, { type: "start", session: 2 }]);
 
+    // Lost before its start was answered (Windows can send them in that order): it did not start.
     microphone.receive({ type: "lost", session: 2 });
+    microphone.receive({ type: "started", session: 2 });
+    expect(current.completions).toEqual([]);
     await sleep(60);
     expect(sent.at(-1)).toEqual({ type: "start", session: 3 });
     microphone.receive({ type: "started", session: 2 });

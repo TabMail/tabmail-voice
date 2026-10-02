@@ -136,6 +136,7 @@ describe("HelperClient", () => {
 
     expect((await failure(client.request("exit", { code: 75 }))).kind).toBe("exited");
     expect(starts).toBe(1);
+    expect(onExit).toBeDefined();
     expect((await onExit)?.pid).not.toBe(pid);
     expect(errors).toEqual([]);
     expect(file).toContain("debug fake-helper: exited to start afresh");

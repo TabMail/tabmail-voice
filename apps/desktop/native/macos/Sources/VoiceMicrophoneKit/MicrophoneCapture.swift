@@ -172,6 +172,8 @@ final class MicrophoneCapture: @unchecked Sendable {
                 tap.withLockUnchecked { $0 = nil }
                 if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
                 configurationObserver = nil
+                // Kept, as a stopped engine is: the process ends with it.
+                stopped = engine
                 throw error
             }
             self.engine = engine

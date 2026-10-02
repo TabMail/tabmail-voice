@@ -86,7 +86,9 @@ export class SessionAudioCapture implements AudioCapture {
     if (report.session !== this.session) return;
     switch (report.type) {
       case "started":
-        return this.finishStart(null);
+        // Not after this session was lost: the next try is on its way.
+        if (this.retryTimer === null) this.finishStart(null);
+        return;
       case "failed":
         return this.startFailed(new MicrophoneError(report.error));
       case "chunk":
