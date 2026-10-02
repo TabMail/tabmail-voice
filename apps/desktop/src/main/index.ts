@@ -204,6 +204,7 @@ function launch(): void {
     ),
     // Learn corrections locally through each supported native field reader (ADR-DESK-038).
     corrections: nativeAudio ? new CorrectionWatch((target, exclusions) => system.focusedFieldValue(target, exclusions), (words) => settings.learnWords(words)) : undefined,
+    useWords: (texts) => settings.useWords(texts),
     keepRecording: isDebugBuild
       ? (wav) => {
           writeFile(lastRecordingPath, wav).catch((error: unknown) => {

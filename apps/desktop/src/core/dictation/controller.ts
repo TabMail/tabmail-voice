@@ -101,6 +101,9 @@ export interface DictationDependencies {
   /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`); none where the field
    * can't be read (no helper on Windows and Linux yet). */
   corrections?: { watch(pid: number, pasted: string, exclusions: ScreenExclusions): void; stop(): void };
+  /** Marks the dictionary's words in a dictation's transcript and cleaned text used
+   * (`AppSettings.useWords`), so a full dictionary keeps them (ADR-DESK-038). */
+  useWords: (texts: readonly string[]) => void;
 }
 
 /** Shown when the recording had no words in it. Kept to one line of the pill. */
@@ -542,6 +545,7 @@ export class DictationController extends Observable {
         this.fail(nothingHeardMessage);
         return;
       }
+      this.deps.useWords(transcription.cleanedText === null ? [transcript] : [transcript, transcription.cleanedText]);
       if (mode === "dictation") {
         const text = DictationCleanup.pasted(transcript, transcription.cleanedText);
         await this.paste(text, targetApp, signal);

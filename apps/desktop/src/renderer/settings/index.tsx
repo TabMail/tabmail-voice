@@ -162,12 +162,15 @@ function DictationPane({ state }: { state: SettingsState }) {
 }
 
 /** The user's dictionary (ADR-DESK-038): a field to add a word, the words with a remove button each
- * (a learned one tagged so), and the switch for learning from the user's corrections where it can. */
+ * (the typed ones first, then the learned ones, tagged so), and the switch for learning from the
+ * user's corrections where it can. */
 function DictionaryPane({ state }: { state: SettingsState }) {
   const [draft, setDraft] = useState("");
   const word = dictionaryWord(draft);
   const isThere = word !== null && state.dictionary.some((entry) => isSameWord(entry.word, word));
-  const isFull = state.dictionary.length >= config.dictionaryMaxEntries;
+  // A learned word makes room for a typed one: full only with typed words alone.
+  const isFull = state.dictionary.filter((entry) => !entry.learned).length >= config.dictionaryMaxEntries;
+  const shown = [...state.dictionary.filter((entry) => !entry.learned), ...state.dictionary.filter((entry) => entry.learned)];
   let problem: string | null = null;
   if (draft.trim() !== "" && word === null) problem = `A word or name of up to ${config.dictionaryWordMaxWords} words, without < or >.`;
   else if (isFull && !isThere) problem = `The dictionary holds ${config.dictionaryMaxEntries} words. Remove one to add another.`;
@@ -205,7 +208,7 @@ function DictionaryPane({ state }: { state: SettingsState }) {
           </div>
         ) : (
           <ul className="dictionary" aria-label="Dictionary">
-            {state.dictionary.map((entry) => (
+            {shown.map((entry) => (
               <li key={entry.word} className="row">
                 <span>
                   {entry.word}
@@ -222,7 +225,7 @@ function DictionaryPane({ state }: { state: SettingsState }) {
       {state.canLearnWords && (
         <Group>
           <Toggle label="Learn from my corrections" checked={state.learnsWords} onChange={(value) => send({ type: "setLearnsWords", value })}>
-            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. The field’s text stays on this Mac, and a password field is never read.
+            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here, in place of the learned word used least recently once the dictionary is full. The field’s text stays on this Mac, and a password field is never read.
           </Toggle>
         </Group>
       )}

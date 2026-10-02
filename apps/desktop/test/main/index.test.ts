@@ -30,6 +30,7 @@ const app = vi.hoisted(() => ({
   paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
   corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
+  useWords: undefined as ((texts: readonly string[]) => void) | undefined,
   prewarms: 0,
   /** The paste history the controller was given, what went on the clipboard, the history window's
    * openings, moves and closings, and each time the app was hidden. */
@@ -275,10 +276,11 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
 vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/core/dictation/controller.js")>()),
   DictationController: class {
-    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections }) {
+    constructor(dependencies: { capture: AudioCapture; copy: (text: string) => void; paste: (text: string, signal: AbortSignal, target: number) => Promise<void>; history: NonNullable<typeof app.history>; connectorTools: typeof app.connectorTools; corrections?: typeof app.corrections; useWords: NonNullable<typeof app.useWords> }) {
       app.capture = dependencies.capture;
       app.history = dependencies.history;
       app.corrections = dependencies.corrections;
+      app.useWords = dependencies.useWords;
       app.connectorTools = dependencies.connectorTools;
       app.paste = dependencies.paste;
       app.copy = dependencies.copy;
@@ -400,6 +402,7 @@ afterEach(() => {
   app.paste = null;
   app.copy = null;
   app.corrections = undefined;
+  app.useWords = undefined;
   app.prewarms = 0;
   app.history = null;
   app.clipboard = [];
@@ -983,8 +986,8 @@ describe("main process wiring", () => {
     expect(await send({ type: "removeDictionaryWord", word: "TabMail" })).toEqual({ error: null });
     expect(await send({ type: "setLearnsWords", value: false })).toEqual({ error: null });
 
-    expect(state()).toMatchObject({ dictionary: [{ word: "Xyvora", learned: false }], learnsWords: false });
-    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: false }]);
+    expect(state()).toMatchObject({ dictionary: [{ word: "Xyvora", learned: false, lastUsed: 1 }], learnsWords: false });
+    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: false, lastUsed: 1 }]);
     expect(app.stored.get("learnsWords")).toBe(false);
   });
 
@@ -1004,7 +1007,16 @@ describe("main process wiring", () => {
       { ...(platform === "win32" ? { window: 42 } : { pid: 42 }), maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
     ]);
     watch.learn(["Xyvora"]);
-    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true }]);
+    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true, lastUsed: 1 }]);
+  });
+
+  /** A dictation's text reaches the settings, marking the dictionary's words in it used (ADR-DESK-038,
+   * Amendment 2026-10-02): unwired, a full dictionary would drop the words the user says most. */
+  test("the controller marks the dictionary's words used in the settings", async () => {
+    await launch("darwin");
+    (app.corrections as unknown as { learn: (words: string[]) => void }).learn(["Xyvora"]);
+    app.useWords?.(["ask xyvora about it"]);
+    expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true, lastUsed: 2 }]);
   });
 
   /** The apps and websites a dictation excludes from screen reading reach `voice-macos` with the screen read, as

@@ -8,8 +8,9 @@ import { type AgentToolID, isAgentToolID, offeredAgentToolIDs } from "./agent/to
 import * as config from "./config.js";
 import { type ExcludedApp, excludedApp, isBuiltInExcludedApp, isSameApp, storedExcludedApps } from "./dictation/excludedApps.js";
 import { excludedSite, isBuiltInExcludedSite, storedExcludedSites } from "./dictation/excludedSites.js";
-import { type DictionaryEntry, dictionaryWord, isSameWord, storedDictionary } from "./dictionary/entries.js";
+import { type DictionaryEntry, dictionaryWord, isSameWord, leastRecentlyUsedLearned, nextUse, storedDictionary } from "./dictionary/entries.js";
 import { type DictationHotkey, defaultHotkey, isDictationHotkey } from "./hotkey/bindings.js";
+import { log } from "./log.js";
 import { type KeyValueStore, storedBool, storedString } from "./util/keyValueStore.js";
 import { Observable } from "./util/observable.js";
 
@@ -64,7 +65,7 @@ export interface DictationSettings {
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
- * `config.dictionaryMaxEntries`. A word already there is `added`, spelled as typed now (and typed, if it was learned). */
+ * `config.dictionaryMaxEntries` typed words (a learned one makes room). A word already there is `added`, spelled as typed now (and typed, if it was learned). */
 export type AddWordResult = "added" | "invalid" | "full";
 
 /** What excluding an app did: `invalid` for one without a bundle identifier or name, `full` at
@@ -184,32 +185,64 @@ export class AppSettings extends Observable {
   }
 
   /** Adds a word the user typed. One already there takes the spelling typed, the user's latest; one
-   * learned becomes typed, so it shows as the user's own. */
+   * learned becomes typed, so it shows as the user's own. A full dictionary drops the learned word
+   * used least recently for it; one of typed words only is full. */
   addWord(raw: string): AddWordResult {
     const word = dictionaryWord(raw);
     if (word === null) return "invalid";
     const entries = this.dictionary;
+    const use = nextUse(entries);
     const existing = entries.findIndex((entry) => isSameWord(entry.word, word));
-    if (existing === -1 && entries.length >= config.dictionaryMaxEntries) return "full";
-    if (existing === -1) entries.push({ word, learned: false });
-    else entries[existing] = { word, learned: false };
+    if (existing !== -1) entries[existing] = { word, learned: false, lastUsed: use };
+    else {
+      if (!this.makeRoom(entries, use)) return "full";
+      entries.push({ word, learned: false, lastUsed: use });
+    }
     this.writeDictionary(entries);
     return "added";
   }
 
-  /** Adds words learned from the user's corrections, those not already there, while there is room;
-   * returns those added. */
+  /** Adds words learned from the user's corrections, those not already there; a full dictionary drops
+   * the learned word used least recently for each, never one learned in the same call. One already
+   * there counts as used. Returns those added. */
   learnWords(words: readonly string[]): string[] {
     const entries = this.dictionary;
+    const use = nextUse(entries);
     const added: string[] = [];
+    let changed = false;
     for (const raw of words) {
       const word = dictionaryWord(raw);
-      if (word === null || entries.length >= config.dictionaryMaxEntries || entries.some((entry) => isSameWord(entry.word, word))) continue;
-      entries.push({ word, learned: true });
+      if (word === null) continue;
+      const existing = entries.find((entry) => isSameWord(entry.word, word));
+      if (existing) {
+        changed ||= existing.lastUsed !== use;
+        existing.lastUsed = use;
+        continue;
+      }
+      if (!this.makeRoom(entries, use)) continue;
+      entries.push({ word, learned: true, lastUsed: use });
       added.push(word);
+      changed = true;
     }
-    if (added.length > 0) this.writeDictionary(entries);
+    if (changed) this.writeDictionary(entries);
     return added;
+  }
+
+  /** Marks the dictionary's words found in a dictation's `texts` (the transcript, and the text pasted)
+   * as used now, whatever their case, so a full dictionary keeps them over the learned words not used
+   * since. A word inside a longer one counts ("TabMail" in "TabMail's"): the scripts without spaces
+   * between words have no edge to look for. */
+  useWords(texts: readonly string[]): void {
+    const entries = this.dictionary;
+    const said = texts.join("\n").toLowerCase();
+    const use = nextUse(entries);
+    let changed = false;
+    for (const entry of entries) {
+      if (!said.includes(entry.word.toLowerCase())) continue;
+      entry.lastUsed = use;
+      changed = true;
+    }
+    if (changed) this.writeDictionary(entries);
   }
 
   removeWord(word: string): void {
@@ -364,6 +397,17 @@ export class AppSettings extends Observable {
       dictionary: this.dictionary.map((entry) => entry.word),
       learnsWords: this.learnsWords,
     };
+  }
+
+  /** Makes room in `entries` for one more word: true when there was room, or after dropping the learned
+   * word used least recently before `use`; false when there is none to drop. */
+  private makeRoom(entries: DictionaryEntry[], use: number): boolean {
+    if (entries.length < config.dictionaryMaxEntries) return true;
+    const dropped = leastRecentlyUsedLearned(entries, use);
+    if (dropped === -1) return false;
+    const [entry] = entries.splice(dropped, 1);
+    log.content("AppSettings: dictionary full; dropped the learned word used least recently", entry?.word ?? "");
+    return true;
   }
 
   private writeDictionary(entries: DictionaryEntry[]): void {

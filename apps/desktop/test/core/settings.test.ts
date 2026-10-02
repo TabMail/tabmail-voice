@@ -523,7 +523,7 @@ describe("dictionary", () => {
     expect(changes).toBe(3);
 
     const relaunched = settings(store);
-    expect(relaunched.dictionary).toEqual([{ word: "Xyvora", learned: false }, { word: "Kaelthorne Draszek", learned: true }]);
+    expect(relaunched.dictionary).toEqual([{ word: "Xyvora", learned: false, lastUsed: 1 }, { word: "Kaelthorne Draszek", learned: true, lastUsed: 2 }]);
     expect(relaunched.learnsWords).toBe(false);
     expect(relaunched.dictation(null).dictionary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
   });
@@ -542,16 +542,16 @@ describe("dictionary", () => {
     const app = settings();
     app.learnWords(["Tabmail"]);
     expect(app.addWord("TabMail")).toBe("added");
-    expect(app.dictionary).toEqual([{ word: "TabMail", learned: false }]);
+    expect(app.dictionary).toEqual([{ word: "TabMail", learned: false, lastUsed: 2 }]);
     app.addWord("XyVora");
     expect(app.addWord("Xyvora")).toBe("added");
-    expect(app.dictionary).toEqual([{ word: "TabMail", learned: false }, { word: "Xyvora", learned: false }]);
+    expect(app.dictionary).toEqual([{ word: "TabMail", learned: false, lastUsed: 2 }, { word: "Xyvora", learned: false, lastUsed: 4 }]);
   });
 
   test("takes a word of the most characters", () => {
     const app = settings();
     expect(app.addWord("x".repeat(config.dictionaryWordMaxChars))).toBe("added");
-    expect(app.dictionary).toEqual([{ word: "x".repeat(config.dictionaryWordMaxChars), learned: false }]);
+    expect(app.dictionary.map((entry) => entry.word)).toEqual(["x".repeat(config.dictionaryWordMaxChars)]);
   });
 
   test.each(["", "   ", "x".repeat(config.dictionaryWordMaxChars + 1), "one two three four five six seven", "Xy<vora", "Xy\u0007vora", "Xy\u007fvora", "Xy\u0085vora"])("refuses %j", (word) => {
@@ -564,32 +564,142 @@ describe("dictionary", () => {
   test("collapses a word's spaces", () => {
     const app = settings();
     app.addWord("Kaelthorne \t  Draszek");
-    expect(app.dictionary).toEqual([{ word: "Kaelthorne Draszek", learned: false }]);
+    expect(app.dictionary.map((entry) => entry.word)).toEqual(["Kaelthorne Draszek"]);
   });
 
-  /** Learning only words already there, or refused, changes nothing: no write, no Settings update. */
-  test("learning nothing new changes nothing", () => {
+  /** Learning only words refused changes nothing: no write, no Settings update. */
+  test("learning nothing changes nothing", () => {
     const app = settings();
     app.addWord("Xyvora");
     let changes = 0;
     app.observe(() => (changes += 1));
-    expect(app.learnWords(["xyvora", "Xy<vora"])).toEqual([]);
+    expect(app.learnWords(["Xy<vora", ""])).toEqual([]);
     expect(changes).toBe(0);
   });
 
+  /** A word learned again, typed or learned, is a use: it adds nothing but is kept over the words not
+   * used since. */
+  test("learning a word already there marks it used", () => {
+    const app = settings();
+    app.addWord("Xyvora");
+    app.learnWords(["TabMail"]);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    expect(app.learnWords(["xyvora"])).toEqual([]);
+    expect(changes).toBe(1);
+    expect(app.dictionary).toEqual([{ word: "Xyvora", learned: false, lastUsed: 3 }, { word: "TabMail", learned: true, lastUsed: 2 }]);
+  });
+
   /** At `config.dictionaryMaxEntries`, half the words the backend takes with a dictation (the other
-   * half are the screen's terms): a typed word is refused, learning stops. */
+   * half are the screen's terms). */
   test("holds at most its half of the words sent", () => {
     const app = settings();
     const words = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `word${index}`);
     expect(app.learnWords(words)).toHaveLength(config.dictionaryMaxEntries);
-    expect(app.addWord("Xyvora")).toBe("full");
-    expect(app.learnWords(["Xyvora"])).toEqual([]);
-    expect(app.addWord("WORD0")).toBe("added");
+    expect(app.learnWords(["Xyvora"])).toEqual(["Xyvora"]);
+    expect(app.addWord("TabMail")).toBe("added");
     expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
-    app.removeWord("word1");
-    expect(app.addWord("Xyvora")).toBe("added");
-    expect(app.dictionary.at(-1)).toEqual({ word: "Xyvora", learned: false });    expect(config.dictionaryMaxEntries + config.contextTermsMax).toBe(200);
+    expect(config.dictionaryMaxEntries + config.contextTermsMax).toBe(200);
+  });
+
+  /** Owner, 2026-10-02: a full dictionary keeps learning; each new word, learned or typed, takes the
+   * place of the learned word used least recently (not the one learned first), and a typed word is
+   * never dropped. */
+  describe("when full", () => {
+    /** A dictionary of typed words, then learned ones, each used once, in order. */
+    function full(typed: number): AppSettings {
+      const app = settings();
+      for (let index = 0; index < typed; index += 1) app.addWord(`typed${index}`);
+      for (let index = typed; index < config.dictionaryMaxEntries; index += 1) app.learnWords([`learned${index}`]);
+      expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
+      return app;
+    }
+    const words = (app: AppSettings) => app.dictionary.map((entry) => entry.word);
+
+    test("a learned word takes the place of the learned word used least recently", () => {
+      const app = full(10);
+      // The oldest learned word, used in a dictation since: the next oldest goes instead.
+      app.useWords(["she said learned10 twice"]);
+      expect(app.learnWords(["Xyvora"])).toEqual(["Xyvora"]);
+      expect(words(app)).toHaveLength(config.dictionaryMaxEntries);
+      expect(words(app)).toContain("learned10");
+      expect(words(app)).not.toContain("learned11");
+      expect(words(app).at(-1)).toBe("Xyvora");
+      // Next goes the one after it; learned10 and Xyvora, used later, stay.
+      app.learnWords(["Kaelthorne Draszek"]);
+      expect(words(app)).not.toContain("learned12");
+      expect(words(app)).toEqual(expect.arrayContaining(["learned10", "Xyvora", "Kaelthorne Draszek"]));
+    });
+
+    test("a word learned again counts as used", () => {
+      const app = full(0);
+      app.learnWords(["LEARNED0"]);
+      app.learnWords(["Xyvora"]);
+      expect(words(app)).toContain("learned0");
+      expect(words(app)).not.toContain("learned1");
+    });
+
+    test("a typed word takes the place of the learned word used least recently", () => {
+      const app = full(10);
+      app.useWords(["learned10"]);
+      expect(app.addWord("Xyvora")).toBe("added");
+      expect(words(app)).toHaveLength(config.dictionaryMaxEntries);
+      expect(words(app)).toContain("learned10");
+      expect(words(app)).not.toContain("learned11");
+      expect(app.dictionary.at(-1)).toEqual({ word: "Xyvora", learned: false, lastUsed: config.dictionaryMaxEntries + 2 });
+    });
+
+    /** Typed words only: nothing is dropped. A typed word is refused, nothing is learned; a word
+     * already there is still typed or used. */
+    test("never drops a typed word", () => {
+      const app = full(config.dictionaryMaxEntries);
+      expect(app.addWord("Xyvora")).toBe("full");
+      expect(app.learnWords(["Xyvora"])).toEqual([]);
+      expect(app.addWord("TYPED0")).toBe("added");
+      expect(words(app)).toHaveLength(config.dictionaryMaxEntries);
+      app.removeWord("typed1");
+      expect(app.addWord("Xyvora")).toBe("added");
+      expect(words(app).at(-1)).toBe("Xyvora");
+    });
+
+    /** Words learned together don't push each other out: with one learned word to drop, the second
+     * is not learned. */
+    test("doesn't drop a word learned in the same correction", () => {
+      const app = full(config.dictionaryMaxEntries - 1);
+      expect(app.learnWords(["Xyvora", "Kaelthorne Draszek"])).toEqual(["Xyvora"]);
+      expect(words(app).at(-1)).toBe("Xyvora");
+      expect(words(app)).not.toContain(`learned${config.dictionaryMaxEntries - 1}`);
+    });
+
+    /** Of learned words never used since they were stored (`lastUsed` 0), the earliest goes first. */
+    test("drops the earliest of words used as long ago", () => {
+      const stored = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: true }));
+      const app = settings(new MemoryStore({ dictionary: stored }));
+      app.learnWords(["Xyvora"]);
+      expect(words(app)[0]).toBe("word1");
+      expect(words(app).at(-1)).toBe("Xyvora");
+    });
+  });
+
+  /** A dictation's text marks the words in it used, typed or learned, whatever their case, a word
+   * inside a longer one too (scripts without spaces have no word edge); only a change is written. */
+  test("marks the words in a dictation's text used", () => {
+    const app = settings();
+    app.addWord("Xyvora");
+    app.learnWords(["TabMail"]);
+    app.learnWords(["탭메일"]);
+    let changes = 0;
+    app.observe(() => (changes += 1));
+    app.useWords(["nothing in the dictionary"]);
+    expect(changes).toBe(0);
+    app.useWords(["ask about tabmail's roadmap", "Ask about TabMail’s roadmap."]);
+    expect(changes).toBe(1);
+    app.useWords(["탭메일은 좋아요", "XYVORA"]);
+    expect(app.dictionary).toEqual([
+      { word: "Xyvora", learned: false, lastUsed: 5 },
+      { word: "TabMail", learned: true, lastUsed: 4 },
+      { word: "탭메일", learned: true, lastUsed: 5 },
+    ]);
   });
 
   test("removes a word by its spelling", () => {
@@ -616,11 +726,22 @@ describe("dictionary", () => {
       { word: "TabMail" },
       "Loose",
       null,
-      { word: "Kaelthorne Draszek", learned: true },
+      { word: "Kaelthorne Draszek", learned: true, lastUsed: 7 },
+      { word: "Zivora", learned: true, lastUsed: -1 },
+      { word: "Brevalle", learned: true, lastUsed: 1.5 },
+      { word: "Ostrava", learned: true, lastUsed: "7" },
       ...Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: true })),
     ];
     const dictionary = settings(new MemoryStore({ dictionary: stored })).dictionary;
-    expect(dictionary.slice(0, 3)).toEqual([{ word: "Xyvora", learned: false }, { word: "Kaelthorne Draszek", learned: true }, { word: "word0", learned: true }]);
+    // One stored before `lastUsed` was kept, or with an invalid one, reads as never used.
+    expect(dictionary.slice(0, 6)).toEqual([
+      { word: "Xyvora", learned: false, lastUsed: 0 },
+      { word: "Kaelthorne Draszek", learned: true, lastUsed: 7 },
+      { word: "Zivora", learned: true, lastUsed: 0 },
+      { word: "Brevalle", learned: true, lastUsed: 0 },
+      { word: "Ostrava", learned: true, lastUsed: 0 },
+      { word: "word0", learned: true, lastUsed: 0 },
+    ]);
     expect(dictionary).toHaveLength(config.dictionaryMaxEntries);
     expect(settings(new MemoryStore({ dictionary: "Xyvora" })).dictionary).toEqual([]);
   });

@@ -155,9 +155,18 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
     });
 
-    test("lists the words, the learned ones tagged, each with a remove button", async () => {
-      const page = await open({ ...signedIn, dictionary: [{ word: "Xyvora", learned: false }, { word: "TabMail", learned: true }] });
-      expect(words()).toEqual(["XyvoraRemove", "TabMail LearnedRemove"]);
+    /** The typed words on top, then the learned ones, each in the order added (owner, 2026-10-02). */
+    test("lists the words, typed first, the learned ones tagged, each with a remove button", async () => {
+      const page = await open({
+        ...signedIn,
+        dictionary: [
+          { word: "TabMail", learned: true, lastUsed: 4 },
+          { word: "Xyvora", learned: false, lastUsed: 1 },
+          { word: "Brevalle", learned: true, lastUsed: 2 },
+          { word: "Kaelthorne Draszek", learned: false, lastUsed: 3 },
+        ],
+      });
+      expect(words()).toEqual(["XyvoraRemove", "Kaelthorne DraszekRemove", "TabMail LearnedRemove", "Brevalle LearnedRemove"]);
       expect(visibleText()).not.toContain("No words yet.");
 
       await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove TabMail"]')?.click());
@@ -165,10 +174,9 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([{ type: "removeDictionaryWord", word: "TabMail" }]);
     });
 
-    /** Full: a new word is refused with the reason; one already there can still be typed (it becomes the
-     * user's own). */
-    test("a full dictionary takes no new word", async () => {
-      const dictionary = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: true }));
+    /** Full of typed words: a new word is refused with the reason; one already there can still be typed. */
+    test("a dictionary full of typed words takes no new word", async () => {
+      const dictionary = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: false, lastUsed: index + 1 }));
       const page = await open({ ...signedIn, dictionary });
 
       await act(async () => type(field(), "Xyvora"));
@@ -182,6 +190,19 @@ describe("Settings page", () => {
       expect(button("Add").disabled).toBe(false);
       await act(async () => button("Add").click());
       expect(page.commands).toEqual([{ type: "addDictionaryWord", word: "WORD3" }]);
+    });
+
+    /** A learned word makes room for a typed one (`AppSettings.addWord`): full, but not of typed words
+     * alone, the dictionary takes a new word. */
+    test("a full dictionary with a learned word takes a new word", async () => {
+      const dictionary = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: index === 0, lastUsed: index + 1 }));
+      const page = await open({ ...signedIn, dictionary });
+
+      await act(async () => type(field(), "Xyvora"));
+      expect(button("Add").disabled).toBe(false);
+      expect(document.querySelector(".error")).toBeNull();
+      await act(async () => button("Add").click());
+      expect(page.commands).toEqual([{ type: "addDictionaryWord", word: "Xyvora" }]);
     });
 
     test("the learning switch sends the choice, and shows only where corrections can be learned", async () => {
@@ -766,7 +787,7 @@ describe("Settings page", () => {
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
-      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. The field’s text stays on this Mac, and a password field is never read.`,
+      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here, in place of the learned word used least recently once the dictionary is full. The field’s text stays on this Mac, and a password field is never read.`,
       // Privacy's, which the Swift app never had (owner, 2026-09-30).
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
       `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,

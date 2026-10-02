@@ -2174,6 +2174,31 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
   backend fall back to it (its ADR-025).
 
+**Amendment 2026-10-02 — a full dictionary keeps learning, dropping the learned word used least
+recently.** Owner: at the cap, auto-learned words should keep updating, the learned word *used* least
+recently giving way (not the one learned first), with a stamp of each word's last use; the typed
+words are always listed on top in Settings. Before, a full dictionary refused every new word, typed or
+learned, so learning stopped for good, silently, once 100 words were in.
+- Each entry keeps `lastUsed`, a count rather than a time (larger is more recent; a clock set back
+  can't reorder it): a word's last use is its adding, its typing or learning again, or a dictation
+  whose transcript or cleaned text holds it (`AppSettings.useWords`, called by the controller as the
+  transcript comes back, agent mode's request included). A word counts there whatever its case, inside
+  a longer word too, since a script without spaces has no word edge to look for; a word counted too
+  often only stays longer. An entry stored before `lastUsed` (or with an invalid one) reads as never
+  used.
+- A new word at `dictionaryMaxEntries`, learned or typed, takes the place of the learned word of the
+  smallest `lastUsed` (the earliest added of a tie), never one learned in the same correction. A typed
+  word is never dropped: only a dictionary of typed words alone is full, and refuses a typed word with
+  the same note as before.
+- Settings lists the typed words first, then the learned ones, each in the order added; the learning
+  switch's note says a learned word replaces the one used least recently once the list is full. The
+  words are sent in the order stored, all of them, as before.
+
+**Consequences (amendment):**
+- A learned word can drop out with no notice but the debug log's (`log.content`), as a learned word
+  arrives with none.
+- The dictionary file is rewritten after a dictation that holds a dictionary word.
+
 ## ADR-DESK-039: A shorter wait between the release and the text
 
 **Context:** Owner, 2026-09-29: two to three seconds passed between letting go of the key and the
