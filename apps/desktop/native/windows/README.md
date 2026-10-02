@@ -32,7 +32,8 @@ Windows Terminal exposes its cursor through a collapsed `TextPattern` selection,
 without the editable-field patterns. Caret lookup uses the focused control’s accessibility capabilities, independently
 of its editable-value capabilities: active `TextPattern2` carets or collapsed
 `TextPattern` selections can provide geometry without enabling field learning.
-No application name or control-class allowlist is used. Disabled, hidden, password
+No application name or control-class allowlist is used for the caret (the screen
+read knows a terminal by `HelperConfig::terminalApps`). Disabled, hidden, password
 and explicitly read-only value controls are refused. Selected output alone does
 not establish a caret, and terminal output remains excluded from correction learning. Validate the real
 Terminal provider from a focused Windows Terminal tab, with the app quit and no

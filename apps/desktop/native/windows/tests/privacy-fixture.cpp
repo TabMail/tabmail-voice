@@ -26,7 +26,7 @@ std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -104,7 +104,8 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     }
     HRESULT STDMETHODCALLTYPE get_BoundingRectangle(UiaRect* result) override {
         RECT frame{}; GetWindowRect(window, &frame);
-        *result = {static_cast<double>(frame.left + 20), static_cast<double>(frame.top + 40 + id * 25), 400, 24};
+        // A thin box shows nothing; what is under it still reports its full size.
+        *result = {static_cast<double>(frame.left + 20), static_cast<double>(frame.top + 40 + id * 25), thin ? 1.0 : 400.0, thin ? 1.0 : 24.0};
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE GetEmbeddedFragmentRoots(SAFEARRAY** result) override { *result = nullptr; return S_OK; }
@@ -121,7 +122,7 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
         } else { read(); *result = SysAllocString(text.c_str()); }
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* result) override { *result = FALSE; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_IsReadOnly(BOOL* result) override { *result = readOnly ? TRUE : FALSE; return S_OK; }
 };
 int add(int parent, CONTROLTYPEID type, bool password = false) {
     const int id = static_cast<int>(nodes.size());
@@ -139,12 +140,21 @@ void configure(const std::string& mode) {
         nodes.at(1)->password = true; nodes.at(1)->type = UIA_EditControlTypeId;
         nodes.at(1)->text = L"DO_NOT_READ_SYNTHETIC_PASSWORD";
         add(1, UIA_TextControlTypeId); nodes.back()->forbidden = true;
+    } else if (mode == "row-hidden") {
+        // A row with one cell on screen and one in a box that shows nothing.
+        const int row = add(0, UIA_DataItemControlTypeId);
+        nodes.at(add(row, UIA_TextControlTypeId))->text = L"Synthetic cell text";
+        const int box = add(row, UIA_GroupControlTypeId);
+        nodes.at(box)->thin = true;
+        nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
     } else if (mode.starts_with("password-")) {
         int container = 0;
         if (mode == "password-row") container = add(0, UIA_DataItemControlTypeId);
         if (mode == "password-link") container = add(0, UIA_HyperlinkControlTypeId);
         if (mode == "password-web-control") { const int page = add(0, UIA_DocumentControlTypeId); container = add(page, UIA_ButtonControlTypeId); }
-        add(container, UIA_TextControlTypeId);
+        const int label = add(container, UIA_TextControlTypeId);
+        // Its own text: a block that repeats the one before it is left out of the read.
+        if (mode == "password-row" || mode == "password-link") nodes.at(label)->text = L"Synthetic cell text";
         const int secret = add(container, UIA_EditControlTypeId, true);
         add(secret, UIA_TextControlTypeId); nodes.back()->forbidden = true;
     } else {
@@ -156,13 +166,19 @@ void configure(const std::string& mode) {
         if (mode == "page-in-focus") parent = 1;
         const int page = add(parent, UIA_DocumentControlTypeId);
         nodes.at(page)->address = L"https://blocked.example/synthetic";
+        // A page that may be read: with the focus outside it, and as the focus itself (a
+        // page that can't be edited, as a browser gives one that was clicked on).
+        const bool open = mode.starts_with("open-page");
+        if (open) nodes.at(page)->address = L"https://open.example/synthetic";
         if (mode == "page-no-address") nodes.at(page)->address.clear();
         if (mode == "page-unknown") nodes.at(page)->unknownAddress = true;
         // Querying a refused page's address is permitted; its contents are not.
-        nodes.at(page)->forbidden = mode != "page-no-address";
+        nodes.at(page)->forbidden = mode != "page-no-address" && !open;
         const int child = add(page, mode == "page-focus-child" ? UIA_EditControlTypeId : UIA_TextControlTypeId);
-        nodes.at(child)->forbidden = mode != "page-no-address";
-        if (mode == "page-focus") focus = page;
+        nodes.at(child)->forbidden = mode != "page-no-address" && !open;
+        if (open) nodes.at(child)->text = L"Synthetic page text";
+        if (mode == "page-focus" || mode == "open-page-focus") focus = page;
+        if (mode == "open-page-focus") nodes.at(page)->readOnly = true;
         if (mode == "page-focus-child" || mode == "page-no-address" || mode == "page-unknown") focus = child;
         if (mode == "page-address-bar") nodes.at(1)->type = UIA_EditControlTypeId;
     }
