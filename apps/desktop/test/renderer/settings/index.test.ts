@@ -15,6 +15,7 @@ import type { Command, CommandResult, SettingsState } from "../../../src/shared/
 const signedIn: SettingsState = {
   email: "person@example.com",
   hotkey: "rightOption",
+  availableHotkeys: ["rightOption", "function"],
   readsScreen: true,
   enabledTools: ["edit", "compose", "thunderbird", "answer"],
   connectors: [],
@@ -27,6 +28,7 @@ const signedIn: SettingsState = {
   excludedApps: [],
   excludedSites: [],
   canExcludeApps: true,
+  builtInExcludedApps: config.builtInExcludedApps,
   emailClient: null,
   systemEmailApp: null,
   installedEmailApps: [],
@@ -212,6 +214,13 @@ describe("Settings page", () => {
       expect(text).toContain("never reads the screen");
       expect(text).toContain("Dictation still works there.");
       expect(text).toContain("No apps added yet.");
+    });
+
+    test("names only the password managers supported by this platform", async () => {
+      await open({ ...signedIn, builtInExcludedApps: config.windowsBuiltInExcludedApps });
+      for (const name of ["1Password", "Bitwarden", "KeePassXC"]) expect(visibleText()).toContain(name);
+      expect(visibleText()).not.toContain("Keychain Access");
+      expect(visibleText()).not.toContain("1Password 7");
     });
 
     test("lists the apps the user added, each with a remove button that sends its identifier", async () => {
@@ -549,6 +558,13 @@ describe("Settings page", () => {
       { type: "setOpenAtLogin", value: false },
       { type: "setDebugMode", value: true },
     ]);
+  });
+
+  test("the hotkey menu contains only the keys supported on this platform", async () => {
+    const shown: SettingsState = { ...signedIn, hotkey: "rightControl", availableHotkeys: ["rightControl"] };
+    await settingsPage({ error: null }, shown, shown);
+    const choices = [...menu("Hold to dictate").options].map((option) => option.value);
+    expect(choices).toEqual(["rightControl"]);
   });
 
   /** Every other control sends its own command: each menu its choice, each Allow… its own

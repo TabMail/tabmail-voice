@@ -2,18 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CalendarEvent, type EventStore, EventStoreError, type ReminderItem } from "../../core/agent/connectors/calendar.js";
-import { type ContactCard, type ContactStore, ContactStoreError } from "../../core/agent/connectors/contacts.js";
-import { type FileStore, FileStoreError, type FoundItem } from "../../core/agent/connectors/files.js";
-import type { FocusedElement, ThunderbirdSystem } from "../../core/agent/connectors/thunderbird/relay.js";
-import * as config from "../../core/config.js";
-import type { GlobeKeySystem } from "../../core/hotkey/globeKeyAction.js";
-import type { Rect } from "../../core/ui/overlayGeometry.js";
-import { errorName, log } from "../../core/log.js";
-import type { ScreenExclusions } from "../../core/dictation/excludedSites.js";
-import type { ScreenContext } from "../../core/dictation/screenContext.js";
-import type { AudioCommand, AudioReport } from "../../shared/ipc.js";
-import { HelperError, type HelperClient } from "./helperClient.js";
+import { type CalendarEvent, type EventStore, EventStoreError, type ReminderItem } from "../../../core/agent/connectors/calendar.js";
+import { type ContactCard, type ContactStore, ContactStoreError } from "../../../core/agent/connectors/contacts.js";
+import { type FileStore, FileStoreError, type FoundItem } from "../../../core/agent/connectors/files.js";
+import type { FocusedElement, ThunderbirdSystem } from "../../../core/agent/connectors/thunderbird/relay.js";
+import * as config from "../../../core/config.js";
+import type { GlobeKeySystem } from "../../../core/hotkey/macos/globeKeyAction.js";
+import type { Rect } from "../../../core/ui/overlayGeometry.js";
+import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
+import type { ScreenContext } from "../../../core/dictation/screenContext.js";
+import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
+import { NativeMicrophone } from "../microphone.js";
+import { HelperError, type HelperClient } from "../helperClient.js";
 
 /** What `voice-macos` does for the app (`MacService` in the helper), typed. */
 export class MacSystem {
@@ -207,49 +207,12 @@ export class MacSystem {
     }
   }
 
-  /** The microphone, run in the helper as the Swift app runs it (prepared ahead, so a start only
-   * starts the device): `SessionAudioCapture`'s commands go to the helper, and what the helper says
-   * comes back to `report`. */
-  microphone(report: (report: AudioReport) => void): (command: AudioCommand) => void {
-    this.helper.on("microphoneChunk", (message) => {
-      const samples = decodeSamples(message.samples);
-      if (Number.isInteger(message.session) && samples) report({ type: "chunk", session: message.session as number, samples });
-    });
-    this.helper.on("microphoneLost", (message) => {
-      if (Number.isInteger(message.session)) report({ type: "lost", session: message.session as number });
-    });
-    return (command) => {
-      switch (command.type) {
-        case "prepare":
-          this.helper.request("microphonePrepare").catch((error: unknown) => log.error(`MacSystem: microphone not prepared: ${errorName(error)}`));
-          return;
-        case "start": {
-          const { session } = command;
-          this.helper.request("microphoneStart", { session, sampleRate: config.recordingSampleRate }, config.microphoneStartTimeout).then(
-            () => report({ type: "started", session }),
-            (error: unknown) => report({ type: "failed", session, error: errorName(error) }),
-          );
-          return;
-        }
-        case "stop":
-          this.helper.request("microphoneStop", { session: command.session }).catch((error: unknown) => log.error(`MacSystem: microphone not stopped: ${errorName(error)}`));
-      }
-    };
-  }
+  readonly microphone = (report: (report: AudioReport) => void): (command: AudioCommand) => void =>
+    new NativeMicrophone(this.helper, "MacSystem").microphone(report);
 
   private async flag(method: string, app: string): Promise<boolean> {
     return (await this.helper.request<{ value: boolean }>(method, { bundleIdentifier: app })).value;
   }
-}
-
-/** A chunk's samples as the helper sends them: base64 of little-endian 32-bit floats. Null when
- * malformed. */
-export function decodeSamples(value: unknown): Float32Array | null {
-  if (typeof value !== "string") return null;
-  const bytes = Buffer.from(value, "base64");
-  if (bytes.length % Float32Array.BYTES_PER_ELEMENT !== 0) return null;
-  // Its own copy: a Buffer is a view into a shared pool.
-  return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
 }
 
 /** An event as the helper sends it: its times in milliseconds since 1970. */

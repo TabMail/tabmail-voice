@@ -1,0 +1,273 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+import { app, BrowserWindow, screen } from "electron";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { once } from "node:events";
+
+// This exercises Chromium's actual UIA provider in a normal Windows desktop
+// session, rather than a classic Win32 fixture or mocked accessibility API.
+assert.equal(process.platform, "win32");
+assert.ok(process.argv[2], "pass the Windows helper executable path");
+const privacyOnly = process.argv.includes("--privacy-only");
+const coldActivation = process.argv.includes("--cold-activation");
+if (!coldActivation) app.commandLine.appendSwitch("force-renderer-accessibility");
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const pending = new Map();
+let id = 0;
+let helper;
+let activator;
+let activatorErrors = "";
+let lines;
+let window;
+let stderr = "";
+let stage = "initialization";
+const startedAt = Date.now();
+function request(method, params = {}) {
+  if (method === "readScreen" || method === "focusedFieldValue") params = { excludedAppIDs: [], excludedHosts: [], ...params };
+  const requestID = ++id;
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { pending.delete(requestID); reject(new Error(`${method} timed out`)); }, 4000);
+    pending.set(requestID, (message) => {
+      clearTimeout(timeout);
+      if (message.error) reject(new Error(`${method}: ${message.error.message}`));
+      else resolve(message.result);
+    });
+    helper.stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
+  });
+}
+async function focus(element, start = null, end = start) {
+  await window.webContents.executeJavaScript(`(() => {
+    const field = document.getElementById(${JSON.stringify(element)});
+    field.focus();
+    if (${start !== null}) field.setSelectionRange(${start}, ${end});
+  })()`);
+  await delay(150);
+}
+async function anchor(target, field = "editor", fieldFallback = false) {
+  const physical = await request("caretAnchor", { window: target });
+  assert.ok(physical, "focused editor exposes an anchor");
+  const rect = screen.screenToDipRect(null, physical);
+  const frame = await window.webContents.executeJavaScript(`(() => {
+    const r = document.getElementById(${JSON.stringify(field)}).getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  })()`);
+  const content = window.getContentBounds();
+  assert.ok(rect.x >= content.x + frame.x - 2 && rect.x <= content.x + frame.x + frame.width + 2, "anchor stays in the focused field horizontally");
+  assert.ok(rect.y >= content.y + frame.y - 2 && rect.y + rect.height <= content.y + frame.y + frame.height + 2, "anchor stays in the focused field vertically");
+  assert.ok(rect.height > 0 && rect.height <= (fieldFallback ? frame.height + 2 : 32), `nonempty text exposes text-sized geometry: ${JSON.stringify(rect)}`);
+  return rect;
+}
+// The full matrix makes hundreds of separately bounded UIA calls; x64 runs
+// under emulation on ARM64 developer VMs. Keep each request capped at four
+// seconds while allowing the complete matrix two minutes.
+const timeout = setTimeout(() => {
+  process.stderr.write(`Windows Electron integration timed out at ${stage}; ${id} requests in ${Date.now() - startedAt} ms\n`);
+  activator?.kill(); helper?.kill(); app.exit(1);
+}, privacyOnly ? 60_000 : 120_000);
+async function main() {
+  try {
+    await app.whenReady();
+    helper = spawn(process.argv[2], [], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    helper.on("error", (error) => { process.stderr.write(`${error.message}\n`); app.exit(1); });
+    helper.stderr.on("data", (chunk) => { stderr += chunk; });
+    lines = createInterface({ input: helper.stdout });
+    lines.on("line", (line) => {
+      const message = JSON.parse(line);
+      if (message.event) return;
+      const resolve = pending.get(message.id);
+      assert.ok(resolve, "reply matches a pending request");
+      pending.delete(message.id);
+      resolve(message);
+    });
+    if (coldActivation) {
+      activator = spawn(process.argv[2], ["--accessibility-activator"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+      activator.on("error", (error) => { process.stderr.write(`${error.message}\n`); app.exit(1); });
+      activator.stderr.on("data", (chunk) => { activatorErrors += chunk; });
+    }
+    window = new BrowserWindow({ width: 800, height: 600, title: "Native editor integration test", webPreferences: { contextIsolation: true, nodeIntegration: false } });
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+      <style>textarea,input,[contenteditable]{font:16px monospace}textarea{width:90%;height:80px}[contenteditable]{border:1px solid;padding:3px}</style>
+      <h1>Unrelated heading outside focused field</h1>
+      <textarea id="editor">Before selected after. 🙂</textarea>
+      <div id="rich" contenteditable="true">Rich selected text.</div>
+      <input id="secret" type="password" value="synthetic-secret">
+      <input id="readonly" readonly value="synthetic-readonly">
+      <button id="button" aria-label="undrawn-button-secret">Non-text</button>
+      <button aria-label="undrawn-icon-secret"><span aria-hidden="true">+</span></button>
+      <p>Unrelated footer outside focused field</p>
+      <div style="display:none">hidden-display-secret</div>
+      <div style="position:fixed;top:-5000px">offscreen-secret</div>
+      <div style="position:absolute;width:1px;height:1px;overflow:hidden">thin-hidden-secret</div>
+      <a href="https://example.com">Visible link</a>
+    `)}`);
+    window.show(); window.focus();
+    const fixtureHandle = window.getNativeWindowHandle().readBigUInt64LE();
+    // Consecutive GUI fixtures can briefly inherit the preceding process's
+    // foreground transition. Establish our own window before testing providers;
+    // frontmostApp reads only Win32 window metadata and does not warm UIA.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (BigInt((await request("frontmostApp")).window) === fixtureHandle) break;
+      window.focus();
+      await delay(50);
+    }
+    stage = "field and privacy checks";
+    await focus("editor", 7, 15);
+    // No accessibility override or preliminary caret/context request: the foreground
+    // observer must initiate activation before the first dictation's native lookup.
+    const { window: target } = await request("frontmostApp");
+    assert.equal(BigInt(target), window.getNativeWindowHandle().readBigUInt64LE(), "fixture owns foreground focus before the accessibility assertions");
+    // Dictation starts its context read while the overlay looks up the caret.
+    // Both requests must complete; a busy rejection silently puts the overlay at the mouse.
+    const [concurrentContext, concurrentCaret] = await Promise.all([
+      request("readScreen"), request("caretAnchor", { window: target }),
+    ]);
+    assert.ok(concurrentContext?.renderedText.includes("Before"), "concurrent context read completes");
+    assert.ok(concurrentCaret?.height > 0, "concurrent caret lookup completes");
+    assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Before selected after. 🙂" });
+    assert.equal(await request("readScreen", { excludedHosts: ["data"] }), null, "page address excludes the whole screen before text is returned");
+    assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000, excludedHosts: ["data"] }), { value: null }, "excluded page refuses correction learning");
+    const context = await request("readScreen");
+    assert.equal(context.host, "data", "nearest page host follows the Mac contract");
+    assert.equal(context.textBeforeCaret, "Before ", "moving context backward does not escape into the page heading");
+    assert.equal(context.selectedText, "selected");
+    assert.equal(context.textAfterCaret, " after. 🙂", "context excludes adjacent fields and footer");
+    assert.ok(context.renderedText.includes("Unrelated heading outside focused field"), "visible window heading is available outside the caret field");
+    assert.ok(context.renderedText.includes("Unrelated footer outside focused field"), "visible window footer is available");
+    assert.ok(context.renderedText.includes("» Before ‸selected‸ after. 🙂"), "focused field is marked at its position in the window");
+    assert.ok(context.renderedText.includes("Non-text"), "a labeled web control retains its visible caption");
+    for (const secret of ["synthetic-secret", "hidden-display-secret", "offscreen-secret", "thin-hidden-secret", "undrawn-button-secret", "undrawn-icon-secret"]) {
+      assert.ok(!context.renderedText.includes(secret), `password and hidden text never enter screen context: ${secret}`);
+    }
+    assert.ok(!context.summary.includes("Before") && !context.summary.includes("Unrelated"), "summary contains only sizes and timing");
+    await anchor(target);
+    await focus("editor", 0);
+    const first = await anchor(target);
+    await focus("editor", 15);
+    const middle = await anchor(target);
+    await focus("editor", 25);
+    const endContext = await request("readScreen");
+    assert.equal(endContext.textBeforeCaret, "Before selected after. 🙂");
+    assert.equal(endContext.selectedText, "");
+    assert.equal(endContext.textAfterCaret, "", "end selection does not include the following page node");
+    const last = await anchor(target);
+    assert.ok(first.x < middle.x && middle.x <= last.x, "collapsed caret follows insertion position");
+    await focus("editor", 0, 25);
+    const entire = await request("readScreen");
+    assert.equal(entire.textBeforeCaret, "");
+    assert.equal(entire.selectedText, "Before selected after. 🙂");
+    assert.equal(entire.textAfterCaret, "", "full selection remains inside the focused field");
+    await window.webContents.executeJavaScript('document.getElementById("editor").value = ""');
+    await focus("editor", 0);
+    assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "" });
+    const emptyContext = await request("readScreen");
+    assert.equal(emptyContext.textBeforeCaret, "");
+    assert.equal(emptyContext.selectedText, "");
+    assert.equal(emptyContext.textAfterCaret, "");
+    await anchor(target, "editor", true);
+    // A real object replacement character must not be confused with an empty field.
+    await window.webContents.executeJavaScript('document.getElementById("editor").value = "\\uFFFC"');
+    await focus("editor", 0);
+    assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "\uFFFC" });
+    await window.webContents.executeJavaScript('document.getElementById("editor").value = "First line\\nSecond 🙂"');
+    await focus("editor", 0);
+    const firstLine = await anchor(target);
+    await focus("editor", 20);
+    const secondLine = await anchor(target);
+    assert.ok(secondLine.y > firstLine.y, "caret follows the focused line in a multiline field");
+    assert.equal((await request("readScreen")).textAfterCaret, "");
+    for (const field of ["secret", "readonly", "button"]) {
+      await focus(field);
+      assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), field === "secret" ? { value: null } : null);
+      const refusedContext = await request("readScreen");
+      assert.ok(refusedContext && !refusedContext.renderedText.includes("synthetic-secret"), "noneditable focus retains safe visible window context");
+      if (field === "secret") {
+        assert.deepEqual([refusedContext.textBeforeCaret, refusedContext.selectedText, refusedContext.textAfterCaret], ["", "", ""]);
+        assert.ok(refusedContext.renderedText.includes("» ‸"));
+      }
+      assert.equal(await request("caretAnchor", { window: target }), null);
+    }
+    await focus("rich");
+    assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Rich selected text." });
+    const rich = await request("readScreen");
+    assert.ok(rich && rich.renderedText.includes("Unrelated") && !rich.renderedText.includes("synthetic-secret"), "rich editor retains safe visible window context");
+    assert.ok(!rich.textBeforeCaret.includes("Unrelated") && !rich.textAfterCaret.includes("Unrelated"), "rich caret text remains scoped to its field");
+    await anchor(target, "rich");
+    // Compare to the browser's rendered insertion point, not merely the field bounds.
+    // A provider can report a plausible rectangle at the wrong end of the field.
+    if (!privacyOnly) for (const [direction, text, width] of [
+      ["ltr", "Synthetic caret", 300], ["rtl", "אבגד", 300],
+      ["ltr", "abc אבגד xyz", 300], ["rtl", "אבגד abc הוז", 300],
+      ["ltr", "Synthetic wrapped caret across several words", 160],
+    ]) {
+      await window.webContents.executeJavaScript(`(() => {
+        const field = document.getElementById("rich");
+        field.dir = ${JSON.stringify(direction)};
+        field.style.width = ${JSON.stringify(width + "px")};
+        field.textContent = ${JSON.stringify(text)};
+        field.focus();
+      })()`);
+      await delay(500);
+      for (const offset of Array.from({ length: text.length + 1 }, (_, index) => index)) {
+        stage = `caret matrix ${direction}/${width}, offset ${offset}/${text.length}`;
+        const expected = await window.webContents.executeJavaScript(`(() => {
+          const field = document.getElementById("rich");
+          const range = document.createRange();
+          range.setStart(field.firstChild, ${offset}); range.collapse(true);
+          const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+          return Array.from(range.getClientRects(), rect => ({
+            x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          }));
+        })()`);
+        await delay(150);
+        {
+          assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }),
+            { value: text }, `${direction} complete field value preserves logical text order`);
+          const positionContext = await request("readScreen");
+          assert.equal(positionContext?.textBeforeCaret, text.slice(0, offset),
+            `${direction} provider selection begins at the DOM insertion point`);
+          assert.equal(positionContext?.textAfterCaret, text.slice(offset),
+            `${direction} provider selection belongs to the current field contents`);
+        }
+        const actual = await anchor(target, "rich");
+        const content = window.getContentBounds();
+        // A bidi boundary can expose two valid insertion positions. The union
+        // returned by getBoundingClientRect loses that affinity information.
+        assert.ok(expected.some(rect => rect.width <= 2 &&
+          Math.abs(actual.x - content.x - rect.x) <= 3 &&
+          Math.abs(actual.y - content.y - rect.y) <= 3),
+          `${direction} caret at ${offset} matches a rendered insertion position: ${JSON.stringify({actual, expected, content})}`);
+      }
+    }
+    stage = "insertion and shutdown";
+    process.stdout.write(`Windows Electron field/context/caret/refusal/recovery checks passed after ${id} requests in ${Date.now() - startedAt} ms\n`);
+    await window.webContents.executeJavaScript('document.getElementById("editor").value = "Before selected after. 🙂"');
+    await focus("editor", 7, 15);
+    assert.deepEqual(await request("insert", { window: target, text: "inserted", restoreDelay: 200, deadline: Date.now() + 2000 }), {});
+    assert.equal(await window.webContents.executeJavaScript('document.getElementById("editor").value'), "Before inserted after. 🙂", "native paste replaces the actual Chromium selection");
+    const exited = once(helper, "exit"); helper.stdin.end();
+    assert.deepEqual(await exited, [0, null]);
+    assert.equal(pending.size, 0);
+    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug screen access: excluded or unknown page not read\ndebug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
+    process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");
+    if (activator) {
+      const stopped = once(activator, "exit"); activator.stdin.end();
+      assert.deepEqual(await stopped, [0, null], "activator stops on parent EOF");
+      assert.ok(!activatorErrors.includes("error "), "activator configured its UIA client and foreground hook");
+      assert.ok(activatorErrors.split(/\r?\n/u).filter(Boolean).every((line) => /^debug accessibility warmup: (provider-unavailable|no-focused-element)$/u.test(line)), "activation logs contain only fixed categories");
+    }
+    app.quit();
+  } catch (error) {
+    process.stderr.write(stderr);
+    process.stderr.write(`${error.stack}\n`);
+    app.exit(1);
+  } finally {
+    clearTimeout(timeout); activator?.kill(); helper?.kill(); lines?.close();
+  }
+
+}
+// Allow Electron to finish loading its entry module before waiting for ready.
+void main();

@@ -9,7 +9,7 @@
 // (`npm run gen:registries`); `--check` only says whether the file is current.
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const folder = join(root, "src/core/agent/connectors");
@@ -26,7 +26,12 @@ interface Declaration {
  * and on a repeated id or order. */
 export function connectorDeclarations(directory = folder): Declaration[] {
   const declarations: Declaration[] = [];
-  for (const file of readdirSync(directory).filter((name) => name.endsWith(".ts") && name !== registryFile).sort()) {
+  const files = readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .map((entry) => relative(directory, join(entry.parentPath, entry.name)).replaceAll("\\", "/"))
+    .filter((name) => name !== registryFile)
+    .sort();
+  for (const file of files) {
     const source = readFileSync(join(directory, file), "utf8");
     const calls = source.split("defineConnector({").length - 1;
     const found = [...source.matchAll(/^export const (\w+) = defineConnector\(\{\n {2}id: "([a-z]+)",\n {2}order: (\d+),$/gm)];

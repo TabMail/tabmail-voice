@@ -35,6 +35,8 @@ export interface HelperOptions {
   args?: string[];
   requestTimeout?: number;
   restartDelay?: number;
+  /** Helper implements fire-and-forget cancel requests for queued native mutations. */
+  cancelRequests?: boolean;
 }
 
 interface Pending {
@@ -42,6 +44,7 @@ interface Pending {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  drop?: () => void;
 }
 
 /**
@@ -92,7 +95,8 @@ export class HelperClient {
    * `timeout`, or is not running. A request given its operation's `signal` waits instead while the
    * helper restarts (within `timeout`), so what a crash sets off (sending what was said, then pasting
    * it) still reaches the helper; if the signal aborts first it is never sent and rejects with a
-   * `CancellationError` (a canceled dictation pastes nothing). */
+   * `CancellationError`. With `cancelRequests`, aborts and timeouts also notify the native helper
+   * after writing; it must check cancellation before committing its mutation. */
   request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeout = this.options.requestTimeout ?? config.helperRequestTimeout, signal?: AbortSignal): Promise<T> {
     const child = this.child;
     if (!child && (this.restartTimer === null || signal === undefined)) return Promise.reject(new HelperError("exited", method));
@@ -101,22 +105,37 @@ export class HelperClient {
     this.nextID += 1;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
+        this.pending.get(id)?.drop?.();
         this.pending.delete(id);
+        if (this.options.cancelRequests) this.cancelWritten(id);
         reject(new HelperError("timeout", method));
       }, timeout);
       this.pending.set(id, { method, resolve: resolve as (value: unknown) => void, reject, timer });
       const line = `${JSON.stringify({ id, method, params })}\n`;
-      if (child) child.stdin.write(line);
-      else if (signal) {
-        const cancel = () => {
-          if (!this.pending.delete(id)) return;
-          clearTimeout(timer);
-          reject(new CancellationError());
-        };
+      const cancel = () => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        pending.drop?.();
+        this.pending.delete(id);
+        clearTimeout(timer);
+        if (this.options.cancelRequests) this.cancelWritten(id);
+        reject(new CancellationError());
+      };
+      const drop = () => signal?.removeEventListener("abort", cancel);
+      if (signal && (this.options.cancelRequests || !child)) {
         signal.addEventListener("abort", cancel, { once: true });
-        this.waiting.push({ id, line, drop: () => signal.removeEventListener("abort", cancel) });
+        if (this.options.cancelRequests) {
+          const pending = this.pending.get(id);
+          if (pending) pending.drop = drop;
+        }
       }
+      if (child) child.stdin.write(line);
+      else if (signal) this.waiting.push({ id, line, drop: this.options.cancelRequests ? () => {} : drop });
     });
+  }
+
+  private cancelWritten(id: number): void {
+    this.child?.stdin.write(`${JSON.stringify({ method: "cancel", params: { id } })}\n`);
   }
 
   private launch(): void {
@@ -174,6 +193,7 @@ export class HelperClient {
     if (!pending) return;
     this.pending.delete(message.id);
     clearTimeout(pending.timer);
+    pending.drop?.();
     const error = message.error as { message?: unknown } | undefined;
     if (error) pending.reject(new HelperError("failed", pending.method, typeof error.message === "string" ? error.message : undefined));
     else pending.resolve(message.result ?? null);
@@ -182,6 +202,7 @@ export class HelperClient {
   private failPending(kind: HelperErrorKind): void {
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
+      pending.drop?.();
       this.pending.delete(id);
       pending.reject(new HelperError(kind, pending.method));
     }

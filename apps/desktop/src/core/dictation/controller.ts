@@ -11,7 +11,8 @@ import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
 import { isJSONObject, type ConnectorTool } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
 import { type AgentToolID, agentTools } from "../agent/tools.js";
-import { type AudioCapture, AudioRecorder, decibels, recordingDuration } from "../audio/recorder.js";
+import { type AudioCapture, AudioRecorder, recordingDuration } from "../audio/recorder.js";
+import { LevelSampler } from "../audio/levelSampler.js";
 import { BackendError } from "../backend/errors.js";
 import { type CompletionsClient, type ServerToolEvent, type ToolCall } from "../backend/completions.js";
 import { type Transcription, type TranscriptionClient } from "../backend/transcription.js";
@@ -76,14 +77,14 @@ export interface DictationDependencies {
   tips: TipBook;
   /** Pastes into the focused field, for the dictation whose `signal` it is: one canceled before the
    * paste reaches the system pastes nothing. */
-  paste: (text: string, signal: AbortSignal) => Promise<void>;
+  paste: (text: string, signal: AbortSignal, target: number) => Promise<void>;
   /** Puts `text` on the clipboard, when it was not pasted. */
   copy: (text: string) => void;
   /** Every text pasted, or copied instead, for the triple tap's list (ADR-DESK-043). */
   history: PasteHistory;
   thunderbird: ThunderbirdRelay;
   capture: AudioCapture;
-  /** The process of the app in front, null without one. */
+  /** Opaque positive foreground identity (macOS process id; Windows window), null without one. */
   frontmostApp: () => Promise<number | null>;
   /** The active keyboard input source's language. */
   keyboardLanguage: () => Promise<string | null>;
@@ -391,12 +392,13 @@ export class DictationController extends Observable {
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
     // time most of the start-up is done.
     const recorder = new AudioRecorder();
+    const meter = new LevelSampler();
     this.recorder = recorder;
     this.deps.capture.start(
       (samples) => {
         if (this.generation !== current) return;
         recorder.append(samples);
-        this.updateLevel(decibels(samples));
+        meter.append(samples, (level) => this.updateLevel(level));
       },
       (error) => {
         if (error) this.microphoneFailed(error, current);
@@ -763,14 +765,18 @@ export class DictationController extends Observable {
       this.deps.copy(text);
       throw new NotPastedError();
     }
-    await this.deps.paste(text, signal);
+    const target = await targetApp;
+    if (signal.aborted) throw new CancellationError();
+    // focusChanged requires a positive identity; pass it through for the native final check.
+    if (target === null) throw new NotPastedError();
+    await this.deps.paste(text, signal, target);
   };
 
   /** Whether the app in front now is not `targetApp`, the one at key-down (null for none, or one that
    * couldn't be read). */
   private async focusChanged(targetApp: Promise<number | null>): Promise<boolean> {
     const [then, now] = await Promise.all([targetApp, this.deps.frontmostApp().catch(() => null)]);
-    return now !== then;
+    return then === null || now === null || !Number.isSafeInteger(then) || !Number.isSafeInteger(now) || then <= 0 || now <= 0 || now !== then;
   }
 
   /** A triple tap: the paste history shows, by the pill (ADR-DESK-043), which is placed while the

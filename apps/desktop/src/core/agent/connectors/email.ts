@@ -72,6 +72,7 @@ function crlf(text: string): string {
 export const emailConnector = defineConnector({
   id: "email",
   order: 50,
+  platforms: ["darwin", "win32", "linux"],
   displayName: "Email",
   settingsDescription: "Opens a new email in your email app, written for you to review and send.",
   tools: ({ emailOpener }: Pick<ConnectorServices, "emailOpener">): ConnectorTool[] => [new EmailComposeTool(emailOpener)],

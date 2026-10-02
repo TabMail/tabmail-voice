@@ -137,9 +137,9 @@ function ConsentPage({ state }: { state: WelcomeState }) {
         <li>
           <BookIcon size={config.welcomeLabelIconSize} />
           <span>
-            The words in your dictionary, so they’re spelled your way. You add them in Settings, and on a Mac TabMail Voice also learns them: when you correct a
-            name or term it typed, it reads the text field for a short while to see the new spelling. That text stays on this computer. Learning is on unless you
-            switch it off in Settings.
+            The words in your dictionary, so they’re spelled your way. You add them in Settings.
+            {state.canLearnWords && <> TabMail Voice also learns them: when you correct a name or term it typed, it reads the text field for a short while to see
+              the new spelling. That text stays on this computer. Learning is on unless you switch it off in Settings.</>}
           </span>
         </li>
         <li>

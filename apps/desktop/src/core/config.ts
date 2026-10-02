@@ -25,8 +25,9 @@ export const recordingSampleRate = 16_000;
  * frame's residual is split into (2^order), as libFLAC's defaults. */
 export const flacBlockSize = 4_096;
 export const flacMaxPartitionOrder = 6;
-/** Frames per microphone chunk sent from the audio window (~85 ms at 16 kHz), the rate the level
- * envelope below is tuned for (~12 chunks a second). */
+/** Frames per live-meter interval (~85 ms at 16 kHz). LevelSampler groups native packets at this
+ * shared cadence; the audio window also sends chunks this size. The envelope below is tuned for
+ * ~12 readings a second. */
 export const audioChunkFrames = 1_365;
 /** Before upload the recording is scaled so its loudest sample sits this far below full scale (peak
  * normalization, `normalizePeak`), leaving headroom so nothing clips. Quiet microphones deliver
@@ -234,6 +235,12 @@ export const builtInExcludedApps: readonly { bundleIdentifier: string; name: str
   { bundleIdentifier: "com.bitwarden.desktop", name: "Bitwarden" },
   { bundleIdentifier: "org.keepassxc.keepassxc", name: "KeePassXC" },
   { bundleIdentifier: "com.nordsec.nordpass", name: "NordPass" },
+];
+/** Windows executable identities, verified with the installed vendor package. */
+export const windowsBuiltInExcludedApps: readonly { bundleIdentifier: string; name: string }[] = [
+  { bundleIdentifier: "1Password.exe", name: "1Password" },
+  { bundleIdentifier: "Bitwarden.exe", name: "Bitwarden" },
+  { bundleIdentifier: "KeePassXC.exe", name: "KeePassXC" },
 ];
 /** The most apps the user can exclude, and the longest bundle identifier and name kept for one. */
 export const excludedAppsMax = 100;

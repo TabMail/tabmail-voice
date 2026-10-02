@@ -94,16 +94,19 @@ export class AppSettings extends Observable {
     private readonly store: KeyValueStore,
     /** Whether a Thunderbird profile has TabMail's add-on (`EmailClient.hasTabMail`). */
     private readonly hasTabMail: () => boolean,
+    readonly availableHotkeys: readonly [DictationHotkey, ...DictationHotkey[]] = [defaultHotkey, "function"],
+    readonly builtInExcludedApps: readonly ExcludedApp[] = config.builtInExcludedApps,
   ) {
     super();
   }
 
   get hotkey(): DictationHotkey {
     const stored = storedString(this.store, Key.hotkey);
-    return isDictationHotkey(stored) ? stored : defaultHotkey;
+    return isDictationHotkey(stored) && this.availableHotkeys.includes(stored) ? stored : this.availableHotkeys[0];
   }
 
   set hotkey(value: DictationHotkey) {
+    if (!this.availableHotkeys.includes(value)) return;
     this.store.set(Key.hotkey, value);
     this.changed();
     this.onHotkeyChange?.(value);
@@ -227,7 +230,7 @@ export class AppSettings extends Observable {
   /** The apps the user excludes from screen reading, in the order they were added; the built-in ones
    * (`config.builtInExcludedApps`) are not among them. */
   get excludedApps(): ExcludedApp[] {
-    return storedExcludedApps(this.store.get(Key.excludedApps));
+    return storedExcludedApps(this.store.get(Key.excludedApps), this.builtInExcludedApps);
   }
 
   /** Excludes an app from screen reading. */
@@ -235,7 +238,7 @@ export class AppSettings extends Observable {
     const app = excludedApp(value);
     if (app === null) return "invalid";
     const apps = this.excludedApps;
-    if (isBuiltInExcludedApp(app.bundleIdentifier)) return "added";
+    if (isBuiltInExcludedApp(app.bundleIdentifier, this.builtInExcludedApps)) return "added";
     // One already there is written again: it may be held from an add that could not be saved.
     if (apps.some((other) => isSameApp(other.bundleIdentifier, app.bundleIdentifier))) return this.store.set(Key.excludedApps, apps) ? "added" : "unsaved";
     if (apps.length >= config.excludedAppsMax) return "full";
@@ -351,7 +354,7 @@ export class AppSettings extends Observable {
       hotkey: this.hotkey,
       backendURL: this.backendURL(email),
       readsScreen: this.readsScreen,
-      excludedApps: [...config.builtInExcludedApps, ...this.excludedApps].map((app) => app.bundleIdentifier),
+      excludedApps: [...this.builtInExcludedApps, ...this.excludedApps].map((app) => app.bundleIdentifier),
       excludedSites: [...config.builtInExcludedSites, ...this.excludedSites],
       enabledTools: this.enabledTools,
       enabledConnectors: this.enabledConnectors,

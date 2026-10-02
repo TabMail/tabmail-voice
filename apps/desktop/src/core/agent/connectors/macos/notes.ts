@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import * as config from "../../config.js";
-import { LocalDateTime } from "../../util/localDateTime.js";
+import * as config from "../../../config.js";
+import { LocalDateTime } from "../../../util/localDateTime.js";
 import type { ScriptRunner } from "./appleScript.js";
-import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "../contract.js";
 
 /** A note in Apple Notes, as the notes tools read them. */
 export interface NoteItem {
@@ -75,6 +75,7 @@ function escaped(text: string): string {
 export const notesConnector = defineConnector({
   id: "notes",
   order: 60,
+  platforms: ["darwin"],
   displayName: "Notes",
   settingsDescription: "Answers from your notes, and adds ones you ask for once you confirm.",
   tools: ({ scriptRunner }: Pick<ConnectorServices, "scriptRunner">): ConnectorTool[] => [new NotesSearchTool(scriptRunner), new NotesCreateTool(scriptRunner)],

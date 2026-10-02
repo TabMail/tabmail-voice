@@ -17,6 +17,7 @@ const features: WelcomeState = {
   isLastStep: false,
   canAdvance: true,
   hasConsented: true,
+  canLearnWords: true,
   readsScreen: true,
   enabledTools: ["compose"],
   connectors: [],
@@ -75,6 +76,14 @@ function nameField(): HTMLInputElement {
 describe("welcome wizard", () => {
   /** The consent step names everything a dictation sends, the dictionary's words included, and that
    * learning them reads the field on this computer only (ADR-DESK-038). */
+  test("consent describes local learning only when the platform supports it", async () => {
+    const { push } = await welcomePage({ ...features, step: "consent", canLearnWords: false });
+    expect(document.querySelector(".sends")?.textContent).not.toContain("also learns");
+    await push({ ...features, step: "consent", canLearnWords: true });
+    expect(document.querySelector(".sends")?.textContent).toContain("also learns");
+    expect(document.querySelector(".sends")?.textContent).toContain("That text stays on this computer.");
+  });
+
   test("the consent step says what dictation sends", async () => {
     await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false });
     const sent = [...document.querySelectorAll(".sends li")].map((item) => item.textContent ?? "");

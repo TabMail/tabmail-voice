@@ -11,7 +11,7 @@ import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { excludedSite, isBuiltInExcludedSite } from "../../core/dictation/excludedSites.js";
 import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
-import { dictationHotkeys, hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
+import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
 import { brandBlue, brandGradient, brandTextGradient } from "../shared/brand.js";
@@ -144,7 +144,7 @@ function DictationPane({ state }: { state: SettingsState }) {
               if (isDictationHotkey(event.target.value)) void send({ type: "setHotkey", hotkey: event.target.value });
             }}
           >
-            {dictationHotkeys.map((hotkey) => (
+            {state.availableHotkeys.map((hotkey) => (
               <option key={hotkey} value={hotkey}>
                 {hotkeyNames[hotkey].displayName}
               </option>
@@ -323,7 +323,7 @@ function PrivacyPane({ state }: { state: SettingsState }) {
       <Group
         captions={[
           "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
-          `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,
+          ...(state.builtInExcludedApps.length ? [`Password managers are always excluded: ${state.builtInExcludedApps.map((app) => app.name).join(", ")}.`] : []),
         ]}
       >
         <div className="row">

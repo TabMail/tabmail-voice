@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import * as config from "../../config.js";
+import * as config from "../../../config.js";
 import type { ScriptRunner } from "./appleScript.js";
-import { isAddress } from "./email.js";
-import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
+import { isAddress } from "../email.js";
+import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "../contract.js";
 
 /** The AppleScript behind `messages_send` (ADR-DESK-028), which takes its values as arguments
  * (`ScriptRunner`). */
@@ -32,6 +32,7 @@ export function isHandle(text: string): boolean {
 export const messagesConnector = defineConnector({
   id: "messages",
   order: 70,
+  platforms: ["darwin"],
   displayName: "Messages",
   settingsDescription: "Sends iMessages you ask for once you confirm.",
   tools: ({ scriptRunner }: Pick<ConnectorServices, "scriptRunner">): ConnectorTool[] => [new MessagesSendTool(scriptRunner)],

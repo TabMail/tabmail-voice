@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, nativeTheme } from "electron";
+import type { SettingsState } from "../../src/shared/ipc.js";
 
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
@@ -37,6 +38,7 @@ const conversation = {
   confirmationExpiresAt: null,
 };
 const settings = {
+  availableHotkeys: ["rightOption", "function"],
   email: null,
   hotkey: "function",
   readsScreen: true,
@@ -59,11 +61,12 @@ const settings = {
   excludedApps: [],
   excludedSites: [],
   canExcludeApps: true,
+  builtInExcludedApps: [{ bundleIdentifier: "com.1password.1password", name: "1Password" }],
   userName: "Alex Example",
   suggestedName: "Alex Example",
   enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"],
-};
-const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
+} satisfies SettingsState;
+const welcome = { step: "consent", index: 0, categoryIndex: 0, isFirstStep: true, isLastStep: false, canAdvance: false, hasConsented: false, canLearnWords: true, readsScreen: true, microphoneGranted: false, accessibilityTrusted: false, vscodeFix: "notNeeded", userName: null, suggestedName: "Alex Example", enabledTools: ["edit", "compose", "thunderbird", "answer"], connectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"], enabledConnectors: ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"] };
 
 /** The paste history: a short entry, a long one clipped to its lines, and an older one. */
 const history = {

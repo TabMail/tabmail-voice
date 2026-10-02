@@ -65,6 +65,7 @@ export class EventStoreError extends Error {
 export const calendarConnector = defineConnector({
   id: "calendar",
   order: 10,
+  platforms: ["darwin"],
   displayName: "Calendar",
   settingsDescription: "Answers from your calendars, and adds events you ask for once you confirm.",
   tools: ({ eventStore }: Pick<ConnectorServices, "eventStore">): ConnectorTool[] => [new CalendarReadTool(eventStore, () => new Date()), new CalendarEventCreateTool(eventStore)],
@@ -73,6 +74,7 @@ export const calendarConnector = defineConnector({
 export const remindersConnector = defineConnector({
   id: "reminders",
   order: 20,
+  platforms: ["darwin"],
   displayName: "Reminders",
   settingsDescription: "Answers from your reminders, and adds ones you ask for once you confirm.",
   tools: ({ eventStore }: Pick<ConnectorServices, "eventStore">): ConnectorTool[] => [new RemindersReadTool(eventStore), new ReminderCreateTool(eventStore)],

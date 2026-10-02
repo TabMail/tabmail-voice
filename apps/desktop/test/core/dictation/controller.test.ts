@@ -33,6 +33,8 @@ import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
 import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
 
+vi.mock("electron", () => ({ screen: {} }));
+
 const transcript = "ask jordan about the road map";
 const cleaned = "Ask Jordan about the roadmap.";
 const request = "make this friendlier";
@@ -161,9 +163,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** Runs one recording through the controller; returns what was pasted. */
   async function dictate(account?: AccountModel): Promise<{ pasted: string[]; controller: DictationController }> {
-    // No key-down, so no app in front then: none now either, or the paste would be for another app.
-    const { controller, pastes } = makeController({ account, frontmostApp: async () => null });
-    await controller.transcribe(new TextEncoder().encode("fLaC-test-audio"), 0);
+    const { controller, pastes } = makeController({ account, capture: new CountingCapture(true) });
+    await holdAndRelease(controller);
+    expect(await eventually(() => controller.phase.kind !== "listening" && controller.phase.kind !== "arming" && controller.phase.kind !== "transcribing" && controller.phase.kind !== "retrying" && controller.phase.kind !== "running")).toBe(true);
     return { pasted: pastes, controller };
   }
 
@@ -197,6 +199,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** One request: the recording with the cleanup's variables, and the backend's cleanup back with the
    * transcript (backend ADR-027). */
+  test("the original window reaches the Windows insertion boundary without copy fallback", async () => {
+    transcription.enqueue(200, cleanedReply);
+    const inserts: { text: string; window: number }[] = [];
+    const { WindowsSystem } = await import("../../../src/main/native/windows/system.js");
+    const system = new WindowsSystem({ request: async (_method: string, params: { text: string; window: number }) => { inserts.push(params); } } as never);
+    const { controller, copies } = makeController({ capture: new CountingCapture(true), paste: system.paste.bind(system) });
+    await holdAndRelease(controller);
+    expect(await eventually(() => settled(controller))).toBe(true);
+    expect(inserts.map(({ text, window }) => ({ text, window }))).toEqual([{ text: cleaned, window: 101 }]);
+    expect(copies).toEqual([]);
+    expect(controller.phase).toEqual(idle);
+  });
+
   test("pastes the cleaned-up transcript", async () => {
     transcription.enqueue(200, cleanedReply);
 
@@ -358,6 +373,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["the app in front can't be read at the paste", async (reads) => (reads === 1 ? 101 : Promise.reject(new Error("helper exited")))],
       ["the app in front couldn't be read at key-down", async (reads) => (reads === 1 ? Promise.reject(new Error("helper exited")) : 101)],
       ["no app was in front at key-down", async (reads) => (reads === 1 ? null : 101)],
+      ["neither foreground read identifies an app", async () => null],
+      ["the helper returns a zero target", async () => 0],
+      ["the helper returns a negative target", async () => -1],
+      ["the helper returns a fractional target", async () => 1.5],
     ])("when %s, the text is copied, not pasted", async (_, frontmost) => {
       transcription.enqueue(200, cleanedReply);
       let reads = 0;
@@ -561,7 +580,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("without an app in front at key-down, nothing is watched", async () => {
       front.pid = null;
       const { calls, corrections } = watcher();
-      expect(await dictateHeld(corrections)).toEqual([cleaned]);
+      const { controller, pastes, copies } = makeController({ capture: new CountingCapture(true), corrections });
+      transcription.enqueue(200, cleanedReply);
+      await holdAndRelease(controller);
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([]);
+      expect(copies).toEqual([cleaned]);
       expect(calls).toEqual(["stop"]);
     });
 

@@ -40,8 +40,9 @@ export function overlayOrigin(anchor: Rect, canvas: Size, pillHeight: number, wo
   let pillTop = maxY(anchor) + gap;
   if (opensUpward(anchor, pillHeight, workArea)) pillTop = anchor.y - gap - pillHeight;
   pillTop = Math.min(Math.max(pillTop, workArea.y), maxY(workArea) - heightUnderPillTop(pillHeight));
-  let x = midX(anchor) - canvas.width / 2;
-  x = Math.min(Math.max(x, workArea.x), maxX(workArea) - canvas.width);
+  const footprint = Math.min(canvas.width, workArea.width);
+  const center = Math.min(Math.max(midX(anchor), workArea.x + footprint / 2), maxX(workArea) - footprint / 2);
+  const x = center - canvas.width / 2;
   return { x, y: pillTop - pillTopInset };
 }
 
@@ -169,7 +170,7 @@ export function chatSide(pillTop: number, bubblesUnder: boolean, workArea: Rect,
  * as the chat grows, so the pill never moves. */
 export function chatWindowFrame(pill: Point, contentHeight: number, workArea: Rect, side: { below: boolean; maxHeight: number }, bubblesUnder: boolean): Rect {
   const margin = config.chatShadowMargin;
-  const width = config.chatWidth + 2 * margin;
+  const width = Math.min(config.chatWidth, workArea.width) + 2 * margin;
   const below = side.below;
   const height = 2 * margin + Math.min(contentHeight, side.maxHeight) + config.chatPillGap + config.chatStripHeight;
   const stripTop = chatStripTop(pill.y, bubblesUnder);
