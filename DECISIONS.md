@@ -791,6 +791,32 @@ its table row, and a row's text was gathered from static text and text fields on
 heading or link now takes a text area's value like a field's, shown ones only, within the same
 `contextMaxBlockChars`. A password field is still never read (`walkNeverReadsAPasswordField`).
 
+**Amendment 2026-10-01: a field that frames an excluded page is marked hidden, and the rest is
+read.** A field (text area or text field) is read by its value and never walked into, in the window
+and in a row alike, so a page of an excluded website framed inside one was not seen: the window was
+read without it and nothing said so. Owner: "There should be a marker. We still need to read the
+rest and just have this marker that some area is hidden."
+- The reader looks inside a shown field for an excluded page (`holdsExcludedPage`) before reading
+  it. A field that holds one is not read: `HelperConfig.contextHiddenMarker` ("[hidden for
+  privacy]") stands in its place, as the field's block in the window or its cell in a row, and the
+  walk goes on.
+- First built, the same day, as a refusal of the whole window (the screen answered as hidden, as
+  the Windows helper does for an edit control); the owner chose the marker instead. Everywhere
+  else an excluded page still hides the whole window (ADR-DESK-047): a page the window shows
+  brings its title and tabs with it, which a field's contents do not.
+- The Windows helper still refuses the whole window in this case: the stricter of the two, not
+  changed here because it could not be built or run on this machine.
+- **A field that could not be looked through whole is marked hidden too.** The look stops at the
+  walk's element budget (its own count) and at the read's time budget. A field it gave up on might
+  hold an excluded page it did not reach, so the field is not read and the marker stands in. This
+  is the opposite of the look's answer for the focused element (ADR-DESK-047, "kept as it is"):
+  there, giving up closed would drop every large window; here it costs one field.
+- No app is known to frame a page in a field. The cost: most fields have no children, but a
+  rich-text editor on a web page that is not in focus has its whole subtree looked through (roles
+  and page addresses, never text) before its value is read. One with more elements than the budget
+  is shown as hidden though it holds no page, and a slow one can use up the read's time, so the
+  rest of the window after it goes unread: context lost, never the field's text.
+
 ## ADR-DESK-017: Settings are read once, as a dictation starts
 
 **Context:** Owner standing rule, 2026-09-26 (root `Companion/Rules/Active/snapshot-settings-at-operation-start.md`):

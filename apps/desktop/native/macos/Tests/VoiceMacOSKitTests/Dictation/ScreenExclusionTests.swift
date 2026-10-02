@@ -460,6 +460,76 @@ struct ScreenExclusionTests {
         #expect(read.text.contains("card 4242"))
     }
 
+    /// A page of an excluded website framed inside a field, in the window or in a row: a field is
+    /// read by its value and never walked into, so the page is looked for first. The field is not
+    /// read and a marker stands in its place; the rest of the window is read. So with the page
+    /// framed in another website's page there. A field too thin to show anything is not read
+    /// either way, and leaves no marker.
+    @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
+    func aFieldFramingAnExcludedWebsiteIsMarkedHiddenAndTheRestRead(role: String, inRow: Bool) {
+        let excluded = page("pay.example.com", "card 4242")
+        let shown = CGRect(x: 10, y: 40, width: 200, height: 40)
+        let shapes: [(name: String, frame: CGRect, inside: FakeElement)] = [
+            ("shown", shown, FakeElement("AXGroup", children: [excluded])),
+            ("too thin to show", CGRect(x: 10, y: 40, width: 200, height: 1), FakeElement("AXGroup", children: [excluded])),
+            ("in another page", shown, FakeElement("AXWebArea", ["host": "news.example.org"], children: [excluded])),
+        ]
+        let marker = HelperConfig.contextHiddenMarker
+        for shape in shapes {
+            let field = FakeElement(role, [kAXValueAttribute: "Field words"], frame: shape.frame, children: [shape.inside])
+            let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300), children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"], frame: CGRect(x: 10, y: 10, width: 100, height: 16)),
+                inRow ? FakeElement("AXRow", frame: shown, children: [FakeElement("AXCell", children: [
+                    FakeElement("AXStaticText", [kAXValueAttribute: "10:15"], frame: CGRect(x: 10, y: 40, width: 40, height: 16)), field,
+                ])]) : field,
+                FakeElement("AXStaticText", [kAXValueAttribute: "After"], frame: CGRect(x: 10, y: 100, width: 100, height: 16)),
+            ])
+            let isShown = shape.name != "too thin to show"
+            let hidden = walk(window, excluding: ["example.com"])
+            #expect(hidden.read, "\(shape.name)")
+            #expect(!hidden.text.contains("Field words") && !hidden.text.contains("card 4242"), "\(shape.name)")
+            let place = inRow ? (isShown ? "| 10:15 | \(marker)" : "| 10:15") : (isShown ? "> \(marker)" : nil)
+            #expect(hidden.text == ["Outer", place, "After"].compactMap { $0 }.joined(separator: "\n"), "\(shape.name)")
+
+            let read = walk(window, excluding: ["example.net"])
+            #expect(read.read, "\(shape.name)")
+            #expect(read.text.contains("Field words") == isShown, "\(shape.name)")
+            #expect(!read.text.contains(marker), "\(shape.name)")
+        }
+    }
+
+    /// A field too large to look through is not read either: the look gives up at the element
+    /// budget, and a page it did not reach might be an excluded one. One element fewer, and the
+    /// field is looked through whole and read.
+    @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
+    func aFieldTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) {
+        let shown = CGRect(x: 10, y: 40, width: 200, height: 40)
+        func read(fillers: Int, behind host: String?) -> String {
+            // The look takes the last child first: the page, when there is one, is reached last.
+            let page = host.map { [self.page($0, "card 4242")] } ?? []
+            let field = FakeElement(role, [kAXValueAttribute: "Field words"], frame: shown,
+                                    children: page + (0..<fillers).map { _ in FakeElement("AXGroup") })
+            let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300), children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"], frame: CGRect(x: 10, y: 10, width: 100, height: 16)),
+                inRow ? FakeElement("AXRow", frame: shown, children: [FakeElement("AXCell", children: [field])]) : field,
+                FakeElement("AXStaticText", [kAXValueAttribute: "After"], frame: CGRect(x: 10, y: 100, width: 100, height: 16)),
+            ])
+            let result = walk(window, excluding: ["example.com"])
+            #expect(result.read)
+            return result.text
+        }
+        let mark = inRow ? "| " : "> "
+        let hidden = "Outer\n\(mark)\(HelperConfig.contextHiddenMarker)\nAfter"
+        let budget = HelperConfig.contextNodeBudget
+        // One element more than the look takes in: hidden whether the one not reached is an
+        // excluded page or nothing of the kind.
+        #expect(read(fillers: budget, behind: "pay.example.com") == hidden)
+        #expect(read(fillers: budget + 1, behind: nil) == hidden)
+        // Looked through whole: the excluded page is found, and a field without one is read.
+        #expect(read(fillers: budget - 1, behind: "pay.example.com") == hidden)
+        #expect(read(fillers: budget, behind: nil) == "Outer\n\(mark)Field words\nAfter")
+    }
+
     /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
     /// read around the caret and its visible lines kept as a plain field.
     @Test func aTerminalsCaretComesFromItsPaneWhenThereIsOne() {
@@ -575,6 +645,16 @@ struct ScreenExclusionTests {
         #expect(holds(outer))
         #expect(!holds(outer, intoPages: false))
         #expect(holds(FakeElement("AXGroup", children: [FakeElement("AXGroup", children: [frame])]), intoPages: false))
+        // A field is read only when all of it was looked through: out of time or of elements, with a
+        // page behind them or none, it is taken to hold one.
+        func fieldHolds(_ element: FakeElement, since started: Date = Date()) -> Bool {
+            ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
+                                                  unlessSeenWhole: true, within: HelperConfig.contextTimeBudget, since: started)
+        }
+        #expect(fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")]), since: .distantPast))
+        #expect(!fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")])))
+        #expect(fieldHolds(FakeElement("AXTextArea", children: fillers + [FakeElement("AXGroup")])))
+        #expect(!fieldHolds(FakeElement("AXTextArea", children: fillers)))
     }
 
     /// A page whose address the app failed to give can't be told safe: it is treated as excluded,

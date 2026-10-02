@@ -92,13 +92,15 @@ enum ScreenContextReader {
     /// its caret was asked for, so it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
-    /// element is taken to hold none.
+    /// element is taken to hold none, or, with `unlessSeenWhole`, to hold one: a field is read only
+    /// when all of it was looked through.
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
-                                                    intoPages: Bool = true, within seconds: Double, since started: Date) -> Bool {
+                                                    intoPages: Bool = true, unlessSeenWhole: Bool = false,
+                                                    within seconds: Double, since started: Date) -> Bool {
         var stack = tree.children(of: element)
         var visited = 0
         while let next = stack.popLast() {
-            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return false }
+            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return unlessSeenWhole }
             visited += 1
             if tree.string(next, kAXRoleAttribute) == "AXWebArea" {
                 if exclusions.excludes(tree.page(of: next)) { return true }
@@ -174,7 +176,8 @@ enum ScreenContextReader {
     /// A password field is never read, nor anything inside it (one above the focused element is
     /// walked into like any of its ancestors; no app is known to focus inside one).
     /// False when the window shows a page of an excluded website, in focus or not: the walk stops
-    /// there, and what it gathered must not be used.
+    /// there, and what it gathered must not be used. A field that frames such a page (a field is read
+    /// by its value, never walked into) is not read, and `contextHiddenMarker` stands in its place.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
                                        into context: inout ScreenContext) -> Bool {
@@ -223,7 +226,7 @@ enum ScreenContextReader {
                     var text = label(of: element, in: tree)
                     if text == nil {
                         text = subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb,
-                                           excluding: exclusions, context: &context)
+                                           excluding: exclusions, started: started, context: &context)
                         // A page of an excluded website is framed in it.
                         if text == nil { return false }
                     }
@@ -231,7 +234,16 @@ enum ScreenContextReader {
                 }
                 continue
             case "AXTextArea", "AXTextField":
-                if shown, let text = tree.fieldText(of: element, windowFrame: windowFrame) { context.append(.field, text, frame: frame) }
+                // A field is read by its value and not walked into, so a page framed in it is looked for:
+                // a field holding one, or too large to look through, is not read, and the read says
+                // that something there is hidden.
+                if shown {
+                    let hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
+                                                   within: HelperConfig.contextTimeBudget, since: started)
+                    if let text = hidden ? HelperConfig.contextHiddenMarker : tree.fieldText(of: element, windowFrame: windowFrame) {
+                        context.append(.field, text, frame: frame)
+                    }
+                }
                 continue
             case _ where inWeb && HelperConfig.contextWebControlRoles.contains(role):
                 if let title = drawnTitle(of: element, in: tree) {
@@ -272,7 +284,8 @@ enum ScreenContextReader {
     /// and its fields' and text views' (a native chat app's message is a text area in its table
     /// row). Nil when a page of an excluded website is among them.
     private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, separator: String, inWeb: Bool,
-                                                      excluding exclusions: ScreenExclusions, context: inout ScreenContext) -> String? {
+                                                      excluding exclusions: ScreenExclusions, started: Date,
+                                                      context: inout ScreenContext) -> String? {
         var parts: [String] = []
         var length = 0
         var stack = Array(tree.children(of: root).reversed())
@@ -285,8 +298,14 @@ enum ScreenContextReader {
             let title = inWeb && HelperConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
             if role == "AXStaticText" || role == "AXTextField" || role == "AXTextArea" || title != nil {
                 let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
-                let text = (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                // A field is read by its value and not walked into, so a page framed in it is looked
+                // for: a field holding one is not read, and the row says that something there is hidden.
+                let hidden = shown && (role == "AXTextField" || role == "AXTextArea")
+                    && holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
+                                         within: HelperConfig.contextTimeBudget, since: started)
+                let text = hidden ? HelperConfig.contextHiddenMarker
+                    : (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 if shown, !text.isEmpty, text != parts.last {
                     parts.append(text)
                     length += text.count
