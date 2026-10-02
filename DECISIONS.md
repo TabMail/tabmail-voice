@@ -1679,6 +1679,40 @@ source stays in git history (the parent of this change) and in the unmerged Swif
 branches, which remain the reference for porting agent mode. The docs describe the Electron app
 only; code comments that name the Swift app record what a port matches.
 
+**Amendment 2026-10-01 (owner: the microphone "not working and hanging" with AirPods): no engine is
+built or released while the input device changes.** The helper's log and crash reports gave three
+failures, all in `MicrophoneCapture`'s default-input listener, which released the prepared engine
+and built the next one on the spot: `installTap` raising an Objective-C exception (the helper
+aborts: Swift cannot catch it); AVFAudio's own listener for the engine just released crashing; and
+the capture queue held for up to minutes, so the next starts and stops timed out ("Couldn't start
+the microphone", nothing recorded) and then ran all at once.
+- A change of the input device (the default input switched; a running engine's
+  `AVAudioEngineConfigurationChange`) retires the engine bound to the old device: it is released
+  `microphoneDeviceSettleDelay` later, on a queue of its own, so its release can neither race the
+  change nor hold up a start. The next engine is prepared once no further change has come for that
+  long (`InputChanges`: a headset arriving changes the device several times over, and only the
+  latest change's wait settles it). A stop in that window prepares nothing either; the settle does.
+- The tap is installed with no format, so it takes the node's own: a format read first and passed
+  in can differ from the device's by the time it is installed, which raises that exception. The
+  device's own format is checked for a sample rate and channels before.
+- The start path is unchanged: a prepared engine for the current device is started as before
+  (measured through the helper on a USB microphone: the first chunk 553–560 ms after the request,
+  554–580 ms before this change). A key-down inside the settle window builds its own engine, as a
+  start always did when none was prepared for the current device.
+- A change while a dictation is listening ends it as its release would (the owner, 2026-10-01:
+  *"force dictation to terminate as if user stopped dictating"*): this is `microphoneLost` as
+  above, what was said is sent, and it is not retried.
+- The log says how each prepared engine's device is connected (the transport's four characters,
+  never the device's name), its sample rate and channels and how long preparing took, and when the
+  default input changed.
+- Not closed: an exception from `installTap` in a start made inside the settle window, were the
+  device to lose its format between the check and the tap; and what the audio system itself takes
+  to start a Bluetooth headset's microphone, which is the system's.
+- Windows needs none of this (`native/windows/src/microphone.h`): each start opens the default
+  endpoint afresh on its own thread and nothing is prepared or kept between dictations, so there is
+  no engine to go stale and no listener; an endpoint that goes away mid-capture fails the capture
+  call, which is reported as `microphoneLost`, the same ending.
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it

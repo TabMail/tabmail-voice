@@ -18,6 +18,16 @@ import VoiceHelperSupport
 /// dictation, and a prepared engine never opens the device. A running engine that stops by itself
 /// (the input's format changed: AVAudioEngine stops on a configuration change) is that session's
 /// microphone lost, told to `onLost`.
+///
+/// While the input device changes (the default input switched, AirPods connecting or changing to
+/// their microphone mode, a running engine's format changed), no engine is built or released on the
+/// spot: building one against a device mid-change raised an Objective-C exception in `installTap`,
+/// which Swift cannot catch, and releasing one raced AVFAudio's own listener for that engine, both
+/// ending the helper; either could also hold the capture queue, and every start and stop behind it,
+/// for minutes. The engine bound to the old device is released later, off the capture queue
+/// (`retire`), and the next one is prepared once the changes have stopped for
+/// `HelperConfig.microphoneDeviceSettleDelay`. A start in that window builds its own engine, as it
+/// does whenever none is prepared for the current device.
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
@@ -48,6 +58,10 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// The running session's engine; `sessions.running` names its session.
     private var engine: AVAudioEngine?
     private var sessions = MicrophoneSessions()
+    private var inputChanges = InputChanges()
+    /// Where engines bound to a device that changed are released: releasing one waits on the audio
+    /// system, which must not hold up a start.
+    private let retireQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneRetire", qos: .utility)
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
     /// Watches the running engine for a configuration change.
     private var configurationObserver: NSObjectProtocol?
@@ -56,11 +70,11 @@ final class MicrophoneCapture: @unchecked Sendable {
         self.onSamples = onSamples
         self.onLost = onLost
         // The user switched the default input (System Settings › Sound, AirPods connecting…): a
-        // prepared engine is bound to the old device, so rebuild it.
+        // prepared engine is bound to the old device, so rebuild it, once the device has settled.
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
-            self.prepared = nil
-            self.prepareOnQueue()
+            HelperLog.debug("MicrophoneCapture: the default input changed")
+            self.inputChangedOnQueue()
         }
         var address = Self.defaultInputAddress
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue, listener)
@@ -123,6 +137,8 @@ final class MicrophoneCapture: @unchecked Sendable {
             if let prepared, prepared.device == current {
                 engine = prepared.engine
             } else {
+                if let prepared { retire(prepared.engine) }
+                HelperLog.debug("MicrophoneCapture: no engine prepared for device \(current); building one")
                 engine = try makeEngine()
             }
             prepared = nil
@@ -156,12 +172,36 @@ final class MicrophoneCapture: @unchecked Sendable {
     private func engineStoppedOnQueue(_ stopped: AVAudioEngine) {
         guard stopped === engine, let session = sessions.lost() else { return }
         HelperLog.error("MicrophoneCapture: session \(session) lost: the input's configuration changed")
-        stopEngine()
-        prepareOnQueue()
+        stopEngine(retiring: true)
+        inputChangedOnQueue()
         onLost(session)
     }
 
-    private func stopEngine() {
+    /// The input device changed: the engine prepared for it is retired, and the next is prepared
+    /// once no further change has come for `microphoneDeviceSettleDelay` (a device arriving changes
+    /// several times over).
+    private func inputChangedOnQueue() {
+        if let prepared { retire(prepared.engine) }
+        prepared = nil
+        let change = inputChanges.changed()
+        queue.asyncAfter(deadline: .now() + HelperConfig.microphoneDeviceSettleDelay) { [weak self] in
+            guard let self, self.inputChanges.settled(change) else { return }
+            self.prepareOnQueue()
+        }
+    }
+
+    /// Releases an engine whose device changed, after the change has settled and off the capture
+    /// queue.
+    private func retire(_ engine: AVAudioEngine) {
+        let retired = Retired(engine: engine)
+        retireQueue.asyncAfter(deadline: .now() + HelperConfig.microphoneDeviceSettleDelay) {
+            retired.release()
+        }
+    }
+
+    /// Stops the running engine. `retiring` when its device changed: it is released later, off this
+    /// queue.
+    private func stopEngine(retiring: Bool = false) {
         tap.withLockUnchecked { $0 = nil }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
@@ -169,14 +209,19 @@ final class MicrophoneCapture: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
+        if retiring { retire(engine) }
         HelperLog.debug("MicrophoneCapture: engine stopped")
     }
 
+    /// Prepares an engine for the next start, unless one is prepared or running, or the input device
+    /// is still changing (the settle prepares then).
     private func prepareOnQueue() {
-        guard prepared == nil, engine == nil else { return }
+        guard prepared == nil, engine == nil, !inputChanges.settling else { return }
         do {
             let device = Self.defaultInputDevice()
+            let began = ContinuousClock.now
             prepared = Prepared(engine: try makeEngine(), device: device)
+            HelperLog.debug("MicrophoneCapture: prepared for device \(device) (\(Self.transportName(Self.transport(of: device)))) in \((ContinuousClock.now - began).formatted(.units(allowed: [.milliseconds])))")
         } catch {
             HelperLog.error("MicrophoneCapture: prepare failed: \(type(of: error))")
         }
@@ -185,11 +230,16 @@ final class MicrophoneCapture: @unchecked Sendable {
     private func makeEngine() throws -> AVAudioEngine {
         let engine = AVAudioEngine()
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else {
+        // The device's own format: `installTap` raises an exception Swift cannot catch when it has
+        // no sample rate or channels (no input, or one still arriving).
+        let hardware = input.inputFormat(forBus: 0)
+        guard hardware.sampleRate > 0, hardware.channelCount > 0 else {
             throw CaptureError.noInputDevice
         }
-        input.installTap(onBus: 0, bufferSize: HelperConfig.microphoneTapBufferSize, format: format) { [weak self] buffer, _ in
+        HelperLog.debug("MicrophoneCapture: input at \(Int(hardware.sampleRate)) Hz, \(hardware.channelCount) channel(s)")
+        // No format given: the tap takes the node's own. One read here and passed in can already
+        // differ from the device's by the time it is installed, which raises the same exception.
+        input.installTap(onBus: 0, bufferSize: HelperConfig.microphoneTapBufferSize, format: nil) { [weak self] buffer, _ in
             self?.deliver(buffer)
         }
         engine.prepare()
@@ -266,6 +316,63 @@ final class MicrophoneCapture: @unchecked Sendable {
         var address = defaultInputAddress
         AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
         return device
+    }
+
+    /// How `device` is connected (`kAudioDevicePropertyTransportType`), 0 when it does not say.
+    private static func transport(of device: AudioDeviceID) -> UInt32 {
+        var transport = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport)
+        return transport
+    }
+
+    /// A transport type for the log: its four characters ("blue", "usb", "bltn"), which name no
+    /// device; "unknown" when they are not printable.
+    static func transportName(_ transport: UInt32) -> String {
+        let bytes = [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: transport >> $0) }
+        guard bytes.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { return "unknown" }
+        return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespaces)
+    }
+}
+
+/// An engine on its way out, carried to the queue that releases it.
+private final class Retired: @unchecked Sendable {
+    private var engine: AVAudioEngine?
+
+    init(engine: AVAudioEngine) {
+        self.engine = engine
+    }
+
+    /// Releases the engine, on the caller's thread. Called once.
+    func release() {
+        engine = nil
+    }
+}
+
+/// Whether the input device is still changing. A device arriving changes several times in a row;
+/// each change is numbered, and only the latest one's wait settles it.
+struct InputChanges {
+    private var latest = 0
+    /// A change came and its wait has not ended.
+    private(set) var settling = false
+
+    /// A change came; returns its number, for `settled`.
+    mutating func changed() -> Int {
+        latest += 1
+        settling = true
+        return latest
+    }
+
+    /// `change`'s wait ended. Whether the device has settled: no later change came.
+    mutating func settled(_ change: Int) -> Bool {
+        guard change == latest else { return false }
+        settling = false
+        return true
     }
 }
 

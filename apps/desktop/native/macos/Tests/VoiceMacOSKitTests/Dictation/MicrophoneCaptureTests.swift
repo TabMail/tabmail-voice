@@ -153,6 +153,65 @@ struct MicrophoneSessionsTests {
     }
 }
 
+/// When an engine may be prepared again after the input device changed. Preparing one while the
+/// device was still changing ended the helper (an exception in `installTap`), so nothing is prepared
+/// until the latest change's wait has ended.
+struct InputChangesTests {
+    @Test func nothingIsSettlingUntilAChangeComes() {
+        #expect(!InputChanges().settling)
+    }
+
+    @Test func aChangeSettlesWhenItsWaitEnds() {
+        var changes = InputChanges()
+        let change = changes.changed()
+        let settlingMeanwhile = changes.settling
+        let settled = changes.settled(change)
+        #expect(settlingMeanwhile && settled && !changes.settling)
+    }
+
+    /// A device arriving changes several times over: the earlier changes' waits end while it is
+    /// still changing, and only the last one's settles it.
+    @Test func onlyTheLatestChangeOfABurstSettlesIt() {
+        var changes = InputChanges()
+        let first = changes.changed()
+        let second = changes.changed()
+        let third = changes.changed()
+        let earlier = [changes.settled(first), changes.settled(second)]
+        let settlingAfterEarlier = changes.settling
+        let last = changes.settled(third)
+        #expect(earlier == [false, false] && settlingAfterEarlier)
+        #expect(last && !changes.settling)
+    }
+
+    /// A wait that ends again, or late, after a newer change, does not settle that newer change.
+    @Test func anOldWaitDoesNotSettleANewerChange() {
+        var changes = InputChanges()
+        let first = changes.changed()
+        let firstSettled = changes.settled(first)
+        let second = changes.changed()
+        let firstAgain = changes.settled(first)
+        #expect(firstSettled && !firstAgain && changes.settling)
+        let secondSettled = changes.settled(second)
+        #expect(secondSettled && !changes.settling)
+    }
+}
+
+/// How the input device is connected, as the log names it: the transport's four characters, which
+/// name no device.
+struct MicrophoneTransportNameTests {
+    @Test func aTransportIsNamedByItsFourCharacters() {
+        #expect(MicrophoneCapture.transportName(0x626C_7565) == "blue")
+        #expect(MicrophoneCapture.transportName(0x626C_746E) == "bltn")
+        // "usb " is padded with a space.
+        #expect(MicrophoneCapture.transportName(0x7573_6220) == "usb")
+    }
+
+    @Test func aTransportThatDoesNotSayIsUnknown() {
+        #expect(MicrophoneCapture.transportName(0) == "unknown")
+        #expect(MicrophoneCapture.transportName(0xFFFF_FFFF) == "unknown")
+    }
+}
+
 /// A request whose number is no whole number in range (a fraction, 1e100) is refused with an
 /// error, not converted: a trapping conversion would crash the helper, and with it the dictation.
 @MainActor
