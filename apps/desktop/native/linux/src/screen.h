@@ -16,6 +16,11 @@ class LiveScreenTree {
 public:
     using Node = voice::Node;
     static constexpr size_t nodeBudget = 5000;
+    explicit LiveScreenTree(const Node& root) {
+        // A browser can publish its tree after our client first sees the window.
+        // Refresh cached descendants for each read, including correction learning.
+        atspi_accessible_clear_cache(root.get());
+    }
     bool same(const Node& first, const Node& second) { return voice::same(first, second); }
     bool withinBudget() const { return std::chrono::steady_clock::now() < deadline; }
     AtspiRole role(const Node& node) { check(); return voice::role(node); }
@@ -33,7 +38,8 @@ public:
         std::unique_ptr<GHashTable, decltype(&g_hash_table_unref)> owned(attributes, &g_hash_table_unref);
         if (error.value || !attributes) return PageHost{};
         // An answered attribute list establishes absence; an unavailable list does not.
-        const auto value = static_cast<const char*>(g_hash_table_lookup(attributes, "DocURL"));
+        auto value = static_cast<const char*>(g_hash_table_lookup(attributes, "DocURL"));
+        if (!value) value = static_cast<const char*>(g_hash_table_lookup(attributes, "URI"));
         return hostOfAddress(value ? std::string(value) : std::string{});
     }
     // Collection performs the role census in the provider, avoiding one D-Bus

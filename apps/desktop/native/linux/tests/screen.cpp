@@ -16,12 +16,12 @@ struct Tree {
     using Node = Element*;
     unsigned counts = 0, selections = 0, values = 0, titles = 0;
     bool budget = true;
-    Node expireAfterLabel = nullptr;
+    Node expireAfterLabel = nullptr, expireAfterPage = nullptr;
     bool withinBudget() { return budget; }
     bool same(Node first, Node second) { return first == second; }
     AtspiRole role(Node node) { if (!budget) throw voice::ScreenBudgetExceeded(); return node->role; }
     bool isPassword(Node node) { return node->role == ATSPI_ROLE_PASSWORD_TEXT; }
-    std::optional<voice::PageHost> page(Node node) { return node->page; }
+    std::optional<voice::PageHost> page(Node node) { if (node == expireAfterPage) budget = false; return node->page; }
     std::vector<Node> children(Node node, size_t limit) {
         if (node->children.size() > limit) throw std::runtime_error("fixture child budget");
         return node->children;
@@ -144,6 +144,8 @@ int main() {
     bulk.census.reset(); page.page = voice::hostOfAddress("https://allowed.example/"); page.children = {&heading};
     expect(voice::safeSubtree(bulk, &page, policy, true) && bulk.childQueries > 0,
         "unsupported or failed bulk request falls back to ordinary census");
+    bulk.census = std::vector<Element*>{&page}; bulk.expireAfterPage = &page;
+    expect(!voice::safeSubtree(bulk, &page, policy, true), "metadata response past deadline cannot authorize content");
     bulk.census = std::vector<Element*>{&page}; bulk.budget = false;
     expect(!voice::safeSubtree(bulk, &page, policy, true), "bulk query cannot bypass time budget");
     std::cout << "screen semantic layout and password/page access census passed\n";

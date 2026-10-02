@@ -99,6 +99,22 @@ if(BUILD_TESTING)
   target_link_libraries(voice-screen-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
   target_compile_options(voice-screen-tests PRIVATE -Wall -Wextra -Werror)
   add_test(NAME voice-screen COMMAND voice-screen-tests)
+  add_executable(voice-screen-collection-tests tests/screen-collection.cpp)
+  target_link_libraries(voice-screen-collection-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  target_compile_options(voice-screen-collection-tests PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-screen-collection-tests PRIVATE
+    -Wl,--wrap=atspi_accessible_get_collection_iface -Wl,--wrap=atspi_collection_get_matches
+    -Wl,--wrap=g_array_unref -Wl,--wrap=atspi_accessible_clear_cache)
+  add_test(NAME voice-screen-collection COMMAND voice-screen-collection-tests)
+  add_executable(voice-browser-accessibility-tests tests/browser-accessibility.cpp)
+  target_link_libraries(voice-browser-accessibility-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  target_compile_options(voice-browser-accessibility-tests PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-browser-accessibility-tests PRIVATE
+    -Wl,--wrap=atspi_accessible_clear_cache -Wl,--wrap=atspi_accessible_get_attributes
+    -Wl,--wrap=atspi_accessible_get_child_count -Wl,--wrap=atspi_accessible_get_child_at_index
+    -Wl,--wrap=atspi_accessible_get_role -Wl,--wrap=atspi_accessible_get_document_iface
+    -Wl,--wrap=atspi_document_get_document_attributes)
+  add_test(NAME voice-browser-accessibility COMMAND voice-browser-accessibility-tests)
   add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs" $<TARGET_FILE:voice-linux> "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixture.py")
   set_tests_properties(voice-accessibility PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)
 endif()
