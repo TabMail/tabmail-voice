@@ -3384,6 +3384,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(tool.runs).toHaveLength(1);
           });
 
+          /** The microphone is released before the answer is sent, not once the upload is done. */
+          test("the microphone is released while the answer is transcribed", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+            let release: () => void = () => {};
+            transcription.gate = (request) => (request.signal ? new Promise((resolve) => (release = resolve)) : Promise.resolve());
+
+            await sayAloud(controller, "Yes.");
+            expect(await eventually(() => transcription.requests.length === 2)).toBe(true);
+            expect(capture.events.at(-1)).toBe("stop");
+
+            transcription.gate = undefined;
+            release();
+            await done;
+            expect(tool.runs).toHaveLength(1);
+          });
+
           /** One that stops while the key is still held is sent once: the release that follows sends
            * nothing more. */
           test("an answer whose microphone stops while the key is held is sent once", async () => {

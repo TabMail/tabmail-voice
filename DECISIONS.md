@@ -1252,7 +1252,8 @@ the hotkey answers it (it still starts no new request).
   with the answer (`question_id`, minted by the app: the model's own call ids need not be unique
   across rounds), and `confirmation_answer {question_id, confirmed}` runs the waiting call only when
   it names that id. One naming no question or another answers nothing, and the waiting answer waits
-  on. Found in review twice: `{confirmed}` alone said nothing of which question it answered, so with
+  on; one whose arguments are not a JSON object, or say neither true nor false, uses the answer up
+  and runs nothing. Found in review twice: `{confirmed}` alone said nothing of which question it answered, so with
   two questions answered aloud (in one round, or one after the other) the model's "yes" to the
   event ran the message the user had declined aloud. A first fix (only a round's one spoken answer
   waits) closed the one-round case and missed the other; naming the question closes both by
