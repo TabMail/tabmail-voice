@@ -14,6 +14,10 @@ enum HelperConfig {
     /// Frames per captured buffer, at the device's rate (≈ 85 ms at 48 kHz): the Swift app's
     /// `audioTapBufferSize`.
     static let microphoneTapBufferSize: AVAudioFrameCount = 4096
+    /// How long the input device must go unchanged before an engine is prepared for it, and how long
+    /// an engine bound to the old device is kept before it is released. A Bluetooth headset arriving,
+    /// or changing to its microphone mode, changes the device several times within about a second.
+    static let microphoneDeviceSettleDelay: DispatchTimeInterval = .milliseconds(1_500)
 
     // MARK: Insertion
 
