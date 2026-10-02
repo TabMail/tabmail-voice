@@ -387,6 +387,60 @@ struct ScreenExclusionTests {
         #expect(typed.context.textBeforeCaret == "account 1234 ")
     }
 
+    /// A focused element that is no field (a list, a row, a group, a button) is read like any
+    /// element, where it is: it is no empty caret block with nothing under it read.
+    @Test func aFocusedElementThatIsNoFieldIsReadLikeAnyElement() {
+        let secret = FakeElement("AXTextField", [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "placeholder-secret"])
+        func mail(_ attributes: [String: String] = [:]) -> (window: FakeElement, list: FakeElement, row: FakeElement) {
+            let row = FakeElement("AXRow", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Sender One"]), FakeElement("AXStaticText", [kAXValueAttribute: "Quarterly plan"]),
+            ])
+            let list = FakeElement("AXList", attributes, children: [row, FakeElement("AXGroup", children: [secret])])
+            let window = FakeElement("AXWindow", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Inbox"]), list, FakeElement("AXTextField", [kAXValueAttribute: "search"]),
+            ])
+            return (window, list, row)
+        }
+        let whole = "Inbox\n| Sender One | Quarterly plan\n> search"
+        // The list in focus, and a row of it in focus: what the window shows, and no caret block.
+        let plain = mail()
+        for (focused, path) in [(plain.list, [plain.window]), (plain.row, [plain.list, plain.window])] {
+            let read = gather(plain.window, focused: focused, focusPath: path, excluding: [])
+            #expect(read.read)
+            #expect(read.context.renderedText() == whole)
+            #expect(!read.context.blocks.contains { $0.kind == .caret })
+            // A password field inside the focused element is asked for nothing.
+            #expect(!read.asked.elements.contains(ObjectIdentifier(secret)))
+        }
+        // The same with no focus at all: the focus takes nothing away.
+        #expect(gather(plain.window, focused: nil, focusPath: [], excluding: []).context.renderedText() == whole)
+
+        // Something selected in it is kept, as the caret block before it; the text around the
+        // selection is the element's own, read once, by the walk.
+        let selected = mail(Self.caret)
+        let chosen = gather(selected.window, focused: selected.list, focusPath: [selected.window], excluding: [])
+        #expect(chosen.context.selectedText == "balance")
+        #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
+        #expect(chosen.context.renderedText() == "Inbox\n» ‸balance‸\n| Sender One | Quarterly plan\n> search")
+
+        // A focused button is skipped outside web content like any button, and read inside it.
+        let button = FakeElement("AXButton", [kAXTitleAttribute: "Send"])
+        let native = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
+        let skipped = gather(native, focused: button, focusPath: [native], excluding: [])
+        #expect(skipped.context.renderedText() == "Draft")
+        let area = FakeElement("AXWebArea", ["host": "example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
+        let web = FakeElement("AXWindow", children: [area])
+        #expect(gather(web, focused: button, focusPath: [area, web], excluding: []).context.renderedText() == "Draft\nSend")
+
+        // A field in focus is still the caret block and is not walked into, whatever its role.
+        for role in HelperConfig.contextFieldRoles.sorted() {
+            let field = FakeElement(role, Self.caret, children: [FakeElement("AXStaticText", [kAXValueAttribute: "inner"])])
+            let window = FakeElement("AXWindow", children: [field])
+            let typed = gather(window, focused: field, focusPath: [window], excluding: [])
+            #expect(typed.context.renderedText() == "» account 1234 ‸balance‸ 99")
+        }
+    }
+
     /// The walk into a page that has the focus refuses an excluded page framed in it, on its own,
     /// and reads nothing inside a password field there.
     @Test func theWalkIntoAFocusedPageRefusesAnExcludedPageFramedInIt() {
@@ -606,8 +660,8 @@ struct ScreenExclusionTests {
     }
 
     /// A page that frames an excluded one and has the focus itself, or a focused group that holds
-    /// one: the walk never goes into a focused element that is no page, and into a focused page only
-    /// after its caret's text was asked for, so it is looked into before anything is read.
+    /// one: the walk goes into a focused element that is no field only after its caret's text was
+    /// asked for, so it is looked into before anything is read.
     @Test func anExcludedPageInsideTheFocusedElementIsNotRead() {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
         let outer = FakeElement("AXWebArea", Self.caret.merging(["host": "example.org"]) { $1 }, children: [FakeElement("AXGroup", children: [frame])])

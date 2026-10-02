@@ -288,13 +288,26 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
     full-sized there and walking in would read text that is not on screen.*
   - *A focused element that is neither a field nor a page (a list, a button) is read like any
     other on Windows; the Mac puts an empty caret block in its place and reads nothing under it.
-    Matching the Mac would make Windows read less: left for the owner.*
+    Matching the Mac would make Windows read less: left for the owner. (Settled the same day, in
+    the next amendment: the Mac changed.)*
   - *The Windows helper refuses a window for an excluded page it finds before checking that the
     page is inside the window, and looks through a link, row or control for one before reading
     its name. The Mac skips an element outside the window first. Windows is the stricter; matching
     the Mac would loosen it: left for the owner.*
 
   *The Windows changes were written and reviewed by reading: they were not built or run when made.)*
+- *(Amended 2026-10-01, owner: where the two helpers differ, the read is to be the larger of the
+  two, so the Mac helper now reads a focused element that is no field as Windows does. With a list,
+  a row or a group in focus (a mail list, a chat's message list), the Mac put an empty caret block
+  in its place and read nothing under it. The walk now reads it like any element (`walk`): its
+  rows, text and fields at their place, its password fields and framed excluded pages refused as
+  anywhere, a button skipped outside web content as any button is. The rule for a page in focus is
+  this rule: the text around the caret is dropped, since it is the element's own, and what is
+  selected is kept as the caret block before it. The field the caret is in (`isFieldInFocus`) is a
+  text field, text area or combo box (`contextFieldRoles`), or an element whose value can be set
+  (an editor's document); it stays the caret block and is not walked into. A text area that can't
+  be edited (a terminal, a read-only view) is still such a field and keeps the text around its
+  caret, which Windows reads only from a field that can be edited or a terminal's pane.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
