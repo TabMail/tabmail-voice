@@ -798,18 +798,30 @@ describe("the chat window", () => {
     const blue = rgb(brandColor(0))[0] ?? "";
     const voiced = rgb(brandColor(config.waveformVoicedColor))[0] ?? "";
     const shifted = rgb(brandColor(config.thinkingRetryColorShift))[0] ?? "";
+    const arcEnd = rgb(brandColor(config.thinkingArcEndColor))[0] ?? "";
+    const shiftedArcEnd = rgb(brandColor(config.thinkingArcEndColor + config.thinkingRetryColorShift))[0] ?? "";
+    const arcColors = () => rgb(document.querySelector<HTMLElement>(".pill .rim.spinning")?.getAttribute("style") ?? "");
+    // The bars ease into the new color rather than jump.
+    const easing = () => [...document.querySelectorAll<HTMLElement>(".pill .bar")].map((bar) => bar.style.transition);
 
     await page.show({ ...listening, hasVoice: false });
     expect(barColors()).toEqual(Array(config.overlayMeterBarCount).fill(blue));
     await page.show({ ...listening, hasVoice: true });
     expect(barColors()).toEqual(Array(config.overlayMeterBarCount).fill(voiced));
+    expect(easing()).toHaveLength(config.overlayMeterBarCount);
+    expect(easing().every((transition) => transition.includes(`background-color ${config.waveformColorTransitionSeconds}s`))).toBe(true);
 
     const transcribing: OverlayState = { ...listening, phase: { kind: "transcribing" } };
     await page.show({ ...transcribing, isRetrying: false });
     expect(rimColors()).toHaveLength(2);
     expect(rimColors().every((colors) => colors.includes(blue) && !colors.includes(shifted))).toBe(true);
+    expect(arcColors()).toContain(arcEnd);
+    expect(arcColors()).not.toContain(shiftedArcEnd);
     await page.show({ ...transcribing, isRetrying: true });
     expect(rimColors().every((colors) => colors.includes(shifted) && !colors.includes(blue))).toBe(true);
+    // The arc's purple end moves along with it.
+    expect(arcColors()).toContain(shiftedArcEnd);
+    expect(arcColors()).not.toContain(arcEnd);
   });
 
   /** A new turn scrolls the conversation to it. */

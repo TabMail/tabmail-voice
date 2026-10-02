@@ -484,8 +484,8 @@ export const thinkingTrackOpacity = 0.2;
 /** The arc runs from blue to this point on the blue → purple gradient. */
 export const thinkingArcEndColor = 0.6;
 /** While a transcription is tried again after a server error, the arc and its track move this far
- * along the gradient toward purple, a hint of the retry before (and while) its note shows (owner,
- * 2026-10-02). */
+ * along the gradient toward purple, a hint of the retry before its note takes the circle's place
+ * (owner, 2026-10-02). */
 export const thinkingRetryColorShift = 0.3;
 /** Pill fill: a soft off-white (pure white glared). */
 export const pillFillWhite = 0.96;
