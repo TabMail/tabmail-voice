@@ -37,7 +37,7 @@ apps/desktop/
 │   │   ├── VoiceHotkeyKit/          Event tap + push-to-talk gesture, and `HotkeyService` (its requests)
 │   │   ├── VoiceMacOS/              `voice-macos`'s `main.swift`
 │   │   ├── VoiceMicrophone/         `voice-microphone`'s `main.swift`
-│   │   ├── VoiceMicrophoneKit/      The microphone, in a process of its own that ends itself when the input device changes and is started afresh: `MicrophoneService` (its requests), `MicrophoneCapture` (the engine, prepared ahead), `HelperConfig`
+│   │   ├── VoiceMicrophoneKit/      The microphone, in a process of its own that runs one engine, ending itself after each dictation or an input change to be started afresh: `MicrophoneService` (its requests), `MicrophoneCapture` (the engine, prepared ahead), `HelperConfig`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
 │   │       ├── Dictation/               Paste and clipboard restore, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
 │   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor`, its list generated from `native/shared/privacy/redactors.json`); the apps and websites a read excludes (`ScreenExclusions`)
@@ -101,7 +101,7 @@ What a new file, target or name must match (the folders' rules are ADR-DESK-044'
 | Helper executables | kebab-case, `voice-<what>` (`.exe` on Windows); the name is also the helper's name in the log | `voice-hotkey`, `voice-macos`, `voice-microphone`, `voice-windows.exe` |
 | Swift targets | PascalCase: `Voice<What>` (the executable, only its `main.swift`) over `Voice<What>Kit` (the library), tested by `Voice<What>KitTests` | `VoiceMicrophone`, `VoiceMicrophoneKit`, `VoiceMicrophoneKitTests` |
 | Swift files | PascalCase, named for the type declared; a test file is that type's name plus `Tests`, in the same folder under `Tests/`; a kit's requests are its `<What>Service` (an enum with `register(on:)`), its tunable numbers its `HelperConfig` | `MicrophoneCapture.swift`, `MicrophoneCaptureTests.swift`, `MicrophoneService`, `HelperConfig.swift` |
-| Swift names | Types PascalCase; functions, properties, constants and enum cases camelCase; a dispatch queue's label is `ai.tabmail.voice.helper.<camelCase>` | `inputChangedExitCode`, `ai.tabmail.voice.helper.microphoneChunks` |
+| Swift names | Types PascalCase; functions, properties, constants and enum cases camelCase; a dispatch queue's label is `ai.tabmail.voice.helper.<camelCase>` | `restartExitCode`, `ai.tabmail.voice.helper.microphoneChunks` |
 | Windows helper sources | snake_case `.h`/`.cpp`; types PascalCase, functions and variables camelCase, in namespace `voice` | `helper_config.h`, `screen_context.h`, `voice::Microphone` |
 | The helpers' wire | Methods, events and their fields camelCase, a concern's methods sharing its prefix; the same names on every platform that has them | `microphoneStart`, `microphoneChunk`, `sampleRate` |
 | Decisions | `ADR-DESK-NNN`, the next number; a change to one is a dated **Amendment** under it, never a rewrite | `ADR-DESK-032`, "Amendment 2026-10-01" |

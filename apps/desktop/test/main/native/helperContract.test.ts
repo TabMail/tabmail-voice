@@ -334,7 +334,7 @@ describe("helper wire contract", () => {
     for (const { method, params } of requests) {
       expect(new Set(Object.keys(params)), method).toEqual(handlers.get(method));
     }
-    const exitCode = /inputChangedExitCode: Int32 = (\d+)/.exec(readFileSync(join(root, microphoneService), "utf8"))?.[1];
+    const exitCode = /restartExitCode: Int32 = (\d+)/.exec(readFileSync(join(root, microphoneService), "utf8"))?.[1];
     expect(Number(exitCode)).toBe(config.microphoneHelperRestartExitCode);
   });
 
@@ -387,10 +387,10 @@ describe("helper wire contract", () => {
     ]);
   });
 
-  /** A prepare cut short by its helper exiting is no error: `voice-microphone` ends itself whenever
-   * the input changes, and the helper started in its place is prepared again. Any other failure of
-   * a prepare is one. */
-  test("a prepare whose helper exited is logged at debug, any other failure as an error", async () => {
+  /** A prepare or stop cut short by its helper exiting is no error: `voice-microphone` ends itself
+   * after each dictation's stop and whenever the input changes, and the helper started in its place
+   * is prepared again. Any other failure of either is one. */
+  test("a prepare or stop whose helper exited is logged at debug, any other failure as an error", async () => {
     const errors: string[] = [];
     const file: string[] = [];
     configureLog({ isDebugBuild: true, sinks: { file: (level, text) => file.push(`${level} ${text}`), error: (text) => errors.push(text) } });
@@ -407,6 +407,18 @@ describe("helper wire contract", () => {
       microphone({ type: "prepare" });
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(errors).toEqual(["voice-microphone: microphone not prepared: HelperError.timeout(microphonePrepare)"]);
+
+      failure = new HelperError("exited", "microphoneStop");
+      microphone({ type: "stop", session: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(file.at(-1)).toBe("debug voice-microphone: microphone not stopped: HelperError.exited(microphoneStop)");
+      failure = new HelperError("timeout", "microphoneStop");
+      microphone({ type: "stop", session: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(errors).toEqual([
+        "voice-microphone: microphone not prepared: HelperError.timeout(microphonePrepare)",
+        "voice-microphone: microphone not stopped: HelperError.timeout(microphoneStop)",
+      ]);
     } finally {
       configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
     }

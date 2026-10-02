@@ -21,13 +21,7 @@ export class NativeMicrophone {
     return (command) => {
       switch (command.type) {
         case "prepare":
-          this.helper.request("microphonePrepare").catch((error: unknown) => {
-            // A helper that exited is started again and prepared then (its `onStart`): the macOS
-            // one ends itself whenever the input changes, a prepare under way or not.
-            const message = `${this.name}: microphone not prepared: ${errorName(error)}`;
-            if (error instanceof HelperError && error.kind === "exited") log.debug(message);
-            else log.error(message);
-          });
+          this.helper.request("microphonePrepare").catch((error: unknown) => this.failed("prepared", error));
           return;
         case "start": {
           const { session } = command;
@@ -38,9 +32,18 @@ export class NativeMicrophone {
           return;
         }
         case "stop":
-          this.helper.request("microphoneStop", { session: command.session }).catch((error: unknown) => log.error(`${this.name}: microphone not stopped: ${errorName(error)}`));
+          this.helper.request("microphoneStop", { session: command.session }).catch((error: unknown) => this.failed("stopped", error));
       }
     };
+  }
+
+  /** A prepare or stop that got no answer. One whose helper exited is no error: the macOS helper
+   * ends itself after each dictation's stop and whenever the input changes, and the helper started
+   * in its place is prepared again (its `onStart`), with the microphone off. */
+  private failed(what: "prepared" | "stopped", error: unknown): void {
+    const message = `${this.name}: microphone not ${what}: ${errorName(error)}`;
+    if (error instanceof HelperError && error.kind === "exited") log.debug(message);
+    else log.error(message);
   }
 
 }

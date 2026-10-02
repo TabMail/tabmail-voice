@@ -128,8 +128,8 @@ function launch(): void {
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : mac;
-  // On macOS the microphone has a helper to itself, which starts afresh when the input changes
-  // (ADR-DESK-032); on Windows it is in `voice-windows`.
+  // On macOS the microphone has a helper to itself, started afresh after each dictation and when
+  // the input changes (ADR-DESK-032); on Windows it is in `voice-windows`.
   const microphoneHelper = process.platform === "darwin"
     ? new HelperClient({ name: "voice-microphone", executable: join(helpers, "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode })
     : null;

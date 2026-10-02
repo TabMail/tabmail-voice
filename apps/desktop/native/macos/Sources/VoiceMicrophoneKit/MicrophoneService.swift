@@ -6,10 +6,12 @@ import Foundation
 import VoiceHelperSupport
 
 /// The requests `voice-microphone` answers: the microphone, and nothing else, in a process of its
-/// own. The process ends itself when the input device changes (`inputChangedExitCode`) and the app
-/// starts it afresh at once: an engine that outlives a change of its device held up every start
-/// for up to minutes, and only a new process is sure to have none. A dictation running at that
-/// moment ends as any exit of its helper ends it: what was said is sent.
+/// own, which runs one engine: the process ends itself (`restartExitCode`) once its engine has run
+/// or failed to start, or the input device changes, and the app starts it afresh at once, which
+/// prepares the next engine (`MicrophoneCapture` says why). A dictation running when the input
+/// changes ends as any exit of its helper ends it: what was said is sent. The reply to the stop or
+/// the failed start that ends the process may not get out first; the app takes that exit as their
+/// answer.
 ///
 /// - `microphonePrepare` → `{}`: the microphone-off setup, ahead of the first dictation.
 /// - `microphoneStart {session, sampleRate}` → `{}` once the microphone runs; then events
@@ -18,9 +20,9 @@ import VoiceHelperSupport
 ///   off.
 public enum MicrophoneService {
     static let microphoneChunkEvent = "microphoneChunk"
-    /// The process's exit code when it ends itself for a changed input device: the app's
+    /// The process's exit code when it ends itself to be started afresh: the app's
     /// `microphoneHelperRestartExitCode`.
-    static let inputChangedExitCode: Int32 = 75
+    static let restartExitCode: Int32 = 75
 
     /// A chunk event's fields: its session, and its samples as base64 of little-endian 32-bit floats.
     static func microphoneChunk(session: Int, samples: [Float]) -> [String: JSON] {
@@ -31,7 +33,7 @@ public enum MicrophoneService {
     public static func register(on channel: HelperChannel) -> AnyObject {
         // Without the process's exit handlers: they would release what the audio system holds, which
         // is what waits when a device has changed.
-        register(on: channel, end: { _exit(inputChangedExitCode) })
+        register(on: channel, end: { _exit(restartExitCode) })
     }
 
     /// `end` ends the process, or is a test's stand-in.
@@ -45,9 +47,9 @@ public enum MicrophoneService {
                 }
             },
             // After the chunks already queued, so the app has all that was heard.
-            onInputChanged: {
+            onEnd: {
                 chunkQueue.async {
-                    HelperLog.debug("MicrophoneService: the input device changed; ending, to be started afresh")
+                    HelperLog.debug("MicrophoneService: ending, to be started afresh")
                     end()
                 }
             }

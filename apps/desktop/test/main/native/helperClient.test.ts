@@ -116,7 +116,7 @@ describe("HelperClient", () => {
   });
 
   /** A helper that exits with its `restartExitCode` asks to be started afresh (the microphone's,
-   * when the input changes): it is started again at once, not after `restartDelay`, so a request
+   * after each dictation and when the input changes): it is started again at once, not after `restartDelay`, so a request
    * made on the exit goes to the new one without an operation's signal; `onExit` runs as for any
    * exit, and it is no error. Any other exit code waits out `restartDelay`. */
   test("a helper that exits with its restart code is started again at once, without an error", async () => {

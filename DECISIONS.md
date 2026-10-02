@@ -1791,28 +1791,37 @@ the microphone", nothing recorded) and then ran all at once.
   microphone mode); a release `microphoneDeviceSettleDelay` later that still falls in a longer
   change (off the capture queue, so it holds up no start); and what the audio system itself takes
   to start a Bluetooth headset's microphone, which is the system's.
+- Windows needs none of this (`native/windows/src/microphone.h`): each start opens the default
+  endpoint afresh on its own thread and nothing is prepared or kept between dictations, so there is
+  no engine to go stale and no listener; an endpoint that goes away mid-capture fails the capture
+  call, which is reported as `microphoneLost`, the same ending.
 
 **Amendment 2026-10-01 (owner: "it should be a separate helper"): the microphone has a helper to
-itself, `voice-microphone`, which ends itself when the input changes.** The amendment above did
-not hold when a headset was switched off: with the default input gone, the engine prepared for it
-rebound itself inside AVFAudio, and building the next engine waited on the audio system (one took
-64 s), so every start in that time failed. Switching the input with the headset still connected
-worked. Waiting for the device to settle cannot fix an engine that is already alive in the process
-when its device goes; the owner chose a process of its own over more handling in `voice-macos`.
+itself, `voice-microphone`, which runs one engine and is then started afresh.** The amendment above
+did not hold when a headset was switched off: with the default input gone, the engine prepared for
+it rebound itself inside AVFAudio, and building the next engine waited on the audio system (one
+took 64 s), so every start in that time failed. Switching the input with the headset still
+connected worked. Waiting for the device to settle cannot fix an engine that is already alive in
+the process when its device goes; the owner chose a process of its own over more handling in
+`voice-macos`. Tested with AirPods, that fixed switching them off, but every other dictation then
+failed: the engine prepared after a stop, in the process whose engine had just run, lost its
+configuration about 0.2 s after it started (the headset changes mode as a dictation ends), while
+the first engine of a fresh process always worked. So a process runs one engine.
 - `voice-microphone` (`VoiceMicrophone` over `VoiceMicrophoneKit`: `MicrophoneService`,
   `MicrophoneCapture`, its `HelperConfig`) answers `microphonePrepare`, `microphoneStart` and
   `microphoneStop` and emits `microphoneChunk`, as `voice-macos` did; `voice-macos` no longer has a
   microphone. The start path is the same code: an engine prepared ahead, started at key-down.
-- When the default input changes, or a running engine posts `AVAudioEngineConfigurationChange`,
-  the helper ends itself (`_exit`, code `inputChangedExitCode`, after the chunks already queued; no
-  exit handlers, which would release what the audio system holds). It prepares nothing and releases
-  nothing for the change. The app starts it again at once (`HelperOptions.restartExitCode`,
+- The helper ends itself (`_exit`, code `restartExitCode`, after the chunks already queued; no exit
+  handlers, which would release what the audio system holds) once its engine has run (the
+  session's stop) or failed to start, when the default input changes, and when the running engine
+  posts `AVAudioEngineConfigurationChange`. It prepares nothing more and releases nothing: the
+  process's end releases its engine. The app starts it again at once (`HelperOptions.restartExitCode`,
   `microphoneHelperRestartExitCode`; logged at debug, not as an error) and its `onStart` prepares
-  the new process's engine (a prepare cut short by such an exit is logged at debug: the next
-  process is prepared in its place). Any other exit restarts after `helperRestartDelay`, as every
-  helper's.
-  This replaces `InputChanges`, the settle wait and the helper's `microphoneLost` event on macOS
-  (`voice-windows` still sends it).
+  the new process's engine. A prepare or a stop cut short by such an exit, which can come before
+  their reply, is logged at debug. Any other exit restarts after `helperRestartDelay`, as every
+  helper's. This replaces `InputChanges`, the settle wait, the delayed release
+  (`engineReleaseDelay`) and the helper's `microphoneLost` event on macOS (`voice-windows` still
+  sends it).
 - A change while a dictation is listening ends it as before, now through the helper's exit
   (`onExit` → `SessionAudioCapture.lost()`): what was said is sent, and it is not retried. The
   paste and the caret are `voice-macos`'s, which keeps running, so the paste no longer waits out a
@@ -1822,23 +1831,19 @@ when its device goes; the owner chose a process of its own over more handling in
   after a failed one while `microphoneStartRetryWindow` from key-down has not passed, then fails
   the dictation with the last reason; the one `microphoneStartTimeout` covers every try. A new
   session each time, as the helper has ended the failed one. This covers a key-down while the
-  helper starts afresh and an input that refuses its first start mid-change. It applies wherever
-  the microphone runs (the audio window too); a start that succeeds is not delayed.
-- Still kept from the amendment above: engines are released off the capture queue
-  (`engineReleaseDelay`), the tap takes the node's own format, and the log names the transport.
+  helper starts afresh (one right after the previous dictation's stop) and an input that refuses
+  its first start mid-change. It applies wherever the microphone runs (the audio window too); a
+  start that succeeds is not delayed.
+- Still kept from the amendment above: the tap takes the node's own format, and the log names the
+  transport.
 - Windows keeps its microphone in `voice-windows` for now, opened afresh per dictation with
   nothing prepared ahead; a helper of its own and a prepared endpoint are tracked in issue #98.
-- The owner's manual test (2026-10-01): a headset connected and then switched off each restarted
-  the helper within 10 ms, the next engine was prepared within 2 s (twice over when the input
-  changed again as the new process started), and dictation kept working.
-- Not closed: what the audio system itself takes to start a Bluetooth headset's microphone; and an
-  engine prepared right after a stop that now and then takes seconds with no device change seen
-  (1.4–4.2 s, four times in 54 prepares, in `voice-macos` before this change too), which holds up
-  that stop's reply and a start made meanwhile.
-- Windows needs none of this (`native/windows/src/microphone.h`): each start opens the default
-  endpoint afresh on its own thread and nothing is prepared or kept between dictations, so there is
-  no engine to go stale and no listener; an endpoint that goes away mid-capture fails the capture
-  call, which is reported as `microphoneLost`, the same ending.
+- The owner's manual test (2026-10-01), before one engine per process: a headset connected and
+  then switched off each restarted the helper within 10 ms, the next engine was prepared within
+  2 s (twice over when the input changed again as the new process started), and dictation kept
+  working.
+- Not closed: what the audio system itself takes to start a Bluetooth headset's microphone; and a
+  prepare that now and then takes seconds with no device change seen (issue #101).
 
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 

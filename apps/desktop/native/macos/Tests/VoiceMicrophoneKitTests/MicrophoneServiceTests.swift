@@ -29,11 +29,11 @@ struct MicrophoneServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
-    /// The code the process ends itself with for a changed input device is the one the app starts it
-    /// afresh for without calling it a failure (`microphoneHelperRestartExitCode` in the app's
-    /// config, which `helperContract.test.ts` holds to this).
-    @Test func theExitCodeForAChangedInputIsTheAppsRestartCode() {
-        #expect(MicrophoneService.inputChangedExitCode == 75)
+    /// The code the process ends itself with to be started afresh is the one the app restarts it at
+    /// once for without calling it a failure (`microphoneHelperRestartExitCode` in the app's config,
+    /// which `helperContract.test.ts` holds to this).
+    @Test func theRestartExitCodeIsTheAppsRestartCode() {
+        #expect(MicrophoneService.restartExitCode == 75)
     }
 }
 

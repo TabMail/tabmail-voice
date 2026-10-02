@@ -339,8 +339,8 @@ export const contactStoreRequestTimeout = eventStoreRequestTimeout;
 export const fileStoreRequestTimeout = 30_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
-/** `voice-microphone` exits with this when the input changes (`MicrophoneService.inputChangedExitCode`
- * in the helper): it asks to be started afresh, at once. */
+/** `voice-microphone` exits with this after each dictation and when the input changes
+ * (`MicrophoneService.restartExitCode` in the helper): it asks to be started afresh, at once. */
 export const microphoneHelperRestartExitCode = 75;
 
 // MARK: Updates

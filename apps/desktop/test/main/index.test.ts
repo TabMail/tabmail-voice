@@ -472,7 +472,7 @@ describe("main process wiring", () => {
     expect(app.prewarms).toBe(1);
   });
 
-  /** A `voice-microphone` that (re)starts, as it does whenever the input changes, gets the
+  /** A `voice-microphone` that (re)starts, as it does after each dictation, gets the
    * microphone prepared again, ahead of the next dictation; a `voice-macos` that does gets its
    * activator started, and leaves the microphone, which isn't its own, alone. The app starts
    * `voice-microphone` afresh at once when it exits with the code it ends itself with. */

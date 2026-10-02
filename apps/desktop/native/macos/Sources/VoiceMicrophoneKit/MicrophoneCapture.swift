@@ -14,24 +14,21 @@ import VoiceHelperSupport
 /// converted to mono float samples at the app's rate and handed to `onSamples`.
 ///
 /// Sessions are numbered by the app; which one runs is `MicrophoneSessions`' decision. The
-/// microphone runs only between a start and its stop: the engine is discarded after every
-/// dictation, and a prepared engine never opens the device.
+/// microphone runs only between a start and its stop, and a prepared engine never opens the device.
 ///
-/// An engine does not outlive a change of its device in this process. When the default input
-/// changes (System Settings › Sound, AirPods connecting or switched off), or the running engine
-/// stops by itself (AVAudioEngine stops when its input's format changes), `onInputChanged` is told
-/// and the process is expected to end: the app starts the helper afresh, and a dictation that was
-/// running ends as the helper's exit ends it. Carrying on here did not work: an engine bound to a
-/// device that went away rebinds itself inside AVFAudio, and building, starting or releasing any
-/// engine meanwhile waited on the audio system for up to minutes (one build took 64 s after AirPods
-/// were switched off), raised an Objective-C exception in `installTap`, or crashed in AVFAudio's
-/// own listener. So nothing here reacts to a change but by saying so, from a queue no engine work
-/// runs on.
-///
-/// No engine is released on the capture queue either: a headset changes as a dictation ends,
-/// without the default input changing, and a release that falls in such a change waits on the
-/// audio system. Each engine is stopped there (the microphone is off) and released later on a
-/// queue of its own (`retire`).
+/// One engine per process: after its engine has run (a session stopped) or failed to start, when
+/// the default input changes (System Settings › Sound, AirPods connecting or switched off), or when
+/// the running engine stops by itself (AVAudioEngine stops when its input's format changes),
+/// `onEnd` is told and the process is expected to end; the app starts the helper afresh, which
+/// prepares the next engine, and a dictation that was running ends as the helper's exit ends it.
+/// A second engine in the same process did not work: with a Bluetooth headset, which changes mode
+/// as a dictation ends, the engine prepared after a stop lost its configuration as it started,
+/// every other dictation; an engine bound to a device that went away rebinds itself inside
+/// AVFAudio, and building, starting or releasing any engine meanwhile waited on the audio system
+/// for up to minutes (one build took 64 s after AirPods were switched off), raised an Objective-C
+/// exception in `installTap`, or crashed in AVFAudio's own listener. So nothing here reacts to a
+/// change but by saying so, from a queue no engine work runs on, and no engine is released here:
+/// the process ending releases it.
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
@@ -52,9 +49,9 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Receives each converted chunk, with its session, on the audio render thread.
     private let onSamples: @Sendable (Int, [Float]) -> Void
-    /// Told that the input device changed, or the running engine stopped by itself: the process
-    /// should end. Not on the capture queue, which an engine may be holding.
-    private let onInputChanged: @Sendable () -> Void
+    /// Told that the process should end (its engine ran or failed, or the input changed). Not on
+    /// the capture queue when the input changed, as an engine may be holding it.
+    private let onEnd: @Sendable () -> Void
     /// Where the default input's changes arrive.
     private let changeQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneChanges", qos: .userInitiated)
     private let queue = DispatchQueue(label: "ai.tabmail.voice.helper.microphone", qos: .userInitiated)
@@ -64,20 +61,20 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var prepared: Prepared?
     /// The running session's engine; `sessions.running` names its session.
     private var engine: AVAudioEngine?
+    /// Engines that ran, kept until the process ends: releasing one while a headset changes waits on
+    /// the audio system, and would hold up the process's end.
+    private var stopped: [AVAudioEngine] = []
     private var sessions = MicrophoneSessions()
-    /// Where engines are released: releasing one waits on the audio system, which must not hold up
-    /// a start.
-    private let retireQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneRetire", qos: .utility)
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
     /// Watches the running engine for a configuration change (it stopped by itself).
     private var configurationObserver: NSObjectProtocol?
 
-    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onInputChanged: @escaping @Sendable () -> Void) {
+    init(onSamples: @escaping @Sendable (Int, [Float]) -> Void, onEnd: @escaping @Sendable () -> Void) {
         self.onSamples = onSamples
-        self.onInputChanged = onInputChanged
+        self.onEnd = onEnd
         let listener: AudioObjectPropertyListenerBlock = { _, _ in
             HelperLog.debug("MicrophoneCapture: the default input changed")
-            onInputChanged()
+            onEnd()
         }
         var address = Self.defaultInputAddress
         AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, changeQueue, listener)
@@ -117,12 +114,12 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    /// Stops `session` (and any older one) if it runs, and prepares a fresh engine for next time.
+    /// Stops `session` (and any older one) if it runs; the process then ends, and the next engine
+    /// is prepared in the one started in its place.
     func stop(session: Int) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             queue.async {
-                if self.sessions.stop(session) { self.stopEngine() }
-                self.prepareOnQueue()
+                if self.sessions.stop(session), self.stopEngine() { self.onEnd() }
                 continuation.resume()
             }
         }
@@ -140,7 +137,6 @@ final class MicrophoneCapture: @unchecked Sendable {
             if let prepared, prepared.device == current {
                 engine = prepared.engine
             } else {
-                if let prepared { retire(prepared.engine) }
                 HelperLog.debug("MicrophoneCapture: no engine prepared for device \(current); building one")
                 engine = try makeEngine()
             }
@@ -149,10 +145,10 @@ final class MicrophoneCapture: @unchecked Sendable {
             // Watched before it starts, so a change as it starts is not missed. Only the running
             // engine is watched (the observer is removed as it stops), and the notification names it
             // without being handed it: nothing here may hold the engine.
-            let onInputChanged = self.onInputChanged
+            let onEnd = self.onEnd
             configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { _ in
                 HelperLog.error("MicrophoneCapture: session \(session) lost: the input's configuration changed")
-                onInputChanged()
+                onEnd()
             }
             do {
                 try engine.start()
@@ -160,41 +156,37 @@ final class MicrophoneCapture: @unchecked Sendable {
                 tap.withLockUnchecked { $0 = nil }
                 if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
                 configurationObserver = nil
-                retire(engine)
                 throw error
             }
             self.engine = engine
         } catch {
             sessions.failed(session)
+            // A start the app tries again goes to a fresh process.
+            onEnd()
             throw error
         }
         HelperLog.debug("MicrophoneCapture: session \(session) started")
     }
 
-    /// Releases an engine `engineReleaseDelay` from now, off the capture queue.
-    private func retire(_ engine: AVAudioEngine) {
-        let retired = Retired(engine: engine)
-        retireQueue.asyncAfter(deadline: .now() + HelperConfig.engineReleaseDelay) {
-            retired.release()
-        }
-    }
-
-    /// Stops the running engine, so the microphone is off; the engine itself is released later.
-    private func stopEngine() {
+    /// Stops the running engine, if any, so the microphone is off; whether one ran. The engine is
+    /// kept: the process ends with it.
+    @discardableResult
+    private func stopEngine() -> Bool {
         tap.withLockUnchecked { $0 = nil }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
-        guard let engine else { return }
+        guard let engine else { return false }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        stopped.append(engine)
         self.engine = nil
-        retire(engine)
         HelperLog.debug("MicrophoneCapture: engine stopped")
+        return true
     }
 
-    /// Prepares an engine for the next start, unless one is prepared or running.
+    /// Prepares the process's engine, unless one is prepared or has run.
     private func prepareOnQueue() {
-        guard prepared == nil, engine == nil else { return }
+        guard prepared == nil, engine == nil, stopped.isEmpty else { return }
         do {
             let device = Self.defaultInputDevice()
             let began = ContinuousClock.now
@@ -211,10 +203,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         // The device's own format: `installTap` raises an exception Swift cannot catch when it has
         // no sample rate or channels (no input).
         let hardware = input.inputFormat(forBus: 0)
-        guard hardware.sampleRate > 0, hardware.channelCount > 0 else {
-            retire(engine)
-            throw CaptureError.noInputDevice
-        }
+        guard hardware.sampleRate > 0, hardware.channelCount > 0 else { throw CaptureError.noInputDevice }
         HelperLog.debug("MicrophoneCapture: input at \(Int(hardware.sampleRate)) Hz, \(hardware.channelCount) channel(s)")
         // No format given: the tap takes the node's own. One read here and passed in can already
         // differ from the device's by the time it is installed, which raises the same exception.
@@ -316,20 +305,6 @@ final class MicrophoneCapture: @unchecked Sendable {
         let bytes = [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: transport >> $0) }
         guard bytes.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { return "unknown" }
         return String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespaces)
-    }
-}
-
-/// An engine on its way out, carried to the queue that releases it.
-private final class Retired: @unchecked Sendable {
-    private var engine: AVAudioEngine?
-
-    init(engine: AVAudioEngine) {
-        self.engine = engine
-    }
-
-    /// Releases the engine, on the caller's thread. Called once.
-    func release() {
-        engine = nil
     }
 }
 
