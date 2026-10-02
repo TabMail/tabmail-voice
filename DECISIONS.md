@@ -2187,7 +2187,8 @@ learned, so learning stopped for good, silently, once 100 words were in.
   often only stays longer. An entry stored before `lastUsed` (or with an invalid one) reads as never
   used.
 - A new word at `dictionaryMaxEntries`, learned or typed, takes the place of the learned word of the
-  smallest `lastUsed` (the earliest added of a tie), never one learned in the same correction. A typed
+  smallest `lastUsed` (the earliest added of a tie), never one learned in the same correction nor
+  one the same correction respells again (marked used before any word is added). A typed
   word is never dropped: only a dictionary of typed words alone is full, and refuses a typed word with
   the same note as before.
 - Settings lists the typed words first, then the learned ones, each in the order added; the learning

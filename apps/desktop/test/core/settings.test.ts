@@ -662,6 +662,29 @@ describe("dictionary", () => {
       expect(words(app).at(-1)).toBe("Xyvora");
     });
 
+    /** A correction that respells a word already there and a new one: the word already there is used
+     * now, so the new one never drops it, whichever comes first in the correction. */
+    test.each([
+      ["after", ["Xyvora", "learned98"]],
+      ["before", ["learned98", "Xyvora"]],
+    ])("keeps a word learned again in the same correction, listed %s the new one", (_order, learned) => {
+      // learned98 is the learned word used least recently, learned99 the next: learned98, used again,
+      // stays, and Xyvora takes learned99's place.
+      const app = full(config.dictionaryMaxEntries - 2);
+      expect(app.learnWords(learned)).toEqual(["Xyvora"]);
+      expect(words(app)).toContain("learned98");
+      expect(words(app)).not.toContain("learned99");
+      expect(app.dictionary.find((entry) => entry.word === "learned98")?.lastUsed).toBe(config.dictionaryMaxEntries + 1);
+    });
+
+    /** Typed words only: a typed word respelled in a correction counts as used even when the new
+     * word with it finds no room. */
+    test("marks a typed word used though a new word in the same correction finds no room", () => {
+      const app = full(config.dictionaryMaxEntries);
+      expect(app.learnWords(["Xyvora", "typed0"])).toEqual([]);
+      expect(app.dictionary[0]).toEqual({ word: "typed0", learned: false, lastUsed: config.dictionaryMaxEntries + 1 });
+    });
+
     /** Words learned together don't push each other out: with one learned word to drop, the second
      * is not learned. */
     test("doesn't drop a word learned in the same correction", () => {
@@ -694,7 +717,7 @@ describe("dictionary", () => {
     expect(changes).toBe(0);
     app.useWords(["ask about tabmail's roadmap", "Ask about TabMail’s roadmap."]);
     expect(changes).toBe(1);
-    app.useWords(["탭메일은 좋아요", "XYVORA"]);
+    app.useWords(["탭메일은 좋아요", "the Xyvoracorp deal"]);
     expect(app.dictionary).toEqual([
       { word: "Xyvora", learned: false, lastUsed: 5 },
       { word: "TabMail", learned: true, lastUsed: 4 },

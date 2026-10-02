@@ -204,27 +204,30 @@ export class AppSettings extends Observable {
 
   /** Adds words learned from the user's corrections, those not already there; a full dictionary drops
    * the learned word used least recently for each, never one learned in the same call. One already
-   * there counts as used. Returns those added. */
+   * there counts as used, marked before any is added so that no new word drops it, wherever it comes
+   * in `words`. Returns those added. */
   learnWords(words: readonly string[]): string[] {
     const entries = this.dictionary;
     const use = nextUse(entries);
-    const added: string[] = [];
+    const fresh: string[] = [];
     let changed = false;
     for (const raw of words) {
       const word = dictionaryWord(raw);
       if (word === null) continue;
       const existing = entries.find((entry) => isSameWord(entry.word, word));
-      if (existing) {
-        changed ||= existing.lastUsed !== use;
+      if (!existing) fresh.push(word);
+      else if (existing.lastUsed !== use) {
         existing.lastUsed = use;
-        continue;
+        changed = true;
       }
-      if (!this.makeRoom(entries, use)) continue;
+    }
+    const added: string[] = [];
+    for (const word of fresh) {
+      if (entries.some((entry) => isSameWord(entry.word, word)) || !this.makeRoom(entries, use)) continue;
       entries.push({ word, learned: true, lastUsed: use });
       added.push(word);
-      changed = true;
     }
-    if (changed) this.writeDictionary(entries);
+    if (changed || added.length > 0) this.writeDictionary(entries);
     return added;
   }
 
