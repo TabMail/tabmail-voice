@@ -761,8 +761,11 @@ page of an excluded website framed inside one was not seen: the window was read 
 agent mode was not told anything was hidden. Owner: that case "should still have that note as
 well". The reader now looks inside a field for an excluded page (`holdsExcludedPage`) before reading
 it, and refuses the window as for any excluded page, so the screen is answered as hidden for privacy
-(ADR-DESK-047's note). No app is known to frame a page in a field; the cost is one more look at a
-field's children, which most fields do not have.
+(ADR-DESK-047's note). No app is known to frame a page in a field. The cost: most fields have no
+children, but a rich-text editor on a web page that is not in focus has its whole subtree looked
+through (roles and page addresses, never text) before its value is read. That look is bounded by
+the read's time budget, not its element budget, so on a very large editor the rest of the window
+after it may go unread: context lost, never privacy.
 
 ## ADR-DESK-017: Settings are read once, as a dictation starts
 

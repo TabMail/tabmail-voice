@@ -461,20 +461,28 @@ struct ScreenExclusionTests {
     }
 
     /// A page of an excluded website framed inside a field, in the window or in a row: a field is
-    /// read by its value and never walked into, so the page is looked for before it is read.
+    /// read by its value and never walked into, so the page is looked for before it is read. So is
+    /// one in a field too thin to show anything, and one framed in another website's page there.
     @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
     func anExcludedWebsiteFramedInAFieldIsNotRead(role: String, inRow: Bool) {
-        let field = FakeElement(role, [kAXValueAttribute: "Field words"], children: [
-            FakeElement("AXGroup", children: [page("pay.example.com", "card 4242")]),
-        ])
-        let window = FakeElement("AXWindow", children: [
-            FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
-            inRow ? FakeElement("AXRow", children: [FakeElement("AXCell", children: [field])]) : field,
-        ])
-        #expect(!walk(window, excluding: ["example.com"]).read)
-        let read = walk(window, excluding: ["example.net"])
-        #expect(read.read)
-        #expect(read.text.contains("Field words"))
+        let excluded = page("pay.example.com", "card 4242")
+        let shown = CGRect(x: 10, y: 10, width: 200, height: 40)
+        let shapes: [(name: String, frame: CGRect, inside: FakeElement)] = [
+            ("shown", shown, FakeElement("AXGroup", children: [excluded])),
+            ("too thin to show", CGRect(x: 10, y: 10, width: 200, height: 1), FakeElement("AXGroup", children: [excluded])),
+            ("in another page", shown, FakeElement("AXWebArea", ["host": "news.example.org"], children: [excluded])),
+        ]
+        for shape in shapes {
+            let field = FakeElement(role, [kAXValueAttribute: "Field words"], frame: shape.frame, children: [shape.inside])
+            let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300), children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
+                inRow ? FakeElement("AXRow", frame: shown, children: [FakeElement("AXCell", children: [field])]) : field,
+            ])
+            #expect(!walk(window, excluding: ["example.com"]).read, "\(shape.name)")
+            let read = walk(window, excluding: ["example.net"])
+            #expect(read.read, "\(shape.name)")
+            #expect(read.text.contains("Field words") == (shape.name != "too thin to show"), "\(shape.name)")
+        }
     }
 
     /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
