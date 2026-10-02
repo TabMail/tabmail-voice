@@ -735,6 +735,14 @@ is still walked into, since Slack keeps its whole message list inside a 1×2 scr
   Slack and the hidden-box rule on frames measured in Slack and Chrome. Test text is placeholders,
   never what was on the measured screen.
 
+**Amendment 2026-10-01: a row's text views are part of its text.** Owner: in a native chat app
+agent mode "didn't seem to get enough context" of the discussion on screen. The read held each
+message's time and sender and no message: the app puts a message in a text area (`AXTextArea`) in
+its table row, and a row's text was gathered from static text and text fields only
+(`ScreenContextReader.subtreeText`), though the walk reads a text area anywhere else. A row,
+heading or link now takes a text area's value like a field's, shown ones only, within the same
+`contextMaxBlockChars`. A password field is still never read (`walkNeverReadsAPasswordField`).
+
 ## ADR-DESK-017: Settings are read once, as a dictation starts
 
 **Context:** Owner standing rule, 2026-09-26 (root `Companion/Rules/Active/snapshot-settings-at-operation-start.md`):
