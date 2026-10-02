@@ -9,7 +9,7 @@ import { contextTerms } from "../../../src/core/dictionary/contextTerms.js";
 /** The names and terms picked from the screen read at key-down (ADR-DESK-038), sent with a dictation
  * beside the user's dictionary. */
 describe("contextTerms", () => {
-  const terms = (text: string, excluding: string[] = [], max = config.contextTermsMax) => contextTerms(text, excluding, max);
+  const terms = (text: string, excluding: string[] = [], max = config.vocabularyMaxTerms) => contextTerms(text, excluding, max);
 
   test("picks names and terms, not everyday words", () => {
     expect(terms("I spoke with Xyvora about the launch plan.")).toEqual(["Xyvora"]);
@@ -67,7 +67,8 @@ describe("contextTerms", () => {
     expect(terms(text)).toEqual(["Xyvora", "Brevalle", "Kaelthorne"]);
     expect(terms(text, ["xyvora"])).toEqual(["Brevalle", "Kaelthorne"]);
     expect(terms(text, [], 1)).toEqual(["Xyvora"]);
-    expect(config.contextTermsMax).toBe(50);
+    // A dictionary word on screen takes none of the room: the cap counts only the terms sent.
+    expect(terms(text, ["xyvora"], 2)).toEqual(["Brevalle", "Kaelthorne"]);
   });
 
   test("picks in any script", () => {

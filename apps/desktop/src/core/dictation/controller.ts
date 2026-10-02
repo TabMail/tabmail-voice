@@ -517,11 +517,12 @@ export class DictationController extends Observable {
   }
 
   /** The names and terms on the screen read at key-down (`contextTerms`), sent with the recording
-   * beside the dictionary's words (ADR-DESK-038): only if the read is done by the upload (a dictation
-   * waits `contextWait` for it, agent mode not at all); none when the screen is not read. */
+   * after the dictionary's words, as many as the vocabulary has room for (ADR-DESK-038): only if the
+   * read is done by the upload (a dictation waits `contextWait` for it, agent mode not at all); none
+   * when the screen is not read. */
   private screenTerms(dictionary: readonly string[]): string[] {
     const screen = this.screenRead;
-    const terms = screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, dictionary, config.contextTermsMax) : [];
+    const terms = screen ? contextTerms(`${screen.windowTitle ?? ""}\n${screen.renderedText}`, dictionary, config.vocabularyMaxTerms - dictionary.length) : [];
     log.debug(() => `DictationController: sending ${dictionary.length} dictionary word(s) and ${terms.length} screen term(s)`);
     return terms;
   }
