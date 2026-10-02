@@ -247,6 +247,15 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   field is given neither to the terminal's pane reader nor to the caret read, and the field read for
   correction learning asks for its subrole before its value and never asks a password field for
   one.)*
+- *(Amended 2026-10-01, owner: a page that has the focus itself is read like any page. With a page
+  clicked on, rather than a field in it, the focused element is the web area; the walk treated it as
+  the field the caret is in and never went into it, so Safari and Chrome, which give no text around
+  a caret there, gave an empty screen (one caret block, one character), and Firefox gave only the
+  2,000 characters after the page's start. The walk now goes into a focused page (`walk`), its
+  password fields and framed excluded pages refused as anywhere. The text around the page's caret is
+  dropped (`gather`): it is the page's own text. What is selected in the page is kept, for agent
+  mode's Edit and as the caret block before the page's text. The Windows helper already walks a
+  focused document that is no editable field.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
@@ -2525,7 +2534,7 @@ starts alike; case and a trailing dot don't matter.
   caret's text or the window's title is asked for (`ScreenContextReader.gather`): every web area
   above the focused element, and the focused element itself, since a page clicked on or selected in
   has the focus itself, and any page inside the focused element (a page that frames an excluded
-  one, a focused group holding one: `holdsExcludedPage`), which the walk never goes into. The walk then refuses the whole window at any page of an excluded site, in
+  one, a focused group holding one: `holdsExcludedPage`), looked into before the caret's text is asked for. The walk then refuses the whole window at any page of an excluded site, in
   focus or not, framed in another page or inside a row, a heading or a link that has no label of its
   own (one with a label gives its label, and nothing inside it is looked at): with the caret in the
   browser's address field the page is still on screen. `readScreen` answers null, as for an excluded

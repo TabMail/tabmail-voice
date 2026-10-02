@@ -317,6 +317,74 @@ struct ScreenExclusionTests {
         #expect(walk(window, focused: area, focusPath: [window], excluding: ["example.org"]).read)
     }
 
+    /// A page that has the focus itself is read like any page: what it shows, in order, with the
+    /// heading and the field in it. Safari and Chrome give no text around the caret there, and the
+    /// page's text is not the caret's.
+    @Test func aPageThatHasTheFocusItselfIsReadLikeAnyPage() {
+        func page(_ attributes: [String: String]) -> (window: FakeElement, area: FakeElement) {
+            let area = FakeElement("AXWebArea", attributes.merging(["host": "news.example.org"]) { $1 }, children: [
+                FakeElement("AXHeading", [kAXTitleAttribute: "Headlines"]),
+                FakeElement("AXStaticText", [kAXValueAttribute: "account 1234 balance 99"]),
+                FakeElement("AXTextField", [kAXValueAttribute: "search"]),
+                FakeElement("AXTextField", [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "hunter2"]),
+            ])
+            return (FakeElement("AXWindow", [kAXTitleAttribute: "News"], children: [area]), area)
+        }
+        // No caret in the page (Safari, Chrome): the page's text, and no caret block.
+        let plain = page([:])
+        let read = gather(plain.window, focused: plain.area, focusPath: [plain.window], excluding: ["example.com"])
+        #expect(read.read)
+        #expect(read.context.host == "news.example.org")
+        #expect(read.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
+        #expect(!read.context.blocks.contains { $0.kind == .caret })
+
+        // A caret in the page with text selected (Firefox gives the page's text around it): the
+        // selection is kept, as the caret block before the page; the text around it is the page's
+        // own, read once, by the walk.
+        let selected = page(Self.caret)
+        let chosen = gather(selected.window, focused: selected.area, focusPath: [selected.window], excluding: ["example.com"])
+        #expect(chosen.read)
+        #expect(chosen.context.selectedText == "balance")
+        #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
+        #expect(chosen.context.renderedText() == "» ‸balance‸\n## Headlines\naccount 1234 balance 99\n> search")
+
+        // A caret with nothing selected adds no caret block.
+        let caret = page(["caretBefore": "account 1234 ", "caretSelected": "", "caretAfter": "balance 99"])
+        let placed = gather(caret.window, focused: caret.area, focusPath: [caret.window], excluding: ["example.com"])
+        #expect(placed.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
+        #expect(placed.context.textBeforeCaret.isEmpty && placed.context.textAfterCaret.isEmpty)
+
+        // A focused field in the page is still the caret block, with its text around the caret.
+        let field = FakeElement("AXTextField", Self.caret)
+        let area = FakeElement("AXWebArea", ["host": "news.example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Page"]), field])
+        let window = FakeElement("AXWindow", children: [area])
+        let typed = gather(window, focused: field, focusPath: [area, window], excluding: ["example.com"])
+        #expect(typed.context.renderedText() == "Page\n» account 1234 ‸balance‸ 99")
+        #expect(typed.context.textBeforeCaret == "account 1234 ")
+    }
+
+    /// The walk into a page that has the focus refuses an excluded page framed in it, on its own,
+    /// and reads nothing inside a password field there.
+    @Test func theWalkIntoAFocusedPageRefusesAnExcludedPageFramedInIt() {
+        let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
+        let outer = FakeElement("AXWebArea", ["host": "example.org"], children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Checkout"]), FakeElement("AXGroup", children: [frame]),
+        ])
+        let window = FakeElement("AXWindow", children: [outer])
+        #expect(!walk(window, focused: outer, focusPath: [window], excluding: ["example.com"]).read)
+        let read = walk(window, focused: outer, focusPath: [window], excluding: ["example.net"])
+        #expect(read.read && read.text == "Checkout\ncard 4242")
+
+        // What is in a focused page is in web content: a toolbar's text is read there, as in a
+        // page that is not in focus, and is skipped outside one.
+        let toolbar = FakeElement("AXToolbar", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Project chat"])])
+        let page = FakeElement("AXWebArea", ["host": "example.org"], children: [toolbar])
+        let shown = FakeElement("AXWindow", children: [page])
+        #expect(walk(shown, focused: page, focusPath: [shown], excluding: []).text == "Project chat")
+        #expect(walk(shown, excluding: []).text == "Project chat")
+        #expect(walk(FakeElement("AXWindow", children: [toolbar]), excluding: []).text == "")
+    }
+
     /// An excluded page framed in another page, with the focus in it or on it.
     @Test func anExcludedFramedPageInFocusIsNotRead() {
         let field = FakeElement("AXTextField", Self.caret)

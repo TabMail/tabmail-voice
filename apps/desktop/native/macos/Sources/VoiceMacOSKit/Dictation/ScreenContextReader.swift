@@ -51,7 +51,16 @@ enum ScreenContextReader {
         // terminal's own password prompt is one), which asks for the field's value.
         let isPassword = focused.map { isPasswordField($0, in: tree) } ?? false
         let paneRead = isPassword ? false : terminalPane?(&context) ?? false
-        if let focused, !paneRead { readCaret(of: focused, in: tree, into: &context) }
+        if let focused, !paneRead {
+            readCaret(of: focused, in: tree, into: &context)
+            // A page that has the focus itself (clicked on, not a field in it) is no field: the
+            // text around its caret is the page's own, which the walk reads as it is laid out
+            // (Safari and Chrome give none there at all). Only what is selected in it is kept.
+            if tree.string(focused, kAXRoleAttribute) == "AXWebArea" {
+                context.textBeforeCaret = ""
+                context.textAfterCaret = ""
+            }
+        }
         // The page the caret is in: the nearest web area (Notion nests its web page in a local app
         // shell page, which the walk reaches first).
         context.host = hosts.first?.name
@@ -71,8 +80,9 @@ enum ScreenContextReader {
     }
 
     /// Whether a page of an excluded website is inside `element`: a page that frames it has the
-    /// focus itself, or a focused group holds it. The walk reads the focused element by its caret
-    /// and never goes into it, so it is looked into here, for pages only: no text is asked for.
+    /// focus itself, or a focused group holds it. The walk reads a focused element that is no page
+    /// by its caret and never goes into it, and goes into a focused page only after the text around
+    /// its caret was asked for, so it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
     /// element is taken to hold none.
@@ -149,7 +159,8 @@ enum ScreenContextReader {
     /// content controls and toolbars are read (`contextWebReadRoles`): a control adds the text
     /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (`isShown`) is left
     /// out, but its box is still walked into: Slack keeps its message list in one.
-    /// The focused element becomes the caret block at its place in that order.
+    /// The focused element becomes the caret block at its place in that order; a page that has the
+    /// focus itself is walked into like any page, after its selection, if any, as the caret block.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
     /// A password field is never read, nor anything inside it (one above the focused element is
@@ -167,8 +178,13 @@ enum ScreenContextReader {
             context.nodesVisited += 1
 
             if let focused, tree.isSame(element, focused) {
-                if tree.string(element, kAXRoleAttribute) == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return false }
-                context.appendCaret(frame: tree.frame(of: element))
+                guard tree.string(element, kAXRoleAttribute) == "AXWebArea" else {
+                    context.appendCaret(frame: tree.frame(of: element))
+                    continue
+                }
+                if exclusions.excludes(tree.page(of: element)) { return false }
+                if !context.selectedText.isEmpty { context.appendCaret(frame: tree.frame(of: element)) }
+                stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, true) })
                 continue
             }
             if focusPath.contains(where: { tree.isSame($0, element) }) {
