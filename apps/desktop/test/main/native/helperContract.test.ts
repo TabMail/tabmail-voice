@@ -6,13 +6,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
+import { configureLog } from "../../../src/core/log.js";
 import { hotkeyActions } from "../../../src/core/hotkey/bindings.js";
 import { EventStoreError } from "../../../src/core/agent/connectors/calendar.js";
 import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.js";
 import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
 import { MacSystem } from "../../../src/main/native/macos/system.js";
-import { decodeSamples } from "../../../src/main/native/microphone.js";
+import { decodeSamples, NativeMicrophone } from "../../../src/main/native/microphone.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
 
 /** The two sides of the helpers' wire: the requests the app sends and the handlers the Swift helpers
@@ -20,6 +21,7 @@ import type { AudioReport } from "../../../src/shared/ipc.js";
  * side only would fail every request at run time while both sides' own tests pass. */
 
 const root = join(__dirname, "../../..");
+const microphoneService = "native/macos/Sources/VoiceMicrophoneKit/MicrophoneService.swift";
 
 /** Each method the helper source registers, with the params its handler reads. */
 function registered(source: string): Map<string, Set<string>> {
@@ -88,10 +90,6 @@ describe("helper wire contract", () => {
     await mac.contactStore.add({ firstName: "Example", lastName: "", organization: "", emails: [], phones: [] });
     await mac.fileStore.search({ words: ["Example"], kind: "any", changedAfter: null, changedBefore: null }, 1);
     await mac.fileStore.open("/tmp/example.pdf", false);
-    const microphone = mac.microphone(() => {});
-    microphone({ type: "prepare" });
-    microphone({ type: "start", session: 1 });
-    microphone({ type: "stop", session: 1 });
 
     const handlers = registered("native/macos/Sources/VoiceMacOSKit/MacService.swift");
     expect(new Set(requests.map((request) => request.method))).toEqual(new Set(handlers.keys()));
@@ -322,10 +320,29 @@ describe("helper wire contract", () => {
     ]);
   });
 
+  /** The microphone's requests are the ones `voice-microphone` handles, with the params it reads,
+   * and the exit code the app restarts it at once for is the one it ends itself with. */
+  test("every microphone request is one voice-microphone handles, and its restart exit code is the helper's", async () => {
+    const { helper, requests } = recordingHelper();
+    const microphone = new NativeMicrophone(helper, "voice-microphone").microphone(() => {});
+    microphone({ type: "prepare" });
+    microphone({ type: "start", session: 1 });
+    microphone({ type: "stop", session: 1 });
+
+    const handlers = registered(microphoneService);
+    expect(new Set(requests.map((request) => request.method))).toEqual(new Set(handlers.keys()));
+    for (const { method, params } of requests) {
+      expect(new Set(Object.keys(params)), method).toEqual(handlers.get(method));
+    }
+    const exitCode = /inputChangedExitCode: Int32 = (\d+)/.exec(readFileSync(join(root, microphoneService), "utf8"))?.[1];
+    expect(Number(exitCode)).toBe(config.microphoneHelperRestartExitCode);
+  });
+
   /** The microphone's start carries the recording rate and waits the microphone's own start timeout;
    * its answer, or its failure, is that session's report; each chunk event the helper sends (named
-   * as `MacService.microphoneChunkEvent`, its fields as `MicrophoneChunkEventTests` pins them)
-   * becomes that session's samples, and a malformed one is dropped. */
+   * as `MicrophoneService.microphoneChunkEvent`, its fields as `MicrophoneChunkEventTests` pins
+   * them) becomes that session's samples, and a malformed one is dropped. A lost event is
+   * `voice-windows`'s: `voice-microphone` ends itself instead. */
   test("the microphone's commands and events cross the wire as the helper sends and reads them", async () => {
     const calls: { method: string; params: unknown; timeout: unknown }[] = [];
     const events = new Map<string, (message: Record<string, unknown>) => void>();
@@ -339,17 +356,17 @@ describe("helper wire contract", () => {
       on: (event: string, handler: (message: Record<string, unknown>) => void) => events.set(event, handler),
     } as unknown as HelperClient;
     const reports: AudioReport[] = [];
-    const microphone = new MacSystem(helper).microphone((report) => reports.push(report));
+    const microphone = new NativeMicrophone(helper, "voice-microphone").microphone((report) => reports.push(report));
 
     microphone({ type: "start", session: 3 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     const samples = new Float32Array([0.25, -0.5, 1]);
-    const emitted = /microphoneChunkEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"));
+    const emitted = /microphoneChunkEvent = "(\w+)"/.exec(readFileSync(join(root, microphoneService), "utf8"));
     const chunkEvent = events.get(emitted?.[1] ?? "");
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from(samples.buffer).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from([1, 2, 3]).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: "3", samples: Buffer.from(samples.buffer).toString("base64") });
-    const lostName = /microphoneLostEvent = "(\w+)"/.exec(readFileSync(join(root, "native/macos/Sources/VoiceMacOSKit/MacService.swift"), "utf8"))?.[1] ?? "";
+    const lostName = /\{"event", "(microphoneLost)"\}/.exec(readFileSync(join(root, "native/windows/src/microphone.h"), "utf8"))?.[1] ?? "";
     events.get(lostName)?.({ event: lostName, session: "3" });
     events.get(lostName)?.({ event: lostName, session: 3 });
     refuse = true;
@@ -368,6 +385,31 @@ describe("helper wire contract", () => {
       { type: "lost", session: 3 },
       { type: "failed", session: 4, error: "Error" },
     ]);
+  });
+
+  /** A prepare cut short by its helper exiting is no error: `voice-microphone` ends itself whenever
+   * the input changes, and the helper started in its place is prepared again. Any other failure of
+   * a prepare is one. */
+  test("a prepare whose helper exited is logged at debug, any other failure as an error", async () => {
+    const errors: string[] = [];
+    const file: string[] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: (level, text) => file.push(`${level} ${text}`), error: (text) => errors.push(text) } });
+    let failure: Error = new HelperError("exited", "microphonePrepare");
+    const helper = { request: async () => Promise.reject(failure), on() {} } as unknown as HelperClient;
+    const microphone = new NativeMicrophone(helper, "voice-microphone").microphone(() => {});
+    try {
+      microphone({ type: "prepare" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(errors).toEqual([]);
+      expect(file).toEqual(["debug voice-microphone: microphone not prepared: HelperError.exited(microphonePrepare)"]);
+
+      failure = new HelperError("timeout", "microphonePrepare");
+      microphone({ type: "prepare" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(errors).toEqual(["voice-microphone: microphone not prepared: HelperError.timeout(microphonePrepare)"]);
+    } finally {
+      configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+    }
   });
 
   test("a chunk's samples decode from base64 little-endian floats, and a torn one does not", () => {

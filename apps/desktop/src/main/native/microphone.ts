@@ -5,7 +5,7 @@
 import * as config from "../../core/config.js";
 import { errorName, log } from "../../core/log.js";
 import type { AudioCommand, AudioReport } from "../../shared/ipc.js";
-import type { HelperClient } from "./helperClient.js";
+import { type HelperClient, HelperError } from "./helperClient.js";
 
 /** The shared audio protocol; each platform helper owns its native microphone sessions. */
 export class NativeMicrophone {
@@ -21,7 +21,13 @@ export class NativeMicrophone {
     return (command) => {
       switch (command.type) {
         case "prepare":
-          this.helper.request("microphonePrepare").catch((error: unknown) => log.error(`${this.name}: microphone not prepared: ${errorName(error)}`));
+          this.helper.request("microphonePrepare").catch((error: unknown) => {
+            // A helper that exited is started again and prepared then (its `onStart`): the macOS
+            // one ends itself whenever the input changes, a prepare under way or not.
+            const message = `${this.name}: microphone not prepared: ${errorName(error)}`;
+            if (error instanceof HelperError && error.kind === "exited") log.debug(message);
+            else log.error(message);
+          });
           return;
         case "start": {
           const { session } = command;

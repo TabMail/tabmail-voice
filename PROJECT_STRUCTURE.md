@@ -30,14 +30,16 @@ apps/desktop/
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
 ├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046; `host-exclusion-cases.json` (which hosts an excluded website covers, for the app and every helper): ADR-DESK-047
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests (ADR-DESK-044)
-│   ├── Package.swift            Products `voice-hotkey` and `voice-macos`, the executables the app spawns
+│   ├── Package.swift            Products `voice-hotkey`, `voice-macos` and `voice-microphone`, the executables the app spawns
 │   ├── Sources/
-│   │   ├── VoiceHelperSupport/      The line protocol both helpers speak (requests, replies, events, stderr log lines)
+│   │   ├── VoiceHelperSupport/      The line protocol every helper speaks (requests, replies, events, stderr log lines)
 │   │   ├── VoiceHotkey/             `voice-hotkey`'s `main.swift`
 │   │   ├── VoiceHotkeyKit/          Event tap + push-to-talk gesture, and `HotkeyService` (its requests)
 │   │   ├── VoiceMacOS/              `voice-macos`'s `main.swift`
+│   │   ├── VoiceMicrophone/         `voice-microphone`'s `main.swift`
+│   │   ├── VoiceMicrophoneKit/      The microphone, in a process of its own that ends itself when the input device changes and is started afresh: `MicrophoneService` (its requests), `MicrophoneCapture` (the engine, prepared ahead), `HelperConfig`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
-│   │       ├── Dictation/               Paste and clipboard restore, the microphone, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
+│   │       ├── Dictation/               Paste and clipboard restore, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
 │   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor`, its list generated from `native/shared/privacy/redactors.json`); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
@@ -67,11 +69,11 @@ apps/desktop/
 │   │   └── util/                    observable, keyValueStore, timeout, text, localDateTime (the backend's dates in the local zone)
 │   ├── main/                The main process (Node + Electron)
 │   │   ├── index.ts                 Wires everything: helpers, controller, windows, IPC, tray
-│   │   ├── audioCapture.ts          The microphone, one session per dictation: through `voice-macos` on macOS, the hidden audio window elsewhere
+│   │   ├── audioCapture.ts          The microphone, one session per try of a dictation's start (a failed start is tried again for about two seconds): through `voice-microphone` on macOS, `voice-windows` on Windows, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
 │   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, installed at the quit, "Restart now?" once ready (ADR-DESK-041)
 │   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
-│   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts
+│   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts (at once for a helper that exits to be started afresh)
 │   │   │   ├── microphone.ts         Shared native audio wire adapter and chunk decoder
 │   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters
 │   │   │   └── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters
@@ -86,13 +88,31 @@ apps/desktop/
 └── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper); packaging.test.ts
 ```
 
+## Naming
+
+What a new file, target or name must match (the folders' rules are ADR-DESK-044's):
+
+| What | Convention | Examples |
+|---|---|---|
+| TypeScript files and folders | camelCase; an entry point is `index`; no file repeats its folder's name; a platform's own code in a `macos/` or `windows/` folder | `audioCapture.ts`, `native/helperClient.ts`, `agent/chat.ts`, `native/macos/system.ts` |
+| TypeScript tests | The module's name and folder under `test/`, ending `.test.ts`; shared stand-ins in `test/support/` | `test/main/audioCapture.test.ts`, `test/support/fakeHelper.mjs` |
+| Scripts | kebab-case `.mts` (Node runs them directly); a platform's in its folder | `scripts/build-native.mts`, `scripts/macos/build-native.mts` |
+| TypeScript names | Types, classes and React components PascalCase; functions, variables and every constant camelCase (no `SCREAMING_CASE`, `config.ts` included); an error class ends `Error`; a number in `config.ts` says its unit in its comment, and is milliseconds where it is a time | `SessionAudioCapture`, `MicrophoneError`, `microphoneStartTimeout` |
+| Helper executables | kebab-case, `voice-<what>` (`.exe` on Windows); the name is also the helper's name in the log | `voice-hotkey`, `voice-macos`, `voice-microphone`, `voice-windows.exe` |
+| Swift targets | PascalCase: `Voice<What>` (the executable, only its `main.swift`) over `Voice<What>Kit` (the library), tested by `Voice<What>KitTests` | `VoiceMicrophone`, `VoiceMicrophoneKit`, `VoiceMicrophoneKitTests` |
+| Swift files | PascalCase, named for the type declared; a test file is that type's name plus `Tests`, in the same folder under `Tests/`; a kit's requests are its `<What>Service` (an enum with `register(on:)`), its tunable numbers its `HelperConfig` | `MicrophoneCapture.swift`, `MicrophoneCaptureTests.swift`, `MicrophoneService`, `HelperConfig.swift` |
+| Swift names | Types PascalCase; functions, properties, constants and enum cases camelCase; a dispatch queue's label is `ai.tabmail.voice.helper.<camelCase>` | `inputChangedExitCode`, `ai.tabmail.voice.helper.microphoneChunks` |
+| Windows helper sources | snake_case `.h`/`.cpp`; types PascalCase, functions and variables camelCase, in namespace `voice` | `helper_config.h`, `screen_context.h`, `voice::Microphone` |
+| The helpers' wire | Methods, events and their fields camelCase, a concern's methods sharing its prefix; the same names on every platform that has them | `microphoneStart`, `microphoneChunk`, `sampleRate` |
+| Decisions | `ADR-DESK-NNN`, the next number; a change to one is a dated **Amendment** under it, never a rewrite | `ADR-DESK-032`, "Amendment 2026-10-01" |
+
 ## Flow
 
 `voice-hotkey` (`HotkeyMonitor` → `PushToTalkGesture`) sends each gesture action to the main
 process, which hands it to `DictationController` (`src/core/dictation/controller.ts`):
 
 1. **start** (key-down; consent given in the welcome wizard, signed in, both permissions): phase `arming`, nothing shown.
-   The microphone starts (`SessionAudioCapture` → `voice-macos`'s `MicrophoneCapture`, its engine
+   The microphone starts (`SessionAudioCapture` → `voice-microphone`'s `MicrophoneCapture`, its engine
    prepared ahead) and streams samples into `AudioRecorder`; `voice-macos` finds the caret; the
    keyboard's language is read once, for the overlay's badge and the transcription request; the app in
    front is kept (`targetApp`), the only app the text may be pasted into (ADR-DESK-042). After

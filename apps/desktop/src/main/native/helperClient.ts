@@ -35,6 +35,9 @@ export interface HelperOptions {
   args?: string[];
   requestTimeout?: number;
   restartDelay?: number;
+  /** The helper exits with this code to be started afresh: it is then restarted at once, and the
+   * exit is not an error. */
+  restartExitCode?: number;
   /** Helper implements fire-and-forget cancel requests for queued native mutations. */
   cancelRequests?: boolean;
 }
@@ -52,7 +55,8 @@ interface Pending {
  * `{"id", "method", "params"}` one a line on its stdin; replies `{"id", "result"}` or
  * `{"id", "error": {"message"}}` and events `{"event", ...}` one a line on its stdout; its stderr
  * lines (`debug …`, `error …`) go to the app's log. A helper that exits is started again after
- * `restartDelay`, and `onStart` runs each time it starts, so it can be configured afresh.
+ * `restartDelay` (at once when it exits with `restartExitCode`), and `onStart` runs each time it
+ * starts, so it can be configured afresh.
  */
 export class HelperClient {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -162,11 +166,16 @@ export class HelperClient {
       this.child = null;
       this.failPending("exited");
       if (this.stopped) return;
-      log.error(`${name}: exited (${signal ?? code}); restarting`);
-      this.restartTimer = setTimeout(() => {
-        this.restartTimer = null;
-        if (!this.stopped) this.launch();
-      }, this.options.restartDelay ?? config.helperRestartDelay);
+      if (code !== null && code === this.options.restartExitCode) {
+        log.debug(`${name}: exited to start afresh`);
+        this.launch();
+      } else {
+        log.error(`${name}: exited (${signal ?? code}); restarting`);
+        this.restartTimer = setTimeout(() => {
+          this.restartTimer = null;
+          if (!this.stopped) this.launch();
+        }, this.options.restartDelay ?? config.helperRestartDelay);
+      }
       // After the restart is due, so nothing the exit sets off can keep the helper down.
       this.onExit?.();
     });

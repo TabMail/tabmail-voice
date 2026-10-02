@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // A stand-in native helper for HelperClient's tests, speaking the helpers' JSON-lines protocol:
-// `echo` answers its params, `fail` answers an error, `silent` never answers, `exit` exits, `emit`
+// `echo` answers its params, `fail` answers an error, `silent` never answers, `exit` exits (with `params.code`
+// where given), `emit`
 // sends an event, `log` writes a debug and an error line to stderr, `ids` answers its process id.
 import { createInterface } from "node:readline";
 
@@ -33,7 +34,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "silent":
       return;
     case "exit":
-      return process.exit(3);
+      return process.exit(params.code ?? 3);
     case "emit":
       send({ event: "action", action: params.action });
       return send({ id, result: {} });

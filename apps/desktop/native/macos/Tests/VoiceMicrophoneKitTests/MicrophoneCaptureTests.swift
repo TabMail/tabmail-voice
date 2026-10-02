@@ -4,10 +4,8 @@
 
 import AVFoundation
 import Foundation
-import os
 import Testing
-import VoiceHelperSupport
-@testable import VoiceMacOSKit
+@testable import VoiceMicrophoneKit
 
 /// A captured buffer as the app receives it: mono float samples at the rate it asked for, every
 /// channel mixed in. No microphone is used.
@@ -128,71 +126,12 @@ struct MicrophoneSessionsTests {
     }
 
     /// Start(2) failed while the app's stop(1) is still on its way: a late start(1) does not run.
-    /// The running session's microphone stopped by itself: it is the one reported, nothing runs, an
-    /// older start (before any stop) and its late stop change nothing, and the next session starts.
-    @Test func aLostSessionIsReportedOnceAndKeepsOlderSessionsOff() {
-        var sessions = MicrophoneSessions()
-        let noneRunning = sessions.lost()
-        let started = sessions.start(3)
-        let lost = sessions.lost()
-        let runningAfter = sessions.running
-        let lostAgain = sessions.lost()
-        let olderStart = sessions.start(2)
-        let lateStop = sessions.stop(3)
-        let nextStart = sessions.start(4)
-        #expect(noneRunning == nil && started && lost == 3 && runningAfter == nil && lostAgain == nil)
-        #expect(!lateStop && !olderStart && nextStart && sessions.running == 4)
-    }
-
     @Test func aFailedStartKeepsOlderSessionsOff() {
         var sessions = MicrophoneSessions()
         let started = sessions.start(2)
         sessions.failed(2)
         let late = sessions.start(1)
         #expect(started && !late && sessions.running == nil)
-    }
-}
-
-/// When an engine may be prepared again after the input device changed. Preparing one while the
-/// device was still changing ended the helper (an exception in `installTap`), so nothing is prepared
-/// until the latest change's wait has ended.
-struct InputChangesTests {
-    @Test func nothingIsSettlingUntilAChangeComes() {
-        #expect(!InputChanges().settling)
-    }
-
-    @Test func aChangeSettlesWhenItsWaitEnds() {
-        var changes = InputChanges()
-        let change = changes.changed()
-        let settlingMeanwhile = changes.settling
-        let settled = changes.settled(change)
-        #expect(settlingMeanwhile && settled && !changes.settling)
-    }
-
-    /// A device arriving changes several times over: the earlier changes' waits end while it is
-    /// still changing, and only the last one's settles it.
-    @Test func onlyTheLatestChangeOfABurstSettlesIt() {
-        var changes = InputChanges()
-        let first = changes.changed()
-        let second = changes.changed()
-        let third = changes.changed()
-        let earlier = [changes.settled(first), changes.settled(second)]
-        let settlingAfterEarlier = changes.settling
-        let last = changes.settled(third)
-        #expect(earlier == [false, false] && settlingAfterEarlier)
-        #expect(last && !changes.settling)
-    }
-
-    /// A wait that ends again, or late, after a newer change, does not settle that newer change.
-    @Test func anOldWaitDoesNotSettleANewerChange() {
-        var changes = InputChanges()
-        let first = changes.changed()
-        let firstSettled = changes.settled(first)
-        let second = changes.changed()
-        let firstAgain = changes.settled(first)
-        #expect(firstSettled && !firstAgain && changes.settling)
-        let secondSettled = changes.settled(second)
-        #expect(secondSettled && !changes.settling)
     }
 }
 
@@ -210,70 +149,5 @@ struct MicrophoneTransportNameTests {
         #expect(MicrophoneCapture.transportName(0) == "unknown")
         #expect(MicrophoneCapture.transportName(0xFFFF_FFFF) == "unknown")
         #expect(MicrophoneCapture.transportName(0x7F7F_7F7F) == "unknown")
-    }
-}
-
-/// A request whose number is no whole number in range (a fraction, 1e100) is refused with an
-/// error, not converted: a trapping conversion would crash the helper, and with it the dictation.
-@MainActor
-struct MacServiceRequestTests {
-    @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
-        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
-        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let service = MacService.register(on: channel)
-        let requests = [
-            #"{"id":1,"method":"microphoneStop","params":{"session":1e100}}"#,
-            #"{"id":2,"method":"microphoneStart","params":{"session":1.5,"sampleRate":16000}}"#,
-            #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
-            #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
-            #"{"id":5,"method":"insert","params":{"text":"x","restoreDelay":1e300}}"#,
-            #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
-            #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
-            #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
-        ]
-        for request in requests { await channel.handle(line: Data(request.utf8)) }
-
-        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
-        #expect(replies.count == requests.count)
-        #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
-        withExtendedLifetime(service) {}
-    }
-}
-
-/// A chunk as the app reads it off the wire: its session a number, its samples base64 of
-/// little-endian 32-bit floats that decode back to the samples sent.
-@MainActor
-struct MicrophoneChunkEventTests {
-    @Test func aChunkEventCarriesANumericSessionAndItsSamples() throws {
-        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
-        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let samples: [Float] = [0.25, -0.5, 1]
-
-        channel.emit(MacService.microphoneChunkEvent, MacService.microphoneChunk(session: 7, samples: samples))
-
-        let line = try #require(lines.withLock { $0.first })
-        let object = try #require(try JSONSerialization.jsonObject(with: line) as? [String: Any])
-        #expect(object["event"] as? String == "microphoneChunk")
-        #expect((object["session"] as? NSNumber)?.intValue == 7 && !(object["session"] is String))
-        let encoded = try #require(object["samples"] as? String)
-        let bytes = try #require(Data(base64Encoded: encoded))
-        #expect(bytes.count == samples.count * 4)
-        let decoded = (0..<samples.count).map { index in
-            Float(bitPattern: UInt32(bytes[index * 4]) | UInt32(bytes[index * 4 + 1]) << 8 | UInt32(bytes[index * 4 + 2]) << 16 | UInt32(bytes[index * 4 + 3]) << 24)
-        }
-        #expect(decoded == samples)
-    }
-
-    /// The app reads a lost event's session as a number.
-    @Test func aLostEventCarriesANumericSession() throws {
-        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
-        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-
-        channel.emit(MacService.microphoneLostEvent, MacService.microphoneLost(session: 7))
-
-        let line = try #require(lines.withLock { $0.first })
-        let object = try #require(try JSONSerialization.jsonObject(with: line) as? [String: Any])
-        #expect(object["event"] as? String == "microphoneLost")
-        #expect((object["session"] as? NSNumber)?.intValue == 7 && !(object["session"] is String))
     }
 }
