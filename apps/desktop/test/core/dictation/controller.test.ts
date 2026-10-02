@@ -373,18 +373,36 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
   /** The screen's terms fill what the dictionary leaves of the 200 words a dictation sends: all 200
    * with no dictionary, the rest beside a full one (owner, 2026-10-02). */
-  test.each([0, 1, 150])("with %i dictionary words the screen's terms fill the rest of the vocabulary", async (count) => {
+  test.each<[DictationMode, number]>([
+    ["dictation", 0], ["dictation", 1], ["dictation", 150],
+    ["agent", 0], ["agent", 1], ["agent", 150],
+  ])("%s with %i dictionary words fills the rest of the vocabulary", async (mode, count) => {
     const dictionary = Array.from({ length: count }, (_, index) => `Xyvora${index}`);
     const names = Array.from({ length: config.vocabularyMaxTerms + 1 }, (_, index) => `Brevalle${index}`);
-    prefs.value = { ...defaultSettings(), dictionary };
-    transcription.enqueue(200, cleanedReply);
-    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
-    controller.captureContext = async () => blankScreen({ appName: "Example Mail", renderedText: `ask ${names.join(", ")}` });
+    prefs.value = { ...defaultSettings(), dictionary, enabledTools: ["compose"] };
+    const written = "Synthetic composed result.";
+    transcription.enqueue(200, mode === "dictation" ? cleanedReply : { text: request });
+    if (mode === "agent") completions.enqueue(200, reply(written));
+    const { controller, pastes, copies, history } = makeController({ capture: new CountingCapture(true) });
+    let reads = 0;
+    controller.captureContext = async () => {
+      reads += 1;
+      return blankScreen({ appName: "Example Mail", renderedText: `ask ${names.join(", ")}` });
+    };
 
-    await holdAndRelease(controller);
+    await holdAndRelease(controller, mode);
 
     expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(controller.mode).toBe(mode);
+    expect(reads).toBe(1);
+    expect(transcription.requests).toHaveLength(1);
     expect(transcription.body(0).vocabulary).toEqual([...dictionary, ...names.slice(0, config.vocabularyMaxTerms - count)]);
+    expect(cleanupVars(0)?.dictionary).toBe(mode === "dictation" ? dictionary.join("\n") : undefined);
+    const delivered = mode === "dictation" ? cleaned : written;
+    expect(pastes).toEqual([delivered]);
+    expect(copies).toEqual([]);
+    expect(history.entries.map((entry) => entry.text)).toEqual([delivered]);
+    expect(completions.requests).toHaveLength(mode === "dictation" ? 0 : 1);
   });
 
   /** The recording waits at most `contextWait` for the screen read: one not done by then adds no terms. */
