@@ -1881,6 +1881,16 @@ the stream was read whole and named its tools only in development builds.
   for those few frames.
 
 
+**Amendment 2026-10-01: nothing in the chat shrinks.** Owner: the question for a new calendar entry
+"was actually way hidden below in the answer", so it could be neither checked nor confirmed, and it
+ran out of time unanswered. The chat's scrolling column has a set height once it is at its tallest,
+and a column shrinks whichever of its items clip their own overflow: the question's card does, for
+its timer bar, so in a chat long enough to scroll it was squeezed to its padding, its buttons cut
+off where no scroll reached them. The column's items now keep their height (`.chat-scroll > *`) and
+the chat scrolls. The `overlay-chat-confirmation-long` preview fails when the buttons are cut off
+(`whole` now also looks at every clipping box above them); the one preview of a question had no
+earlier turn, so it never scrolled.
+
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
 **Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test

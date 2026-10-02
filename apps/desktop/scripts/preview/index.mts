@@ -85,7 +85,8 @@ const settingsWindowSize = { width: 700, height: 500 };
 const welcomeWindowSize = { width: 560, height: 660 };
 
 /** A shot of `page` with `state`; `whole` names what must show whole in it (the welcome window's
- * buttons, below everything else). */
+ * buttons, below everything else; a question's buttons in a chat long enough to scroll): inside the
+ * window and inside every box above it in the page that clips. */
 const shots: { name: string; page: string; size: { width: number; height: number }; state: unknown; transparent?: boolean; dark?: boolean; forcedColors?: boolean; section?: string; whole?: string }[] = [
   ...[
     ["overlay-listening", { phase: { kind: "listening" } }],
@@ -106,7 +107,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-copied", { phase: { kind: "copied", message: "Switched apps: copied to clipboard and history" } }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay/index.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),
-  ...[
+  ...(
+    [
     // Resting between follow-ups, the last request's bubbles kept, the latest to run first.
     ["overlay-chat-answer", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: over }],
     ["overlay-chat-below", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: under }],
@@ -114,7 +116,10 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-chat-searching", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], runningConnectors: ["web"], chat: { ...conversation, pendingRequest: "Look up the usual place", activity: "Searching the web: usual lunch place" }, chatPlacement: over }],
     // A tool's question in the chat window, a third of its 30 seconds gone.
     ["overlay-chat-confirmation", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
-  ].map(([name, change]) => ({ name: name as string, page: "overlay/index.html", size: chatWindowSize, state: { ...overlay, ...(change as object) }, transparent: true })),
+    // A chat long enough to scroll: the question keeps its height and its buttons show.
+    ["overlay-chat-confirmation-long", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [{ id: 0, request: "Can you add this to my calendar?", tool: "answer", reply: "Happy to add it. Which item on the screen do you mean: the date and time, the title, and any other details? What is on screen does not give me the specifics I need yet." }, { id: 1, request: "The launch review, tomorrow at ten.", tool: "answer", reply: "Here is the entry:\n\n- Title: Launch review\n- When: tomorrow at 10:00\n- No location given\n\nShall I go ahead?" }], pendingRequest: "Yes.", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar tomorrow at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over, whole: ".chat-confirm" }],
+    ] as [string, Record<string, unknown> & { whole?: string }][]
+  ).map(([name, { whole, ...change }]) => ({ name, page: "overlay/index.html", size: chatWindowSize, state: { ...overlay, ...change }, transparent: true, ...(whole === undefined ? {} : { whole }) })),
   { name: "history", page: "history/index.html", size: historyWindowSize, state: history },
   { name: "history-dark", page: "history/index.html", size: historyWindowSize, dark: true, state: history },
   { name: "history-empty", page: "history/index.html", size: historyWindowSize, state: { entries: [] } },
@@ -176,7 +181,7 @@ async function capture(shot: (typeof shots)[number]): Promise<void> {
   // Past the appear animations.
   await new Promise((resolve) => setTimeout(resolve, 1_000));
   const rendered = (await window.webContents.executeJavaScript(`(document.getElementById("root")?.childElementCount ?? 0) > 0`)) as boolean;
-  const whole = shot.whole === undefined || ((await window.webContents.executeJavaScript(`(() => { const box = document.querySelector(${JSON.stringify(shot.whole)})?.getBoundingClientRect(); return box !== undefined && box.top >= 0 && box.bottom <= innerHeight; })()`)) as boolean);
+  const whole = shot.whole === undefined || ((await window.webContents.executeJavaScript(`(() => { const element = document.querySelector(${JSON.stringify(shot.whole)}); const box = element?.getBoundingClientRect(); if (box === undefined || box.top < 0 || box.bottom > innerHeight) return false; for (let above = element.parentElement; above !== null && above !== document.body; above = above.parentElement) { const clip = above.getBoundingClientRect(); if (getComputedStyle(above).overflowY !== "visible" && (box.top < clip.top || box.bottom > clip.bottom)) return false; } return true; })()`)) as boolean);
   if (errors > 0 || !rendered || !whole) throw new Error(`the page ${errors > 0 ? "logged errors" : !rendered ? "rendered nothing" : `cut off ${shot.whole}`}`);
   const image = await window.webContents.capturePage();
   writeFileSync(join(output, `${shot.name}.png`), image.toPNG());
