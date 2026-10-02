@@ -804,7 +804,7 @@ describe("Settings page", () => {
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
-      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this Mac, and a password field is never read.`,
+      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this computer, and a password field is never read.`,
       // Privacy's, which the Swift app never had (owner, 2026-09-30).
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
       `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,
@@ -823,5 +823,33 @@ describe("Settings page", () => {
       await settingsPage({ error: null }, signedIn, { ...signedIn, hotkey: "function", debugAllowed: true, ...emailApp });
       expect(notes().sort()).toEqual([...always].sort());
     }
+  });
+});
+
+
+describe("GNOME integration", () => {
+  test("Enable sends its command, then explains Space and Escape when ready", async () => {
+    const initial: SettingsState = { ...signedIn, gnomeIntegration: "available" };
+    const ready: SettingsState = { ...signedIn, gnomeIntegration: "ready" };
+    const page = await settingsPage({ error: null }, ready, initial);
+    await act(async () => button("Permissions").click());
+    expect(visibleText()).toContain("Space to switch mode");
+    await act(async () => button("Enable").click());
+    expect(page.commands).toContainEqual({ type: "enableGnomeIntegration" });
+    expect(visibleText()).toContain("Press Space while dictating");
+    expect(visibleText()).toContain("Escape to cancel");
+    expect(visibleText()).toContain("✓ Enabled");
+    expect(visibleText()).not.toContain("Shift");
+  });
+
+  test.each(["restart", "unavailable", "unsupported", "checking"] as const)("%s does not report the integration enabled", async (state) => {
+    const initial: SettingsState = { ...signedIn, gnomeIntegration: state };
+    await settingsPage({ error: null }, initial, initial);
+    await act(async () => button("Permissions").click());
+    expect(visibleText()).toContain("GNOME integration");
+    expect(visibleText()).not.toContain("✓ Enabled");
+    expect(button("Enable").disabled).toBe(state === "unsupported" || state === "checking");
+    if (state === "restart") expect(visibleText()).toContain("Log out of Ubuntu and back in");
+    if (state === "unavailable") expect(visibleText()).toContain("could not be enabled");
   });
 });

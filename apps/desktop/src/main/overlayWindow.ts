@@ -54,6 +54,8 @@ export class OverlayWindowController {
     private readonly locateCaret: () => Promise<Rect | null>,
     /** Optional platform restriction, such as regions outside Windows Start/Search. */
     private readonly placementArea?: (workArea: Rect) => Rect | null,
+    /** A platform's safe position when global caret coordinates are unavailable. */
+    private readonly fallbackAnchor?: (workArea: Rect) => Rect,
   ) {}
 
   get opensUpward(): boolean {
@@ -240,6 +242,7 @@ export class OverlayWindowController {
 
   private pointer(): Rect {
     const mouse = screen.getCursorScreenPoint();
+    if (this.fallbackAnchor) return this.fallbackAnchor(screen.getDisplayNearestPoint(mouse).workArea);
     return { x: mouse.x, y: mouse.y, width: 1, height: 1 };
   }
 

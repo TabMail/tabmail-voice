@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { join } from "node:path";
-import { Menu, type MenuItemConstructorOptions, nativeImage, Tray } from "electron";
+import { Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, Tray } from "electron";
+import { linuxTrayIcon, linuxTrayUsesLightText } from "./native/linux/trayIcon.js";
 import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/ui/menuModel.js";
 
 /** What the menu's items do. */
@@ -35,9 +36,11 @@ export class TrayMenu {
     private readonly state: () => MenuState,
     private readonly actions: TrayActions,
   ) {
-    const icon = nativeImage.createFromPath(join(resources, "trayTemplate.png"));
-    icon.setTemplateImage(true);
-    this.tray = new Tray(icon);
+    const template = nativeImage.createFromPath(join(resources, "trayTemplate.png"));
+    template.setTemplateImage(true);
+    const linuxIcon = () => linuxTrayIcon(template, linuxTrayUsesLightText(process.env.XDG_CURRENT_DESKTOP ?? "", nativeTheme.shouldUseDarkColors));
+    this.tray = new Tray(process.platform === "linux" ? linuxIcon() : template);
+    if (process.platform === "linux") nativeTheme.on("updated", () => this.tray.setImage(linuxIcon()));
     this.tray.setToolTip("TabMail Voice");
     this.update();
   }

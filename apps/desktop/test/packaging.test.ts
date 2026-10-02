@@ -36,12 +36,17 @@ describe("the Mac app's packaging", () => {
     const build = readFileSync(join(root, "scripts/macos/build-native.mts"), "utf8");
     const copied = JSON.parse(/const helpers = (\[[^\]]*\]);/.exec(build)?.[1] ?? "null") as string[];
     const products = [...readFileSync(join(root, "native/macos/Package.swift"), "utf8").matchAll(/\.executable\(name: "([^"]+)"/g)].map(([, name = ""]) => name);
-    // Each executable `index.ts` joins to the helpers folder, the Windows ones (`.exe`) aside.
+    // Each executable joined to the helpers folder, excluding Windows `.exe` names.
+    // Linux helpers have their own build and packaging inventory.
     const spawned = [...readFileSync(join(root, "src/main/index.ts"), "utf8").matchAll(/join\(helpers, ([^)]*)\)/g)].flatMap(([, args = ""]) => [...args.matchAll(/"(voice-[a-z-]+)"/g)].map(([, name = ""]) => name));
 
-    expect(spawned).toEqual(["voice-hotkey", "voice-macos", "voice-microphone"]);
+    const linuxBuild = readFileSync(join(root, "scripts/linux/build-native.mts"), "utf8");
+    const linux = JSON.parse(/for \(const helper of (\[[^\]]*\])\)/.exec(linuxBuild)?.[1] ?? "null") as string[];
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; filter: string[] }[] } };
+    expect(linux).toEqual(["voice-hotkey", "voice-linux", "voice-files"]);
+    expect(builder.linux.extraResources.find(({ from }) => from === "dist/helpers")?.filter).toEqual(linux);
+    expect([...new Set(spawned)].sort()).toEqual([...new Set([...products, ...linux])].sort());
     expect([...copied].sort()).toEqual([...products].sort());
-    expect(copied).toEqual(expect.arrayContaining(spawned));
   });
 
   /** The update feed (ADR-DESK-041): the app reads `latest-mac.yml` from TabMail's own CDN, and from
@@ -94,4 +99,21 @@ describe("the Mac app's packaging", () => {
     // The window's title and the mounted volume's name: the app's, without a version.
     expect(builder.dmg.title).toBe("TabMail Voice");
   });
+});
+
+
+test("Linux ships the PNG consumed by native Settings windows", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; to?: string }[] } };
+  expect(builder.linux.extraResources).toContainEqual({ from: "resources/icon.png", to: "icon.png" });
+  expect(readFileSync(join(root, "resources/icon.png")).subarray(1, 4).toString()).toBe("PNG");
+});
+
+
+test("Linux launcher icons include theme-indexed sizes, not only the 1024px source", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { icon: string } };
+  for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+    const png = readFileSync(join(root, builder.linux.icon, `${size}x${size}.png`));
+    expect(png.readUInt32BE(16)).toBe(size);
+    expect(png.readUInt32BE(20)).toBe(size);
+  }
 });

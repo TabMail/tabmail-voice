@@ -415,19 +415,6 @@ export class DictationController extends Observable {
     if (isFollowUp) void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
-    this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
-    const read = this.contextRead;
-    if (read) {
-      void read.then((context) => {
-        if (this.generation !== current) return;
-        this.screenRead = screenShown(context);
-        this.isScreenReadDone = true;
-        this.updateTools();
-      });
-    } else {
-      this.isScreenReadDone = true;
-    }
-
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
     // time most of the start-up is done.
     const recorder = new AudioRecorder();
@@ -444,6 +431,22 @@ export class DictationController extends Observable {
       },
       () => this.microphoneLost(current),
     );
+    // Capture must be dispatched before optional accessibility work: a native
+    // screen read can block its request loop while the audio worker is ready.
+    if (this.generation !== current) return;
+    this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
+    const read = this.contextRead;
+    if (read) {
+      void read.then((context) => {
+        if (this.generation !== current) return;
+        this.screenRead = screenShown(context);
+        this.isScreenReadDone = true;
+        this.updateTools();
+      });
+    } else {
+      this.isScreenReadDone = true;
+    }
+
     if (handsFree) {
       // A double tap is deliberate: no hold to wait for.
       this.deps.tips.markLearned("doubleTap");

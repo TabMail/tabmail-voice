@@ -65,7 +65,7 @@ export class FileStoreError extends Error {
 export const filesConnector = defineConnector({
   id: "files",
   order: 40,
-  platforms: ["darwin", "win32"],
+  platforms: ["darwin", "win32", "linux"],
   displayName: "Files",
   settingsDescription: "Finds indexed files and email messages in your home folder, and opens the ones you ask for.",
   tools: ({ fileStore, home }: Pick<ConnectorServices, "fileStore" | "home">): ConnectorTool[] => [new FilesSearchTool(fileStore, home), new FileOpenTool(fileStore, home)],

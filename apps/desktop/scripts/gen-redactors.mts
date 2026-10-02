@@ -121,7 +121,7 @@ ${redactors.map((r) => `    {"${r.name}", ${cppLiteral(r.pattern)}, ${r.ignoreCa
 export function generatedRedactors(): { path: string; contents: string }[] {
   return [
     { path: join(root, "native/macos/Sources/VoiceMacOSKit/Privacy/Redactors.generated.swift"), contents: swiftRedactors() },
-    { path: join(root, "native/windows/src/Privacy/Redactors.generated.h"), contents: windowsRedactors() },
+    { path: join(root, "native/shared/privacy/Redactors.generated.h"), contents: windowsRedactors() },
   ];
 }
 

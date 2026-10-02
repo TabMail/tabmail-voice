@@ -60,9 +60,9 @@ function Page({ state }: { state: WelcomeState }) {
       );
     case "accessibility":
       return (
-        <StepPage title="Accessibility" text="Lets TabMail Voice notice the dictation key in any app and type the text where your cursor is. Screen reading uses it too.">
-          <GrantRow granted={state.accessibilityTrusted} button="Allow Accessibility Access" onRequest={() => send({ type: "requestAccessibility" })} />
-          {!state.accessibilityTrusted && <span className="caption">In System Settings, turn on TabMail Voice under Privacy &amp; Security › Accessibility.</span>}
+        <StepPage title={state.keyboardPermission?.title ?? "Accessibility"} text={state.keyboardPermission?.description ?? "Lets TabMail Voice notice the dictation key in any app and type the text where your cursor is. Screen reading uses it too."}>
+          <GrantRow granted={state.accessibilityTrusted} button={state.keyboardPermission?.button ?? "Allow Accessibility Access"} onRequest={() => send({ type: "requestAccessibility" })} />
+          {!state.accessibilityTrusted && <span className="caption">{state.keyboardPermission?.instructions ?? "In System Settings, turn on TabMail Voice under Privacy & Security › Accessibility."}</span>}
           {state.vscodeFix !== "notNeeded" && <VSCodeFix done={state.vscodeFix === "done"} />}
         </StepPage>
       );
@@ -80,7 +80,7 @@ function Page({ state }: { state: WelcomeState }) {
           </label>
           {state.readsScreen && !state.accessibilityTrusted && <span className="caption">Screen reading needs Accessibility access.</span>}
           <hr />
-          <span>Agent mode (press Space while dictating) can:</span>
+          <span>Agent mode ({state.keyboardPermission?.agentShortcut ?? "press Space while dictating"}) can:</span>
           {alphabetical([...offeredAgentToolIDs, ...state.connectors]).map((key) =>
             isConnectorID(key) ? (
               <label key={key} className="check">
