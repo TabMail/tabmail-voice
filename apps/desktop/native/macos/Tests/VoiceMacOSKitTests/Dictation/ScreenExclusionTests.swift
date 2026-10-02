@@ -461,27 +461,40 @@ struct ScreenExclusionTests {
     }
 
     /// A page of an excluded website framed inside a field, in the window or in a row: a field is
-    /// read by its value and never walked into, so the page is looked for before it is read. So is
-    /// one in a field too thin to show anything, and one framed in another website's page there.
+    /// read by its value and never walked into, so the page is looked for first. The field is not
+    /// read and a marker stands in its place; the rest of the window is read. So with the page
+    /// framed in another website's page there. A field too thin to show anything is not read
+    /// either way, and leaves no marker.
     @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
-    func anExcludedWebsiteFramedInAFieldIsNotRead(role: String, inRow: Bool) {
+    func aFieldFramingAnExcludedWebsiteIsMarkedHiddenAndTheRestRead(role: String, inRow: Bool) {
         let excluded = page("pay.example.com", "card 4242")
-        let shown = CGRect(x: 10, y: 10, width: 200, height: 40)
+        let shown = CGRect(x: 10, y: 40, width: 200, height: 40)
         let shapes: [(name: String, frame: CGRect, inside: FakeElement)] = [
             ("shown", shown, FakeElement("AXGroup", children: [excluded])),
-            ("too thin to show", CGRect(x: 10, y: 10, width: 200, height: 1), FakeElement("AXGroup", children: [excluded])),
+            ("too thin to show", CGRect(x: 10, y: 40, width: 200, height: 1), FakeElement("AXGroup", children: [excluded])),
             ("in another page", shown, FakeElement("AXWebArea", ["host": "news.example.org"], children: [excluded])),
         ]
+        let marker = HelperConfig.contextHiddenMarker
         for shape in shapes {
             let field = FakeElement(role, [kAXValueAttribute: "Field words"], frame: shape.frame, children: [shape.inside])
             let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300), children: [
-                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
-                inRow ? FakeElement("AXRow", frame: shown, children: [FakeElement("AXCell", children: [field])]) : field,
+                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"], frame: CGRect(x: 10, y: 10, width: 100, height: 16)),
+                inRow ? FakeElement("AXRow", frame: shown, children: [FakeElement("AXCell", children: [
+                    FakeElement("AXStaticText", [kAXValueAttribute: "10:15"], frame: CGRect(x: 10, y: 40, width: 40, height: 16)), field,
+                ])]) : field,
+                FakeElement("AXStaticText", [kAXValueAttribute: "After"], frame: CGRect(x: 10, y: 100, width: 100, height: 16)),
             ])
-            #expect(!walk(window, excluding: ["example.com"]).read, "\(shape.name)")
+            let isShown = shape.name != "too thin to show"
+            let hidden = walk(window, excluding: ["example.com"])
+            #expect(hidden.read, "\(shape.name)")
+            #expect(!hidden.text.contains("Field words") && !hidden.text.contains("card 4242"), "\(shape.name)")
+            let place = inRow ? (isShown ? "| 10:15 | \(marker)" : "| 10:15") : (isShown ? "> \(marker)" : nil)
+            #expect(hidden.text == ["Outer", place, "After"].compactMap { $0 }.joined(separator: "\n"), "\(shape.name)")
+
             let read = walk(window, excluding: ["example.net"])
             #expect(read.read, "\(shape.name)")
-            #expect(read.text.contains("Field words") == (shape.name != "too thin to show"), "\(shape.name)")
+            #expect(read.text.contains("Field words") == isShown, "\(shape.name)")
+            #expect(!read.text.contains(marker), "\(shape.name)")
         }
     }
 

@@ -755,17 +755,26 @@ its table row, and a row's text was gathered from static text and text fields on
 heading or link now takes a text area's value like a field's, shown ones only, within the same
 `contextMaxBlockChars`. A password field is still never read (`walkNeverReadsAPasswordField`).
 
-**Amendment 2026-10-01: a field that frames an excluded page hides the screen.** A field (text area
-or text field) is read by its value and never walked into, in the window and in a row alike, so a
-page of an excluded website framed inside one was not seen: the window was read without it, and
-agent mode was not told anything was hidden. Owner: that case "should still have that note as
-well". The reader now looks inside a field for an excluded page (`holdsExcludedPage`) before reading
-it, and refuses the window as for any excluded page, so the screen is answered as hidden for privacy
-(ADR-DESK-047's note). No app is known to frame a page in a field. The cost: most fields have no
-children, but a rich-text editor on a web page that is not in focus has its whole subtree looked
-through (roles and page addresses, never text) before its value is read. That look is bounded by
-the read's time budget, not its element budget, so on a very large editor the rest of the window
-after it may go unread: context lost, never privacy.
+**Amendment 2026-10-01: a field that frames an excluded page is marked hidden, and the rest is
+read.** A field (text area or text field) is read by its value and never walked into, in the window
+and in a row alike, so a page of an excluded website framed inside one was not seen: the window was
+read without it and nothing said so. Owner: "There should be a marker. We still need to read the
+rest and just have this marker that some area is hidden."
+- The reader looks inside a shown field for an excluded page (`holdsExcludedPage`) before reading
+  it. A field that holds one is not read: `HelperConfig.contextHiddenMarker` ("[hidden for
+  privacy]") stands in its place, as the field's block in the window or its cell in a row, and the
+  walk goes on.
+- First built, the same day, as a refusal of the whole window (the screen answered as hidden, as
+  the Windows helper does for an edit control); the owner chose the marker instead. Everywhere
+  else an excluded page still hides the whole window (ADR-DESK-047): a page the window shows
+  brings its title and tabs with it, which a field's contents do not.
+- The Windows helper still refuses the whole window in this case: the stricter of the two, not
+  changed here because it could not be built or run on this machine.
+- No app is known to frame a page in a field. The cost: most fields have no children, but a
+  rich-text editor on a web page that is not in focus has its whole subtree looked through (roles
+  and page addresses, never text) before its value is read. That look is bounded by the read's time
+  budget, not its element budget, so on a very large editor the rest of the window after it may go
+  unread: context lost, never privacy.
 
 ## ADR-DESK-017: Settings are read once, as a dictation starts
 
