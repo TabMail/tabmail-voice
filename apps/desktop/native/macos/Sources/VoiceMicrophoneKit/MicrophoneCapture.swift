@@ -27,12 +27,16 @@ import VoiceHelperSupport
 /// AVFAudio, and building, starting or releasing any engine meanwhile waited on the audio system
 /// for up to minutes (one build took 64 s after AirPods were switched off), raised an Objective-C
 /// exception in `installTap`, or crashed in AVFAudio's own listener. So nothing here reacts to a
-/// change but by saying so, from a queue no engine work runs on, and no engine is released here:
-/// the process ending releases it.
+/// change but by saying so, from a queue no engine work runs on, and no engine that was prepared
+/// or ran is released here: the process ending releases it. (One built for an input with no
+/// format, which never had a tap, is dropped at once.)
 final class MicrophoneCapture: @unchecked Sendable {
     enum CaptureError: Error {
         case noInputDevice
         case cannotConvert
+        /// This process's engine has started, or was prepared for another device: the start is
+        /// for a fresh process.
+        case engineUsed
     }
 
     private struct Prepared {
@@ -61,9 +65,9 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var prepared: Prepared?
     /// The running session's engine; `sessions.running` names its session.
     private var engine: AVAudioEngine?
-    /// Engines that ran, kept until the process ends: releasing one while a headset changes waits on
-    /// the audio system, and would hold up the process's end.
-    private var stopped: [AVAudioEngine] = []
+    /// The engine that ran, kept until the process ends: releasing it while a headset changes waits
+    /// on the audio system, and would hold up the process's end.
+    private var stopped: AVAudioEngine?
     private var sessions = MicrophoneSessions()
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
     /// Watches the running engine for a configuration change (it stopped by itself).
@@ -119,22 +123,34 @@ final class MicrophoneCapture: @unchecked Sendable {
     func stop(session: Int) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             queue.async {
-                if self.sessions.stop(session), self.stopEngine() { self.onEnd() }
+                if self.sessions.stop(session) {
+                    self.stopEngine()
+                    self.onEnd()
+                }
                 continuation.resume()
             }
         }
     }
 
     private func startOnQueue(session: Int, sampleRate: Double) throws {
-        guard sessions.start(session) else {
+        switch sessions.start(session) {
+        case .skipped:
             HelperLog.debug("MicrophoneCapture: session \(session) was stopped or superseded before it started")
             return
+        case .endsProcess:
+            HelperLog.debug("MicrophoneCapture: session \(session) asked after this process's engine started; ending")
+            stopEngine()
+            onEnd()
+            throw CaptureError.engineUsed
+        case .runs:
+            break
         }
-        stopEngine()
         let current = Self.defaultInputDevice()
         do {
             let engine: AVAudioEngine
-            if let prepared, prepared.device == current {
+            if let prepared {
+                // Prepared for another device: the input changed, and the process is ending.
+                guard prepared.device == current else { throw CaptureError.engineUsed }
                 engine = prepared.engine
             } else {
                 HelperLog.debug("MicrophoneCapture: no engine prepared for device \(current); building one")
@@ -168,25 +184,23 @@ final class MicrophoneCapture: @unchecked Sendable {
         HelperLog.debug("MicrophoneCapture: session \(session) started")
     }
 
-    /// Stops the running engine, if any, so the microphone is off; whether one ran. The engine is
-    /// kept: the process ends with it.
-    @discardableResult
-    private func stopEngine() -> Bool {
+    /// Stops the running engine, if any, so the microphone is off. The engine is kept: the process
+    /// ends with it.
+    private func stopEngine() {
         tap.withLockUnchecked { $0 = nil }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
-        guard let engine else { return false }
+        guard let engine else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        stopped.append(engine)
+        stopped = engine
         self.engine = nil
         HelperLog.debug("MicrophoneCapture: engine stopped")
-        return true
     }
 
-    /// Prepares the process's engine, unless one is prepared or has run.
+    /// Prepares the process's engine, unless one is prepared or has started.
     private func prepareOnQueue() {
-        guard prepared == nil, engine == nil, stopped.isEmpty else { return }
+        guard prepared == nil, sessions.mayPrepare else { return }
         do {
             let device = Self.defaultInputDevice()
             let began = ContinuousClock.now
@@ -308,23 +322,45 @@ final class MicrophoneCapture: @unchecked Sendable {
     }
 }
 
-/// Which of the app's numbered sessions the microphone runs for. The app stops each session before
-/// it starts the next, but the helper handles each request in its own task, so they can arrive in
-/// any order: a stop stops its own session or an older one, never a newer; and a start the app has
-/// already stopped, or older than the one running, does not start.
+/// Which of the app's numbered sessions the microphone runs for, and when the process ends: it
+/// runs one engine (`MicrophoneCapture`), so the first start that runs is the only one, and the
+/// process ends once that session stops or its start fails. The app stops each session before it
+/// starts the next, but the helper handles each request in its own task, so they can arrive in any
+/// order: a stop stops its own session or an older one, never a newer; a start the app has already
+/// stopped, or older than the one running, does not start; and a newer start that comes before the
+/// running session's stop ends the process, so the app's retry starts it in a fresh one.
 struct MicrophoneSessions {
+    enum Start: Equatable {
+        /// The engine starts for the session.
+        case runs
+        /// Already stopped or superseded: nothing happens.
+        case skipped
+        /// The process's engine has started: any running session stops, and the process ends.
+        case endsProcess
+    }
+
     /// The session the microphone runs for.
     private(set) var running: Int?
     private var lastStopped = 0
+    /// Whether this process's engine has started, run or failed.
+    private var engineStarted = false
 
-    /// Whether `session` starts, in place of any older one running.
-    mutating func start(_ session: Int) -> Bool {
-        guard session > lastStopped, session > (running ?? 0) else { return false }
+    /// Whether the engine may be prepared: it has not started.
+    var mayPrepare: Bool { !engineStarted }
+
+    mutating func start(_ session: Int) -> Start {
+        guard session > lastStopped, session > (running ?? 0) else { return .skipped }
+        guard !engineStarted else {
+            lastStopped = session
+            running = nil
+            return .endsProcess
+        }
+        engineStarted = true
         running = session
-        return true
+        return .runs
     }
 
-    /// Whether the running session stops: `session` itself, or an older one.
+    /// Whether the running session stops, `session` itself or an older one, which ends the process.
     mutating func stop(_ session: Int) -> Bool {
         lastStopped = max(lastStopped, session)
         guard let current = running, current <= session else { return false }
@@ -332,7 +368,7 @@ struct MicrophoneSessions {
         return true
     }
 
-    /// `session`'s start failed: nothing runs, and, as after its stop, no older session starts.
+    /// `session`'s start failed: nothing runs, no older session starts, and the process ends.
     mutating func failed(_ session: Int) {
         lastStopped = max(lastStopped, session)
         if running == session { running = nil }

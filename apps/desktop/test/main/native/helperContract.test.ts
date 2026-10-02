@@ -419,6 +419,12 @@ describe("helper wire contract", () => {
         "voice-microphone: microphone not prepared: HelperError.timeout(microphonePrepare)",
         "voice-microphone: microphone not stopped: HelperError.timeout(microphoneStop)",
       ]);
+      // The helper answering with an error is one too.
+      failure = new HelperError("failed", "microphonePrepare", "microphone: noInputDevice");
+      microphone({ type: "prepare" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(errors.at(-1)).toBe("voice-microphone: microphone not prepared: HelperError.failed(microphonePrepare: microphone: noInputDevice)");
+      expect(errors).toHaveLength(3);
     } finally {
       configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
     }

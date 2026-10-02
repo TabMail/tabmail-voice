@@ -1819,9 +1819,13 @@ the first engine of a fresh process always worked. So a process runs one engine.
   `microphoneHelperRestartExitCode`; logged at debug, not as an error) and its `onStart` prepares
   the new process's engine. A prepare or a stop cut short by such an exit, which can come before
   their reply, is logged at debug. Any other exit restarts after `helperRestartDelay`, as every
-  helper's. This replaces `InputChanges`, the settle wait, the delayed release
-  (`engineReleaseDelay`) and the helper's `microphoneLost` event on macOS (`voice-windows` still
-  sends it).
+  helper's. A start that reaches a process whose engine has already started (a newer dictation's
+  start handled before the previous one's stop, as the helper takes requests in any order) or whose
+  engine was prepared for another device is refused and ends the process, so the app's retry
+  starts it in a fresh one; `MicrophoneSessions` makes these decisions and its tests pin them. This
+  replaces `InputChanges`, the settle wait, the delayed release of engines (the amendment above,
+  `microphoneDeviceSettleDelay` after their stop) and the helper's `microphoneLost` event on macOS
+  (`voice-windows` still sends it).
 - A change while a dictation is listening ends it as before, now through the helper's exit
   (`onExit` → `SessionAudioCapture.lost()`): what was said is sent, and it is not retried. The
   paste and the caret are `voice-macos`'s, which keeps running, so the paste no longer waits out a

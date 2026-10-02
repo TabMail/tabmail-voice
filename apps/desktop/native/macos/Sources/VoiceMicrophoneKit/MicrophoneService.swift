@@ -30,6 +30,17 @@ public enum MicrophoneService {
         return ["session": .number(Double(session)), "samples": .string(data.base64EncodedString())]
     }
 
+    /// Ends the process after the chunks already queued on `chunkQueue`, so the app has all that
+    /// was heard.
+    static func ending(after chunkQueue: DispatchQueue, end: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
+        {
+            chunkQueue.async {
+                HelperLog.debug("MicrophoneService: ending, to be started afresh")
+                end()
+            }
+        }
+    }
+
     public static func register(on channel: HelperChannel) -> AnyObject {
         // Without the process's exit handlers: they would release what the audio system holds, which
         // is what waits when a device has changed.
@@ -46,13 +57,7 @@ public enum MicrophoneService {
                     channel.emit(microphoneChunkEvent, microphoneChunk(session: session, samples: samples))
                 }
             },
-            // After the chunks already queued, so the app has all that was heard.
-            onEnd: {
-                chunkQueue.async {
-                    HelperLog.debug("MicrophoneService: ending, to be started afresh")
-                    end()
-                }
-            }
+            onEnd: ending(after: chunkQueue, end: end)
         )
 
         channel.on("microphonePrepare") { _ in

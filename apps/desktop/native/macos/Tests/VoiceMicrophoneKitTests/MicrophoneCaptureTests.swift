@@ -77,52 +77,89 @@ struct MicrophoneCaptureTests {
 }
 
 /// Which session the microphone runs for, as the app's starts and stops reach the helper in any
-/// order (each request is handled in its own task). The app always stops a session before starting
-/// the next.
+/// order (each request is handled in its own task), and when the process ends: it runs one engine,
+/// so it ends once its session stops or its start fails, and a newer start that comes before the
+/// running session's stop ends it too. The app always stops a session before starting the next.
 struct MicrophoneSessionsTests {
+    enum Step: Equatable {
+        case start(Int)
+        case stop(Int)
+    }
+
+    enum Decision: Equatable {
+        case start(MicrophoneSessions.Start)
+        /// A stop: whether it stopped the running session, which ends the process.
+        case stop(Bool)
+    }
+
     /// What each start or stop decided, in order, and the session left running.
-    private func run(_ steps: [(start: Bool, session: Int)]) -> (decisions: [Bool], running: Int?) {
+    private func run(_ steps: [Step]) -> (decisions: [Decision], running: Int?) {
         var sessions = MicrophoneSessions()
-        let decisions = steps.map { $0.start ? sessions.start($0.session) : sessions.stop($0.session) }
+        let decisions = steps.map { step -> Decision in
+            switch step {
+            case .start(let session): .start(sessions.start(session))
+            case .stop(let session): .stop(sessions.stop(session))
+            }
+        }
         return (decisions, sessions.running)
     }
 
-    @Test func aStartRunsUntilItsStop() {
-        #expect(run([(true, 1)]) == ([true], 1))
-        #expect(run([(true, 1), (false, 1)]) == ([true, true], nil))
+    @Test func aStartRunsUntilItsStopWhichEndsTheProcess() {
+        #expect(run([.start(1)]) == ([.start(.runs)], 1))
+        #expect(run([.start(1), .stop(1)]) == ([.start(.runs), .stop(true)], nil))
     }
 
-    /// Stop(n) handled before its start: the microphone never starts for n.
+    /// Stop(n) handled before its start: the microphone never starts for n, and the process goes on.
     @Test func aStopBeforeItsStartKeepsTheMicrophoneOff() {
-        #expect(run([(false, 1), (true, 1)]) == ([false, false], nil))
+        #expect(run([.stop(1), .start(1)]) == ([.stop(false), .start(.skipped)], nil))
     }
 
-    /// Start(n+1) handled before stop(n): n+1 runs, and the late stop(n) leaves it running.
-    @Test func aLateStopLeavesTheNewerSessionRunning() {
-        #expect(run([(true, 1), (true, 2), (false, 1)]) == ([true, true, false], 2))
+    /// Start(n+1) handled before stop(n): no second engine starts in the process; n stops and the
+    /// process ends, and the late stop(n) is nothing more.
+    @Test func aNewerStartBeforeTheStopEndsTheProcess() {
+        #expect(run([.start(1), .start(2), .stop(1)]) == ([.start(.runs), .start(.endsProcess), .stop(false)], nil))
+        #expect(run([.start(1), .stop(1), .start(2)]) == ([.start(.runs), .stop(true), .start(.endsProcess)], nil))
     }
 
     /// Start(n+1), then a late start(n), then stop(n): the newer session keeps the microphone until
     /// its own stop.
     @Test func aLateStartDoesNotTakeOverFromANewerSession() {
-        #expect(run([(true, 2), (true, 1), (false, 1)]) == ([true, false, false], 2))
-        #expect(run([(true, 2), (true, 1), (false, 1), (false, 2)]) == ([true, false, false, true], nil))
+        #expect(run([.start(2), .start(1), .stop(1)]) == ([.start(.runs), .start(.skipped), .stop(false)], 2))
+        #expect(run([.start(2), .start(1), .stop(1), .stop(2)]) == ([.start(.runs), .start(.skipped), .stop(false), .stop(true)], nil))
     }
 
     /// Stops repeated, or of a session long gone, change nothing; a start after its own stop does not run.
     @Test func repeatedStopsChangeNothing() {
-        #expect(run([(true, 1), (false, 1), (false, 1), (true, 1), (true, 2)]) == ([true, true, false, false, true], 2))
+        #expect(run([.start(1), .stop(1), .stop(1), .start(1)]) == ([.start(.runs), .stop(true), .stop(false), .start(.skipped)], nil))
     }
 
-    /// A failed start runs nothing, and the next session starts.
+    /// The engine is prepared until it starts, and never after: not once its session stopped, its
+    /// start failed or a newer start ended the process.
+    @Test func theEngineIsPreparedOnlyBeforeItStarts() {
+        var sessions = MicrophoneSessions()
+        let before = sessions.mayPrepare
+        _ = sessions.stop(1)
+        let afterStaleStop = sessions.mayPrepare
+        _ = sessions.start(2)
+        let whileRunning = sessions.mayPrepare
+        _ = sessions.stop(2)
+        #expect(before && afterStaleStop && !whileRunning && !sessions.mayPrepare)
+
+        var failed = MicrophoneSessions()
+        _ = failed.start(1)
+        failed.failed(1)
+        #expect(!failed.mayPrepare)
+    }
+
+    /// A failed start runs nothing, and, the process ending, no other start runs in it.
     @Test func aFailedStartRunsNothing() {
         var sessions = MicrophoneSessions()
         let started = sessions.start(2)
         sessions.failed(2)
-        #expect(started && sessions.running == nil)
+        #expect(started == .runs && sessions.running == nil)
         let stopped = sessions.stop(2)
         let next = sessions.start(3)
-        #expect(!stopped && next && sessions.running == 3)
+        #expect(!stopped && next == .endsProcess && sessions.running == nil)
     }
 
     /// Start(2) failed while the app's stop(1) is still on its way: a late start(1) does not run.
@@ -131,7 +168,7 @@ struct MicrophoneSessionsTests {
         let started = sessions.start(2)
         sessions.failed(2)
         let late = sessions.start(1)
-        #expect(started && !late && sessions.running == nil)
+        #expect(started == .runs && late == .skipped && sessions.running == nil)
     }
 }
 
