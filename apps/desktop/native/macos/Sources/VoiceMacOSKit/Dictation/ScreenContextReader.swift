@@ -180,6 +180,9 @@ enum ScreenContextReader {
     /// False when the window shows a page of an excluded website, in focus or not: the walk stops
     /// there, and what it gathered must not be used. A field that frames such a page (a field is read
     /// by its value, never walked into) is not read, and `contextHiddenMarker` stands in its place.
+    /// An element read in one piece by a label of its own and not walked into (a piece of text, a
+    /// heading, a link, a row, a web control with its title) is looked through for such a page
+    /// (`holdsExcludedPage`): its label can be made of what it holds.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
                                        into context: inout ScreenContext) -> Bool {
@@ -211,6 +214,9 @@ enum ScreenContextReader {
             let role = tree.string(element, kAXRoleAttribute) ?? ""
             if isSkipped(role, inWeb: inWeb) { continue }
             let shown = frame.map(ScreenContext.isShown) ?? true
+            func holdsPage() -> Bool {
+                Self.holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+            }
 
             switch role {
             case "AXWebArea":
@@ -218,12 +224,17 @@ enum ScreenContextReader {
                 if exclusions.excludes(page) { return false }
                 if context.host == nil { context.host = page.name }
             case "AXStaticText":
+                if shown, holdsPage() { return false }
                 if shown { context.append(.text, tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame) }
                 continue
             case "AXHeading", "AXLink", "AXRow":
                 if shown {
                     let kind: ScreenContext.Block.Kind = role == "AXHeading" ? .heading : role == "AXLink" ? .link : .row
                     var text = label(of: element, in: tree)
+                    // Read by its label, nothing inside it is reached: a page in it is looked for.
+                    // Without a label its text is gathered, which finds a page on its way and
+                    // marks a field that frames one.
+                    if text != nil, holdsPage() { return false }
                     if text == nil {
                         text = subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb,
                                            excluding: exclusions, started: started, context: &context)
@@ -246,6 +257,7 @@ enum ScreenContextReader {
                 }
                 continue
             case _ where inWeb && HelperConfig.contextWebControlRoles.contains(role):
+                if shown, holdsPage() { return false }
                 if let title = drawnTitle(of: element, in: tree) {
                     if shown { context.append(.text, title, frame: frame) }
                     continue
@@ -303,6 +315,11 @@ enum ScreenContextReader {
                 let hidden = shown && (role == "AXTextField" || role == "AXTextArea")
                     && holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
                                          within: HelperConfig.contextTimeBudget, since: started)
+                // A piece of text or a titled control that holds one refuses the window, as in the walk.
+                if shown, !hidden, role != "AXTextField", role != "AXTextArea",
+                   holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
+                    return nil
+                }
                 let text = hidden ? HelperConfig.contextHiddenMarker
                     : (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

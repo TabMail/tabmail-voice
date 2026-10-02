@@ -293,7 +293,9 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   - *The Windows helper refuses a window for an excluded page it finds before checking that the
     page is inside the window, and looks through a link, row or control for one before reading
     its name. The Mac skips an element outside the window first. Windows is the stricter; matching
-    the Mac would loosen it: left for the owner.*
+    the Mac would loosen it: left for the owner. (Settled the same day, in ADR-DESK-047's
+    amendments: the Mac looks through such an element too, and Windows is to skip a page outside
+    the window as the Mac does.)*
 
   *The Windows changes were written and reviewed by reading: they were not built or run when made.)*
 - *(Amended 2026-10-01, owner: where the two helpers differ, the read is to be the larger of the
@@ -2685,7 +2687,8 @@ starts alike; case and a trailing dot don't matter.
   has the focus itself, and any page inside the focused element (a page that frames an excluded
   one, a focused group holding one: `holdsExcludedPage`), looked into before the caret's text is asked for. The walk then refuses the whole window at any page of an excluded site, in
   focus or not, framed in another page or inside a row, a heading or a link that has no label of its
-  own (one with a label gives its label, and nothing inside it is looked at): with the caret in the
+  own (one with a label gave its label, and nothing inside it was looked at; amended below,
+  2026-10-01: it is looked through first): with the caret in the
   browser's address field the page is still on screen. `readScreen` answers that the screen is hidden, as for an excluded
   app, and drops a context whose host is excluded whatever the reader did. A refused read gives
   back nothing of what it had gathered (`gather` answers no context at all). `focusedFieldValue`
@@ -2730,3 +2733,23 @@ starts alike; case and a trailing dot don't matter.
   read until the list is updated or the user adds it.
 - Windows and Linux take the same two lists with their helpers' screen read, and run the shared
   host cases.
+
+*(Amended 2026-10-01, owner: an element the Mac helper reads in one piece is looked through for an
+excluded page first, as the Windows helper does. A row, a heading or a link with a label of its own,
+a piece of text, and a web control with a title are read by that label and never walked into, so a
+page inside one was not seen, and a label can be made of what the element holds. The walk now looks
+through each such element that is shown (`holdsExcludedPage`, for pages only) and refuses the whole
+window when it holds a page of an excluded website or one whose address is unknown, the same answer
+as for a page the walk reaches itself: a page in a row is a page the window shows. So for a piece
+of text or a titled control inside a row whose text is gathered. A field that frames such a page is
+the other case and keeps its own answer, the marker in its place, in the window and in a row with
+no label (#94; Windows: #96); inside a row, heading or link read by its label, where the field is
+never reached, it refuses the window like any page there. The look keeps to the walk's budgets, past which
+the element is taken to hold none, as before. It asks every such element for its children, which
+the walk did not before; what that costs on a large page was not measured on a live app.)*
+
+*(Amended 2026-10-01, owner: an excluded page that lies wholly outside the window is skipped
+without hiding the window, which is what the Mac helper does. The Windows helper answers "hidden"
+for it, before checking that the page is inside the window and shown; neither helper reads that
+page, so the Mac's answer loses nothing and reads more. The Windows helper is to follow: #97.)*
+

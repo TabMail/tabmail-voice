@@ -584,6 +584,43 @@ struct ScreenExclusionTests {
         #expect(read(fillers: budget, behind: nil) == "Outer\n\(mark)Field words\nAfter")
     }
 
+    /// The same with a label of its own, and for a piece of text and a web control with a title:
+    /// such an element is read in one piece and never walked into, and its label can be made of
+    /// what it holds, so it is looked through and the window refused.
+    @Test(arguments: ["AXRow", "AXHeading", "AXLink", "AXStaticText", "AXButton"])
+    func anExcludedWebsiteInsideALabelledElementIsNotRead(role: String) {
+        func window(frame: CGRect? = nil) -> (window: FakeElement, holder: FakeElement) {
+            let holder = FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"], frame: frame,
+                                     children: [FakeElement("AXGroup", children: [page("pay.example.com", "card 4242")])])
+            let area = FakeElement("AXWebArea", ["host": "example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]), holder])
+            return (FakeElement("AXWindow", children: [area]), holder)
+        }
+        let shown = window()
+        let refused = gather(shown.window, focused: nil, focusPath: [], excluding: ["example.com"])
+        #expect(!refused.read && refused.context.blocks.isEmpty)
+        #expect(!walk(shown.window, excluding: ["example.com"]).read)
+
+        // Not excluded: it is read by its label, as before, and not walked into.
+        let read = walk(shown.window, excluding: ["example.net"])
+        #expect(read.read)
+        #expect(read.text.contains("Pay now") && !read.text.contains("card 4242"))
+
+        // One too thin to show anything is not read and not looked through, as before.
+        let thin = window(frame: CGRect(x: 0, y: 0, width: 200, height: 1))
+        let hidden = walk(thin.window, excluding: ["example.com"])
+        #expect(hidden.read && hidden.text == "Outer")
+
+        // Inside a row with no label, whose text is gathered: a piece of text or a titled control
+        // that holds the page refuses the window there too.
+        if role == "AXStaticText" || role == "AXButton" {
+            let row = FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "10:15"]), shown.holder])
+            let area = FakeElement("AXWebArea", ["host": "example.org"], children: [row])
+            let inRow = FakeElement("AXWindow", children: [area])
+            #expect(!walk(inRow, excluding: ["example.com"]).read)
+            #expect(walk(inRow, excluding: ["example.net"]).text == "| 10:15 | Pay now")
+        }
+    }
+
     /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
     /// read around the caret and its visible lines kept as a plain field.
     @Test func aTerminalsCaretComesFromItsPaneWhenThereIsOne() {
