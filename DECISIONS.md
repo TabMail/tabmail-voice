@@ -2174,11 +2174,28 @@ model; TabMail on iOS does the same (its ADR-IOS-086).
   missed. At 200 words of up to 6 each, the list could pass AssemblyAI's 1,000-word total should the
   backend fall back to it (its ADR-025).
 
-**Amendment 2026-10-02 — a full dictionary keeps learning, dropping the learned word used least
-recently.** Owner: at the cap, auto-learned words should keep updating, the learned word *used* least
-recently giving way (not the one learned first), with a stamp of each word's last use; the typed
-words are always listed on top in Settings. Before, a full dictionary refused every new word, typed or
-learned, so learning stopped for good, silently, once 100 words were in.
+**Amendment 2026-10-02 — 150 dictionary words (100 typed at most) and 50 screen terms; a full
+dictionary keeps learning, dropping the learned word used least recently.** Owner: at the cap,
+auto-learned words should keep updating, the learned word *used* least recently giving way (not the
+one learned first), with a count of each word's last use rather than a time; the typed words are listed on top in
+Settings. Then: 50 of the 200 words sent kept for the screen's terms, 150 for the dictionary, the
+typed words taking precedence up to 100 (refused past that, the user asked to remove one), the learned
+words in the rest, all 150 when none is typed ("we should make use of everything"); a learned word
+dropped with no notice; both lists shown alphabetically. Before, the dictionary and the screen had
+100 each, and a full dictionary refused every new word, typed or learned, so learning stopped for
+good, silently, once 100 words were in.
+- Measured first (`Scripts/stt-compare/vocabulary_limit.py`, OpenRouter, `microsoft/mai-transcribe-2`,
+  a spoken made-up name as the canary): a list of up to 200 terms is taken and 201 refused (HTTP 400);
+  200 common English words, or 200 made-up Korean names, still spell the canary right wherever it is
+  in the list. Lists of made-up Latin names that sound alike ("Zorvekqua") lost it from 129 terms, or
+  from 60 terms of 40 characters, the transcript then exactly the one without a list: a list of
+  invented, similar names can blunt itself well below 200, which no budget fixes. Real words and names
+  do not, so the budget stays the backend's 200.
+- `dictionaryMaxEntries` (150) + `contextTermsMax` (50) = the backend's 200, so every dictionary word
+  is still sent. `dictionaryMaxTypedWords` (100) caps the typed words: `addWord` refuses a new word,
+  or a learned word typed again (one more typed), at the cap; a typed word typed again takes the
+  spelling typed. Settings disables Add with "You can add up to 100 words. Remove one to add
+  another."
 - Each entry keeps `lastUsed`, a count rather than a time (larger is more recent; a clock set back
   can't reorder it): a word's last use is its adding, its typing or learning again, or a dictation
   whose transcript or cleaned text holds it (`AppSettings.useWords`, called by the controller as the
@@ -2186,19 +2203,19 @@ learned, so learning stopped for good, silently, once 100 words were in.
   a longer word too, since a script without spaces has no word edge to look for; a word counted too
   often only stays longer. An entry stored before `lastUsed` (or with an invalid one) reads as never
   used.
-- A new word at `dictionaryMaxEntries`, learned or typed, takes the place of the learned word of the
-  smallest `lastUsed` (the earliest added of a tie), never one learned in the same correction nor
-  one the same correction respells again (marked used before any word is added). A typed
-  word is never dropped: only a dictionary of typed words alone is full, and refuses a typed word with
-  the same note as before.
-- Settings lists the typed words first, then the learned ones, each in the order added; the learning
-  switch's note says a learned word replaces the one used least recently once the list is full. The
-  words are sent in the order stored, all of them, as before.
+- A new word at `dictionaryMaxEntries`, learned or typed (below the typed cap), takes the place of the
+  learned word of the smallest `lastUsed` (the earliest added of a tie), never one learned in the
+  same correction nor one the same correction respells again (marked used before any word is added).
+  A typed word is never dropped.
+- Settings lists the typed words first, then the learned ones, each alphabetically (`localeCompare`);
+  the learning switch's note says learned words fill the room the typed ones leave, up to 150, the
+  one used least recently making way. The words are sent in the order stored, all of them, as before.
 
 **Consequences (amendment):**
 - A learned word can drop out with no notice but the debug log's (`log.content`), as a learned word
   arrives with none.
 - The dictionary file is rewritten after a dictation that holds a dictionary word.
+- Fewer screen terms (50, was 100): the most frequent on screen are kept.
 
 ## ADR-DESK-039: A shorter wait between the release and the text
 

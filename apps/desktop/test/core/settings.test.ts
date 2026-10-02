@@ -590,21 +590,42 @@ describe("dictionary", () => {
     expect(app.dictionary).toEqual([{ word: "Xyvora", learned: false, lastUsed: 3 }, { word: "TabMail", learned: true, lastUsed: 2 }]);
   });
 
-  /** At `config.dictionaryMaxEntries`, half the words the backend takes with a dictation (the other
-   * half are the screen's terms). */
-  test("holds at most its half of the words sent", () => {
-    const app = settings();
-    const words = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `word${index}`);
-    expect(app.learnWords(words)).toHaveLength(config.dictionaryMaxEntries);
-    expect(app.learnWords(["Xyvora"])).toEqual(["Xyvora"]);
-    expect(app.addWord("TabMail")).toBe("added");
-    expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
+  /** Owner, 2026-10-02: of the 200 words the backend takes with a dictation, 50 are the screen's
+   * terms and 150 the dictionary's, at most 100 of them typed; learned words fill the rest, all 150
+   * when none is typed. */
+  test("holds the words sent beside the screen's, at most 100 typed", () => {
+    expect([config.dictionaryMaxEntries, config.dictionaryMaxTypedWords, config.contextTermsMax]).toEqual([150, 100, 50]);
     expect(config.dictionaryMaxEntries + config.contextTermsMax).toBe(200);
+    const app = settings();
+    const learned = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `learned${index}`);
+    expect(app.learnWords(learned)).toHaveLength(config.dictionaryMaxEntries);
+    expect(app.learnWords(["Xyvora"])).toEqual(["Xyvora"]);
+    expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
+    for (let index = 0; index < config.dictionaryMaxTypedWords; index += 1) expect(app.addWord(`typed${index}`)).toBe("added");
+    expect(app.addWord("TabMail")).toBe("full");
+    expect(app.dictionary).toHaveLength(config.dictionaryMaxEntries);
+    expect(app.dictionary.filter((entry) => !entry.learned)).toHaveLength(config.dictionaryMaxTypedWords);
+    expect(app.dictionary.filter((entry) => entry.learned)).toHaveLength(config.dictionaryMaxEntries - config.dictionaryMaxTypedWords);
   });
 
-  /** Owner, 2026-10-02: a full dictionary keeps learning; each new word, learned or typed, takes the
-   * place of the learned word used least recently (not the one learned first), and a typed word is
-   * never dropped. */
+  /** At the cap a learned word typed again would be one more typed word: refused, and it stays
+   * learned. A typed word typed again adds none: it takes the spelling typed. */
+  test("refuses a learned word typed again at the typed cap", () => {
+    const app = settings();
+    app.learnWords(["Xyvora"]);
+    for (let index = 0; index < config.dictionaryMaxTypedWords; index += 1) app.addWord(`typed${index}`);
+    expect(app.addWord("XYVORA")).toBe("full");
+    expect(app.dictionary[0]).toEqual({ word: "Xyvora", learned: true, lastUsed: 1 });
+    expect(app.addWord("TYPED0")).toBe("added");
+    expect(app.dictionary[1]).toEqual({ word: "TYPED0", learned: false, lastUsed: config.dictionaryMaxTypedWords + 2 });
+    app.removeWord("typed1");
+    expect(app.addWord("xyvora")).toBe("added");
+    expect(app.dictionary[0]).toEqual({ word: "xyvora", learned: false, lastUsed: config.dictionaryMaxTypedWords + 3 });
+  });
+
+  /** Owner, 2026-10-02: a full dictionary keeps learning; each new word, learned or typed (below the
+   * typed cap), takes the place of the learned word used least recently (not the one learned first),
+   * and a typed word is never dropped. */
   describe("when full", () => {
     /** A dictionary of typed words, then learned ones, each used once, in order. */
     function full(typed: number): AppSettings {
@@ -649,49 +670,51 @@ describe("dictionary", () => {
       expect(app.dictionary.at(-1)).toEqual({ word: "Xyvora", learned: false, lastUsed: config.dictionaryMaxEntries + 2 });
     });
 
-    /** Typed words only: nothing is dropped. A typed word is refused, nothing is learned; a word
-     * already there is still typed or used. */
+    /** At the typed cap a typed word is refused; learning goes on in the learned words' room, and
+     * however much is learned, no typed word is dropped. */
     test("never drops a typed word", () => {
-      const app = full(config.dictionaryMaxEntries);
+      const app = full(config.dictionaryMaxTypedWords);
       expect(app.addWord("Xyvora")).toBe("full");
-      expect(app.learnWords(["Xyvora"])).toEqual([]);
-      expect(app.addWord("TYPED0")).toBe("added");
+      const learned = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => `later${index}`);
+      for (const word of learned) expect(app.learnWords([word])).toEqual([word]);
       expect(words(app)).toHaveLength(config.dictionaryMaxEntries);
-      app.removeWord("typed1");
-      expect(app.addWord("Xyvora")).toBe("added");
-      expect(words(app).at(-1)).toBe("Xyvora");
+      expect(words(app).slice(0, config.dictionaryMaxTypedWords)).toEqual(Array.from({ length: config.dictionaryMaxTypedWords }, (_, index) => `typed${index}`));
+      expect(words(app).slice(config.dictionaryMaxTypedWords)).toEqual(learned.slice(-(config.dictionaryMaxEntries - config.dictionaryMaxTypedWords)));
     });
 
     /** A correction that respells a word already there and a new one: the word already there is used
      * now, so the new one never drops it, whichever comes first in the correction. */
+    // With the typed words at their cap: the learned word used least recently, then the next.
+    const oldest = `learned${config.dictionaryMaxTypedWords}`;
+    const next = `learned${config.dictionaryMaxTypedWords + 1}`;
+
     test.each([
-      ["after", ["Xyvora", "learned98"]],
-      ["before", ["learned98", "Xyvora"]],
+      ["after", ["Xyvora", oldest]],
+      ["before", [oldest, "Xyvora"]],
     ])("keeps a word learned again in the same correction, listed %s the new one", (_order, learned) => {
-      // learned98 is the learned word used least recently, learned99 the next: learned98, used again,
-      // stays, and Xyvora takes learned99's place.
-      const app = full(config.dictionaryMaxEntries - 2);
+      // The oldest, used again, stays, and Xyvora takes the next one's place.
+      const app = full(config.dictionaryMaxTypedWords);
       expect(app.learnWords(learned)).toEqual(["Xyvora"]);
-      expect(words(app)).toContain("learned98");
-      expect(words(app)).not.toContain("learned99");
-      expect(app.dictionary.find((entry) => entry.word === "learned98")?.lastUsed).toBe(config.dictionaryMaxEntries + 1);
+      expect(words(app)).toContain(oldest);
+      expect(words(app)).not.toContain(next);
+      expect(app.dictionary.find((entry) => entry.word === oldest)?.lastUsed).toBe(config.dictionaryMaxEntries + 1);
     });
 
-    /** Typed words only: a typed word respelled in a correction counts as used even when the new
-     * word with it finds no room. */
-    test("marks a typed word used though a new word in the same correction finds no room", () => {
-      const app = full(config.dictionaryMaxEntries);
-      expect(app.learnWords(["Xyvora", "typed0"])).toEqual([]);
+    /** A typed word respelled in a correction counts as used, beside a new word learned. */
+    test("marks a typed word used in the same correction as a new word", () => {
+      const app = full(config.dictionaryMaxTypedWords);
+      expect(app.learnWords(["Xyvora", "typed0"])).toEqual(["Xyvora"]);
       expect(app.dictionary[0]).toEqual({ word: "typed0", learned: false, lastUsed: config.dictionaryMaxEntries + 1 });
     });
 
-    /** Words learned together don't push each other out: with one learned word to drop, the second
-     * is not learned. */
+    /** Words learned together don't push each other out: once every learned word there is one of
+     * them, the next is not learned. */
     test("doesn't drop a word learned in the same correction", () => {
-      const app = full(config.dictionaryMaxEntries - 1);
-      expect(app.learnWords(["Xyvora", "Kaelthorne Draszek"])).toEqual(["Xyvora"]);
-      expect(words(app).at(-1)).toBe("Xyvora");
-      expect(words(app)).not.toContain(`learned${config.dictionaryMaxEntries - 1}`);
+      const app = full(config.dictionaryMaxTypedWords);
+      const room = config.dictionaryMaxEntries - config.dictionaryMaxTypedWords;
+      const correction = Array.from({ length: room + 1 }, (_, index) => `new${index}`);
+      expect(app.learnWords(correction)).toEqual(correction.slice(0, room));
+      expect(words(app).slice(config.dictionaryMaxTypedWords)).toEqual(correction.slice(0, room));
     });
 
     /** Of learned words never used since they were stored (`lastUsed` 0), the earliest goes first. */

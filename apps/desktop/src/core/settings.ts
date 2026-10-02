@@ -65,7 +65,8 @@ export interface DictationSettings {
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
- * `config.dictionaryMaxEntries` typed words (a learned one makes room). A word already there is `added`, spelled as typed now (and typed, if it was learned). */
+ * `config.dictionaryMaxTypedWords` typed words (a learned word typed again would be one more). A word
+ * already there is `added`, spelled as typed now (and typed, if it was learned). */
 export type AddWordResult = "added" | "invalid" | "full";
 
 /** What excluding an app did: `invalid` for one without a bundle identifier or name, `full` at
@@ -179,23 +180,27 @@ export class AppSettings extends Observable {
     return (this.userName ?? "").trim();
   }
 
-  /** The user's dictionary, in the order the words were added (ADR-DESK-038). */
+  /** The user's dictionary, in the order the words were added (ADR-DESK-038): at most
+   * `config.dictionaryMaxEntries` words, `config.dictionaryMaxTypedWords` of them typed. */
   get dictionary(): DictionaryEntry[] {
     return storedDictionary(this.store.get(Key.dictionary));
   }
 
-  /** Adds a word the user typed. One already there takes the spelling typed, the user's latest; one
-   * learned becomes typed, so it shows as the user's own. A full dictionary drops the learned word
-   * used least recently for it; one of typed words only is full. */
+  /** Adds a word the user typed, refused at `config.dictionaryMaxTypedWords` typed words. One already
+   * there takes the spelling typed, the user's latest; one learned becomes typed, so it shows as the
+   * user's own. A full dictionary drops the learned word used least recently for it. */
   addWord(raw: string): AddWordResult {
     const word = dictionaryWord(raw);
     if (word === null) return "invalid";
     const entries = this.dictionary;
     const use = nextUse(entries);
-    const existing = entries.findIndex((entry) => isSameWord(entry.word, word));
-    if (existing !== -1) entries[existing] = { word, learned: false, lastUsed: use };
-    else {
-      if (!this.makeRoom(entries, use)) return "full";
+    const existing = entries.find((entry) => isSameWord(entry.word, word));
+    const typedFull = entries.filter((entry) => !entry.learned).length >= config.dictionaryMaxTypedWords;
+    if (existing) {
+      if (existing.learned && typedFull) return "full";
+      Object.assign(existing, { word, learned: false, lastUsed: use });
+    } else {
+      if (typedFull || !this.makeRoom(entries, use)) return "full";
       entries.push({ word, learned: false, lastUsed: use });
     }
     this.writeDictionary(entries);

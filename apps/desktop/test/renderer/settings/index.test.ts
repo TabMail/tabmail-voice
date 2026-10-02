@@ -155,8 +155,8 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
     });
 
-    /** The typed words on top, then the learned ones, each in the order added (owner, 2026-10-02), not
-     * by last use: in each half the last uses are in neither the order added nor its reverse. */
+    /** The typed words on top, then the learned ones, each alphabetically whatever the case (owner,
+     * 2026-10-02), neither in the order added nor by last use. */
     test("lists the words, typed first, the learned ones tagged, each with a remove button", async () => {
       const page = await open({
         ...signedIn,
@@ -164,12 +164,13 @@ describe("Settings page", () => {
           { word: "TabMail", learned: true, lastUsed: 4 },
           { word: "Xyvora", learned: false, lastUsed: 5 },
           { word: "Brevalle", learned: true, lastUsed: 2 },
-          { word: "Kaelthorne Draszek", learned: false, lastUsed: 6 },
-          { word: "Ostrava", learned: true, lastUsed: 3 },
-          { word: "Zivora", learned: false, lastUsed: 1 },
+          { word: "Kaelthorne Draszek", learned: false, lastUsed: 7 },
+          { word: "ostrava", learned: true, lastUsed: 3 },
+          { word: "zivora", learned: false, lastUsed: 1 },
+          { word: "Aldrin", learned: false, lastUsed: 6 },
         ],
       });
-      expect(words()).toEqual(["XyvoraRemove", "Kaelthorne DraszekRemove", "ZivoraRemove", "TabMail LearnedRemove", "Brevalle LearnedRemove", "Ostrava LearnedRemove"]);
+      expect(words()).toEqual(["AldrinRemove", "Kaelthorne DraszekRemove", "XyvoraRemove", "zivoraRemove", "Brevalle LearnedRemove", "ostrava LearnedRemove", "TabMail LearnedRemove"]);
       expect(visibleText()).not.toContain("No words yet.");
 
       await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove TabMail"]')?.click());
@@ -177,35 +178,48 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([{ type: "removeDictionaryWord", word: "TabMail" }]);
     });
 
-    /** Full of typed words: a new word is refused with the reason; one already there can still be typed. */
-    test("a dictionary full of typed words takes no new word", async () => {
-      const dictionary = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: false, lastUsed: index + 1 }));
-      const page = await open({ ...signedIn, dictionary });
+    /** A full dictionary of `typed` typed words, then learned ones. */
+    const full = (typed: number) =>
+      Array.from({ length: config.dictionaryMaxEntries }, (_, index) =>
+        index < typed ? { word: `word${index}`, learned: false, lastUsed: index + 1 } : { word: `learned${index}`, learned: true, lastUsed: index + 1 },
+      );
 
-      await act(async () => type(field(), "Xyvora"));
-      expect(button("Add").disabled).toBe(true);
-      expect(document.querySelector(".error")?.textContent).toContain(`holds ${config.dictionaryMaxEntries} words`);
-      await act(async () => field().form?.requestSubmit());
-      expect(page.commands).toEqual([]);
-      expect(field().value).toBe("Xyvora");
+    /** At the typed cap a new word is refused with the reason, and so is a learned word typed again
+     * (`AppSettings.addWord`); a typed word can still be typed again. */
+    test("typed words at their cap take no new word", async () => {
+      const page = await open({ ...signedIn, dictionary: full(config.dictionaryMaxTypedWords) });
+
+      for (const word of ["Xyvora", `LEARNED${config.dictionaryMaxTypedWords}`]) {
+        await act(async () => type(field(), word));
+        expect(button("Add").disabled).toBe(true);
+        expect(document.querySelector(".error")?.textContent).toBe(`You can add up to ${config.dictionaryMaxTypedWords} words. Remove one to add another.`);
+        await act(async () => field().form?.requestSubmit());
+        expect(page.commands).toEqual([]);
+        expect(field().value).toBe(word);
+      }
 
       await act(async () => type(field(), "WORD3"));
       expect(button("Add").disabled).toBe(false);
+      expect(document.querySelector(".error")).toBeNull();
       await act(async () => button("Add").click());
       expect(page.commands).toEqual([{ type: "addDictionaryWord", word: "WORD3" }]);
     });
 
-    /** A learned word makes room for a typed one (`AppSettings.addWord`): full, but not of typed words
-     * alone, the dictionary takes a new word. */
-    test("a full dictionary with a learned word takes a new word", async () => {
-      const dictionary = Array.from({ length: config.dictionaryMaxEntries }, (_, index) => ({ word: `word${index}`, learned: index === 0, lastUsed: index + 1 }));
-      const page = await open({ ...signedIn, dictionary });
+    /** Below the typed cap a learned word makes room for a typed one: a full dictionary takes a new
+     * word, and a learned word typed again. */
+    test("a full dictionary below the typed cap takes a new word", async () => {
+      const page = await open({ ...signedIn, dictionary: full(config.dictionaryMaxTypedWords - 1) });
 
-      await act(async () => type(field(), "Xyvora"));
-      expect(button("Add").disabled).toBe(false);
-      expect(document.querySelector(".error")).toBeNull();
-      await act(async () => button("Add").click());
-      expect(page.commands).toEqual([{ type: "addDictionaryWord", word: "Xyvora" }]);
+      for (const word of ["Xyvora", `LEARNED${config.dictionaryMaxTypedWords}`]) {
+        await act(async () => type(field(), word));
+        expect(button("Add").disabled).toBe(false);
+        expect(document.querySelector(".error")).toBeNull();
+        await act(async () => button("Add").click());
+      }
+      expect(page.commands).toEqual([
+        { type: "addDictionaryWord", word: "Xyvora" },
+        { type: "addDictionaryWord", word: `LEARNED${config.dictionaryMaxTypedWords}` },
+      ]);
     });
 
     test("the learning switch sends the choice, and shows only where corrections can be learned", async () => {
@@ -790,7 +804,7 @@ describe("Settings page", () => {
       "Sent to TabMail with agent mode’s requests, so it knows which messages on screen are yours. TabMail doesn’t keep it.",
       "Names and terms spelled your way, kept on this computer. They’re sent with each dictation so they come out right, and TabMail doesn’t keep them.",
       "No words yet.",
-      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here, in place of the learned word used least recently once the dictionary is full. The field’s text stays on this Mac, and a password field is never read.`,
+      `For ${config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to ${config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this Mac, and a password field is never read.`,
       // Privacy's, which the Swift app never had (owner, 2026-09-30).
       "In these apps TabMail Voice never reads the screen: nothing in their windows is sent with a dictation or used to learn a spelling. Dictation still works there.",
       `Password managers are always excluded: ${config.builtInExcludedApps.map((app) => app.name).join(", ")}.`,

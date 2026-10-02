@@ -10,7 +10,7 @@ import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
-import { dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
+import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
@@ -162,18 +162,19 @@ function DictationPane({ state }: { state: SettingsState }) {
 }
 
 /** The user's dictionary (ADR-DESK-038): a field to add a word, the words with a remove button each
- * (the typed ones first, then the learned ones, tagged so), and the switch for learning from the
- * user's corrections where it can. */
+ * (the typed ones first, then the learned ones, tagged so, each alphabetically), and the switch for
+ * learning from the user's corrections where it can. */
 function DictionaryPane({ state }: { state: SettingsState }) {
   const [draft, setDraft] = useState("");
   const word = dictionaryWord(draft);
-  const isThere = word !== null && state.dictionary.some((entry) => isSameWord(entry.word, word));
-  // A learned word makes room for a typed one: full only with typed words alone.
-  const isFull = state.dictionary.filter((entry) => !entry.learned).length >= config.dictionaryMaxEntries;
-  const shown = [...state.dictionary.filter((entry) => !entry.learned), ...state.dictionary.filter((entry) => entry.learned)];
+  const existing = word === null ? undefined : state.dictionary.find((entry) => isSameWord(entry.word, word));
+  // Typed words are capped; learned ones make room for them. Retyping a typed word adds none.
+  const isFull = state.dictionary.filter((entry) => !entry.learned).length >= config.dictionaryMaxTypedWords && existing?.learned !== false;
+  const byWord = (a: DictionaryEntry, b: DictionaryEntry) => a.word.localeCompare(b.word);
+  const shown = [...state.dictionary.filter((entry) => !entry.learned).sort(byWord), ...state.dictionary.filter((entry) => entry.learned).sort(byWord)];
   let problem: string | null = null;
   if (draft.trim() !== "" && word === null) problem = `A word or name of up to ${config.dictionaryWordMaxWords} words, without < or >.`;
-  else if (isFull && !isThere) problem = `The dictionary holds ${config.dictionaryMaxEntries} words. Remove one to add another.`;
+  else if (isFull) problem = `You can add up to ${config.dictionaryMaxTypedWords} words. Remove one to add another.`;
   const add = (event: FormEvent) => {
     event.preventDefault();
     if (word === null || problem !== null) return;
@@ -225,7 +226,7 @@ function DictionaryPane({ state }: { state: SettingsState }) {
       {state.canLearnWords && (
         <Group>
           <Toggle label="Learn from my corrections" checked={state.learnsWords} onChange={(value) => send({ type: "setLearnsWords", value })}>
-            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here, in place of the learned word used least recently once the dictionary is full. The field’s text stays on this Mac, and a password field is never read.
+            For {config.correctionWatchDuration / 1000} seconds after a dictation, watches the text field it went into. When you correct how a word or name was spelled, the new spelling is added here. Learned words fill the room your own words leave, up to {config.dictionaryMaxEntries} in all, and the one used least recently makes way for a new one. The field’s text stays on this Mac, and a password field is never read.
           </Toggle>
         </Group>
       )}
