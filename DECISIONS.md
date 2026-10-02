@@ -1243,9 +1243,13 @@ the hotkey answers it (it still starts no new request).
   this computer's tools): `confirmed` true runs the call that asked, exactly as the user was shown
   it; false declines it.
 - **The tool does nothing unless a spoken answer is waiting.** One waits only after the user
-  actually spoke while the question showed, for the model's very next call in the same request: any
-  other call (a changed one, another tool's, the same one again) drops it and is asked about as
-  before, and a click, a timeout or the request ending leaves none. So the model cannot confirm for
+  actually spoke while the question showed, for the model's very next call in a later round of the
+  same request: a confirmation written in the round that asked was written before the user answered,
+  and answers nothing (found in review: one round of `[create, confirm true]` ran the tool on a
+  spoken "no"); any other call (a changed one, another tool's, the same one again) drops it and is
+  asked about as before; and a click, a timeout or the request ending leaves none.
+- A spoken answer has its own abort: dropped (another key, a click on the question, the paste
+  history), its upload is canceled and not tried again, and words that arrive anyway answer nothing. So the model cannot confirm for
   a user who said nothing, cannot confirm twice, and cannot run something the user was not shown.
 - Rejected: the app matching "yes"/"no" words itself (every language, and "yes, but on Monday");
   starting a follow-up request from the answer (the model would ask its question a second time);

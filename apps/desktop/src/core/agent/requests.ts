@@ -94,7 +94,7 @@ export const DesktopAgent = {
   },
 
   /** The answer to `request`, from the backend's tool loop: each round either replies, or calls
-   * tools, which `runTool` runs here (the backend runs its own, which `onServerTool` hears of as they
+   * tools, which `runTool` runs here (told which round called them, counted from 0) (the backend runs its own, which `onServerTool` hears of as they
    * start and end); their results go back with the loop's state for the next round. The backend ends the loop at its round limit, counting the
    * rounds the app sends back (`current_round`), as the iOS app's `BackendClient` does. */
   async answer(
@@ -107,7 +107,7 @@ export const DesktopAgent = {
     client: CompletionsClient,
     account: AccountModel,
     userID: string | null,
-    runTool: (call: ToolCall) => Promise<string>,
+    runTool: (call: ToolCall, round: number) => Promise<string>,
     onServerTool: (event: ServerToolEvent) => void,
     signal?: AbortSignal,
   ): Promise<string> {
@@ -126,6 +126,7 @@ export const DesktopAgent = {
         log.content("DesktopAgent: answer wrote", text);
         return text;
       }
+      const called = round;
       round += 1;
       // The state is JSON the round checked is there; its history must be a list to add to.
       const fields = result.state as Record<string, unknown>;
@@ -133,7 +134,7 @@ export const DesktopAgent = {
       const added: unknown[] = [...fields.harmony_messages];
       for (const call of result.calls) {
         signal?.throwIfAborted();
-        const output = await runTool(call);
+        const output = await runTool(call, called);
         added.push({ role: "tool", content: output, tool_call_id: call.id });
       }
       state = { ...fields, harmony_messages: added, current_round: round };

@@ -210,12 +210,13 @@ export class DictationController extends Observable {
   /** When the question now showing appeared. */
   private confirmationShownAt = 0;
   /** The answer to the question being spoken (the hotkey, while the question shows): its recording,
-   * and the phase the request it interrupts goes back to. */
-  private spokenAnswer: { id: number; recorder: AudioRecorder; startedAt: number; handsFree: boolean; resume: Phase } | null = null;
+   * and the phase the request it interrupts goes back to. Its own `abort` stops its transcription
+   * when it is dropped (canceled, the question clicked), the request going on. */
+  private spokenAnswer: { id: number; recorder: AudioRecorder; abort: AbortController; startedAt: number; handsFree: boolean; resume: Phase } | null = null;
   private spokenAnswers = 0;
   /** The call whose question the user answered aloud: the model, having read the answer, confirms or
    * declines it for them (`config.confirmationTool`). Dropped by any other call, and with its request. */
-  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown> } | null = null;
+  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown>; round: number } | null = null;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
@@ -596,7 +597,7 @@ export class DictationController extends Observable {
                 client,
                 account,
                 userID,
-                (call) => this.runConnectorTool(call, connectorTools, transcript, isCurrent, signal),
+                (call, round) => this.runConnectorTool(call, round, connectorTools, transcript, isCurrent, signal),
                 (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
@@ -671,9 +672,15 @@ export class DictationController extends Observable {
    * whether it agrees and answers the question for the user (`config.confirmationTool`): confirmed,
    * the call that asked runs as the user was shown it. Any other call drops the waiting one and is
    * asked about as usual. */
-  private async runConnectorTool(call: ToolCall, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
-    // The call the user answered aloud waits for the model's very next call only.
+  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     const waiting = this.answeredAloud;
+    // A confirmation the model wrote in the round that asked was written before the user answered:
+    // it answers nothing, and the answer waits for the next round, where the model has read it.
+    if (call.function.name === config.confirmationTool && waiting !== null && round <= waiting.round) {
+      log.error(`DictationController: ${config.confirmationTool} called in the round that asked`);
+      return config.confirmationToolNothingWaiting;
+    }
+    // Otherwise the call the user answered aloud waits for the model's very next call only.
     this.answeredAloud = null;
     if (call.function.name === config.confirmationTool) {
       const answer = parsedJSON(call.function.arguments);
@@ -705,7 +712,7 @@ export class DictationController extends Observable {
       const answer = await this.confirm(question);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
-        if (isCurrent()) this.answeredAloud = { tool, args };
+        if (isCurrent()) this.answeredAloud = { tool, args, round };
         return config.connectorToolAnsweredAloud(question, answer.spoken);
       }
       if (answer !== "confirmed") {
@@ -820,7 +827,7 @@ export class DictationController extends Observable {
     const id = this.spokenAnswers;
     const recorder = new AudioRecorder();
     const meter = new LevelSampler();
-    this.spokenAnswer = { id, recorder, startedAt: performance.now(), handsFree, resume: this.currentPhase };
+    this.spokenAnswer = { id, recorder, abort: new AbortController(), startedAt: performance.now(), handsFree, resume: this.currentPhase };
     this.currentLevel = 0;
     this.envelope = new LevelEnvelope();
     this.hearing = false;
@@ -860,18 +867,19 @@ export class DictationController extends Observable {
     const isCurrent = () => this.spokenAnswer?.id === spoken.id;
     // The microphone stays open briefly, as after a dictation, so the last word isn't clipped.
     this.releaseTailTimer = after(config.releaseTailDuration, () => {
-      if (isCurrent()) void this.transcribeSpokenAnswer(spoken.recorder, isCurrent);
+      if (isCurrent()) void this.transcribeSpokenAnswer(spoken.recorder, spoken.abort.signal, isCurrent);
     });
   }
 
-  private async transcribeSpokenAnswer(recorder: AudioRecorder, isCurrent: () => boolean): Promise<void> {
+  private async transcribeSpokenAnswer(recorder: AudioRecorder, answerSignal: AbortSignal, isCurrent: () => boolean): Promise<void> {
     this.deps.capture.stop();
     const recording = recorder.finish();
     if (recording.pcm.length === 0) return this.abandonSpokenAnswer("no audio");
     const account = this.deps.account;
     const userID = account.session?.userID ?? null;
     const settings = this.dictationSettings;
-    const signal = this.abort.signal;
+    // Ended with the request, or dropped on its own: nothing more is sent.
+    const signal = AbortSignal.any([this.abort.signal, answerSignal]);
     try {
       const language = await this.languageRead;
       if (!isCurrent()) return;
@@ -903,6 +911,7 @@ export class DictationController extends Observable {
     const spoken = this.spokenAnswer;
     if (spoken === null) return;
     this.spokenAnswer = null;
+    spoken.abort.abort();
     this.deps.capture.stop();
     cancelTimer(this.maxDurationTimer);
     this.maxDurationTimer = null;

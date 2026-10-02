@@ -3127,6 +3127,191 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(transcription.requests).toHaveLength(2);
           });
 
+          /** A confirmation the model writes in the round that asks was written before the user
+           * answered: it answers nothing, whatever the user then says, and the answer waits for the
+           * model's next round, which reads it. */
+          test.each([
+            ["declines", declining, []],
+            ["confirms", confirming, [{ title: "Launch review", day: "friday" }]],
+          ] as const)("a confirmation written in the round that asked answers nothing (the next round %s)", async (_, next, runs) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall, confirming), calling(next), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "No, leave it. Do not add that.");
+            await done;
+
+            expect(told(1)).toEqual([config.connectorToolAnsweredAloud(confirmationQuestion, "No, leave it. Do not add that."), config.confirmationToolNothingWaiting]);
+            expect(tool.runs).toEqual(runs);
+          });
+
+          /** An answer dropped while it is transcribed (another key, a click on the question) sends
+           * nothing more: its upload is canceled, and one waiting to be tried again is not sent. */
+          test.each(["canceled", "clicked"] as const)("a dropped answer's transcription is canceled (%s)", async (how) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            let release: () => void = () => {};
+            transcription.gate = (request) => (request.signal ? new Promise((resolve) => (release = resolve)) : Promise.resolve());
+            transcription.honorsCancel = true;
+
+            await sayAloud(controller, "Yes.");
+            expect(await eventually(() => transcription.requests.length === 2)).toBe(true);
+            if (how === "canceled") controller.handle("cancel");
+            else controller.answerConfirmation(false);
+            const upload = transcription.requests[1];
+            expect(upload?.signal?.aborted).toBe(true);
+            transcription.gate = undefined;
+            release();
+            if (how === "canceled") controller.answerConfirmation(false);
+            await done;
+            expect(transcription.requests).toHaveLength(2);
+            expect(tool.runs).toEqual([]);
+          });
+
+          test("a dropped answer is not tried again", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")], (controller) => {
+              controller.transcriptionRetryDelays = [300];
+            });
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            transcription.enqueue(502, { error: "transcription_failed" });
+            transcription.enqueue(200, { text: "Yes." });
+            controller.handle("start");
+            await sleep(config.minimumHoldDuration + 50);
+            controller.handle("finish");
+            expect(await eventually(() => controller.phase.kind === "retrying")).toBe(true);
+            controller.handle("cancel");
+            await sleep(500);
+
+            expect(transcription.requests).toHaveLength(2);
+            expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+            controller.answerConfirmation(false);
+            await done;
+            expect(tool.runs).toEqual([]);
+          });
+
+          /** Words that arrive after their answer was dropped answer nothing: not the question they
+           * were spoken to, which the user answered with a click, nor the next one. */
+          test("an answer that arrives after it was dropped answers nothing", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(sameCall), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            let release: () => void = () => {};
+            transcription.gate = (request) => (request.signal ? new Promise((resolve) => (release = resolve)) : Promise.resolve());
+
+            await sayAloud(controller, "Yes, do it.");
+            expect(await eventually(() => transcription.requests.length === 2)).toBe(true);
+            controller.answerConfirmation(false);
+            // The model asks again; the dropped words arrive while it does.
+            expect(await eventually(() => completions.requests.length === 2 && controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            transcription.gate = undefined;
+            release();
+            await sleep(100);
+
+            expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+            expect(told(1)).toEqual([config.connectorToolDeclined]);
+            controller.answerConfirmation(false);
+            await done;
+            expect(tool.runs).toEqual([]);
+            expect(told(2)).toEqual([config.connectorToolDeclined]);
+          });
+
+          /** The paste history (a triple tap) while the answer is spoken drops the answer, not the
+           * request: the question asks on. */
+          test("the paste history while the answer is spoken leaves the question asking", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            controller.handle("start");
+            controller.handle("showHistory");
+
+            expect(controller.phase).toEqual(running("answer"));
+            expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+            expect(controller.chat?.confirmationExpiresAt).not.toBeNull();
+            controller.answerConfirmation(true);
+            await done;
+            expect(tool.runs).toHaveLength(1);
+          });
+
+          /** A second press while the answer is spoken starts nothing more: one recording, one answer. */
+          test("a second press while the answer is spoken starts nothing more", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+            const starts = capture.starts;
+
+            controller.handle("start");
+            controller.handle("start");
+            expect(capture.starts).toBe(starts + 1);
+            await sayAloud(controller, "Yes.");
+            await done;
+            expect(tool.runs).toHaveLength(1);
+            expect(controller.phase).toEqual(idle);
+          });
+
+          /** The microphone failing to start, or recording nothing, leaves the question asking with
+           * its whole time again; one that stops by itself sends what it heard. */
+          test.each(["failed to start", "recorded nothing"] as const)("an answer whose microphone %s leaves the question asking", async (how) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply(answer)], (controller) => {
+              controller.confirmationTimeout = 5_000;
+            });
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+
+            if (how === "failed to start") {
+              controller.handle("start");
+              capture.fail();
+            } else {
+              Object.assign(capture, { hears: false });
+              controller.handle("start");
+              await sleep(config.minimumHoldDuration + 50);
+              controller.handle("finish");
+              expect(await eventually(() => controller.phase.kind === "running")).toBe(true);
+            }
+
+            expect(controller.phase).toEqual(running("answer"));
+            expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+            expect((controller.chat?.confirmationExpiresAt ?? 0) - Date.now()).toBeGreaterThan(4_000);
+            expect(transcription.requests).toHaveLength(1);
+            controller.answerConfirmation(true);
+            await done;
+            expect(tool.runs).toHaveLength(1);
+          });
+
+          test("an answer whose microphone stops by itself sends what it heard", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+
+            transcription.enqueue(200, { text: "Yes." });
+            controller.handle("start");
+            await sleep(config.minimumHoldDuration + 50);
+            capture.lose();
+            await done;
+            expect(transcription.requests).toHaveLength(2);
+            expect(tool.runs).toHaveLength(1);
+          });
+
+          /** The chat window stays open while the answer is spoken, however long the user takes. */
+          test("the chat window stays open while the answer is spoken", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const touched = controller.chat?.touched;
+
+            controller.handle("start");
+            expect(touched).toBe(false);
+            expect(controller.chat?.touched).toBe(true);
+            controller.handle("cancel");
+            controller.answerConfirmation(false);
+            await done;
+          });
+
           /** Closing the chat window while the answer is spoken drops the request, as while it asks. */
           test("closing the chat window while the answer is spoken drops the request", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
