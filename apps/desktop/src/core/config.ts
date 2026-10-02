@@ -144,12 +144,15 @@ export const completionsRequestTimeout = 30_000;
 
 // MARK: Dictionary (ADR-DESK-038)
 
-/** The words sent with each dictation: the backend takes at most 200 (its ADR-025), half for the
- * user's dictionary, all of it sent, and half for the names and terms picked from the screen
- * (`contextTerms`). Each word is at most this many characters and this many space-separated words,
- * the backend's limits. */
-export const dictionaryMaxEntries = 100;
-export const contextTermsMax = 100;
+/** The words sent with each dictation: the backend takes at most 200 (its ADR-025), and the speech
+ * model heeds a list of 200 real words or names (measured 2026-10-02, `Scripts/stt-compare/
+ * vocabulary_limit.py`). 50 are kept for the names and terms picked from the screen (`contextTerms`),
+ * 150 for the user's dictionary, all of it sent: at most 100 typed words, and learned words in the
+ * rest, all 150 when none is typed (owner, 2026-10-02). Each word is at most this many characters and
+ * this many space-separated words, the backend's limits. */
+export const dictionaryMaxEntries = 150;
+export const dictionaryMaxTypedWords = 100;
+export const contextTermsMax = 50;
 export const dictionaryWordMaxChars = 50;
 export const dictionaryWordMaxWords = 6;
 /** After a dictation's paste, the field is read this often, for this long, to learn the user's

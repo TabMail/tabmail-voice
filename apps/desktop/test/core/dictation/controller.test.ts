@@ -106,6 +106,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
   let prefs: { value: DictationSettings };
   /** Which tips were shown and learned, as `TipBook` keeps them. */
   let tipStore: MemoryStore;
+  /** The texts each dictation marked its dictionary words used in (`useWords`). */
+  let used: string[][];
 
   beforeEach(() => {
     transcription = new StubTransport();
@@ -116,6 +118,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     keyboard = { language: null, atReveal: [] };
     prefs = { value: defaultSettings() };
     tipStore = new MemoryStore();
+    used = [];
   });
 
   /** A controller with both grants and the user's consent, signed in to `account`, on the stub
@@ -157,6 +160,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       makeCompletionsClient: (url) => new CompletionsClient(url, "test", completions.transport),
       connectorTools: options.connectorTools ?? [],
       corrections: options.corrections,
+      useWords: (texts) => used.push([...texts]),
     });
     return { controller, pastes, copies, history };
   }
@@ -251,6 +255,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(pasted).toEqual([cleaned]);
     expect(transcription.body(0).vocabulary).toEqual(["Xyvora", "Kaelthorne Draszek"]);
     expect(cleanupVars(0)?.dictionary).toBe("Xyvora\nKaelthorne Draszek");
+  });
+
+  /** The words the dictation came out with, as heard and as cleaned up, mark the dictionary's words in
+   * them used, so a full dictionary keeps them (ADR-DESK-038). */
+  test("marks the dictionary's words used in the transcript and the cleanup", async () => {
+    transcription.enqueue(200, cleanedReply);
+
+    await dictate();
+
+    expect(used).toEqual([[transcript, cleaned]]);
+  });
+
+  test("marks only the transcript when no cleanup came back", async () => {
+    transcription.enqueue(200, { text: transcript });
+
+    await dictate();
+
+    expect(used).toEqual([[transcript]]);
   });
 
   test("an empty dictionary sends no words and an empty cleanup dictionary", async () => {
@@ -626,6 +648,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(pasted).toEqual([]);
     expect(completions.requests).toHaveLength(0);
     expect(controller.phase).toEqual(failed(nothingHeardMessage));
+    expect(used).toEqual([]);
   });
 
   /** The shared backend errors still explain the failure in the overlay, without a cleanup or paste. */
@@ -963,6 +986,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
       expect(controller.phase).toEqual(idle);
     });
+  });
+
+  /** A transcript answered after a cancel is not the user's text: it pastes nothing and marks no
+   * dictionary word used (ADR-DESK-038). */
+  test("a transcript answered after a cancel marks no word used", async () => {
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    transcription.gate = async () => {
+      controller.handle("cancel");
+    };
+
+    await holdAndRelease(controller);
+    expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+    await sleep(50);
+
+    expect(pastes).toEqual([]);
+    expect(used).toEqual([]);
   });
 
   /** Canceled while the request runs, the cleanup with it (another key pressed while the hotkey is
@@ -1373,6 +1413,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual(["compose"]);
       expect(phases).toContainEqual(running("compose"));
       expect(completionsVars(0)?.content).toBe("system_prompt_desktop_compose");
+      // The spoken request was transcribed with the dictionary too: its words count as used.
+      expect(used).toEqual([["write that we ship on Friday"]]);
     });
 
     /** The selection alone decides between Edit and Compose, as the bubbles showed it: the other

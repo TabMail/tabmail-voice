@@ -8,7 +8,8 @@ import { MemoryStore } from "../../core/util/keyValueStore.js";
 import { errorName, log } from "../../core/log.js";
 
 /** The app's preferences in a JSON file under its data folder, written whole on every change (they
- * change rarely: a Settings switch, a tip shown). An unreadable file starts empty. */
+ * change rarely: a Settings switch, a tip shown, a dictation holding a dictionary word). An unreadable
+ * file starts empty. */
 export class JSONFileStore extends MemoryStore {
   constructor(private readonly path: string) {
     super(read(path));

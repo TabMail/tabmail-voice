@@ -67,7 +67,7 @@ describe("contextTerms", () => {
     expect(terms(text)).toEqual(["Xyvora", "Brevalle", "Kaelthorne"]);
     expect(terms(text, ["xyvora"])).toEqual(["Brevalle", "Kaelthorne"]);
     expect(terms(text, [], 1)).toEqual(["Xyvora"]);
-    expect(config.contextTermsMax).toBe(100);
+    expect(config.contextTermsMax).toBe(50);
   });
 
   test("picks in any script", () => {
