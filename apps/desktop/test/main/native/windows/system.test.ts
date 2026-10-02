@@ -85,3 +85,17 @@ test.each([["en-US", "en"], ["EN", "en"], ["zh-Hans", "zh"], ["pt_BR", "pt"], ["
   mocks.request.mockResolvedValue({ code });
   expect(await system.keyboardLanguage()).toBe(expected);
 });
+
+/** The native readers receive the entire enlarged policy, including exclusions past the old cap. */
+test("screen reading and correction learning forward every saved exclusion", async () => {
+  const apps = Array.from({ length: 1000 }, (_, index) => `Synthetic${index}.exe`);
+  const sites = Array.from({ length: 1000 }, (_, index) => `site${index}.example.test`);
+  const policy = { apps, sites };
+  mocks.request.mockResolvedValue(null);
+  await system.readScreen(policy);
+  await system.focusedFieldValue(101, policy);
+  expect(mocks.request.mock.calls).toEqual([
+    ["readScreen", { excludedAppIDs: apps, excludedHosts: sites }, 5000],
+    ["focusedFieldValue", { window: 101, maxLength: 20_000, excludedAppIDs: apps, excludedHosts: sites }],
+  ]);
+});
