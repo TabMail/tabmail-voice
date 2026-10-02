@@ -56,7 +56,7 @@ enum ScreenContextReader {
             // A page that has the focus itself (clicked on, not a field in it) is no field: the
             // text around its caret is the page's own, which the walk reads as it is laid out
             // (Safari and Chrome give none there at all). Only what is selected in it is kept.
-            if tree.string(focused, kAXRoleAttribute) == "AXWebArea" {
+            if isPageInFocus(focused, in: tree) {
                 context.textBeforeCaret = ""
                 context.textAfterCaret = ""
             }
@@ -71,6 +71,13 @@ enum ScreenContextReader {
         let read = walk(window, in: tree, frame: tree.frame(of: window), focused: terminalPane != nil && !paneRead ? nil : focused,
                         focusPath: focusPath, excluding: exclusions, started: started, into: &context)
         return read ? context : nil
+    }
+
+    /// Whether the focused element is a page that is read, not written in: a web area that can't
+    /// be edited. One that can (a mail's compose window, a rich-text editor's document) is the
+    /// field the caret is in, as any text field.
+    static func isPageInFocus<Tree: ScreenTree>(_ focused: Tree.Element, in tree: Tree) -> Bool {
+        tree.string(focused, kAXRoleAttribute) == "AXWebArea" && !tree.isEditable(focused)
     }
 
     /// The hosts of the pages the focused element is in, nearest first: the element itself when it
@@ -160,7 +167,8 @@ enum ScreenContextReader {
     /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (`isShown`) is left
     /// out, but its box is still walked into: Slack keeps its message list in one.
     /// The focused element becomes the caret block at its place in that order; a page that has the
-    /// focus itself is walked into like any page, after its selection, if any, as the caret block.
+    /// focus itself and can't be edited (`isPageInFocus`) is walked into like any page, after its
+    /// selection, if any, as the caret block.
     /// The focused element's ancestors (`focusPath`) are always walked into, never collapsed (a
     /// Notion row), skipped or pruned, so the caret block lands at its place.
     /// A password field is never read, nor anything inside it (one above the focused element is
@@ -178,11 +186,11 @@ enum ScreenContextReader {
             context.nodesVisited += 1
 
             if let focused, tree.isSame(element, focused) {
-                guard tree.string(element, kAXRoleAttribute) == "AXWebArea" else {
+                if tree.string(element, kAXRoleAttribute) == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return false }
+                guard isPageInFocus(element, in: tree) else {
                     context.appendCaret(frame: tree.frame(of: element))
                     continue
                 }
-                if exclusions.excludes(tree.page(of: element)) { return false }
                 if !context.selectedText.isEmpty { context.appendCaret(frame: tree.frame(of: element)) }
                 stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, true) })
                 continue
@@ -449,6 +457,8 @@ protocol ScreenTree {
     /// The focused field's text before the caret, selected, and after it.
     func caretWindow(of element: Element) -> (String, String, String)?
     func isSame(_ first: Element, _ second: Element) -> Bool
+    /// Whether the element's text can be changed: a web area that is itself an editor's document.
+    func isEditable(_ element: Element) -> Bool
 }
 
 struct LiveScreenTree: ScreenTree {
@@ -467,6 +477,13 @@ struct LiveScreenTree: ScreenTree {
     }
 
     func caretWindow(of element: AXUIElement) -> (String, String, String)? { ScreenContextReader.caretWindow(of: element) }
+
+    /// An element whose value the app lets be set: observed true for an editable web area in WebKit
+    /// and Gecko, false for a page that is only read.
+    func isEditable(_ element: AXUIElement) -> Bool {
+        var settable: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+    }
 
     func isSame(_ first: AXUIElement, _ second: AXUIElement) -> Bool { CFEqual(first, second) }
 }

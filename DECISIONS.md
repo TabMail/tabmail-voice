@@ -254,8 +254,11 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   2,000 characters after the page's start. The walk now goes into a focused page (`walk`), its
   password fields and framed excluded pages refused as anywhere. The text around the page's caret is
   dropped (`gather`): it is the page's own text. What is selected in the page is kept, for agent
-  mode's Edit and as the caret block before the page's text. The Windows helper already walks a
-  focused document that is no editable field.)*
+  mode's Edit and as the caret block before the page's text. A focused web area that can be edited
+  (its value is settable: a mail's compose window, an editor whose whole document is editable) is
+  not such a page: it stays the field the caret is in, read by its caret and not walked into, as
+  before (`isPageInFocus`). The Windows helper applies the same rule: it walks a focused document
+  that is no editable field.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

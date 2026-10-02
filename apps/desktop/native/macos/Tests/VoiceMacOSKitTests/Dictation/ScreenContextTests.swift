@@ -701,4 +701,6 @@ struct FakeScreenTree: ScreenTree {
         return (before, selected, after)
     }
     func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { first === second }
+    /// "editable" stands for an element whose text the app lets be changed.
+    func isEditable(_ element: FakeElement) -> Bool { element.attributes["editable"] != nil }
 }

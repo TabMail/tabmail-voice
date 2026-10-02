@@ -244,6 +244,7 @@ struct ScreenExclusionTests {
             return tree.caretWindow(of: element)
         }
         func isSame(_ first: FakeElement, _ second: FakeElement) -> Bool { tree.isSame(first, second) }
+        func isEditable(_ element: FakeElement) -> Bool { tree.isEditable(element) }
     }
 
     private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
@@ -353,6 +354,22 @@ struct ScreenExclusionTests {
         let placed = gather(caret.window, focused: caret.area, focusPath: [caret.window], excluding: ["example.com"])
         #expect(placed.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
         #expect(placed.context.textBeforeCaret.isEmpty && placed.context.textAfterCaret.isEmpty)
+
+        // A page that can be edited (a mail being written, an editor's document) is the field the
+        // caret is in: its text around the caret is kept as the caret block, and it is not walked
+        // into, with or without a selection.
+        for selection in ["balance", ""] {
+            let editor = page(["editable": "1", "caretBefore": "account 1234 ", "caretSelected": selection, "caretAfter": " 99"])
+            let written = gather(editor.window, focused: editor.area, focusPath: [editor.window], excluding: ["example.com"])
+            #expect(written.read)
+            #expect(written.context.textBeforeCaret == "account 1234 " && written.context.textAfterCaret == " 99")
+            #expect(written.context.renderedText() == (selection.isEmpty ? "» account 1234 ‸ 99" : "» account 1234 ‸balance‸ 99"))
+        }
+        // One on an excluded website is still refused, by the walk on its own too.
+        let vault = FakeElement("AXWebArea", Self.caret.merging(["editable": "1", "host": "vault.example.com"]) { $1 })
+        let vaultWindow = FakeElement("AXWindow", children: [vault])
+        #expect(!gather(vaultWindow, focused: vault, focusPath: [vaultWindow], excluding: ["example.com"]).read)
+        #expect(!walk(vaultWindow, focused: vault, focusPath: [vaultWindow], excluding: ["example.com"]).read)
 
         // A focused field in the page is still the caret block, with its text around the caret.
         let field = FakeElement("AXTextField", Self.caret)
