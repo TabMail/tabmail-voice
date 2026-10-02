@@ -11,8 +11,9 @@ import VoiceHelperSupport
 ///
 /// - `frontmostApp` → `{pid, name, bundleIdentifier, path}` or null.
 /// - `readScreen {excludedAppIDs, excludedHosts}` → the screen context of the app in front
-///   (`ScreenContext.json`); null without one, or when it is an app, or shows a website, the user
-///   excludes from screen reading (`ScreenExclusions`), which is not read. Secret-looking text is
+///   (`ScreenContext.json`); null without one; `{hidden: true}` when it is an app, or shows a
+///   website, the user excludes from screen reading (`ScreenExclusions`), or a page whose address is
+///   unknown, which is not read: nothing of it is sent, only that it is hidden. Secret-looking text is
 ///   taken out of it before it is sent (`Redactor`), and `selectionRedacted` says whether any was in
 ///   the selection.
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
@@ -105,15 +106,15 @@ public enum MacService {
             guard let (pid, name, bundleID) = await MainActor.run(body: screen.frontmost) else { return .null }
             if exclusions.excludesApp(bundleID) {
                 HelperLog.debug("ScreenContext: the app in front is excluded from screen reading; not read")
-                return .null
+                return hiddenScreen
             }
             // Blocking Accessibility calls: off the main thread, where the activator's notifications run.
             return await Task.detached { () -> JSON in
-                guard let context = screen.read(pid, name, bundleID, exclusions) else { return .null }
+                guard let context = screen.read(pid, name, bundleID, exclusions) else { return hiddenScreen }
                 // The reader refuses an excluded website itself; a context on one never leaves the helper.
                 if exclusions.excludesHost(context.host) {
                     HelperLog.debug("ScreenContext: the page read is on a website excluded from screen reading; dropped")
-                    return .null
+                    return hiddenScreen
                 }
                 return context.json
             }.value
@@ -300,6 +301,11 @@ public enum MacService {
         return id
     }
 }
+
+/// `readScreen`'s answer for a screen that is not read for the user's privacy (an excluded app, a
+/// page of an excluded website or of an unknown address): that it is hidden, and nothing of it, so
+/// the app can tell the agent the screen was kept from it rather than empty.
+private let hiddenScreen: JSON = ["hidden": .bool(true)]
 
 /// What `readScreen` and `focusedFieldValue` read of other apps: through Accessibility, or a test's
 /// stand-ins that read nothing.

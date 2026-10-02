@@ -10,7 +10,7 @@ import * as config from "../../../core/config.js";
 import type { GlobeKeySystem } from "../../../core/hotkey/macos/globeKeyAction.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
-import type { ScreenContext } from "../../../core/dictation/screenContext.js";
+import type { ScreenRead } from "../../../core/dictation/screenContext.js";
 import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
 import { NativeMicrophone } from "../microphone.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
@@ -62,10 +62,10 @@ export class MacSystem {
     return png === null ? null : `data:image/png;base64,${png}`;
   }
 
-  /** The screen context of the app in front; null without one, or when the app, or the website it
-   * shows, is among `exclusions`, which the helper doesn't read. */
-  readScreen(exclusions: ScreenExclusions): Promise<ScreenContext | null> {
-    return this.helper.request<ScreenContext | null>("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, config.screenReadTimeout);
+  /** The screen context of the app in front; null without one; that it is hidden when the app, or
+   * the website it shows, is among `exclusions`, which the helper doesn't read. */
+  readScreen(exclusions: ScreenExclusions): Promise<ScreenRead | null> {
+    return this.helper.request<ScreenRead | null>("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, config.screenReadTimeout);
   }
 
   /** The app at `path` (an `.app` the user picked); null when it is none. */

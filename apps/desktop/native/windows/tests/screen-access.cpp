@@ -29,7 +29,7 @@ static int run(int argc, char** argv) {
     std::ostringstream log;
     auto* original = std::cerr.rdbuf(log.rdbuf());
     try {
-        expect(voice::screenAccess(excluded, 42, identity, read).is_null(), "excluded screen refused");
+        expect(voice::screenAccess(excluded, 42, identity, read) == JSON{{"hidden", true}}, "excluded screen refused, and reported as hidden with nothing of it");
         expect(voice::screenAccess(excluded, 42, identity, read, true) == JSON{{"value", nullptr}}, "excluded field refused");
         expect(lookups == 2 && reads == 0, "exclusion never invokes accessibility or title read");
         expect(log.str() == "debug screen access: excluded app not read\ndebug screen access: excluded app not read\n", "logs contain only categories");

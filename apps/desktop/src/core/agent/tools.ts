@@ -90,7 +90,7 @@ export interface AgentTool {
   chatCaption: string | null;
   /** The prompt's variables. Every variable is sent, empty when unknown: the backend leaves a
    * missing one in the prompt as written. */
-  variables(request: string, context: ScreenContext | null): Record<string, string>;
+  variables(request: string, context: ScreenContext | null, screenHidden: boolean): Record<string, string>;
   /** The text the prompt wrote (trimmed, not empty), ready to deliver. */
   fitted(text: string, context: ScreenContext | null): string;
   /** Puts the text where the tool puts it. Throws when it can't: then nothing is pasted, though Edit's
@@ -104,13 +104,21 @@ export function selection(context: ScreenContext | null): string {
   return trimWhitespace(selected) === "" ? "" : selected;
 }
 
-/** The variables every tool's prompt gets: the request, the app, and the screen read at key-down. */
-export function screenVariables(request: string, context: ScreenContext | null): Record<string, string> {
+/** What a tool's prompt gets as the screen's text when the screen was not read for the user's
+ * privacy (`ScreenHidden`): that it is hidden, so the model does not take the screen for empty, or
+ * for the one an earlier request in the conversation was about. */
+export const screenHiddenNote =
+  "[Hidden for privacy: the user keeps the app or website now in front out of screen reading, so nothing on screen was read. " +
+  "The user is no longer on any screen the conversation so far was about.]";
+
+/** The variables every tool's prompt gets: the request, the app, and the screen read at key-down
+ * (`screenHiddenNote` in its place when it was hidden: there is no `context` then). */
+export function screenVariables(request: string, context: ScreenContext | null, screenHidden: boolean): Record<string, string> {
   return {
     app_name: context?.appName ?? "",
     web_host: context?.host ?? "",
     window_title: context?.windowTitle ?? "",
-    screen_text: context?.renderedText ?? "",
+    screen_text: screenHidden ? screenHiddenNote : (context?.renderedText ?? ""),
     selected_text: selection(context),
     user_request: request,
   };
@@ -157,8 +165,8 @@ export const ComposeTool: AgentTool = {
 
   /** The screen, plus the program running in a terminal, so a command comes out as that program
    * takes it. */
-  variables(request, context) {
-    return { ...screenVariables(request, context), terminal_program: context?.terminalProgram ?? "" };
+  variables(request, context, screenHidden) {
+    return { ...screenVariables(request, context, screenHidden), terminal_program: context?.terminalProgram ?? "" };
   },
 
   fitted: (text) => text,

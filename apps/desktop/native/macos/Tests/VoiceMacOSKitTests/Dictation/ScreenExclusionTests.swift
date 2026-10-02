@@ -60,13 +60,20 @@ struct ScreenExclusionTests {
         return (replies, reads)
     }
 
+    /// Whether the reply says the screen is hidden, and nothing else: no field of a context.
+    private func isHidden(_ reply: [String: Any]?) -> Bool {
+        guard let reply, reply["error"] == nil, let result = reply["result"] as? NSDictionary else { return false }
+        return result == ["hidden": true] as NSDictionary
+    }
+
+    /// An excluded app in front is not read; the reply says the screen is hidden, and nothing of it.
     @Test func anExcludedAppInFrontIsNotRead() async throws {
         let (replies, reads) = try await replies(to: [
             #"{"id":1,"method":"readScreen","params":{"excludedAppIDs":["org.example.bank","org.example.vault"],"excludedHosts":[]}}"#,
             #"{"id":2,"method":"readScreen","params":{"excludedAppIDs":["ORG.Example.Vault"],"excludedHosts":[]}}"#,
         ])
         #expect(replies.count == 2)
-        #expect(replies.allSatisfy { $0["result"] is NSNull && $0["error"] == nil })
+        #expect(replies.allSatisfy(isHidden))
         #expect(reads.screens.withLock { $0 }.isEmpty)
     }
 
@@ -81,7 +88,7 @@ struct ScreenExclusionTests {
     }
 
     /// An app without a bundle identifier can't be excluded, and is read; with no app in front
-    /// nothing is.
+    /// nothing is, and nothing is hidden.
     @Test func anAppWithoutAnIdentifierIsReadAndNoAppIsNot() async throws {
         let request = #"{"id":1,"method":"readScreen","params":{"excludedAppIDs":["org.example.vault"],"excludedHosts":[]}}"#
         let (bare, bareReads) = try await replies(to: [request], frontmost: (9, "Tool", nil))
@@ -691,18 +698,18 @@ struct ScreenExclusionTests {
         #expect(FocusedField.value(of: field, above: [area, window], in: FakeScreenTree(), maxLength: 5, excluding: ScreenExclusions(hosts: [])) == nil)
     }
 
-    /// The helper replies with nothing when the reader refuses, and drops a context on an excluded
-    /// host whatever the reader did.
+    /// The helper replies that the screen is hidden, and with nothing of it, when the reader refuses,
+    /// and drops a context on an excluded host whatever the reader did.
     @Test func aScreenOnAnExcludedWebsiteNeverLeavesTheHelper() async throws {
         let excluding = #"{"id":1,"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":["example.org","Example.com"]}}"#
         let (refused, refusedReads) = try await replies(to: [excluding], refuses: true)
         #expect(refused.count == 1)
-        #expect(refused.first?["result"] is NSNull && refused.first?["error"] == nil)
+        #expect(isHidden(refused.first))
         #expect(refusedReads.exclusions.withLock { $0 } == [ScreenExclusions(hosts: ["example.org", "Example.com"])])
 
         let (dropped, _) = try await replies(to: [excluding], host: "vault.example.com")
         #expect(dropped.count == 1)
-        #expect(dropped.first?["result"] is NSNull && dropped.first?["error"] == nil)
+        #expect(isHidden(dropped.first))
 
         let (read, _) = try await replies(to: [
             excluding, #"{"id":2,"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":[]}}"#,

@@ -26,7 +26,7 @@ import { elapsed, errorName, log } from "../log.js";
 import { Observable } from "../util/observable.js";
 import type { PasteHistory } from "./pasteHistory.js";
 import type { MicrophoneStatus } from "../onboarding/permissions.js";
-import type { ScreenContext } from "./screenContext.js";
+import { isScreenHidden, type ScreenContext, type ScreenRead, screenShown } from "./screenContext.js";
 import type { ScreenExclusions } from "./excludedSites.js";
 import type { DictationSettings } from "../settings.js";
 import { charCount, trimWhitespace } from "../util/text.js";
@@ -155,8 +155,9 @@ export class DictationController extends Observable {
   /** A triple tap asks for the paste history (ADR-DESK-043). */
   onShowHistory: (() => void) | undefined;
   /** Starts reading the screen context when a dictation starts (key-down) with screen reading on,
-   * with the target app still frontmost. Null: no context (the cleanup runs without it). */
-  captureContext: ((exclusions: ScreenExclusions) => Promise<ScreenContext | null> | null) | undefined;
+   * with the target app still frontmost. Null: no context (the cleanup runs without it). A screen
+   * hidden for privacy is no context either; agent mode's tools are told it is hidden. */
+  captureContext: ((exclusions: ScreenExclusions) => Promise<ScreenRead | null> | null) | undefined;
   /** How long a dictation's upload waits for that read, which its cleanup variables travel with
    * (agent mode waits for all of it, once its transcript is ready). Settable for tests. */
   contextWait = config.contextWait;
@@ -182,7 +183,7 @@ export class DictationController extends Observable {
   private envelope = new LevelEnvelope();
   /** Debug tuning aid: the highest waveform level reached this dictation. */
   private peakMeterLevel = 0;
-  private contextRead: Promise<ScreenContext | null> | null = null;
+  private contextRead: Promise<ScreenRead | null> | null = null;
   /** That read's result, once done (null without a read); `tools` waits for it. */
   private screenRead: ScreenContext | null = null;
   private isScreenReadDone = false;
@@ -381,7 +382,7 @@ export class DictationController extends Observable {
     if (read) {
       void read.then((context) => {
         if (this.generation !== current) return;
-        this.screenRead = context;
+        this.screenRead = screenShown(context);
         this.isScreenReadDone = true;
         this.updateTools();
       });
@@ -522,7 +523,7 @@ export class DictationController extends Observable {
       if (mode === "dictation") {
         // The screen context read at key-down, if it is done in time: best effort (ADR-DESK-008). It
         // goes with the recording, for the backend's cleanup.
-        context = read ? await withTimeout(this.contextWait, () => read).catch(() => null) : null;
+        context = read ? await withTimeout(this.contextWait, () => read.then(screenShown)).catch(() => null) : null;
         if (read && context === null) log.debug("DictationController: screen read not done in time; continuing without it");
         if (!isCurrent()) return;
       }
@@ -551,7 +552,9 @@ export class DictationController extends Observable {
         }
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
-        context = read ? await read : null;
+        const screen = read ? await read : null;
+        context = screenShown(screen);
+        const screenHidden = isScreenHidden(screen);
         if (!isCurrent()) return;
         const email = await this.lookUpEmailApp();
         if (!isCurrent()) return;
@@ -573,6 +576,7 @@ export class DictationController extends Observable {
             ? await DesktopAgent.answer(
                 transcript,
                 context,
+                screenHidden,
                 conversation,
                 settings.userName,
                 DesktopAgent.answerTools(connectorTools),
@@ -583,7 +587,7 @@ export class DictationController extends Observable {
                 (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
-            : await DesktopAgent.write(tool, transcript, context, conversation, settings.userName, client, account, userID, signal);
+            : await DesktopAgent.write(tool, transcript, context, screenHidden, conversation, settings.userName, client, account, userID, signal);
         if (!isCurrent()) return;
         await agentTools[tool].deliver(text, {
           emailApp: email.app,
