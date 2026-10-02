@@ -868,13 +868,17 @@ describe("DictationController", { timeout: 20_000 }, () => {
       controller.transcriptionRetryDelays = [300];
       controller.transcriptionRetryNoticeDelay = 10_000;
       expect(controller.isRetrying).toBe(false);
+      // What the overlay is told, as each change notifies it.
+      const told: string[] = [];
+      controller.observe(() => told.push(`${controller.phase.kind}:${controller.isRetrying}`));
 
       await holdAndRelease(controller);
 
-      expect(await eventually(() => controller.isRetrying)).toBe(true);
-      expect(controller.phase.kind).toBe("transcribing");
+      expect(await eventually(() => told.includes("transcribing:true"))).toBe(true);
+      expect(controller.isRetrying).toBe(true);
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
       expect(controller.isRetrying).toBe(false);
+      expect(told.at(-1)?.endsWith(":false")).toBe(true);
     });
 
     /** A dictation that fails with no retry left stops saying it is retrying. */

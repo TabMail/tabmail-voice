@@ -130,8 +130,6 @@ export class DictationController extends Observable {
   private currentTools: AgentToolID[] = [];
   private currentLevel = 0;
   private hearing = false;
-  /** True once a voice stood above the room's noise this dictation (`hasVoice`). */
-  private voiced = false;
   /** True from a transcription's first server error until it answers or ends (`isRetrying`). */
   private retrying = false;
   private currentLanguage: string | null = null;
@@ -285,11 +283,11 @@ export class DictationController extends Observable {
     return this.hearing;
   }
 
-  /** True once a voice stood `waveformVoiceAboveNoiseDecibels` above the room's noise this
-   * dictation: the overlay's waveform turns from blue to purple, a sign it is listening
-   * (owner, 2026-10-02). */
+  /** True once a voice stood above the room's noise this dictation (`LevelEnvelope.hasVoice`; each
+   * dictation and spoken answer starts a new envelope): the overlay's waveform turns from blue to
+   * purple, a sign it is listening (owner, 2026-10-02). */
   get hasVoice(): boolean {
-    return this.voiced;
+    return this.envelope.hasVoice;
   }
 
   /** True from a transcription's first server error until it answers or ends, the note or not: the
@@ -401,7 +399,6 @@ export class DictationController extends Observable {
     this.peakMeterLevel = 0;
     this.envelope = new LevelEnvelope();
     this.hearing = false;
-    this.voiced = false;
     this.startedAt = performance.now();
     this.targetApp = this.deps.frontmostApp().catch(() => null);
     this.currentLanguage = null;
@@ -890,7 +887,6 @@ export class DictationController extends Observable {
     this.currentLevel = 0;
     this.envelope = new LevelEnvelope();
     this.hearing = false;
-    this.voiced = false;
     const isCurrent = () => this.spokenAnswer?.id === id;
     this.deps.capture.start(
       (samples) => {
@@ -978,7 +974,6 @@ export class DictationController extends Observable {
     cancelTimer(this.releaseTailTimer);
     this.releaseTailTimer = null;
     this.hearing = false;
-    this.voiced = false;
     this.currentLevel = 0;
     this.setPhase(spoken.resume);
   }
@@ -1109,10 +1104,6 @@ export class DictationController extends Observable {
       this.showDueTip();
     }
     if (!this.hearing) return;
-    // A voice: a reading this far above the room's noise as it stood before it (the floor after
-    // it has moved toward the reading). Loudness only; the overlay turns the waveform purple.
-    const floor = this.envelope.floorDecibels;
-    if (!this.voiced && floor !== undefined && level - floor >= config.waveformVoiceAboveNoiseDecibels) this.voiced = true;
     const next = this.envelope.level(level);
     const rate = next > this.currentLevel ? config.levelAttack : config.levelRelease;
     this.currentLevel += (next - this.currentLevel) * rate;
@@ -1311,7 +1302,6 @@ export class DictationController extends Observable {
     cancelTimer(this.revealTimer);
     this.revealTimer = null;
     this.hearing = false;
-    this.voiced = false;
     cancelTimer(this.maxDurationTimer);
     this.maxDurationTimer = null;
     cancelTimer(this.secondTapTimer);

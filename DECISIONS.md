@@ -213,15 +213,20 @@ color", as a sign it is listening properly, on TabMail Voice and iOS alike. TabM
 wait for speech (a held key says someone is speaking), so the owner chose a loudness cue: the bars
 are the brand blue when the pill replaces the swirl and ease (`waveformColorTransitionSeconds`,
 0.4 s) to `waveformVoicedColor` (the brand purple) once a reading stands
-`waveformVoiceAboveNoiseDecibels` (6 dB) above `LevelEnvelope`'s floor as it stood before that
-reading; `DictationController.hasVoice` stays true for the rest of the dictation. Before, each bar
-was the blue → purple gradient throughout.
+`waveformVoiceAboveNoiseDecibels` (6 dB) above the room's noise as it stood before that reading
+(`LevelEnvelope.hasVoice`: a floor of its own, left without the first `waveformVoiceWarmupReadings`
+(4, ≈ 0.34 s) readings, so a start-up blip or a first reading part digital silence, which would hold
+it below the room, never turns room noise purple). It stays purple for the rest of the dictation;
+each dictation and each spoken answer starts a new envelope, so starts blue. Before, each bar was
+the blue → purple gradient throughout.
 - Loudness only (ADR-DESK-005 found no level that tells quiet speech from a room's noise): a loud
   noise turns it purple too, and a very quiet microphone's speech (2–5 dB above its noise) may leave
   it blue. Tunable in `config.ts`.
-- Tests: `controller.test.ts` › a voice above the room's noise turns the waveform purple (just under
-  and just over the 6 dB, reset each dictation); `overlay/index.test.ts` › the waveform turns purple
-  once a voice is heard.
+- Tests: `recorder.test.ts` › `LevelEnvelope` (just under and just over the 6 dB; no voice in room
+  noise after a −70 dB blip or a part-silent first reading; speech from the first reading heard at
+  its first pause); `controller.test.ts` › a voice above the room's noise turns the waveform purple
+  (reset each dictation); `overlay/index.test.ts` › the waveform turns purple once a voice is heard;
+  `main/index.test.ts` › the overlay is told of a voice heard and of a retry.
 
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 

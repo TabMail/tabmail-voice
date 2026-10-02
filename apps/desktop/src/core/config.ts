@@ -461,11 +461,13 @@ export const waveformGain = 1;
 export const waveformIdleLevel = 0.05;
 /** The bars are blue until a voice is heard, then ease to this point on the blue → purple gradient,
  * over this long: a sign the dictation is listening (owner, 2026-10-02). A voice is a reading this
- * many dB above the room's noise (`LevelEnvelope`'s floor); loudness only, so a loud noise counts
- * too, and a very quiet mic's speech (2–5 dB above its noise) may not. */
+ * many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
+ * this many readings, ≈ 0.34 s, where a start-up blip would hold it low); loudness only, so a loud
+ * noise counts too, and a very quiet mic's speech (2–5 dB above its noise) may not. */
 export const waveformVoicedColor = 1;
 export const waveformColorTransitionSeconds = 0.4;
 export const waveformVoiceAboveNoiseDecibels = 6;
+export const waveformVoiceWarmupReadings = 4;
 /** Each bar's ripple speed differs by up to this fraction, so the motion looks organic. */
 export const waveformSpeedVariance = 0.2;
 /** Outer bars reach this fraction of the center bar's height. */
