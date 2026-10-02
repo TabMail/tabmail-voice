@@ -194,6 +194,11 @@ export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"
 export const connectorToolDeclined = "The user declined, so nothing was done.";
 /** What the model reads when the user left a tool's question unanswered (`chatConfirmationTimeout`). */
 export const connectorToolUnanswered = "The user didn't confirm in time, so nothing was done.";
+/** What the model reads when the user answered a tool's question aloud instead of clicking: the
+ * question and their words. The model reads whether they agree; the app runs the same call, made
+ * again, without asking twice, and asks about any other. */
+export const connectorToolAnsweredAloud = (question: string, answer: string): string =>
+  `Nothing was done yet. The user was asked: ${JSON.stringify(question)} and answered aloud: ${JSON.stringify(answer)}. If that answer agrees, call this tool again with exactly the same arguments: it then runs without asking again. If it asks for a change, call this tool with the changed arguments: the user is asked about those. If it declines, or you cannot tell, call nothing and say that nothing was done.`;
 /** The longest range `calendar_read` reads at once, in days: EventKit reads at most four years of
  * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
 export const calendarReadMaxDays = 4 * 365;

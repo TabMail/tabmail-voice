@@ -1229,6 +1229,29 @@ up as an event confirmed after its time had passed.)
 - Each question has its own clock, stopped by any answer (the user's, the window closing, the request
   ending), so one answered in time never declines the next.
 
+**Amendment 2026-10-01: a question can be answered aloud.** Owner: "we can just also allow voice
+confirmations. Agents are smart enough to do that, so to force a confirmation, a user can click yes,
+but they can also just answer yes." This supersedes "the hotkey starts nothing" above: while a
+question shows, the hotkey answers it (it still starts no new request).
+- Holding the hotkey (or the hands-free double tap) while a question shows records an answer, which
+  is transcribed as the request was, with no cleanup. The tool's call returns to the model
+  `config.connectorToolAnsweredAloud`: nothing was done, the question, and the user's words.
+- **The app never reads "yes" itself; the model does.** If the answer agrees, the model makes the
+  same call again and the app runs it without a second question. The app allows that for exactly one
+  call: the same tool with the same arguments (compared whatever their order), made in the same
+  request, after the user actually spoke while that question showed. Any other call (another tool,
+  changed arguments, the same call a second time, the next request's) is asked about as before. So a
+  model cannot confirm for a user who said nothing, and cannot run something the user was not shown.
+- Rejected: the app matching "yes"/"no" words itself (every language, and "yes, but on Monday"); a
+  confirming tool the model calls (it could call it with nothing said); starting a follow-up request
+  from the answer (the model would then ask its question a second time).
+- The question's clock stops while the answer is spoken and transcribed. An answer that comes to
+  nothing (a tap, another key, no words heard, a failed transcription) leaves the question asking
+  with its whole time again. A click on the card while speaking answers it and drops the recording.
+- Trade-off: an agreeing answer costs one more model round than a click, and rests on the model
+  reading the answer rightly; a wrong reading can only decline, ask again, or run exactly what the
+  card showed.
+
 ## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
 
 **Context:** Owner, 2026-09-26: the Answer prompt's tools reach the user's apps, each a switch in
