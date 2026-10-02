@@ -134,6 +134,10 @@ export const transcriptionRequestTimeout = 45_000;
  * milliseconds, before the dictation fails: owner, 2026-09-29, rather than make the user say it
  * again. */
 export const transcriptionRetryDelays: readonly number[] = [500, 1_500];
+/** How long after the first server error the pill says it is retrying: a retry that answers sooner
+ * shows nothing but a dictation taking a moment longer (owner, 2026-10-02: the note on every brief
+ * rate limit was the annoying part, not the wait). */
+export const transcriptionRetryNoticeDelay = 2_000;
 /** Longest pause in an agent-mode completions response stream (the backend sends keepalives while
  * the model works). */
 export const completionsRequestTimeout = 30_000;

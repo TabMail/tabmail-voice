@@ -42,7 +42,7 @@ export type Phase =
   | { kind: "arming" }
   | { kind: "listening" }
   | { kind: "transcribing" }
-  /** The transcription failed on the server's side and is being tried again (`transcribeRetrying`). */
+  /** The transcription failed on the server's side and has been tried again for a while (`transcribeRetrying`). */
   | { kind: "retrying"; message: string }
   /** Agent mode: the agent chose this tool, which is writing its text. */
   | { kind: "running"; tool: AgentToolID }
@@ -147,6 +147,8 @@ export class DictationController extends Observable {
   confirmationTimeout = config.chatConfirmationTimeout;
   /** The waits before each retry of a transcription that failed on the server's side. Settable for tests. */
   transcriptionRetryDelays = config.transcriptionRetryDelays;
+  /** How long after the first server error the pill says it is retrying. Settable for tests. */
+  transcriptionRetryNoticeDelay = config.transcriptionRetryNoticeDelay;
   /** A double tap's second press was released as a tap, leaving the hotkey helper hands-free, but no
    * hands-free dictation listens: the press came while the last dictation was still busy, or failed
    * to start, or its dictation ended while the key was down. The helper must be told, or it keeps
@@ -650,21 +652,34 @@ export class DictationController extends Observable {
   /** Makes the transcription request, and makes it again after a server error (a 5xx other than the
    * backend's own timeout: the speech model behind it was rate limited or failed) or a dropped
    * connection, up to `transcriptionRetryDelays.length` more times, so the user need not say it again.
-   * The pill says so while it waits and tries, and goes back to transcribing once a retry answers. Any
-   * other failure (signed out, over quota, a refused request, a timeout) fails at once. */
+   * The pill keeps transcribing until `transcriptionRetryNoticeDelay` has passed since the first
+   * failure, then says it is retrying while it waits and tries, and goes back to transcribing once a
+   * retry answers. Any other failure (signed out, over quota, a refused request, a timeout) fails at
+   * once. */
   private async transcribeRetrying(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal): Promise<Transcription> {
-    for (let retry = 0; ; retry += 1) {
-      try {
-        const transcription = await request();
-        if (retry > 0 && isCurrent()) this.setPhase({ kind: "transcribing" });
-        return transcription;
-      } catch (error) {
-        const delay = this.transcriptionRetryDelays[retry];
-        if (delay === undefined || !isServerError(error) || !isCurrent()) throw error;
-        log.debug(`DictationController: transcription failed (${errorName(error)}); retrying in ${delay}ms`);
-        this.setPhase({ kind: "retrying", message: retryingMessage });
-        await sleep(delay, signal);
+    let notice: ReturnType<typeof setTimeout> | null = null;
+    let noticeShown = false;
+    try {
+      for (let retry = 0; ; retry += 1) {
+        try {
+          const transcription = await request();
+          if (noticeShown && isCurrent()) this.setPhase({ kind: "transcribing" });
+          return transcription;
+        } catch (error) {
+          const delay = this.transcriptionRetryDelays[retry];
+          if (delay === undefined || !isServerError(error) || !isCurrent()) throw error;
+          log.debug(`DictationController: transcription failed (${errorName(error)}); retrying in ${delay}ms`);
+          notice ??= setTimeout(() => {
+            if (!isCurrent()) return;
+            noticeShown = true;
+            this.setPhase({ kind: "retrying", message: retryingMessage });
+          }, this.transcriptionRetryNoticeDelay);
+          await sleep(delay, signal);
+        }
       }
+    } finally {
+      // Answered, failed or canceled: the note must not come up over what follows.
+      if (notice !== null) clearTimeout(notice);
     }
   }
 

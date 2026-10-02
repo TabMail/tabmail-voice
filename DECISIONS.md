@@ -2259,6 +2259,11 @@ time; measured first (below).
   or a timeout, here or the backend's own 504 (either already waited: `transcriptionRequestTimeout`,
   or the backend's 30 s for the speech model; retrying a 504 would hold the hotkey for 1.5 minutes). Canceling during the wait sends nothing more. Both modes share it,
   since agent mode's request starts with the same transcription.
+  *(Later, owner 2026-10-02: the note shows only once `transcriptionRetryNoticeDelay` (2 s) has
+  passed since the first failure, so a retry that answers sooner, as most brief rate limits do, shows
+  nothing but a dictation taking a moment longer. The retries themselves are unchanged. A note that
+  has not come up by the time a retry answers, the last fails or the dictation is canceled never
+  does.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
 **Consequences:**
