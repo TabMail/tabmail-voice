@@ -645,6 +645,16 @@ struct ScreenExclusionTests {
         #expect(holds(outer))
         #expect(!holds(outer, intoPages: false))
         #expect(holds(FakeElement("AXGroup", children: [FakeElement("AXGroup", children: [frame])]), intoPages: false))
+        // A field is read only when all of it was looked through: out of time or of elements, with a
+        // page behind them or none, it is taken to hold one.
+        func fieldHolds(_ element: FakeElement, since started: Date = Date()) -> Bool {
+            ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
+                                                  unlessSeenWhole: true, within: HelperConfig.contextTimeBudget, since: started)
+        }
+        #expect(fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")]), since: .distantPast))
+        #expect(!fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")])))
+        #expect(fieldHolds(FakeElement("AXTextArea", children: fillers + [FakeElement("AXGroup")])))
+        #expect(!fieldHolds(FakeElement("AXTextArea", children: fillers)))
     }
 
     /// A page whose address the app failed to give can't be told safe: it is treated as excluded,
