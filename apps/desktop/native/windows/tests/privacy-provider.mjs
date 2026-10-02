@@ -54,11 +54,11 @@ try {
     fixture.child.stdin.write("reset\n"); await fixture.next();
     const context = await request("readScreen", exclusions);
     const refused = mode.startsWith("page-") && mode !== "page-no-address";
-    if (refused && context !== null) {
+    if (refused && (context === null || context.hidden !== true)) {
       fixture.child.stdin.write("stats\n");
       process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}`);
     }
-    if (refused) assert.equal(context, null, `${mode}: entire reply refused`);
+    if (refused) assert.deepEqual(context, { hidden: true }, `${mode}: entire reply refused, and reported as hidden`);
     else {
       assert.ok(context, `${mode}: safe context remains available`);
       assert.ok(!JSON.stringify(context).includes("DO_NOT_READ"), `${mode}: password absent from reply`);

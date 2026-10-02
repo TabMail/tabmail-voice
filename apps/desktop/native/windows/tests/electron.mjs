@@ -128,7 +128,7 @@ async function main() {
     assert.ok(concurrentContext?.renderedText.includes("Before"), "concurrent context read completes");
     assert.ok(concurrentCaret?.height > 0, "concurrent caret lookup completes");
     assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Before selected after. 🙂" });
-    assert.equal(await request("readScreen", { excludedHosts: ["data"] }), null, "page address excludes the whole screen before text is returned");
+    assert.deepEqual(await request("readScreen", { excludedHosts: ["data"] }), { hidden: true }, "page address excludes the whole screen before text is returned, and says only that it is hidden");
     assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000, excludedHosts: ["data"] }), { value: null }, "excluded page refuses correction learning");
     const context = await request("readScreen");
     assert.equal(context.host, "data", "nearest page host follows the Mac contract");

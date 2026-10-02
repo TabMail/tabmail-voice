@@ -10,7 +10,7 @@ import { type AgentChat, chatTranscript, emptyChat } from "../../../src/core/age
 import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
 import { RelayError } from "../../../src/core/agent/connectors/thunderbird/relay.js";
-import { AgentError, type AgentToolID, agentToolIDs } from "../../../src/core/agent/tools.js";
+import { AgentError, type AgentToolID, agentToolIDs, screenHiddenNote } from "../../../src/core/agent/tools.js";
 import { AudioRecorder } from "../../../src/core/audio/recorder.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
@@ -23,7 +23,7 @@ import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { type MicrophoneStatus, PermissionsModel } from "../../../src/core/onboarding/permissions.js";
-import type { ScreenContext } from "../../../src/core/dictation/screenContext.js";
+import type { ScreenContext, ScreenRead } from "../../../src/core/dictation/screenContext.js";
 import type { DictationSettings } from "../../../src/core/settings.js";
 import { TipBook, tipDetails } from "../../../src/core/onboarding/tips.js";
 import { CancellationError, sleep } from "../../../src/core/util/timeout.js";
@@ -304,6 +304,22 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(pastes).toEqual([cleaned]);
     expect(transcription.body(0).vocabulary).toEqual(["Xyvora"]);
     expect(JSON.stringify(transcription.body(0))).not.toMatch(/Example Vault|Brevalle|Kaelthorne/);
+  });
+
+  /** A screen the helper hides for privacy is, to a dictation, no screen: its cleanup gets none,
+   * and nothing is said of it (the note is for agent mode's tools). */
+  test("a dictation with the screen hidden for privacy is pasted with no screen context", async () => {
+    prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+    transcription.enqueue(200, cleanedReply);
+    const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+    controller.captureContext = async () => ({ hidden: true });
+
+    await holdAndRelease(controller);
+
+    expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    expect(pastes).toEqual([cleaned]);
+    expect(transcription.body(0).vocabulary).toEqual(["Xyvora"]);
+    expect(cleanupVars(0)).toEqual({ app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "", dictionary: "Xyvora" });
   });
 
   test("sends the screen's names and terms after the dictionary", async () => {
@@ -1114,7 +1130,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** One agent-mode request, spoken over `context`: the controller, what was pasted, and every phase
      * it went through. `prepare` runs on the controller before the hold. */
     async function carryOut(
-      context: ScreenContext | null,
+      context: ScreenRead | null,
       thunderbird?: FakeThunderbird,
       prepare: (controller: DictationController) => void = () => {},
       options: { account?: AccountModel; paste?: DictationDependencies["paste"]; frontmostApp?: () => Promise<number | null>; connectorTools?: ConnectorTool[] } = {},
@@ -1128,6 +1144,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       return { controller, pastes, phases };
     }
+
+    /** With the screen hidden for privacy, agent mode is as with no selection (Compose), and its
+     * tool is told the screen is hidden, so it does not answer from an earlier screen; a screen
+     * that was only not read says nothing. */
+    test.each([true, false])("agent mode tells its tool the screen is hidden for privacy (hidden: %s)", async (hidden) => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("We ship on Friday."));
+
+      const { controller, pastes } = await carryOut(hidden ? { hidden: true } : null, undefined, (controller) => {
+        if (!hidden) controller.captureContext = async () => null;
+      });
+
+      expect(controller.tools).toEqual(["compose"]);
+      expect(pastes).toEqual(["We ship on Friday."]);
+      expect(completions.requests).toHaveLength(1);
+      expect(completionsVars(0)?.screen_text).toBe(hidden ? screenHiddenNote : "");
+      expect(completionsVars(0)?.app_name).toBe("");
+      expect(transcription.body(0).vocabulary).toBeUndefined();
+    });
 
     /** Without an email app there is nothing to choose: the selection's writing tool runs, with no
      * agent call. */
@@ -2275,6 +2310,33 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.tools).toEqual([]);
         expect(completions.requests).toHaveLength(0);
         expect(pastes).toEqual([]);
+      });
+
+      /** A question asked on a screen that is read, then one after moving to a screen hidden for
+       * privacy: the second is told the screen is hidden, with nothing of the first screen but what
+       * the conversation holds. */
+      test("an answer asked on a hidden screen after a shown one is told the screen is hidden", async () => {
+        setTools(["answer"]);
+        transcription.enqueue(200, { text: "first question" });
+        completions.enqueue(200, reply("first answer"));
+        const { controller } = makeController({ capture: new CountingCapture(true) });
+        opened.push(controller);
+        let read: ScreenRead = screen("A");
+        controller.captureContext = async () => read;
+
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => settled(controller) && controller.chat?.turns.length === 1)).toBe(true);
+        read = { hidden: true };
+        transcription.enqueue(200, { text: "next question" });
+        completions.enqueue(200, reply("next answer"));
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => settled(controller) && controller.chat?.turns.length === 2)).toBe(true);
+
+        expect(completionsVars(0)?.screen_text).toBe("» Agenda A ‸");
+        expect(completionsVars(1)?.screen_text).toBe(screenHiddenNote);
+        expect(completionsVars(1)?.app_name).toBe("");
+        expect(completionsVars(1)?.window_title).toBe("");
+        expect(String(completionsVars(1)?.conversation)).toContain("first answer");
       });
 
       /** Tools switched off while the user speaks still apply to that request; the next request reads

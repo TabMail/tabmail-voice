@@ -114,7 +114,7 @@ try {
   assert.ok(privateContext.renderedText.includes("[redacted]"));
   assert.ok(!JSON.stringify(privateContext).includes("synthetic" + "value123"), "screen reply contains no raw secret");
   assert.deepEqual(await request("focusedFieldValue", fieldParams), { value: "password: [redacted]" }, "correction learning reply is filtered too");
-  assert.equal(await request("readScreen", { excludedAppIDs: ["VOICE-UI-FIXTURE.EXE"] }), null, "exclusion is exact and case insensitive");
+  assert.deepEqual(await request("readScreen", { excludedAppIDs: ["VOICE-UI-FIXTURE.EXE"] }), { hidden: true }, "exclusion is exact and case insensitive, and says only that the screen is hidden");
   assert.deepEqual(await request("focusedFieldValue", { ...fieldParams, excludedAppIDs: ["voice-ui-fixture.exe"] }), { value: null });
   assert.ok(await request("readScreen", { excludedAppIDs: ["voice-ui-fixture"] }), "prefix does not exclude a different ID");
   const exits = [once(fixture.child, "exit"), once(helper.child, "exit")];

@@ -6,6 +6,7 @@
 #include <oleacc.h>
 #include "Privacy/ScreenPrivacy.h"
 #include "Privacy/PageScan.h"
+#include "Privacy/ScreenAccess.h"
 #include "accessible_text.h"
 #include <UIAutomation.h>
 #include <string>
@@ -184,7 +185,7 @@ public:
         require(element->get_CurrentIsPassword(&protectedFocus));
         const auto started = GetTickCount64();
         std::optional<PageHost> focusedPage;
-        if (refusedPages(window, element.Get(), exclusions, 1500, false, &focusedPage)) return nullptr;
+        if (refusedPages(window, element.Get(), exclusions, 1500, false, &focusedPage)) return hiddenScreen();
         // A protected focus contributes only the caret marker. Never ask it for
         // value/text patterns, including the editable capability probe.
         const bool isEditable = !protectedFocus && editable(element.Get());
@@ -196,7 +197,7 @@ public:
                 std::cerr << "debug accessible text: metadata ownership unavailable\n";
                 return nullptr;
             }
-            if (refusedPages(window, logical->metadata(), exclusions, 1500, false)) return nullptr;
+            if (refusedPages(window, logical->metadata(), exclusions, 1500, false)) return hiddenScreen();
             if (!safeTextSubtree(logical->metadata(), started, 1500)) {
                 std::cerr << "debug accessible text: protected or incomplete subtree\n";
                 return nullptr;
@@ -208,7 +209,12 @@ public:
         const std::string right = parts ? (*parts)[2] : "";
         VisibleContext context;
         const std::string caretText = left + "‸" + selection + (selection.empty() ? "" : "‸") + right;
-        if (!readVisible(window, element.Get(), protectedFocus || parts.has_value(), caretText, started, context, exclusions)) return nullptr;
+        // Only a page that is excluded, or whose address is unknown, is reported as hidden;
+        // a read that stopped because the window lost the foreground is no context.
+        bool hiddenPage = false;
+        if (!readVisible(window, element.Get(), protectedFocus || parts.has_value(), caretText, started, context, exclusions, hiddenPage)) {
+            return hiddenPage ? hiddenScreen() : JSON(nullptr);
+        }
         wchar_t title[513]{};
         GetWindowTextW(window, title, 513);
         DWORD pid = 0;
@@ -442,7 +448,7 @@ private:
         return result == "\xEF\xBF\xBC" ? "" : result;
     }
     bool readVisible(HWND window, IUIAutomationElement* focus, bool hasParts, const std::string& caretText,
-                     ULONGLONG started, VisibleContext& context, const ScreenExclusions& exclusions) {
+                     ULONGLONG started, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage) {
         ComPtr<IUIAutomationElement> root;
         require(automation->ElementFromHandle(window, &root));
         if (!root) return true;
@@ -483,6 +489,7 @@ private:
             }
             if (const auto page = pageHost(node); page && exclusions.excludes(*page)) {
                 std::cerr << "debug screen access: excluded or unknown page not read\n";
+                hiddenPage = true;
                 return false;
             }
             if (FAILED(node->get_CurrentIsOffscreen(&offscreen))) continue;
@@ -527,6 +534,7 @@ private:
                     PageTree tree{this, walker, started, 1500};
                     if (privacy::holdsExcludedPage(tree, entry.element, exclusions, true)) {
                         std::cerr << "debug screen access: excluded or unknown page not read\n";
+                        hiddenPage = true;
                         return false;
                     }
                 }

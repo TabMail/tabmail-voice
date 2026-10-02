@@ -61,11 +61,12 @@ export const DesktopAgent = {
 
   /** The text `tool` writes for `request`, ready to insert (for Thunderbird, to send): for an edit,
    * with the selection's own leading and trailing blank space, so replacing a whole line keeps its
-   * line break. */
+   * line break. `screenHidden`: the screen was not read for the user's privacy, which the tool is told. */
   async write(
     tool: AgentToolID,
     request: string,
     context: ScreenContext | null,
+    screenHidden: boolean,
     conversation: string,
     userName: string,
     client: CompletionsClient,
@@ -75,7 +76,7 @@ export const DesktopAgent = {
   ): Promise<string> {
     // The selection as read is not the user's text: nothing is asked for, and nothing replaces it.
     if (tool === "edit" && context?.selectionRedacted === true) throw new AgentError("secretInSelection");
-    const text = await complete(DesktopAgent.toolMessage(tool, request, context, conversation, userName), client, account, userID, signal);
+    const text = await complete(DesktopAgent.toolMessage(tool, request, context, screenHidden, conversation, userName), client, account, userID, signal);
     if (text === "") throw new AgentError("noText");
     const written = agentTools[tool].fitted(text, context);
     log.content(`DesktopAgent: ${tool} wrote`, written);
@@ -97,6 +98,7 @@ export const DesktopAgent = {
   async answer(
     request: string,
     context: ScreenContext | null,
+    screenHidden: boolean,
     conversation: string,
     userName: string,
     tools: readonly string[],
@@ -107,7 +109,7 @@ export const DesktopAgent = {
     onServerTool: (event: ServerToolEvent) => void,
     signal?: AbortSignal,
   ): Promise<string> {
-    const message = DesktopAgent.toolMessage("answer", request, context, conversation, userName);
+    const message = DesktopAgent.toolMessage("answer", request, context, screenHidden, conversation, userName);
     let state: unknown;
     let round = 0;
     for (;;) {
@@ -156,10 +158,11 @@ export const DesktopAgent = {
 
   /** A tool's prompt and its variables, with the chat window's `conversation` and the user's name
    * (`userName`, empty when none is set), by which the backend tells the user's own messages on screen
-   * from other people's. */
-  toolMessage(tool: AgentToolID, request: string, context: ScreenContext | null, conversation: string, userName: string): CompletionsMessage {
+   * from other people's. With `screenHidden` (no `context` then) the screen's text says that the
+   * screen is hidden for privacy. */
+  toolMessage(tool: AgentToolID, request: string, context: ScreenContext | null, screenHidden: boolean, conversation: string, userName: string): CompletionsMessage {
     const implementation = agentTools[tool];
-    return { role: "system", content: implementation.prompt, vars: { ...implementation.variables(request, context), conversation, user_name: userName } };
+    return { role: "system", content: implementation.prompt, vars: { ...implementation.variables(request, context, screenHidden), conversation, user_name: userName } };
   },
 };
 

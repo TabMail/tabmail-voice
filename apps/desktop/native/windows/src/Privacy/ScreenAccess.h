@@ -27,6 +27,12 @@ inline std::wstring executableName(HWND window) {
     return slash == std::wstring::npos ? name : name.substr(slash + 1);
 }
 
+// The screen-read reply for a screen not read for the user's privacy (an excluded
+// app, a page of an excluded website or of an unknown address): that it is
+// hidden, and nothing of it, so the app can tell the agent the screen was kept
+// from it rather than empty. A read that fails for any other reason stays null.
+inline nlohmann::json hiddenScreen() { return {{"hidden", true}}; }
+
 // This is the handler boundary: validation and the one target identity lookup
 // precede constructing any accessibility client or asking for window text.
 // Injectable operations let tests prove refused requests perform no read at all.
@@ -37,7 +43,7 @@ inline nlohmann::json screenAccess(const nlohmann::json& params, Target target,
     if (!target) return nullptr;
     if (exclusions.excludesApp(identity(target))) {
         std::cerr << "debug screen access: excluded app not read\n";
-        return field ? nlohmann::json{{"value", nullptr}} : nlohmann::json(nullptr);
+        return field ? nlohmann::json{{"value", nullptr}} : hiddenScreen();
     }
     return read(target, exclusions);
 }

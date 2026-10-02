@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { configureLog } from "../../../src/core/log.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
-import { type ScreenContext, ScreenContextProbe } from "../../../src/core/dictation/screenContext.js";
+import { isScreenHidden, type ScreenContext, ScreenContextProbe, screenShown } from "../../../src/core/dictation/screenContext.js";
 
 const none: ScreenExclusions = { apps: [], sites: [] };
 
@@ -76,8 +76,33 @@ describe("ScreenContextProbe", () => {
     await newer;
     reads[0]?.(screen({ appName: "Older" }));
 
-    expect((await older)?.appName).toBe("Older");
+    expect(screenShown(await older)?.appName).toBe("Older");
     expect(probe.lastContext?.appName).toBe("Newer");
+  });
+
+  /** A screen the helper hides for privacy is passed on as hidden, and is no screen to anything
+   * that uses one; nothing of it is kept for the debug window, and what was kept stays. */
+  test("a hidden screen is passed on as hidden and never kept", async () => {
+    configureLog({ isDebugBuild: true, sinks: { error: () => {} } });
+    let hidden = false;
+    let captures = 0;
+    const probe = new ScreenContextProbe(() => true, () => Promise.resolve(hidden ? { hidden: true } : screen({ appName: "Shown" })), () => {
+      captures += 1;
+    });
+
+    const shown = await probe.capture(none);
+    hidden = true;
+    const read = await probe.capture(none);
+
+    expect(read).toEqual({ hidden: true });
+    expect(isScreenHidden(read)).toBe(true);
+    expect(screenShown(read)).toBeNull();
+    expect(isScreenHidden(shown)).toBe(false);
+    expect(screenShown(shown)?.appName).toBe("Shown");
+    expect(isScreenHidden(null)).toBe(false);
+    expect(screenShown(null)).toBeNull();
+    expect(probe.lastContext?.appName).toBe("Shown");
+    expect(captures).toBe(1);
   });
 
   test("release builds keep no capture", async () => {

@@ -30,6 +30,25 @@ export interface ScreenContext {
   logDescription: string;
 }
 
+/** The helper's answer for a screen it does not read, for the user's privacy: an app or a website
+ * excluded from screen reading, or a page whose address is unknown. It carries nothing of the screen. */
+export interface ScreenHidden {
+  hidden: true;
+}
+
+/** What a screen read gives: the screen, or that it is hidden. */
+export type ScreenRead = ScreenContext | ScreenHidden;
+
+/** Whether the read found the screen hidden for privacy, rather than a screen or nothing. */
+export function isScreenHidden(read: ScreenRead | null): read is ScreenHidden {
+  return read !== null && "hidden" in read;
+}
+
+/** The screen as read, for everything that uses it: none when it is hidden. */
+export function screenShown(read: ScreenRead | null): ScreenContext | null {
+  return isScreenHidden(read) ? null : read;
+}
+
 /** Reads the screen context of the frontmost app when a dictation starts, in the background while
  * the user speaks; the dictation's cleanup uses it if it is done in time. While debug logging is on
  * (`isDebugLogging`) the latest capture is kept in memory for the debug window. Logs sizes and timings; the text goes to the debug
@@ -41,24 +60,28 @@ export class ScreenContextProbe {
 
   constructor(
     private readonly isTrusted: () => boolean,
-    /** Null when no app is in front, or what is in front is among `exclusions` (an app, or the
-     * website in a browser), which the helper doesn't read. */
-    private readonly read: (exclusions: ScreenExclusions) => Promise<ScreenContext | null>,
+    /** Null when no app is in front; hidden when what is in front is among `exclusions` (an app, or
+     * the website in a browser), which the helper doesn't read. */
+    private readonly read: (exclusions: ScreenExclusions) => Promise<ScreenRead | null>,
     private readonly onCapture: () => void = () => {},
   ) {}
 
   /** Null without the Accessibility grant. (Whether to read at all is the dictation's
    * screen-reading setting, `DictationSettings.readsScreen`.) The promise yields the screen of the
-   * app in front when this was called, even if a newer capture has started since; null without an
-   * app in front, with an app or a website the dictation excludes from screen reading (`exclusions`), or when the
-   * read failed. */
-  capture(exclusions: ScreenExclusions): Promise<ScreenContext | null> | null {
+   * app in front when this was called, even if a newer capture has started since; that it is hidden,
+   * with an app or a website the dictation excludes from screen reading (`exclusions`); null without
+   * an app in front, or when the read failed. */
+  capture(exclusions: ScreenExclusions): Promise<ScreenRead | null> | null {
     if (!this.isTrusted()) return null;
     this.generation += 1;
     const current = this.generation;
     return this.read(exclusions).then(
       (context) => {
         if (!context) return null;
+        if (isScreenHidden(context)) {
+          log.debug("ScreenContext: hidden for privacy; not read");
+          return context;
+        }
         log.debug(`ScreenContext: ${context.summary}`);
         log.content("ScreenContext", context.logDescription);
         if (isDebugLogging() && this.generation === current) {
