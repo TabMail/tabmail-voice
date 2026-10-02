@@ -19,13 +19,14 @@ import VoiceHelperSupport
 /// (the input's format changed: AVAudioEngine stops on a configuration change) is that session's
 /// microphone lost, told to `onLost`.
 ///
-/// While the input device changes (the default input switched, AirPods connecting or changing to
-/// their microphone mode, a running engine's format changed), no engine is built or released on the
-/// spot: building one against a device mid-change raised an Objective-C exception in `installTap`,
-/// which Swift cannot catch, and releasing one raced AVFAudio's own listener for that engine, both
-/// ending the helper; either could also hold the capture queue, and every start and stop behind it,
-/// for minutes. The engine bound to the old device is released later, off the capture queue
-/// (`retire`), and the next one is prepared once the changes have stopped for
+/// The input device can be changing at any time (the default input switched, AirPods connecting or
+/// changing to their microphone mode as a dictation starts and back as it ends). Releasing an
+/// engine then raced AVFAudio's own listener for it, and building one raised an Objective-C
+/// exception in `installTap`, which Swift cannot catch, both ending the helper; either could also
+/// hold the capture queue, and every start and stop behind it, for minutes. So no engine is ever
+/// released on the capture queue: each is stopped there and released later on a queue of its own
+/// (`retire`). And after a change the helper sees (the default input, a running engine's format),
+/// the next engine is prepared only once the changes have stopped for
 /// `HelperConfig.microphoneDeviceSettleDelay`. A start in that window builds its own engine, as it
 /// does whenever none is prepared for the current device.
 final class MicrophoneCapture: @unchecked Sendable {
@@ -59,8 +60,8 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var sessions = MicrophoneSessions()
     private var inputChanges = InputChanges()
-    /// Where engines bound to a device that changed are released: releasing one waits on the audio
-    /// system, which must not hold up a start.
+    /// Where engines are released: releasing one waits on the audio system, which must not hold up
+    /// a start.
     private let retireQueue = DispatchQueue(label: "ai.tabmail.voice.helper.microphoneRetire", qos: .utility)
     private var defaultDeviceListener: AudioObjectPropertyListenerBlock?
     /// Watches the running engine for a configuration change.
@@ -158,6 +159,7 @@ final class MicrophoneCapture: @unchecked Sendable {
                 tap.withLockUnchecked { $0 = nil }
                 if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
                 configurationObserver = nil
+                retire(engine)
                 throw error
             }
             self.engine = engine
@@ -172,7 +174,7 @@ final class MicrophoneCapture: @unchecked Sendable {
     private func engineStoppedOnQueue(_ stopped: AVAudioEngine) {
         guard stopped === engine, let session = sessions.lost() else { return }
         HelperLog.error("MicrophoneCapture: session \(session) lost: the input's configuration changed")
-        stopEngine(retiring: true)
+        stopEngine()
         inputChangedOnQueue()
         onLost(session)
     }
@@ -190,8 +192,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    /// Releases an engine whose device changed, after the change has settled and off the capture
-    /// queue.
+    /// Releases an engine `microphoneDeviceSettleDelay` from now, off the capture queue.
     private func retire(_ engine: AVAudioEngine) {
         let retired = Retired(engine: engine)
         retireQueue.asyncAfter(deadline: .now() + HelperConfig.microphoneDeviceSettleDelay) {
@@ -199,9 +200,8 @@ final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
-    /// Stops the running engine. `retiring` when its device changed: it is released later, off this
-    /// queue.
-    private func stopEngine(retiring: Bool = false) {
+    /// Stops the running engine, so the microphone is off; the engine itself is released later.
+    private func stopEngine() {
         tap.withLockUnchecked { $0 = nil }
         if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         configurationObserver = nil
@@ -209,7 +209,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
-        if retiring { retire(engine) }
+        retire(engine)
         HelperLog.debug("MicrophoneCapture: engine stopped")
     }
 
@@ -234,6 +234,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         // no sample rate or channels (no input, or one still arriving).
         let hardware = input.inputFormat(forBus: 0)
         guard hardware.sampleRate > 0, hardware.channelCount > 0 else {
+            retire(engine)
             throw CaptureError.noInputDevice
         }
         HelperLog.debug("MicrophoneCapture: input at \(Int(hardware.sampleRate)) Hz, \(hardware.channelCount) channel(s)")

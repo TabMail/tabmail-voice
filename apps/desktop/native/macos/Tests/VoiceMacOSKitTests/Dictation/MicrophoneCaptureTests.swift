@@ -209,6 +209,7 @@ struct MicrophoneTransportNameTests {
     @Test func aTransportThatDoesNotSayIsUnknown() {
         #expect(MicrophoneCapture.transportName(0) == "unknown")
         #expect(MicrophoneCapture.transportName(0xFFFF_FFFF) == "unknown")
+        #expect(MicrophoneCapture.transportName(0x7F7F_7F7F) == "unknown")
     }
 }
 

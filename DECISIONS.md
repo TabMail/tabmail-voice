@@ -1686,11 +1686,14 @@ and built the next one on the spot: `installTap` raising an Objective-C exceptio
 aborts: Swift cannot catch it); AVFAudio's own listener for the engine just released crashing; and
 the capture queue held for up to minutes, so the next starts and stops timed out ("Couldn't start
 the microphone", nothing recorded) and then ran all at once.
-- A change of the input device (the default input switched; a running engine's
-  `AVAudioEngineConfigurationChange`) retires the engine bound to the old device: it is released
-  `microphoneDeviceSettleDelay` later, on a queue of its own, so its release can neither race the
-  change nor hold up a start. The next engine is prepared once no further change has come for that
-  long (`InputChanges`: a headset arriving changes the device several times over, and only the
+- No engine is released on the capture queue. Every engine on its way out (the prepared one when
+  the device changes, the running one at its stop or loss, one whose start failed) is stopped there,
+  so the microphone is off as before, and released `microphoneDeviceSettleDelay` later on a queue of
+  its own: a headset changes as a dictation starts and again as it ends, without the default input
+  changing, so any release can fall in a change, and its release must not hold up a start.
+- After a change the helper sees (the default input switched; a running engine's
+  `AVAudioEngineConfigurationChange`), the next engine is prepared once no further change has come
+  for `microphoneDeviceSettleDelay` (`InputChanges`: a headset arriving changes the device several times over, and only the
   latest change's wait settles it). A stop in that window prepares nothing either; the settle does.
 - The tap is installed with no format, so it takes the node's own: a format read first and passed
   in can differ from the device's by the time it is installed, which raises that exception. The
