@@ -2744,9 +2744,14 @@ as for a page the walk reaches itself: a page in a row is a page the window show
 of text or a titled control inside a row whose text is gathered. A field that frames such a page is
 the other case and keeps its own answer, the marker in its place, in the window and in a row with
 no label (#94; Windows: #96); inside a row, heading or link read by its label, where the field is
-never reached, it refuses the window like any page there. The look keeps to the walk's budgets, past which
-the element is taken to hold none, as before. It asks every such element for its children, which
-the walk did not before; what that costs on a large page was not measured on a live app.)*
+never reached, it refuses the window like any page there. Only a control with a title is
+looked through: one without is walked into, and what is in it gets its own answer. The look keeps
+to the walk's budgets; an element it could not look through whole (more elements than the read's
+element budget, or the read's time running out mid-look) is not read, and the marker stands in its
+place, as for a field (`lookForExcludedPage`), since a page the look did not reach might be an
+excluded one. It asks every such element for its children, which the walk did not before; what
+that costs on a large page was not measured on a live app (on a made-up tree of labelled rows,
+texts and buttons, about twice as many questions to the app).)*
 
 *(Amended 2026-10-01, owner: an excluded page that lies wholly outside the window is skipped
 without hiding the window, which is what the Mac helper does. The Windows helper answers "hidden"

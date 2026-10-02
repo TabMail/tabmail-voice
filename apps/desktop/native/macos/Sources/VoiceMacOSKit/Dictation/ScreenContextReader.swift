@@ -99,18 +99,32 @@ enum ScreenContextReader {
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
                                                     intoPages: Bool = true, unlessSeenWhole: Bool = false,
                                                     within seconds: Double, since started: Date) -> Bool {
+        switch lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) {
+        case .excluded: return true
+        case .none: return false
+        case .notSeenWhole: return unlessSeenWhole
+        }
+    }
+
+    /// What a look inside an element for a page of an excluded website found.
+    enum PageLook { case none, excluded, notSeenWhole }
+
+    /// The look behind `holdsExcludedPage`, which also says when it gave up at a budget before
+    /// the element was seen whole.
+    static func lookForExcludedPage<Tree: ScreenTree>(in element: Tree.Element, _ tree: Tree, excluding exclusions: ScreenExclusions,
+                                                      intoPages: Bool = true, within seconds: Double, since started: Date) -> PageLook {
         var stack = tree.children(of: element)
         var visited = 0
         while let next = stack.popLast() {
-            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return unlessSeenWhole }
+            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return .notSeenWhole }
             visited += 1
             if tree.string(next, kAXRoleAttribute) == "AXWebArea" {
-                if exclusions.excludes(tree.page(of: next)) { return true }
+                if exclusions.excludes(tree.page(of: next)) { return .excluded }
                 if !intoPages { continue }
             }
             stack.append(contentsOf: tree.children(of: next))
         }
-        return false
+        return .none
     }
 
     // MARK: Caret
@@ -182,7 +196,8 @@ enum ScreenContextReader {
     /// by its value, never walked into) is not read, and `contextHiddenMarker` stands in its place.
     /// An element read in one piece by a label of its own and not walked into (a piece of text, a
     /// heading, a link, a row, a web control with its title) is looked through for such a page
-    /// (`holdsExcludedPage`): its label can be made of what it holds.
+    /// (`lookForExcludedPage`): its label can be made of what it holds. One that holds such a page
+    /// refuses the window; one too large to look through is not read, and the marker stands in its place.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
                                        into context: inout ScreenContext) -> Bool {
@@ -214,8 +229,8 @@ enum ScreenContextReader {
             let role = tree.string(element, kAXRoleAttribute) ?? ""
             if isSkipped(role, inWeb: inWeb) { continue }
             let shown = frame.map(ScreenContext.isShown) ?? true
-            func holdsPage() -> Bool {
-                Self.holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+            func look() -> PageLook {
+                lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
             }
 
             switch role {
@@ -224,8 +239,12 @@ enum ScreenContextReader {
                 if exclusions.excludes(page) { return false }
                 if context.host == nil { context.host = page.name }
             case "AXStaticText":
-                if shown, holdsPage() { return false }
-                if shown { context.append(.text, tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame) }
+                if shown {
+                    let held = look()
+                    if held == .excluded { return false }
+                    context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker
+                        : tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
+                }
                 continue
             case "AXHeading", "AXLink", "AXRow":
                 if shown {
@@ -234,7 +253,11 @@ enum ScreenContextReader {
                     // Read by its label, nothing inside it is reached: a page in it is looked for.
                     // Without a label its text is gathered, which finds a page on its way and
                     // marks a field that frames one.
-                    if text != nil, holdsPage() { return false }
+                    if text != nil {
+                        let held = look()
+                        if held == .excluded { return false }
+                        if held == .notSeenWhole { text = HelperConfig.contextHiddenMarker }
+                    }
                     if text == nil {
                         text = subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb,
                                            excluding: exclusions, started: started, context: &context)
@@ -257,9 +280,12 @@ enum ScreenContextReader {
                 }
                 continue
             case _ where inWeb && HelperConfig.contextWebControlRoles.contains(role):
-                if shown, holdsPage() { return false }
                 if let title = drawnTitle(of: element, in: tree) {
-                    if shown { context.append(.text, title, frame: frame) }
+                    if shown {
+                        let held = look()
+                        if held == .excluded { return false }
+                        context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker : title, frame: frame)
+                    }
                     continue
                 }
             default:
@@ -312,13 +338,18 @@ enum ScreenContextReader {
                 let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
                 // A field is read by its value and not walked into, so a page framed in it is looked
                 // for: a field holding one is not read, and the row says that something there is hidden.
-                let hidden = shown && (role == "AXTextField" || role == "AXTextArea")
-                    && holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
-                                         within: HelperConfig.contextTimeBudget, since: started)
-                // A piece of text or a titled control that holds one refuses the window, as in the walk.
-                if shown, !hidden, role != "AXTextField", role != "AXTextArea",
-                   holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
-                    return nil
+                // A piece of text or a titled control that holds one refuses the window, as in the
+                // walk, and one too large to look through is hidden like such a field.
+                var hidden = false
+                if shown, role == "AXTextField" || role == "AXTextArea" {
+                    hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
+                                               within: HelperConfig.contextTimeBudget, since: started)
+                } else if shown {
+                    switch lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
+                    case .excluded: return nil
+                    case .notSeenWhole: hidden = true
+                    case .none: break
+                    }
                 }
                 let text = hidden ? HelperConfig.contextHiddenMarker
                     : (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?

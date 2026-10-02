@@ -626,7 +626,64 @@ struct ScreenExclusionTests {
             let inRow = FakeElement("AXWindow", children: [area])
             #expect(!walk(inRow, excluding: ["example.com"]).read)
             #expect(walk(inRow, excluding: ["example.net"]).text == "| 10:15 | Pay now")
+            // Too thin to show, it is neither read nor looked through there either.
+            let thinRow = FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "10:15"]), thin.holder])
+            let thinInRow = walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [thinRow])]),
+                                 excluding: ["example.com"])
+            #expect(thinInRow.read && thinInRow.text == "| 10:15")
         }
+
+        // The page framed in another website's page inside it is found too.
+        let framed = FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"], children: [
+            FakeElement("AXWebArea", ["host": "news.example.org"], children: [page("pay.example.com", "card 4242")]),
+        ])
+        let outer = FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [framed])])
+        #expect(!walk(outer, excluding: ["example.com"]).read)
+    }
+
+    /// Such an element too large to look through is not read: the look gives up at the element
+    /// budget, and a page it did not reach might be an excluded one. The marker stands in its
+    /// place and the rest is read. One element fewer, and it is looked through whole.
+    @Test(arguments: ["AXRow", "AXHeading", "AXLink", "AXStaticText", "AXButton"], [true, false])
+    func aLabelledElementTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) {
+        func read(fillers: Int, behind host: String?) -> (read: Bool, text: String) {
+            // The look takes the last child first: the page, when there is one, is reached last.
+            let page = host.map { [self.page($0, "card 4242")] } ?? []
+            let holder = FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"],
+                                     children: page + (0..<fillers).map { _ in FakeElement("AXGroup") })
+            let area = FakeElement("AXWebArea", ["host": "example.org"], children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
+                inRow ? FakeElement("AXRow", children: [holder]) : holder,
+                FakeElement("AXStaticText", [kAXValueAttribute: "After"]),
+            ])
+            return walk(FakeElement("AXWindow", children: [area]), excluding: ["example.com"])
+        }
+        // Inside a row with no label only a piece of text and a titled control are read in one
+        // piece; a row, heading or link there is walked into.
+        guard !inRow || role == "AXStaticText" || role == "AXButton" else { return }
+        let marker = HelperConfig.contextHiddenMarker
+        let budget = HelperConfig.contextNodeBudget
+        for hidden in [read(fillers: budget, behind: "pay.example.com"), read(fillers: budget + 1, behind: nil)] {
+            #expect(hidden.read)
+            #expect(hidden.text.contains(marker) && !hidden.text.contains("Pay now"))
+            #expect(hidden.text.hasPrefix("Outer\n") && hidden.text.hasSuffix("\nAfter"))
+        }
+        // Looked through whole: the excluded page is found, and an element without one is read.
+        #expect(!read(fillers: budget - 1, behind: "pay.example.com").read)
+        let whole = read(fillers: budget, behind: nil)
+        #expect(whole.read && whole.text.contains("Pay now") && !whole.text.contains(marker))
+    }
+
+    /// A web control with no title of its own is walked into, not read in one piece: a field in
+    /// it that frames an excluded page keeps its marker, and the rest of the window is read.
+    @Test(arguments: [[kAXDescriptionAttribute: "Copy"], [:]])
+    func aWebControlWithoutATitleIsWalkedIntoNotLookedThrough(attributes: [String: String]) {
+        let field = FakeElement("AXTextField", [kAXValueAttribute: "Field words"], children: [page("pay.example.com", "card 4242")])
+        let area = FakeElement("AXWebArea", ["host": "example.org"], children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]), FakeElement("AXButton", attributes, children: [field]),
+        ])
+        let read = walk(FakeElement("AXWindow", children: [area]), excluding: ["example.com"])
+        #expect(read.read && read.text == "Outer\n> \(HelperConfig.contextHiddenMarker)")
     }
 
     /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
