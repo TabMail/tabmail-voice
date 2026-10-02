@@ -460,6 +460,23 @@ struct ScreenExclusionTests {
         #expect(read.text.contains("card 4242"))
     }
 
+    /// A page of an excluded website framed inside a field, in the window or in a row: a field is
+    /// read by its value and never walked into, so the page is looked for before it is read.
+    @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
+    func anExcludedWebsiteFramedInAFieldIsNotRead(role: String, inRow: Bool) {
+        let field = FakeElement(role, [kAXValueAttribute: "Field words"], children: [
+            FakeElement("AXGroup", children: [page("pay.example.com", "card 4242")]),
+        ])
+        let window = FakeElement("AXWindow", children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
+            inRow ? FakeElement("AXRow", children: [FakeElement("AXCell", children: [field])]) : field,
+        ])
+        #expect(!walk(window, excluding: ["example.com"]).read)
+        let read = walk(window, excluding: ["example.net"])
+        #expect(read.read)
+        #expect(read.text.contains("Field words"))
+    }
+
     /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
     /// read around the caret and its visible lines kept as a plain field.
     @Test func aTerminalsCaretComesFromItsPaneWhenThereIsOne() {

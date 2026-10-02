@@ -755,6 +755,15 @@ its table row, and a row's text was gathered from static text and text fields on
 heading or link now takes a text area's value like a field's, shown ones only, within the same
 `contextMaxBlockChars`. A password field is still never read (`walkNeverReadsAPasswordField`).
 
+**Amendment 2026-10-01: a field that frames an excluded page hides the screen.** A field (text area
+or text field) is read by its value and never walked into, in the window and in a row alike, so a
+page of an excluded website framed inside one was not seen: the window was read without it, and
+agent mode was not told anything was hidden. Owner: that case "should still have that note as
+well". The reader now looks inside a field for an excluded page (`holdsExcludedPage`) before reading
+it, and refuses the window as for any excluded page, so the screen is answered as hidden for privacy
+(ADR-DESK-047's note). No app is known to frame a page in a field; the cost is one more look at a
+field's children, which most fields do not have.
+
 ## ADR-DESK-017: Settings are read once, as a dictation starts
 
 **Context:** Owner standing rule, 2026-09-26 (root `Companion/Rules/Active/snapshot-settings-at-operation-start.md`):

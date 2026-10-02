@@ -173,8 +173,9 @@ enum ScreenContextReader {
     /// Notion row), skipped or pruned, so the caret block lands at its place.
     /// A password field is never read, nor anything inside it (one above the focused element is
     /// walked into like any of its ancestors; no app is known to focus inside one).
-    /// False when the window shows a page of an excluded website, in focus or not: the walk stops
-    /// there, and what it gathered must not be used.
+    /// False when the window shows a page of an excluded website, in focus or not, or framed in a
+    /// field (which is read by its value, never walked into): the walk stops there, and what it
+    /// gathered must not be used.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
                                        into context: inout ScreenContext) -> Bool {
@@ -223,7 +224,7 @@ enum ScreenContextReader {
                     var text = label(of: element, in: tree)
                     if text == nil {
                         text = subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb,
-                                           excluding: exclusions, context: &context)
+                                           excluding: exclusions, started: started, context: &context)
                         // A page of an excluded website is framed in it.
                         if text == nil { return false }
                     }
@@ -231,6 +232,10 @@ enum ScreenContextReader {
                 }
                 continue
             case "AXTextArea", "AXTextField":
+                // A field is read by its value and not walked into, so a page framed in it is looked for.
+                if holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
+                    return false
+                }
                 if shown, let text = tree.fieldText(of: element, windowFrame: windowFrame) { context.append(.field, text, frame: frame) }
                 continue
             case _ where inWeb && HelperConfig.contextWebControlRoles.contains(role):
@@ -272,7 +277,8 @@ enum ScreenContextReader {
     /// and its fields' and text views' (a native chat app's message is a text area in its table
     /// row). Nil when a page of an excluded website is among them.
     private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, separator: String, inWeb: Bool,
-                                                      excluding exclusions: ScreenExclusions, context: inout ScreenContext) -> String? {
+                                                      excluding exclusions: ScreenExclusions, started: Date,
+                                                      context: inout ScreenContext) -> String? {
         var parts: [String] = []
         var length = 0
         var stack = Array(tree.children(of: root).reversed())
@@ -282,6 +288,11 @@ enum ScreenContextReader {
             let role = tree.string(element, kAXRoleAttribute) ?? ""
             if role == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return nil }
             if isSkipped(role, inWeb: inWeb) || isPasswordField(element, in: tree) { continue }
+            // A field is read by its value and not walked into, so a page framed in it is looked for.
+            if role == "AXTextField" || role == "AXTextArea",
+               holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
+                return nil
+            }
             let title = inWeb && HelperConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
             if role == "AXStaticText" || role == "AXTextField" || role == "AXTextArea" || title != nil {
                 let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
