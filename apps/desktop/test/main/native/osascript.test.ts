@@ -9,11 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, test, vi } from "vitest";
-import { ScriptError } from "../../../src/core/agent/connectors/appleScript.js";
-import { MessagesScripts } from "../../../src/core/agent/connectors/messages.js";
-import { NotesScripts } from "../../../src/core/agent/connectors/notes.js";
+import { ScriptError } from "../../../src/core/agent/connectors/macos/appleScript.js";
+import { MessagesScripts } from "../../../src/core/agent/connectors/macos/messages.js";
+import { NotesScripts } from "../../../src/core/agent/connectors/macos/notes.js";
 import { sleep } from "../../../src/core/util/timeout.js";
-import { osascript } from "../../../src/main/native/osascript.js";
+import { osascript } from "../../../src/main/native/macos/osascript.js";
 
 // A small output cap, so a script can print past it: a test's other output stays far below.
 vi.mock("../../../src/core/config.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../../src/core/config.js")>()), appleScriptMaxOutputBytes: 1_024 }));

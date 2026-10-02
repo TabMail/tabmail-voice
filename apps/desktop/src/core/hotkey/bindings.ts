@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 /** The key held to dictate. */
-export type DictationHotkey = "rightOption" | "function";
+export type DictationHotkey = "rightOption" | "function" | "rightControl" | "rightAlt";
 
-export const dictationHotkeys: readonly DictationHotkey[] = ["rightOption", "function"];
+export const dictationHotkeys: readonly DictationHotkey[] = ["rightOption", "function", "rightControl", "rightAlt"];
 
 export const defaultHotkey: DictationHotkey = "rightOption";
 
@@ -15,6 +15,8 @@ export function isDictationHotkey(value: unknown): value is DictationHotkey {
 
 export const hotkeyNames: Record<DictationHotkey, { displayName: string; keycap: string }> = {
   rightOption: { displayName: "Right Option (⌥)", keycap: "right ⌥" },
+  rightAlt: { displayName: "Right Alt (Alt)", keycap: "right Alt" },
+  rightControl: { displayName: "Right Control (Ctrl)", keycap: "right Ctrl" },
   function: { displayName: "Fn / Globe (🌐)", keycap: "fn" },
 };
 

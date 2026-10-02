@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { execFile } from "node:child_process";
-import { type ScriptRunner, ScriptError } from "../../core/agent/connectors/appleScript.js";
-import * as config from "../../core/config.js";
-import { CancellationError } from "../../core/util/timeout.js";
+import { type ScriptRunner, ScriptError } from "../../../core/agent/connectors/macos/appleScript.js";
+import * as config from "../../../core/config.js";
+import { CancellationError } from "../../../core/util/timeout.js";
 
 /**
  * The Notes and Messages scripts, run by `/usr/bin/osascript` from the main process (ADR-DESK-028):

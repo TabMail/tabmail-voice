@@ -4,7 +4,7 @@
 
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { trimWhitespace } from "../../util/text.js";
-import type { ScriptRunner } from "./appleScript.js";
+import type { ScriptRunner } from "./macos/appleScript.js";
 import type { EventStore } from "./calendar.js";
 import type { ContactStore } from "./contacts.js";
 import type { EmailOpener } from "./email.js";
@@ -101,12 +101,14 @@ export interface ConnectorServices {
 /**
  * An app on this computer the Answer prompt's tools reach (`ConnectorTool.connector`), a switch in
  * Settings and the welcome wizard, on by default (owner, 2026-09-26). The OS asks for access the
- * first time a request needs it. All are macOS apps for now: elsewhere none is offered or shown.
+ * first time a request needs it. Each connector declares the platforms its services support.
  * Each is declared in its own file in this folder with `defineConnector`, and
  * `scripts/gen-registries.mts` lists them in `registry.ts` (ADR-DESK-044).
  */
 export interface Connector {
   readonly id: ConnectorID;
+  /** Platforms with a working implementation of this connector’s services. */
+  readonly platforms: readonly ("darwin" | "win32" | "linux")[];
   /** Where its switch and bubble sit among the connectors', lowest first. */
   readonly order: number;
   readonly displayName: string;

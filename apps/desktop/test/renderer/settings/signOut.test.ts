@@ -58,6 +58,15 @@ vi.mock("@napi-rs/keyring", () => ({
     getPassword(): string | null {
       return app.credential;
     }
+    getSecret(): number[] | null {
+      const stored = app.credential;
+      if (stored === null) return null;
+      return [...(stored.startsWith("binary:") ? Buffer.from(stored.slice(7), "base64") : Buffer.from(stored, "utf16le"))];
+    }
+    setSecret(value: Uint8Array): void {
+
+      app.credential = `binary:${Buffer.from(value).toString("base64")}`;
+    }
     setPassword(value: string): void {
       app.credential = value;
     }

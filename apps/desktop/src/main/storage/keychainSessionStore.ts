@@ -6,6 +6,7 @@ import { Entry } from "@napi-rs/keyring";
 import { type SessionStore, sessionFromWire, sessionToWire, type TabMailSession } from "../../core/backend/account.js";
 import * as config from "../../core/config.js";
 import { errorName, log } from "../../core/log.js";
+import { WindowsSessionCredential } from "./windows/sessionCredential.js";
 
 /** Shown when the credential store refuses to keep a sign-in. */
 export const saveFailedMessage = "Couldn't save your sign-in in the system's credential store. Try again.";
@@ -17,7 +18,12 @@ export const savedSignInKeptMessage = "Signed out, but your saved sign-in couldn
  * Credential Manager, the Secret Service on Linux), as GoTrue's JSON. Tests use
  * `InMemorySessionStore` and never touch it. */
 export class KeychainSessionStore implements SessionStore {
-  private readonly entry = new Entry(config.keychainService, config.keychainAccount);
+  private readonly entry: Pick<Entry, "getPassword" | "setPassword" | "deletePassword">;
+
+  constructor(platform: NodeJS.Platform = process.platform) {
+    const entry = new Entry(config.keychainService, config.keychainAccount);
+    this.entry = platform === "win32" ? new WindowsSessionCredential(entry) : entry;
+  }
 
   load(): TabMailSession | null {
     try {

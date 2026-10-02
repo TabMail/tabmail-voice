@@ -11,7 +11,8 @@ import { EventStoreError } from "../../../src/core/agent/connectors/calendar.js"
 import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.js";
 import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
-import { decodeSamples, MacSystem } from "../../../src/main/native/macos.js";
+import { MacSystem } from "../../../src/main/native/macos/system.js";
+import { decodeSamples } from "../../../src/main/native/microphone.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
 
 /** The two sides of the helpers' wire: the requests the app sends and the handlers the Swift helpers

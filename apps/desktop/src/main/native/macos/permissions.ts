@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { shell, systemPreferences } from "electron";
-import { errorName, log } from "../core/log.js";
-import type { PermissionSystem } from "../core/onboarding/permissions.js";
+import { errorName, log } from "../../../core/log.js";
+import type { PermissionSystem } from "../../../core/onboarding/permissions.js";
 
 /** System Settings' Privacy & Security panes. */
 const settingsPanes = {

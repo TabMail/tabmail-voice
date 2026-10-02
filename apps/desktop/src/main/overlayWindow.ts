@@ -9,6 +9,12 @@ import { errorName, log } from "../core/log.js";
 import { bubblesFitUnder, chatSide, chatWindowFrame, opensUpward, overlayOrigin, type Point, pillPosition, type Rect } from "../core/ui/overlayGeometry.js";
 import type { ChatPlacement } from "../shared/ipc.js";
 
+/** Presentation operations used by the shared placement controller. A platform may present the
+ * same renderer through a native window without duplicating caret or chat placement logic. */
+export type OverlaySurface = Pick<BrowserWindow,
+  "hide" | "isVisible" | "setBounds" | "getBounds" | "setOpacity" | "setIgnoreMouseEvents" | "showInactive"
+>;
+
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
  * hold is arming (the caret is looked up then, so the overlay appears there the moment the hold is
@@ -18,6 +24,8 @@ import type { ChatPlacement } from "../shared/ipc.js";
  */
 export class OverlayWindowController {
   private anchor: Rect | null = null;
+  private requestedChat = false;
+  private requestedPill = false;
   private lookupGeneration = 0;
   private lookupPending = false;
   /** The hold was revealed before the caret lookup finished: show once it does, so the overlay
@@ -36,13 +44,16 @@ export class OverlayWindowController {
   /** The chat window opened and its page hasn't measured it yet: the overlay is transparent meanwhile,
    * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is). */
   private chatUnmeasured = false;
+  private measuredChatHeight: number | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
 
   constructor(
-    private readonly window: BrowserWindow,
+    private readonly window: OverlaySurface,
     /** The caret's rect in the app in front, in top-left screen points; null when it has none. */
     private readonly locateCaret: () => Promise<Rect | null>,
+    /** Optional platform restriction, such as regions outside Windows Start/Search. */
+    private readonly placementArea?: (workArea: Rect) => Rect | null,
   ) {}
 
   get opensUpward(): boolean {
@@ -68,12 +79,14 @@ export class OverlayWindowController {
     const chat = this.chat;
     if (chat === null) return null;
     // In the window as placed, its origin rounded.
-    return { ...chat.side, bubblesUnder: chat.bubblesUnder, pillX: chat.pill.x - Math.round(this.chatFrame(chat.side.maxHeight).x) };
+    return { ...chat.side, ...(chat.workArea.width < config.chatWidth ? { width: chat.workArea.width } : {}), bubblesUnder: chat.bubblesUnder, pillX: chat.pill.x - Math.round(this.chatFrame(chat.side.maxHeight).x) };
   }
 
   /** Shows the overlay for `phase`, and the chat window over its pill while it is open (`chatOpen`),
    * where it opened: a follow-up's pill shows under it. */
   update(phase: Phase, chatOpen = false): void {
+    this.requestedChat = chatOpen;
+    this.requestedPill = phase.kind !== "idle" && phase.kind !== "arming";
     if (chatOpen) {
       this.cancelHide();
       if (this.chat === null) this.showChat();
@@ -118,10 +131,25 @@ export class OverlayWindowController {
     }
   }
 
+  /** Recompute after a platform exclusion or display changes, including recovery when a shell
+   * surface previously left no usable space. Never reveals an idle or still-arming hold. */
+  refreshPlacement(): void {
+    if (this.requestedChat) {
+      if (this.chat !== null) this.hideChat();
+      this.showChat();
+      // A move with unchanged content dimensions need not trigger ResizeObserver again.
+      // Reuse the last measured height; a changed width will send a fresh measurement.
+      if (this.measuredChatHeight !== null) this.fitChat(this.measuredChatHeight);
+    } else if (this.requestedPill && !this.lookupPending) {
+      this.show();
+    }
+  }
+
   /** The chat window measured itself: the overlay takes its height, so no empty part of the window
    * catches clicks. */
   fitChat(height: number): void {
     if (this.chat === null) return;
+    this.measuredChatHeight = height;
     this.window.setBounds(rounded(this.chatFrame(height)));
     if (!this.chatUnmeasured) return;
     this.chatUnmeasured = false;
@@ -136,6 +164,7 @@ export class OverlayWindowController {
     this.lookupPending = false;
     this.showWhenLocated = false;
     const anchor = this.anchor ?? this.pointer();
+    if (!this.hasPlacementArea(anchor)) { this.window.hide(); return; }
     const workArea = this.workArea(anchor);
     // Rounded as `position` placed the canvas, so the pill doesn't move by a fraction of a point.
     const origin = overlayOrigin(anchor, config.overlayCanvasSize, config.pillHeight, workArea);
@@ -171,6 +200,7 @@ export class OverlayWindowController {
 
   private show(): void {
     this.showWhenLocated = false;
+    if (!this.hasPlacementArea(this.anchor ?? this.pointer())) { this.window.hide(); return; }
     this.position();
     this.window.showInactive();
   }
@@ -213,9 +243,15 @@ export class OverlayWindowController {
     return { x: mouse.x, y: mouse.y, width: 1, height: 1 };
   }
 
+  private hasPlacementArea(anchor: Rect): boolean {
+    const area = screen.getDisplayNearestPoint({ x: Math.round(anchor.x + anchor.width / 2), y: Math.round(anchor.y + anchor.height / 2) }).workArea;
+    return this.placementArea === undefined || this.placementArea(area) !== null;
+  }
+
   /** The work area of the display `anchor` is on. */
   private workArea(anchor: Rect): Rect {
-    return screen.getDisplayNearestPoint({ x: Math.round(anchor.x + anchor.width / 2), y: Math.round(anchor.y + anchor.height / 2) }).workArea;
+    const display = screen.getDisplayNearestPoint({ x: Math.round(anchor.x + anchor.width / 2), y: Math.round(anchor.y + anchor.height / 2) }).workArea;
+    return this.placementArea?.(display) ?? display;
   }
 
   private cancelHide(): void {

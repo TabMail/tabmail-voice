@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AccountModel, AuthClient, type SessionStore, type TabMailSession } from "../../src/core/backend/account.js";
-import type { ScriptRunner } from "../../src/core/agent/connectors/appleScript.js";
+import type { ScriptRunner } from "../../src/core/agent/connectors/macos/appleScript.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
 import * as config from "../../src/core/config.js";
 import { type HTTPRequest, type HTTPTransport, TransportError } from "../../src/core/backend/http.js";

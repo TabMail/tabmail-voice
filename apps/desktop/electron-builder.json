@@ -9,7 +9,6 @@
   },
   "files": ["dist/node/**", "dist/renderer/**", "package.json"],
   "extraResources": [
-    { "from": "dist/helpers", "to": "helpers" },
     { "from": "resources", "to": ".", "filter": ["trayTemplate*.png"] }
   ],
   "asar": true,
@@ -18,6 +17,7 @@
     "category": "public.app-category.productivity",
     "artifactName": "TabMail-Voice-${version}-${arch}.${ext}",
     "icon": "resources/icon.png",
+    "extraResources": [{ "from": "dist/helpers", "to": "helpers" }],
     "target": [
       { "target": "dmg", "arch": ["arm64"] },
       { "target": "zip", "arch": ["arm64"] }
@@ -36,6 +36,23 @@
       "NSContactsUsageDescription": "TabMail Voice looks up people in your contacts to answer what you ask, and adds the ones you confirm.",
       "NSAppleEventsUsageDescription": "TabMail Voice uses Notes and Messages to answer what you ask, and adds the notes and sends the messages you confirm."
     }
+  },
+  "win": {
+    "target": "nsis",
+    "artifactName": "TabMail-Voice-${version}-windows-${arch}.${ext}",
+    "icon": "resources/icon.png",
+    "requestedExecutionLevel": "asInvoker",
+    "extraResources": [
+      { "from": "dist/helpers", "to": "helpers", "filter": ["voice-hotkey.exe", "voice-windows.exe"] },
+      { "from": "native/windows/vendor/ia2/LICENSE.txt", "to": "helpers/IAccessible2-LICENSE.txt" }
+    ],
+    "publish": null
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "useZip": true,
+    "differentialPackage": false
   },
   "dmg": {
     "artifactName": "TabMail-Voice-latest-${arch}.${ext}",

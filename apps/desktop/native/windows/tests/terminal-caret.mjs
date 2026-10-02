@@ -1,0 +1,79 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+// Run interactively inside Windows Terminal. This deliberately tests its real
+// UIA provider; redirected CTest output cannot establish an interactive caret.
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+
+assert.equal(process.platform, "win32", "requires the native Windows runtime");
+assert.ok(process.stdout.isTTY, "run directly in a focused Windows Terminal tab, without output redirection");
+assert.ok(process.argv[2], "pass the built voice-windows.exe path");
+const helper = spawn(process.argv[2], { stdio: ["pipe", "pipe", "pipe"] });
+const lines = createInterface({ input: helper.stdout });
+const pending = new Map();
+let nextID = 0;
+let helperFailed = false;
+function fail(error) {
+  helperFailed = true;
+  for (const waiter of pending.values()) waiter.reject(error);
+  pending.clear();
+}
+helper.on("error", fail);
+helper.on("exit", () => fail(new Error("helper exited before the request completed")));
+helper.stderr.on("data", () => {});
+lines.on("line", (line) => {
+  try {
+    const reply = JSON.parse(line);
+    const waiter = pending.get(reply.id);
+    if (!waiter) return;
+    pending.delete(reply.id);
+    if (reply.error) waiter.reject(new Error("native caret request failed"));
+    else waiter.resolve(reply.result);
+  } catch (error) { fail(error); }
+});
+function request(method, params = {}) {
+  assert.equal(helperFailed, false, "helper remains alive");
+  const id = ++nextID;
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject });
+    helper.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+  });
+}
+const timeout = setTimeout(() => {
+  fail(new Error("terminal caret validation timed out"));
+  helper.kill();
+}, 15_000);
+const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+try {
+  process.stdout.write("\nSynthetic terminal caret: ");
+  await settle();
+  const target = await request("frontmostApp");
+  assert.ok(target?.window, "terminal must be foreground");
+  const first = await request("caretAnchor", target);
+  assert.ok(first && first.height > 0, "Terminal's collapsed selection exposes a caret");
+  process.stdout.write("ABCDEF");
+  await settle();
+  const second = await request("caretAnchor", target);
+  assert.ok(second, "caret remains available after terminal output");
+  assert.ok(second.x > first.x, "caret tracks new characters independently of mouse position");
+  assert.equal(second.y, first.y, "short output stays on the same line");
+  assert.equal(second.height, first.height, "font metrics remain stable");
+  process.stdout.write("\nSynthetic next line: ");
+  await settle();
+  const third = await request("caretAnchor", target);
+  assert.ok(third && third.x < second.x, "new-line caret returns toward the left margin");
+  // At the viewport bottom Terminal scrolls instead of increasing screen Y.
+  assert.ok(third.y >= second.y, "new line advances or scrolls at the viewport edge");
+  assert.equal(await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] }), null,
+    "geometry support does not opt terminal output into correction learning");
+  assert.deepEqual(await request("frontmostApp"), target, "helper never activates a different window");
+  process.stdout.write("\nTERMINAL_CARET_PASS\n");
+} finally {
+  clearTimeout(timeout);
+  helper.stdin.end();
+  helper.kill();
+  lines.close();
+}

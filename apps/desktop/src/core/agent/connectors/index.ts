@@ -16,3 +16,8 @@ export function isConnectorID(name: unknown): name is ConnectorID {
 }
 
 export const connectorByID = Object.fromEntries(connectors.map((connector) => [connector.id, connector])) as Record<ConnectorID, Connector>;
+
+/** Only advertise tools whose service implementation exists on this platform. */
+export function connectorsForPlatform(platform: string): readonly Connector[] {
+  return connectors.filter((connector) => connector.platforms.some((supported) => supported === platform));
+}

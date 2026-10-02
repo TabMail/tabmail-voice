@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { GlobeKeyAction, type GlobeKeySystem, savedChoiceKey } from "../../../src/core/hotkey/globeKeyAction.js";
+import { GlobeKeyAction, type GlobeKeySystem, savedChoiceKey } from "../../../src/core/hotkey/macos/globeKeyAction.js";
 import type { DictationHotkey } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 

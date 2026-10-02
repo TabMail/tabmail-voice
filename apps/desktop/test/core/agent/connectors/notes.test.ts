@@ -3,9 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { ScriptError } from "../../../../src/core/agent/connectors/appleScript.js";
+import { ScriptError } from "../../../../src/core/agent/connectors/macos/appleScript.js";
 import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
-import { NotesCreateTool, NotesScripts, notesConnector, NotesSearchTool } from "../../../../src/core/agent/connectors/notes.js";
+import { NotesCreateTool, NotesScripts, notesConnector, NotesSearchTool } from "../../../../src/core/agent/connectors/macos/notes.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 import { FakeScriptRunner } from "../../../support/stubs.js";

@@ -50,6 +50,8 @@ export interface OverlayState {
 }
 
 export interface ChatPlacement {
+  /** Chat content width when the available placement region is narrower than its usual width. */
+  width?: number;
   /** Under the pill and its bubbles (`chatSide`), or over them. */
   below: boolean;
   /** How tall the chat grows before it scrolls: at most `chatMaxHeight`, less where the screen has less
@@ -67,6 +69,7 @@ export interface EmailAppChoice {
 }
 
 export interface SettingsState {
+  availableHotkeys: readonly DictationHotkey[];
   email: string | null;
   hotkey: DictationHotkey;
   readsScreen: boolean;
@@ -98,6 +101,7 @@ export interface SettingsState {
    * (`config.builtInExcludedSites`). */
   excludedSites: string[];
   canExcludeApps: boolean;
+  builtInExcludedApps: readonly ExcludedApp[];
   microphoneGranted: boolean;
   accessibilityTrusted: boolean;
   vscodeFix: VSCodeFix;
@@ -125,6 +129,8 @@ export interface WelcomeState {
   isLastStep: boolean;
   canAdvance: boolean;
   hasConsented: boolean;
+  /** Whether the native helper supports local correction learning. */
+  canLearnWords: boolean;
   readsScreen: boolean;
   /** Agent mode's tools switched on. */
   enabledTools: AgentToolID[];
