@@ -59,8 +59,8 @@ describe("tips", () => {
     expect(keys).toEqual(["F9", "Ctrl+Shift+F9"]);
   });
 
-  test("active GNOME integration names Shift and Escape while preserving other platforms", () => {
-    expect(tipLines("agentAndHistory", "F8", true).flat()).toContainEqual({ key: "Shift" });
+  test("active GNOME integration names Space and Escape while preserving other platforms", () => {
+    expect(tipLines("agentAndHistory", "F8", true).flat()).toContainEqual({ key: "Space" });
     expect(tipLines("handsFree", "F8", true).flat()).toContainEqual({ key: "Esc" });
     expect(tipLines("agentAndHistory", "rightOption", true)).toEqual(tipLines("agentAndHistory", "rightOption"));
   });

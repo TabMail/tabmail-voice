@@ -1,7 +1,7 @@
 {
   "uuid": "voice-caret@tabmail.ai",
   "name": "TabMail Voice Integration",
-  "description": "Caret placement and temporary Shift/Escape shortcuts for TabMail Voice dictation.",
+  "description": "Caret placement and temporary Space/Escape shortcuts for TabMail Voice dictation.",
   "shell-version": ["50"],
   "version": 1,
   "url": "https://tabmail.ai"

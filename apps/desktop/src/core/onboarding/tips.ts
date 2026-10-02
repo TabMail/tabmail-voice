@@ -34,7 +34,7 @@ export type TipPart = { words: string } | { key: string };
  * 2026-09-26: "should be multi-line instead"), as the config writes them. */
 export function tipLines(tip: DictationTip, hotkey: DictationHotkey, gnomeRecordingKeys = false): TipPart[][] {
   if (hotkey === "F8" || hotkey === "F9") {
-    if (tip === "agentAndHistory") return [[{ words: "Agent mode:" }, { key: gnomeRecordingKeys ? "Shift" : `Shift+${hotkey}` }], [{ words: "Triple-tap for paste history" }]];
+    if (tip === "agentAndHistory") return [[{ words: "Agent mode:" }, { key: gnomeRecordingKeys ? "Space" : `Shift+${hotkey}` }], [{ words: "Triple-tap for paste history" }]];
     if (tip === "handsFree") return [[{ words: "Finish:" }, { key: hotkey }], [{ words: "Cancel:" }, { key: gnomeRecordingKeys ? "Esc" : `Ctrl+Shift+${hotkey}` }]];
   }
   return tipDetails[tip].lines.map((line) => tipParts(line, hotkey));

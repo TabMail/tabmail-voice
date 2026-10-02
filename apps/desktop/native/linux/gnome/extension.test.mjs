@@ -144,17 +144,17 @@ test('recording grabs are scoped to owner and disappear on end, disconnect, lock
     const f = await fixture();
     assert.equal(f.grabs.size, 0);
     assert.equal(f.recording(true), true);
-    assert.deepEqual([...f.grabs.values()], ['Shift_L', 'Shift_R', 'Escape']);
+    assert.deepEqual([...f.grabs.values()], ['space', 'Escape']);
     assert.equal(f.recording(true), true);
-    assert.equal(f.grabs.size, 3);
+    assert.equal(f.grabs.size, 2);
     assert.equal(f.recording(false, ':1.99'), false);
-    const shift = [...f.grabs.keys()][0];
-    f.display.emit('accelerator-activated', shift);
+    const space = [...f.grabs.keys()][0];
+    f.display.emit('accelerator-activated', space);
     assert.equal(f.actions[0][0], ':1.42');
     assert.equal(f.actions[0][4].value[0], 'toggleMode');
     assert.equal(f.recording(false), true);
     assert.equal(f.grabs.size, 0);
-    f.display.emit('accelerator-activated', shift);
+    f.display.emit('accelerator-activated', space);
     assert.equal(f.actions.length, 1);
     f.recording(true); f.disconnectOwner(); assert.equal(f.grabs.size, 0);
     f.recording(true); f.sessionMode.isLocked = true; f.sessionMode.emit('updated');
@@ -167,11 +167,11 @@ test('recording grabs are scoped to owner and disappear on end, disconnect, lock
 
 test('Escape releases grabs immediately and a partial grab failure rolls back', async () => {
     const f = await fixture();
-    f.failGrab('Shift_R');
+    f.failGrab('Escape');
     assert.equal(f.recording(true), false);
     assert.equal(f.grabs.size, 0);
     f.failGrab(null); assert.equal(f.recording(true), true);
-    f.display.emit('accelerator-activated', [...f.grabs.keys()][2]);
+    f.display.emit('accelerator-activated', [...f.grabs.keys()][1]);
     assert.equal(f.actions[0][4].value[0], 'cancel');
     assert.equal(f.grabs.size, 0);
     f.extension.disable();

@@ -132,7 +132,7 @@ export default class VoiceCaret extends Extension {
                 this._owner = owner;
                 this._ownerWatch = Gio.bus_watch_name_on_connection(Gio.DBus.session,
                     owner, Gio.BusNameWatcherFlags.NONE, null, () => this._releaseRecording());
-                for (const [key, action] of [['Shift_L', 'toggleMode'], ['Shift_R', 'toggleMode'], ['Escape', 'cancel']]) {
+                for (const [key, action] of [['space', 'toggleMode'], ['Escape', 'cancel']]) {
                     const id = global.display.grab_accelerator(key, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT);
                     if (!id) throw new Error(`Cannot acquire ${key}`);
                     this._grabs.push({id, action});

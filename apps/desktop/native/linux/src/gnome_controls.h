@@ -28,7 +28,7 @@ public:
                 if (!self->recording || !g_variant_is_of_type(value, G_VARIANT_TYPE("(s)"))) return;
                 const char* action; g_variant_get(value, "(&s)", &action);
                 // Gesture's shared internal mode key remains platform-neutral;
-                // the extension maps the physical Shift key to that action.
+                // the extension maps the physical Space key to that action.
                 const unsigned key = std::string(action) == "toggleMode" ? 32 : std::string(action) == "cancel" ? 27 : 0;
                 // A menu-started recording has no native key gesture. Do not synthesize
                 // handsFree from an asynchronous phase notification: that can arrive

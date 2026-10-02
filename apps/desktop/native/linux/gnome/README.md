@@ -9,12 +9,12 @@ does not render above Shell surfaces or move keyboard focus.
 The extension listens to the same input-method signals used by GNOME's on-screen
 keyboard: Wayland cursor location and X11 IBus cursor location. It exposes only a
 rectangle on the session bus, never field text. During recording it also grabs
-Shift_L/Shift_R to change mode and Escape to cancel, using Mutter accelerators.
+Space to change mode and Escape to cancel, using Mutter accelerators.
 The grabs belong to the requesting helper connection and are released on recording
 end, cancellation, helper disconnect, screen lock, or extension disable. Action
 signals are sent only to that helper. No periodic polling, accessibility-tree
 traversal, or custom renderer is involved.
-The helper allows 25 ms for the bus call; the app bounds the entire request to 50 ms.
+The helper allows 25 ms for the bus call; the app bounds the entire request to 200 ms.
 
 ## Installation and activation
 
