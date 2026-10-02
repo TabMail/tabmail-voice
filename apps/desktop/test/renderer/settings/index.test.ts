@@ -825,3 +825,31 @@ describe("Settings page", () => {
     }
   });
 });
+
+
+describe("GNOME integration", () => {
+  test("Enable sends its command, then explains Space and Escape when ready", async () => {
+    const initial: SettingsState = { ...signedIn, gnomeIntegration: "available" };
+    const ready: SettingsState = { ...signedIn, gnomeIntegration: "ready" };
+    const page = await settingsPage({ error: null }, ready, initial);
+    await act(async () => button("Permissions").click());
+    expect(visibleText()).toContain("Space to switch mode");
+    await act(async () => button("Enable").click());
+    expect(page.commands).toContainEqual({ type: "enableGnomeIntegration" });
+    expect(visibleText()).toContain("Press Space while dictating");
+    expect(visibleText()).toContain("Escape to cancel");
+    expect(visibleText()).toContain("✓ Enabled");
+    expect(visibleText()).not.toContain("Shift");
+  });
+
+  test.each(["restart", "unavailable", "unsupported", "checking"] as const)("%s does not report the integration enabled", async (state) => {
+    const initial: SettingsState = { ...signedIn, gnomeIntegration: state };
+    await settingsPage({ error: null }, initial, initial);
+    await act(async () => button("Permissions").click());
+    expect(visibleText()).toContain("GNOME integration");
+    expect(visibleText()).not.toContain("✓ Enabled");
+    expect(button("Enable").disabled).toBe(state === "unsupported" || state === "checking");
+    if (state === "restart") expect(visibleText()).toContain("Log out of Ubuntu and back in");
+    if (state === "unavailable") expect(visibleText()).toContain("could not be enabled");
+  });
+});

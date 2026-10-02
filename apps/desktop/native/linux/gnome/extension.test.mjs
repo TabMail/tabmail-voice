@@ -19,6 +19,7 @@ async function fixture(failExport = false) {
     const sessionMode = Object.assign(new Signals(), {isLocked: false});
     const ibus = new Signals();
     let exported = false;
+    let exportXML, exportPath;
     const grabs = new Map(), allowed = new Map(), actions = [];
     let lostOwner = null, failKey = null, nextGrab = 100;
     display.grab_accelerator = key => {
@@ -34,9 +35,9 @@ async function fixture(failExport = false) {
         'gi://Gio': {default: {BusNameWatcherFlags: {NONE: 0},
             bus_watch_name_on_connection(_bus, _name, _flags, _appeared, vanished) {lostOwner = vanished; return 1;},
             bus_unwatch_name() {lostOwner = null;},
-            DBus: {session: {emit_signal: (...args) => actions.push(args)}}, DBusExportedObject: {wrapJSObject: () => ({
-            export() { if (failExport) throw new Error("synthetic export failure"); exported = true; }, unexport() { exported = false; },
-        })}}},
+            DBus: {session: {emit_signal: (...args) => actions.push(args)}}, DBusExportedObject: {wrapJSObject: xml => { exportXML = xml; return ({
+            export(_bus, path) { exportPath = path; if (failExport) throw new Error("synthetic export failure"); exported = true; }, unexport() { exported = false; },
+        }); }}}},
         'resource:///org/gnome/shell/extensions/extension.js': {Extension: class {}},
         'resource:///org/gnome/shell/ui/main.js': {inputMethod, overview, sessionMode, wm: {allowKeybinding: (id, mode) => allowed.set(id, mode)}},
         'resource:///org/gnome/shell/misc/ibusManager.js': {getIBusManager: () => ibus},
@@ -59,7 +60,7 @@ async function fixture(failExport = false) {
         extension.SetRecordingAsync([active], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    return {recording, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported};
+    return {recording, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -174,5 +175,24 @@ test('Escape releases grabs immediately and a partial grab failure rolls back', 
     f.display.emit('accelerator-activated', [...f.grabs.keys()][1]);
     assert.equal(f.actions[0][4].value[0], 'cancel');
     assert.equal(f.grabs.size, 0);
+    f.extension.disable();
+});
+
+
+test('exported protocol matches the native GNOME peer and unicast Action envelope', async () => {
+    const f = await fixture();
+    const {xml, path} = f.protocol();
+    assert.equal(path, '/ai/tabmail/Voice/Caret');
+    assert.match(xml, /<interface name="ai\.tabmail\.Voice\.Caret">/);
+    assert.match(xml, /<method name="Version"><arg type="u" direction="out"\/><\/method>/);
+    assert.match(xml, /<method name="Read"><arg type="s" direction="out"\/><\/method>/);
+    assert.match(xml, /<method name="SetRecording"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
+    assert.match(xml, /<signal name="Action"><arg type="s"\/><\/signal>/);
+    assert.equal(f.extension.Version(), 1);
+    assert.equal(f.recording(true), true);
+    f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
+    assert.deepEqual(f.actions[0].slice(0, 4), [':1.42', path, 'ai.tabmail.Voice.Caret', 'Action']);
+    assert.equal(f.actions[0][4].type, '(s)');
+    assert.equal(f.actions[0][4].value[0], 'toggleMode');
     f.extension.disable();
 });

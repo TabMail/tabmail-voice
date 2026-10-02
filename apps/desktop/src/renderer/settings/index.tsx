@@ -421,11 +421,11 @@ function PermissionsPane({ state }: { state: SettingsState }) {
       </Group>
       {state.gnomeIntegration && (
         <Group captions={[
-          state.gnomeIntegration === "ready" ? "Press Shift while dictating to switch to agent mode, or Escape to cancel. The pill follows the caret where the app provides its position."
+          state.gnomeIntegration === "ready" ? "Press Space while dictating to switch to agent mode, or Escape to cancel. The pill follows the caret where the app provides its position."
             : state.gnomeIntegration === "restart" ? "Log out of Ubuntu and back in, then choose Enable if needed. GNOME loads newly installed or updated integration at login."
               : state.gnomeIntegration === "unsupported" ? "GNOME integration currently supports GNOME 50. The regular dictation shortcuts remain available."
                 : state.gnomeIntegration === "unavailable" ? "GNOME integration could not be enabled. Check GNOME Extensions for an error, then try again."
-                : "Enable GNOME integration for Shift to switch mode, Escape to cancel, and improved caret placement. The TabMail installer includes it.",
+                : "Enable GNOME integration for Space to switch mode, Escape to cancel, and improved caret placement. The TabMail installer includes it.",
         ]}>
           <div className="row">
             <span>GNOME integration</span>

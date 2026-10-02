@@ -1513,3 +1513,40 @@ test("Linux helper exit invalidates established permission readiness", async () 
   insertion.onExit!();
   expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
 });
+
+/** Exercise the real GNOME adapter through its main-process consumer; only the
+ * desktop command boundary and native IPC transport are stand-ins. */
+test("GNOME activation, readiness hints and recording ownership are wired to the hotkey helper", async () => {
+  const commands: [string, readonly string[]][] = [];
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME");
+  vi.doMock("../../src/main/native/linux/gnomeIntegration.js", async (original) => {
+    const { GnomeIntegration } = await original<typeof import("../../src/main/native/linux/gnomeIntegration.js")>();
+    return { GnomeIntegration: class extends GnomeIntegration {
+      constructor(helper: ConstructorParameters<typeof GnomeIntegration>[0]) {
+        super(helper, async (file, args) => { commands.push([file, args]); return "GNOME Shell 50.1"; });
+      }
+    } };
+  });
+  try {
+    await launch("linux");
+    const state = (name: string) => app.handlers.get(channels.getState)?.({}, name);
+    await vi.waitFor(() => expect(state("settings")).toMatchObject({ gnomeIntegration: "available" }));
+    expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: false });
+    const hotkey = app.helpers.get("voice-hotkey")!;
+    hotkey.replies.set("gnomeIntegration", true);
+    await send({ type: "enableGnomeIntegration" });
+    expect(commands).toContainEqual(["gnome-extensions", ["enable", "voice-caret@tabmail.ai"]]);
+    expect(state("settings")).toMatchObject({ gnomeIntegration: "ready" });
+    expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: true });
+    hotkey.requests.length = 0;
+    app.controller!.onPhaseChange!({ kind: "arming" });
+    app.controller!.onPhaseChange!({ kind: "listening" });
+    app.controller!.onPhaseChange!({ kind: "idle" });
+    expect(hotkey.requests.filter(({ method }) => method === "setRecording").map(({ params }) => params)).toEqual([{ active: true }, { active: true }]);
+    expect(hotkey.requests.some(({ method }) => method === "dictationEnded")).toBe(true);
+    expect(app.helpers.get("voice-linux")!.requests.some(({ method }) => method === "setRecording" || method === "gnomeIntegration")).toBe(false);
+  } finally {
+    vi.unstubAllEnvs();
+    vi.doUnmock("../../src/main/native/linux/gnomeIntegration.js");
+  }
+});
