@@ -1248,9 +1248,16 @@ the hotkey answers it (it still starts no new request).
   and answers nothing (found in review: one round of `[create, confirm true]` ran the tool on a
   spoken "no"); any other call (a changed one, another tool's, the same one again) drops it and is
   asked about as before; and a click, a timeout or the request ending leaves none.
+- **A confirmation names no question, so only a round's one spoken answer waits.** A round can ask
+  two questions (`[create, send]`), which the model answers together in its next round: once a
+  call follows a spoken answer in its own round, no answer spoken later in that round waits, and the
+  model reads that it must ask that question again (found in review: "yes" to the event and "no" to
+  the message, answered `[true, false]`, sent the message). Either answer then needs one more
+  question; a question clicked earlier in the round leaves the later spoken one waiting.
 - A spoken answer has its own abort: dropped (another key, a click on the question, the paste
   history), its upload is canceled and not tried again, and words that arrive anyway answer nothing. So the model cannot confirm for
-  a user who said nothing, cannot confirm twice, and cannot run something the user was not shown.
+  a user who said nothing, cannot confirm twice, cannot run something the user was not shown, and
+  cannot run one question's answer on another.
 - Rejected: the app matching "yes"/"no" words itself (every language, and "yes, but on Monday");
   starting a follow-up request from the answer (the model would ask its question a second time);
   and, tried first, letting the same call made again run unasked (the model had to reproduce its

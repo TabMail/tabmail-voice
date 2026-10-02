@@ -3013,13 +3013,70 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
             expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
 
+            // Past the next request's first round too, where a confirmation is refused as written
+            // before any answer.
             transcription.enqueue(200, { text: "go ahead" });
+            completions.enqueue(200, calling(confirming));
             completions.enqueue(200, calling(confirming));
             completions.enqueue(200, reply("Nothing was added."));
             await holdAndRelease(controller, "agent");
-            expect(await eventually(() => completions.requests.length === 4 && controller.phase.kind === "idle")).toBe(true);
+            expect(await eventually(() => completions.requests.length === 5 && controller.phase.kind === "idle")).toBe(true);
             expect(tool.runs).toEqual([]);
-            expect(told(3).at(-1)).toBe(config.confirmationToolNothingWaiting);
+            expect(told(3)).toEqual([config.confirmationToolNothingWaiting]);
+            expect(told(4).at(-1)).toBe(config.confirmationToolNothingWaiting);
+          });
+
+          /** Two questions asked in one round and both answered aloud: the model answers them in its
+           * next round, and its confirmation names neither, so none runs, whatever the user said to
+           * each. The model reads that the second must be asked again. The next request's question
+           * answered aloud waits as usual. */
+          test.each([
+            ["confirms the first and declines the second", confirming, declining],
+            ["declines the first and confirms the second", declining, confirming],
+          ] as const)("two questions answered aloud in one round run nothing (the model %s)", async (_, first, second) => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const other = Object.assign(new FakeLoopTool("example_send"), { question: "Send it?" });
+            const { controller, done } = await ask([tool, other], [calling(sameCall, ["example_send", '{"to":"x"}']), calling(first, second), reply("Nothing was done.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, first === confirming ? "Yes, add it." : "No, don't add it.");
+            expect(await eventually(() => controller.chat?.confirmation === "Send it?")).toBe(true);
+            await sayAloud(controller, second === confirming ? "Yes, send it." : "No, don't send that.");
+            await done;
+
+            expect(tool.runs).toEqual([]);
+            expect(other.runs).toEqual([]);
+            expect(told(1)[1]).toBe(config.connectorToolAnsweredAloudAmongOthers("Send it?", second === confirming ? "Yes, send it." : "No, don't send that."));
+            expect(told(2)).toEqual([config.confirmationToolNothingWaiting, config.confirmationToolNothingWaiting]);
+            expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+
+            transcription.enqueue(200, { text: "add the review" });
+            completions.enqueue(200, calling(sameCall));
+            completions.enqueue(200, calling(confirming));
+            completions.enqueue(200, reply(answer));
+            await holdAndRelease(controller, "agent");
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            await sayAloud(controller, "Yes.");
+            expect(await eventually(() => completions.requests.length === 6 && controller.phase.kind === "idle")).toBe(true);
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+          });
+
+          /** A question answered aloud after another of its round was clicked is the round's only
+           * spoken answer: it waits, and the model's confirmation runs it. */
+          test("a question answered aloud after one clicked in its round waits for the model", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const other = Object.assign(new FakeLoopTool("example_send"), { question: "Send it?" });
+            const { controller, done } = await ask([tool, other], [calling(sameCall, ["example_send", '{"to":"x"}']), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            controller.answerConfirmation(true);
+            expect(await eventually(() => controller.chat?.confirmation === "Send it?")).toBe(true);
+            await sayAloud(controller, "Yes, send it.");
+            await done;
+
+            expect(tool.runs).toHaveLength(1);
+            expect(other.runs).toEqual([{ to: "x" }]);
+            expect(told(1)).toEqual(["Added.", config.connectorToolAnsweredAloud("Send it?", "Yes, send it.")]);
           });
 
           /** The question's clock stops while its answer is spoken and transcribed: it is not declined
@@ -3292,6 +3349,61 @@ describe("DictationController", { timeout: 20_000 }, () => {
             controller.handle("start");
             await sleep(config.minimumHoldDuration + 50);
             capture.lose();
+            await done;
+            expect(transcription.requests).toHaveLength(2);
+            expect(tool.runs).toHaveLength(1);
+          });
+
+          /** One that stops while the key is still held is sent once: the release that follows sends
+           * nothing more. */
+          test("an answer whose microphone stops while the key is held is sent once", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+            let release: () => void = () => {};
+            transcription.gate = (request) => (request.signal ? new Promise((resolve) => (release = resolve)) : Promise.resolve());
+
+            transcription.enqueue(200, { text: "Yes." });
+            controller.handle("start");
+            await sleep(config.minimumHoldDuration + 50);
+            capture.lose();
+            expect(await eventually(() => transcription.requests.length === 2)).toBe(true);
+            controller.handle("finish");
+            await sleep(config.releaseTailDuration + 100);
+
+            expect(transcription.requests).toHaveLength(2);
+            transcription.gate = undefined;
+            release();
+            await done;
+            expect(transcription.requests).toHaveLength(2);
+            expect(tool.runs).toHaveLength(1);
+          });
+
+          /** A hands-free answer, which no key release ends, stops at `maxRecordingDuration`: the
+           * microphone is released and what it heard is sent. */
+          test("a hands-free answer stops at the length cap and is sent", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+            const stops = capture.stops;
+
+            transcription.enqueue(200, { text: "Yes." });
+            vi.useFakeTimers();
+            try {
+              controller.handle("startHandsFree");
+              controller.handle("listenHandsFree");
+              await vi.advanceTimersByTimeAsync(config.maxRecordingDuration - 1);
+              expect(controller.phase).toEqual({ kind: "listening" });
+              expect(transcription.requests).toHaveLength(1);
+
+              await vi.advanceTimersByTimeAsync(1 + config.releaseTailDuration);
+              expect(controller.phase.kind).not.toBe("listening");
+              expect(capture.stops).toBeGreaterThan(stops);
+            } finally {
+              vi.useRealTimers();
+            }
             await done;
             expect(transcription.requests).toHaveLength(2);
             expect(tool.runs).toHaveLength(1);
