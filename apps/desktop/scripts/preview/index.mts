@@ -15,7 +15,7 @@ import type { SettingsState } from "../../src/shared/ipc.js";
 const root = join(import.meta.dirname, "../..");
 const output = process.argv[2] ?? join(tmpdir(), "tabmail-voice-preview");
 
-const overlay = { mode: "dictation", level: 0.5, isHearing: true, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
+const overlay = { mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, hotkey: "rightOption", tools: [], connectors: [], emailAppIcon: null, opensUpward: false, bubblesFitUnder: true, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
 /** `config.overlayCanvasSize`: a script run by Electron cannot import the app's TypeScript. */
 /** Every app, as `connectors`. */
 const allConnectors = ["calendar", "reminders", "contacts", "files", "email", "notes", "messages", "web"];

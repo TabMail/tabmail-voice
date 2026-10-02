@@ -207,6 +207,27 @@ to the front (switching away and back is the user's way to restart the asking); 
 open at the pointer. An app that never answers within the attempts is left until it next comes to the
 front.
 
+**Amendment 2026-10-02 — the waveform turns purple once a voice is heard (owner).** "When it actually
+starts to listen, the waveform color could turn from blue to a little bit more purple, our theme
+color", as a sign it is listening properly, on TabMail Voice and iOS alike. TabMail Voice has no
+wait for speech (a held key says someone is speaking), so the owner chose a loudness cue: the bars
+are the brand blue when the pill replaces the swirl and ease (`waveformColorTransitionSeconds`,
+0.4 s) to `waveformVoicedColor` (the brand purple) once a reading stands
+`waveformVoiceAboveNoiseDecibels` (6 dB) above the room's noise as it stood before that reading
+(`LevelEnvelope.hasVoice`: a floor of its own, left without the first `waveformVoiceWarmupReadings`
+(4, ≈ 0.34 s) readings, so a start-up blip or a first reading part digital silence, which would hold
+it below the room, never turns room noise purple). It stays purple for the rest of the dictation;
+each dictation and each spoken answer starts a new envelope, so starts blue. Before, each bar was
+the blue → purple gradient throughout.
+- Loudness only (ADR-DESK-005 found no level that tells quiet speech from a room's noise): a loud
+  noise turns it purple too, and a very quiet microphone's speech (2–5 dB above its noise) may leave
+  it blue. Tunable in `config.ts`.
+- Tests: `recorder.test.ts` › `LevelEnvelope` (just under and just over the 6 dB; no voice in room
+  noise after a −70 dB blip or a part-silent first reading; speech from the first reading heard at
+  its first pause); `controller.test.ts` › a voice above the room's noise turns the waveform purple
+  (reset each dictation); `overlay/index.test.ts` › the waveform turns purple once a voice is heard;
+  `main/index.test.ts` › the overlay is told of a voice heard and of a retry.
+
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 
 **Context:** Phase 2 gives dictation the context on screen. Measured on one Mac (2026-09-25): the
@@ -2317,6 +2338,16 @@ time; measured first (below).
   nothing but a dictation taking a moment longer. The retries themselves are unchanged. A note that
   has not come up by the time a retry answers, the last fails or the dictation is canceled never
   does.)*
+  *(Later still, owner 2026-10-02: from the first server error until a retry answers or the
+  dictation ends, `DictationController.isRetrying` is true, and the thinking circle's arc and track
+  move `thinkingRetryColorShift` (0.3) along the blue → purple gradient: a hint of the retry while the
+  note waits its 2 s. The hint belongs to the transcription that hit the error: it shows only while
+  that transcription's dictation is the current one and it is not canceled, and only that
+  transcription clears it, so a canceled dictation's or a dropped spoken answer's retry still in flight
+  neither tints what follows nor, answering late, clears its own hint (owner: purple if and only if
+  this dictation hit a server error). Tests: `controller.test.ts` › a canceled dictation's retry
+  neither shows on nor clears the next dictation's; a dropped answer's retry still in flight stops
+  saying it is retrying; each answer spoken aloud starts with no voice heard.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
 **Consequences:**

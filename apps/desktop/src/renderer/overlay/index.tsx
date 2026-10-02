@@ -271,7 +271,7 @@ function PillLayout({
   return (
     <div ref={exitRef} className="layer" style={layerStyle}>
       <div ref={pillRef} className="pill-anchor" style={{ left: anchor.x, top: anchor.y }}>
-        <Pill mode={mode} level={state.level} language={state.language} isAgent={state.mode === "agent" || keepsBubbles} />
+        <Pill mode={mode} level={state.level} hasVoice={state.hasVoice} isRetrying={state.isRetrying} language={state.language} isAgent={state.mode === "agent" || keepsBubbles} />
       </div>
       {bubbles.map((item, index) => {
         const center = centers[index];
@@ -611,7 +611,7 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
   );
 }
 
-function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; language: string | null; isAgent: boolean }) {
+function Pill({ mode, level, hasVoice, isRetrying, language, isAgent }: { mode: Mode; level: number; hasVoice: boolean; isRetrying: boolean; language: string | null; isAgent: boolean }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
   const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "copied" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
@@ -671,7 +671,7 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
       content = (
         <>
           {language !== null && <LanguageBadge code={language} />}
-          <Waveform level={level} />
+          <Waveform level={level} hasVoice={hasVoice} />
         </>
       );
   }
@@ -679,7 +679,7 @@ function Pill({ mode, level, language, isAgent }: { mode: Mode; level: number; l
   return (
     <div ref={ref} className="pill" style={style}>
       {content}
-      {mode.kind === "transcribing" && <SpinningRim />}
+      {mode.kind === "transcribing" && <SpinningRim isRetrying={isRetrying} />}
       {/* Working: a gradient arc circles the pill's border, as the running tool's bubble's. */}
       {mode.kind === "running" && <CirclingBorder />}
     </div>
@@ -708,8 +708,9 @@ function LanguageBadge({ code }: { code: string }) {
   );
 }
 
-/** Voice waveform: bars follow the incoming sound level with a traveling ripple. */
-function Waveform({ level }: { level: number }) {
+/** Voice waveform: bars follow the incoming sound level with a traveling ripple, blue until a voice is
+ * heard, then purple (`hasVoice`). */
+function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
   const bars = useRef<(HTMLDivElement | null)[]>([]);
   const latestLevel = useRef(level);
   latestLevel.current = level;
@@ -728,7 +729,13 @@ function Waveform({ level }: { level: number }) {
             bars.current[index] = element;
           }}
           className="bar"
-          style={{ width: config.overlayMeterBarWidth, height: config.overlayMeterMinBarHeight, borderRadius: config.overlayMeterBarWidth / 2, backgroundImage: brandGradient }}
+          style={{
+            width: config.overlayMeterBarWidth,
+            height: config.overlayMeterMinBarHeight,
+            borderRadius: config.overlayMeterBarWidth / 2,
+            backgroundColor: hasVoice ? brandColor(config.waveformVoicedColor) : brandBlue,
+            transition: `background-color ${config.waveformColorTransitionSeconds}s ease-in-out`,
+          }}
         />
       ))}
     </div>
@@ -756,19 +763,20 @@ function ringMask(width: number): string {
 }
 
 /** Loading indicator on the thinking circle's rim: a blue → violet arc with a fading tail, circling
- * over a faint blue ring. */
-function SpinningRim() {
+ * over a faint blue ring; both moved toward purple while a server error is tried again. */
+function SpinningRim({ isRetrying }: { isRetrying: boolean }) {
   const width = config.thinkingRimWidth;
   const arc = 360 * config.thinkingArcFraction;
   const ring: CSSProperties = { mask: ringMask(width) };
+  const shift = isRetrying ? config.thinkingRetryColorShift : 0;
   return (
     <>
-      <div className="rim" style={{ ...ring, background: brandColor(0, config.thinkingTrackOpacity) }} />
+      <div className="rim" style={{ ...ring, background: brandColor(shift, config.thinkingTrackOpacity) }} />
       <div
         className="rim spinning"
         style={{
           ...ring,
-          background: `conic-gradient(${brandColor(0, 0)} 0deg, ${brandBlue} ${arc / 2}deg, ${brandColor(config.thinkingArcEndColor)} ${arc}deg, transparent ${arc}deg)`,
+          background: `conic-gradient(${brandColor(shift, 0)} 0deg, ${brandColor(shift)} ${arc / 2}deg, ${brandColor(config.thinkingArcEndColor + shift)} ${arc}deg, transparent ${arc}deg)`,
           animationDuration: `${1 / config.thinkingRevolutionsPerSecond}s`,
         }}
       />

@@ -26,6 +26,10 @@ export interface OverlayState {
   mode: DictationMode;
   level: number;
   isHearing: boolean;
+  /** `DictationController.hasVoice`: the waveform is purple. */
+  hasVoice: boolean;
+  /** `DictationController.isRetrying`: the thinking circle's arc and track move toward purple. */
+  isRetrying: boolean;
   language: string | null;
   tip: DictationTip | null;
   gnomeRecordingKeys?: boolean;

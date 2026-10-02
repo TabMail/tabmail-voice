@@ -225,6 +225,12 @@ export class CountingCapture implements AudioCapture {
     this.onChunk?.(tone(0.1));
   }
 
+  /** The last start's microphone hears one level window (`config.audioChunkFrames`) of a tone at
+   * `amplitude`, so the waveform reads exactly that level. */
+  hearWindow(amplitude: number): void {
+    this.onChunk?.(tone(config.audioChunkFrames / config.recordingSampleRate, amplitude));
+  }
+
   stop(): void {
     this.events.push("stop");
   }

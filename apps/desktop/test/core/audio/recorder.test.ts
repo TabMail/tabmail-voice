@@ -236,6 +236,44 @@ describe("LevelEnvelope", () => {
   test("steady sound settles low", () => {
     expect(run(new LevelEnvelope(), -45, 60)).toBeLessThan(0.1);
   });
+
+  /** A voice is a reading `waveformVoiceAboveNoiseDecibels` over the room's noise, and stays heard;
+   * one just under it is not (owner, 2026-10-02: the waveform turns purple). */
+  test("hears a voice above the room's noise", () => {
+    const under = new LevelEnvelope();
+    run(under, -45, 20);
+    under.level(-45 + config.waveformVoiceAboveNoiseDecibels - 0.2);
+    expect(under.hasVoice).toBe(false);
+
+    const over = new LevelEnvelope();
+    run(over, -45, 20);
+    expect(over.hasVoice).toBe(false);
+    over.level(-45 + config.waveformVoiceAboveNoiseDecibels + 0.2);
+    expect(over.hasVoice).toBe(true);
+    run(over, -45, 20);
+    expect(over.hasVoice).toBe(true);
+  });
+
+  /** Room noise alone is no voice, even after a start-up blip (−70 dB) or a first reading that is
+   * mostly digital silence, which would hold a floor below the room for a moment. */
+  test("hears no voice in room noise after a start-up blip", () => {
+    for (const start of [[-70, -70, -70], [-52]]) {
+      const envelope = new LevelEnvelope();
+      for (const reading of start) envelope.level(reading);
+      run(envelope, -45, 30);
+      expect(envelope.hasVoice).toBe(false);
+    }
+  });
+
+  /** Speech from the first reading on is heard at its first pause and the word after it. */
+  test("hears a voice that starts at once", () => {
+    const envelope = new LevelEnvelope();
+    run(envelope, -35, 8);
+    run(envelope, -45, 2);
+    expect(envelope.hasVoice).toBe(false);
+    envelope.level(-35);
+    expect(envelope.hasVoice).toBe(true);
+  });
 });
 
 describe("WAV", () => {

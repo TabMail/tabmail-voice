@@ -721,6 +721,26 @@ describe("main process wiring", () => {
     ]);
   });
 
+  /** The overlay is told whether a voice is heard and whether a transcription is being tried again,
+   * as the controller says: its waveform and thinking circle turn purple by them (owner, 2026-10-02). */
+  test("the overlay is told of a voice heard and of a retry", async () => {
+    await launch("darwin");
+    const pushed: [boolean, boolean][] = [];
+    app.listeners.set("voice:state", [
+      (_event, name, state) => {
+        const overlayState = state as { hasVoice: boolean; isRetrying: boolean };
+        if (name === "overlay") pushed.push([overlayState.hasVoice, overlayState.isRetrying]);
+      },
+    ]);
+    const controller = app.controller;
+    expect(controller).not.toBeNull();
+    for (const [hasVoice, isRetrying] of [[true, false], [false, true], [true, true]] as const) {
+      if (controller) Object.defineProperties(controller, { hasVoice: { value: hasVoice, configurable: true }, isRetrying: { value: isRetrying, configurable: true } });
+      app.overlay?.onPlace?.();
+    }
+    expect(pushed).toEqual([[true, false], [false, true], [true, true]]);
+  });
+
   /** The hotkey helper is told whenever the chat window opens or closes, so Escape closes it only
    * while it is open; a restarted helper is told again. The overlay turns into the chat window and
    * back. */
