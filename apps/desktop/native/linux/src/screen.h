@@ -36,6 +36,30 @@ public:
         const auto value = static_cast<const char*>(g_hash_table_lookup(attributes, "DocURL"));
         return hostOfAddress(value ? std::string(value) : std::string{});
     }
+    // Collection performs the role census in the provider, avoiding one D-Bus
+    // round trip per descendant. Keep the ordinary walk for other providers.
+    std::optional<std::vector<Node>> privacyNodes(const Node& node) {
+        check();
+        auto collection = own(atspi_accessible_get_collection_iface(node.get()));
+        if (!collection) return {};
+        auto roles = g_array_new(FALSE, FALSE, sizeof(AtspiRole));
+        std::unique_ptr<GArray, decltype(&g_array_unref)> ownedRoles(roles, &g_array_unref);
+        const AtspiRole wanted[] = {ATSPI_ROLE_DOCUMENT_WEB, ATSPI_ROLE_DOCUMENT_FRAME, ATSPI_ROLE_PASSWORD_TEXT};
+        g_array_append_vals(roles, wanted, 3);
+        auto rule = own(atspi_match_rule_new(nullptr, ATSPI_Collection_MATCH_ALL,
+            nullptr, ATSPI_Collection_MATCH_ALL, roles, ATSPI_Collection_MATCH_ANY,
+            nullptr, ATSPI_Collection_MATCH_ALL, FALSE));
+        Error error;
+        auto matches = atspi_collection_get_matches(collection.get(), rule.get(),
+            ATSPI_Collection_SORT_ORDER_CANONICAL, nodeBudget + 1, TRUE, &error.value);
+        std::unique_ptr<GArray, decltype(&g_array_unref)> ownedMatches(matches, &g_array_unref);
+        std::vector<Node> result{node}; // Collection returns descendants, not its root.
+        if (matches) for (guint i = 0; i < matches->len; ++i)
+            result.push_back(own(g_array_index(matches, AtspiAccessible*, i)));
+        if (error.value || !matches) return {};
+        check();
+        return result;
+    }
     std::optional<ContextFrame> frame(const Node& node) {
         check();
         auto component = own(atspi_accessible_get_component_iface(node.get()));
@@ -108,6 +132,17 @@ private:
 // Aggregated ranges may include descendants, so they need a password census too.
 template<class Tree>
 bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& exclusions, bool prohibitPasswords) {
+    if constexpr (requires { tree.privacyNodes(root); }) {
+        if (auto nodes = tree.privacyNodes(root)) {
+            if (nodes->size() > 5000) return false;
+            for (const auto& node : *nodes) {
+                if (!tree.withinBudget()) return false;
+                if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
+                if (const auto page = tree.page(node); page && exclusions.excludes(*page)) throw PrivacyHidden{};
+            }
+            return tree.withinBudget();
+        }
+    }
     std::vector<typename Tree::Node> stack{root};
     size_t visited = 0;
     while (!stack.empty()) {
