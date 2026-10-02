@@ -67,6 +67,8 @@ describe("contextTerms", () => {
     expect(terms(text)).toEqual(["Xyvora", "Brevalle", "Kaelthorne"]);
     expect(terms(text, ["xyvora"])).toEqual(["Brevalle", "Kaelthorne"]);
     expect(terms(text, [], 1)).toEqual(["Xyvora"]);
+    // A dictionary word on screen takes none of the room: the cap counts only the terms sent.
+    expect(terms(text, ["xyvora"], 2)).toEqual(["Brevalle", "Kaelthorne"]);
   });
 
   test("picks in any script", () => {
