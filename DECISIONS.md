@@ -1229,6 +1229,52 @@ up as an event confirmed after its time had passed.)
 - Each question has its own clock, stopped by any answer (the user's, the window closing, the request
   ending), so one answered in time never declines the next.
 
+**Amendment 2026-10-01: a question can be answered aloud, and the agent clicks for the user.**
+Owner: "we can just also allow voice confirmations. Agents are smart enough to do that, so to force a
+confirmation, a user can click yes, but they can also just answer yes", and: "pose this as a tool
+that the agent executes … the agent has a confirmation tool which either says yes or no … the agent
+is clicking for the user." This supersedes "the hotkey starts nothing" above: while a question shows,
+the hotkey answers it (it still starts no new request).
+- Holding the hotkey (or the hands-free double tap) while a question shows records an answer, which
+  is transcribed as the request was, with no cleanup. The tool's call returns to the model
+  `config.connectorToolAnsweredAloud`: nothing was done, the question, and the user's words.
+- **The app never reads "yes" itself; the model does**, and answers the question for the user with
+  the `confirmation_answer` tool (`config.confirmationTool`, defined in the backend, offered with
+  this computer's tools): `confirmed` true runs the call that asked, exactly as the user was shown
+  it; false declines it.
+- **The tool does nothing unless a spoken answer is waiting.** One waits only after the user
+  actually spoke while the question showed, for a confirmation in a later round of the same
+  request: one written in the round that asked was written before the user answered, and answers
+  nothing (found in review: one round of `[create, confirm true]` ran the tool on a spoken "no");
+  any other call (a changed one, another tool's, the same one again) drops it and is asked about as
+  before; and a click, a timeout or the request ending leaves none.
+- **The confirmation names its question.** Each spoken answer gets its own id, which the model reads
+  with the answer (`question_id`, minted by the app: the model's own call ids need not be unique
+  across rounds), and `confirmation_answer {question_id, confirmed}` runs the waiting call only when
+  it names that id. One naming no question or another answers nothing, and the waiting answer waits
+  on; one whose arguments are not a JSON object, or say neither true nor false, uses the answer up
+  and runs nothing. Found in review twice: `{confirmed}` alone said nothing of which question it answered, so with
+  two questions answered aloud (in one round, or one after the other) the model's "yes" to the
+  event ran the message the user had declined aloud. A first fix (only a round's one spoken answer
+  waits) closed the one-round case and missed the other; naming the question closes both by
+  construction. A question dropped by a later call (the model asked another before confirming it)
+  is asked again.
+- A spoken answer has its own abort: dropped (another key, a click on the question, the paste
+  history), its upload is canceled and not tried again, and words that arrive anyway answer nothing. So the model cannot confirm for
+  a user who said nothing, cannot confirm twice, cannot run something the user was not shown, and
+  cannot run one question's answer on another.
+- Rejected: the app matching "yes"/"no" words itself (every language, and "yes, but on Monday");
+  starting a follow-up request from the answer (the model would ask its question a second time);
+  and, tried first, letting the same call made again run unasked (the model had to reproduce its
+  arguments exactly, and the click had no name).
+- The question's clock stops while the answer is spoken and transcribed. An answer that comes to
+  nothing (a tap, another key, no words heard, a failed transcription) leaves the question asking
+  with its whole time again. A click on the card while speaking answers it and drops the recording.
+- Trade-off: an agreeing answer costs one more model round than a click, and rests on the model
+  reading the answer rightly; a wrong reading can only decline, ask again, or run exactly what the
+  card it names showed. Text the model read earlier in the request (a page, search results) could
+  steer it to confirm once the user has said anything; the damage is still bounded by that card.
+
 ## ADR-DESK-024: Calendar and Reminders, the first apps the Answer tool reaches
 
 **Context:** Owner, 2026-09-26: the Answer prompt's tools reach the user's apps, each a switch in

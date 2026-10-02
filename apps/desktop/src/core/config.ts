@@ -194,6 +194,19 @@ export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"
 export const connectorToolDeclined = "The user declined, so nothing was done.";
 /** What the model reads when the user left a tool's question unanswered (`chatConfirmationTimeout`). */
 export const connectorToolUnanswered = "The user didn't confirm in time, so nothing was done.";
+/** The tool the model answers a question with for the user, once they answered it aloud: it runs
+ * the call that asked (`confirmed` true) or drops it (false). It does nothing unless such an answer
+ * is waiting, so the model cannot confirm what the user said nothing to. */
+export const confirmationTool = "confirmation_answer";
+/** What the model reads when the user answered a tool's question aloud instead of clicking: the
+ * question, their words, the question's id (`questionID`), and how to answer the question for them. */
+export const connectorToolAnsweredAloud = (question: string, answer: string, questionID: string): string =>
+  `Nothing was done yet. The user was asked: ${JSON.stringify(question)} and answered aloud: ${JSON.stringify(answer)}. Answer the question for them: if that answer agrees, call ${confirmationTool} with question_id ${JSON.stringify(questionID)} and confirmed true, which runs this as the user was shown it; if it declines, call ${confirmationTool} with question_id ${JSON.stringify(questionID)} and confirmed false. If it asks for a change, call this tool again with the changed arguments: the user is asked about those. If you cannot tell, call nothing and ask the user.`;
+/** What the model reads when it calls `confirmationTool` with no spoken answer waiting under the
+ * question_id it gave. */
+export const confirmationToolNothingWaiting = "Error: no question with that question_id is waiting for an answer, so nothing was done. A tool that asks the user must be called first, the user must have answered it aloud, and the confirmation comes in a later turn with the question_id that answer gave. If the user agreed to a question that is no longer waiting, call its tool again and the user is asked again.";
+/** What the model reads when it calls `confirmationTool` without saying which way. */
+export const confirmationToolNoAnswer = "Error: confirmed must be true or false. Nothing was done.";
 /** The longest range `calendar_read` reads at once, in days: EventKit reads at most four years of
  * events for one request and silently drops the rest, so a longer range is refused, not cut short. */
 export const calendarReadMaxDays = 4 * 365;

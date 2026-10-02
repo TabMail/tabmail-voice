@@ -35,7 +35,8 @@ export interface AgentChat {
   /** What the window asks before a tool sends or creates anything, until the user confirms or
    * declines it, or it goes unanswered until `confirmationExpiresAt`. */
   confirmation: string | null;
-  /** When the question is declined unless answered (epoch milliseconds); null with no question. */
+  /** When the question is declined unless answered (epoch milliseconds); null with no question, and
+   * while an answer to it is spoken. */
   confirmationExpiresAt: number | null;
 }
 

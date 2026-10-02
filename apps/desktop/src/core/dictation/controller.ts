@@ -209,6 +209,17 @@ export class DictationController extends Observable {
   private confirmationTimer: Timer | null = null;
   /** When the question now showing appeared. */
   private confirmationShownAt = 0;
+  /** The answer to the question being spoken (the hotkey, while the question shows): its recording,
+   * and the phase the request it interrupts goes back to. Its own `abort` stops its transcription
+   * when it is dropped (canceled, the question clicked), the request going on. */
+  private spokenAnswer: { id: number; recorder: AudioRecorder; abort: AbortController; startedAt: number; handsFree: boolean; resume: Phase } | null = null;
+  private spokenAnswers = 0;
+  /** The call whose question the user answered aloud: the model, having read the answer, confirms or
+   * declines it for them (`config.confirmationTool`), naming the question by its `id`. Dropped by any
+   * other call, and with its request. */
+  private answeredAloud: { tool: ConnectorTool; args: Record<string, unknown>; round: number; id: string } | null = null;
+  /** How many questions have been answered aloud, for each its own id. */
+  private questionsAnsweredAloud = 0;
 
   constructor(private readonly deps: DictationDependencies) {
     super();
@@ -324,8 +335,11 @@ export class DictationController extends Observable {
    * already running, if that tap is still waiting for it. Released as a tap, the press leaves it
    * listening until `finish()` or `cancel()` (`listenHandsFree()`); held, it finishes on release
    * like any hold. With the chat window open it is a follow-up: an agent request from the start,
-   * which keeps the window open, and shows no tips. */
+   * which keeps the window open, and shows no tips. While the chat window asks a tool's question,
+   * it records the user's answer to it instead (`startSpokenAnswer`). */
   start(handsFree = false): void {
+    // With a question showing, the hotkey answers it aloud.
+    if (this.confirmationReply !== null) return this.startSpokenAnswer(handsFree);
     if (this.secondTapTimer !== null) {
       if (handsFree) {
         this.latchHandsFree();
@@ -450,6 +464,7 @@ export class DictationController extends Observable {
   }
 
   finish(): void {
+    if (this.spokenAnswer !== null) return this.finishSpokenAnswer();
     switch (this.currentPhase.kind) {
       case "arming": {
         // Released before the hold became deliberate: a tap. Nothing was shown. Unless a second
@@ -489,6 +504,8 @@ export class DictationController extends Observable {
   }
 
   cancel(): void {
+    // Only the answer being spoken: its question, and the request that asks it, go on.
+    if (this.spokenAnswer !== null) return this.abandonSpokenAnswer("canceled");
     if (isResting(this.currentPhase)) return;
     log.debug("DictationController: canceled");
     this.discard();
@@ -583,7 +600,7 @@ export class DictationController extends Observable {
                 client,
                 account,
                 userID,
-                (call) => this.runConnectorTool(call, connectorTools, transcript, isCurrent, signal),
+                (call, round) => this.runConnectorTool(call, round, connectorTools, transcript, isCurrent, signal),
                 (event) => this.serverToolRan(event, isCurrent),
                 signal,
               )
@@ -652,9 +669,42 @@ export class DictationController extends Observable {
   }
 
   /** Runs a tool the Answer prompt's model called, and returns what the model reads next: the tool's
-   * result, that the user declined, or why it could not run. The chat window opens (if the request
-   * was not a follow-up) to show which tool runs and, for one that sends or creates, to ask first. */
-  private async runConnectorTool(call: ToolCall, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+   * result, that the user declined, what the user answered aloud, or why it could not run. The chat
+   * window opens (if the request was not a follow-up) to show which tool runs and, for one that
+   * sends or creates, to ask first. An answer spoken to the question goes to the model, which reads
+   * whether it agrees and answers the question for the user (`config.confirmationTool`): confirmed,
+   * the call that asked runs as the user was shown it. The confirmation names the question it answers
+   * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
+   * about as usual. */
+  private async runConnectorTool(call: ToolCall, round: number, connectorTools: readonly ConnectorTool[], request: string, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
+    const waiting = this.answeredAloud;
+    if (call.function.name === config.confirmationTool) {
+      const answer = parsedJSON(call.function.arguments);
+      if (waiting === null) {
+        log.error(`DictationController: ${config.confirmationTool} called with no spoken answer waiting`);
+        return config.confirmationToolNothingWaiting;
+      }
+      // One written in the round that asked was written before the user answered, and one naming
+      // another question answers it nothing: the answer waits on, for a confirmation that names it.
+      if (round <= waiting.round) {
+        log.error(`DictationController: ${config.confirmationTool} called in the round that asked`);
+        return config.confirmationToolNothingWaiting;
+      }
+      if (isJSONObject(answer) && answer.question_id !== waiting.id) {
+        log.error(`DictationController: ${config.confirmationTool} called for another question`);
+        return config.confirmationToolNothingWaiting;
+      }
+      // Otherwise the call the user answered aloud is answered by the model's very next call only.
+      this.answeredAloud = null;
+      if (!isJSONObject(answer) || typeof answer.confirmed !== "boolean") {
+        log.error(`DictationController: ${config.confirmationTool} called without true or false`);
+        return config.confirmationToolNoAnswer;
+      }
+      log.debug(`DictationController: ${waiting.tool.name} ${answer.confirmed ? "confirmed" : "declined"} for the user`);
+      return answer.confirmed ? this.runTool(waiting.tool, waiting.args, isCurrent, signal) : config.connectorToolDeclined;
+    }
+    // Any other call drops the call answered aloud: the answer covered only what its question showed.
+    this.answeredAloud = null;
     const tool = connectorTools.find((candidate) => candidate.name === call.function.name);
     if (tool === undefined) {
       log.error("DictationController: the agent called a tool this app doesn't have");
@@ -670,11 +720,23 @@ export class DictationController extends Observable {
     // Closing the window or ending the request declines the question (`teardown`).
     if (question !== null) {
       const answer = await this.confirm(question);
+      if (typeof answer !== "string") {
+        log.debug(`DictationController: ${tool.name} answered aloud`);
+        this.questionsAnsweredAloud += 1;
+        const id = `q${this.questionsAnsweredAloud}`;
+        if (isCurrent()) this.answeredAloud = { tool, args, round, id };
+        return config.connectorToolAnsweredAloud(question, answer.spoken, id);
+      }
       if (answer !== "confirmed") {
         log.debug(`DictationController: ${tool.name} ${answer}`);
         return answer === "declined" ? config.connectorToolDeclined : config.connectorToolUnanswered;
       }
     }
+    return this.runTool(tool, args, isCurrent, signal);
+  }
+
+  /** Runs `tool`, confirmed if it asks: the chat window says what it does, and its app's bubble runs. */
+  private async runTool(tool: ConnectorTool, args: Record<string, unknown>, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
     log.debug(`DictationController: running ${tool.name}`);
     this.updateChat({ activity: tool.progressLabel });
     this.appStarted(tool.connector);
@@ -718,17 +780,25 @@ export class DictationController extends Observable {
   }
 
   /** Shows `question` in the chat window, and waits for the user to confirm or decline it
-   * (`answerConfirmation`); closing the window or canceling the request declines it, and so does
-   * leaving it unanswered for `confirmationTimeout`. */
+   * (`answerConfirmation`) or answer it aloud (`startSpokenAnswer`); closing the window or canceling
+   * the request declines it, and so does leaving it unanswered for `confirmationTimeout`. */
   private confirm(question: string): Promise<ConfirmationAnswer> {
     this.confirmationShownAt = Date.now();
-    this.updateChat({ confirmation: question, confirmationExpiresAt: this.confirmationShownAt + this.confirmationTimeout });
+    this.updateChat({ confirmation: question });
     return new Promise((resolve) => {
       this.confirmationReply = resolve;
-      this.confirmationTimer = after(this.confirmationTimeout, () => {
-        this.confirmationTimer = null;
-        this.replyToConfirmation("unanswered");
-      });
+      this.startConfirmationClock();
+    });
+  }
+
+  /** The question's time to answer starts: from when it shows, and again, whole, when an answer
+   * spoken to it came to nothing. */
+  private startConfirmationClock(): void {
+    cancelTimer(this.confirmationTimer);
+    this.updateChat({ confirmationExpiresAt: Date.now() + this.confirmationTimeout });
+    this.confirmationTimer = after(this.confirmationTimeout, () => {
+      this.confirmationTimer = null;
+      this.replyToConfirmation("unanswered");
     });
   }
 
@@ -749,8 +819,119 @@ export class DictationController extends Observable {
     this.confirmationReply = null;
     cancelTimer(this.confirmationTimer);
     this.confirmationTimer = null;
+    // Answered another way (a click, the window closing) while an answer was being spoken.
+    this.endSpokenAnswer();
     this.updateChat({ confirmation: null, confirmationExpiresAt: null });
     reply(answer);
+  }
+
+  /** The hotkey while the chat window asks a tool's question: the user answers it aloud. The
+   * request that asks goes on under it (its generation, settings and signal are kept), the question
+   * stays, and its clock stops while the answer is spoken and transcribed. A double tap answers
+   * hands-free, as it dictates. */
+  private startSpokenAnswer(handsFree: boolean): void {
+    if (this.spokenAnswer !== null || this.currentPhase.kind !== "running") return;
+    cancelTimer(this.confirmationTimer);
+    this.confirmationTimer = null;
+    this.updateChat({ confirmationExpiresAt: null });
+    this.keepChatOpen();
+    this.spokenAnswers += 1;
+    const id = this.spokenAnswers;
+    const recorder = new AudioRecorder();
+    const meter = new LevelSampler();
+    this.spokenAnswer = { id, recorder, abort: new AbortController(), startedAt: performance.now(), handsFree, resume: this.currentPhase };
+    this.currentLevel = 0;
+    this.envelope = new LevelEnvelope();
+    this.hearing = false;
+    const isCurrent = () => this.spokenAnswer?.id === id;
+    this.deps.capture.start(
+      (samples) => {
+        if (!isCurrent()) return;
+        recorder.append(samples);
+        meter.append(samples, (level) => this.updateLevel(level));
+      },
+      (error) => {
+        if (error && isCurrent()) this.abandonSpokenAnswer("the microphone failed to start");
+      },
+      () => {
+        // The microphone stopped by itself: what was said is sent, as for a dictation.
+        if (isCurrent() && this.currentPhase.kind === "listening") this.finishSpokenAnswer();
+      },
+    );
+    this.maxDurationTimer = after(config.maxRecordingDuration, () => {
+      if (isCurrent()) this.finishSpokenAnswer();
+    });
+    this.setPhase({ kind: "listening" });
+    log.debug(`DictationController: listening for an answer to the question${handsFree ? ", hands-free" : ""}`);
+  }
+
+  /** The answer's hold is released: a tap says nothing (its second press may start a hands-free
+   * answer); otherwise what was said is transcribed and given to the tool that asked. An answer with
+   * no words in it, or one that could not be transcribed, leaves the question asking. */
+  private finishSpokenAnswer(): void {
+    const spoken = this.spokenAnswer;
+    if (spoken === null || this.currentPhase.kind !== "listening") return;
+    if (!spoken.handsFree && performance.now() - spoken.startedAt < config.minimumHoldDuration) return this.abandonSpokenAnswer("a tap");
+    cancelTimer(this.maxDurationTimer);
+    this.maxDurationTimer = null;
+    this.currentLevel = 0;
+    this.setPhase({ kind: "transcribing" });
+    const isCurrent = () => this.spokenAnswer?.id === spoken.id;
+    // The microphone stays open briefly, as after a dictation, so the last word isn't clipped.
+    this.releaseTailTimer = after(config.releaseTailDuration, () => {
+      if (isCurrent()) void this.transcribeSpokenAnswer(spoken.recorder, spoken.abort.signal, isCurrent);
+    });
+  }
+
+  private async transcribeSpokenAnswer(recorder: AudioRecorder, answerSignal: AbortSignal, isCurrent: () => boolean): Promise<void> {
+    this.deps.capture.stop();
+    const recording = recorder.finish();
+    if (recording.pcm.length === 0) return this.abandonSpokenAnswer("no audio");
+    const account = this.deps.account;
+    const userID = account.session?.userID ?? null;
+    const settings = this.dictationSettings;
+    // Ended with the request, or dropped on its own: nothing more is sent.
+    const signal = AbortSignal.any([this.abort.signal, answerSignal]);
+    try {
+      const language = await this.languageRead;
+      if (!isCurrent()) return;
+      const client = this.deps.makeTranscriptionClient(settings.backendURL);
+      const transcription = await this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, settings.dictionary, token, signal)), isCurrent, signal);
+      if (!isCurrent()) return;
+      const transcript = trimWhitespace(transcription.text);
+      log.content("Transcript (answer to the question)", transcript);
+      if (transcript === "") return this.abandonSpokenAnswer("nothing heard");
+      this.replyToConfirmation({ spoken: transcript });
+    } catch (error) {
+      if (!isCurrent()) return;
+      log.error(`DictationController: the answer to the question was not transcribed: ${errorName(error)}`);
+      this.abandonSpokenAnswer("not transcribed");
+    }
+  }
+
+  /** The answer being spoken came to nothing: the question asks on, its time to answer whole again. */
+  private abandonSpokenAnswer(why: string): void {
+    if (this.spokenAnswer === null) return;
+    log.debug(`DictationController: no answer to the question (${why})`);
+    this.endSpokenAnswer();
+    if (this.confirmationReply !== null) this.startConfirmationClock();
+  }
+
+  /** Stops recording an answer to the question, if one is being spoken: the pill shows the request
+   * it interrupted again. */
+  private endSpokenAnswer(): void {
+    const spoken = this.spokenAnswer;
+    if (spoken === null) return;
+    this.spokenAnswer = null;
+    spoken.abort.abort();
+    this.deps.capture.stop();
+    cancelTimer(this.maxDurationTimer);
+    this.maxDurationTimer = null;
+    cancelTimer(this.releaseTailTimer);
+    this.releaseTailTimer = null;
+    this.hearing = false;
+    this.currentLevel = 0;
+    this.setPhase(spoken.resume);
   }
 
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015), and keeps
@@ -790,7 +971,8 @@ export class DictationController extends Observable {
     log.debug("DictationController: triple tap; showing the paste history");
     this.deps.tips.markLearned("agentAndHistory");
     this.onShowHistory?.();
-    if (this.currentPhase.kind === "listening" || this.currentPhase.kind === "arming") this.discard();
+    if (this.spokenAnswer !== null) this.abandonSpokenAnswer("left for the paste history");
+    else if (this.currentPhase.kind === "listening" || this.currentPhase.kind === "arming") this.discard();
   }
 
   /** The email app of the settings this dictation started with, asked once per dictation. */
@@ -1089,6 +1271,7 @@ export class DictationController extends Observable {
     const chat = this.currentChat;
     if (chat?.pendingRequest != null) this.setChat({ ...chat, pendingRequest: null, activity: null });
     this.replyToConfirmation("declined");
+    this.answeredAloud = null;
     // A chat window a tool opened with nothing in it yet goes, whether the request failed, was
     // canceled or ended with the account: the pill says what failed, and the next hold dictates.
     if (this.currentChat?.turns.length === 0) this.dropChat();
@@ -1130,9 +1313,9 @@ function parsedJSON(json: string): unknown {
 
 type Timer = ReturnType<typeof setTimeout>;
 
-/** How the chat window's question ended: the user confirmed or declined it, or it went unanswered
- * for `confirmationTimeout`. */
-type ConfirmationAnswer = "confirmed" | "declined" | "unanswered";
+/** How the chat window's question ended: the user confirmed or declined it, answered it aloud
+ * (`spoken`, the words), or it went unanswered for `confirmationTimeout`. */
+type ConfirmationAnswer = "confirmed" | "declined" | "unanswered" | { spoken: string };
 
 /** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. Not a 504:
  * the backend gave up waiting for the speech model, and like a request that timed out here, it
