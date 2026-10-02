@@ -2341,7 +2341,11 @@ time; measured first (below).
   *(Later still, owner 2026-10-02: from the first server error until a retry answers or the
   dictation ends, `DictationController.isRetrying` is true, and the thinking circle's arc and track
   move `thinkingRetryColorShift` (0.3) along the blue → purple gradient: a hint of the retry while the
-  note waits its 2 s.)*
+  note waits its 2 s. The hint belongs to the dictation that hit the error: it shows only while that
+  dictation is the current one, and only that transcription clears it, so a canceled dictation's retry
+  still in flight neither tints the next dictation's circle nor, answering late, clears the next one's
+  own (owner: purple if and only if this dictation hit a server error). Test: `controller.test.ts` ›
+  a canceled dictation's retry neither shows on nor clears the next dictation's.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
 **Consequences:**

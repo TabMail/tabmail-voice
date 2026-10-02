@@ -895,6 +895,51 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.isRetrying).toBe(false);
     });
 
+    /** The circle is purple only while this dictation has hit a server error: a canceled dictation's
+     * retry still in flight neither shows on the next dictation nor, answering late, clears the next
+     * one's own retry (owner, 2026-10-02). */
+    test("a canceled dictation's retry neither shows on nor clears the next dictation's", async () => {
+      // Replies go in the order the requests pass the gate: the first dictation's retry (2) is held
+      // while the second dictation's first request (3) fails and its retry (4) is held.
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      transcription.enqueue(503, { error: "transcription_unavailable" });
+      transcription.enqueue(200, cleanedReply);
+      transcription.enqueue(200, cleanedReply);
+      const staleRetry = deferred<void>();
+      const ownRetry = deferred<void>();
+      transcription.gate = async () => {
+        const sent = transcription.requests.length;
+        if (sent === 2) await staleRetry.promise;
+        if (sent === 4) await ownRetry.promise;
+      };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1];
+      controller.transcriptionRetryNoticeDelay = 10_000;
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => transcription.requests.length === 2 && controller.isRetrying)).toBe(true);
+      controller.handle("cancel");
+      expect(controller.isRetrying).toBe(false);
+
+      // What the overlay is told for the second dictation, as each change notifies it.
+      const told: string[] = [];
+      controller.observe(() => told.push(`${controller.phase.kind}:${controller.isRetrying}`));
+      await holdAndRelease(controller);
+      expect(await eventually(() => transcription.requests.length === 4)).toBe(true);
+      expect(controller.isRetrying).toBe(true);
+      const transcribing = told.filter((entry) => entry.startsWith("transcribing:"));
+      expect(transcribing[0]).toBe("transcribing:false");
+      expect(transcribing).toContain("transcribing:true");
+      expect(told.every((entry) => entry.startsWith("transcribing:") || entry.endsWith(":false"))).toBe(true);
+      staleRetry.resolve();
+      await sleep(50);
+      expect(controller.isRetrying).toBe(true);
+
+      ownRetry.resolve();
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      expect(controller.isRetrying).toBe(false);
+    });
+
     /** The note comes up once the retries have gone on for `transcriptionRetryNoticeDelay` since the
      * first failure, not at the failure, and stays until a retry answers. */
     test("shows the note once the notice delay has passed since the first failure", async () => {
