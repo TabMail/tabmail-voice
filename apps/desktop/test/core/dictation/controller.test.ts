@@ -3557,6 +3557,39 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(tool.runs).toEqual([]);
           });
 
+          /** An answer dropped with a click while its retry's request is still out (a token refresh, or a
+           * reply already on its way, does not stop for it): the retry note's time comes before that
+           * request settles, and the note never comes up over the chat window's question. */
+          test("a dropped answer's retry note never comes up", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")], (controller) => {
+              controller.transcriptionRetryDelays = [1];
+              controller.transcriptionRetryNoticeDelay = 100;
+            });
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            transcription.enqueue(502, { error: "transcription_failed" });
+            transcription.enqueue(200, { text: "Yes." });
+            const held = deferred<void>();
+            transcription.gate = async () => {
+              if (transcription.requests.length === 3) await held.promise;
+            };
+            const phases: Phase[] = [];
+            controller.onPhaseChange = (phase) => phases.push(phase);
+
+            controller.handle("start");
+            await sleep(config.minimumHoldDuration + 50);
+            controller.handle("finish");
+            expect(await eventually(() => transcription.requests.length === 3)).toBe(true);
+            controller.answerConfirmation(false);
+            await sleep(250);
+            transcription.gate = undefined;
+            held.resolve();
+            await done;
+
+            expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
+            expect(tool.runs).toEqual([]);
+          });
+
           /** Words that arrive after their answer was dropped answer nothing: not the question they
            * were spoken to, which the user answered with a click, nor the next one. */
           test("an answer that arrives after it was dropped answers nothing", async () => {
