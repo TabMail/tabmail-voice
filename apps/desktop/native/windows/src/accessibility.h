@@ -604,7 +604,8 @@ private:
             CONTROLTYPEID type = 0;
             if (FAILED(node->get_CurrentControlType(&type)) || isChrome(type, web)) continue;
             const auto place = placement(node, within.window, within.hiddenThickness);
-            if (!place) continue;
+            // A box that shows nothing is not gone into, as in the walk itself.
+            if (!place || !place->shown) continue;
             std::string piece;
             bool read = false;
             if (web && isControl(type)) {
@@ -619,7 +620,7 @@ private:
             }
             if (!read) { push(node); continue; }
             piece = trimmed(piece);
-            if (place->shown && !piece.empty() && (pieces.empty() || piece != pieces.back())) {
+            if (!piece.empty() && (pieces.empty() || piece != pieces.back())) {
                 length += piece.size();
                 pieces.push_back(std::move(piece));
             }

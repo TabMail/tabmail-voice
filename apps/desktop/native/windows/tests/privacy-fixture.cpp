@@ -26,7 +26,7 @@ std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false, readOnly = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -104,7 +104,8 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     }
     HRESULT STDMETHODCALLTYPE get_BoundingRectangle(UiaRect* result) override {
         RECT frame{}; GetWindowRect(window, &frame);
-        *result = {static_cast<double>(frame.left + 20), static_cast<double>(frame.top + 40 + id * 25), 400, 24};
+        // A thin box shows nothing; what is under it still reports its full size.
+        *result = {static_cast<double>(frame.left + 20), static_cast<double>(frame.top + 40 + id * 25), thin ? 1.0 : 400.0, thin ? 1.0 : 24.0};
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE GetEmbeddedFragmentRoots(SAFEARRAY** result) override { *result = nullptr; return S_OK; }
@@ -139,12 +140,21 @@ void configure(const std::string& mode) {
         nodes.at(1)->password = true; nodes.at(1)->type = UIA_EditControlTypeId;
         nodes.at(1)->text = L"DO_NOT_READ_SYNTHETIC_PASSWORD";
         add(1, UIA_TextControlTypeId); nodes.back()->forbidden = true;
+    } else if (mode == "row-hidden") {
+        // A row with one cell on screen and one in a box that shows nothing.
+        const int row = add(0, UIA_DataItemControlTypeId);
+        nodes.at(add(row, UIA_TextControlTypeId))->text = L"Synthetic cell text";
+        const int box = add(row, UIA_GroupControlTypeId);
+        nodes.at(box)->thin = true;
+        nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
     } else if (mode.starts_with("password-")) {
         int container = 0;
         if (mode == "password-row") container = add(0, UIA_DataItemControlTypeId);
         if (mode == "password-link") container = add(0, UIA_HyperlinkControlTypeId);
         if (mode == "password-web-control") { const int page = add(0, UIA_DocumentControlTypeId); container = add(page, UIA_ButtonControlTypeId); }
-        add(container, UIA_TextControlTypeId);
+        const int label = add(container, UIA_TextControlTypeId);
+        // Its own text: a block that repeats the one before it is left out of the read.
+        if (mode == "password-row" || mode == "password-link") nodes.at(label)->text = L"Synthetic cell text";
         const int secret = add(container, UIA_EditControlTypeId, true);
         add(secret, UIA_TextControlTypeId); nodes.back()->forbidden = true;
     } else {
