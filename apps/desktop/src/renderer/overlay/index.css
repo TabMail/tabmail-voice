@@ -195,6 +195,13 @@ body {
   overscroll-behavior: contain;
 }
 
+/* Nothing in the chat shrinks to make room once it is taller than the window: it scrolls. A column
+ * of a set height shrinks whichever items clip their own overflow, and the question does (for its
+ * timer bar), so it was squeezed to its padding, its buttons out of reach. */
+.chat-scroll > * {
+  flex: none;
+}
+
 .chat-turn,
 .chat-reply {
   display: flex;
