@@ -770,11 +770,16 @@ rest and just have this marker that some area is hidden."
   brings its title and tabs with it, which a field's contents do not.
 - The Windows helper still refuses the whole window in this case: the stricter of the two, not
   changed here because it could not be built or run on this machine.
+- **A field that could not be looked through whole is marked hidden too.** The look stops at the
+  walk's element budget (its own count) and at the read's time budget. A field it gave up on might
+  hold an excluded page it did not reach, so the field is not read and the marker stands in. This
+  is the opposite of the look's answer for the focused element (ADR-DESK-047, "kept as it is"):
+  there, giving up closed would drop every large window; here it costs one field.
 - No app is known to frame a page in a field. The cost: most fields have no children, but a
   rich-text editor on a web page that is not in focus has its whole subtree looked through (roles
-  and page addresses, never text) before its value is read. That look is bounded by the read's time
-  budget, not its element budget, so on a very large editor the rest of the window after it may go
-  unread: context lost, never privacy.
+  and page addresses, never text) before its value is read. One with more elements than the budget
+  is shown as hidden though it holds no page, and a slow one can use up the read's time, so the
+  rest of the window after it goes unread: context lost, never the field's text.
 
 ## ADR-DESK-017: Settings are read once, as a dictation starts
 

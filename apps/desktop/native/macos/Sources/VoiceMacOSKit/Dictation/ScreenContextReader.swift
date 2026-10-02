@@ -92,13 +92,15 @@ enum ScreenContextReader {
     /// its caret was asked for, so it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
-    /// element is taken to hold none.
+    /// element is taken to hold none, or, with `unlessSeenWhole`, to hold one: a field is read only
+    /// when all of it was looked through.
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
-                                                    intoPages: Bool = true, within seconds: Double, since started: Date) -> Bool {
+                                                    intoPages: Bool = true, unlessSeenWhole: Bool = false,
+                                                    within seconds: Double, since started: Date) -> Bool {
         var stack = tree.children(of: element)
         var visited = 0
         while let next = stack.popLast() {
-            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return false }
+            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return unlessSeenWhole }
             visited += 1
             if tree.string(next, kAXRoleAttribute) == "AXWebArea" {
                 if exclusions.excludes(tree.page(of: next)) { return true }
@@ -233,9 +235,11 @@ enum ScreenContextReader {
                 continue
             case "AXTextArea", "AXTextField":
                 // A field is read by its value and not walked into, so a page framed in it is looked for:
-                // a field holding one is not read, and the read says that something there is hidden.
+                // a field holding one, or too large to look through, is not read, and the read says
+                // that something there is hidden.
                 if shown {
-                    let hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+                    let hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
+                                                   within: HelperConfig.contextTimeBudget, since: started)
                     if let text = hidden ? HelperConfig.contextHiddenMarker : tree.fieldText(of: element, windowFrame: windowFrame) {
                         context.append(.field, text, frame: frame)
                     }
@@ -297,7 +301,8 @@ enum ScreenContextReader {
                 // A field is read by its value and not walked into, so a page framed in it is looked
                 // for: a field holding one is not read, and the row says that something there is hidden.
                 let hidden = shown && (role == "AXTextField" || role == "AXTextArea")
-                    && holdsExcludedPage(element, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+                    && holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
+                                         within: HelperConfig.contextTimeBudget, since: started)
                 let text = hidden ? HelperConfig.contextHiddenMarker
                     : (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
