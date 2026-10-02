@@ -268,8 +268,9 @@ enum ScreenContextReader {
         return chain
     }
 
-    /// Text of a heading, link or row gathered from its descendants, as `walk` reads it. Nil when a
-    /// page of an excluded website is among them.
+    /// Text of a heading, link or row gathered from its descendants, as `walk` reads it: its text,
+    /// and its fields' and text views' (a native chat app's message is a text area in its table
+    /// row). Nil when a page of an excluded website is among them.
     private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, separator: String, inWeb: Bool,
                                                       excluding exclusions: ScreenExclusions, context: inout ScreenContext) -> String? {
         var parts: [String] = []
@@ -282,7 +283,7 @@ enum ScreenContextReader {
             if role == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return nil }
             if isSkipped(role, inWeb: inWeb) || isPasswordField(element, in: tree) { continue }
             let title = inWeb && HelperConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
-            if role == "AXStaticText" || role == "AXTextField" || title != nil {
+            if role == "AXStaticText" || role == "AXTextField" || role == "AXTextArea" || title != nil {
                 let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
                 let text = (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

@@ -392,6 +392,42 @@ struct ScreenContextTests {
         #expect(read(inside: "AXGroup") == "| Draft")
     }
 
+    /// A row's text view is part of its text: a native chat app's message is a text area in its
+    /// table row, beside the time and the sender's name. One with nothing shown is left out.
+    @Test func rowTextReadsATextArea() {
+        let shown = CGRect(x: 20, y: 40, width: 300, height: 32)
+        let row = FakeElement("AXRow", frame: CGRect(x: 0, y: 30, width: 400, height: 60), children: [
+            FakeElement("AXCell", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "10:15"], frame: CGRect(x: 340, y: 40, width: 30, height: 16)),
+                FakeElement("AXStaticText", [kAXValueAttribute: "Alex Lee"], frame: CGRect(x: 20, y: 30, width: 100, height: 18)),
+                FakeElement("AXImage", frame: shown),
+                FakeElement("AXTextArea", [kAXValueAttribute: "Lunch tomorrow at noon?"], frame: shown),
+                FakeElement("AXTextArea", [kAXValueAttribute: "Hidden draft"], frame: CGRect(x: 20, y: 40, width: 300, height: 1)),
+            ]),
+        ])
+        let table = FakeElement("AXTable", frame: CGRect(x: 0, y: 0, width: 400, height: 600), children: [row])
+        let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 600), children: [table])
+        #expect(walk(window).renderedText() == "| 10:15 | Alex Lee | Lunch tomorrow at noon?")
+    }
+
+    /// A row's text is one block, cut at the block's size however long a text view in it is: what
+    /// follows the cut is left out.
+    @Test func rowTextIsCutAtTheBlockSize() {
+        let cap = HelperConfig.contextMaxBlockChars
+        let long = String(repeating: "word ", count: cap)
+        let row = FakeElement("AXRow", frame: CGRect(x: 0, y: 30, width: 400, height: 60), children: [
+            FakeElement("AXCell", children: [
+                FakeElement("AXStaticText", [kAXValueAttribute: "10:15"], frame: CGRect(x: 340, y: 40, width: 30, height: 16)),
+                FakeElement("AXTextArea", [kAXValueAttribute: long], frame: CGRect(x: 20, y: 40, width: 300, height: 32)),
+                FakeElement("AXStaticText", [kAXValueAttribute: "Read"], frame: CGRect(x: 340, y: 60, width: 30, height: 16)),
+            ]),
+        ])
+        let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 600), children: [row])
+        let rendered = walk(window).renderedText()
+        #expect(rendered == "| " + String(("10:15 | " + long).prefix(cap)))
+        #expect(rendered.count == cap + 2)
+    }
+
     @Test func summaryCarriesSizesNotText() {
         var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
         context.windowTitle = "Private subject"
