@@ -424,7 +424,7 @@ struct ScreenExclusionTests {
         #expect(chosen.context.renderedText() == "Inbox\n» ‸balance‸\n| Sender One | Quarterly plan\n> search")
 
         // A focused button is skipped outside web content like any button, and read inside it.
-        let button = FakeElement("AXButton", [kAXTitleAttribute: "Send"])
+        let button = FakeElement("AXButton", [kAXTitleAttribute: "Send"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Inner"])])
         let native = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
         let skipped = gather(native, focused: button, focusPath: [native], excluding: [])
         #expect(skipped.context.renderedText() == "Draft")
@@ -432,8 +432,16 @@ struct ScreenExclusionTests {
         let web = FakeElement("AXWindow", children: [area])
         #expect(gather(web, focused: button, focusPath: [area, web], excluding: []).context.renderedText() == "Draft\nSend")
 
+        // Outside the window it is not read, as any element there.
+        let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
+        let away = FakeElement("AXStaticText", [kAXValueAttribute: "Elsewhere"], frame: CGRect(x: 0, y: 900, width: 100, height: 16))
+        let framed = FakeElement("AXWindow", frame: frame, children: [
+            FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: CGRect(x: 0, y: 10, width: 100, height: 16)), away,
+        ])
+        #expect(gather(framed, focused: away, focusPath: [framed], excluding: []).context.renderedText() == "Draft")
+
         // A field in focus is still the caret block and is not walked into, whatever its role.
-        for role in HelperConfig.contextFieldRoles.sorted() {
+        for role in ["AXComboBox", "AXTextArea", "AXTextField"] {
             let field = FakeElement(role, Self.caret, children: [FakeElement("AXStaticText", [kAXValueAttribute: "inner"])])
             let window = FakeElement("AXWindow", children: [field])
             let typed = gather(window, focused: field, focusPath: [window], excluding: [])

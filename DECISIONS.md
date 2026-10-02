@@ -257,7 +257,7 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   mode's Edit and as the caret block before the page's text. A focused web area that can be edited
   (its value is settable: a mail's compose window, an editor whose whole document is editable) is
   not such a page: it stays the field the caret is in, read by its caret and not walked into, as
-  before (`isPageInFocus`). The Windows helper applies the same rule: it walks a focused document
+  before (`isPageInFocus`, since renamed `isFieldInFocus`). The Windows helper applies the same rule: it walks a focused document
   that is no editable field.)*
 - *(Amended 2026-10-01, owner: the Windows helper reads as the Mac one does, "unless impossible".
   The two were read side by side and the Windows helper changed where they differed:*

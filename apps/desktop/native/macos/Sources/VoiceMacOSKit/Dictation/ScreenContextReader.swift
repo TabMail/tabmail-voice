@@ -210,7 +210,7 @@ enum ScreenContextReader {
             }
             if isPasswordField(element, in: tree) { continue }
             let frame = tree.frame(of: element)
-            if !isFocus, let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
+            if let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
             let role = tree.string(element, kAXRoleAttribute) ?? ""
             if isSkipped(role, inWeb: inWeb) { continue }
             let shown = frame.map(ScreenContext.isShown) ?? true
