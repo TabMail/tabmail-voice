@@ -155,18 +155,21 @@ describe("Settings page", () => {
       expect(page.commands).toEqual([]);
     });
 
-    /** The typed words on top, then the learned ones, each in the order added (owner, 2026-10-02). */
+    /** The typed words on top, then the learned ones, each in the order added (owner, 2026-10-02), not
+     * by last use: in each half the last uses are in neither the order added nor its reverse. */
     test("lists the words, typed first, the learned ones tagged, each with a remove button", async () => {
       const page = await open({
         ...signedIn,
         dictionary: [
           { word: "TabMail", learned: true, lastUsed: 4 },
-          { word: "Xyvora", learned: false, lastUsed: 1 },
+          { word: "Xyvora", learned: false, lastUsed: 5 },
           { word: "Brevalle", learned: true, lastUsed: 2 },
-          { word: "Kaelthorne Draszek", learned: false, lastUsed: 3 },
+          { word: "Kaelthorne Draszek", learned: false, lastUsed: 6 },
+          { word: "Ostrava", learned: true, lastUsed: 3 },
+          { word: "Zivora", learned: false, lastUsed: 1 },
         ],
       });
-      expect(words()).toEqual(["XyvoraRemove", "Kaelthorne DraszekRemove", "TabMail LearnedRemove", "Brevalle LearnedRemove"]);
+      expect(words()).toEqual(["XyvoraRemove", "Kaelthorne DraszekRemove", "ZivoraRemove", "TabMail LearnedRemove", "Brevalle LearnedRemove", "Ostrava LearnedRemove"]);
       expect(visibleText()).not.toContain("No words yet.");
 
       await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove TabMail"]')?.click());

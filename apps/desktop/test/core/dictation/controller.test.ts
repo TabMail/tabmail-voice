@@ -844,8 +844,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
   });
 
-  /** Canceled while the request runs, the cleanup with it (another key pressed while the hotkey is
-   * held): the request is canceled right away and its result is not pasted. */
   /** A transcript answered after a cancel is not the user's text: it pastes nothing and marks no
    * dictionary word used (ADR-DESK-038). */
   test("a transcript answered after a cancel marks no word used", async () => {
@@ -863,6 +861,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(used).toEqual([]);
   });
 
+  /** Canceled while the request runs, the cleanup with it (another key pressed while the hotkey is
+   * held): the request is canceled right away and its result is not pasted. */
   test("a dictation canceled during its request pastes nothing", async () => {
     transcription.enqueue(200, cleanedReply);
     const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
