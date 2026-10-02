@@ -885,6 +885,63 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
+    /** Canceled while a retry's request is still out (a token refresh, or a reply already on its way,
+     * does not stop for the cancel), the note's time can come before that request settles: the note
+     * never comes up, over the idle pill or over the next dictation's. */
+    test("the note never comes up over what follows a cancel while a retry is still out", async () => {
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(200, cleanedReply);
+      const held = deferred<void>();
+      transcription.gate = async () => {
+        if (transcription.requests.length === 2) await held.promise;
+      };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1];
+      controller.transcriptionRetryNoticeDelay = 100;
+      const phases: Phase[] = [];
+      controller.onPhaseChange = (phase) => phases.push(phase);
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => transcription.requests.length === 2)).toBe(true);
+      controller.handle("cancel");
+      expect(controller.phase).toEqual(idle);
+      // The next dictation starts before the old note's time comes, and is still held when it does.
+      controller.handle("start");
+      await sleep(250);
+      const next = controller.phase.kind;
+      held.resolve();
+      controller.handle("cancel");
+      await sleep(50);
+
+      expect(phases.map((phase) => phase.kind)).not.toContain("retrying");
+      expect(["arming", "listening"]).toContain(next);
+      expect(controller.phase).toEqual(idle);
+      expect(pastes).toEqual([]);
+    });
+
+    /** A retry that answers after the dictation was canceled, the note already up, leaves the pill
+     * as the cancel left it, not transcribing. */
+    test("a retry that answers after a cancel leaves the pill as the cancel left it", async () => {
+      transcription.enqueue(502, { error: "transcription_failed" });
+      transcription.enqueue(200, cleanedReply);
+      const held = deferred<void>();
+      transcription.gate = async () => {
+        if (transcription.requests.length === 2) await held.promise;
+      };
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1];
+      controller.transcriptionRetryNoticeDelay = 0;
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => transcription.requests.length === 2 && controller.phase.kind === "retrying")).toBe(true);
+      controller.handle("cancel");
+      held.resolve();
+      await sleep(100);
+
+      expect(controller.phase).toEqual(idle);
+      expect(pastes).toEqual([]);
+    });
+
     /** The server's error can still arrive after the dictation was canceled: it is not tried again,
      * and the pill never says it is. */
     test("a server error answered after a cancel is not tried again", async () => {
