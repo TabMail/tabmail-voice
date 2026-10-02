@@ -3091,6 +3091,98 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(told(3)).toEqual([config.confirmationToolNothingWaiting, "Added."]);
           });
 
+          /** The question_id the model reads in a spoken answer's result, wherever the result names it. */
+          function readID(result: string): string {
+            const ids = [...result.matchAll(/question_id ("[^"]*")/g)].map(([, id]) => JSON.parse(id ?? "null") as string);
+            expect(ids.length).toBeGreaterThan(0);
+            expect(new Set(ids).size).toBe(1);
+            return ids[0] ?? "";
+          }
+
+          /** The model confirms with the id it read, as a real one does, not one the test knows: each
+           * question answered aloud gives its own id, and after a spoken change the confirmation naming
+           * the first question runs nothing, while the one naming the second runs the changed call once. */
+          test("each question answered aloud gives the model its own id", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const monday = ["example_create", '{"title":"Launch review","day":"monday"}'] as [string, string];
+            const ids: string[] = [];
+            const { controller, done } = await ask([tool], [calling(sameCall)], () => {
+              completions.gate = async () => {
+                const count = completions.requests.length;
+                if (count === 2) {
+                  ids.push(readID(told(1)[0] ?? ""));
+                  completions.enqueue(200, calling(monday));
+                } else if (count === 3) {
+                  ids.push(readID(told(2)[0] ?? ""));
+                  completions.enqueue(200, calling(answering(ids[0] ?? "", true), answering(ids[1] ?? "", true)));
+                } else if (count === 4) {
+                  completions.enqueue(200, reply(answer));
+                }
+              };
+            });
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+            await sayAloud(controller, "Make it Monday.");
+            expect(await eventually(() => completions.requests.length === 2 && controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            expect(tool.runs).toEqual([]);
+            await sayAloud(controller, "Yes, add it.");
+            await done;
+
+            expect(ids).toHaveLength(2);
+            expect(ids[0]).not.toBe(ids[1]);
+            expect(told(3)).toEqual([config.confirmationToolNothingWaiting, "Added."]);
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "monday" }]);
+          });
+
+          /** The answer is transcribed with the request's settings as they were when it started (the
+           * backend, the keyboard's language, the dictionary), not as they were changed while the question
+           * showed, and with no cleanup. */
+          test("the answer is transcribed with the request's language and dictionary", async () => {
+            keyboard.language = "ko";
+            prefs.value = { ...prefs.value, backendURL: "https://first.example.com", dictionary: ["Xyvora"] };
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            prefs.value = { ...prefs.value, backendURL: "https://second.example.com", dictionary: ["Changed"] };
+            keyboard.language = "fr";
+
+            await sayAloud(controller, "Yes, add Xyvora.");
+            await done;
+
+            expect(transcription.requests).toHaveLength(2);
+            expect(hosts(transcription)).toEqual(["first.example.com", "first.example.com"]);
+            expect(transcription.body(1).language).toBe("ko");
+            expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
+            expect(transcription.body(1).cleanup).toBeUndefined();
+            expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+          });
+
+          /** The words answered aloud are user content: only the debug log's content entries carry them,
+           * never an error, which reaches stderr in every build, nor the debug log's other entries. */
+          test.each([false, true])("the answer aloud is logged only as content (debug build: %s)", async (isDebugBuild) => {
+            const words = "Yes, private spoken answer.";
+            const file: [LogLevel, string][] = [];
+            const errors: string[] = [];
+            configureLog({ isDebugBuild, sinks: { file: (level, text) => file.push([level, text]), error: (text) => errors.push(text) } });
+            try {
+              const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+              const { controller, done } = await ask([tool], [calling(sameCall), calling(confirming), reply(answer)]);
+              expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+              await sayAloud(controller, words);
+              await done;
+
+              expect(tool.runs).toEqual([{ title: "Launch review", day: "friday" }]);
+              expect(errors.join("\n")).not.toContain(words);
+              expect(file.filter(([level]) => level !== "CONTENT").map(([, text]) => text).join("\n")).not.toContain(words);
+              const content = file.filter(([level]) => level === "CONTENT").map(([, text]) => text).join("\n");
+              if (isDebugBuild) expect(content).toContain(words);
+              else expect(file).toEqual([]);
+            } finally {
+              configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+            }
+          });
+
           /** A question answered aloud after another of its round was clicked waits, and the model's
            * confirmation runs it. */
           test("a question answered aloud after one clicked in its round waits for the model", async () => {
