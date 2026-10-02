@@ -1796,6 +1796,59 @@ the microphone", nothing recorded) and then ran all at once.
   no engine to go stale and no listener; an endpoint that goes away mid-capture fails the capture
   call, which is reported as `microphoneLost`, the same ending.
 
+**Amendment 2026-10-01 (owner: "it should be a separate helper"): the microphone has a helper to
+itself, `voice-microphone`, which runs one engine and is then started afresh.** The amendment above
+did not hold when a headset was switched off: with the default input gone, the engine prepared for
+it rebound itself inside AVFAudio, and building the next engine waited on the audio system (one
+took 64 s), so every start in that time failed. Switching the input with the headset still
+connected worked. Waiting for the device to settle cannot fix an engine that is already alive in
+the process when its device goes; the owner chose a process of its own over more handling in
+`voice-macos`. Tested with AirPods, that fixed switching them off, but every other dictation then
+failed: the engine prepared after a stop, in the process whose engine had just run, lost its
+configuration about 0.2 s after it started (the headset changes mode as a dictation ends), while
+the first engine of a fresh process always worked. So a process runs one engine.
+- `voice-microphone` (`VoiceMicrophone` over `VoiceMicrophoneKit`: `MicrophoneService`,
+  `MicrophoneCapture`, its `HelperConfig`) answers `microphonePrepare`, `microphoneStart` and
+  `microphoneStop` and emits `microphoneChunk`, as `voice-macos` did; `voice-macos` no longer has a
+  microphone. The start path is the same code: an engine prepared ahead, started at key-down.
+- The helper ends itself (`_exit`, code `restartExitCode`, after the chunks already queued; no exit
+  handlers, which would release what the audio system holds) once its engine has run (the
+  session's stop) or failed to start, when the default input changes, and when the running engine
+  posts `AVAudioEngineConfigurationChange`. It prepares nothing more and releases nothing: the
+  process's end releases its engine. The app starts it again at once (`HelperOptions.restartExitCode`,
+  `microphoneHelperRestartExitCode`; logged at debug, not as an error) and its `onStart` prepares
+  the new process's engine. A prepare or a stop cut short by such an exit, which can come before
+  their reply, is logged at debug. Any other exit restarts after `helperRestartDelay`, as every
+  helper's. A start that reaches a process whose engine has already started (a newer dictation's
+  start handled before the previous one's stop, as the helper takes requests in any order) or whose
+  engine was prepared for another device is refused and ends the process, so the app's retry
+  starts it in a fresh one; `MicrophoneSessions` makes these decisions and its tests pin them. This
+  replaces `InputChanges`, the settle wait, the delayed release of engines (the amendment above,
+  `microphoneDeviceSettleDelay` after their stop) and the helper's `microphoneLost` event on macOS
+  (`voice-windows` still sends it).
+- A change while a dictation is listening ends it as before, now through the helper's exit
+  (`onExit` → `SessionAudioCapture.lost()`): what was said is sent, and it is not retried. The
+  paste and the caret are `voice-macos`'s, which keeps running, so the paste no longer waits out a
+  restart for this.
+- A start that fails is tried again (owner, 2026-10-01: *"try at least a couple times within the
+  first two seconds or so"*): `SessionAudioCapture` sends a new session `microphoneStartRetryDelay`
+  after a failed one while `microphoneStartRetryWindow` from key-down has not passed, then fails
+  the dictation with the last reason; the one `microphoneStartTimeout` covers every try. A new
+  session each time, as the helper has ended the failed one. This covers a key-down while the
+  helper starts afresh (one right after the previous dictation's stop) and an input that refuses
+  its first start mid-change. It applies wherever the microphone runs (the audio window too); a
+  start that succeeds is not delayed.
+- Still kept from the amendment above: the tap takes the node's own format, and the log names the
+  transport.
+- Windows keeps its microphone in `voice-windows` for now, opened afresh per dictation with
+  nothing prepared ahead; a helper of its own and a prepared endpoint are tracked in issue #98.
+- The owner's manual test (2026-10-01), before one engine per process: a headset connected and
+  then switched off each restarted the helper within 10 ms, the next engine was prepared within
+  2 s (twice over when the input changed again as the new process started), and dictation kept
+  working.
+- Not closed: what the audio system itself takes to start a Bluetooth headset's microphone; and a
+  prepare that now and then takes seconds with no device change seen (issue #101).
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
@@ -2436,6 +2489,11 @@ that Thunderbird counts as a connector; a reorganization only, with no change to
   folders by concern, mirrored in its tests: `Dictation/` (paste, microphone, caret, focused field,
   keyboard language, the screen read), `System/` (Accessibility activator, apps, Globe key) and
   `Connectors/` (Calendar and Reminders, Contacts, Files: what the TypeScript connectors reach).
+  *(Amended 2026-10-01: a third helper, `voice-microphone` (`VoiceMicrophone` over
+  `VoiceMicrophoneKit`), has the microphone, which left `Dictation/`: ADR-DESK-032's amendment of
+  that day. A new helper follows the same shape: `voice-<what>`, `Voice<What>`, `Voice<What>Kit`
+  with its `<What>Service` and `HelperConfig`, and `Voice<What>KitTests`. The names' rules are in
+  `PROJECT_STRUCTURE.md` › Naming.)*
 - `test/` mirrors `src/`: a module's test has its name and folder under `test/` (the renderer's
   `<page>/index.test.ts`), a test file tests one module, shared stubs and the fake helper are in
   `test/support/`, and the package's checks (`packaging.test.ts`) are at the top.

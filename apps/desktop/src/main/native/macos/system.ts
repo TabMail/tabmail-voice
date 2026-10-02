@@ -11,8 +11,6 @@ import type { GlobeKeySystem } from "../../../core/hotkey/macos/globeKeyAction.j
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
 import type { ScreenRead } from "../../../core/dictation/screenContext.js";
-import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
-import { NativeMicrophone } from "../microphone.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 
 /** What `voice-macos` does for the app (`MacService` in the helper), typed. */
@@ -206,9 +204,6 @@ export class MacSystem {
       throw error;
     }
   }
-
-  readonly microphone = (report: (report: AudioReport) => void): (command: AudioCommand) => void =>
-    new NativeMicrophone(this.helper, "MacSystem").microphone(report);
 
   private async flag(method: string, app: string): Promise<boolean> {
     return (await this.helper.request<{ value: boolean }>(method, { bundleIdentifier: app })).value;

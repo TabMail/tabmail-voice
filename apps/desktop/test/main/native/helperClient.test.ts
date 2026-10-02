@@ -21,7 +21,7 @@ describe("HelperClient", () => {
     for (const client of clients.splice(0)) client.stop();
   });
 
-  function helper(options: { requestTimeout?: number; restartDelay?: number } = {}): HelperClient {
+  function helper(options: { requestTimeout?: number; restartDelay?: number; restartExitCode?: number } = {}): HelperClient {
     const client = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper], ...options });
     clients.push(client);
     client.start();
@@ -113,6 +113,39 @@ describe("HelperClient", () => {
     expect(exits).toBe(1);
     const restarted = await client.request<{ pid: number }>("pid");
     expect(restarted.pid).not.toBe(pid);
+  });
+
+  /** A helper that exits with its `restartExitCode` asks to be started afresh (the microphone's,
+   * after each dictation and when the input changes): it is started again at once, not after `restartDelay`, so a request
+   * made on the exit goes to the new one without an operation's signal; `onExit` runs as for any
+   * exit, and it is no error. Any other exit code waits out `restartDelay`. */
+  test("a helper that exits with its restart code is started again at once, without an error", async () => {
+    const errors: string[] = [];
+    const file: string[] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: (level, text) => file.push(`${level} ${text}`), error: (text) => errors.push(text) } });
+    const client = helper({ restartDelay: 60_000, restartExitCode: 75 });
+    const { pid } = await client.request<{ pid: number }>("pid");
+    let starts = 0;
+    client.onStart = () => {
+      starts += 1;
+    };
+    let onExit: Promise<{ pid: number }> | undefined;
+    client.onExit = () => {
+      onExit = client.request<{ pid: number }>("pid");
+    };
+
+    expect((await failure(client.request("exit", { code: 75 }))).kind).toBe("exited");
+    expect(starts).toBe(1);
+    expect(onExit).toBeDefined();
+    expect((await onExit)?.pid).not.toBe(pid);
+    expect(errors).toEqual([]);
+    expect(file).toContain("debug fake-helper: exited to start afresh");
+
+    client.onExit = undefined;
+    expect((await failure(client.request("exit", { code: 3 }))).kind).toBe("exited");
+    expect(starts).toBe(1);
+    expect((await failure(client.request("pid"))).kind).toBe("exited");
+    expect(errors).toEqual(["fake-helper: exited (3); restarting"]);
   });
 
   /** What a crash sets off reaches the restarted helper: a request made for an operation (with its

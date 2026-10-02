@@ -4,6 +4,7 @@
 
 import type { AudioCapture } from "../core/audio/recorder.js";
 import * as config from "../core/config.js";
+import { log } from "../core/log.js";
 import type { AudioCommand, AudioReport } from "../shared/ipc.js";
 
 /** Why the microphone did not start; the message is for the log only. */
@@ -19,10 +20,15 @@ export class MicrophoneError extends Error {
 }
 
 /**
- * The microphone, driven by commands to whatever runs it: the macOS helper (`MacSystem.microphone`),
- * or elsewhere the hidden audio window (`getUserMedia` into an AudioWorklet at the recording rate).
- * Its reports, chunks included, come back to `receive`. Each `start` is a session; reports from an
- * earlier one are dropped. `stop` ends the session and releases the microphone (every dictation).
+ * The microphone, driven by commands to whatever runs it: a native helper (`NativeMicrophone`), or
+ * elsewhere the hidden audio window (`getUserMedia` into an AudioWorklet at the recording rate).
+ * Its reports, chunks included, come back to `receive`. Each try of a `start` is a session; reports
+ * from an earlier one are dropped. `stop` ends the session and releases the microphone (every
+ * dictation).
+ *
+ * A start that fails within `retry.window` of being asked is tried again after `retry.delay`, as a
+ * new session (what runs the microphone has ended the failed one): the input can be briefly
+ * unavailable while it changes. The dictation's one `startTimeout` covers every try.
  */
 export class SessionAudioCapture implements AudioCapture {
   private session = 0;
@@ -30,11 +36,15 @@ export class SessionAudioCapture implements AudioCapture {
   private completion: ((error: Error | null) => void) | null = null;
   private onLost: (() => void) | null = null;
   private startTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the start being made stops being tried again. */
+  private retryUntil = 0;
 
   constructor(
     /** Sends to what runs the microphone. */
     private readonly send: (command: AudioCommand) => void,
     private readonly startTimeout = config.microphoneStartTimeout,
+    private readonly retry = { window: config.microphoneStartRetryWindow, delay: config.microphoneStartRetryDelay },
   ) {}
 
   /** Does the microphone-off setup ahead of the first dictation (the helper's prepared engine, or
@@ -44,17 +54,17 @@ export class SessionAudioCapture implements AudioCapture {
   }
 
   start(onChunk: (samples: Float32Array) => void, completion: (error: Error | null) => void, onLost: () => void): void {
-    this.session += 1;
-    const session = this.session;
+    this.clearTimers();
     this.onChunk = onChunk;
     this.completion = completion;
     this.onLost = onLost;
-    this.startTimer = setTimeout(() => this.finishStart(session, new MicrophoneError("timeout")), this.startTimeout);
-    this.send({ type: "start", session });
+    this.retryUntil = Date.now() + this.retry.window;
+    this.startTimer = setTimeout(() => this.finishStart(new MicrophoneError("timeout")), this.startTimeout);
+    this.startSession();
   }
 
   stop(): void {
-    this.clearStartTimer();
+    this.clearTimers();
     this.onChunk = null;
     this.completion = null;
     this.onLost = null;
@@ -76,27 +86,46 @@ export class SessionAudioCapture implements AudioCapture {
     if (report.session !== this.session) return;
     switch (report.type) {
       case "started":
-        return this.finishStart(report.session, null);
+        // Not after this session was lost: the next try is on its way.
+        if (this.retryTimer === null) this.finishStart(null);
+        return;
       case "failed":
-        return this.finishStart(report.session, new MicrophoneError(report.error));
+        return this.startFailed(new MicrophoneError(report.error));
       case "chunk":
         this.onChunk?.(report.samples);
         return;
       case "lost":
-        return this.completion !== null ? this.finishStart(report.session, new MicrophoneError("lost")) : this.lost();
+        return this.completion !== null ? this.startFailed(new MicrophoneError("lost")) : this.lost();
     }
   }
 
-  private finishStart(session: number, error: Error | null): void {
-    if (session !== this.session) return;
-    this.clearStartTimer();
+  private startSession(): void {
+    this.session += 1;
+    this.send({ type: "start", session: this.session });
+  }
+
+  /** The session being started failed: another is tried while the start may still be retried. */
+  private startFailed(error: MicrophoneError): void {
+    if (this.completion === null || this.retryTimer !== null) return;
+    if (Date.now() >= this.retryUntil) return this.finishStart(error);
+    log.debug(`microphone: start failed (${error.reason}); trying again`);
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.startSession();
+    }, this.retry.delay);
+  }
+
+  private finishStart(error: Error | null): void {
+    this.clearTimers();
     const completion = this.completion;
     this.completion = null;
     completion?.(error);
   }
 
-  private clearStartTimer(): void {
+  private clearTimers(): void {
     if (this.startTimer !== null) clearTimeout(this.startTimer);
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer);
     this.startTimer = null;
+    this.retryTimer = null;
   }
 }

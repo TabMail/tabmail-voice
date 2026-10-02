@@ -25,7 +25,7 @@ const app = vi.hoisted(() => ({
   listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
   credential: null as string | null,
   refusesDelete: false,
-  helpers: new Map<string, { onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
+  helpers: new Map<string, { options: { name: string; restartExitCode?: number }; onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
@@ -248,7 +248,7 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     onExit: (() => void) | undefined;
     readonly requests: { method: string; params: unknown; signal?: AbortSignal }[] = [];
     readonly events = new Map<string, (message: Record<string, unknown>) => void>();
-    constructor(readonly options: { name: string }) {
+    constructor(readonly options: { name: string; restartExitCode?: number }) {
       app.helpers.set(options.name, this);
     }
     on(event: string, handler: (message: Record<string, unknown>) => void) {
@@ -472,25 +472,42 @@ describe("main process wiring", () => {
     expect(app.prewarms).toBe(1);
   });
 
-  /** A `voice-macos` that (re)starts gets the microphone prepared again, ahead of the next
-   * dictation, and the activator started. */
-  test("a restarted voice-macos prepares the microphone again", async () => {
+  /** A `voice-microphone` that (re)starts, as it does after each dictation, gets the
+   * microphone prepared again, ahead of the next dictation; a `voice-macos` that does gets its
+   * activator started, and leaves the microphone, which isn't its own, alone. The app starts
+   * `voice-microphone` afresh at once when it exits with the code it ends itself with. */
+  test("a restarted voice-microphone prepares the microphone again, and a restarted voice-macos only starts its activator", async () => {
     await launch("darwin");
+    const microphone = app.helpers.get("voice-microphone");
     const helper = app.helpers.get("voice-macos");
     const before = app.prewarms;
-    helper?.onStart?.();
-
+    microphone?.onStart?.();
     expect(app.prewarms).toBe(before + 1);
-    expect(helper?.requests.map((request) => request.method)).toContain("startActivator");
+
+    const activators = () => helper?.requests.filter((request) => request.method === "startActivator").length ?? 0;
+    const started = activators();
+    helper?.onStart?.();
+    expect(app.prewarms).toBe(before + 1);
+    expect(activators()).toBe(started + 1);
+    expect(microphone?.options).toMatchObject({ restartExitCode: config.microphoneHelperRestartExitCode });
+    expect(helper?.options).not.toHaveProperty("restartExitCode");
   });
 
-  /** On macOS a dictation's microphone runs in `voice-macos`: the capture's start is its
-   * `microphoneStart`, for the dictation's session at the recording rate, and its stop the
-   * matching `microphoneStop`; the helper's answer and its chunk events reach the dictation, and
-   * the helper exiting under it is the dictation's microphone lost. */
+  /** Off macOS there is no `voice-microphone`: the microphone is `voice-windows`'s, or the audio
+   * window's. */
+  test.each(["win32", "linux"] as const)("on %s there is no voice-microphone", async (platform) => {
+    await launch(platform);
+    expect(app.helpers.has("voice-microphone")).toBe(false);
+  });
+
+  /** On macOS a dictation's microphone runs in `voice-microphone`, on Windows in `voice-windows`:
+   * the capture's start is its `microphoneStart`, for the dictation's session at the recording
+   * rate, and its stop the matching `microphoneStop`; the helper's answer and its chunk events
+   * reach the dictation, and the helper exiting under it is the dictation's microphone lost. On
+   * macOS `voice-macos` is never asked for the microphone, nor its exit taken for a lost one. */
   test.each(["darwin", "win32"] as const)("on %s capture uses its native helper", async (platform) => {
     await launch(platform);
-    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-macos");
+    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-microphone");
     const capture = app.capture;
     expect(capture).not.toBeNull();
     const completions: (Error | null)[] = [];
@@ -510,6 +527,8 @@ describe("main process wiring", () => {
     expect(app.audioCommands).toEqual([]);
     expect(completions).toEqual([null]);
     expect(chunks).toEqual([samples]);
+    if (platform === "darwin") app.helpers.get("voice-macos")?.onExit?.();
+    expect(losses).toBe(0);
     helper?.onExit?.();
     expect(losses).toBe(1);
     capture?.stop();
@@ -520,6 +539,7 @@ describe("main process wiring", () => {
       { method: "microphoneStart", params: { session: 1, sampleRate: config.recordingSampleRate } },
       { method: "microphoneStop", params: { session: 1 } },
     ]);
+    if (platform === "darwin") expect(app.helpers.get("voice-macos")?.requests.filter((request) => request.method.startsWith("microphone"))).toEqual([]);
   });
 
   /** Elsewhere the microphone stays in the audio window, until those platforms have a native

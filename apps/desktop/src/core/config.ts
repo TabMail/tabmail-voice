@@ -72,6 +72,12 @@ export const debugLastRecordingFileName = "TabMail-last-dictation.wav";
 export const maxRecordingDuration = 120_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
+/** A microphone start that fails is tried again for this long after the dictation's key-down, then
+ * the dictation fails: the input can be briefly unavailable while it changes (headphones
+ * connecting or switched off, the microphone helper starting afresh). */
+export const microphoneStartRetryWindow = 2_000;
+/** The wait before each such try. */
+export const microphoneStartRetryDelay = 250;
 
 // MARK: Insertion
 
@@ -333,6 +339,9 @@ export const contactStoreRequestTimeout = eventStoreRequestTimeout;
 export const fileStoreRequestTimeout = 30_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
+/** `voice-microphone` exits with this after each dictation and when the input changes
+ * (`MicrophoneService.restartExitCode` in the helper): it asks to be started afresh, at once. */
+export const microphoneHelperRestartExitCode = 75;
 
 // MARK: Updates
 

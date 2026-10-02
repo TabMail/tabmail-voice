@@ -29,6 +29,21 @@ describe("the Mac app's packaging", () => {
     }
   });
 
+  /** The helpers the build copies into the app are every executable the Swift package makes, and
+   * among them every one the app runs on a Mac: a helper left out would fail to spawn, and its
+   * part (the microphone, the hotkey, the paste) with it. */
+  test("it carries every Swift helper the app runs", () => {
+    const build = readFileSync(join(root, "scripts/macos/build-native.mts"), "utf8");
+    const copied = JSON.parse(/const helpers = (\[[^\]]*\]);/.exec(build)?.[1] ?? "null") as string[];
+    const products = [...readFileSync(join(root, "native/macos/Package.swift"), "utf8").matchAll(/\.executable\(name: "([^"]+)"/g)].map(([, name = ""]) => name);
+    // Each executable `index.ts` joins to the helpers folder, the Windows ones (`.exe`) aside.
+    const spawned = [...readFileSync(join(root, "src/main/index.ts"), "utf8").matchAll(/join\(helpers, ([^)]*)\)/g)].flatMap(([, args = ""]) => [...args.matchAll(/"(voice-[a-z-]+)"/g)].map(([, name = ""]) => name));
+
+    expect(spawned).toEqual(["voice-hotkey", "voice-macos", "voice-microphone"]);
+    expect([...copied].sort()).toEqual([...products].sort());
+    expect(copied).toEqual(expect.arrayContaining(spawned));
+  });
+
   /** The update feed (ADR-DESK-041): the app reads `latest-mac.yml` from TabMail's own CDN, and from
    * nowhere else (no third party sees an update check), which names the ZIP by the file name
    * electron-builder gave it, uploaded as named: no spaces. Squirrel.Mac installs from the ZIP. The

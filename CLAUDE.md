@@ -34,9 +34,13 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   a rule the app and the helpers both apply (which hosts a site covers) has its cases in
   `native/shared/privacy/` and every side runs them.
 - **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).
-- **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-macos` is
+- **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-microphone` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary
-  tale).
+  tale). That helper runs one engine: it ends itself after each dictation, a failed start or an
+  input change, and the app starts it afresh (ADR-DESK-032). Never run a second engine in the
+  process or release one there.
+- **Names follow `PROJECT_STRUCTURE.md` › Naming** (files, helpers, targets, wire methods,
+  config): match it, and add to it when a new kind of thing gets a name.
 - **No internal mistake IDs (`MIS-…`) in this public repo** (owner, 2026-09-28): they point into
   the private monorepo's log, which no reader here can open. Say the lesson in place instead.
 - **Tests never touch the user's clipboard or post keystrokes.** Use a uniquely named
