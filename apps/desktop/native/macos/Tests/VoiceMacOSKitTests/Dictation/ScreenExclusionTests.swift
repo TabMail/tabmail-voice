@@ -536,8 +536,8 @@ struct ScreenExclusionTests {
     }
 
     /// A page that frames an excluded one and has the focus itself, or a focused group that holds
-    /// one: the walk never goes into the focused element, so it is looked into before anything is
-    /// read.
+    /// one: the walk never goes into a focused element that is no page, and into a focused page only
+    /// after its caret's text was asked for, so it is looked into before anything is read.
     @Test func anExcludedPageInsideTheFocusedElementIsNotRead() {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
         let outer = FakeElement("AXWebArea", Self.caret.merging(["host": "example.org"]) { $1 }, children: [FakeElement("AXGroup", children: [frame])])
