@@ -639,6 +639,24 @@ struct ScreenExclusionTests {
         ])
         let outer = FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [framed])])
         #expect(!walk(outer, excluding: ["example.com"]).read)
+
+        // A page whose address the app failed to give can't be told safe: held by such an
+        // element it refuses the window with nothing excluded at all. A page with no address is read.
+        func holding(_ attributes: [String: String]) -> FakeElement {
+            FakeElement(role, [kAXTitleAttribute: "Pay now", kAXValueAttribute: "Pay now"], children: [FakeElement("AXWebArea", attributes)])
+        }
+        func inWindow(_ element: FakeElement) -> FakeElement {
+            FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [element])])
+        }
+        #expect(!walk(inWindow(holding(["hostUnknown": "1"])), excluding: []).read)
+        let noAddress = walk(inWindow(holding([:])), excluding: ["example.com"])
+        #expect(noAddress.read && noAddress.text.contains("Pay now"))
+        // Both, the framed page and the unknown one, inside a row with no label.
+        if role == "AXStaticText" || role == "AXButton" {
+            #expect(!walk(inWindow(FakeElement("AXRow", children: [framed])), excluding: ["example.com"]).read)
+            #expect(!walk(inWindow(FakeElement("AXRow", children: [holding(["hostUnknown": "1"])])), excluding: []).read)
+            #expect(walk(inWindow(FakeElement("AXRow", children: [holding([:])])), excluding: ["example.com"]).text == "| Pay now")
+        }
     }
 
     /// Such an element too large to look through is not read: the look gives up at the element
