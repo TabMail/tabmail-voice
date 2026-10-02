@@ -260,6 +260,21 @@ describe("Settings page", () => {
       expect(visibleText()).not.toContain("At most");
     });
 
+    /** The warning goes once the app is saved, by picking it again. */
+    test("an app's warning is gone once a later try is saved", async () => {
+      const reply = { error: "Excluded for now, but this couldn't be saved." as string | null };
+      const page = await open({ ...signedIn, excludedApps: excluded }, reply);
+      const warning = () => document.querySelector("main > div:not([hidden]) .error")?.textContent ?? null;
+      await act(async () => button("Add App…").click());
+      expect(warning()).toBe("Excluded for now, but this couldn't be saved.");
+
+      reply.error = null;
+      await act(async () => button("Add App…").click());
+      expect(page.commands).toEqual([{ type: "excludeApp" }, { type: "excludeApp" }]);
+      expect(warning()).toBeNull();
+      expect(visibleText()).toContain("Example Bank");
+    });
+
     test("a removal that could not be saved shows why", async () => {
       await open({ ...signedIn, excludedApps: excluded }, { error: "Removed for now, but this couldn't be saved." });
       await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Remove Example Notes"]')?.click());
