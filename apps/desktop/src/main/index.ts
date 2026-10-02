@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { app, autoUpdater as squirrel, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
+import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
 import { autoUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
@@ -60,6 +60,11 @@ import { OverlayWindowController } from "./overlayWindow.js";
 import { macPermissions } from "./native/macos/permissions.js";
 import { windowsPermissions } from "./native/windows/permissions.js";
 import { WindowsSystem } from "./native/windows/system.js";
+import { LinuxFileStore, linuxSearchRunner } from "./native/linux/files.js";
+import { LinuxSystem } from "./native/linux/system.js";
+import { LinuxPermissions } from "./native/linux/permissions.js";
+import { LinuxAutostart } from "./native/linux/autostart.js";
+import { linuxFallbackAnchor } from "./native/linux/overlayArea.js";
 import { shellPlacementArea } from "./native/windows/overlayArea.js";
 import { ShellGeometry } from "./native/windows/shellGeometry.js";
 import { WindowsFileStore } from "./native/windows/files.js";
@@ -67,6 +72,7 @@ import { osascript } from "./native/macos/osascript.js";
 import { nodeProfileFiles } from "./storage/profileFiles.js";
 import { TrayMenu } from "./tray.js";
 import { Updater } from "./updater.js";
+import { GnomeIntegration } from "./native/linux/gnomeIntegration.js";
 import { Windows } from "./windows.js";
 
 /** Debug builds are the unpackaged app (`npm start`); a packaged build is a release. */
@@ -78,6 +84,9 @@ const availableConnectors = platformConnectors.map((connector) => connector.id);
 const genericError = "Something went wrong. Try again.";
 /** The pages a window may open in the browser. */
 const openableURLs: readonly string[] = [config.termsURL, config.privacyURL];
+
+// Linux launchers pass --ozone-platform=x11 before Electron initializes its display
+// backend. Appending it here is too late to select XWayland on a Wayland session.
 
 if (app.requestSingleInstanceLock()) {
   app.whenReady().then(launch, (error: unknown) => {
@@ -113,8 +122,7 @@ function launch(): void {
   let suggestedName = "";
 
   const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
-  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
-  const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : macPermissions);
+  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : process.platform === "linux" ? ["F8", "F9"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
@@ -123,17 +131,26 @@ function launch(): void {
   const mac = new MacSystem(macHelper);
   const nativeHelper = process.platform === "win32"
     ? new HelperClient({ name: "voice-windows", executable: join(helpers, "voice-windows.exe"), cancelRequests: true })
-    : macHelper;
+    : process.platform === "linux"
+      ? new HelperClient({ name: "voice-linux", executable: join(helpers, "voice-linux"), cancelRequests: true })
+      : macHelper;
   const accessibilityActivator = process.platform === "win32"
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
-  const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : mac;
+  const linuxPermissions = process.platform === "linux" ? new LinuxPermissions(nativeHelper, hotkeyHelper, () => {
+    const handle = BrowserWindow.getFocusedWindow()?.getNativeWindowHandle();
+    return handle && handle.length >= 4 ? `x11:${handle.readUInt32LE(0).toString(16)}` : "";
+  }) : null;
+  const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : linuxPermissions ?? macPermissions);
+  if (linuxPermissions) linuxPermissions.onChange = () => permissions.refresh();
+  const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
+  const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
+  const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), process.env.APPIMAGE ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
   // On macOS the microphone has a helper to itself, started afresh after each dictation and when
   // the input changes (ADR-DESK-032); on Windows it is in `voice-windows`.
   const microphoneHelper = process.platform === "darwin"
     ? new HelperClient({ name: "voice-microphone", executable: join(helpers, "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode })
     : null;
-  const nativeAudio = process.platform === "darwin" || process.platform === "win32";
 
   let wizard: WelcomeWizard | null = null;
   let stopObservingWizard: (() => void) | null = null;
@@ -141,19 +158,21 @@ function launch(): void {
   let emailAppIcon: { path: string | null; dataURL: string | null } = { path: null, dataURL: null };
 
   const windows = new Windows(stateOf);
+  const gnomeIntegration = process.platform === "linux" && process.env.XDG_CURRENT_DESKTOP?.toLowerCase().split(":").includes("gnome") ? new GnomeIntegration(hotkeyHelper) : null;
+  if (gnomeIntegration) gnomeIntegration.onChange = () => windows.push("settings");
 
   function sendAudio(command: AudioCommand): void {
     const contents = windows.audio().webContents;
     if (contents.isLoading()) contents.once("did-finish-load", () => contents.send(channels.audioCommand, command));
     else contents.send(channels.audioCommand, command);
   }
-  // Native Mac and Windows capture preserve session ownership without opening a renderer device.
+  // Native capture preserve session ownership without opening a renderer device.
   const receiveAudio = (report: AudioReport): void => capture.receive(report);
   const capture: SessionAudioCapture = new SessionAudioCapture(
-    microphoneHelper ? new NativeMicrophone(microphoneHelper, "voice-microphone").microphone(receiveAudio) : system instanceof WindowsSystem ? system.microphone(receiveAudio) : sendAudio,
+    microphoneHelper ? new NativeMicrophone(microphoneHelper, "voice-microphone").microphone(receiveAudio) : (system instanceof WindowsSystem || system instanceof LinuxSystem) ? system.microphone(receiveAudio) : sendAudio,
   );
   // A helper that exits takes a running microphone with it.
-  if (nativeAudio) (microphoneHelper ?? nativeHelper).onExit = () => capture.lost();
+  if (nativeAudio) (microphoneHelper ?? nativeHelper).onExit = () => { capture.lost(); linuxPermissions?.reset(); };
 
   // `email_compose`'s draft (ADR-DESK-027), opened with the app macOS opens `mailto:` links with,
   // which the result names.
@@ -178,7 +197,7 @@ function launch(): void {
     settings: () => settings.dictation(account.email),
     account,
     tips: new TipBook(store),
-    paste: (text, signal, target) => system instanceof WindowsSystem ? system.paste(text, signal, target) : system.paste(text, signal),
+    paste: (text, signal, target) => system instanceof WindowsSystem || system instanceof LinuxSystem ? system.paste(text, signal, target) : system.paste(text, signal),
     copy: (text) => copyText(text),
     history,
     thunderbird: new ThunderbirdRelay(mac.thunderbird),
@@ -194,7 +213,7 @@ function launch(): void {
       connector.tools({
         eventStore: mac.eventStore,
         contactStore: mac.contactStore,
-        fileStore: process.platform === "win32" ? new WindowsFileStore(homedir()) : mac.fileStore,
+        fileStore: process.platform === "win32" ? new WindowsFileStore(homedir()) : process.platform === "linux" ? new LinuxFileStore(homedir(), linuxSearchRunner(join(helpers, "voice-files"))) : mac.fileStore,
         home: homedir(),
         emailOpener,
         scriptRunner: osascript,
@@ -217,6 +236,8 @@ function launch(): void {
 
   const shellGeometry = system instanceof WindowsSystem ? new ShellGeometry(() => system.shellExclusionBounds()) : null;
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
+    // Ask only the compositor on Linux: AT-SPI traversal would delay the pill.
+    if (system instanceof LinuxSystem) return system.caretAnchor();
     const pid = await system.frontmostApp();
     if (system instanceof WindowsSystem) {
       try {
@@ -227,7 +248,7 @@ function launch(): void {
       }
     }
     return pid === null ? null : system.caretAnchor(pid);
-  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined);
+  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined);
 
   if (system instanceof WindowsSystem) {
     let refreshing = false;
@@ -295,6 +316,7 @@ function launch(): void {
       isHearing: controller.isHearing,
       language: controller.language,
       tip: controller.tip,
+      ...(gnomeIntegration ? { gnomeRecordingKeys: gnomeIntegration.state === "ready" } : {}),
       opensUpward: overlay.opensUpward,
       bubblesFitUnder: overlay.bubblesFitUnder,
       hotkey: controller.settings.hotkey,
@@ -335,7 +357,15 @@ function launch(): void {
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
-      openAtLogin: app.getLoginItemSettings().openAtLogin,
+      ...(process.platform === "linux" ? { keyboardPermission: {
+        title: "Shortcut and keyboard control",
+        agentShortcut: `Shift+${settings.hotkey}`,
+        description: "Allows the dictation shortcut, pasting, and clipboard restoration.",
+        button: "Allow Keyboard Control",
+        instructions: "Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.",
+      } } : {}),
+      ...(gnomeIntegration ? { gnomeIntegration: gnomeIntegration.state } : {}),
+      openAtLogin: linuxAutostart?.enabled ?? app.getLoginItemSettings().openAtLogin,
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,
       version: app.getVersion(),
@@ -363,6 +393,13 @@ function launch(): void {
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
+      ...(process.platform === "linux" ? { keyboardPermission: {
+        title: "Shortcut and keyboard control",
+        agentShortcut: `Shift+${settings.hotkey}`,
+        description: "Allows the dictation shortcut, pasting, and clipboard restoration.",
+        button: "Allow Keyboard Control",
+        instructions: "Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.",
+      } } : {}),
     };
   }
 
@@ -431,6 +468,7 @@ function launch(): void {
   function showSettings(): void {
     permissions.refresh();
     windows.showSettings();
+    void gnomeIntegration?.refresh();
     if (process.platform !== "darwin") return;
     mac.emailApps(config.thunderbirdBundleIdentifiers).then(
       (apps) => {
@@ -534,7 +572,7 @@ function launch(): void {
 
   function configureHotkey(hotkey: DictationHotkey): void {
     sendHotkeyState<{ installed: boolean }>("configure", { hotkey, tapMaxDuration: config.minimumHoldDuration / 1000, doubleTapWindow: config.doubleTapWindow / 1000 })
-      .then(({ installed }) => log.debug(`main: hotkey ${hotkey} ${installed ? "installed" : "not installed (no Accessibility grant yet)"}`))
+      .then(({ installed }) => log.debug(`main: hotkey ${hotkey} ${installed ? "installed" : process.platform === "linux" ? "not installed (compositor shortcut access unavailable)" : "not installed (no Accessibility grant yet)"}`))
       .catch((error: unknown) => {
         log.error(`main: couldn't configure the hotkey: ${errorName(error)}`);
       });
@@ -554,6 +592,7 @@ function launch(): void {
   }
 
   // A restarted helper knows nothing of the chat window either.
+  hotkeyHelper.onExit = () => linuxPermissions?.resetHotkey();
   hotkeyHelper.onStart = () => {
     configureHotkey(settings.hotkey);
     setChatOpen(controller.chat !== null);
@@ -563,6 +602,7 @@ function launch(): void {
   });
   // Prepare capture on launch and after each restart of the helper it runs in.
   nativeHelper.onStart = () => {
+    linuxPermissions?.restore();
     if (process.platform === "darwin") startActivator();
     if (!microphoneHelper) controller.prewarm();
   };
@@ -589,6 +629,9 @@ function launch(): void {
     switch (phase.kind) {
       case "arming":
       case "listening":
+        if (process.platform === "linux") hotkeyHelper.request("setRecording", { active: true }).catch((error: unknown) => {
+          log.error(`main: recording shortcut setup failed: ${errorName(error)}`);
+        });
         return;
       default:
         // Finished, failed or canceled without the hotkey: hands-free listening is over too.
@@ -622,7 +665,7 @@ function launch(): void {
   // the grant lands.
   permissions.onAccessibilityGranted = () => {
     configureHotkey(settings.hotkey);
-    startActivator();
+    if (process.platform === "darwin") startActivator();
   };
   permissions.onMicrophoneGranted = () => controller.prewarm();
 
@@ -661,9 +704,9 @@ function launch(): void {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: "Exclude an App",
       buttonLabel: "Exclude",
-      defaultPath: process.platform === "win32" ? process.env.ProgramFiles : config.applicationsDirectory,
+      defaultPath: process.platform === "win32" ? process.env.ProgramFiles : process.platform === "linux" ? "/usr/share/applications" : config.applicationsDirectory,
       properties: ["openFile"],
-      filters: [{ name: "Applications", extensions: [process.platform === "win32" ? "exe" : "app"] }],
+      filters: [{ name: "Applications", extensions: [process.platform === "win32" ? "exe" : process.platform === "linux" ? "desktop" : "app"] }],
     });
     const path = filePaths[0];
     if (canceled || path === undefined) return;
@@ -727,7 +770,8 @@ function launch(): void {
         if (command.bundleIdentifier === null || config.thunderbirdBundleIdentifiers.includes(command.bundleIdentifier)) settings.emailClient = command.bundleIdentifier;
         return;
       case "setOpenAtLogin":
-        app.setLoginItemSettings({ openAtLogin: command.value });
+        if (linuxAutostart) linuxAutostart.enabled = command.value;
+        else app.setLoginItemSettings({ openAtLogin: command.value });
         pushSettingsWindows();
         return;
       case "setDebugMode":
@@ -738,6 +782,8 @@ function launch(): void {
         return;
       case "requestMicrophone":
         return permissions.requestMicrophone();
+      case "enableGnomeIntegration":
+        return gnomeIntegration?.enable();
       case "requestAccessibility":
         return permissions.requestAccessibility();
       case "checkForUpdates":
@@ -819,6 +865,7 @@ function launch(): void {
 
   hotkeyHelper.start();
   nativeHelper.start();
+  void gnomeIntegration?.refresh();
   microphoneHelper?.start();
   accessibilityActivator?.start();
   readSuggestedName();

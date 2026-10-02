@@ -45,7 +45,7 @@ describe("the connector registry", () => {
   test("platform capabilities retain every Mac connector and expose shared tools on both ports", () => {
     expect(connectorsForPlatform("darwin").map(({ id }) => id)).toEqual(connectorIDs);
     for (const platform of ["win32", "linux"] as const) {
-      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(platform === "win32" ? ["files", "email", "web"] : ["email", "web"]);
+      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(["files", "email", "web"]);
     }
     expect(connectorsForPlatform("freebsd")).toEqual([]);
   });

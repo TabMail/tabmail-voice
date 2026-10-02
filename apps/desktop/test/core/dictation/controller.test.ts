@@ -306,6 +306,19 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(peak).toBe(Math.round(0x7fff * 10 ** (config.normalizedPeakDecibels / 20)));
   });
 
+  test("microphone starts before optional screen context and does not wait for it", async () => {
+    const capture = new CountingCapture();
+    const { controller } = makeController({ capture });
+    const context = deferred<ScreenRead | null>();
+    let startsWhenRead = -1;
+    controller.captureContext = () => { startsWhenRead = capture.starts; return context.promise; };
+    controller.handle("start");
+    expect(startsWhenRead).toBe(1);
+    expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+    controller.handle("cancel");
+    context.resolve(null);
+  });
+
   /** The screen read is asked with the apps excluded at key-down; when the app in front is one of
    * them the read is null, and the dictation goes through with no screen context and no terms. */
   test("a dictation in an excluded app is pasted with no screen context and no screen terms", async () => {

@@ -133,6 +133,7 @@ function DictationPane({ state }: { state: SettingsState }) {
       <Group
         captions={[
           state.hotkey === "function" && "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
+          (state.hotkey === "F8" || state.hotkey === "F9") && `Hold ${state.hotkey} to dictate, or double-tap for hands-free. Shift+${state.hotkey} starts agent mode; Ctrl+Shift+${state.hotkey} cancels.`,
           "Your recording is sent to TabMail for transcription and isn’t stored.",
         ]}
       >
@@ -416,8 +417,23 @@ function PermissionsPane({ state }: { state: SettingsState }) {
     <>
       <Group>
         <PermissionRow title="Microphone" granted={state.microphoneGranted} onRequest={() => send({ type: "requestMicrophone" })} />
-        <PermissionRow title="Accessibility (hotkey and typing)" granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
+        <PermissionRow title={state.keyboardPermission?.title ?? "Accessibility (hotkey and typing)"} granted={state.accessibilityTrusted} onRequest={() => send({ type: "requestAccessibility" })} />
       </Group>
+      {state.gnomeIntegration && (
+        <Group captions={[
+          state.gnomeIntegration === "ready" ? "Press Shift while dictating to switch to agent mode, or Escape to cancel. The pill follows the caret where the app provides its position."
+            : state.gnomeIntegration === "restart" ? "Log out of Ubuntu and back in, then choose Enable if needed. GNOME loads newly installed or updated integration at login."
+              : state.gnomeIntegration === "unsupported" ? "GNOME integration currently supports GNOME 50. The regular dictation shortcuts remain available."
+                : state.gnomeIntegration === "unavailable" ? "GNOME integration could not be enabled. Check GNOME Extensions for an error, then try again."
+                : "Enable GNOME integration for Shift to switch mode, Escape to cancel, and improved caret placement. The TabMail installer includes it.",
+        ]}>
+          <div className="row">
+            <span>GNOME integration</span>
+            {state.gnomeIntegration === "ready" ? <span className="allowed">✓ Enabled</span>
+              : <button disabled={state.gnomeIntegration === "checking" || state.gnomeIntegration === "unsupported"} onClick={() => send({ type: "enableGnomeIntegration" })}>Enable</button>}
+          </div>
+        </Group>
+      )}
       {state.vscodeFix !== "notNeeded" && (
         <Group
           captions={[

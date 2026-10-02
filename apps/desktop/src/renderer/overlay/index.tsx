@@ -293,7 +293,7 @@ function PillLayout({
           </div>
         );
       })}
-      <TipSlot tip={tip} hotkey={state.hotkey} pill={pill} bubbles={frames} opensUpward={state.opensUpward} />
+      <TipSlot gnomeRecordingKeys={state.gnomeRecordingKeys === true} tip={tip} hotkey={state.hotkey} pill={pill} bubbles={frames} opensUpward={state.opensUpward} />
       {hoveredBubble && hoveredFrame && (
         // Keyed by bubble, so the next bubble's tooltip is measured afresh (hidden until then), not
         // shown at the last one's size.
@@ -879,7 +879,7 @@ function BubbleTooltip({ name, description, bubble, canvas }: { name: string; de
 /** The tip under the pill, or over it (`tipGoesAbove`), fading in and out; the last one stays while
  * it fades. Hidden until measured: it is placed by its size, so unmeasured it would show for a frame
  * away from the pill. */
-function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTip | null; hotkey: DictationHotkey; pill: Rect; bubbles: Rect[]; opensUpward: boolean }) {
+function TipSlot({ tip, hotkey, pill, bubbles, opensUpward, gnomeRecordingKeys }: { gnomeRecordingKeys: boolean; tip: DictationTip | null; hotkey: DictationHotkey; pill: Rect; bubbles: Rect[]; opensUpward: boolean }) {
   const [shown, setShown] = useState<DictationTip | null>(tip);
   useEffect(() => {
     if (tip !== null) setShown(tip);
@@ -894,7 +894,7 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
       className="centered"
       style={{ left: center.x, top: center.y, opacity: tip === null ? 0 : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out`, visibility: size.width > 0 ? "visible" : "hidden" }}
     >
-      <TipTooltip tip={shown} hotkey={hotkey} pointsDown={above} />
+      <TipTooltip gnomeRecordingKeys={gnomeRecordingKeys} tip={shown} hotkey={hotkey} pointsDown={above} />
     </div>
   );
 }
@@ -902,9 +902,9 @@ function TipSlot({ tip, hotkey, pill, bubbles, opensUpward }: { tip: DictationTi
 /** A tip in a tooltip by the listening pill, under it or over it (`tipGoesAbove`): a dark rounded
  * box with an arrow at the pill (down when `pointsDown`), the tip's words around keycaps. Hidden until
  * measured, as its outline is drawn to its size: never its words for a frame without their box. */
-function TipTooltip({ tip, hotkey, pointsDown }: { tip: DictationTip; hotkey: DictationHotkey; pointsDown: boolean }) {
+function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeRecordingKeys: boolean; tip: DictationTip; hotkey: DictationHotkey; pointsDown: boolean }) {
   const [ref, size] = useSize<HTMLDivElement>();
-  const lines = tipLines(tip, hotkey);
+  const lines = tipLines(tip, hotkey, gnomeRecordingKeys);
   return (
     <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
       <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)})` }}>

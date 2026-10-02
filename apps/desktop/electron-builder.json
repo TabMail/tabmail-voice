@@ -7,20 +7,51 @@
     "buildResources": "resources",
     "output": "release"
   },
-  "files": ["dist/node/**", "dist/renderer/**", "package.json"],
+  "files": [
+    "dist/node/**",
+    "dist/renderer/**",
+    "package.json"
+  ],
   "extraResources": [
-    { "from": "resources", "to": ".", "filter": ["trayTemplate*.png"] }
+    {
+      "from": "resources",
+      "to": ".",
+      "filter": [
+        "trayTemplate*.png"
+      ]
+    }
   ],
   "asar": true,
-  "publish": [{ "provider": "generic", "url": "https://cdn.tabmail.ai/releases/voice/macos-arm64", "useMultipleRangeRequest": false }],
+  "publish": [
+    {
+      "provider": "generic",
+      "url": "https://cdn.tabmail.ai/releases/voice/macos-arm64",
+      "useMultipleRangeRequest": false
+    }
+  ],
   "mac": {
     "category": "public.app-category.productivity",
     "artifactName": "TabMail-Voice-${version}-${arch}.${ext}",
     "icon": "resources/icon.png",
-    "extraResources": [{ "from": "dist/helpers", "to": "helpers" }],
+    "extraResources": [
+      {
+        "from": "dist/helpers",
+        "to": "helpers"
+      }
+    ],
     "target": [
-      { "target": "dmg", "arch": ["arm64"] },
-      { "target": "zip", "arch": ["arm64"] }
+      {
+        "target": "dmg",
+        "arch": [
+          "arm64"
+        ]
+      },
+      {
+        "target": "zip",
+        "arch": [
+          "arm64"
+        ]
+      }
     ],
     "minimumSystemVersion": "15.0",
     "hardenedRuntime": true,
@@ -43,10 +74,81 @@
     "icon": "resources/icon.png",
     "requestedExecutionLevel": "asInvoker",
     "extraResources": [
-      { "from": "dist/helpers", "to": "helpers", "filter": ["voice-hotkey.exe", "voice-windows.exe"] },
-      { "from": "native/windows/vendor/ia2/LICENSE.txt", "to": "helpers/IAccessible2-LICENSE.txt" }
+      {
+        "from": "dist/helpers",
+        "to": "helpers",
+        "filter": [
+          "voice-hotkey.exe",
+          "voice-windows.exe"
+        ]
+      },
+      {
+        "from": "native/windows/vendor/ia2/LICENSE.txt",
+        "to": "helpers/IAccessible2-LICENSE.txt"
+      }
     ],
     "publish": null
+  },
+  "linux": {
+    "target": "deb",
+    "executableArgs": [
+      "--ozone-platform=x11"
+    ],
+    "artifactName": "TabMail-Voice-${version}-linux-${arch}.${ext}",
+    "executableName": "tabmail-voice",
+    "syncDesktopName": true,
+    "category": "Utility",
+    "icon": "resources/linux/icons",
+    "extraResources": [
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "native/linux/gnome/voice-caret@tabmail.ai",
+        "to": "linux/gnome/voice-caret@tabmail.ai"
+      },
+      {
+        "from": "dist/helpers",
+        "to": "helpers",
+        "filter": [
+          "voice-hotkey",
+          "voice-linux",
+          "voice-files"
+        ]
+      }
+    ],
+    "publish": null,
+    "desktop": {
+      "entry": {
+        "Name": "TabMail Voice",
+        "Comment": "Dictate into the app you are using",
+        "StartupNotify": "false"
+      }
+    }
+  },
+  "deb": {
+    "appArmorProfile": "scripts/linux/apparmor-profile.tpl",
+    "depends": [
+      "libgtk-3-0t64",
+      "libnotify4",
+      "libnss3",
+      "libxss1",
+      "libxtst6",
+      "xdg-utils",
+      "libatspi2.0-0t64 (>= 2.56)",
+      "libsecret-1-0",
+      "libpulse0",
+      "libibus-1.0-5",
+      "libtinysparql-3.0-0",
+      "localsearch",
+      "libicu78",
+      "xdg-desktop-portal",
+      "xdg-desktop-portal-gnome"
+    ],
+    "fpm": [
+      "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai"
+    ]
   },
   "nsis": {
     "oneClick": true,
@@ -59,8 +161,17 @@
     "title": "TabMail Voice",
     "background": "dmg-background.png",
     "contents": [
-      { "x": 130, "y": 145, "type": "file" },
-      { "x": 410, "y": 145, "type": "link", "path": "/Applications" }
+      {
+        "x": 130,
+        "y": 145,
+        "type": "file"
+      },
+      {
+        "x": 410,
+        "y": 145,
+        "type": "link",
+        "path": "/Applications"
+      }
     ]
   }
 }

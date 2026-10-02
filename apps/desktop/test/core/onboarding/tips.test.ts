@@ -53,6 +53,18 @@ describe("tips", () => {
     expect(tipKeycap("agentAndHistory", "function")).toBe("space");
   });
 
+  test("Linux tips name the portal shortcuts rather than unavailable plain Space and Escape", () => {
+    expect(tipKeycap("agentAndHistory", "F8")).toBe("Shift+F8");
+    const keys = tipLines("handsFree", "F9").flat().flatMap((part) => "key" in part ? [part.key] : []);
+    expect(keys).toEqual(["F9", "Ctrl+Shift+F9"]);
+  });
+
+  test("active GNOME integration names Shift and Escape while preserving other platforms", () => {
+    expect(tipLines("agentAndHistory", "F8", true).flat()).toContainEqual({ key: "Shift" });
+    expect(tipLines("handsFree", "F8", true).flat()).toContainEqual({ key: "Esc" });
+    expect(tipLines("agentAndHistory", "rightOption", true)).toEqual(tipLines("agentAndHistory", "rightOption"));
+  });
+
   test("the tips say what the key does", () => {
     const words = (lines: ReturnType<typeof tipLines>) => lines.flat().map((part) => ("words" in part ? part.words : part.key)).join(" ").toLowerCase();
     expect(words(tipLines("agentAndHistory", "rightOption"))).toBe("press space for agent mode, triple-tap right ⌥ for history");

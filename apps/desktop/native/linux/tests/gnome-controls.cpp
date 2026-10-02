@@ -1,0 +1,63 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#include "../src/gnome_controls.h"
+#include <source_location>
+using namespace voice;
+static void require(bool value, std::source_location at = std::source_location::current()) {
+    if (!value) { std::cerr << "controls check failed at " << at.line() << '\n'; std::_Exit(1); }
+}
+int main() {
+    Error error;
+    auto bus = own(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.value)); require(bus && !error.value);
+    auto name = g_dbus_connection_call_sync(bus.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", g_variant_new("(su)", "org.gnome.Shell", 0u), nullptr, G_DBUS_CALL_FLAGS_NONE, 1000, nullptr, &error.value);
+    require(name && !error.value); g_variant_unref(name);
+    auto info = g_dbus_node_info_new_for_xml(R"(<node><interface name="ai.tabmail.Voice.Caret"><method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method><signal name="Action"><arg type="s"/></signal></interface></node>)", &error.value); require(info);
+    std::vector<bool> states;
+    const GDBusInterfaceVTable table{[](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*, GVariant* args, GDBusMethodInvocation* call, gpointer data) {
+        gboolean active; g_variant_get(args, "(b)", &active);
+        static_cast<std::vector<bool>*>(data)->push_back(active);
+        g_dbus_method_invocation_return_value(call, g_variant_new("(b)", true));
+    }, nullptr, nullptr, {nullptr}};
+    const auto registration = g_dbus_connection_register_object(bus.get(), "/ai/tabmail/Voice/Caret", info->interfaces[0], &table, &states, nullptr, &error.value); require(registration);
+    g_dbus_node_info_unref(info);
+    const auto drain = [] {
+        const auto end = g_get_monotonic_time() + 30000;
+        while (g_get_monotonic_time() < end) { while(g_main_context_iteration(nullptr, false)) {} g_usleep(1000); }
+    };
+    const auto action = [&](const char* value) {
+        require(g_dbus_connection_emit_signal(bus.get(), nullptr, "/ai/tabmail/Voice/Caret", "ai.tabmail.Voice.Caret", "Action", g_variant_new("(s)", value), &error.value)); drain();
+    };
+    {
+        Output output; Gesture gesture; GnomeControls controls(output, gesture);
+        drain(); action("cancel"); action("toggleMode");
+        controls.emit(*gesture.modifier(true, 1)); drain();
+        controls.setRecording(true); drain(); require(states == std::vector<bool>{true});
+        action("unknown"); action("toggleMode"); action("cancel");
+        require(states == std::vector<bool>({true, false}));
+        action("toggleMode"); gesture.modifier(false, 2);
+        controls.emit(*gesture.modifier(true, 3)); drain();
+        controls.emit(*gesture.modifier(false, 4)); drain();
+        require(states == std::vector<bool>({true, false, true, false}));
+        controls.emit(*gesture.modifier(true, 5)); drain();
+    }
+    drain(); require(states == std::vector<bool>({true, false, true, false, true, false}));
+    {
+        Output output; Gesture gesture; GnomeControls controls(output, gesture);
+        gesture.tapMaxDuration = 0.3; gesture.doubleTapWindow = 0.4;
+        controls.emit(*gesture.modifier(true, 10));
+        controls.emit(*gesture.modifier(false, 10.1));
+        // The main process's arming notification arrives after native key-up.
+        controls.setRecording(true); drain();
+        const auto second = gesture.modifier(true, 10.2);
+        require(second == Action::startHandsFree);
+        controls.emit(*second);
+        controls.emit(*gesture.modifier(false, 10.3)); drain();
+        action("cancel");
+        gesture.dictationEnded();
+        // Menu-started recording has no active native gesture, but still owns keys.
+        controls.setRecording(true); drain();
+        action("toggleMode"); action("cancel");
+    }
+    g_dbus_connection_unregister_object(bus.get(), registration);
+}

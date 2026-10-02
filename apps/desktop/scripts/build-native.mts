@@ -13,6 +13,9 @@ switch (process.platform) {
   case "win32":
     (await import("./windows/build-native.mts")).buildNative(root);
     break;
+  case "linux":
+    (await import("./linux/build-native.mts")).buildNative(root);
+    break;
   default:
     throw new Error(`Native helpers are not implemented for ${process.platform} yet`);
 }

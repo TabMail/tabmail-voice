@@ -10,6 +10,7 @@ import type { Phase } from "../../src/core/dictation/controller.js";
 import type { Rect } from "../../src/core/ui/overlayGeometry.js";
 import { OverlayWindowController } from "../../src/main/overlayWindow.js";
 import { shellPlacementArea } from "../../src/main/native/windows/overlayArea.js";
+import { linuxFallbackAnchor } from "../../src/main/native/linux/overlayArea.js";
 
 /** One display, and the mouse pointer in its middle; a test may move the pointer or use another
  * display, and puts them back. */
@@ -518,4 +519,35 @@ test("repositioned chat remains opaque without another renderer size notificatio
   controller.refreshPlacement();
   expect(overlay.visible()).toBe(true);
   expect(overlay.opacity()).toBe(1);
+});
+
+
+test("Linux fallback stays on the selected display when the pointer moves, and preserves a usable caret", async () => {
+  const area = { x: -1440, y: 30, width: 1440, height: 870 };
+  screenNow.workArea = area;
+  try {
+    const overlay = recordingWindow();
+    let caret: Rect | null = null;
+    const controller = new OverlayWindowController(overlay.window, async () => caret, undefined, linuxFallbackAnchor);
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+    const first = controller.pillPlace;
+    expect(first.pill.x).toBe(-719.5);
+    controller.update({ kind: "idle" });
+    screenNow.pointer = { x: -1300, y: 850 };
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(overlay.visible()).toBe(true));
+    expect(controller.pillPlace).toEqual(first);
+    controller.update({ kind: "idle" });
+    caret = { x: -1200, y: 200, width: 1, height: 20 };
+    controller.update({ kind: "arming" });
+    controller.update({ kind: "listening" });
+    await vi.waitFor(() => expect(controller.pillPlace.pill.x).toBe(-1199.5));
+    expect(overlay.ignoresMouse()).toBe(true);
+  } finally {
+    screenNow.workArea = workArea;
+    screenNow.pointer = pointerAtRest;
+  }
 });

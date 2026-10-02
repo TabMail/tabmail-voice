@@ -46,7 +46,7 @@ const app = vi.hoisted(() => ({
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
-  overlay: null as { opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
+  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
@@ -90,6 +90,7 @@ vi.mock("electron", async () => {
       return app.squirrel;
     },
     app: {
+      commandLine: { appendSwitch: vi.fn() },
       get isPackaged() {
         return app.packaged;
       },
@@ -108,6 +109,7 @@ vi.mock("electron", async () => {
         app.hides += 1;
       },
     },
+    BrowserWindow: { getFocusedWindow: () => null },
     clipboard: {
       writeText: async (text: string) => {
         if (app.clipboardFails) throw new Error("the clipboard is busy");
@@ -329,7 +331,7 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     onPlace: (() => void) | undefined;
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
-    constructor(_window: unknown, _locate: unknown, readonly place?: (area: Rect) => Rect | null) {
+    constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null) {
       app.overlay = this;
     }
     refreshPlacement() {
@@ -496,8 +498,7 @@ describe("main process wiring", () => {
     expect(helper?.options).not.toHaveProperty("restartExitCode");
   });
 
-  /** Off macOS there is no `voice-microphone`: the microphone is `voice-windows`'s, or the audio
-   * window's. */
+  /** Off macOS there is no `voice-microphone`: the microphone belongs to its platform helper. */
   test.each(["win32", "linux"] as const)("on %s there is no voice-microphone", async (platform) => {
     await launch(platform);
     expect(app.helpers.has("voice-microphone")).toBe(false);
@@ -508,9 +509,9 @@ describe("main process wiring", () => {
    * rate, and its stop the matching `microphoneStop`; the helper's answer and its chunk events
    * reach the dictation, and the helper exiting under it is the dictation's microphone lost. On
    * macOS `voice-macos` is never asked for the microphone, nor its exit taken for a lost one. */
-  test.each(["darwin", "win32"] as const)("on %s capture uses its native helper", async (platform) => {
+  test.each(["darwin", "win32", "linux"] as const)("on %s capture uses its native helper", async (platform) => {
     await launch(platform);
-    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-microphone");
+    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : platform === "linux" ? "voice-linux" : "voice-microphone");
     const capture = app.capture;
     expect(capture).not.toBeNull();
     const completions: (Error | null)[] = [];
@@ -545,31 +546,6 @@ describe("main process wiring", () => {
     if (platform === "darwin") expect(app.helpers.get("voice-macos")?.requests.filter((request) => request.method.startsWith("microphone"))).toEqual([]);
   });
 
-  /** Elsewhere the microphone stays in the audio window, until those platforms have a native
-   * helper: the capture's start and stop are commands to that window for the dictation's session,
-   * and `voice-macos` is never asked for the microphone nor its exit taken for a lost one. */
-  test("elsewhere the capture runs in the audio window", async () => {
-    await launch("linux");
-    const helper = app.helpers.get("voice-macos");
-    const capture = app.capture;
-    expect(capture).not.toBeNull();
-
-    capture?.start(
-      () => {},
-      () => {},
-      () => {},
-    );
-    capture?.stop();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(app.audioCommands).toEqual([
-      { type: "start", session: 1 },
-      { type: "stop", session: 1 },
-    ]);
-    expect(helper?.requests.filter((request) => request.method.startsWith("microphone") && request.method !== "microphonePrepare")).toEqual([]);
-    expect(helper?.onExit).toBeUndefined();
-  });
-
   /** A dictation's paste reaches `voice-macos` with the dictation's session and signal, so a paste waiting out a
    * helper restart is called off when the dictation is. */
   test("a dictation's paste carries its signal to voice-macos", async () => {
@@ -583,6 +559,16 @@ describe("main process wiring", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
     expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
+  });
+
+  test("Linux placement queries compositor geometry without an accessibility target lookup", async () => {
+    await launch("linux");
+    const helper = app.helpers.get("voice-hotkey");
+    const before = helper?.requests.length;
+    expect(await app.overlay?.locate()).toBeNull();
+    expect(helper?.requests.slice(before)).toEqual([{ method: "caretAnchor", params: {}, signal: undefined }]);
+    helper?.replies.set("caretAnchor", { x: 200, y: 300, width: 1, height: 20 });
+    expect(await app.overlay?.locate()).toEqual({ x: 200, y: 300, width: 1, height: 20 });
   });
 
   test("Windows paste keeps its original window and uses the cancellable Windows helper", async () => {
@@ -979,7 +965,7 @@ describe("main process wiring", () => {
   test.each(["darwin", "win32", "linux"] as const)("the dictionary's commands and state, on %s", async (platform) => {
     await launch(platform);
     const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { dictionary: unknown; learnsWords: boolean; canLearnWords: boolean };
-    expect(state()).toMatchObject({ dictionary: [], learnsWords: true, canLearnWords: platform !== "linux" });
+    expect(state()).toMatchObject({ dictionary: [], learnsWords: true, canLearnWords: true });
 
     expect(await send({ type: "addDictionaryWord", word: " Xyvora " })).toEqual({ error: null });
     expect(await send({ type: "addDictionaryWord", word: "TabMail" })).toEqual({ error: null });
@@ -992,19 +978,15 @@ describe("main process wiring", () => {
   });
 
   /** On macOS the correction watch reads the field through `voice-macos` and learns into the stored
-   * dictionary; Linux still awaits its native field reader. */
+   * dictionary; all platforms use their native field reader. */
   test.each(["darwin", "win32", "linux"] as const)("the correction watch's wiring, on %s", async (platform) => {
     await launch(platform);
-    if (platform === "linux") {
-      expect(app.corrections).toBeUndefined();
-      return;
-    }
     // Its two dependencies, as the watch calls them.
     const watch = app.corrections as unknown as { readField: (pid: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null>; learn: (words: string[]) => void };
-    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : "voice-macos");
+    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : platform === "linux" ? "voice-linux" : "voice-macos");
     await watch.readField(42, { apps: ["org.example.vault"], sites: ["example.com"] });
     expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
-      { ...(platform === "win32" ? { window: 42 } : { pid: 42 }), maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
+      { ...(platform !== "darwin" ? { window: 42 } : { pid: 42 }), maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
     ]);
     watch.learn(["Xyvora"]);
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true, lastUsed: 1 }]);
@@ -1167,15 +1149,17 @@ describe("main process wiring", () => {
     expect((app.stored.get("excludedSites") as unknown[]).length).toBe(config.exclusionsMax);
   });
 
-  test("elsewhere, apps can't be excluded: nothing is asked", async () => {
+  test("Linux exclusions use desktop app identity and its application picker", async () => {
     await launch("linux");
-    app.pickedPath = "/Applications/Example Bank.app";
-    const state = app.handlers.get(channels.getState)?.({}, "settings") as { canExcludeApps: boolean };
-    expect(state.canExcludeApps).toBe(false);
-
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { canExcludeApps: boolean; excludedApps: unknown };
+    expect(state().canExcludeApps).toBe(true);
+    const helper = app.helpers.get("voice-linux")!;
+    app.pickedPath = "/usr/share/applications/example.desktop";
+    helper.replies.set("appInfo", { bundleIdentifier: "example.desktop", name: "Example", path: app.pickedPath });
     expect(await send({ type: "excludeApp" })).toEqual({ error: null });
-    expect(app.openDialogs).toEqual([]);
-    expect(app.stored.has("excludedApps")).toBe(false);
+    expect(app.openDialogs).toEqual([expect.objectContaining({ filters: [{ name: "Applications", extensions: ["desktop"] }] })]);
+    expect(helper.requests.filter((request) => request.method === "appInfo").map((request) => request.params)).toEqual([{ path: app.pickedPath }]);
+    expect(state().excludedApps).toEqual([{ bundleIdentifier: "example.desktop", name: "Example" }]);
   });
 
   /** On macOS the name offered is the account's full name from `voice-macos`, and Next on the
@@ -1243,9 +1227,9 @@ describe("main process wiring", () => {
   test.each(["win32", "linux"] as const)("shared Answer tools and switches work on %s", async (platform) => {
     await launch(platform);
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(platform === "win32" ? ["files_search", "file_open", "email_compose", "web_read", "web_open"] : ["email_compose", "web_read", "web_open"]);
-    expect(state("settings").connectors).toEqual(platform === "win32" ? ["files", "email", "web"] : ["email", "web"]);
-    expect(state("welcome").connectors).toEqual(platform === "win32" ? ["files", "email", "web"] : ["email", "web"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["files_search", "file_open", "email_compose", "web_read", "web_open"]);
+    expect(state("settings").connectors).toEqual(["files", "email", "web"]);
+    expect(state("welcome").connectors).toEqual(["files", "email", "web"]);
     const web = app.connectorTools.find((tool) => tool.name === "web_open");
     expect(web).toBeDefined();
     expect(await web?.run({ url: "https://example.com/page" }, signal)).toContain("Opened");
@@ -1515,4 +1499,17 @@ describe("main process wiring", () => {
       expect(updater?.installs).toBe(1);
     });
   });
+});
+
+
+test("Linux helper exit invalidates established permission readiness", async () => {
+  vi.doUnmock("../../src/core/onboarding/permissions.js");
+  await launch("linux");
+  const insertion = app.helpers.get("voice-linux")!;
+  const shortcut = app.helpers.get("voice-hotkey")!;
+  shortcut.events.get("hotkeyInstallationChanged")!({ installed: true });
+  insertion.events.get("insertionPermissionChanged")!({ granted: true });
+  expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(true);
+  insertion.onExit!();
+  expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
 });

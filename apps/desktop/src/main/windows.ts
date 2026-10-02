@@ -168,6 +168,9 @@ export class Windows {
     const existing = this.open.get(name);
     if (existing && !existing.isDestroyed()) return existing;
     const window = new BrowserWindow({
+      ...(process.platform === "linux" ? {
+        icon: join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), "icon.png"),
+      } : {}),
       ...options,
       webPreferences: {
         ...options.webPreferences,
