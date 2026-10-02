@@ -151,6 +151,8 @@ void configure(const std::string& mode) {
         int parent = 0;
         if (mode == "page-frame") parent = add(0, UIA_DocumentControlTypeId);
         if (mode == "page-row") parent = add(0, UIA_DataItemControlTypeId);
+        // A page inside a link: refused where the walk looks into a link before reading its name.
+        if (mode == "page-link") parent = add(0, UIA_HyperlinkControlTypeId);
         if (mode == "page-in-focus") parent = 1;
         const int page = add(parent, UIA_DocumentControlTypeId);
         nodes.at(page)->address = L"https://blocked.example/synthetic";

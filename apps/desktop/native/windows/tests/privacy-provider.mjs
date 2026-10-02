@@ -47,7 +47,7 @@ const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); p
 let checks = 0;
 try {
   for (const mode of ["password-window", "password-row", "password-link", "password-web-control", "password-focus",
-    "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-unknown", "page-no-address", "page-address-bar"]) {
+    "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar"]) {
     fixture = client(process.argv[3], [mode]);
     const initial = await fixture.next();
     assert.deepEqual(await request("frontmostApp"), { window: initial.window }, `${mode}: fixture owns foreground`);
