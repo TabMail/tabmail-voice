@@ -121,6 +121,7 @@ export const partlyCopiedMessage = "Couldn't transcribe the end. The rest was co
 
 /** The status the backend answers when the speech model did not answer in time. */
 const gatewayTimeout = 504;
+const speechModelRateLimited = 429;
 
 /**
  * Drives one push-to-talk dictation at a time: record → transcribe on the backend → clean up the
@@ -749,12 +750,12 @@ export class DictationController extends Observable {
   }
 
   /** Makes the transcription request, and makes it again after a server error (a 5xx other than the
-   * backend's own timeout: the speech model behind it was rate limited or failed) or a dropped
-   * connection, up to `transcriptionRetryDelays.length` more times, so the user need not say it again.
-   * The pill keeps transcribing until `transcriptionRetryNoticeDelay` has passed since the first
-   * failure, then says it is retrying while it waits and tries, and goes back to transcribing once a
-   * retry answers. Any other failure (signed out, over quota, a refused request, a timeout) fails at
-   * once. */
+   * backend's own timeout: the speech model behind it failed) or a dropped connection, up to
+   * `transcriptionRetryDelays.length` more times, so the user need not say it again. The pill keeps
+   * transcribing until `transcriptionRetryNoticeDelay` has passed since the first failure, then says
+   * it is retrying while it waits and tries, and goes back to transcribing once a retry answers. Any
+   * other failure (signed out, over quota, a refused request, a timeout, or the speech model's rate
+   * limit, which the backend already waited out) fails at once. */
   private async transcribeRetrying(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal): Promise<Transcription> {
     const notice = this.retryNotice(isCurrent, signal);
     try {
@@ -839,11 +840,12 @@ export class DictationController extends Observable {
 
   /** Makes a chunk's request until it answers (owner, 2026-10-03: "retries should keep on happening
    * until the final give up"). While the user is still dictating, a server error, a dropped
-   * connection or the backend's own timeout is tried again after each of `chunkRetryDelays`, the last
-   * repeating, for as long as the dictation goes on: nobody waits for it yet. From the release, it gets
-   * `transcriptionRetryDelays` more tries on the same failures, with the pill's retry note, so the end
-   * of a dictation is not lost to a burst of rate limits (owner, 2026-10-03). Any other failure
-   * (signed out, over quota, a refused request) gives up at once. */
+   * connection, the backend's own timeout or the speech model's rate limit (`backendWaited`) is tried
+   * again after each of `chunkRetryDelays`, the last repeating, for as long as the dictation goes
+   * on: nobody waits for it yet. From the release, it gets `transcriptionRetryDelays` more tries on
+   * the same failures, with the pill's retry note, so the end of a dictation is not lost to a burst
+   * of rate limits (owner, 2026-10-03). Any other failure (signed out, over quota, a refused request)
+   * gives up at once. */
   private async transcribeChunk(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal, release: Release): Promise<Transcription> {
     let waits = 0;
     let lastTries = 0;
@@ -853,7 +855,7 @@ export class DictationController extends Observable {
       } catch (error) {
         if (!isCurrent()) throw error;
         if (!release.done) {
-          if (!isServerError(error) && !isGatewayTimeout(error)) throw error;
+          if (!isServerError(error) && !backendWaited(error)) throw error;
           const delay = this.chunkRetryDelays[Math.min(waits, this.chunkRetryDelays.length - 1)] ?? 0;
           waits += 1;
           log.debug(`DictationController: chunk failed while recording (${errorName(error)}); retrying in ${delay}ms`);
@@ -862,7 +864,7 @@ export class DictationController extends Observable {
           continue;
         }
         const delay = this.transcriptionRetryDelays[lastTries];
-        if (delay === undefined || (!isServerError(error) && !isGatewayTimeout(error))) throw error;
+        if (delay === undefined || (!isServerError(error) && !backendWaited(error))) throw error;
         lastTries += 1;
         log.debug(`DictationController: chunk failed after the release (${errorName(error)}); retrying in ${delay}ms`);
         release.notice?.failed();
@@ -906,8 +908,9 @@ export class DictationController extends Observable {
       });
     } finally {
       notice.end();
-      // Any chunk after one that gave up is no longer needed.
-      if (this.generation === generation) this.chunkAbort.abort();
+      // Any chunk after one that gave up is no longer needed. This dictation's own: a dictation
+      // started since has its own.
+      chunkAbort.abort();
     }
   }
 
@@ -1605,9 +1608,12 @@ function newRelease(): Release {
   return { done: false, released, markReleased, notice: null };
 }
 
-/** The backend gave up waiting for the speech model (`transcription_timeout`). */
-function isGatewayTimeout(error: unknown): boolean {
-  return error instanceof BackendError && error.kind === "failed" && error.status === gatewayTimeout;
+/** The backend gave up on the speech model after waiting for it: its timeout (504
+ * `transcription_timeout`), or the model's rate limit outlasting the backend's own retries (429
+ * `transcription_rate_limited`, backend ADR-022). One recording is not tried again (it already
+ * waited); a long dictation's chunk is (ADR-DESK-048). */
+function backendWaited(error: unknown): boolean {
+  return error instanceof BackendError && error.kind === "failed" && (error.status === gatewayTimeout || error.status === speechModelRateLimited);
 }
 
 /** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. Not a 504:

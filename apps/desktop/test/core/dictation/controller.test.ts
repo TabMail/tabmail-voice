@@ -706,6 +706,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     [400, `{"error":"invalid_request"}`, "Dictation failed. Please try again."],
     // The backend's own timeout: it already waited for the speech model.
     [504, `{"error":"transcription_timeout"}`, "Dictation failed. Please try again."],
+    // The speech model's rate limit, which the backend already retried for 30 s.
+    [429, `{"error":"transcription_rate_limited"}`, "Dictation failed. Please try again."],
     [200, `{"unexpected":true}`, "TabMail returned an unexpected response."],
   ])("a failed transcription (%i %s) is neither cleaned up nor pasted, nor tried again", async (status, body, message) => {
     transcription.enqueue(status, body);
@@ -3946,6 +3948,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
             try {
               controller.handle("startHandsFree");
               controller.handle("listenHandsFree");
+              // More than the cap reaches the microphone before the cap's timer fires.
+              capture.feed(tone(config.maxUnchunkedDuration / 1000 + 5));
             } finally {
               timers.mockRestore();
             }
@@ -3956,6 +3960,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
             expect(capture.stops).toBeGreaterThan(stops);
             expect(transcription.requests).toHaveLength(2);
+            // One request within what the speech model transcribes at once: the answer is not chunked.
+            const uploaded = decodeFLAC(new Uint8Array(Buffer.from(String(transcription.body(1).audio), "base64")));
+            expect(uploaded.totalSamples).toBeLessThanOrEqual((config.maxUnchunkedDuration / 1000) * config.recordingSampleRate);
+            expect(uploaded.totalSamples).toBeGreaterThan(((config.maxUnchunkedDuration / 1000) - 1) * config.recordingSampleRate);
             expect(tool.runs).toHaveLength(1);
           });
 
@@ -5205,10 +5213,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual(["We met on Monday and agreed to ship the beta on Friday."]);
     });
 
-    /** Nobody waits for a chunk while the user still dictates: a server error, a dropped connection or
-     * the backend's own timeout is tried again, quietly. */
+    /** Nobody waits for a chunk while the user still dictates: a server error, a dropped connection,
+     * the backend's own timeout or the speech model's rate limit is tried again, quietly. */
     test("a chunk failing while the user dictates is retried in the background until it answers", async () => {
-      const failures: ChunkReply[] = [serverError, "network", { status: 504, body: { error: "transcription_timeout" } }];
+      const failures: ChunkReply[] = [serverError, "network", { status: 504, body: { error: "transcription_timeout" } }, { status: 429, body: { error: "transcription_rate_limited" } }];
       const backend = new ChunkBackend((chunk, attempt) => (chunk === 0 ? (failures[attempt] ?? part(0)) : part(chunk)));
       const { controller, capture, pastes, phases } = makeLong(backend);
 
@@ -5285,10 +5293,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => backend.inFlight === 0 && settled(controller))).toBe(true);
     });
 
-    /** Only a server error, a dropped connection or the backend's timeout is tried again while the
-     * user dictates: a refused chunk gives up at once. */
-    test("a chunk refused while the user dictates is not tried again", async () => {
-      const backend = new ChunkBackend((chunk) => (chunk === 0 ? refused : part(chunk)));
+    /** Only a server error, a dropped connection, the backend's timeout or the speech model's rate
+     * limit is tried again while the user dictates: a refused chunk, or one over this account's own
+     * rate limit, gives up at once. */
+    test.each([
+      ["refused", refused],
+      ["over the account's rate limit", { status: 429, body: { error: "rate_limited" } } satisfies ChunkReply],
+    ])("a chunk %s while the user dictates is not tried again", async (_name, reply) => {
+      const backend = new ChunkBackend((chunk) => (chunk === 0 ? reply : part(chunk)));
       const { controller, capture, pastes } = makeLong(backend);
 
       await startHearing(controller, capture, pausedSpeech(29, 12, 0.5));
@@ -5403,10 +5415,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Owner, 2026-10-03: "we should not lose the end". The last chunk is sent at the release, so
-     * the backend's own timeout on it comes after the release: it is tried again, as while recording. */
-    test("the last chunk timing out on the backend after the release is tried again, and the end is pasted", async () => {
-      const gatewayTimeout: ChunkReply = { status: 504, body: { error: "transcription_timeout" } };
-      const backend = new ChunkBackend((chunk, attempt) => (chunk === 1 && attempt < 2 ? gatewayTimeout : part(chunk)));
+     * the backend's own timeout on it, or the speech model's rate limit outlasting the backend's
+     * retries, comes after the release: it is tried again, as while recording. */
+    test.each([
+      ["timing out on the backend", { status: 504, body: { error: "transcription_timeout" } } satisfies ChunkReply],
+      ["rate limited by the speech model", { status: 429, body: { error: "transcription_rate_limited" } } satisfies ChunkReply],
+    ])("the last chunk %s after the release is tried again, and the end is pasted", async (_name, failure) => {
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 1 && attempt < 2 ? failure : part(chunk)));
       const { controller, capture, pastes } = makeLong(backend);
 
       await startHearing(controller, capture, pausedSpeech(16, 12, 4));
@@ -5537,6 +5552,40 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller) && pastes.length === 2)).toBe(true);
       expect(pastes).toEqual(["Part 0. Part 1.", "Part 2. Part 3."]);
       expect(phases.slice(second).some((phase) => phase.kind === "retrying")).toBe(false);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** A dictation ending late (its paste returning after a cancel and the next dictation's start)
+     * never cancels or cuts short the chunks of the dictation that followed it. */
+    test("an earlier long dictation ending late leaves the next one's chunks alone", async () => {
+      const firstPaste = deferred<void>();
+      const pasted: string[] = [];
+      const backend = new ChunkBackend(part);
+      const { controller, capture } = makeLong(backend, {
+        paste: async (text) => {
+          if (pasted.length === 0) {
+            pasted.push(text);
+            await firstPaste.promise;
+            return;
+          }
+          pasted.push(text);
+        },
+      });
+
+      await startHearing(controller, capture, pausedSpeech(44, 12, 4));
+      controller.handle("finish");
+      expect(await eventually(() => pasted.length === 1)).toBe(true);
+      controller.handle("cancel");
+      expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+      await startHearing(controller, capture, pausedSpeech(45, 12, 0.5));
+      expect(await eventually(() => backend.chunks === 3)).toBe(true);
+      firstPaste.resolve();
+      await sleep(50);
+      capture.feed(pausedSpeech(46, 4));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller) && pasted.length === 2)).toBe(true);
+      expect(pasted).toEqual(["Part 0. Part 1.", "Part 2. Part 3."]);
       expect(controller.phase).toEqual(idle);
     });
 

@@ -2387,6 +2387,12 @@ not outlast one. `transcriptionRetryDelays` is now 0.5, 1.5, 3, 5, 10, 10, 15 an
 minute in all, with the retry note up from 2 s; the user can cancel at any time. A recording's 504
 is still not retried (above). A long dictation's chunk after the release retries its 504 too, as
 while recording (ADR-DESK-048).
+*(Later the same day: the backend now retries the speech model's own 429 for its 30 s window and
+then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
+that code as a failure of the speech model, not this account's limit (`BackendError` `failed`, 429;
+the account's 429s stay `rateLimited`). Like a 504, the backend already waited, so a recording does
+not try it again; a long dictation's chunk does, while recording and after the release
+(`backendWaited`, ADR-DESK-048).)*
 
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
@@ -3077,13 +3083,15 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   request per 105 s of silence, and a silence the model may hear a stray word in.
 - **Each chunk is normalized on its own** (ADR-DESK-040) and FLAC-encoded as it is cut (ADR-DESK-039).
 - **Retries (owner: "continuous retries until even the last chunk or the user release is done…
-  until the final give up").** While the user dictates, a chunk's server error, dropped connection
-  or backend timeout (504) is tried again after each of `chunkRetryDelays`, the last repeating,
+  until the final give up").** While the user dictates, a chunk's server error, dropped connection,
+  backend timeout (504) or the speech model's rate limit outlasting the backend's own 30 s of retries
+  (429 `transcription_rate_limited`, backend ADR-022; found in review 2026-10-03, where one such 429
+  threw away the rest of a dictation) is tried again after each of `chunkRetryDelays`, the last repeating,
   quietly: nobody waits for it yet. From the release, a chunk still failing gets the
   `transcriptionRetryDelays` tries one recording gets, about a minute (ADR-DESK-039, amendment
-  2026-10-03), with the pill's retry note, on the same failures, a 504 included: the last chunk is sent
+  2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
   at the release, so its backend timeout comes after it (owner: "we should not lose the end").
-  Any other failure (signed out, over quota, refused) gives up at once.
+  Any other failure (signed out, over quota or the account's own rate limit, refused) gives up at once.
 - **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
   the up to successful part").** The chunks before the first that gave up are pasted, and the pill
   says `partlyTranscribedMessage` (`partlyCopiedMessage` when the text was copied instead, the user

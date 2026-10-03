@@ -40,6 +40,9 @@ export class BackendError extends Error {
     if (status === 401) return new BackendError("unauthorized");
     if (status === 402) return new BackendError("subscriptionRequired");
     if (status === 403) return new BackendError(code === "consent_required" ? "accountSetupRequired" : "accessDenied");
+    // The speech model's rate limit, which the backend already retried for its 30 s window (backend
+    // ADR-022): its failure, not this account's limit.
+    if (status === 429 && code === "transcription_rate_limited") return new BackendError("failed", status);
     if (status === 429) return new BackendError("rateLimited");
     if (status === 400 && code === "audio_too_large") return new BackendError("recordingTooLong");
     return new BackendError("failed", status);

@@ -170,6 +170,18 @@ describe("Chunker", () => {
     expect(cuts.length).toBeGreaterThan(1);
   });
 
+  /** The voice level is read above the room only, so minutes of the room (the user away first) do
+   * not drag it down to the room's and hide the pause after them. */
+  test("a pause after a long silence is still cut at", () => {
+    const rand = random(17);
+    const before = concat(room(240, rand), speech(12, rand));
+    const audio = concat(before, room(1.5, rand), speech(4, rand));
+    const { cuts, last } = chunk(audio);
+    expectCovers(audio, cuts, last);
+    const pauseStart = before.length;
+    expect(cuts.some((cut) => cut.end > pauseStart && cut.end < pauseStart + 1.5 * rate)).toBe(true);
+  });
+
   test("a recording of nothing but the room is cut within the maximum length too", () => {
     const rand = random(7);
     const audio = room(250, rand);
