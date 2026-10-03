@@ -75,6 +75,24 @@ describe("joinChunkTexts", () => {
     expect(joinChunkTexts([paused(left), overlapping(right)])).toBe(`${left} ${right}`);
   });
 
+  test("an overlap is matched only near the seam in the later text too", () => {
+    const filler = Array.from({ length: config.chunkOverlapSearchWords }, (_, i) => `f${i}`).join(" ");
+    // The shared words sit further than `chunkOverlapSearchWords` from the start of the later text.
+    const left = "we start with red green blue";
+    const right = `${filler} red green blue again`;
+    expect(joinChunkTexts([paused(left), overlapping(right)])).toBe(`${left} ${right}`);
+  });
+
+  /** A chunk overlaps only the one just before it. After an empty one (a long silence not sent, or
+   * nothing heard), matching it against an earlier chunk's words would cut out the speech between. */
+  test("a chunk overlapping an empty one is joined whole, not matched against the chunk before that", () => {
+    const first = "I think that one of the main points is the travel cost and the hotel.";
+    const last = "Okay, back again. I think that one of the main points we missed is staffing.";
+    for (const empty of ["", "  ", "…"]) {
+      expect(joinChunkTexts([paused(first), overlapping(empty), overlapping(last)])).toBe(`${first} ${last}`);
+    }
+  });
+
   test("an overlap and an ellipsis together: the ellipsis goes, then the words are matched", () => {
     expect(joinChunkTexts([paused("we will meet on the second floor..."), overlapping("…on the second floor at noon")])).toBe("we will meet on the second floor at noon");
   });

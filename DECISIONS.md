@@ -3063,7 +3063,9 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   `chunkOverlapSpeech` (15 s) of speech earlier, at most `chunkMaxOverlap`. The join keeps the
   words both heard once: it matches the longest run of at least `chunkOverlapMinimumRun` words
   (lower case, letters and digits only) within `chunkOverlapSearchWords` of the seam, and with no
-  such run joins the two whole (owner: "better than losing things").
+  such run joins the two whole (owner: "better than losing things"). A chunk overlaps only the one
+  just before it: after an empty or unsent one (a long silence) it is joined whole, or matching it
+  against an earlier chunk's words would cut out the speech between.
 - **The join.** An ellipsis where two chunks meet is the cut's pause, written by the model, and is
   taken out; one inside a chunk stays. Chunks join with a space, or none where Chinese, Japanese,
   Thai, Lao, Khmer or Burmese text meets. Each chunk's cleaned text is pasted (its transcript where
@@ -3081,20 +3083,30 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   Any other failure (signed out, over quota, refused) gives up at once.
 - **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
   the up to successful part").** The chunks before the first that gave up are pasted, and the pill
-  says `partlyTranscribedMessage`; the chunks after it are not, so the text has no hole. The first
+  says `partlyTranscribedMessage` (`partlyCopiedMessage` when the text was copied instead, the user
+  having switched apps, ADR-DESK-042); the chunks after it are not, so the text has no hole. The first
   chunk giving up loses the dictation, as one recording's failure does. Agent mode carries out a
   request whole or not at all: a lost chunk fails it.
-- Cancelling cancels every chunk's request.
+- Cancelling cancels every chunk's request. The chunks already answered have been transcribed and
+  cleaned up, as any dictation is.
 - A spoken answer to a confirmation (ADR-DESK-036) stays one upload, capped at
   `maxUnchunkedDuration` (120 s).
 
 **Consequences:**
 - A long dictation's text is ready about as soon as its last chunk is transcribed: the earlier ones
   are done while the user speaks.
-- Privacy is unchanged: the same audio goes to the same place, only sooner, and none of it is
-  stored (root ADR-004). The welcome wizard's consent page says a long dictation is sent in parts
-  while the user speaks; users who consented before are told once at launch
-  (`whatsNewEntries`, `takeWhatsNew`), and never asked again.
+- The audio goes to the same place as before and none of it is stored (root ADR-004), but it leaves
+  sooner: a long dictation cancelled after a cut has already sent the chunks before it (before
+  chunking, a cancelled hold sent nothing). The welcome wizard's consent page says a long dictation
+  is sent in parts while the user speaks; users who consented before are told once at launch
+  (`whatsNewEntries`, `takeWhatsNew`), including that a part already sent is transcribed even if
+  they cancel, and are never asked again.
+- After a chunk gives up for good while the user is still speaking, the later chunks are still
+  sent (and count toward usage) until the release, though they will not be pasted: nothing is
+  shown until the release.
+- A long dictation's chunks always carry the cleanup's variables, in agent mode too: the first is
+  sent before the release, and Space can switch the mode back to dictation after it. Agent mode
+  uses only the transcript.
 - Each chunk is a request of its own and counts toward usage as one; an overlap's 15 s are
   transcribed twice.
 - The cleanup sees one chunk at a time: a sentence cut at a forced cut is cleaned in two halves.
@@ -3102,4 +3114,4 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
 - A chunk is cut only after 10 s of speech, so a pause cut is never shorter; a forced cut leaves the
   next chunk at least its overlap.
 - The model's real limit is unmeasured past the 120 s cap: `chunkMaxDuration` stays under it.
-- iOS does the same (`tabmail-ios` ADR-IOS for long dictations), from the same rules and numbers.
+- iOS does the same (`tabmail-ios` ADR-IOS-087), from the same rules and numbers.

@@ -19,7 +19,7 @@ export const whatsNewEntries: readonly WhatsNewEntry[] = [
     id: "longDictations",
     title: "Dictate for up to ten minutes",
     detail:
-      "A long dictation is now sent in parts while you speak, so its text is ready as soon as you finish. The parts are handled like any dictation and aren’t kept: they’re only sent sooner.",
+      "A long dictation is now sent in parts while you speak, so its text is ready as soon as you finish. The parts are handled like any dictation and aren’t kept. A part already sent is transcribed even if you then cancel.",
   },
 ];
 

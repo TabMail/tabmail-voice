@@ -28,20 +28,25 @@ const unspacedScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{
  *   end of that one: the two are joined where their words first run together for at least
  *   `chunkOverlapMinimumRun` words, the run kept once. With no such run they are joined whole
  *   (owner, 2026-10-03: "better than losing things"): a few words may repeat, none are lost.
- * - An empty chunk adds nothing. Nothing else is changed: no capital is lowered, no punctuation added.
+ * - An empty chunk adds nothing, and the chunk after it is joined whole: it overlaps only the empty
+ *   one, so matching it against an earlier chunk's words would cut out the speech between them.
+ *   Nothing else is changed: no capital is lowered, no punctuation added.
  */
 export function joinChunkTexts(chunks: readonly ChunkText[]): string {
   let joined = "";
+  let previousHeard = false;
   for (const chunk of chunks) {
     let text = trimWhitespace(chunk.text);
     if (joined !== "") text = text.replace(leadingEllipsis, "");
+    const overlapsJoined = chunk.overlapped && previousHeard;
+    previousHeard = text !== "";
     if (text === "") continue;
     if (joined === "") {
       joined = text;
       continue;
     }
     joined = joined.replace(trailingEllipsis, "");
-    joined = chunk.overlapped ? joinOverlapping(joined, text) : joinedWith(joined, text);
+    joined = overlapsJoined ? joinOverlapping(joined, text) : joinedWith(joined, text);
   }
   return joined;
 }

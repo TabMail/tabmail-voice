@@ -120,6 +120,34 @@ describe("Chunker", () => {
     expectCovers(audio, cuts, last);
   });
 
+  /** The overlap is measured in speech: the gaps between words that are too long to count as speech
+   * (but too short to cut at) take it further back. */
+  test("the overlap after a forced cut holds its speech, not just its length", () => {
+    const rand = random(13);
+    // One second of speech, then 0.6 s of quiet: longer than a gap within speech, shorter than a pause.
+    const audio = concat(...Array.from({ length: 80 }, () => concat(speech(1, rand), room(0.6, rand))));
+    const { cuts, last } = chunk(audio);
+    const cut = cuts[0];
+    expect(cut).toBeDefined();
+    if (cut === undefined || last === null) return;
+    expect(last.overlapped).toBe(true);
+    // 15 s of this speech spans about 24 s.
+    expect(seconds(cut.end - last.start)).toBeGreaterThan((config.chunkOverlapSpeech / 1000) * 1.4);
+    expect(seconds(cut.end - last.start)).toBeLessThanOrEqual(config.chunkMaxOverlap / 1000);
+  });
+
+  /** The overlap's speech counts toward the next chunk's ten seconds: a pause soon after a forced cut
+   * is cut at. */
+  test("the next chunk counts the speech it overlaps, so a pause soon after a forced cut is cut at", () => {
+    const rand = random(14);
+    const audio = concat(speech(config.chunkMaxDuration / 1000 + 3, rand), room(1.5, rand), speech(4, rand));
+    const { cuts, last } = chunk(audio);
+    expect(cuts).toHaveLength(2);
+    expect(cuts[1]?.overlapped).toBe(true);
+    expect(last?.overlapped).toBe(false);
+    expectCovers(audio, cuts, last);
+  });
+
   /** A forced cut lands on the quietest moment near the end, a dip between syllables. */
   test("a forced cut lands on the quietest window of the chunk's last seconds", () => {
     const rand = random(5);

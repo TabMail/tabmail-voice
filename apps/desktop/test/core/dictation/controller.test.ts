@@ -16,7 +16,7 @@ import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
 import { TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import * as config from "../../../src/core/config.js";
-import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyTranscribedMessage, type Phase, retryingMessage } from "../../../src/core/dictation/controller.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
@@ -5242,6 +5242,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(made.pastes).toEqual(["Part 0. Part 1."]);
       expect(made.controller.phase).toEqual(idle);
       expect(made.phases).toContainEqual({ kind: "retrying", message: retryingMessage });
+      // Once the retry answers, the pill shows the transcription going on again.
+      expect(made.phases.slice(made.phases.findIndex((phase) => phase.kind === "retrying"))).toContainEqual(transcribing);
+    });
+
+    /** A chunk waiting to be tried again while the user dictates is tried at once on the release:
+     * the user waits for it now. */
+    test("the release cuts a chunk's wait short: its last tries start at once", async () => {
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 0 && attempt === 0 ? serverError : part(chunk)));
+      const { controller, capture, pastes } = makeLong(backend, { chunkRetryDelays: [60_000] });
+
+      await startHearing(controller, capture, pausedSpeech(17, 12, 3));
+      expect(await eventually(() => backend.attempts(0) === 1 && backend.inFlight === 0)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+      expect(backend.attempts(0)).toBe(2);
     });
 
     /** Owner, 2026-10-03: "we should not lose the end". The last chunk is sent at the release, so
@@ -5284,6 +5301,122 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([pasted]);
       expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+    });
+
+    /** The chunks after the first that gave up are no longer needed: their requests stop. */
+    test("a chunk giving up cancels the requests of the chunks after it", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : chunk === 2 ? never() : part(chunk)));
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(18, 12, 12, 4));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0."]);
+      expect(await eventually(() => backend.inFlight === 0)).toBe(true);
+      expect(backend.sent.filter((sent) => sent.chunk === 2).every((sent) => sent.signal?.aborted === true)).toBe(true);
+    });
+
+    /** Copied instead of pasted (the user switched apps, ADR-DESK-042), the text still says its end
+     * is missing. */
+    test("a dictation whose end was lost and that is copied, as the user switched apps, says the end is missing", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : part(chunk)));
+      const { controller, capture, pastes, copies } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(19, 12, 12, 4));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      front.pid = 202;
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([]);
+      expect(copies).toEqual(["Part 0."]);
+      expect(controller.phase).toEqual({ kind: "copied", message: partlyCopiedMessage });
+    });
+
+    /** A long silence (hands-free, the user away) cuts chunks with no speech in them, which are not
+     * sent; the chunk after them overlaps a silent one, not the speech before the silence, so no
+     * word on either side of the silence is lost however the two texts read. */
+    test("the words on both sides of a long silence are all pasted", { timeout: 60_000 }, async () => {
+      const texts = [
+        "We should meet next week to talk about the budget. I think that one of the main points is the travel cost and the hotel.",
+        "Okay, back again. I think that one of the main points we missed is staffing, so let us add it.",
+      ];
+      const backend = new ChunkBackend((chunk) => ({ status: 200, body: { text: texts[chunk], cleaned_text: texts[chunk] } }));
+      const { controller, capture, pastes } = makeLong(backend);
+      const rand = random(20);
+
+      await startHearing(controller, capture, concat(speech(12, rand), room(1.5, rand), room(240, rand), speech(5, rand)));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.chunks).toBe(2);
+      expect(pastes).toEqual([texts.join(" ")]);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** Space can switch to agent mode and back at any time during the hold, after the first chunk was
+     * sent too: every chunk takes the cleanup, and a dictation is pasted cleaned up. */
+    test("a dictation switched to agent mode and back after its first chunk is still pasted cleaned up", async () => {
+      const backend = new ChunkBackend(part);
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(21, 12, 0.5), "agent");
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      controller.handle("toggleMode");
+      expect(controller.mode).toBe("dictation");
+      capture.feed(pausedSpeech(22, 4));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.sent.map((sent) => sent.body.cleanup !== undefined)).toEqual([true, true]);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+    });
+
+    /** Each dictation pastes its own chunks only, and its chunks are retried quietly while it is
+     * recorded, however many dictations came before on the same controller. */
+    test("a second long dictation pastes only its own chunks, retried quietly while recording", async () => {
+      // Chunks 2 and 3 are the second dictation's; chunk 2 fails more times than the release's last tries.
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 2 && attempt < 3 ? serverError : part(chunk)));
+      const { controller, capture, pastes, phases } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(23, 12, 4));
+      controller.handle("finish");
+      expect(await eventually(() => settled(controller) && pastes.length === 1)).toBe(true);
+      const second = phases.length;
+      await startHearing(controller, capture, pausedSpeech(24, 12, 0.5));
+      expect(await eventually(() => backend.attempts(2) === 4)).toBe(true);
+      capture.feed(pausedSpeech(25, 4));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller) && pastes.length === 2)).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1.", "Part 2. Part 3."]);
+      expect(phases.slice(second).some((phase) => phase.kind === "retrying")).toBe(false);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** Each chunk is raised to the same peak on its own (ADR-DESK-040): a quiet stretch is not
+     * left quiet beside a loud one. */
+    test("each chunk is peak-normalized on its own", async () => {
+      const backend = new ChunkBackend(part);
+      const { controller, capture } = makeLong(backend);
+      const rand = random(26);
+
+      await startHearing(controller, capture, concat(speech(12, rand, 0.05), room(1.5, rand), speech(4, rand, 0.4)));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.chunks).toBe(2);
+      const peaks = backend.sent.map((sent) => {
+        const pcm = decodeFLAC(new Uint8Array(Buffer.from(String(sent.body.audio), "base64"))).pcm;
+        const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+        let peak = 0;
+        for (let index = 0; index < pcm.length / 2; index += 1) peak = Math.max(peak, Math.abs(view.getInt16(index * 2, true)));
+        return peak;
+      });
+      const target = Math.round(0x7fff * 10 ** (config.normalizedPeakDecibels / 20));
+      expect(peaks).toEqual([target, target]);
     });
 
     /** Owner, 2026-10-03: "if it continuously fails completely, paste nothing". */
@@ -5330,7 +5463,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(backend.chunks).toBe(2);
-      expect(backend.sent.every((sent) => sent.body.cleanup === undefined)).toBe(true);
+      // The chunks take the cleanup in agent mode too (the user may switch back); its text is unused.
+      expect(backend.sent.every((sent) => sent.body.cleanup !== undefined)).toBe(true);
       expect(completions.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
       expect(controller.phase.kind).toBe("failed");

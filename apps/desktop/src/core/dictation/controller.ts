@@ -116,6 +116,8 @@ export const retryingMessage = "Server error, retrying…";
 /** Shown after a long dictation whose later chunks couldn't be transcribed: what came before them was
  * pasted (ADR-DESK-048). Kept to one line of the pill. */
 export const partlyTranscribedMessage = "Couldn't transcribe the end. The rest was pasted.";
+/** `partlyTranscribedMessage` for one copied instead, as the user switched apps (ADR-DESK-042). */
+export const partlyCopiedMessage = "Couldn't transcribe the end. The rest was copied.";
 
 /** The status the backend answers when the speech model did not answer in time. */
 const gatewayTimeout = 504;
@@ -577,7 +579,7 @@ export class DictationController extends Observable {
     const signal = this.abort.signal;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     await this.deliver(generation, async () => {
-      const upload = await this.preparedUpload();
+      const upload = await this.preparedUpload(false);
       if (!isCurrent()) return null;
       log.debug(`DictationController: uploading ${flac.length} bytes`);
       const transcription = await this.transcribeRetrying(() => upload.send(flac, signal), isCurrent, signal);
@@ -589,25 +591,27 @@ export class DictationController extends Observable {
    * account signed in then (every request goes under it, even if the user switches accounts while
    * they run), the keyboard's language, the dictionary and the screen's terms, and in dictation mode
    * the cleanup's variables, with the screen context read at key-down if it is done in time (best
-   * effort, ADR-DESK-008): they go with the recording, for the backend's cleanup. */
-  private preparedUpload(): Promise<Upload> {
-    this.upload ??= this.prepareUpload();
+   * effort, ADR-DESK-008): they go with the recording, for the backend's cleanup. A long dictation's
+   * chunks always take the cleanup: the first is sent before the release, and the user may still
+   * switch to agent mode and back (agent mode reads only the transcript). */
+  private preparedUpload(forChunks: boolean): Promise<Upload> {
+    this.upload ??= this.prepareUpload(forChunks);
     return this.upload;
   }
 
-  private async prepareUpload(): Promise<Upload> {
+  private async prepareUpload(forChunks: boolean): Promise<Upload> {
     const account = this.deps.account;
     const userID = account.session?.userID ?? null;
     const settings = this.dictationSettings;
-    const mode = this.currentMode;
+    const cleans = forChunks || this.currentMode === "dictation";
     const language = await this.languageRead;
     let context: ScreenContext | null = null;
-    if (mode === "dictation") {
+    if (cleans) {
       const read = this.contextRead;
       context = read ? await withTimeout(this.contextWait, () => read.then(screenShown)).catch(() => null) : null;
       if (read && context === null) log.debug("DictationController: screen read not done in time; continuing without it");
     }
-    const cleanup = mode === "dictation" ? DictationCleanup.variables(context, settings.dictionary) : undefined;
+    const cleanup = cleans ? DictationCleanup.variables(context, settings.dictionary) : undefined;
     const client = this.deps.makeTranscriptionClient(settings.backendURL);
     const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
     return { send: (flac, signal) => withFreshToken(account, userID, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)) };
@@ -627,15 +631,19 @@ export class DictationController extends Observable {
     const signal = this.abort.signal;
     const targetApp = this.targetApp;
     const isCurrent = () => this.generation === generation && !signal.aborted;
+    let lost: unknown = null;
     try {
       const read = this.contextRead;
       let context: ScreenContext | null = null;
       const started = performance.now();
       const result = await obtain();
       if (result === null || !isCurrent()) return;
-      const { parts, lost } = result;
-      const heard = parts.map((part) => ({ ...part, text: trimWhitespace(part.transcription.text) })).filter((part) => part.text !== "");
-      const transcript = joinChunkTexts(heard);
+      const { parts } = result;
+      lost = result.lost;
+      // Every part, empty ones too: an overlapped chunk is joined to the one just before it only.
+      const texts = parts.map((part) => ({ ...part, text: trimWhitespace(part.transcription.text) }));
+      const heard = texts.filter((part) => part.text !== "");
+      const transcript = joinChunkTexts(texts);
       if (lost !== null && (transcript === "" || mode !== "dictation")) throw lost;
       log.debug(() => `DictationController: transcript ready in ${elapsed(started)} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
       log.content(`Transcript (${mode})`, transcript);
@@ -646,7 +654,7 @@ export class DictationController extends Observable {
       }
       this.deps.useWords(heard.flatMap((part) => (part.transcription.cleanedText === null ? [part.text] : [part.text, part.transcription.cleanedText])));
       if (mode === "dictation") {
-        const text = joinChunkTexts(heard.map((part) => ({ text: DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
+        const text = joinChunkTexts(texts.map((part) => ({ text: part.text === "" ? "" : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
         await this.paste(text, targetApp, signal);
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
@@ -719,7 +727,9 @@ export class DictationController extends Observable {
       if (!isCurrent()) return;
       this.teardown();
       if (error instanceof NotPastedError) {
-        this.showMessage({ kind: "copied", message: error.message });
+        // Copied instead of pasted, the missing end is still said.
+        if (lost !== null) log.error(`DictationController: the end of a long dictation was lost (${errorName(lost)})`);
+        this.showMessage({ kind: "copied", message: lost === null ? error.message : partlyCopiedMessage });
         return;
       }
       log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
@@ -817,7 +827,7 @@ export class DictationController extends Observable {
     const release = this.release;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     try {
-      const upload = await this.preparedUpload();
+      const upload = await this.preparedUpload(true);
       if (!isCurrent()) throw new CancellationError();
       log.debug(`DictationController: uploading chunk ${chunk.index} (${chunk.flac.length} bytes)`);
       return { transcription: await this.transcribeChunk(() => upload.send(chunk.flac, signal), isCurrent, signal, release) };
