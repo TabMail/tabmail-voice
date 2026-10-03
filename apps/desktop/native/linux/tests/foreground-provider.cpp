@@ -109,7 +109,7 @@ extern "C" GHashTable* __wrap_atspi_document_get_document_attributes(AtspiDocume
     g_hash_table_insert(result, g_strdup("URI"), g_strdup("https://synthetic.example/page")); return result;
 }
 extern "C" gchar* __wrap_atspi_accessible_get_name(AtspiAccessible* value, GError**) { if (value == secret) std::abort(); return g_strdup(items.at(value).text.c_str()); }
-extern "C" AtspiText* __wrap_atspi_accessible_get_text_iface(AtspiAccessible* value) { if (value == secret) std::abort(); return reinterpret_cast<AtspiText*>(ref(value)); }
+extern "C" AtspiText* __wrap_atspi_accessible_get_text_iface(AtspiAccessible* value) { if (value == secret || (active >= 0 && value == fields[active] && !items.at(value).live.empty())) std::abort(); return reinterpret_cast<AtspiText*>(ref(value)); }
 extern "C" gint __wrap_atspi_text_get_character_count(AtspiText* value, GError**) { return items.at(reinterpret_cast<AtspiAccessible*>(value)).text.size(); }
 extern "C" gint __wrap_atspi_text_get_caret_offset(AtspiText* value, GError** error) { return __wrap_atspi_text_get_character_count(value, error); }
 extern "C" gint __wrap_atspi_text_get_n_selections(AtspiText*, GError**) { return 0; }
