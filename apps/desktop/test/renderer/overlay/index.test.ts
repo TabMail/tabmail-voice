@@ -10,7 +10,7 @@ import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
 import { connectorByID } from "../../../src/core/agent/connectors/index.js";
 import { agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
-import { brandColor } from "../../../src/renderer/shared/brand.js";
+import { brandColor, rgba } from "../../../src/renderer/shared/brand.js";
 import type { DictationTip } from "../../../src/core/onboarding/tips.js";
 import { retryingMessage } from "../../../src/core/dictation/controller.js";
 import type { AgentChat } from "../../../src/core/agent/chat.js";
@@ -786,17 +786,17 @@ describe("the chat window", () => {
     expect(circling()).toEqual([]);
   });
 
-  /** The waveform is blue until a voice is heard, then purple, a sign the dictation is listening;
-   * while a server error is tried again, the thinking circle's arc and track turn toward purple too
-   * (owner, 2026-10-02). */
-  test("the waveform turns purple once a voice is heard, and the circle while a retry runs", async () => {
+  /** The waveform is blue until a voice is heard, then a muted crimson, a sign the dictation is
+   * recording; while a server error is tried again, the thinking circle's arc and track turn toward
+   * purple (owner, 2026-10-02). */
+  test("the waveform turns crimson once a voice is heard, and the circle purple while a retry runs", async () => {
     const page = await overlayPage();
     // A color's red, green and blue, however the page writes it.
     const rgb = (css: string) => [...css.replace(/\s/g, "").matchAll(/(\d+),(\d+),(\d+)/g)].map((match) => match.slice(1, 4).join(","));
     const barColors = () => [...document.querySelectorAll<HTMLElement>(".pill .bar")].flatMap((bar) => rgb(bar.style.backgroundColor));
     const rimColors = () => [...document.querySelectorAll<HTMLElement>(".pill .rim")].map((rim) => rgb(rim.getAttribute("style") ?? ""));
     const blue = rgb(brandColor(0))[0] ?? "";
-    const voiced = rgb(brandColor(config.waveformVoicedColor))[0] ?? "";
+    const voiced = rgb(rgba(config.waveformVoicedColor))[0] ?? "";
     const shifted = rgb(brandColor(config.thinkingRetryColorShift))[0] ?? "";
     const arcEnd = rgb(brandColor(config.thinkingArcEndColor))[0] ?? "";
     const shiftedArcEnd = rgb(brandColor(config.thinkingArcEndColor + config.thinkingRetryColorShift))[0] ?? "";

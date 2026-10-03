@@ -462,12 +462,13 @@ export const waveformLevelExponent = 1;
 export const waveformGain = 1;
 /** The bars always ripple this much (0…1) while listening, so the pill looks alive between words. */
 export const waveformIdleLevel = 0.05;
-/** The bars are blue until a voice is heard, then ease to this point on the blue → purple gradient,
- * over this long: a sign the dictation is listening (owner, 2026-10-02). A voice is a reading this
+/** The bars are blue until a voice is heard, then ease to this muted crimson (#E5484D; red, green
+ * and blue, 0–255), over this long: a sign the dictation is recording, red as recording reads, not
+ * a pure red (owner, 2026-10-02; was the brand purple). A voice is a reading this
  * many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
  * this many readings, ≈ 0.34 s, where a start-up blip would hold it low); loudness only, so a loud
  * noise counts too, and a very quiet mic's speech (2–5 dB above its noise) may not. */
-export const waveformVoicedColor = 1;
+export const waveformVoicedColor: readonly [number, number, number] = [0xe5, 0x48, 0x4d];
 export const waveformColorTransitionSeconds = 0.4;
 export const waveformVoiceAboveNoiseDecibels = 6;
 export const waveformVoiceWarmupReadings = 4;

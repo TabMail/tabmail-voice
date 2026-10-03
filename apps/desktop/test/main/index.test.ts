@@ -722,7 +722,7 @@ describe("main process wiring", () => {
   });
 
   /** The overlay is told whether a voice is heard and whether a transcription is being tried again,
-   * as the controller says: its waveform and thinking circle turn purple by them (owner, 2026-10-02). */
+   * as the controller says: its waveform turns crimson and its thinking circle toward purple by them (owner, 2026-10-02). */
   test("the overlay is told of a voice heard and of a retry", async () => {
     await launch("darwin");
     const pushed: [boolean, boolean][] = [];

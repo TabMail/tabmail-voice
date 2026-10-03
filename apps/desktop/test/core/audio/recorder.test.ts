@@ -238,7 +238,7 @@ describe("LevelEnvelope", () => {
   });
 
   /** A voice is a reading `waveformVoiceAboveNoiseDecibels` over the room's noise, and stays heard;
-   * one just under it is not (owner, 2026-10-02: the waveform turns purple). */
+   * one just under it is not (owner, 2026-10-02: the waveform turns crimson). */
   test("hears a voice above the room's noise", () => {
     const under = new LevelEnvelope();
     run(under, -45, 20);
