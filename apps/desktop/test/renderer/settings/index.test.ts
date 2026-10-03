@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../../src/core/config.js";
+import { palette } from "../../../src/core/palette.js";
 import { brandBlue, brandGradient, brandTextGradient } from "../../../src/renderer/shared/brand.js";
 import type { Command, CommandResult, SettingsState } from "../../../src/shared/ipc.js";
 
@@ -626,8 +627,8 @@ describe("Settings page", () => {
       "--brand-gradient": brandGradient,
       "--brand-text-gradient": brandTextGradient,
       "--brand-blue": brandBlue,
-      "--window-light": config.settingsWindowColor.light,
-      "--window-dark": config.settingsWindowColor.dark,
+      "--window-light": palette.settingsWindowLight,
+      "--window-dark": palette.settingsWindowDark,
     };
 
     expect(read.size).toBeGreaterThan(0);

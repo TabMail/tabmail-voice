@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as config from "../../src/core/config.js";
+import { palette } from "../../src/core/palette.js";
 import { Windows } from "../../src/main/windows.js";
 
 /** Electron's `BrowserWindow` as far as `Windows` uses it; `destroy()` emits `closed`, as Electron
@@ -143,12 +144,12 @@ describe("Windows", () => {
     expect(settingsWindow("darwin")).toMatchObject({ vibrancy: "sidebar", titleBarStyle: "hiddenInset", backgroundColor: "#00000000", ...config.settingsWindowSize });
 
     const light = settingsWindow("win32");
-    expect(light).toMatchObject({ backgroundColor: config.settingsWindowColor.light });
+    expect(light).toMatchObject({ backgroundColor: palette.settingsWindowLight });
     expect(light).not.toHaveProperty("vibrancy");
     expect(light).not.toHaveProperty("titleBarStyle");
 
     electron.nativeTheme.shouldUseDarkColors = true;
-    expect(settingsWindow("linux")).toMatchObject({ backgroundColor: config.settingsWindowColor.dark });
+    expect(settingsWindow("linux")).toMatchObject({ backgroundColor: palette.settingsWindowDark });
   });
 
   /** The overlay is never focused, so every click on it is a first click: the chat window's close

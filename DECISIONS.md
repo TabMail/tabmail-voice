@@ -2358,6 +2358,9 @@ time; measured first (below).
   this dictation hit a server error). Tests: `controller.test.ts` › a canceled dictation's retry
   neither shows on nor clears the next dictation's; a dropped answer's retry still in flight stops
   saying it is retrying; each answer spoken aloud starts with no voice heard.)*
+  *(Later, owner 2026-10-03 (ADR-DESK-048): the shift toward purple was too close to blue to notice;
+  the arc and track now fade to fuchsia, `palette.retryArcStart` → `palette.retryArcEnd`, over
+  `colorTransitionSeconds`, and back when a retry answers.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
 **Consequences:**
@@ -2960,4 +2963,37 @@ texts and buttons, about twice as many questions to the app).)*
 without hiding the window, which is what the Mac helper does. The Windows helper answers "hidden"
 for it, before checking that the page is inside the window and shown; neither helper reads that
 page, so the Mac's answer loses nothing and reads more. The Windows helper is to follow: #97.)*
+
+## ADR-DESK-048: Every color in one palette file; one time for every color change
+
+**Context:** Owner, 2026-10-03: the retry's shift toward purple on the thinking circle
+(ADR-DESK-039) did not show; from a page of candidates the owner chose fuchsia, asked that it fade
+in "just like the voice" (the waveform's 0.4 s ease, ADR-DESK-006's 2026-10-02 amendment), with "the
+transition time … a variable configured globally", and asked for "a palette file for both the iOS
+and the Voice app, similarly to Thunderbird, so that we can actually adjust the colors easily from
+the palette". Colors were spread across `config.ts` (the waveform's, agent mode's glow, the Settings
+window's) and `renderer/shared/brand.ts` (the brand blue and purple).
+
+**Decision:**
+- **`src/core/palette.ts`** holds every named color the app draws with, as `#RRGGBB`: the brand
+  blue and purple, the waveform's waiting and recording colors, the retry's arc colors, agent mode's
+  glow, and the Settings window's own colors. `brand.ts` reads the brand colors from it, and its
+  `rgba(hex, alpha)` takes a palette color. Opacities and the color change's time stay tunable
+  numbers in `config.ts`. As Thunderbird's `theme/palette/palette.data.json` and iOS's
+  `Theme/Palette.swift` (ADR-IOS-085's 2026-10-03 amendment).
+- **`colorTransitionSeconds`** (0.4 s, renamed from `waveformColorTransitionSeconds`) is how long
+  every color change in the overlay eases: the waveform's, and the thinking circle's.
+- **The retry's colors fade.** The thinking circle draws its two sets of colors as two layers
+  (`RimLayer`) circling together, the brand's and the retry's (`palette.retryArcStart` #C026D3 →
+  `palette.retryArcEnd` #E0399E, the track in the start color), one fading out as the other fades in
+  over `colorTransitionSeconds`, since a CSS gradient can't ease from one color to another.
+  `thinkingRetryColorShift` is gone.
+
+**Consequences:**
+- A color is changed in `palette.ts` alone. The stylesheets' own grays and shadows (`form.css`,
+  `settings/index.css`, `overlay/index.css`) are not in it yet.
+- The thinking circle draws two arcs at once; the hidden one is fully transparent.
+- Tests: `overlay/index.test.ts` › the waveform takes its recording colour once a voice is heard, and
+  the circle the retry's colours while a retry runs (red-verified against a retry layer never shown
+  and against no fade). The `overlay-transcribing-retry` preview shows the retry's circle.
 

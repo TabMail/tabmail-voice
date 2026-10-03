@@ -98,7 +98,8 @@ body {
   flex: none;
 }
 
-.rim {
+.rim,
+.rim-layer {
   position: absolute;
   inset: 0;
   border-radius: 50%;

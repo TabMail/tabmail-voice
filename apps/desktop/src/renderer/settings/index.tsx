@@ -9,6 +9,7 @@ import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
+import { palette } from "../../core/palette.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
@@ -42,8 +43,8 @@ const colors = {
   "--brand-gradient": brandGradient,
   "--brand-text-gradient": brandTextGradient,
   "--brand-blue": brandBlue,
-  "--window-light": config.settingsWindowColor.light,
-  "--window-dark": config.settingsWindowColor.dark,
+  "--window-light": palette.settingsWindowLight,
+  "--window-dark": palette.settingsWindowDark,
 } as CSSProperties;
 
 /** Whether the sidebar offers `name`'s section: Privacy only where apps can be excluded from screen

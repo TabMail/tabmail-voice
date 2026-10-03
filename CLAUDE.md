@@ -33,7 +33,8 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   and websites, secret-looking text) is refused or removed in the helper, never in the Electron app;
   a rule the app and the helpers both apply (which hosts a site covers) has its cases in
   `native/shared/privacy/` and every side runs them.
-- **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`).
+- **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`), and
+  **every color in `src/core/palette.ts`** (ADR-DESK-048).
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-microphone` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary
   tale). That helper runs one engine: it ends itself after each dictation, a failed start or an

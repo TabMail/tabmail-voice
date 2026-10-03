@@ -47,7 +47,7 @@ apps/desktop/
 ├── native/windows/          CMake/MSVC helpers: Win32 hotkey, WASAPI audio, UI Automation; native tests and build instructions in README.md
 ├── src/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app (folders: ADR-DESK-044)
-│   │   ├── config.ts, log.ts, settings.ts   Every tunable number; the debug-gated log; the settings every part reads
+│   │   ├── config.ts, palette.ts, log.ts, settings.ts   Every tunable number; every color (ADR-DESK-048); the debug-gated log; the settings every part reads
 │   │   ├── agent/                   Agent mode (ADR-DESK-011)
 │   │   │   ├── requests.ts              `DesktopAgent`: picks the tool, has it write, runs Answer's tool loop
 │   │   │   ├── tools.ts                 Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer

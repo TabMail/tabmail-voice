@@ -9,6 +9,7 @@ import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubble
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
+import { palette } from "../../core/palette.js";
 import type { DictationHotkey } from "../../core/hotkey/bindings.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCenter, grownBubble, hintCenter, hintCenterOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/tips.js";
@@ -628,7 +629,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent }: { mode: 
     background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
     // Neon red-pink in agent mode, a sign of the mode.
     boxShadow: isAgent
-      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(config.agentPillGlowInnerColor, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(config.agentPillGlowOuterColor, config.agentPillGlowOuterOpacity)}`
+      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(palette.agentPillGlowInner, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(palette.agentPillGlowOuter, config.agentPillGlowOuterOpacity)}`
       : `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
     transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponseSeconds}s ease-out`,
   };
@@ -733,8 +734,8 @@ function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
             width: config.overlayMeterBarWidth,
             height: config.overlayMeterMinBarHeight,
             borderRadius: config.overlayMeterBarWidth / 2,
-            backgroundColor: rgba(hasVoice ? config.waveformVoicedColor : config.waveformWaitingColor),
-            transition: `background-color ${config.waveformColorTransitionSeconds}s ease-in-out`,
+            backgroundColor: rgba(hasVoice ? palette.waveformVoiced : palette.waveformWaiting),
+            transition: `background-color ${config.colorTransitionSeconds}s ease-in-out`,
           }}
         />
       ))}
@@ -763,24 +764,36 @@ function ringMask(width: number): string {
 }
 
 /** Loading indicator on the thinking circle's rim: a blue → violet arc with a fading tail, circling
- * over a faint blue ring; both moved toward purple while a server error is tried again. */
+ * over a faint blue ring; while a server error is tried again, both fade to the retry's colors
+ * (`palette.retryArcStart` → `palette.retryArcEnd`). A gradient can't ease from one color to
+ * another, so the two sets of colors are two layers circling together, one fading out as the other
+ * fades in, over `colorTransitionSeconds`. */
 function SpinningRim({ isRetrying }: { isRetrying: boolean }) {
+  return (
+    <>
+      <RimLayer start={brandColor(0)} end={brandColor(config.thinkingArcEndColor)} track={brandColor(0, config.thinkingTrackOpacity)} transparent={brandColor(0, 0)} isShown={!isRetrying} />
+      <RimLayer start={rgba(palette.retryArcStart)} end={rgba(palette.retryArcEnd)} track={rgba(palette.retryArcStart, config.thinkingTrackOpacity)} transparent={rgba(palette.retryArcStart, 0)} isShown={isRetrying} />
+    </>
+  );
+}
+
+/** One set of the thinking circle's colors: its track and its arc, shown or faded out. */
+function RimLayer({ start, end, track, transparent, isShown }: { start: string; end: string; track: string; transparent: string; isShown: boolean }) {
   const width = config.thinkingRimWidth;
   const arc = 360 * config.thinkingArcFraction;
   const ring: CSSProperties = { mask: ringMask(width) };
-  const shift = isRetrying ? config.thinkingRetryColorShift : 0;
   return (
-    <>
-      <div className="rim" style={{ ...ring, background: brandColor(shift, config.thinkingTrackOpacity) }} />
+    <div className="rim-layer" style={{ opacity: isShown ? 1 : 0, transition: `opacity ${config.colorTransitionSeconds}s ease-in-out` }}>
+      <div className="rim" style={{ ...ring, background: track }} />
       <div
         className="rim spinning"
         style={{
           ...ring,
-          background: `conic-gradient(${brandColor(shift, 0)} 0deg, ${brandColor(shift)} ${arc / 2}deg, ${brandColor(config.thinkingArcEndColor + shift)} ${arc}deg, transparent ${arc}deg)`,
+          background: `conic-gradient(${transparent} 0deg, ${start} ${arc / 2}deg, ${end} ${arc}deg, transparent ${arc}deg)`,
           animationDuration: `${1 / config.thinkingRevolutionsPerSecond}s`,
         }}
       />
-    </>
+    </div>
   );
 }
 

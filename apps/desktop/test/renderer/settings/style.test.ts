@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import * as config from "../../../src/core/config.js";
+import { palette } from "../../../src/core/palette.js";
 
 /** `settings/index.css` without comments. */
 const css = readFileSync(join(import.meta.dirname, "../../../src/renderer/settings/index.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -94,12 +94,12 @@ describe("Settings stylesheet", () => {
     const allowed = value(light, ".settings", "--allowed");
     expect(secondary).toBeDefined();
     expect(allowed).toBeDefined();
-    for (const background of [config.settingsWindowColor.light, "#ffffff"]) {
+    for (const background of [palette.settingsWindowLight, "#ffffff"]) {
       expect(contrast(secondary ?? "", background)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(allowed ?? "", background)).toBeGreaterThanOrEqual(4.5);
     }
     // form.css's own values, which these replace, fall short.
-    expect(contrast("rgba(0, 0, 0, 0.5)", config.settingsWindowColor.light)).toBeLessThan(4.5);
+    expect(contrast("rgba(0, 0, 0, 0.5)", palette.settingsWindowLight)).toBeLessThan(4.5);
     expect(contrast("#28a745", "#ffffff")).toBeLessThan(4.5);
   });
 
@@ -114,7 +114,7 @@ describe("Settings stylesheet", () => {
     for (const name of ["--text", "--secondary", "--allowed"]) {
       const color = value(formDark, ":root", name);
       expect(color, name).toBeDefined();
-      for (const background of [config.settingsWindowColor.dark, card]) expect(contrast(color ?? "", background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
+      for (const background of [palette.settingsWindowDark, card]) expect(contrast(color ?? "", background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
     }
     const track = value(mediaBlock("(prefers-color-scheme: dark)"), ":root", "--switch-off") ?? "";
     expect(contrast("#ffffff", opaque(track, card))).toBeGreaterThanOrEqual(3);
