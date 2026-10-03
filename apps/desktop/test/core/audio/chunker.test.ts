@@ -103,6 +103,29 @@ describe("Chunker", () => {
     expectCovers(audio, cuts, last);
   });
 
+  /** On a quiet microphone the room's own noise pokes over the quiet line a frame or three at a time
+   * all through a pause (the owner's recording, 2026-10-03, was never cut): such blips leave the pause
+   * going, and a louder stretch just past `chunkPauseBlip` ends it, as a syllable does. */
+  test.each([
+    { blip: config.chunkPauseBlip, cut: true },
+    { blip: config.chunkPauseBlip + 2 * config.chunkFrameDuration, cut: false },
+  ])("a pause with $blip ms blips of the room in it is cut at: $cut", ({ blip, cut }) => {
+    const rand = random(12);
+    const blips: Int16Array[] = [];
+    for (let index = 0; index < 8; index += 1) blips.push(room(0.25, rand), speech(blip / 1000, rand));
+    const pauseStart = 12 * rate;
+    const audio = concat(speech(12, rand), ...blips, room(0.25, rand), speech(5, rand));
+    const { cuts, last } = chunk(audio);
+    if (cut) {
+      expect(cuts).toHaveLength(1);
+      expect(cuts[0]?.end).toBeGreaterThan(pauseStart);
+      expect(cuts[0]?.end).toBeLessThan(pauseStart + 2.5 * rate);
+    } else {
+      expect(cuts).toEqual([]);
+    }
+    expectCovers(audio, cuts, last);
+  });
+
   /** With no pause at all, a chunk is cut at `chunkMaxDuration`, and the next starts about
    * `chunkOverlapSpeech` of speech earlier, so the cut's words are heard whole in one of them. */
   test("speech with no pause is cut at the maximum length, the next chunk overlapping it", () => {

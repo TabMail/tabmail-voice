@@ -3059,10 +3059,19 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   never a fixed one (ADR-DESK-005 found none): the 10th percentile of its frames is the room, the
   90th percentile of those at least `chunkMinimumRange` above it the voice, and a frame less than
   `chunkPauseLevel` of the way up is quiet; a quiet run shorter than `chunkSpeechGap` (between
-  syllables and words) is speech. Once a chunk holds `chunkMinimumSpeech` (10 s) of speech, it is cut
+  syllables and words) is speech, and louder frames no longer than `chunkPauseBlip` (40 ms) inside a
+  quiet run are quiet. Once a chunk holds `chunkMinimumSpeech` (10 s) of speech, it is cut
   in the middle of the next `chunkPauseDuration` (1 s) of quiet. Measured on the owner's recordings
   with room gaps between them: 1.1 s and 1.5 s gaps cut, always inside the gap; 0.7 s gaps never;
-  reading the whole of a 10-minute recording takes 15–22 ms. The levels are relative, so speech
+  reading the whole of a 10-minute recording takes 15–22 ms. Those gaps were spliced room audio; a
+  real dictation's pauses are not that clean (owner's test, 2026-10-03: a 32 s dictation with
+  several 1–2 s pauses after 10 s+ of speech was never cut). On its USB microphone the room was
+  −31.5 dB, the voice −19 dB, the line −27.8 dB, and every pause was 80–90% quiet, the rest room
+  noise 0–4 dB over the line a frame or two at a time; the longest all-quiet run was 0.54 s. Letting
+  blips of up to `chunkPauseBlip` through cut it at 13.5 s and 27.4 s, both inside its pauses.
+  The tolerance is kept to a plosive's burst, shorter than any vowel, since a cut must be in a
+  pause for sure (owner, 2026-10-03: "really high precision, even if some recall could be lower");
+  louder stretches past it end the pause as before. The levels are relative, so speech
   much softer than what came before, with few frames at the room's level, can read as quiet: a
   pause cut can land in it and split a word or two, with no overlap to recover them (reproduced
   with synthetic audio in review, 2026-10-03; real speech dips to the room between words). Every

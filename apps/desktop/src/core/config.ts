@@ -89,6 +89,13 @@ export const chunkMinimumRange = 3;
 /** A quiet shorter than this (ms) between louder frames, a gap between syllables or words, counts as
  * speech. */
 export const chunkSpeechGap = 300;
+/** A louder stretch no longer than this (ms) inside a pause is the room's noise (a click, the room's
+ * own swing) and leaves the pause going: on a quiet microphone the room's frames reach a few dB over
+ * the quiet line, so the owner's real pauses of a second or two had no second of frames all under
+ * it (2026-10-03: 80–90% quiet, the rest a frame or two at a time) and were never cut at. Kept to a
+ * plosive's burst, shorter than any vowel, as a cut must be in a pause for sure (owner, 2026-10-03:
+ * "really high precision, even if some recall could be lower"). */
+export const chunkPauseBlip = 40;
 /** A chunk is cut at a pause this long (ms; owner, 2026-10-03: "a second pause")… */
 export const chunkPauseDuration = 1_000;
 /** …once it holds this much speech (ms; owner, 2026-10-03: "only after 10s+"). */
