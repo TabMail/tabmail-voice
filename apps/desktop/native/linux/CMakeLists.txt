@@ -115,6 +115,37 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_accessible_get_role -Wl,--wrap=atspi_accessible_get_document_iface
     -Wl,--wrap=atspi_document_get_document_attributes)
   add_test(NAME voice-browser-accessibility COMMAND voice-browser-accessibility-tests)
+  add_executable(voice-foreground-fixture src/system.cpp tests/foreground-provider.cpp)
+  target_link_libraries(voice-foreground-fixture PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n)
+  target_compile_options(voice-foreground-fixture PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-foreground-fixture PRIVATE
+    -Wl,--wrap=atspi_init
+    -Wl,--wrap=atspi_event_main
+    -Wl,--wrap=atspi_event_listener_new
+    -Wl,--wrap=atspi_event_listener_register
+    -Wl,--wrap=atspi_event_listener_deregister
+    -Wl,--wrap=atspi_get_desktop
+    -Wl,--wrap=atspi_accessible_clear_cache
+    -Wl,--wrap=atspi_accessible_get_attributes
+    -Wl,--wrap=atspi_accessible_get_role
+    -Wl,--wrap=atspi_accessible_get_state_set
+    -Wl,--wrap=atspi_accessible_get_child_count
+    -Wl,--wrap=atspi_accessible_get_child_at_index
+    -Wl,--wrap=atspi_accessible_get_parent
+    -Wl,--wrap=atspi_accessible_get_process_id
+    -Wl,--wrap=atspi_accessible_get_collection_iface
+    -Wl,--wrap=atspi_accessible_get_component_iface
+    -Wl,--wrap=atspi_accessible_get_document_iface
+    -Wl,--wrap=atspi_document_get_document_attributes
+    -Wl,--wrap=atspi_accessible_get_name
+    -Wl,--wrap=atspi_accessible_get_text_iface
+    -Wl,--wrap=atspi_text_get_character_count
+    -Wl,--wrap=atspi_text_get_caret_offset
+    -Wl,--wrap=atspi_text_get_n_selections
+    -Wl,--wrap=atspi_text_get_text
+)
+  add_test(NAME voice-foreground-lifecycle COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/foreground-lifecycle.py" $<TARGET_FILE:voice-foreground-fixture>)
+  set_tests_properties(voice-foreground-lifecycle PROPERTIES TIMEOUT 20)
   add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs" $<TARGET_FILE:voice-linux> "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixture.py")
   set_tests_properties(voice-accessibility PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)
 endif()
