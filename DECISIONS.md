@@ -99,7 +99,7 @@ multilingual accuracy than Apple's on-device model.
 - A failed transcription loses that recording (no retry queue yet). (Since ADR-DESK-039 a server
   error or dropped connection is retried twice before it does.) Chunking long dictations
   (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
-  issue #1 (P3).
+  issue #1 (P3). (Done in ADR-DESK-048: cut at pauses, sent while the user speaks.)
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
 
 **Amendment 2026-09-27 — the length cap is 120 s.** Owner: *"there was a bug before about this
@@ -109,6 +109,11 @@ back end… we should do it for two minutes for now until the chunking arrives i
 at most 120 s of audio (backend ADR-022), so a longer recording was uploaded only to fail.
 `maxRecordingDuration` is 120 s in both apps (`DictationConfig`, `config.ts`), for a hold and
 hands-free alike; the recorder keeps nothing past it. Raise it once chunking (issue #1) lands.
+
+**Amendment 2026-10-03 — 10 minutes, in chunks.** Chunking arrived on the app's side (ADR-DESK-048):
+a dictation is cut into chunks under the backend's 120 s and sent while the user speaks, so
+`maxRecordingDuration` is 10 minutes. A spoken answer to a confirmation stays one upload, capped at
+`maxUnchunkedDuration` (120 s).
 
 ## ADR-DESK-006: Boot the microphone at key-down, reveal the overlay at the caret after the hold
 
@@ -1023,7 +1028,7 @@ for agent mode; this one is for dictation, and Space still switches the mode.
 
 **Consequences:**
 - Hands-free listening is capped like a hold (`maxRecordingDuration`, 120 s since the ADR-DESK-005
-  amendment of 2026-09-27), then transcribed.
+  amendment of 2026-09-27, 10 minutes since ADR-DESK-048), then transcribed.
 - While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
 - ~~A first tap is still a discarded recording start (the microphone boots and stops); a double tap
   starts it twice.~~ Superseded by the amendment below.
@@ -3020,3 +3025,70 @@ window's) and `renderer/shared/brand.ts` (the brand blue and purple).
   in a component, a variable nothing gives, and the overlay given the dark theme), and
   `settings/style.test.ts`'s contrast checks, which now read the palette's themes.
 
+
+## ADR-DESK-048: Long dictations, cut into chunks at pauses and sent while the user speaks
+
+**Context:** A dictation stopped at 120 s, the most the backend's transcription takes at once
+(ADR-DESK-005, amended 2026-09-27; issue #1). Owner, 2026-10-03: the recording can be longer; the app
+splits it into parts under the backend's limit and joins their texts. OpenWhispr, looked at for
+comparison, cuts only after recording, into fixed 240 s pieces with no overlap, and joins them with
+spaces, so a word at a cut is split and lost; its own issues propose cutting at the quietest moment.
+
+**Decision:** `maxRecordingDuration` is 10 minutes. As it is recorded, a dictation is cut into
+chunks (`Chunker`, `src/core/audio/chunker.ts`), each sent at once, as a whole request with its own
+cleanup (backend ADR-027), while the user goes on; the texts are joined in order at the release
+(`joinChunkTexts`, `src/core/dictation/chunkJoin.ts`). A dictation never cut is one upload, as before.
+
+- **Where it is cut (owner, 2026-10-03: "a second pause should be enforced… only after 10s+ for
+  chunks").** Loudness is read in `chunkFrameDuration` frames against the recording's own levels,
+  never a fixed one (ADR-DESK-005 found none): the 10th percentile of its frames is the room, the
+  90th percentile of those at least `chunkMinimumRange` above it the voice, and a frame less than
+  `chunkPauseLevel` of the way up is quiet; a quiet run shorter than `chunkSpeechGap` (between
+  syllables and words) is speech. Once a chunk holds `chunkMinimumSpeech` (10 s) of speech, it is cut
+  in the middle of the next `chunkPauseDuration` (1 s) of quiet. Measured on the owner's recordings
+  with room gaps between them: 1.1 s and 1.5 s gaps cut, always inside the gap; 0.7 s gaps never;
+  reading the whole of a 10-minute recording takes 15–22 ms.
+- **No pause (owner: "if a continuous speech goes over 2 minutes… overlapping things").** A chunk
+  that reaches `chunkMaxDuration` (105 s, under the backend's 120 s) is cut at the quietest
+  `chunkForcedCutWindow` of its last `chunkForcedCutSearch`, and the next chunk starts
+  `chunkOverlapSpeech` (15 s) of speech earlier, at most `chunkMaxOverlap`. The join keeps the
+  words both heard once: it matches the longest run of at least `chunkOverlapMinimumRun` words
+  (lower case, letters and digits only) within `chunkOverlapSearchWords` of the seam, and with no
+  such run joins the two whole (owner: "better than losing things").
+- **The join.** An ellipsis where two chunks meet is the cut's pause, written by the model, and is
+  taken out; one inside a chunk stays. Chunks join with a space, or none where Chinese, Japanese,
+  Thai, Lao, Khmer or Burmese text meets. Each chunk's cleaned text is pasted (its transcript where
+  the cleanup failed, ADR-DESK-008).
+- **Chunks with no speech** (a long silence, hands-free) are not sent, so no quiet is boosted into
+  words (ADR-DESK-040); with nothing sent at all, the last chunk is, and the model decides.
+- **Each chunk is normalized on its own** (ADR-DESK-040) and FLAC-encoded as it is cut (ADR-DESK-039).
+- **Retries (owner: "continuous retries until even the last chunk or the user release is done…
+  until the final give up").** While the user dictates, a chunk's server error, dropped connection
+  or backend timeout (504) is tried again after each of `chunkRetryDelays`, the last repeating,
+  quietly: nobody waits for it yet. From the release, a chunk still failing gets the
+  `transcriptionRetryDelays` tries one recording gets, with the pill's retry note (ADR-DESK-039).
+  Any other failure (signed out, over quota, refused) gives up at once.
+- **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
+  the up to successful part").** The chunks before the first that gave up are pasted, and the pill
+  says `partlyTranscribedMessage`; the chunks after it are not, so the text has no hole. The first
+  chunk giving up loses the dictation, as one recording's failure does. Agent mode carries out a
+  request whole or not at all: a lost chunk fails it.
+- Cancelling cancels every chunk's request.
+- A spoken answer to a confirmation (ADR-DESK-036) stays one upload, capped at
+  `maxUnchunkedDuration` (120 s).
+
+**Consequences:**
+- A long dictation's text is ready about as soon as its last chunk is transcribed: the earlier ones
+  are done while the user speaks.
+- Privacy is unchanged: the same audio goes to the same place, only sooner, and none of it is
+  stored (root ADR-004). The welcome wizard's consent page says a long dictation is sent in parts
+  while the user speaks; users who consented before are told once at launch
+  (`whatsNewEntries`, `takeWhatsNew`), and never asked again.
+- Each chunk is a request of its own and counts toward usage as one; an overlap's 15 s are
+  transcribed twice.
+- The cleanup sees one chunk at a time: a sentence cut at a forced cut is cleaned in two halves.
+- 10 minutes at 16 kHz is about 19 MB of samples kept in memory until the release.
+- A chunk is cut only after 10 s of speech, so a pause cut is never shorter; a forced cut leaves the
+  next chunk at least its overlap.
+- The model's real limit is unmeasured past the 120 s cap: `chunkMaxDuration` stays under it.
+- iOS does the same (`tabmail-ios` ADR-IOS for long dictations), from the same rules and numbers.
