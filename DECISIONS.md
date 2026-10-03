@@ -227,6 +227,11 @@ the blue → purple gradient throughout.
   its first pause); `controller.test.ts` › a voice above the room's noise turns the waveform purple
   (reset each dictation); `overlay/index.test.ts` › the waveform turns purple once a voice is heard;
   `main/index.test.ts` › the overlay is told of a voice heard and of a retry.
+*(Later, owner 2026-10-02: "something that's more red and more professional", red reading as
+recording, "but we don't want just pure red because that looks cheap." The
+voiced colour is now a muted crimson, `waveformVoicedColor` #E5484D, in place of the brand purple;
+nothing else changes. The retry circle keeps its shift toward purple, so red only ever means
+recording.)*
 
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 

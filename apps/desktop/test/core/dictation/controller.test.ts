@@ -3665,7 +3665,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           });
 
           /** Each answer spoken aloud starts blue: a voice heard in one the user dropped does not
-           * turn the next one's waveform purple (owner, 2026-10-02). */
+           * turn the next one's waveform crimson (owner, 2026-10-02). */
           test("each answer spoken aloud starts with no voice heard", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
             const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")]);
@@ -4303,10 +4303,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
     });
 
-    /** The waveform turns purple once a voice stands `waveformVoiceAboveNoiseDecibels` above the room's
+    /** The waveform turns crimson once a voice stands `waveformVoiceAboveNoiseDecibels` above the room's
      * noise as it stood before it, and stays so for the dictation; each dictation starts blue
      * (owner, 2026-10-02). A reading just under that is not a voice. */
-    test("a voice above the room's noise turns the waveform purple", async () => {
+    test("a voice above the room's noise turns the waveform crimson", async () => {
       const capture = new CountingCapture();
       const { controller } = makeController({ capture });
       const noise = 0.01;
