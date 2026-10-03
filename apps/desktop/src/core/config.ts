@@ -614,6 +614,13 @@ export const setNameTip: TipSettings = {
   displayDuration: 4_000,
   maxDisplays: null,
 };
+/** What's new: long dictations are sent in parts as the user talks (ADR-DESK-048), shown once, ahead
+ * of the other tips (owner, 2026-10-03: "really punchy"), long enough to read twice. */
+export const longDictationsTip: TipSettings = {
+  lines: ["New: dictate up to 10 minutes,", "sent in parts as you talk"],
+  displayDuration: 6_000,
+  maxDisplays: 1,
+};
 /** The longest name the welcome wizard and Settings take for the user. */
 export const userNameMaxLength = 100;
 /** A hold this long shows the double-tap tip: this user dictates at length, and need not hold. */

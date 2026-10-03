@@ -119,6 +119,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
     keyboard = { language: null, atReveal: [] };
     prefs = { value: defaultSettings() };
     tipStore = new MemoryStore();
+    // Told what's new already, unless a test starts afresh: it would take the first tip's turn.
+    new TipBook(tipStore).markLearned("longDictations");
     used = [];
   });
 
@@ -4310,6 +4312,44 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await throughout(300, () => controller.tip === null)).toBe(true);
       controller.handle("cancel");
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
+    });
+
+    /** What's new about long dictations (ADR-DESK-048) is a tip, first in line, shown once (owner,
+     * 2026-10-03: "an ordinary tooltip that shows with high priority only once"). */
+    test("the what's-new tip shows first at the next hold, once, then the hold's tips", async () => {
+      tipStore = new MemoryStore();
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      const whatsNewDuration = 300;
+      controller.tipDisplayDuration = (tip) => (tip === "longDictations" ? whatsNewDuration : 60_000);
+
+      controller.handle("start");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      expect(controller.tip).toBe("longDictations");
+      expect(await eventually(() => controller.tip === "agentAndHistory")).toBe(true);
+      controller.handle("cancel");
+      expect(new TipBook(tipStore).isEligible("longDictations")).toBe(false);
+
+      controller.handle("start");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      expect(controller.tip).toBe("agentAndHistory");
+      controller.handle("cancel");
+    });
+
+    /** Hands-free, it goes before the hands-free tip; up already as the second press ends as a tap,
+     * it stays its time rather than flashing by, as it never shows again. */
+    test.each([false, true])("hands-free, the what's-new tip shows before the hands-free tip (up as the tap ended: %s)", async (upAsTheTapEnded) => {
+      tipStore = new MemoryStore();
+      const { controller } = makeController({ capture: new CountingCapture(true) });
+      const whatsNewDuration = 300;
+      controller.tipDisplayDuration = (tip) => (tip === "longDictations" ? whatsNewDuration : tipDetails[tip].displayDuration);
+
+      controller.handle("startHandsFree");
+      if (upAsTheTapEnded) expect(await eventually(() => controller.tip === "longDictations")).toBe(true);
+      controller.handle("listenHandsFree");
+      expect(await eventually(() => controller.tip !== null)).toBe(true);
+      expect(controller.tip).toBe("longDictations");
+      expect(await eventually(() => controller.tip === "handsFree")).toBe(true);
+      controller.handle("cancel");
     });
 
     /** The waveform takes its recording colour once a voice stands `waveformVoiceAboveNoiseDecibels` above the room's

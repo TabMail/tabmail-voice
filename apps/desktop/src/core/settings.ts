@@ -28,7 +28,6 @@ const Key = {
   learnsWords: "learnsWords",
   excludedApps: "excludedApps",
   excludedSites: "excludedSites",
-  whatsNewSeen: "whatsNewSeen",
 } as const;
 
 /** The settings one dictation uses, read as the first thing it does when it starts and fixed for
@@ -150,17 +149,6 @@ export class AppSettings extends Observable {
 
   set hasFinishedWelcome(value: boolean) {
     this.write(Key.hasFinishedWelcome, value);
-  }
-
-  /** The What's-new entries already shown (`WhatsNewEntry.id`). */
-  get whatsNewSeen(): string[] {
-    const stored = this.store.get(Key.whatsNewSeen);
-    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
-  }
-
-  set whatsNewSeen(value: string[]) {
-    this.store.set(Key.whatsNewSeen, value);
-    this.changed();
   }
 
   /** The bundle identifier of the email app that mail and calendar requests go to; null for the

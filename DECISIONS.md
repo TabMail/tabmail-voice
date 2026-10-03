@@ -3125,9 +3125,13 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   sooner: a long dictation cancelled after a cut has already sent the chunks before it, each with
   the cleanup's context (the text around the cursor and on screen, as every dictation sends; before
   chunking, a cancelled hold sent nothing). The welcome wizard's consent page says a long dictation
-  is sent in parts while the user speaks; users who consented before are told once at launch
-  (`whatsNewEntries`, `takeWhatsNew`), including that a part already sent is transcribed and
-  cleaned up with its screen context even if they cancel, and are never asked again.
+  is sent in parts while the user speaks; users who consented before are told once, by a tip under
+  the pill at their next dictation, ahead of the other tips (`longDictations`: "New: dictate up to
+  10 minutes, sent in parts as you talk"), and are never asked again. Owner, 2026-10-03: a launch
+  dialog was "poorly formatted… too long and sloppy"; "an ordinary tooltip that shows with high
+  priority only once". The tip is too short to say that a part already sent is transcribed and
+  cleaned up even if the user cancels; the consent page and this ADR say it. A user still in the
+  welcome wizard at launch never gets the tip.
 - After a chunk gives up for good while the user is still speaking, the later chunks are still
   sent (and count toward usage) until the release, though they will not be pasted: nothing is
   shown until the release.

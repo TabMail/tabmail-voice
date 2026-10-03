@@ -435,7 +435,8 @@ export class DictationController extends Observable {
       this.currentLanguage = language;
       this.changed();
     });
-    this.dueTips = ["agentAndHistory"];
+    // What's new goes first, once (`longDictations`).
+    this.dueTips = ["longDictations", "agentAndHistory"];
     if (isFollowUp) void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
@@ -1334,7 +1335,7 @@ export class DictationController extends Observable {
     this.secondPressTimer = after(config.minimumHoldDuration, () => {
       if (this.generation !== current) return;
       this.secondPressTimer = null;
-      this.dueTips = ["agentAndHistory"];
+      this.dueTips = ["longDictations", "agentAndHistory"];
       this.showDueTip();
     });
   }
@@ -1349,8 +1350,9 @@ export class DictationController extends Observable {
       this.onNothingListening?.();
       return;
     }
-    this.dueTips = ["handsFree"];
-    this.hideTip();
+    this.dueTips = ["longDictations", "handsFree"];
+    // What's new shows only once: up as the tap ended, it stays its time.
+    if (this.currentTip !== "longDictations") this.hideTip();
     log.debug("DictationController: second press was a tap; listening without the key");
   }
 

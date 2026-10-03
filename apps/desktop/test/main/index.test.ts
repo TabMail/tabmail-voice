@@ -196,26 +196,22 @@ vi.mock("../../src/core/backend/http.js", () => ({
     throw new Error("no network in tests");
   },
 }));
-vi.mock("../../src/main/storage/jsonFileStore.js", async () => {
-  const { whatsNewEntries } = await import("../../src/core/onboarding/whatsNew.js");
-  return {
-    JSONFileStore: class {
-      get(key: string) {
-        if (key === "hasFinishedWelcome") return true;
-        // Every What's-new entry already shown, unless a test stores otherwise.
-        if (key === "whatsNewSeen" && !app.stored.has(key)) return whatsNewEntries.map((entry) => entry.id);
-        return app.stored.get(key);
-      }
-      set(key: string, value: unknown) {
-        app.stored.set(key, value);
-        return !app.savesFail;
-      }
-      remove(key: string) {
-        app.stored.delete(key);
-      }
-    },
-  };
-});
+vi.mock("../../src/main/storage/jsonFileStore.js", () => ({
+  JSONFileStore: class {
+    get(key: string) {
+      // Set up, unless a test stores otherwise.
+      if (key === "hasFinishedWelcome" && !app.stored.has(key)) return true;
+      return app.stored.get(key);
+    }
+    set(key: string, value: unknown) {
+      app.stored.set(key, value);
+      return !app.savesFail;
+    }
+    remove(key: string) {
+      app.stored.delete(key);
+    }
+  },
+}));
 vi.mock("../../src/main/native/macos/osascript.js", () => ({
   osascript: {
     run: async (source: string, args: readonly string[]) => {
@@ -1351,18 +1347,17 @@ describe("main process wiring", () => {
     expect(ended()).toBe(2);
   });
 
-  /** ADR-DESK-048: a user who set the app up before long dictations is told once, at launch, in one
-   * message; the next launch tells nothing. */
-  test("a user set up before a change is told about it once, at launch", async () => {
-    app.stored.set("whatsNewSeen", []);
-    await launch("darwin");
-    await vi.waitFor(() => expect(app.dialogs).toEqual([expect.objectContaining({ message: "What’s New in TabMail Voice", buttons: ["Got It"] })]));
-    expect(String(app.dialogs[0]?.detail)).toContain("sent in parts while you speak");
-    expect(app.stored.get("whatsNewSeen")).toEqual(["longDictations"]);
-
-    app.dialogs = [];
+  /** ADR-DESK-048: what's new about long dictations is a tip shown once at a dictation, to a user
+   * who set the app up before; one still in the welcome wizard reads it on the consent page, and
+   * never gets the tip. Nothing is shown at launch. */
+  test.each([
+    { finishedWelcome: true, tipShows: true },
+    { finishedWelcome: false, tipShows: false },
+  ])("set up before: $finishedWelcome; the what's-new tip may show: $tipShows", async ({ finishedWelcome, tipShows }) => {
+    app.stored.set("hasFinishedWelcome", finishedWelcome);
     await launch("darwin");
     expect(app.dialogs).toEqual([]);
+    expect(app.stored.get("tip.longDictations.learned") === true).toBe(!tipShows);
   });
 
   describe("updates (ADR-DESK-041)", () => {
