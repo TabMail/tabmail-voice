@@ -86,6 +86,8 @@ vi.mock("../../../src/core/backend/http.js", () => ({
 vi.mock("../../../src/main/storage/jsonFileStore.js", () => ({
   JSONFileStore: class {
     get(key: string) {
+      // Set up, and told every What's-new entry.
+      if (key === "whatsNewSeen") return ["longDictations"];
       return key === "hasFinishedWelcome" ? true : undefined;
     }
     set() {}

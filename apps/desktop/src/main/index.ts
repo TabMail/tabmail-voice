@@ -33,6 +33,7 @@ import { AppSettings, suggestedUserName } from "../core/settings.js";
 import { TipBook } from "../core/onboarding/tips.js";
 import { vscodeHidesCaret, vscodeSettingsPath, withClassicInput } from "../core/onboarding/vscodeSettings.js";
 import { WelcomeWizard } from "../core/onboarding/welcomeWizard.js";
+import { takeWhatsNew, type WhatsNewEntry } from "../core/onboarding/whatsNew.js";
 import {
   type AudioCommand,
   type AudioReport,
@@ -466,6 +467,18 @@ function launch(): void {
     windows.showWelcome();
   }
 
+  /** Tells the user about `entries`, in one message they dismiss. */
+  function showWhatsNew(entries: WhatsNewEntry[]): void {
+    app.focus({ steal: true });
+    void dialog.showMessageBox({
+      type: "info",
+      title: "TabMail Voice",
+      message: "What’s New in TabMail Voice",
+      detail: entries.map((entry) => `${entry.title}\n${entry.detail}`).join("\n\n"),
+      buttons: ["Got It"],
+    });
+  }
+
   /** Opens Settings, with the email apps read afresh as it opens. */
   function showSettings(): void {
     permissions.refresh();
@@ -875,6 +888,9 @@ function launch(): void {
   permissions.startPollingAccessibility();
   updater?.start();
 
-  // The welcome wizard asks for consent and the permissions; it opens until finished.
+  // The welcome wizard asks for consent and the permissions; it opens until finished. A user who set
+  // the app up before a change is told about it once (`takeWhatsNew`).
+  const whatsNew = takeWhatsNew(settings);
   if (!settings.hasFinishedWelcome) showWelcome();
+  else if (whatsNew.length > 0) showWhatsNew(whatsNew);
 }
