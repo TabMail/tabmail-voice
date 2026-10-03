@@ -3064,14 +3064,17 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   words both heard once: it matches the longest run of at least `chunkOverlapMinimumRun` words
   (lower case, letters and digits only) within `chunkOverlapSearchWords` of the seam, and with no
   such run joins the two whole (owner: "better than losing things"). A chunk overlaps only the one
-  just before it: after an empty or unsent one (a long silence) it is joined whole, or matching it
+  just before it: after an empty one (a long silence) it is joined whole, or matching it
   against an earlier chunk's words would cut out the speech between.
 - **The join.** An ellipsis where two chunks meet is the cut's pause, written by the model, and is
   taken out; one inside a chunk stays. Chunks join with a space, or none where Chinese, Japanese,
   Thai, Lao, Khmer or Burmese text meets. Each chunk's cleaned text is pasted (its transcript where
   the cleanup failed, ADR-DESK-008).
-- **Chunks with no speech** (a long silence, hands-free) are not sent, so no quiet is boosted into
-  words (ADR-DESK-040); with nothing sent at all, the last chunk is, and the model decides.
+- **Every chunk is sent**, a long silence's too (owner, 2026-10-03, on review: "send every chunk"):
+  the model decides what was said, as for one recording (ADR-DESK-005: no loudness gate). Chunks
+  judged silent by their loudness were skipped at first, but speech much softer than the speech
+  before it fell under the recording's levels and was lost without a word; the cost of sending is a
+  request per 105 s of silence, and a silence the model may hear a stray word in.
 - **Each chunk is normalized on its own** (ADR-DESK-040) and FLAC-encoded as it is cut (ADR-DESK-039).
 - **Retries (owner: "continuous retries until even the last chunk or the user release is done…
   until the final give up").** While the user dictates, a chunk's server error, dropped connection

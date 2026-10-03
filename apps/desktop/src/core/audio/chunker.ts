@@ -14,8 +14,6 @@ export interface ChunkCut {
    * both hold the same `chunkOverlapSpeech` of speech, which the join removes once
    * (`joinChunkTexts`). */
   overlapped: boolean;
-  /** Whether any of its frames stood above the recording's pause level. */
-  hasSpeech: boolean;
 }
 
 /** Decibels of digital silence, and the histogram's range: −100…0 dB in `binsPerDecibel` steps. */
@@ -102,7 +100,7 @@ export class Chunker {
   finish(totalSamples: number): ChunkCut | null {
     if (this.cuts === 0) return null;
     // The frame not yet whole is part of the last chunk; its loudness is not needed.
-    return { index: this.cuts, start: this.chunkStart, end: totalSamples, overlapped: this.chunkOverlapped, hasSpeech: this.speechFrames > 0 };
+    return { index: this.cuts, start: this.chunkStart, end: totalSamples, overlapped: this.chunkOverlapped };
   }
 
   /** Takes the next whole frame; returns the chunk it completes, if any. */
@@ -173,7 +171,7 @@ export class Chunker {
   /** Ends the current chunk at sample `end`; the next starts at `nextStart`, or at `end` when null
    * (no overlap). */
   private cut(end: number, nextStart: number | null): ChunkCut {
-    const chunk: ChunkCut = { index: this.cuts, start: this.chunkStart, end, overlapped: this.chunkOverlapped, hasSpeech: this.speechFrames > 0 };
+    const chunk: ChunkCut = { index: this.cuts, start: this.chunkStart, end, overlapped: this.chunkOverlapped };
     this.cuts += 1;
     this.chunkStart = nextStart ?? end;
     this.chunkOverlapped = nextStart !== null;

@@ -3,11 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
-import { AudioRecorder, decibels, level, normalizePeak, recordingDuration } from "../../../src/core/audio/recorder.js";
+import { AudioRecorder, decibels, level, normalizePeak, type RecordedChunk, recordingDuration } from "../../../src/core/audio/recorder.js";
 import * as config from "../../../src/core/config.js";
 import { LevelEnvelope } from "../../../src/core/audio/levelEnvelope.js";
 import { encodeWAV, wavHeaderSize } from "../../../src/core/audio/wav.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
+import { concat, random, room, speech } from "../../support/speech.js";
 import { tone } from "../../support/stubs.js";
 
 /** The 16-bit samples of little-endian PCM. */
@@ -158,6 +159,26 @@ describe("AudioRecorder", () => {
     const gain = normalizePeak(samples);
     expect(gain).toBeCloseTo(targetPeak / 2_000, 2);
     expect(Array.from(samples)).toEqual([0, Math.round(1_000 * gain), -targetPeak, Math.round(500 * gain)]);
+  });
+
+  /** A long dictation's chunks (ADR-DESK-048): each uploads its own samples, from its start to its
+   * end, so none outgrows what the backend transcribes at once or repeats another's words. */
+  test("each chunk of a long dictation uploads exactly its own samples", () => {
+    const chunks: RecordedChunk[] = [];
+    const recorder = new AudioRecorder(config.recordingSampleRate, config.maxRecordingDuration, (chunk) => chunks.push(chunk));
+    const rand = random(5);
+    const audio = concat(speech(12, rand), room(1.5, rand), speech(12, rand), room(1.5, rand), speech(4, rand));
+    recorder.append(audio);
+    const recording = recorder.finish();
+    const all = [...chunks, recording.lastChunk];
+    expect(all).toHaveLength(3);
+    expect(all[0]?.start).toBe(0);
+    expect(all.at(-1)?.end).toBe(audio.length);
+    for (const chunk of all) {
+      expect(chunk).not.toBeNull();
+      if (chunk === null || chunk === undefined) return;
+      expect(decodeFLAC(chunk.flac).pcm.length / 2).toBe(chunk.end - chunk.start);
+    }
   });
 
   test("keeps the loudest chunk's level", () => {

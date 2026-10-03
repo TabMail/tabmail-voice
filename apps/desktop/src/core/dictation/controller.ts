@@ -812,13 +812,13 @@ export class DictationController extends Observable {
   }
 
   /** The recorder cut a chunk off a long dictation (ADR-DESK-048): it is sent at once, with its
-   * cleanup, while the user goes on. A chunk with no speech in it (a long silence, hands-free) is not
-   * sent, so no quiet is boosted into words (ADR-DESK-040), unless `alwaysSend`. */
-  private chunkCut(chunk: RecordedChunk, generation: number, alwaysSend = false): void {
+   * cleanup, while the user goes on. Every chunk is sent, a long silence's too: the model decides
+   * what was said, as for one recording (ADR-DESK-005: no loudness gate), and soft speech judged by
+   * loudness alone could be lost (owner, 2026-10-03: send every chunk). */
+  private chunkCut(chunk: RecordedChunk, generation: number): void {
     if (this.generation !== generation) return;
-    log.debug(() => `DictationController: chunk ${chunk.index} cut at ${(chunk.end / config.recordingSampleRate).toFixed(1)}s (${((chunk.end - chunk.start) / config.recordingSampleRate).toFixed(1)}s${chunk.overlapped ? ", overlapping the one before" : ""}${chunk.hasSpeech ? "" : ", no speech"})`);
-    const outcome: Promise<ChunkOutcome> = chunk.hasSpeech || alwaysSend ? this.sendChunk(chunk, generation) : Promise.resolve({ transcription: { text: "", cleanedText: null } });
-    this.chunks.push({ index: chunk.index, overlapped: chunk.overlapped, sent: chunk.hasSpeech || alwaysSend, outcome });
+    log.debug(() => `DictationController: chunk ${chunk.index} cut at ${(chunk.end / config.recordingSampleRate).toFixed(1)}s (${((chunk.end - chunk.start) / config.recordingSampleRate).toFixed(1)}s${chunk.overlapped ? ", overlapping the one before" : ""})`);
+    this.chunks.push({ index: chunk.index, overlapped: chunk.overlapped, outcome: this.sendChunk(chunk, generation) });
   }
 
   /** Transcribes one chunk, never failing: its transcription, or why it gave up. */
@@ -871,16 +871,14 @@ export class DictationController extends Observable {
     }
   }
 
-  /** The release of a dictation cut into chunks: the last one is sent (unless it holds no speech, the
-   * quiet after a pause, and another chunk was sent), the chunks still failing get their last tries, and the text is the chunks'
-   * in order up to the first that gave up (owner, 2026-10-03: "paste only the up to successful
-   * part"). The first giving up loses the dictation, as one recording's failure does. */
+  /** The release of a dictation cut into chunks: the last one is sent, the chunks still failing get
+   * their last tries, and the text is the chunks' in order up to the first that gave up (owner,
+   * 2026-10-03: "paste only the up to successful part"). The first giving up loses the dictation, as
+   * one recording's failure does. */
   private async transcribeChunks(last: RecordedChunk, generation: number): Promise<void> {
     const signal = this.chunkAbort.signal;
     const isCurrent = () => this.generation === generation && !signal.aborted;
-    // With nothing sent (no chunk heard speech), the last is sent anyway: the model decides, as for
-    // one recording (ADR-DESK-005: no loudness gate).
-    this.chunkCut(last, generation, !this.chunks.some((chunk) => chunk.sent));
+    this.chunkCut(last, generation);
     const release = this.release;
     const notice = this.retryNotice(isCurrent, signal);
     release.notice = notice;
@@ -1578,8 +1576,6 @@ interface TranscribedPart {
 interface ChunkJob {
   index: number;
   overlapped: boolean;
-  /** False for a chunk with no speech, not sent: its text is empty. */
-  sent: boolean;
   outcome: Promise<ChunkOutcome>;
 }
 

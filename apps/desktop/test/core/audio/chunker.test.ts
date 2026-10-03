@@ -88,8 +88,7 @@ describe("Chunker", () => {
     // In the middle of the pause's first second, so half its quiet ends this chunk, half starts the next.
     expect(Math.abs(seconds(cut.end - pauseStart) - config.chunkPauseDuration / 2000)).toBeLessThan(0.2);
     expect(cut.overlapped).toBe(false);
-    expect(cut.hasSpeech).toBe(true);
-    expect(last).toMatchObject({ index: 1, start: cut.end, end: audio.length, overlapped: false, hasSpeech: true });
+    expect(last).toMatchObject({ index: 1, start: cut.end, end: audio.length, overlapped: false });
     expectCovers(audio, cuts, last);
   });
 
@@ -162,16 +161,13 @@ describe("Chunker", () => {
     expect(seconds(end)).toBeLessThanOrEqual(dipAt + 0.4);
   });
 
-  /** A long silence (hands-free, the user away) is still cut within the maximum length, its chunks
-   * marked as holding no speech. */
-  test("a long silence is cut within the maximum length, with no speech in it", () => {
+  /** A long silence (hands-free, the user away) is still cut within the maximum length. */
+  test("a long silence is cut within the maximum length", () => {
     const rand = random(6);
     const audio = concat(speech(12, rand), room(1.5, rand), room(240, rand), speech(5, rand));
     const { cuts, last } = chunk(audio);
     expectCovers(audio, cuts, last);
-    expect(cuts[0]?.hasSpeech).toBe(true);
-    expect(cuts.slice(1).every((cut) => !cut.hasSpeech)).toBe(true);
-    expect(last?.hasSpeech).toBe(true);
+    expect(cuts.length).toBeGreaterThan(1);
   });
 
   test("a recording of nothing but the room is cut within the maximum length too", () => {
