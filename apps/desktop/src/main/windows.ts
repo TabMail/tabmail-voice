@@ -76,7 +76,7 @@ export class Windows {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { titleBarStyle: "hiddenInset", vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.settingsWindowDark : palette.settingsWindowLight };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.dark.window : palette.light.window };
     this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
   }
 
@@ -96,7 +96,7 @@ export class Windows {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { vibrancy: "popover", visualEffectState: "active", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.settingsWindowDark : palette.settingsWindowLight };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.dark.window : palette.light.window };
     const existing = this.open.get("history");
     if (existing && !existing.isDestroyed()) {
       existing.setBounds(bounds);

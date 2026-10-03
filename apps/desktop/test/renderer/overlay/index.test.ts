@@ -843,6 +843,16 @@ describe("the chat window", () => {
     expect(shownColors()).not.toContain(retryStart);
   });
 
+  /** The pill and the chat window are light in light and dark mode alike, so their text keeps the
+   * light theme's dark ink when the system is dark: the page takes the palette's light theme alone. */
+  test("the overlay keeps the light theme in dark mode", async () => {
+    await overlayPage();
+    const colors = document.adoptedStyleSheets.flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join("\n");
+    expect(colors).toContain(`--text: ${palette.light.text};`);
+    expect(colors).not.toContain("prefers-color-scheme");
+    expect(colors).not.toContain(palette.dark.text);
+  });
+
   /** A new turn scrolls the conversation to it. */
   test("it scrolls to the newest turn", async () => {
     const page = await overlayPage();

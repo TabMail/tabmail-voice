@@ -14,9 +14,10 @@ import type { DictationHotkey } from "../../core/hotkey/bindings.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCenter, grownBubble, hintCenter, hintCenterOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/tips.js";
 import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
-import { brandBlue, brandColor, brandGradient, gray, rgba } from "../shared/brand.js";
+import { brandBlue, brandColor, brandGradient, rgba } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { ClipboardIcon, ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
+import { applyPalette } from "../shared/theme.js";
 import "./index.css";
 
 /**
@@ -379,7 +380,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
         width,
         borderRadius: config.chatCornerRadius,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+        background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
         boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
       }}
     >
@@ -626,7 +627,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent }: { mode: 
     borderRadius: config.pillHeight / 2,
     borderWidth: config.pillBorderWidth,
     // A light pill in light and dark mode alike, in a gradient border.
-    background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
+    background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
     // Neon red-pink in agent mode, a sign of the mode.
     boxShadow: isAgent
       ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(palette.agentPillGlowInner, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(palette.agentPillGlowOuter, config.agentPillGlowOuterOpacity)}`
@@ -699,7 +700,7 @@ function LanguageBadge({ code }: { code: string }) {
         width: diameter,
         height: diameter,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+        background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
       }}
     >
       <span className="gradient-text" style={{ fontSize: config.languageBadgeFontSize, backgroundImage: brandGradient }}>
@@ -850,7 +851,7 @@ function Bubble({
           width: diameter,
           height: diameter,
           borderWidth: config.pillBorderWidth,
-          background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
+          background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
           boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
           transform: `scale(${isRunning ? config.agentBubbleRunningScale : isHovered ? config.agentBubbleHoverScale : 1})`,
           opacity: isHovered ? 1 : opacity * (isDimmed ? config.agentBubbleIdleOpacity : 1),
@@ -882,17 +883,17 @@ function BubbleTooltip({ name, description, bubble, canvas }: { name: string; de
         padding: config.bubbleTooltipPadding,
         gap: config.bubbleTooltipLineSpacing,
         borderRadius: config.tipCornerRadius,
-        background: gray(config.tipFillWhite, config.tipFillOpacity),
-        border: `${config.pillBorderWidth}px solid ${gray(1, config.tipBorderOpacity)}`,
-        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)}`,
+        background: palette.tip.fill,
+        border: `${config.pillBorderWidth}px solid ${palette.tip.border}`,
+        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${palette.tip.shadow}`,
         // Hidden until measured, so it never shows for a frame where it doesn't belong.
         visibility: size.width > 0 ? "visible" : "hidden",
       }}
     >
-      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: gray(1, config.tipKeyTextOpacity) }}>
+      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: palette.tip.keyText }}>
         {name}
       </span>
-      <span style={{ fontSize: config.bubbleTooltipFontSize, color: gray(1, config.tipTextOpacity) }}>{description}</span>
+      <span style={{ fontSize: config.bubbleTooltipFontSize, color: palette.tip.text }}>{description}</span>
     </div>
   );
 }
@@ -928,9 +929,9 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
   const lines = tipLines(tip, hotkey, gnomeRecordingKeys);
   return (
     <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
-      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)})` }}>
+      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${palette.tip.shadow})` }}>
         {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
-        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={gray(config.tipFillWhite, config.tipFillOpacity)} stroke={gray(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />
+        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={palette.tip.fill} stroke={palette.tip.border} strokeWidth={config.pillBorderWidth} />
       </svg>
       <div
         className="tip-lines"
@@ -940,7 +941,7 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
           <div key={index} className="tip-line" style={{ gap: config.tipSpacing, height: config.tipLineHeight }}>
             {line.map((part, partIndex) =>
               "words" in part ? (
-                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: gray(1, config.tipTextOpacity) }}>
+                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: palette.tip.text }}>
                   {part.words}
                 </span>
               ) : (
@@ -949,13 +950,13 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
                   className="keycap"
                   style={{
                     fontSize: config.tipKeyFontSize,
-                    color: gray(1, config.tipKeyTextOpacity),
+                    color: palette.tip.keyText,
                     padding: `0 ${config.tipKeyPadding}px`,
                     height: config.tipKeyHeight,
                     borderRadius: config.tipKeyCornerRadius,
                     borderWidth: config.pillBorderWidth,
-                    borderColor: gray(1, config.tipKeyBorderOpacity),
-                    background: gray(1, config.tipKeyFillOpacity),
+                    borderColor: palette.tip.keyBorder,
+                    background: palette.tip.keyFill,
                   }}
                 >
                   {part.key}
@@ -1035,4 +1036,6 @@ function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; 
 }
 
 const root = document.getElementById("root");
+// The overlay is light in light and dark mode alike.
+applyPalette(document, false);
 if (root) createRoot(root).render(<Overlay />);

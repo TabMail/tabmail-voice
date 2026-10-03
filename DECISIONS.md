@@ -2988,12 +2988,35 @@ window's) and `renderer/shared/brand.ts` (the brand blue and purple).
   `palette.retryArcEnd` #E0399E, the track in the start color), one fading out as the other fades in
   over `colorTransitionSeconds`, since a CSS gradient can't ease from one color to another.
   `thinkingRetryColorShift` is gone.
+- **One theme for every window** (owner, same day: "include the gray and shadows into the palette
+  and unify it so that there's a single sort of a palette theme"). The palette's `light` and `dark`
+  themes hold the windows' grays, text, accent, control fills, borders and shadows;
+  `renderer/shared/theme.ts` gives each page them as CSS variables (`controlBorder` is
+  `--control-border`) in one constructed stylesheet (`applyPalette`, before the page renders), since
+  the pages' Content Security Policy (`style-src 'self'`) refuses a `<style>` element. Settings, the
+  welcome wizard, the paste history and the screen-read window follow the system's light and dark;
+  the overlay keeps the light theme in both, as it did. The stylesheets declare no colors of their
+  own (a Windows contrast theme's system colors aside), and the overlay's tips (`palette.tip`) and
+  pill fill (`palette.pillFill`) left `config.ts`'s gray levels and opacities.
+- Unifying settled the values the windows had disagreed on: the window color is Settings'
+  `#F4F3F8` / `#1F1E24` everywhere (the wizard and history were `#ececec` / `#1e1e1e`), and the
+  notes gray (0.6) and "Allowed" green (`#1E7E34`) Settings darkened in light mode for 4.5:1 apply
+  to every window. The overlay's chat window took the light theme's values too: its text and Cancel
+  0.85 black (was black), its caption and close glyph the notes gray (0.6, were 0.55 and 0.5), and its
+  spinner's ring the control border (0.15, was 0.2).
 
 **Consequences:**
-- A color is changed in `palette.ts` alone. The stylesheets' own grays and shadows (`form.css`,
-  `settings/index.css`, `overlay/index.css`) are not in it yet.
+- A color is changed in `palette.ts` alone; `theme.test.ts` fails on a color written in any
+  stylesheet or component (the brand's `brand.ts` helpers and a ring's opaque mask aside), and on a
+  variable a stylesheet reads that nothing gives.
+- The wizard's and history's background is a touch lighter and cooler than before; their notes and
+  "Allowed" a touch darker in light mode.
 - The thinking circle draws two arcs at once; the hidden one is fully transparent.
 - Tests: `overlay/index.test.ts` › the waveform takes its recording colour once a voice is heard, and
   the circle the retry's colours while a retry runs (red-verified against a retry layer never shown
   and against no fade). The `overlay-transcribing-retry` preview shows the retry's circle.
+  `shared/theme.test.ts` (no color outside the palette, every variable given, windows follow light
+  and dark while the overlay stays light; red-verified against a color written in a stylesheet and
+  in a component, a variable nothing gives, and the overlay given the dark theme), and
+  `settings/style.test.ts`'s contrast checks, which now read the palette's themes.
 

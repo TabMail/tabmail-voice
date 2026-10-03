@@ -36,8 +36,3 @@ export function rgba(hex: string, alpha = 1): string {
   return `rgba(${channels(hex).join(", ")}, ${alpha})`;
 }
 
-/** A gray of `white` (0 black … 1 white), at `alpha`. */
-export function gray(white: number, alpha = 1): string {
-  const value = Math.round(white * 255);
-  return `rgba(${value}, ${value}, ${value}, ${alpha})`;
-}

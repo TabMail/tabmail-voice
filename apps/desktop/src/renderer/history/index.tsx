@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import * as config from "../../core/config.js";
 import { pastedAgo } from "../../core/dictation/pasteHistory.js";
 import { send, useWindowState } from "../shared/bridge.js";
+import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
@@ -57,4 +58,5 @@ function History() {
 }
 
 const root = document.getElementById("root");
+applyPalette(document);
 if (root) createRoot(root).render(<History />);

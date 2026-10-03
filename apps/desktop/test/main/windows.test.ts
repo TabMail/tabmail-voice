@@ -144,12 +144,12 @@ describe("Windows", () => {
     expect(settingsWindow("darwin")).toMatchObject({ vibrancy: "sidebar", titleBarStyle: "hiddenInset", backgroundColor: "#00000000", ...config.settingsWindowSize });
 
     const light = settingsWindow("win32");
-    expect(light).toMatchObject({ backgroundColor: palette.settingsWindowLight });
+    expect(light).toMatchObject({ backgroundColor: palette.light.window });
     expect(light).not.toHaveProperty("vibrancy");
     expect(light).not.toHaveProperty("titleBarStyle");
 
     electron.nativeTheme.shouldUseDarkColors = true;
-    expect(settingsWindow("linux")).toMatchObject({ backgroundColor: palette.settingsWindowDark });
+    expect(settingsWindow("linux")).toMatchObject({ backgroundColor: palette.dark.window });
   });
 
   /** The overlay is never focused, so every click on it is a first click: the chat window's close

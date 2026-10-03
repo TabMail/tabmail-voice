@@ -612,32 +612,27 @@ describe("Settings page", () => {
     expect(document.querySelector(".settings")?.classList.contains("mac")).toBe(false);
   });
 
-  /** Every color `settings/index.css` reads is there: declared by a stylesheet, or set on the page by
-   * `settings/index.tsx` from the brand and the config (a missing gradient would leave the chosen
-   * section's white label on white). */
+  /** Every color `settings/index.css` and `form.css` read is there, in light and dark: declared by
+   * a stylesheet, or by the palette's stylesheet the page is given (`shared/theme.ts`), with the
+   * palette's values (a missing gradient would leave the chosen section's white label on white). */
   test("the page provides every color its stylesheet reads", async () => {
     const stylesheet = (name: string) => readFileSync(join(import.meta.dirname, "../../../src/renderer", name), "utf8");
-    const settingsCSS = stylesheet("settings/index.css");
-    const declared = new Set([...(settingsCSS + stylesheet("shared/form.css")).matchAll(/(--[\w-]+)\s*:/g)].map(([, name = ""]) => name));
-    const read = new Set([...settingsCSS.matchAll(/var\((--[\w-]+)\)/g)].map(([, name = ""]) => name));
+    const css = stylesheet("settings/index.css") + stylesheet("shared/form.css");
+    const declared = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map(([, name = ""]) => name));
+    const read = new Set([...css.matchAll(/var\((--[\w-]+)\)/g)].map(([, name = ""]) => name));
     await settingsPage({ error: null }, signedIn);
-    const page = document.querySelector<HTMLElement>(".settings");
-    if (!page) throw new Error("no page");
-    const provided: Record<string, string> = {
-      "--brand-gradient": brandGradient,
-      "--brand-text-gradient": brandTextGradient,
-      "--brand-blue": brandBlue,
-      "--window-light": palette.settingsWindowLight,
-      "--window-dark": palette.settingsWindowDark,
-    };
+    expect(document.adoptedStyleSheets).toHaveLength(1);
+    const text = document.adoptedStyleSheets.flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join("\n");
+    const dark = text.indexOf("@media (prefers-color-scheme: dark)");
+    expect(dark).toBeGreaterThan(0);
+    const [lightColors, darkColors] = [text.slice(0, dark), text.slice(dark)];
 
     expect(read.size).toBeGreaterThan(0);
-    for (const name of read) {
-      if (declared.has(name)) continue;
-      expect(provided[name], name).toBeDefined();
-      expect(page.style.getPropertyValue(name).trim(), name).toBe(provided[name]);
+    for (const name of read) if (!declared.has(name)) expect(lightColors, name).toContain(`${name}: `);
+    for (const variable of [`--brand-gradient: ${brandGradient};`, `--brand-text-gradient: ${brandTextGradient};`, `--brand-blue: ${brandBlue};`, `--window: ${palette.light.window};`, `--secondary: ${palette.light.secondary};`]) {
+      expect(lightColors).toContain(variable);
     }
-    for (const name of Object.keys(provided)) expect(read.has(name), name).toBe(true);
+    for (const variable of [`--window: ${palette.dark.window};`, `--secondary: ${palette.dark.secondary};`, `--switch-off: ${palette.dark.switchOff};`]) expect(darkColors).toContain(variable);
   });
 
   /** The sidebar says who is signed in, or that no one is. */

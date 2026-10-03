@@ -2,23 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { type CSSProperties, type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { createRoot } from "react-dom/client";
 import icon from "../../../resources/icon.png";
 import { alphabetical } from "../../core/agent/bubbleOrder.js";
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { offeredAgentToolIDs, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
-import { palette } from "../../core/palette.js";
 import { excludedSite } from "../../core/dictation/excludedSites.js";
 import { type DictionaryEntry, dictionaryWord, isSameWord } from "../../core/dictionary/entries.js";
 import { hotkeyNames, isDictationHotkey } from "../../core/hotkey/bindings.js";
 import { type UpdateState, updateItem } from "../../core/ui/menuModel.js";
 import type { Command, SettingsState } from "../../shared/ipc.js";
-import { brandBlue, brandGradient, brandTextGradient } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { BookIcon, ConnectorIcon, EyeOffIcon, GearIcon, LockShieldIcon, MicrophoneIcon, PersonIcon, SparklesLineIcon, ToolIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
+import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
@@ -37,15 +36,6 @@ const sections: { name: SectionName; title: string; icon: (size: number) => Reac
 
 /** macOS draws its traffic lights over the sidebar and the frosted material behind it. */
 const isMac = navigator.userAgent.includes("Macintosh");
-
-/** The stylesheet's colors from the brand and the config: `index.css` reads them. */
-const colors = {
-  "--brand-gradient": brandGradient,
-  "--brand-text-gradient": brandTextGradient,
-  "--brand-blue": brandBlue,
-  "--window-light": palette.settingsWindowLight,
-  "--window-dark": palette.settingsWindowDark,
-} as CSSProperties;
 
 /** Whether the sidebar offers `name`'s section: Privacy only where apps can be excluded from screen
  * reading (`canExcludeApps`, macOS). */
@@ -71,7 +61,7 @@ function Settings() {
   if (!state) return null;
   const section = sections.find((candidate) => candidate.name === shown) ?? sections[0];
   return (
-    <div className={isMac ? "settings mac" : "settings"} style={colors}>
+    <div className={isMac ? "settings mac" : "settings"}>
       <nav className="sidebar" style={{ width: config.settingsSidebarWidth }}>
         <div className="identity">
           <img src={icon} alt="" width={config.settingsAppIconSize} height={config.settingsAppIconSize} />
@@ -636,4 +626,5 @@ function AccountSection({ email: signedInEmail }: { email: string | null }) {
 }
 
 const root = document.getElementById("root");
+applyPalette(document);
 if (root) createRoot(root).render(<Settings />);

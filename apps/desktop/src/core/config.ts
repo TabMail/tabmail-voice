@@ -486,8 +486,6 @@ export const thinkingTrackOpacity = 0.2;
  * `palette.retryArcEnd`, a sign of the retry before its note takes the circle's place (owner,
  * 2026-10-02). */
 export const thinkingArcEndColor = 0.6;
-/** Pill fill: a soft off-white (pure white glared). */
-export const pillFillWhite = 0.96;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
 export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 100;
 /** Agent mode's bubbles in a row under the pill, one per tool and connector: icon-only circles,
@@ -587,23 +585,14 @@ export const tipHeight = tipBoxHeight(tipLineCount);
 export const tipHorizontalPadding = 10;
 export const tipSpacing = 5;
 export const tipCornerRadius = 8;
-/** Near-black fill, a hairline light border, and a soft drop shadow. */
-export const tipFillWhite = 0.11;
-export const tipFillOpacity = 0.94;
-export const tipBorderOpacity = 0.12;
-export const tipShadowOpacity = 0.3;
+/** A soft drop shadow, in `palette.tip.shadow`; the tip's colors are `palette.tip`'s. */
 export const tipShadowRadius = 5;
 export const tipShadowOffsetY = 2;
-/** White text, the keycap's word a little brighter than the action's. */
-export const tipTextOpacity = 0.78;
-export const tipKeyTextOpacity = 0.95;
 /** The keycap: a raised key, a lighter fill with a light border. */
 export const tipKeyFontSize = 12;
 export const tipKeyPadding = 5;
 export const tipKeyHeight = 17;
 export const tipKeyCornerRadius = 3.5;
-export const tipKeyFillOpacity = 0.14;
-export const tipKeyBorderOpacity = 0.22;
 /** The tooltip's arrow, pointing at the pill. */
 export const tipArrowWidth = 10;
 export const tipArrowHeight = 5;
