@@ -231,6 +231,11 @@ export class CountingCapture implements AudioCapture {
     this.onChunk?.(tone(config.audioChunkFrames / config.recordingSampleRate, amplitude));
   }
 
+  /** The last start's microphone hears `samples`, in the packets it delivers (`config.audioChunkFrames`). */
+  feed(samples: Float32Array): void {
+    for (let offset = 0; offset < samples.length; offset += config.audioChunkFrames) this.onChunk?.(samples.subarray(offset, offset + config.audioChunkFrames));
+  }
+
   stop(): void {
     this.events.push("stop");
   }

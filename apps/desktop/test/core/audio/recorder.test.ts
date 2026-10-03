@@ -71,11 +71,11 @@ describe("AudioRecorder", () => {
     expect(recording.pcm.length).toBe(16_000 * 2);
   });
 
-  /** The backend transcribes at most 120 s of audio: a dictation left running is cut there, not
-   * sent to fail. */
-  test("by default keeps no more than the 120 s the backend transcribes", () => {
+  /** The backend transcribes at most 120 s of audio at once: a recording sent as one request (a
+   * spoken answer) is cut there, not sent to fail. A dictation is chunked instead (ADR-DESK-048). */
+  test("an unchunked recording keeps no more than the 120 s the backend transcribes", () => {
     const backendMaxSeconds = 120;
-    const recorder = new AudioRecorder();
+    const recorder = new AudioRecorder(16_000, config.maxUnchunkedDuration);
     feed(recorder, tone(backendMaxSeconds + 1));
     const recording = recorder.finish();
     expect(recording.truncated).toBe(true);

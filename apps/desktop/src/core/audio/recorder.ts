@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { type ChunkCut, Chunker } from "./chunker.js";
 import { FLACEncoder } from "./flac.js";
 import * as config from "../config.js";
 
@@ -56,12 +57,14 @@ export function normalizePeak(samples: Int16Array): number {
 }
 
 export interface Recording {
-  /** Little-endian 16-bit mono PCM samples, peak-normalized (`normalizePeak`). */
+  /** Little-endian 16-bit mono PCM samples: the whole recording, peak-normalized (`normalizePeak`)
+   * when it is one upload, as captured when it was cut into chunks. */
   pcm: Uint8Array;
-  /** The same samples FLAC-encoded, the upload. */
+  /** The upload FLAC-encoded: the whole recording, or, when it was cut into chunks, the last chunk's
+   * (`lastChunk`), each normalized on its own. */
   flac: Uint8Array;
   sampleRate: number;
-  /** The gain `normalizePeak` applied (1 when none). */
+  /** The gain `normalizePeak` applied to the upload (1 when none). */
   gain: number;
   /** Loudest chunk's level on the fixed 0…1 scale, as captured (before `gain`). */
   peakLevel: number;
@@ -69,6 +72,16 @@ export interface Recording {
   firstChunkAt: number | null;
   /** True when recording hit the maximum duration and later audio was dropped. */
   truncated: boolean;
+  /** The last chunk, from the last cut to the end, when the recording was cut into chunks
+   * (ADR-DESK-048); null when it is one upload. */
+  lastChunk: RecordedChunk | null;
+}
+
+/** A chunk of a long recording, ready to upload: its samples normalized on their own and
+ * FLAC-encoded. */
+export interface RecordedChunk extends ChunkCut {
+  flac: Uint8Array;
+  gain: number;
 }
 
 export function recordingDuration(recording: Recording): number {
@@ -76,21 +89,25 @@ export function recordingDuration(recording: Recording): number {
 }
 
 /** Accumulates one dictation as 16 kHz mono 16-bit PCM; `finish` peak-normalizes it and FLAC-encodes
- * it for the upload. */
+ * it for the upload. Given `onChunk`, it cuts a long recording into chunks as it goes (`Chunker`,
+ * ADR-DESK-048), handing each to `onChunk` as it is cut, and `finish` the last. */
 export class AudioRecorder {
   private readonly maxFrames: number;
-  private readonly chunks: Int16Array[] = [];
+  private samples = new Int16Array(16_000);
   private frames = 0;
   private peakLevel = 0;
   private firstChunkAt: number | null = null;
   private truncated = false;
+  private readonly chunker: Chunker | null;
 
   constructor(
     readonly sampleRate: number = config.recordingSampleRate,
     /** Milliseconds. */
     maxDuration: number = config.maxRecordingDuration,
+    private readonly onChunk?: (chunk: RecordedChunk) => void,
   ) {
     this.maxFrames = Math.floor((maxDuration / 1000) * sampleRate);
+    this.chunker = onChunk ? new Chunker(sampleRate) : null;
   }
 
   append(samples: Float32Array, now: number = performance.now()): void {
@@ -101,30 +118,51 @@ export class AudioRecorder {
     const count = Math.min(samples.length, room);
     if (count < samples.length) this.truncated = true;
     if (count <= 0) return;
-    const pcm = new Int16Array(count);
+    if (this.frames + count > this.samples.length) {
+      const grown = new Int16Array(Math.max(this.samples.length * 2, this.frames + count));
+      grown.set(this.samples.subarray(0, this.frames));
+      this.samples = grown;
+    }
+    const start = this.frames;
     for (let index = 0; index < count; index += 1) {
       const clamped = Math.max(-1, Math.min(1, samples[index] ?? 0));
-      pcm[index] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff);
+      this.samples[start + index] = Math.round(clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff);
     }
-    this.chunks.push(pcm);
     this.frames += count;
+    if (!this.chunker || !this.onChunk) return;
+    for (const cut of this.chunker.append(this.samples.subarray(start, this.frames))) this.onChunk(this.encoded(cut));
   }
 
-  /** Everything recorded so far, peak-normalized. The whole recording's loudest sample sets the
-   * gain, so it is encoded here rather than as it arrives: about 1.4 ms per second of audio. */
+  /** Everything recorded so far. One upload, it is peak-normalized as a whole: the whole recording's
+   * loudest sample sets the gain, so it is encoded here rather than as it arrives (about 1.4 ms per
+   * second of audio). Cut into chunks, only the last chunk is encoded here. */
   finish(): Recording {
-    const samples = new Int16Array(this.frames);
-    let frame = 0;
-    for (const chunk of this.chunks) {
-      samples.set(chunk, frame);
-      frame += chunk.length;
+    const samples = this.samples.slice(0, this.frames);
+    const last = this.chunker?.finish(this.frames) ?? null;
+    if (last !== null) {
+      const lastChunk = this.encoded(last);
+      return { pcm: littleEndian(samples), flac: lastChunk.flac, sampleRate: this.sampleRate, gain: lastChunk.gain, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated, lastChunk };
     }
     const gain = normalizePeak(samples);
     const encoder = new FLACEncoder(this.sampleRate);
     encoder.append(samples);
-    const pcm = new Uint8Array(this.frames * 2);
-    const view = new DataView(pcm.buffer);
-    samples.forEach((sample, index) => view.setInt16(index * 2, sample, true));
-    return { pcm, flac: encoder.finish(), sampleRate: this.sampleRate, gain, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated };
+    return { pcm: littleEndian(samples), flac: encoder.finish(), sampleRate: this.sampleRate, gain, peakLevel: this.peakLevel, firstChunkAt: this.firstChunkAt, truncated: this.truncated, lastChunk: null };
   }
+
+  /** A chunk's samples, peak-normalized on their own and FLAC-encoded. */
+  private encoded(cut: ChunkCut): RecordedChunk {
+    const samples = this.samples.slice(cut.start, cut.end);
+    const gain = normalizePeak(samples);
+    const encoder = new FLACEncoder(this.sampleRate);
+    encoder.append(samples);
+    return { ...cut, flac: encoder.finish(), gain };
+  }
+}
+
+/** `samples` as little-endian 16-bit PCM. */
+function littleEndian(samples: Int16Array): Uint8Array {
+  const pcm = new Uint8Array(samples.length * 2);
+  const view = new DataView(pcm.buffer);
+  samples.forEach((sample, index) => view.setInt16(index * 2, sample, true));
+  return pcm;
 }

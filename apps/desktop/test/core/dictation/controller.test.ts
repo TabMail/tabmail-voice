@@ -16,7 +16,7 @@ import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
 import { TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import * as config from "../../../src/core/config.js";
-import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, type Phase, retryingMessage } from "../../../src/core/dictation/controller.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyTranscribedMessage, type Phase, retryingMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
@@ -32,6 +32,7 @@ import { FakeThunderbird } from "../../support/fakeThunderbird.js";
 import { screen as blankScreen } from "../../support/screens.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
 import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedIn, StubTransport, tone } from "../../support/stubs.js";
+import { concat, random, room, speech } from "../../support/speech.js";
 
 vi.mock("electron", () => ({ screen: {} }));
 
@@ -3923,7 +3924,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(tool.runs).toHaveLength(1);
           });
 
-          /** A hands-free answer, which no key release ends, stops at `maxRecordingDuration`: the
+          /** A hands-free answer, which no key release ends, stops at `maxUnchunkedDuration`, as one request: the
            * microphone is released and what it heard is sent. */
           test("a hands-free answer stops at the length cap and is sent", async () => {
             const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
@@ -3940,7 +3941,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             const realSetTimeout = globalThis.setTimeout;
             const timers = vi.spyOn(globalThis, "setTimeout").mockImplementation(((action: () => void, delay?: number) => {
               delays.push(delay);
-              return realSetTimeout(action, delay === config.maxRecordingDuration ? 0 : delay);
+              return realSetTimeout(action, delay === config.maxUnchunkedDuration ? 0 : delay);
             }) as unknown as typeof setTimeout);
             try {
               controller.handle("startHandsFree");
@@ -3948,7 +3949,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             } finally {
               timers.mockRestore();
             }
-            expect(delays).toContain(config.maxRecordingDuration);
+            expect(delays).toContain(config.maxUnchunkedDuration);
             expect(controller.phase).toEqual({ kind: "listening" });
 
             expect(await eventually(() => controller.phase.kind !== "listening")).toBe(true);
@@ -5077,6 +5078,320 @@ describe("DictationController", { timeout: 20_000 }, () => {
       } finally {
         controller.handle("cancel");
         vi.useRealTimers();
+      }
+    });
+  });
+
+  /** A long dictation, cut into chunks as it is recorded, each sent at once with its own cleanup
+   * (ADR-DESK-048). */
+  describe("a long dictation", () => {
+    type ChunkReply = { status: number; body: unknown } | "network";
+
+    /** The transcription backend of a long dictation. It tells a request's chunk by its audio (the
+     * first audio it hears is chunk 0, the next chunk 1, a retry the same as before), and answers it
+     * with `answer`, or "network" for a dropped connection. A request canceled while it waits fails,
+     * as `liveTransport`'s does. */
+    class ChunkBackend {
+      private readonly audio: string[] = [];
+      readonly sent: { chunk: number; attempt: number; signal: AbortSignal | undefined; body: Record<string, unknown> }[] = [];
+      /** Requests neither answered nor canceled yet. */
+      inFlight = 0;
+
+      constructor(private readonly answer: (chunk: number, attempt: number) => Promise<ChunkReply> | ChunkReply) {}
+
+      readonly transport: HTTPTransport = async (request) => {
+        if (request.signal?.aborted) throw new TransportError("canceled");
+        const body = JSON.parse(request.body) as Record<string, unknown>;
+        const audio = String(body.audio);
+        let chunk = this.audio.indexOf(audio);
+        if (chunk === -1) chunk = this.audio.push(audio) - 1;
+        const attempt = this.attempts(chunk);
+        this.sent.push({ chunk, attempt, signal: request.signal, body });
+        this.inFlight += 1;
+        const reply = await new Promise<ChunkReply>((resolve, reject) => {
+          request.signal?.addEventListener("abort", () => reject(new TransportError("canceled")), { once: true });
+          Promise.resolve(this.answer(chunk, attempt)).then(resolve, reject);
+        }).finally(() => {
+          this.inFlight -= 1;
+        });
+        if (reply === "network") throw new TransportError("network");
+        return { status: reply.status, headers: {}, body: JSON.stringify(reply.body) };
+      };
+
+      /** How many chunks it has heard. */
+      get chunks(): number {
+        return this.audio.length;
+      }
+
+      /** How many requests carried chunk `chunk`. */
+      attempts(chunk: number): number {
+        return this.sent.filter((sent) => sent.chunk === chunk).length;
+      }
+    }
+
+    /** Chunk `chunk`'s answer: heard as `raw <chunk>`, cleaned up to `Part <chunk>.`. */
+    const part = (chunk: number): ChunkReply => ({ status: 200, body: { text: `raw ${chunk}`, cleaned_text: `Part ${chunk}.` } });
+    const serverError: ChunkReply = { status: 502, body: { error: "transcription_failed" } };
+    const refused: ChunkReply = { status: 400, body: { error: "invalid_audio" } };
+    const never = (): Promise<ChunkReply> => new Promise(() => {});
+
+    /** Speech of each of `seconds`, a one-and-a-half-second pause between them: a chunk each, cut at
+     * the pause, as each has more than `chunkMinimumSpeech` of speech but the last. */
+    function pausedSpeech(seed: number, ...seconds: number[]): Float32Array {
+      const rand = random(seed);
+      return concat(...seconds.flatMap((length, index) => (index === seconds.length - 1 ? [speech(length, rand)] : [speech(length, rand), room(1.5, rand)])));
+    }
+
+    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
+      const capture = new CountingCapture();
+      const made = makeController({ capture, transcriptionTransport: backend.transport });
+      made.controller.chunkRetryDelays = options.chunkRetryDelays ?? [1];
+      made.controller.transcriptionRetryDelays = [1, 1];
+      made.controller.transcriptionRetryNoticeDelay = 0;
+      const phases: Phase[] = [];
+      made.controller.onPhaseChange = (phase) => phases.push(phase);
+      return { ...made, capture, phases };
+    }
+
+    /** Starts a dictation (agent mode: Space pressed once), waits for it to listen, and has the
+     * microphone hear `audio`. */
+    async function startHearing(controller: DictationController, capture: CountingCapture, audio: Float32Array, mode: DictationMode = "dictation"): Promise<void> {
+      controller.handle("start");
+      if (mode === "agent") controller.handle("toggleMode");
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      capture.feed(audio);
+    }
+
+    test("is sent in chunks while it is recorded, each with its cleanup, and pasted joined in order", async () => {
+      const lastAnswered = deferred<void>();
+      const backend = new ChunkBackend(async (chunk) => {
+        // The first chunk answers last.
+        if (chunk === 0) await lastAnswered.promise;
+        if (chunk === 2) setTimeout(lastAnswered.resolve, 20);
+        return part(chunk);
+      });
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(1, 12, 0.5));
+      // Cut at the pause and sent while the user goes on.
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      expect(controller.phase).toEqual(listening);
+      capture.feed(pausedSpeech(2, 12, 5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.chunks).toBe(3);
+      expect(pastes).toEqual(["Part 0. Part 1. Part 2."]);
+      expect(controller.phase).toEqual(idle);
+      // Each chunk is a whole request: its cleanup goes with it.
+      expect(backend.sent.every((sent) => sent.body.cleanup !== undefined)).toBe(true);
+      expect(used).toEqual([["raw 0", "Part 0.", "raw 1", "Part 1.", "raw 2", "Part 2."]]);
+    });
+
+    /** Speech with no pause is cut anyway, and the next chunk starts before the cut: the words both
+     * heard are kept once. */
+    test("speech with no pause is cut with an overlap, and the overlap's words are pasted once", async () => {
+      const texts = ["We met on Monday and agreed to ship the beta", "agreed to ship the beta on Friday."];
+      const backend = new ChunkBackend((chunk) => ({ status: 200, body: { text: texts[chunk], cleaned_text: texts[chunk] } }));
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, speech(config.chunkMaxDuration / 1000 + 10, random(3)));
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.chunks).toBe(2);
+      expect(pastes).toEqual(["We met on Monday and agreed to ship the beta on Friday."]);
+    });
+
+    /** Nobody waits for a chunk while the user still dictates: a server error, a dropped connection or
+     * the backend's own timeout is tried again, quietly. */
+    test("a chunk failing while the user dictates is retried in the background until it answers", async () => {
+      const failures: ChunkReply[] = [serverError, "network", { status: 504, body: { error: "transcription_timeout" } }];
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 0 ? (failures[attempt] ?? part(0)) : part(chunk)));
+      const { controller, capture, pastes, phases } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(4, 12, 0.5));
+      expect(await eventually(() => backend.attempts(0) === failures.length + 1)).toBe(true);
+      expect(controller.phase).toEqual(listening);
+      expect(controller.isRetrying).toBe(false);
+      capture.feed(pausedSpeech(5, 4));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+      expect(controller.phase).toEqual(idle);
+      expect(phases.some((phase) => phase.kind === "retrying")).toBe(false);
+    });
+
+    /** At the release, a chunk still failing gets the last tries one recording gets, with the pill's
+     * retry note. */
+    test("a chunk still failing at the release gets its last tries, with the retry note", async () => {
+      const pill: { controller?: DictationController } = {};
+      // It fails until the pill says it is retrying: only once the user released.
+      const backend = new ChunkBackend((chunk) => (chunk === 0 && pill.controller?.isRetrying !== true ? serverError : part(chunk)));
+      const made = makeLong(backend, { chunkRetryDelays: [20] });
+      pill.controller = made.controller;
+
+      await startHearing(made.controller, made.capture, pausedSpeech(6, 12, 3));
+      expect(await eventually(() => backend.attempts(0) >= 2)).toBe(true);
+      made.controller.handle("finish");
+
+      expect(await eventually(() => settled(made.controller))).toBe(true);
+      expect(made.pastes).toEqual(["Part 0. Part 1."]);
+      expect(made.controller.phase).toEqual(idle);
+      expect(made.phases).toContainEqual({ kind: "retrying", message: retryingMessage });
+    });
+
+    /** Owner, 2026-10-03: "paste only the up to successful part". The chunks after the first that
+     * gave up are not pasted either: the text would have a hole. */
+    test.each([
+      { lost: "a middle chunk refused", answer: (chunk: number) => (chunk === 1 ? refused : part(chunk)), pasted: "Part 0." },
+      { lost: "the last chunk failing on every try", answer: (chunk: number) => (chunk === 2 ? serverError : part(chunk)), pasted: "Part 0. Part 1." },
+    ])("$lost: the chunks before it are pasted, and the pill says the end is missing", async ({ answer, pasted }) => {
+      const backend = new ChunkBackend(answer);
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(7, 12, 12, 4));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([pasted]);
+      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+    });
+
+    /** Owner, 2026-10-03: "if it continuously fails completely, paste nothing". */
+    test("the first chunk failing on every try loses the dictation: nothing is pasted", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 0 ? serverError : part(chunk)));
+      const { controller, capture, pastes, phases } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(8, 12, 4));
+      expect(await eventually(() => backend.attempts(0) >= 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(failed("Dictation failed. Please try again."));
+      expect(phases).toContainEqual({ kind: "retrying", message: retryingMessage });
+    });
+
+    test.each(["while recording", "after the release"])("canceled %s: every chunk's request is canceled and nothing is pasted", async (when) => {
+      const backend = new ChunkBackend(never);
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(9, 12, 12, 4));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      if (when === "after the release") {
+        controller.handle("finish");
+        expect(await eventually(() => backend.chunks === 3)).toBe(true);
+      }
+      controller.handle("cancel");
+
+      expect(await eventually(() => backend.sent.every((sent) => sent.signal?.aborted === true))).toBe(true);
+      expect(await eventually(() => backend.inFlight === 0)).toBe(true);
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** Agent mode carries out a request whole or not at all: half of it may ask for something else. */
+    test("agent mode carries out nothing of a request whose end was lost", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 1 ? refused : part(chunk)));
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(10, 12, 4), "agent");
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.chunks).toBe(2);
+      expect(backend.sent.every((sent) => sent.body.cleanup === undefined)).toBe(true);
+      expect(completions.requests).toHaveLength(0);
+      expect(pastes).toEqual([]);
+      expect(controller.phase.kind).toBe("failed");
+      expect(controller.phase).not.toEqual(failed(partlyTranscribedMessage));
+    });
+
+    /** A chunk of nothing but the room (the quiet after the last words) is not sent: a quiet boosted
+     * by normalization can be heard as words (ADR-DESK-040). */
+    test("a last chunk with no speech in it is not sent", async () => {
+      const backend = new ChunkBackend(part);
+      const { controller, capture, pastes } = makeLong(backend);
+      const rand = random(11);
+
+      await startHearing(controller, capture, concat(speech(12, rand), room(1.5, rand), room(4, rand)));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.sent.map((sent) => sent.chunk)).toEqual([0]);
+      expect(pastes).toEqual(["Part 0."]);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** With no speech heard at all, the last chunk goes anyway: the model decides, as for one
+     * recording (no loudness gate, ADR-DESK-005). */
+    test("a long recording of nothing but the room sends its last chunk, and nothing is heard", async () => {
+      const backend = new ChunkBackend(() => ({ status: 200, body: { text: "", cleaned_text: null } }));
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, room(config.chunkMaxDuration / 1000 + 2, random(12)));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.sent).toHaveLength(1);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(failed(nothingHeardMessage));
+    });
+
+    /** Testing rule 11: seeded long dictations of random chunks, each refused, down for good, or
+     * failing a few times by server error or dropped connection, at random latencies, fed in packets
+     * that interleave with the answers. Whatever the order things happen in, what is pasted is
+     * exactly the chunks before the first lost one, joined in order. */
+    test("random chunk failures and timings paste exactly the chunks before the first lost one", { timeout: 120_000 }, async () => {
+      for (let seed = 1; seed <= 8; seed += 1) {
+        const rand = random(seed);
+        const count = 2 + Math.floor(rand() * 4);
+        const fates = Array.from({ length: count }, (): "refused" | "down" | number => {
+          const fate = rand();
+          return fate < 0.12 ? "refused" : fate < 0.24 ? "down" : Math.floor(rand() * 3);
+        });
+        const timing = random(seed * 7_919);
+        const backend = new ChunkBackend(async (chunk, attempt) => {
+          await sleep(timing() * 15);
+          const fate = fates[chunk];
+          if (fate === "refused") return refused;
+          if (fate === "down") return serverError;
+          if (fate !== undefined && attempt < fate) return timing() < 0.5 ? serverError : "network";
+          return part(chunk);
+        });
+        const { controller, capture, pastes } = makeLong(backend);
+        const audio = pausedSpeech(seed * 31, ...Array.from({ length: count }, (_, index) => (index === count - 1 ? 2 + rand() * 5 : 11 + rand() * 8)));
+
+        await startHearing(controller, capture, new Float32Array(0));
+        for (let offset = 0; offset < audio.length; offset += config.audioChunkFrames * 40) {
+          capture.feed(audio.subarray(offset, offset + config.audioChunkFrames * 40));
+          await sleep(timing() * 3);
+        }
+        controller.handle("finish");
+
+        expect(await eventually(() => settled(controller)), `seed ${seed}`).toBe(true);
+        expect(backend.chunks, `seed ${seed}`).toBe(count);
+        const lost = fates.findIndex((fate) => typeof fate === "string");
+        const kept = Array.from({ length: lost === -1 ? count : lost }, (_, chunk) => `Part ${chunk}.`);
+        if (lost === -1) {
+          expect(pastes, `seed ${seed}`).toEqual([kept.join(" ")]);
+          expect(controller.phase, `seed ${seed}`).toEqual(idle);
+        } else if (lost === 0) {
+          expect(pastes, `seed ${seed}`).toEqual([]);
+          expect(controller.phase.kind, `seed ${seed}`).toBe("failed");
+          expect(controller.phase, `seed ${seed}`).not.toEqual(failed(partlyTranscribedMessage));
+        } else {
+          expect(pastes, `seed ${seed}`).toEqual([kept.join(" ")]);
+          expect(controller.phase, `seed ${seed}`).toEqual(failed(partlyTranscribedMessage));
+        }
+        // Nothing is left running once it is done.
+        expect(await eventually(() => backend.inFlight === 0), `seed ${seed}`).toBe(true);
       }
     });
   });
