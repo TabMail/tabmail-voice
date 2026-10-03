@@ -85,6 +85,8 @@ describe("Chunker", () => {
     // Inside the pause: no word is split, and nothing overlaps.
     expect(cut.end).toBeGreaterThan(pauseStart);
     expect(cut.end).toBeLessThan(pauseStart + 1.5 * rate);
+    // In the middle of the pause's first second, so half its quiet ends this chunk, half starts the next.
+    expect(Math.abs(seconds(cut.end - pauseStart) - config.chunkPauseDuration / 2000)).toBeLessThan(0.2);
     expect(cut.overlapped).toBe(false);
     expect(cut.hasSpeech).toBe(true);
     expect(last).toMatchObject({ index: 1, start: cut.end, end: audio.length, overlapped: false, hasSpeech: true });

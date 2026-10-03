@@ -5142,9 +5142,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return concat(...seconds.flatMap((length, index) => (index === seconds.length - 1 ? [speech(length, rand)] : [speech(length, rand), room(1.5, rand)])));
     }
 
-    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
+    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
       const capture = new CountingCapture();
-      const made = makeController({ capture, transcriptionTransport: backend.transport });
+      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste });
       made.controller.chunkRetryDelays = options.chunkRetryDelays ?? [1];
       made.controller.transcriptionRetryDelays = [1, 1];
       made.controller.transcriptionRetryNoticeDelay = 0;
@@ -5244,6 +5244,83 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(made.phases).toContainEqual({ kind: "retrying", message: retryingMessage });
       // Once the retry answers, the pill shows the transcription going on again.
       expect(made.phases.slice(made.phases.findIndex((phase) => phase.kind === "retrying"))).toContainEqual(transcribing);
+    });
+
+    /** The retry note is for a transcription still failing: once every chunk answered, it is not
+     * shown, however long the paste takes. */
+    test("a retry that answers in time shows no retry note, even during a slow paste", async () => {
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 1 && attempt === 0 ? serverError : part(chunk)));
+      const pasted: string[] = [];
+      const { controller, capture, phases } = makeLong(backend, {
+        paste: async (text) => {
+          await sleep(600);
+          pasted.push(text);
+        },
+      });
+      controller.transcriptionRetryNoticeDelay = 300;
+
+      await startHearing(controller, capture, pausedSpeech(27, 12, 3));
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller) && pasted.length === 1)).toBe(true);
+      expect(pasted).toEqual(["Part 0. Part 1."]);
+      expect(backend.attempts(1)).toBe(2);
+      expect(phases.some((phase) => phase.kind === "retrying")).toBe(false);
+      expect(controller.isRetrying).toBe(false);
+    });
+
+    /** While the user dictates, a chunk still failing waits the last of `chunkRetryDelays` between
+     * tries, again and again: never a tight loop. */
+    test("a chunk failing while the user dictates keeps waiting the last delay between tries", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 0 ? serverError : part(chunk)));
+      const { controller, capture } = makeLong(backend, { chunkRetryDelays: [1, 100] });
+
+      await startHearing(controller, capture, pausedSpeech(28, 12, 0.5));
+      expect(await eventually(() => backend.attempts(0) >= 2)).toBe(true);
+      await sleep(500);
+      // About one try per 100 ms: never dozens.
+      expect(backend.attempts(0)).toBeLessThanOrEqual(10);
+      controller.handle("cancel");
+      expect(await eventually(() => backend.inFlight === 0 && settled(controller))).toBe(true);
+    });
+
+    /** Only a server error, a dropped connection or the backend's timeout is tried again while the
+     * user dictates: a refused chunk gives up at once. */
+    test("a chunk refused while the user dictates is not tried again", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 0 ? refused : part(chunk)));
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(29, 12, 0.5));
+      expect(await eventually(() => backend.attempts(0) === 1 && backend.inFlight === 0)).toBe(true);
+      await sleep(100);
+      expect(backend.attempts(0)).toBe(1);
+      capture.feed(pausedSpeech(30, 3));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.attempts(0)).toBe(1);
+      expect(pastes).toEqual([]);
+      expect(controller.phase.kind).toBe("failed");
+    });
+
+    /** Agent mode reads the words on both sides of a long silence too. */
+    test("agent mode is asked the words on both sides of a long silence", { timeout: 60_000 }, async () => {
+      const texts = [
+        "Write to the team that I think that one of the main points is the travel cost and the hotel.",
+        "And also say that I think that one of the main points we missed is staffing.",
+      ];
+      const backend = new ChunkBackend((chunk) => ({ status: 200, body: { text: texts[chunk], cleaned_text: texts[chunk] } }));
+      completions.enqueue(200, reply("Done."));
+      const { controller, capture } = makeLong(backend);
+      const rand = random(31);
+
+      await startHearing(controller, capture, concat(speech(12, rand), room(1.5, rand), room(240, rand), speech(5, rand)), "agent");
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.chunks).toBe(2);
+      expect(completionsVars(0)?.user_request).toBe(texts.join(" "));
     });
 
     /** A chunk waiting to be tried again while the user dictates is tried at once on the release:
@@ -5534,8 +5611,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
         controller.handle("finish");
 
         expect(await eventually(() => settled(controller)), `seed ${seed}`).toBe(true);
-        expect(backend.chunks, `seed ${seed}`).toBe(count);
         const lost = fates.findIndex((fate) => typeof fate === "string");
+        // Every chunk up to the first lost one was sent; the ones after it may be canceled first.
+        if (lost === -1) expect(backend.chunks, `seed ${seed}`).toBe(count);
+        else expect(backend.chunks, `seed ${seed}`).toBeGreaterThanOrEqual(lost + 1);
         const kept = Array.from({ length: lost === -1 ? count : lost }, (_, chunk) => `Part ${chunk}.`);
         if (lost === -1) {
           expect(pastes, `seed ${seed}`).toEqual([kept.join(" ")]);

@@ -3084,7 +3084,9 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
 - **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
   the up to successful part").** The chunks before the first that gave up are pasted, and the pill
   says `partlyTranscribedMessage` (`partlyCopiedMessage` when the text was copied instead, the user
-  having switched apps, ADR-DESK-042); the chunks after it are not, so the text has no hole. The first
+  having switched apps, ADR-DESK-042); the chunks after it are not, so the text has no hole. Once
+  the text is known, the retry note ends and the chunks still running are cancelled, before the
+  paste or the agent's run. The first
   chunk giving up loses the dictation, as one recording's failure does. Agent mode carries out a
   request whole or not at all: a lost chunk fails it.
 - Cancelling cancels every chunk's request. The chunks already answered have been transcribed and

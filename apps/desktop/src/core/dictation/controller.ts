@@ -887,16 +887,24 @@ export class DictationController extends Observable {
     release.done = true;
     release.markReleased();
     const chunks = this.chunks;
+    const chunkAbort = this.chunkAbort;
+    // Once the text is known, the retry note and any chunk after one that gave up end at once, not
+    // after the paste or the agent's run.
+    const settled = <T>(result: T): T => {
+      notice.answered();
+      notice.end();
+      chunkAbort.abort();
+      return result;
+    };
     try {
       await this.deliver(generation, async () => {
         const parts: TranscribedPart[] = [];
         for (const chunk of chunks) {
           const outcome = await chunk.outcome;
-          if ("error" in outcome) return { parts, lost: outcome.error };
+          if ("error" in outcome) return settled({ parts, lost: outcome.error });
           parts.push({ transcription: outcome.transcription, overlapped: chunk.overlapped });
         }
-        notice.answered();
-        return { parts, lost: null };
+        return settled({ parts, lost: null });
       });
     } finally {
       notice.end();
