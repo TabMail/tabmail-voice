@@ -232,6 +232,11 @@ recording, "but we don't want just pure red because that looks cheap." The
 voiced colour is now a muted crimson, `waveformVoicedColor` #E5484D, in place of the brand purple;
 nothing else changes. The retry circle keeps its shift toward purple, so red only ever means
 recording.)*
+*(Later still, owner 2026-10-02: the crimson was "a little bit too red"; from a page of candidates
+the owner chose "the gray to iOS system blue". The bars are now a washed-out grey-blue,
+`waveformWaitingColor` #9DB3C9, until a voice is heard, and ease to a vivid iOS system blue,
+`waveformVoicedColor` #0A84FF: a washed-out colour while not recording that becomes vibrant once it
+is. Nothing else changes; the retry circle keeps its shift toward purple.)*
 
 ## ADR-DESK-007: Screen context from the Accessibility tree, not screen pixels (phase 2 prototype)
 

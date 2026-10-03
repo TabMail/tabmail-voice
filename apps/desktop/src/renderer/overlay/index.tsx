@@ -709,7 +709,7 @@ function LanguageBadge({ code }: { code: string }) {
 }
 
 /** Voice waveform: bars follow the incoming sound level with a traveling ripple, blue until a voice is
- * heard, then crimson (`hasVoice`). */
+ * heard, then its recording colour (`hasVoice`). */
 function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
   const bars = useRef<(HTMLDivElement | null)[]>([]);
   const latestLevel = useRef(level);
@@ -733,7 +733,7 @@ function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
             width: config.overlayMeterBarWidth,
             height: config.overlayMeterMinBarHeight,
             borderRadius: config.overlayMeterBarWidth / 2,
-            backgroundColor: hasVoice ? rgba(config.waveformVoicedColor) : brandBlue,
+            backgroundColor: rgba(hasVoice ? config.waveformVoicedColor : config.waveformWaitingColor),
             transition: `background-color ${config.waveformColorTransitionSeconds}s ease-in-out`,
           }}
         />
