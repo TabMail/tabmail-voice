@@ -3,35 +3,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /* Settings: a sidebar of sections beside the chosen section's cards, in the TabMail icon's
- * blue → purple (`--brand-*`, set from `brand.ts`; under white text, the darker
- * `--brand-text-gradient`), light and dark. On macOS the sidebar shows the
- * window's frosted material, so the page itself is transparent. */
-:root {
-  --sidebar-tint: rgba(0, 0, 0, 0.02);
-  --hover: rgba(0, 0, 0, 0.06);
-  /* Opaque gray: an off switch's white thumb needs 3:1 against its track (a control's state). */
-  --switch-off: #8e8e93;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-/* In light mode `form.css`'s notes gray and "Allowed" green are under the 4.5:1 small text needs on
- * this window's colors; here they are darker. Set on `.settings`, inside `:root`, so its page takes
- * them whichever stylesheet loads last. */
-@media (prefers-color-scheme: light) {
-  .settings {
-    --secondary: rgba(0, 0, 0, 0.6);
-    --allowed: #1e7e34;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --sidebar-tint: rgba(255, 255, 255, 0.02);
-    --hover: rgba(255, 255, 255, 0.07);
-    --switch-off: rgba(120, 120, 128, 0.36);
-    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
-}
+ * blue → purple (`--brand-*`; under white text, the darker `--brand-text-gradient`), light and dark,
+ * every color from the palette (`core/palette.ts`, set by `shared/theme.ts`). On macOS the sidebar
+ * shows the window's frosted material, so the page itself is transparent. */
 
 /* Above `form.css`'s `html, body` whichever loads last (the build links the shared `form.css`
  * after this file), so the page stays clear for the frosted sidebar. */
@@ -118,7 +92,7 @@
 
 .sidebar button.nav.selected {
   background: var(--brand-text-gradient);
-  color: white;
+  color: var(--on-accent);
 }
 
 .sidebar button.nav svg {
@@ -127,7 +101,7 @@
 }
 
 .sidebar button.nav.selected svg {
-  color: white;
+  color: var(--on-accent);
 }
 
 .attention {
@@ -139,7 +113,7 @@
 }
 
 .nav.selected .attention {
-  box-shadow: 0 0 0 1.5px white;
+  box-shadow: 0 0 0 1.5px var(--on-accent);
 }
 
 /* The chosen section. */
@@ -150,17 +124,10 @@
   padding: 26px 28px;
 }
 
-/* The content, and elsewhere the whole window, in the window's own color (the config's). */
+/* The content, and elsewhere the whole window, in the window's own color. */
 .content,
 .settings:not(.mac) {
-  background: var(--window-light);
-}
-
-@media (prefers-color-scheme: dark) {
-  .content,
-  .settings:not(.mac) {
-    background: var(--window-dark);
-  }
+  background: var(--window);
 }
 
 .content h1 {
@@ -232,8 +199,8 @@ input.switch::before {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  background: var(--on-accent);
+  box-shadow: var(--switch-thumb-shadow);
   transition: transform 0.15s;
   content: "";
 }

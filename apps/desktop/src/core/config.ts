@@ -401,8 +401,6 @@ export const settingsWindowSize = { width: 700, height: 500 };
 export const settingsSidebarWidth = 200;
 export const settingsAppIconSize = 36;
 export const settingsSectionIconSize = 16;
-/** The window's own color where macOS's frosted material is not drawn (Windows, Linux). */
-export const settingsWindowColor = { light: "#f4f3f8", dark: "#1f1e24" };
 export const contextDebugWindowSize = { width: 720, height: 560 };
 
 // MARK: Overlay
@@ -421,13 +419,10 @@ export const pillBorderWidth = 1;
 export const pillGlowOpacity = 0.35;
 export const pillGlowRadius = 8;
 /** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
- * neon glow very apparent for the pills"): a tight bright glow in a wide one. Red-pink rather than the
- * brand's blue and purple, so it stands apart from dictation's pill (owner, 2026-09-29: "right now it's
- * not as apparent"; chosen from eight colors tried). The bubbles keep the plain glow. */
+ * neon glow very apparent for the pills"): a tight bright glow in a wide one, in `palette`'s
+ * `agentPillGlowInner` and `agentPillGlowOuter` (owner, 2026-09-29: "right now it's not as
+ * apparent"). The bubbles keep the plain glow. */
 export const agentPillGlowInnerRadius = 4;
-/** The glows' colors, red, green and blue (0–255). */
-export const agentPillGlowInnerColor: readonly [number, number, number] = [0xff, 0x2d, 0x55];
-export const agentPillGlowOuterColor: readonly [number, number, number] = [0xff, 0, 0x6e];
 export const agentPillGlowInnerOpacity = 0.9;
 export const agentPillGlowOuterRadius = 16;
 export const agentPillGlowOuterOpacity = 0.75;
@@ -462,16 +457,15 @@ export const waveformLevelExponent = 1;
 export const waveformGain = 1;
 /** The bars always ripple this much (0…1) while listening, so the pill looks alive between words. */
 export const waveformIdleLevel = 0.05;
-/** The bars are a washed-out grey-blue (#9DB3C9) until a voice is heard, then ease to a vivid iOS
- * system blue (#0A84FF) over this long: a sign the dictation is recording (owner, 2026-10-02, chosen
- * from a page of candidates; was the brand blue, then purple, then a muted crimson). Red, green and
- * blue, 0–255. A voice is a reading this
- * many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
+/** Every color change in the overlay eases over this long, in seconds: the waveform's, from
+ * `palette.waveformWaiting` to `palette.waveformVoiced` once a voice is heard, and the thinking
+ * circle's, to and from its retry colors (owner, 2026-10-03: "the transition time should be a
+ * variable configured globally"). */
+export const colorTransitionSeconds = 0.4;
+/** The bars take their recording color (`palette.waveformVoiced`) once a voice is heard: a reading
+ * this many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
  * this many readings, ≈ 0.34 s, where a start-up blip would hold it low); loudness only, so a loud
  * noise counts too, and a very quiet mic's speech (2–5 dB above its noise) may not. */
-export const waveformWaitingColor: readonly [number, number, number] = [0x9d, 0xb3, 0xc9];
-export const waveformVoicedColor: readonly [number, number, number] = [0x0a, 0x84, 0xff];
-export const waveformColorTransitionSeconds = 0.4;
 export const waveformVoiceAboveNoiseDecibels = 6;
 export const waveformVoiceWarmupReadings = 4;
 /** Each bar's ripple speed differs by up to this fraction, so the motion looks organic. */
@@ -487,14 +481,11 @@ export const thinkingRimWidth = 2.5;
 export const thinkingArcFraction = 0.7;
 export const thinkingRevolutionsPerSecond = 1.2;
 export const thinkingTrackOpacity = 0.2;
-/** The arc runs from blue to this point on the blue → purple gradient. */
+/** The arc runs from blue to this point on the blue → purple gradient. While a transcription is
+ * tried again after a server error, the arc and its track fade to `palette.retryArcStart` →
+ * `palette.retryArcEnd`, a sign of the retry before its note takes the circle's place (owner,
+ * 2026-10-02). */
 export const thinkingArcEndColor = 0.6;
-/** While a transcription is tried again after a server error, the arc and its track move this far
- * along the gradient toward purple, a hint of the retry before its note takes the circle's place
- * (owner, 2026-10-02). */
-export const thinkingRetryColorShift = 0.3;
-/** Pill fill: a soft off-white (pure white glared). */
-export const pillFillWhite = 0.96;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
 export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 100;
 /** Agent mode's bubbles in a row under the pill, one per tool and connector: icon-only circles,
@@ -594,23 +585,14 @@ export const tipHeight = tipBoxHeight(tipLineCount);
 export const tipHorizontalPadding = 10;
 export const tipSpacing = 5;
 export const tipCornerRadius = 8;
-/** Near-black fill, a hairline light border, and a soft drop shadow. */
-export const tipFillWhite = 0.11;
-export const tipFillOpacity = 0.94;
-export const tipBorderOpacity = 0.12;
-export const tipShadowOpacity = 0.3;
+/** A soft drop shadow, in `palette.tip.shadow`; the tip's colors are `palette.tip`'s. */
 export const tipShadowRadius = 5;
 export const tipShadowOffsetY = 2;
-/** White text, the keycap's word a little brighter than the action's. */
-export const tipTextOpacity = 0.78;
-export const tipKeyTextOpacity = 0.95;
 /** The keycap: a raised key, a lighter fill with a light border. */
 export const tipKeyFontSize = 12;
 export const tipKeyPadding = 5;
 export const tipKeyHeight = 17;
 export const tipKeyCornerRadius = 3.5;
-export const tipKeyFillOpacity = 0.14;
-export const tipKeyBorderOpacity = 0.22;
 /** The tooltip's arrow, pointing at the pill. */
 export const tipArrowWidth = 10;
 export const tipArrowHeight = 5;

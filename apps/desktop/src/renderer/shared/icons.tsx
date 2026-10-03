@@ -5,6 +5,7 @@
 import { type ReactNode, useId } from "react";
 import type { ConnectorID } from "../../core/agent/connectors/index.js";
 import type { AgentToolID } from "../../core/agent/tools.js";
+import { palette } from "../../core/palette.js";
 import { brandBlue, brandPurple } from "./brand.js";
 
 /** An id usable in an SVG `url(#…)` reference. */
@@ -149,8 +150,8 @@ export function ExclamationIcon({ size }: { size: number }) {
         </linearGradient>
       </defs>
       <circle cx="12" cy="12" r="10" fill={`url(#${id})`} />
-      <path d="M12 7v6" stroke="white" strokeWidth={2.4} strokeLinecap="round" />
-      <circle cx="12" cy="16.8" r="1.4" fill="white" />
+      <path d="M12 7v6" stroke={palette.light.onAccent} strokeWidth={2.4} strokeLinecap="round" />
+      <circle cx="12" cy="16.8" r="1.4" fill={palette.light.onAccent} />
     </svg>
   );
 }

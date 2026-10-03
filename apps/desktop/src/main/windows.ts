@@ -5,6 +5,7 @@
 import { join } from "node:path";
 import { app, BrowserWindow, type BrowserWindowConstructorOptions, nativeTheme } from "electron";
 import * as config from "../core/config.js";
+import { palette } from "../core/palette.js";
 import { log } from "../core/log.js";
 import type { Rect } from "../core/ui/overlayGeometry.js";
 import { channels, type WindowName, type WindowStates } from "../shared/ipc.js";
@@ -75,7 +76,7 @@ export class Windows {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { titleBarStyle: "hiddenInset", vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColor.dark : config.settingsWindowColor.light };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.dark.window : palette.light.window };
     this.present("settings", { ...config.settingsWindowSize, ...look, title: "TabMail Voice Settings", resizable: false, minimizable: false, maximizable: false, fullscreenable: false });
   }
 
@@ -95,7 +96,7 @@ export class Windows {
     const look: BrowserWindowConstructorOptions =
       process.platform === "darwin"
         ? { vibrancy: "popover", visualEffectState: "active", backgroundColor: "#00000000" }
-        : { backgroundColor: nativeTheme.shouldUseDarkColors ? config.settingsWindowColor.dark : config.settingsWindowColor.light };
+        : { backgroundColor: nativeTheme.shouldUseDarkColors ? palette.dark.window : palette.light.window };
     const existing = this.open.get("history");
     if (existing && !existing.isDestroyed()) {
       existing.setBounds(bounds);

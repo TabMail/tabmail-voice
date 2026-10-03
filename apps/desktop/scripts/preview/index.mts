@@ -96,6 +96,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-tip-hands-free", { phase: { kind: "listening" }, tip: "handsFree" }],
     ["overlay-tip-hands-free-up", { phase: { kind: "listening" }, tip: "handsFree", opensUpward: true, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-transcribing", { phase: { kind: "transcribing" } }],
+    ["overlay-transcribing-retry", { phase: { kind: "transcribing" }, isRetrying: true }],
     ["overlay-agent-listening", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-agent-running", { phase: { kind: "running", tool: "compose" }, mode: "agent", tools: ["compose", "thunderbird"] }],
     ["overlay-agent-apps", { phase: { kind: "listening" }, mode: "agent", tools: ["compose", "thunderbird", "answer"], connectors: allConnectors, tip: "agentAndHistory" }],

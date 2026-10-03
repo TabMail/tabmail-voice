@@ -14,6 +14,7 @@ import icon from "../../../resources/icon.png";
 import { send, useWindowState } from "../shared/bridge.js";
 import { BookIcon, ConnectorIcon, LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
+import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
@@ -238,4 +239,5 @@ function Rail({ state }: { state: WelcomeState }) {
 }
 
 const root = document.getElementById("root");
+applyPalette(document);
 if (root) createRoot(root).render(<Welcome />);

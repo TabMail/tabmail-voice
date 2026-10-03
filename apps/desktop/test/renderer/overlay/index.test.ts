@@ -10,6 +10,7 @@ import { alphabetical } from "../../../src/core/agent/bubbleOrder.js";
 import { connectorByID } from "../../../src/core/agent/connectors/index.js";
 import { agentTools } from "../../../src/core/agent/tools.js";
 import * as config from "../../../src/core/config.js";
+import { palette } from "../../../src/core/palette.js";
 import { brandColor, rgba } from "../../../src/renderer/shared/brand.js";
 import type { DictationTip } from "../../../src/core/onboarding/tips.js";
 import { retryingMessage } from "../../../src/core/dictation/controller.js";
@@ -273,8 +274,8 @@ describe("overlay page", () => {
     const neon = pill()?.style.boxShadow ?? "";
     expect(neon).not.toBe(plain);
     expect(neon).toContain(`${config.agentPillGlowOuterRadius}px`);
-    expect(neon).toContain(`rgba(${config.agentPillGlowInnerColor.join(", ")}, ${config.agentPillGlowInnerOpacity})`);
-    expect(neon).toContain(`rgba(${config.agentPillGlowOuterColor.join(", ")}, ${config.agentPillGlowOuterOpacity})`);
+    expect(neon).toContain(rgba(palette.agentPillGlowInner, config.agentPillGlowInnerOpacity));
+    expect(neon).toContain(rgba(palette.agentPillGlowOuter, config.agentPillGlowOuterOpacity));
     // Not the brand's blue in its purple, as it was before.
     expect(neon).not.toContain(brandColor(0, config.agentPillGlowInnerOpacity));
     expect(neon).not.toContain(brandColor(1, config.agentPillGlowOuterOpacity));
@@ -787,23 +788,31 @@ describe("the chat window", () => {
   });
 
   /** The waveform is a washed-out grey-blue until a voice is heard, then a vivid blue, a sign the dictation is
-   * recording; while a server error is tried again, the thinking circle's arc and track turn toward
-   * purple (owner, 2026-10-02). */
-  test("the waveform takes its recording colour once a voice is heard, and the circle purple while a retry runs", async () => {
+   * recording (owner, 2026-10-02); while a server error is tried again, the thinking circle's arc and track
+   * show the retry's colors instead of the brand's (owner, 2026-10-03). Every color change eases over
+   * `colorTransitionSeconds`. */
+  test("the waveform takes its recording colour once a voice is heard, and the circle the retry's colours while a retry runs", async () => {
     const page = await overlayPage();
     // A color's red, green and blue, however the page writes it.
     const rgb = (css: string) => [...css.replace(/\s/g, "").matchAll(/(\d+),(\d+),(\d+)/g)].map((match) => match.slice(1, 4).join(","));
     const barColors = () => [...document.querySelectorAll<HTMLElement>(".pill .bar")].flatMap((bar) => rgb(bar.style.backgroundColor));
-    const rimColors = () => [...document.querySelectorAll<HTMLElement>(".pill .rim")].map((rim) => rgb(rim.getAttribute("style") ?? ""));
+    const waiting = rgb(rgba(palette.waveformWaiting))[0] ?? "";
+    const voiced = rgb(rgba(palette.waveformVoiced))[0] ?? "";
     const blue = rgb(brandColor(0))[0] ?? "";
-    const waiting = rgb(rgba(config.waveformWaitingColor))[0] ?? "";
-    const voiced = rgb(rgba(config.waveformVoicedColor))[0] ?? "";
-    const shifted = rgb(brandColor(config.thinkingRetryColorShift))[0] ?? "";
     const arcEnd = rgb(brandColor(config.thinkingArcEndColor))[0] ?? "";
-    const shiftedArcEnd = rgb(brandColor(config.thinkingArcEndColor + config.thinkingRetryColorShift))[0] ?? "";
-    const arcColors = () => rgb(document.querySelector<HTMLElement>(".pill .rim.spinning")?.getAttribute("style") ?? "");
+    const retryStart = rgb(rgba(palette.retryArcStart))[0] ?? "";
+    const retryEnd = rgb(rgba(palette.retryArcEnd))[0] ?? "";
     // The bars ease into the new color rather than jump.
     const easing = () => [...document.querySelectorAll<HTMLElement>(".pill .bar")].map((bar) => bar.style.transition);
+    // The thinking circle's layers of color: what each draws, whether it shows, and how it changes.
+    const layers = () =>
+      [...document.querySelectorAll<HTMLElement>(".pill .rim-layer")].map((layer) => ({
+        colors: [...layer.querySelectorAll<HTMLElement>(".rim")].flatMap((rim) => rgb(rim.getAttribute("style") ?? "")),
+        opacity: layer.style.opacity,
+        transition: layer.style.transition,
+      }));
+    // What the eye sees: the colors of the layers showing.
+    const shownColors = () => layers().flatMap((layer) => (layer.opacity === "0" ? [] : layer.colors));
 
     await page.show({ ...listening, hasVoice: false });
     expect(barColors()).toEqual(Array(config.overlayMeterBarCount).fill(waiting));
@@ -811,19 +820,37 @@ describe("the chat window", () => {
     await page.show({ ...listening, hasVoice: true });
     expect(barColors()).toEqual(Array(config.overlayMeterBarCount).fill(voiced));
     expect(easing()).toHaveLength(config.overlayMeterBarCount);
-    expect(easing().every((transition) => transition.includes(`background-color ${config.waveformColorTransitionSeconds}s`))).toBe(true);
+    expect(easing().every((transition) => transition.includes(`background-color ${config.colorTransitionSeconds}s`))).toBe(true);
 
     const transcribing: OverlayState = { ...listening, phase: { kind: "transcribing" } };
     await page.show({ ...transcribing, isRetrying: false });
-    expect(rimColors()).toHaveLength(2);
-    expect(rimColors().every((colors) => colors.includes(blue) && !colors.includes(shifted))).toBe(true);
-    expect(arcColors()).toContain(arcEnd);
-    expect(arcColors()).not.toContain(shiftedArcEnd);
+    expect(shownColors()).toEqual(expect.arrayContaining([blue, arcEnd]));
+    expect(shownColors()).not.toContain(retryStart);
+    expect(shownColors()).not.toContain(retryEnd);
+    // Both sets of colors are drawn all along, so a retry fades in rather than jumps.
+    expect(layers()).toHaveLength(2);
+    expect(layers().every((layer) => layer.transition.includes(`opacity ${config.colorTransitionSeconds}s`))).toBe(true);
+
     await page.show({ ...transcribing, isRetrying: true });
-    expect(rimColors().every((colors) => colors.includes(shifted) && !colors.includes(blue))).toBe(true);
-    // The arc's purple end moves along with it.
-    expect(arcColors()).toContain(shiftedArcEnd);
-    expect(arcColors()).not.toContain(arcEnd);
+    expect(shownColors()).toEqual(expect.arrayContaining([retryStart, retryEnd]));
+    expect(shownColors()).not.toContain(blue);
+    expect(shownColors()).not.toContain(arcEnd);
+    expect(layers()).toHaveLength(2);
+
+    // A retry that answers fades back.
+    await page.show({ ...transcribing, isRetrying: false });
+    expect(shownColors()).toEqual(expect.arrayContaining([blue, arcEnd]));
+    expect(shownColors()).not.toContain(retryStart);
+  });
+
+  /** The pill and the chat window are light in light and dark mode alike, so their text keeps the
+   * light theme's dark ink when the system is dark: the page takes the palette's light theme alone. */
+  test("the overlay keeps the light theme in dark mode", async () => {
+    await overlayPage();
+    const colors = document.adoptedStyleSheets.flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join("\n");
+    expect(colors).toContain(`--text: ${palette.light.text};`);
+    expect(colors).not.toContain("prefers-color-scheme");
+    expect(colors).not.toContain(palette.dark.text);
   });
 
   /** A new turn scrolls the conversation to it. */
