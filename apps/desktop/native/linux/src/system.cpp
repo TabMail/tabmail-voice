@@ -102,12 +102,12 @@ int main() {
                         if (!params.contains("window") || !params["window"].is_number_unsigned() || params["window"] != target->token ||
                             !params.contains("maxLength") || !params["maxLength"].is_number_integer()) return nullptr;
                     }
-                    voice::LiveScreenTree tree;
                     const auto path = voice::ancestors(target->focus);
                     const auto window = std::find_if(path.begin(), path.end(), [](const auto& node) {
                         const auto role = voice::role(node); return role == ATSPI_ROLE_FRAME || role == ATSPI_ROLE_DIALOG || role == ATSPI_ROLE_WINDOW;
                     });
                     if (window == path.end()) { std::cerr << "debug screen: focused window unavailable\n"; return nullptr; }
+                    voice::LiveScreenTree tree(*window);
                     if (method == "readScreen") return voice::gatherScreen(tree, *window, target->focus, path, target->app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
                     const auto limit = params["maxLength"].get<int>();
                     if (limit < 0 || limit > 20000 || params["maxLength"] != limit) return nullptr;

@@ -16,12 +16,12 @@ struct Tree {
     using Node = Element*;
     unsigned counts = 0, selections = 0, values = 0, titles = 0;
     bool budget = true;
-    Node expireAfterLabel = nullptr;
+    Node expireAfterLabel = nullptr, expireAfterPage = nullptr;
     bool withinBudget() { return budget; }
     bool same(Node first, Node second) { return first == second; }
     AtspiRole role(Node node) { if (!budget) throw voice::ScreenBudgetExceeded(); return node->role; }
     bool isPassword(Node node) { return node->role == ATSPI_ROLE_PASSWORD_TEXT; }
-    std::optional<voice::PageHost> page(Node node) { return node->page; }
+    std::optional<voice::PageHost> page(Node node) { if (node == expireAfterPage) budget = false; return node->page; }
     std::vector<Node> children(Node node, size_t limit) {
         if (node->children.size() > limit) throw std::runtime_error("fixture child budget");
         return node->children;
@@ -32,6 +32,12 @@ struct Tree {
     std::string label(Node node) { if (node == expireAfterLabel) budget = false; if (node->role == ATSPI_ROLE_FRAME) ++titles; else ++values; return node->label; }
     std::optional<std::string> field(Node node, int) { ++counts; ++values; return node->label; }
     std::optional<voice::CaretText> caret(Node node) { if (node->role != ATSPI_ROLE_ENTRY && !node->editable) return {}; ++counts; ++selections; ++values; return voice::CaretText{{"Reply ", "synthetic", " after"}}; }
+};
+struct CollectionTree : Tree {
+    std::optional<std::vector<Node>> census;
+    unsigned childQueries = 0;
+    std::optional<std::vector<Node>> privacyNodes(Node) { return census; }
+    std::vector<Node> children(Node node, size_t limit) { ++childQueries; return Tree::children(node, limit); }
 };
 static void expect(bool value, const char* description) { if (!value) throw std::runtime_error(description); }
 int main() {
@@ -116,5 +122,31 @@ int main() {
     result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
     expect(result.is_object() && result["renderedText"].get<std::string>().find("Conversation") != std::string::npos,
         "budget stop retains collected text without a final provider query");
+    // Provider-side metadata search must enforce the same policy without
+    // visiting every ordinary descendant (large focused browser documents).
+    CollectionTree bulk;
+    page.page = voice::hostOfAddress("https://allowed.example/");
+    bulk.census = std::vector<Element*>{&page};
+    expect(voice::safeSubtree(bulk, &page, policy, true) && bulk.childQueries == 0,
+        "bulk privacy census avoids per-descendant queries");
+    bulk.census->push_back(&password);
+    expect(!voice::safeSubtree(bulk, &page, policy, true) &&
+        voice::safeSubtree(bulk, &page, policy, false), "bulk census protects nested passwords");
+    page.page = voice::PageHost{};
+    bool refused = false;
+    try { voice::safeSubtree(bulk, &page, policy, false); } catch (const voice::PrivacyHidden&) { refused = true; }
+    expect(refused && bulk.values == 0 && bulk.counts == 0, "bulk unknown page refuses before content");
+    page.page = voice::hostOfAddress("https://secret.example/"); refused = false;
+    try { voice::safeSubtree(bulk, &page, policy, false); } catch (const voice::PrivacyHidden&) { refused = true; }
+    expect(refused, "bulk excluded page refuses");
+    bulk.census = std::vector<Element*>(5001, &heading);
+    expect(!voice::safeSubtree(bulk, &page, policy, false), "truncated bulk result never authorizes content");
+    bulk.census.reset(); page.page = voice::hostOfAddress("https://allowed.example/"); page.children = {&heading};
+    expect(voice::safeSubtree(bulk, &page, policy, true) && bulk.childQueries > 0,
+        "unsupported or failed bulk request falls back to ordinary census");
+    bulk.census = std::vector<Element*>{&page}; bulk.expireAfterPage = &page;
+    expect(!voice::safeSubtree(bulk, &page, policy, true), "metadata response past deadline cannot authorize content");
+    bulk.census = std::vector<Element*>{&page}; bulk.budget = false;
+    expect(!voice::safeSubtree(bulk, &page, policy, true), "bulk query cannot bypass time budget");
     std::cout << "screen semantic layout and password/page access census passed\n";
 }

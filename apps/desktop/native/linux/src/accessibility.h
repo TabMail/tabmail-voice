@@ -34,6 +34,16 @@ inline bool enableAccessibilityBridge() {
     g_variant_unref(reply);
     return true;
 }
+// Chromium treats extended-property queries as an assistive-client activation
+// signal. Ask on each bounded foreground visit, before dictation starts.
+// https://github.com/chromium/chromium/blob/main/ui/accessibility/platform/ax_platform_node_auralinux.cc
+inline void requestAccessibility(const Node& root) {
+    atspi_accessible_clear_cache(root.get());
+    Error error;
+    auto attributes = atspi_accessible_get_attributes(root.get(), &error.value);
+    if (attributes) g_hash_table_unref(attributes);
+    error.check();
+}
 inline AtspiRole role(const Node& node) {
     Error error;
     const auto result = atspi_accessible_get_role(node.get(), &error.value);

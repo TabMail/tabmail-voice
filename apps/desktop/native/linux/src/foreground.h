@@ -90,6 +90,7 @@ private:
     void warm() {
         ++tried;
         try {
+            requestAccessibility(active);
             if (auto focus = findFocus(active)) { remember(focus); return; }
             std::cerr << "debug accessibility: foreground has no focused element\n";
         } catch (...) { std::cerr << "debug accessibility: foreground lookup unavailable\n"; }
