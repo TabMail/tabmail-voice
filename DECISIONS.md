@@ -3062,7 +3062,11 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   syllables and words) is speech. Once a chunk holds `chunkMinimumSpeech` (10 s) of speech, it is cut
   in the middle of the next `chunkPauseDuration` (1 s) of quiet. Measured on the owner's recordings
   with room gaps between them: 1.1 s and 1.5 s gaps cut, always inside the gap; 0.7 s gaps never;
-  reading the whole of a 10-minute recording takes 15–22 ms.
+  reading the whole of a 10-minute recording takes 15–22 ms. The levels are relative, so speech
+  much softer than what came before, with few frames at the room's level, can read as quiet: a
+  pause cut can land in it and split a word or two, with no overlap to recover them (reproduced
+  with synthetic audio in review, 2026-10-03; real speech dips to the room between words). Every
+  chunk is still sent.
 - **No pause (owner: "if a continuous speech goes over 2 minutes… overlapping things").** A chunk
   that reaches `chunkMaxDuration` (105 s, under the backend's 120 s) is cut at the quietest
   `chunkForcedCutWindow` of its last `chunkForcedCutSearch`, and the next chunk starts
@@ -3109,11 +3113,12 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
 - A long dictation's text is ready about as soon as its last chunk is transcribed: the earlier ones
   are done while the user speaks.
 - The audio goes to the same place as before and none of it is stored (root ADR-004), but it leaves
-  sooner: a long dictation cancelled after a cut has already sent the chunks before it (before
+  sooner: a long dictation cancelled after a cut has already sent the chunks before it, each with
+  the cleanup's context (the text around the cursor and on screen, as every dictation sends; before
   chunking, a cancelled hold sent nothing). The welcome wizard's consent page says a long dictation
   is sent in parts while the user speaks; users who consented before are told once at launch
-  (`whatsNewEntries`, `takeWhatsNew`), including that a part already sent is transcribed even if
-  they cancel, and are never asked again.
+  (`whatsNewEntries`, `takeWhatsNew`), including that a part already sent is transcribed and
+  cleaned up with its screen context even if they cancel, and are never asked again.
 - After a chunk gives up for good while the user is still speaking, the later chunks are still
   sent (and count toward usage) until the release, though they will not be pasted: nothing is
   shown until the release.

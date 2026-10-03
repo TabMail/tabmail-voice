@@ -67,6 +67,15 @@ describe("joinChunkTexts", () => {
     expect(joinChunkTexts([paused(left), overlapping(right)])).toBe("Dear team,\n\nThe launch moved to next week because the build is late and QA needs two more days.");
   });
 
+  /** A forced cut comes after about 105 s of speech, so the earlier text is far longer than the
+   * window searched for the overlap: the words before the window are all kept. */
+  test("an overlap join keeps all of a long earlier text, before the window searched", () => {
+    const filler = Array.from({ length: config.chunkOverlapSearchWords * 2 + 40 }, (_, index) => `word${index}`).join(" ");
+    const earlier = `${filler} and then we agreed to ship the beta on Fri`;
+    const joined = joinChunkTexts([paused(earlier), overlapping("we agreed to ship the beta on Friday after the review.")]);
+    expect(joined).toBe(`${filler} and then we agreed to ship the beta on Friday after the review.`);
+  });
+
   test("an overlap is matched only near the seam", () => {
     const filler = Array.from({ length: config.chunkOverlapSearchWords }, (_, i) => `f${i}`).join(" ");
     // The shared words sit further than `chunkOverlapSearchWords` from the end of the earlier text.
