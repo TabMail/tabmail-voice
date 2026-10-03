@@ -175,8 +175,9 @@ export const transcriptionRequestTimeout = 45_000;
 /** A transcription that failed on the server's side (a 5xx: the speech model behind the backend was
  * rate limited or failed) or lost its connection is tried again after each of these waits, in
  * milliseconds, before the dictation fails: owner, 2026-09-29, rather than make the user say it
- * again. */
-export const transcriptionRetryDelays: readonly number[] = [500, 1_500];
+ * again. About a minute in all (owner, 2026-10-03: "we definitely need more retries … we should not
+ * lose the end"): the provider's rate limits come in bursts of seconds. */
+export const transcriptionRetryDelays: readonly number[] = [500, 1_500, 3_000, 5_000, 10_000, 10_000, 15_000, 15_000];
 /** How long after the first server error the pill says it is retrying: a retry that answers sooner
  * shows nothing but a dictation taking a moment longer (owner, 2026-10-02: the note on every brief
  * rate limit was the annoying part, not the wait). */

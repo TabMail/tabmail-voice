@@ -5244,6 +5244,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(made.phases).toContainEqual({ kind: "retrying", message: retryingMessage });
     });
 
+    /** Owner, 2026-10-03: "we should not lose the end". The last chunk is sent at the release, so
+     * the backend's own timeout on it comes after the release: it is tried again, as while recording. */
+    test("the last chunk timing out on the backend after the release is tried again, and the end is pasted", async () => {
+      const gatewayTimeout: ChunkReply = { status: 504, body: { error: "transcription_timeout" } };
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 1 && attempt < 2 ? gatewayTimeout : part(chunk)));
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(16, 12, 4));
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+      expect(backend.attempts(1)).toBe(3);
+    });
+
+    /** Owner, 2026-10-03: "we definitely need more retries … we should not lose the end". The
+     * provider's rate limits come in bursts of seconds: the last tries span about a minute. */
+    test("the last tries after the release outlast a burst of rate limits", () => {
+      const total = config.transcriptionRetryDelays.reduce((sum, delay) => sum + delay, 0);
+      expect(total).toBeGreaterThanOrEqual(45_000);
+      expect(config.transcriptionRetryDelays.length).toBeGreaterThanOrEqual(6);
+    });
+
     /** Owner, 2026-10-03: "paste only the up to successful part". The chunks after the first that
      * gave up are not pasted either: the text would have a hole. */
     test.each([

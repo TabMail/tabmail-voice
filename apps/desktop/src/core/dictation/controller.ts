@@ -831,8 +831,9 @@ export class DictationController extends Observable {
    * until the final give up"). While the user is still dictating, a server error, a dropped
    * connection or the backend's own timeout is tried again after each of `chunkRetryDelays`, the last
    * repeating, for as long as the dictation goes on: nobody waits for it yet. From the release, it gets
-   * `transcriptionRetryDelays` more tries, as one recording does, with the pill's retry note. Any
-   * other failure (signed out, over quota, a refused request) gives up at once. */
+   * `transcriptionRetryDelays` more tries on the same failures, with the pill's retry note, so the end
+   * of a dictation is not lost to a burst of rate limits (owner, 2026-10-03). Any other failure
+   * (signed out, over quota, a refused request) gives up at once. */
   private async transcribeChunk(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal, release: Release): Promise<Transcription> {
     let waits = 0;
     let lastTries = 0;
@@ -851,7 +852,7 @@ export class DictationController extends Observable {
           continue;
         }
         const delay = this.transcriptionRetryDelays[lastTries];
-        if (delay === undefined || !isServerError(error)) throw error;
+        if (delay === undefined || (!isServerError(error) && !isGatewayTimeout(error))) throw error;
         lastTries += 1;
         log.debug(`DictationController: chunk failed after the release (${errorName(error)}); retrying in ${delay}ms`);
         release.notice?.failed();

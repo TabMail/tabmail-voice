@@ -2341,7 +2341,8 @@ time; measured first (below).
   stays WAV.
 - **Retry on a server error.** A transcription that fails with a 5xx (the speech model behind the
   backend rate limited, overloaded or failed) or a dropped connection is sent again after
-  `transcriptionRetryDelays` (0.5 s, then 1.5 s), the same recording and request, while the pill
+  `transcriptionRetryDelays` (0.5 s, then 1.5 s; *eight tries over about a minute since 2026-10-03,
+  see the amendment below*), the same recording and request, while the pill
   shows "Server error, retrying…" (the `retrying` phase), back to transcribing once a retry
   answers; after the last it fails with the server's error as before. Nothing else is retried:
   signed out, no subscription, over quota or throttled (the backend's own 429), a refused request,
@@ -2378,6 +2379,14 @@ time; measured first (below).
   reports usage only on success.
 - Supersedes ADR-DESK-005's "A failed transcription loses that recording (no retry queue yet)" for
   server errors; its WAV upload is now FLAC.
+
+**Amendment 2026-10-03 — more and longer retries (owner).** *"We definitely need more retries …
+lengthen them, and we should not lose the end."* Measured the same day, the speech model's provider
+refused about one try in three as rate limited, in bursts of seconds, and two tries 2 s apart could
+not outlast one. `transcriptionRetryDelays` is now 0.5, 1.5, 3, 5, 10, 10, 15 and 15 s, about a
+minute in all, with the retry note up from 2 s; the user can cancel at any time. A recording's 504
+is still not retried (above). A long dictation's chunk after the release retries its 504 too, as
+while recording (ADR-DESK-048).
 
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
@@ -3066,7 +3075,9 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   until the final give up").** While the user dictates, a chunk's server error, dropped connection
   or backend timeout (504) is tried again after each of `chunkRetryDelays`, the last repeating,
   quietly: nobody waits for it yet. From the release, a chunk still failing gets the
-  `transcriptionRetryDelays` tries one recording gets, with the pill's retry note (ADR-DESK-039).
+  `transcriptionRetryDelays` tries one recording gets, about a minute (ADR-DESK-039, amendment
+  2026-10-03), with the pill's retry note, on the same failures, a 504 included: the last chunk is sent
+  at the release, so its backend timeout comes after it (owner: "we should not lose the end").
   Any other failure (signed out, over quota, refused) gives up at once.
 - **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
   the up to successful part").** The chunks before the first that gave up are pasted, and the pill
