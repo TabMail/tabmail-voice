@@ -26,7 +26,7 @@ export interface OverlayState {
   mode: DictationMode;
   level: number;
   isHearing: boolean;
-  /** `DictationController.hasVoice`: the waveform is crimson. */
+  /** `DictationController.hasVoice`: the waveform takes its recording colour. */
   hasVoice: boolean;
   /** `DictationController.isRetrying`: the thinking circle's arc and track move toward purple. */
   isRetrying: boolean;
