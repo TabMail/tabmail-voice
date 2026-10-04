@@ -1347,7 +1347,7 @@ describe("main process wiring", () => {
     expect(ended()).toBe(2);
   });
 
-  /** ADR-DESK-048: what's new about long dictations is a tip shown once at a dictation, to a user
+  /** ADR-DESK-049: what's new about long dictations is a tip shown once at a dictation, to a user
    * who set the app up before; one still in the welcome wizard reads it on the consent page, and
    * never gets the tip. Nothing is shown at launch. */
   test.each([

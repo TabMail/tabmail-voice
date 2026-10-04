@@ -59,8 +59,8 @@ apps/desktop/
 │   │   │       ├── index.ts                 What the app reads: `connectors`, `connectorIDs`, `isConnectorID`, `connectorByID`
 │   │   │       ├── macos/appleScript.ts     `ScriptRunner`, for Notes and Messages
 │   │   │       └── thunderbird/             `ThunderbirdRelay` (`relay.ts`, to TabMail's chat) and `EmailClient` (the email app it drives); its native connector goes here (ADR-DESK-037)
-│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `chunkJoin.ts` (a long dictation's chunk texts joined: ADR-DESK-048); `screenContext.ts`; `excludedApps.ts` (the apps the screen is never read in: ADR-DESK-045); `excludedSites.ts` (the websites it is never read on, and `ScreenExclusions`, both lists as a dictation takes them: ADR-DESK-047); `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
-│   │   ├── audio/                   Recording (`recorder.ts`), where a long dictation is cut into chunks (`chunker.ts`: ADR-DESK-048), waveform level, WAV and FLAC
+│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `chunkJoin.ts` (a long dictation's chunk texts joined: ADR-DESK-049); `screenContext.ts`; `excludedApps.ts` (the apps the screen is never read in: ADR-DESK-045); `excludedSites.ts` (the websites it is never read on, and `ScreenExclusions`, both lists as a dictation takes them: ADR-DESK-047); `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
+│   │   ├── audio/                   Recording (`recorder.ts`), where a long dictation is cut into chunks (`chunker.ts`: ADR-DESK-049), waveform level, WAV and FLAC
 │   │   ├── backend/                 Sign-in (`account.ts`), the transcription and completions clients, their errors, HTTP
 │   │   ├── dictionary/              The user's dictionary (`entries.ts`); the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
 │   │   ├── hotkey/                  The hotkey, the modes and the gesture's actions (`bindings.ts`); macos/globeKeyAction.ts (the Globe key's own action while fn is it) (ADR-DESK-031)
@@ -130,7 +130,7 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is
    cut into chunks at pauses as it is recorded (`Chunker`), each sent with its cleanup while the user
    goes on and retried in the background; at the release the last chunk is sent and the texts are
-   joined in order (`joinChunkTexts`), up to the first chunk that gave up (ADR-DESK-048).
+   joined in order (`joinChunkTexts`), up to the first chunk that gave up (ADR-DESK-049).
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
 

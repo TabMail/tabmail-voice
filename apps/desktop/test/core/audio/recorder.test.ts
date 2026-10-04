@@ -73,7 +73,7 @@ describe("AudioRecorder", () => {
   });
 
   /** The backend transcribes at most 120 s of audio at once: a recording sent as one request (a
-   * spoken answer) is cut there, not sent to fail. A dictation is chunked instead (ADR-DESK-048). */
+   * spoken answer) is cut there, not sent to fail. A dictation is chunked instead (ADR-DESK-049). */
   test("an unchunked recording keeps no more than the 120 s the backend transcribes", () => {
     const backendMaxSeconds = 120;
     const recorder = new AudioRecorder(16_000, config.maxUnchunkedDuration);
@@ -161,7 +161,7 @@ describe("AudioRecorder", () => {
     expect(Array.from(samples)).toEqual([0, Math.round(1_000 * gain), -targetPeak, Math.round(500 * gain)]);
   });
 
-  /** A long dictation's chunks (ADR-DESK-048): each uploads its own samples, from its start to its
+  /** A long dictation's chunks (ADR-DESK-049): each uploads its own samples, from its start to its
    * end, so none outgrows what the backend transcribes at once or repeats another's words. */
   test("each chunk of a long dictation uploads exactly its own samples", () => {
     const chunks: RecordedChunk[] = [];

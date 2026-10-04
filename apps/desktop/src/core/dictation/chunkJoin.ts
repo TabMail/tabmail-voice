@@ -19,7 +19,7 @@ const leadingEllipsis = /^\s*(?:(?:\.{3}|…)\s*)+/u;
 const unspacedScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
 /**
- * A long dictation's text, from its chunks' texts in order (ADR-DESK-048).
+ * A long dictation's text, from its chunks' texts in order (ADR-DESK-049).
  *
  * - An ellipsis where two chunks meet is taken out (owner, 2026-10-03): it is the pause the cut fell in, not
  *   the speaker's. One inside a chunk stays.

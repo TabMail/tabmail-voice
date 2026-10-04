@@ -4,7 +4,7 @@
 
 import * as config from "../../src/core/config.js";
 
-/** Synthetic dictation audio for the long-dictation tests (ADR-DESK-048): 16 kHz mono floats, as the
+/** Synthetic dictation audio for the long-dictation tests (ADR-DESK-049): 16 kHz mono floats, as the
  * microphone delivers them. */
 
 const rate = config.recordingSampleRate;

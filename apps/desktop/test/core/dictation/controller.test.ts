@@ -4314,7 +4314,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(new TipBook(tipStore).isEligible("agentAndHistory")).toBe(false);
     });
 
-    /** What's new about long dictations (ADR-DESK-048) is a tip, first in line, shown once (owner,
+    /** What's new about long dictations (ADR-DESK-049) is a tip, first in line, shown once (owner,
      * 2026-10-03: "an ordinary tooltip that shows with high priority only once"). */
     test("the what's-new tip shows first at the next hold, once, then the hold's tips", async () => {
       tipStore = new MemoryStore();
@@ -5131,7 +5131,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   });
 
   /** A long dictation, cut into chunks as it is recorded, each sent at once with its own cleanup
-   * (ADR-DESK-048). */
+   * (ADR-DESK-049). */
   describe("a long dictation", () => {
     type ChunkReply = { status: number; body: unknown } | "network";
 

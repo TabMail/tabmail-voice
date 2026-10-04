@@ -68,13 +68,13 @@ export const logFileMaxBytes = 50_000_000;
  * time ("Play Last Recording"). */
 export const debugLastRecordingFileName = "TabMail-last-dictation.wav";
 /** Recording stops and is sent automatically at this length (10 minutes). A recording longer than
- * the backend transcribes at once is sent in chunks (ADR-DESK-048). */
+ * the backend transcribes at once is sent in chunks (ADR-DESK-049). */
 export const maxRecordingDuration = 600_000;
 /** The longest recording sent as one request, never chunked: a spoken answer to the chat window's
  * question. The backend's model transcribes at most 120 s at once (backend ADR-022). */
 export const maxUnchunkedDuration = 120_000;
 
-// MARK: Long dictations (ADR-DESK-048)
+// MARK: Long dictations (ADR-DESK-049)
 
 /** The chunker reads the recording's loudness in frames this long (ms). */
 export const chunkFrameDuration = 20;
@@ -618,7 +618,7 @@ export const setNameTip: TipSettings = {
   displayDuration: 4_000,
   maxDisplays: null,
 };
-/** What's new: long dictations are sent in parts as the user talks (ADR-DESK-048), shown once, ahead
+/** What's new: long dictations are sent in parts as the user talks (ADR-DESK-049), shown once, ahead
  * of the other tips (owner, 2026-10-03: "really punchy"), long enough to read twice. */
 export const longDictationsTip: TipSettings = {
   lines: ["New: dictate up to 10 minutes,", "sent in parts as you talk"],

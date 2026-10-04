@@ -19,7 +19,7 @@ import { type KeyValueStore, storedBool, storedInteger } from "../util/keyValueS
  * - `setName`: adding a name in Settings lets agent mode tell the user's messages from others'; shown
  *   as agent mode is switched on while no name is set, every time. Never learned: a name set ends it.
  * - `longDictations`: what's new, once (owner, 2026-10-03: "an ordinary tooltip that shows with high
- *   priority only once"): long dictations are sent in parts as the user talks (ADR-DESK-048). First
+ *   priority only once"): long dictations are sent in parts as the user talks (ADR-DESK-049). First
  *   in line at the next dictation; learned at launch by a user still in the welcome wizard, whose
  *   consent page says it. */
 export type DictationTip = "agentAndHistory" | "doubleTap" | "handsFree" | "setName" | "longDictations";

@@ -73,7 +73,7 @@ export interface Recording {
   /** True when recording hit the maximum duration and later audio was dropped. */
   truncated: boolean;
   /** The last chunk, from the last cut to the end, when the recording was cut into chunks
-   * (ADR-DESK-048); null when it is one upload. */
+   * (ADR-DESK-049); null when it is one upload. */
   lastChunk: RecordedChunk | null;
 }
 
@@ -90,7 +90,7 @@ export function recordingDuration(recording: Recording): number {
 
 /** Accumulates one dictation as 16 kHz mono 16-bit PCM; `finish` peak-normalizes it and FLAC-encodes
  * it for the upload. Given `onChunk`, it cuts a long recording into chunks as it goes (`Chunker`,
- * ADR-DESK-048), handing each to `onChunk` as it is cut, and `finish` the last. */
+ * ADR-DESK-049), handing each to `onChunk` as it is cut, and `finish` the last. */
 export class AudioRecorder {
   private readonly maxFrames: number;
   private samples = new Int16Array(16_000);

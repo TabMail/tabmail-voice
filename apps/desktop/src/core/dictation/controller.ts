@@ -114,7 +114,7 @@ export const nothingHeardMessage = "Didn't catch that. Try again.";
 export const retryingMessage = "Server error, retrying…";
 
 /** Shown after a long dictation whose later chunks couldn't be transcribed: what came before them was
- * pasted (ADR-DESK-048). Kept to one line of the pill. */
+ * pasted (ADR-DESK-049). Kept to one line of the pill. */
 export const partlyTranscribedMessage = "Couldn't transcribe the end. The rest was pasted.";
 /** `partlyTranscribedMessage` for one copied instead, as the user switched apps (ADR-DESK-042). */
 export const partlyCopiedMessage = "Couldn't transcribe the end. The rest was copied.";
@@ -204,7 +204,7 @@ export class DictationController extends Observable {
   private recorder: AudioRecorder | null = null;
   /** What every upload of this dictation sends with its audio, prepared once, by its first upload. */
   private upload: Promise<Upload> | null = null;
-  /** A long dictation's chunks, each sent as it is cut while recording (ADR-DESK-048), in order. */
+  /** A long dictation's chunks, each sent as it is cut while recording (ADR-DESK-049), in order. */
   private chunks: ChunkJob[] = [];
   /** Cancels those chunks' requests: with the dictation, or once its text no longer needs them. */
   private chunkAbort = new AbortController();
@@ -444,7 +444,7 @@ export class DictationController extends Observable {
     void this.warmUp(settings.backendURL);
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
     // time most of the start-up is done.
-    // A long dictation is cut into chunks as it is recorded, each sent at once (ADR-DESK-048).
+    // A long dictation is cut into chunks as it is recorded, each sent at once (ADR-DESK-049).
     const recorder = new AudioRecorder(config.recordingSampleRate, config.maxRecordingDuration, (chunk) => this.chunkCut(chunk, current));
     const meter = new LevelSampler();
     this.recorder = recorder;
@@ -845,7 +845,7 @@ export class DictationController extends Observable {
     };
   }
 
-  /** The recorder cut a chunk off a long dictation (ADR-DESK-048): it is sent at once, with its
+  /** The recorder cut a chunk off a long dictation (ADR-DESK-049): it is sent at once, with its
    * cleanup, while the user goes on. Every chunk is sent, a long silence's too: the model decides
    * what was said, as for one recording (ADR-DESK-005: no loudness gate), and soft speech judged by
    * loudness alone could be lost (owner, 2026-10-03: send every chunk). */
@@ -1657,7 +1657,7 @@ function newRelease(): Release {
 /** The backend gave up on the speech model after waiting for it: its timeout (504
  * `transcription_timeout`), or the model's rate limit outlasting the backend's own retries (429
  * `transcription_rate_limited`, backend ADR-022). One recording is not tried again (it already
- * waited); a long dictation's chunk is (ADR-DESK-048). */
+ * waited); a long dictation's chunk is (ADR-DESK-049). */
 function backendWaited(error: unknown): boolean {
   return error instanceof BackendError && error.kind === "failed" && (error.status === gatewayTimeout || error.status === speechModelRateLimited);
 }

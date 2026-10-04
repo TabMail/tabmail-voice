@@ -99,7 +99,7 @@ multilingual accuracy than Apple's on-device model.
 - A failed transcription loses that recording (no retry queue yet). (Since ADR-DESK-039 a server
   error or dropped connection is retried twice before it does.) Chunking long dictations
   (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
-  issue #1 (P3). (Done in ADR-DESK-048: cut at pauses, sent while the user speaks.)
+  issue #1 (P3). (Done in ADR-DESK-049: cut at pauses, sent while the user speaks.)
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
 
 **Amendment 2026-09-27 — the length cap is 120 s.** Owner: *"there was a bug before about this
@@ -110,7 +110,7 @@ at most 120 s of audio (backend ADR-022), so a longer recording was uploaded onl
 `maxRecordingDuration` is 120 s in both apps (`DictationConfig`, `config.ts`), for a hold and
 hands-free alike; the recorder keeps nothing past it. Raise it once chunking (issue #1) lands.
 
-**Amendment 2026-10-03 — 10 minutes, in chunks.** Chunking arrived on the app's side (ADR-DESK-048):
+**Amendment 2026-10-03 — 10 minutes, in chunks.** Chunking arrived on the app's side (ADR-DESK-049):
 a dictation is cut into chunks under the backend's 120 s and sent while the user speaks, so
 `maxRecordingDuration` is 10 minutes. A spoken answer to a confirmation stays one upload, capped at
 `maxUnchunkedDuration` (120 s).
@@ -1028,7 +1028,7 @@ for agent mode; this one is for dictation, and Space still switches the mode.
 
 **Consequences:**
 - Hands-free listening is capped like a hold (`maxRecordingDuration`, 120 s since the ADR-DESK-005
-  amendment of 2026-09-27, 10 minutes since ADR-DESK-048), then transcribed.
+  amendment of 2026-09-27, 10 minutes since ADR-DESK-049), then transcribed.
 - While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
 - ~~A first tap is still a discarded recording start (the microphone boots and stops); a double tap
   starts it twice.~~ Superseded by the amendment below.
@@ -2386,13 +2386,13 @@ refused about one try in three as rate limited, in bursts of seconds, and two tr
 not outlast one. `transcriptionRetryDelays` is now 0.5, 1.5, 3, 5, 10, 10, 15 and 15 s, about a
 minute in all, with the retry note up from 2 s; the user can cancel at any time. A recording's 504
 is still not retried (above). A long dictation's chunk after the release retries its 504 too, as
-while recording (ADR-DESK-048).
+while recording (ADR-DESK-049).
 *(Later the same day: the backend now retries the speech model's own 429 for its 30 s window and
 then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
 that code as a failure of the speech model, not this account's limit (`BackendError` `failed`, 429;
 the account's 429s stay `rateLimited`). Like a 504, the backend already waited, so a recording does
 not try it again; a long dictation's chunk does, while recording and after the release
-(`backendWaited`, ADR-DESK-048).)*
+(`backendWaited`, ADR-DESK-049).)*
 
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
@@ -3041,7 +3041,7 @@ window's) and `renderer/shared/brand.ts` (the brand blue and purple).
   `settings/style.test.ts`'s contrast checks, which now read the palette's themes.
 
 
-## ADR-DESK-048: Long dictations, cut into chunks at pauses and sent while the user speaks
+## ADR-DESK-049: Long dictations, cut into chunks at pauses and sent while the user speaks
 
 **Context:** A dictation stopped at 120 s, the most the backend's transcription takes at once
 (ADR-DESK-005, amended 2026-09-27; issue #1). Owner, 2026-10-03: the recording can be longer; the app

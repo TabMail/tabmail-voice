@@ -4,7 +4,7 @@
 
 import * as config from "../config.js";
 
-/** A part of a recording sent on its own (ADR-DESK-048): samples `start` to `end` (exclusive). */
+/** A part of a recording sent on its own (ADR-DESK-049): samples `start` to `end` (exclusive). */
 export interface ChunkCut {
   /** Its place in the recording, from 0. */
   index: number;
@@ -22,7 +22,7 @@ const binsPerDecibel = 2;
 const binCount = -silenceDecibels * binsPerDecibel + 1;
 
 /**
- * Where a long recording is cut into chunks, as it is recorded (ADR-DESK-048). It reads the loudness
+ * Where a long recording is cut into chunks, as it is recorded (ADR-DESK-049). It reads the loudness
  * of each `chunkFrameDuration` frame against the recording's own levels, never a fixed one: the
  * quiet end of its frames (`chunkFloorPercentile`) is the room, the loud end
  * (`chunkSpeechPercentile`) the voice, and a frame below `chunkPauseLevel` of the way from one to
