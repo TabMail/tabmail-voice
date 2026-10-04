@@ -121,6 +121,8 @@ export const partlyCopiedMessage = "Couldn't transcribe the end. The rest was co
 
 /** The status the backend answers when the speech model did not answer in time. */
 const gatewayTimeout = 504;
+/** The status the backend answers when the speech model's rate limit outlasted its own retries
+ * (`transcription_rate_limited`, backend ADR-022; it answered 502 before 2026-10-03). */
 const speechModelRateLimited = 429;
 
 /**
@@ -783,12 +785,11 @@ export class DictationController extends Observable {
   }
 
   /** Makes the transcription request, and makes it again after a server error (a 5xx other than the
-   * backend's own timeout: the speech model behind it failed) or a dropped connection, up to
+   * backend's own timeout: the speech model behind it failed; or its rate limit) or a dropped connection, up to
    * `transcriptionRetryDelays.length` more times, so the user need not say it again. The pill keeps
    * transcribing until `transcriptionRetryNoticeDelay` has passed since the first failure, then says
    * it is retrying while it waits and tries, and goes back to transcribing once a retry answers. Any
-   * other failure (signed out, over quota, a refused request, a timeout, or the speech model's rate
-   * limit, which the backend already waited out) fails at once. */
+   * other failure (signed out, over quota, a refused request, a timeout) fails at once. */
   private async transcribeRetrying(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal): Promise<Transcription> {
     const notice = this.retryNotice(isCurrent, signal);
     try {
@@ -873,7 +874,7 @@ export class DictationController extends Observable {
 
   /** Makes a chunk's request until it answers (owner, 2026-10-03: "retries should keep on happening
    * until the final give up"). While the user is still dictating, a server error, a dropped
-   * connection, the backend's own timeout or the speech model's rate limit (`backendWaited`) is tried
+   * connection, the speech model's rate limit, or the backend's own timeout (`backendTimedOut`) is tried
    * again after each of `chunkRetryDelays`, the last repeating, for as long as the dictation goes
    * on: nobody waits for it yet. From the release, it gets `transcriptionRetryDelays` more tries on
    * the same failures, with the pill's retry note, so the end of a dictation is not lost to a burst
@@ -888,7 +889,7 @@ export class DictationController extends Observable {
       } catch (error) {
         if (!isCurrent()) throw error;
         if (!release.done) {
-          if (!isServerError(error) && !backendWaited(error)) throw error;
+          if (!isServerError(error) && !backendTimedOut(error)) throw error;
           const delay = this.chunkRetryDelays[Math.min(waits, this.chunkRetryDelays.length - 1)] ?? 0;
           waits += 1;
           log.debug(`DictationController: chunk failed while recording (${errorName(error)}); retrying in ${delay}ms`);
@@ -897,7 +898,7 @@ export class DictationController extends Observable {
           continue;
         }
         const delay = this.transcriptionRetryDelays[lastTries];
-        if (delay === undefined || (!isServerError(error) && !backendWaited(error))) throw error;
+        if (delay === undefined || (!isServerError(error) && !backendTimedOut(error))) throw error;
         lastTries += 1;
         log.debug(`DictationController: chunk failed after the release (${errorName(error)}); retrying in ${delay}ms`);
         release.notice?.failed();
@@ -1656,19 +1657,18 @@ function newRelease(): Release {
   return { done: false, released, markReleased, notice: null };
 }
 
-/** The backend gave up on the speech model after waiting for it: its timeout (504
- * `transcription_timeout`), or the model's rate limit outlasting the backend's own retries (429
- * `transcription_rate_limited`, backend ADR-022). One recording is not tried again (it already
- * waited); a long dictation's chunk is (ADR-DESK-049). */
-function backendWaited(error: unknown): boolean {
-  return error instanceof BackendError && error.kind === "failed" && (error.status === gatewayTimeout || error.status === speechModelRateLimited);
+/** The backend gave up waiting for the speech model (504 `transcription_timeout`). One recording is
+ * not tried again (it already waited, ADR-DESK-039); a long dictation's chunk is (ADR-DESK-049). */
+function backendTimedOut(error: unknown): boolean {
+  return error instanceof BackendError && error.kind === "failed" && error.status === gatewayTimeout;
 }
 
-/** A failure on the server's side, worth trying again: a 5xx, or a connection that dropped. Not a 504:
- * the backend gave up waiting for the speech model, and like a request that timed out here, it
- * already waited (ADR-DESK-039). */
+/** A failure on the server's side, worth trying again: a 5xx, the speech model's rate limit (which
+ * the backend answered as a 502 before it began retrying it itself, and which one recording was
+ * always tried again on), or a connection that dropped. Not a 504: the backend gave up waiting for
+ * the speech model, and like a request that timed out here, it already waited (ADR-DESK-039). */
 function isServerError(error: unknown): boolean {
-  if (error instanceof BackendError) return error.kind === "failed" && error.status !== undefined && error.status >= 500 && error.status !== gatewayTimeout;
+  if (error instanceof BackendError) return error.kind === "failed" && error.status !== undefined && ((error.status >= 500 && error.status !== gatewayTimeout) || error.status === speechModelRateLimited);
   return error instanceof TransportError && error.reason === "network";
 }
 
