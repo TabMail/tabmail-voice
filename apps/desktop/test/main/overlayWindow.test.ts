@@ -608,3 +608,65 @@ test("an old slow caret cannot overwrite a later hold's ready caret", async () =
   await new Promise<void>(queueMicrotask);
   expect(overlay.bounds()).toEqual(shown);
 });
+
+test("late caret cannot change saved placement or the chat opened from it", async () => {
+  const caret = deferred<Rect | null>();
+  const window = recordingWindow();
+  const controller = new OverlayWindowController(window.window, () => caret.promise);
+  controller.update({ kind: "arming" });
+  controller.update({ kind: "listening" });
+  expect(window.visible()).toBe(true);
+  const place = controller.pillPlace;
+  const onScreenX = window.bounds().x + window.bounds().width / 2;
+  expect(place.pill.x).toBe(pointerAtRest.x + 0.5);
+  caret.resolve({ x: 40, y: 40, width: 1, height: 20 });
+  await new Promise<void>(queueMicrotask);
+  await new Promise<void>(queueMicrotask);
+  expect(controller.pillPlace).toEqual(place);
+  controller.update({ kind: "running", tool: "answer" }, true);
+  controller.fitChat(180);
+  expect(window.bounds().x + (controller.chatPlacement?.pillX ?? -10000)).toBe(onScreenX);
+  expect(window.visible()).toBe(true);
+  expect(window.ignoresMouse()).toBe(false);
+});
+
+test("stalled caret cannot suppress a later restriction or its recovery", () => {
+  const caret = deferred<Rect | null>();
+  let area: Rect | null = workArea;
+  const window = recordingWindow();
+  const controller = new OverlayWindowController(window.window, () => caret.promise, () => area);
+  controller.update({ kind: "arming" });
+  controller.update({ kind: "listening" });
+  expect(window.visible()).toBe(true);
+  const shown = { ...window.bounds() };
+  area = null;
+  controller.refreshPlacement();
+  expect(window.visible()).toBe(false);
+  area = workArea;
+  controller.refreshPlacement();
+  expect(window.visible()).toBe(true);
+  expect(window.bounds()).toEqual(shown);
+});
+
+test("old completion cannot change the newer hold's saved placement", async () => {
+  const old = deferred<Rect | null>();
+  const fresh = { x: 400, y: 300, width: 1, height: 20 };
+  const locate = vi.fn().mockImplementationOnce(() => old.promise).mockResolvedValue(fresh);
+  const window = recordingWindow();
+  const controller = new OverlayWindowController(window.window, locate);
+  controller.update({ kind: "arming" });
+  controller.update({ kind: "listening" });
+  controller.update({ kind: "idle" });
+  controller.update({ kind: "arming" });
+  await new Promise<void>(queueMicrotask);
+  controller.update({ kind: "listening" });
+  const place = controller.pillPlace;
+  expect(place.pill.x).toBe(fresh.x + 0.5);
+  old.resolve({ x: 40, y: 40, width: 1, height: 20 });
+  await new Promise<void>(queueMicrotask);
+  await new Promise<void>(queueMicrotask);
+  expect(controller.pillPlace).toEqual(place);
+  controller.refreshPlacement();
+  expect(controller.pillPlace).toEqual(place);
+  expect(window.visible()).toBe(true);
+});

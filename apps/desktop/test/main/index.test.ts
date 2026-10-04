@@ -1544,6 +1544,51 @@ describe("main process wiring", () => {
 });
 
 
+test.each(["blocks", "recovers"] as const)("shell event %s revealed placement while the caret lookup is pending", async (direction) => {
+  await launch("win32");
+  const helper = app.helpers.get("voice-windows");
+  expect(helper).toBeDefined();
+  if (!helper) return;
+  helper.replies.set("frontmostApp", { window: 42 });
+  helper.replies.set("caretAnchor", null);
+  const captured = app.overlay as unknown as {
+    locate: () => Promise<Rect | null>;
+    place: (area: Rect) => Rect | null;
+    refreshPlacement: () => void;
+  };
+  const area = { x: 0, y: 0, width: 1440, height: 900 };
+  if (direction === "recovers") {
+    helper.replies.set("shellExclusionBounds", [area]);
+    helper.events.get("shellGeometryChanged")?.({ event: "shellGeometryChanged" });
+    await vi.waitFor(() => expect(captured.place(area)).toBeNull());
+  }
+  const exclusions = direction === "blocks" ? [area] : [];
+  let visible = false;
+  let bounds = { x: 0, y: 0, width: 1, height: 1 };
+  const surface = {
+    isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; },
+    setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {},
+  };
+  const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
+  const real = new RealOverlay(surface, captured.locate, captured.place);
+  captured.refreshPlacement = () => real.refreshPlacement();
+  const eventReply = Promise.withResolvers<Rect[]>();
+  const caretReply = Promise.withResolvers<Rect | null>();
+  helper.replies.set("caretAnchor", caretReply.promise);
+  helper.replies.set("shellExclusionBounds", eventReply.promise);
+  helper.events.get("shellGeometryChanged")?.({ event: "shellGeometryChanged" });
+  await vi.waitFor(() => expect(helper.requests.some(r => r.method === "shellExclusionBounds")).toBe(true));
+  real.update({ kind: "arming" });
+  real.update({ kind: "listening" });
+  for (let i = 0; i < 8; i++) await new Promise<void>(queueMicrotask);
+  eventReply.resolve(exclusions);
+  await vi.waitFor(() => expect(captured.place(area)).toEqual(direction === "blocks" ? null : area));
+  for (let i = 0; i < 8; i++) await new Promise<void>(queueMicrotask);
+  expect(visible).toBe(direction === "recovers");
+  caretReply.resolve(null);
+});
+
+
 test("Linux helper exit invalidates established permission readiness", async () => {
   vi.doUnmock("../../src/core/onboarding/permissions.js");
   await launch("linux");

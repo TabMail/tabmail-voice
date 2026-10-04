@@ -243,14 +243,6 @@ function launch(): void {
     // Ask only the compositor on Linux: AT-SPI traversal would delay the pill.
     if (system instanceof LinuxSystem) return system.caretAnchor();
     const pid = await system.frontmostApp();
-    if (system instanceof WindowsSystem) {
-      try {
-        await shellGeometry?.refresh();
-      } catch (error: unknown) {
-        // Keep the last known shell exclusion, but do not discard a usable caret.
-        log.debug(`main: shell geometry lookup failed: ${errorName(error)}`);
-      }
-    }
     return pid === null ? null : system.caretAnchor(pid);
   }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined);
 
