@@ -2391,8 +2391,8 @@ not outlast one. `transcriptionRetryDelays` is now 0.5, 1.5, 3, 5, 10, 10, 15 an
 minute in all, with the retry note up from 2 s; the user can cancel at any time. A recording's 504
 is still not retried (above). A long dictation's chunk after the release retries its 504 too, as
 while recording (ADR-DESK-049).
-*(Later the same day: the backend now retries the speech model's own 429 for its 30 s window and
-then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
+*(Later the same day: the backend now retries the speech model's own 429 for its 30 s window (10 s
+since 2026-10-04) and then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
 that code as a failure of the speech model, not this account's limit (`BackendError` `failed`, 429;
 the account's 429s stay `rateLimited`). Like a 504, the backend already waited, so a recording does
 not try it again; a long dictation's chunk does, while recording and after the release
@@ -3138,12 +3138,12 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   tap block can still run as the microphone stops, and the same guard closes a real race there.
 - **Retries (owner: "continuous retries until even the last chunk or the user release is done…
   until the final give up").** While the user dictates, a chunk's server error, dropped connection,
-  backend timeout (504) or the speech model's rate limit outlasting the backend's own 30 s of retries
+  backend timeout (504) or the speech model's rate limit outlasting the backend's own 10 s of retries
   (429 `transcription_rate_limited`, backend ADR-022; found in review 2026-10-03, where one such 429
   threw away the rest of a dictation) is tried again after each of `chunkRetryDelays`, the last repeating,
   quietly: nobody waits for it yet. From the release, a chunk still failing gets the
   `transcriptionRetryDelays` tries one recording gets, about a minute of waits (ADR-DESK-039, amendment
-  2026-10-03; each try the backend holds for its whole 30 s window, a 504 or that 429, adds its 30 s,
+  2026-10-03; each try the backend holds, up to 30 s for a 504 and about 10 s for that 429, adds that time,
   so a chunk failing that way every time keeps the pill transcribing for up to about 5.5 minutes,
   9 tries × 30 s plus the waits, until the user cancels; found in review, 2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
   at the release, so its backend timeout comes after it (owner: "we should not lose the end").
