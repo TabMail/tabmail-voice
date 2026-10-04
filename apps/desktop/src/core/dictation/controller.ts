@@ -32,7 +32,7 @@ import type { ScreenExclusions } from "./excludedSites.js";
 import type { DictationSettings } from "../settings.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 import { type DictationTip, type TipBook, tipDetails } from "../onboarding/tips.js";
-import { CancellationError, sleep, withTimeout } from "../util/timeout.js";
+import { CancellationError, sleep, TimeoutError, withTimeout } from "../util/timeout.js";
 import { encodeWAV } from "../audio/wav.js";
 
 export type Phase =
@@ -167,6 +167,8 @@ export class DictationController extends Observable {
   transcriptionRetryNoticeDelay = config.transcriptionRetryNoticeDelay;
   /** The waits before each retry of a long dictation's chunk that failed while it was recorded. Settable for tests. */
   chunkRetryDelays = config.chunkRetryDelays;
+  /** How long a long dictation's polish may take. Settable for tests. */
+  chunkPolishTimeout = config.chunkPolishTimeout;
   /** A double tap's second press was released as a tap, leaving the hotkey helper hands-free, but no
    * hands-free dictation listens: the press came while the last dictation was still busy, or failed
    * to start, or its dictation ended while the key was down. The helper must be told, or it keeps
@@ -615,15 +617,22 @@ export class DictationController extends Observable {
     }
     const cleanup = cleans ? DictationCleanup.variables(context, settings.dictionary) : undefined;
     const client = this.deps.makeTranscriptionClient(settings.backendURL);
+    const completions = this.deps.makeCompletionsClient(settings.backendURL);
     const vocabulary = [...settings.dictionary, ...this.screenTerms(settings.dictionary)];
-    return { send: (flac, signal) => withFreshToken(account, userID, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)) };
+    return {
+      send: (flac, signal) => withFreshToken(account, userID, (token) => client.transcribe(flac, language, vocabulary, token, signal, cleanup)),
+      polish: cleanup
+        ? (text, signal) =>
+            withFreshToken(account, userID, (token) => completions.complete({ role: "system", content: DictationCleanup.prompt, vars: { ...cleanup, dictation: text } }, token, signal))
+        : null,
+    };
   }
 
   /** Waits for the transcription `obtain` gets, in its parts (one, or a long dictation's chunks), and
    * inserts it (dictation) or carries it out (agent mode). `obtain` answers null when the dictation
    * ended meanwhile. With `lost` (a long dictation whose later chunks failed), a dictation pastes what
    * came before them and says the end is missing; agent mode carries out nothing of it. */
-  private async deliver(generation: number, obtain: () => Promise<{ parts: TranscribedPart[]; lost: unknown } | null>): Promise<void> {
+  private async deliver(generation: number, obtain: () => Promise<{ parts: TranscribedPart[]; lost: unknown; polish?: Polish | null } | null>): Promise<void> {
     // Agent mode's requests go under the account signed in now, even if the user switches accounts
     // while they run.
     const account = this.deps.account;
@@ -656,7 +665,9 @@ export class DictationController extends Observable {
       }
       this.deps.useWords(heard.flatMap((part) => (part.transcription.cleanedText === null ? [part.text] : [part.text, part.transcription.cleanedText])));
       if (mode === "dictation") {
-        const text = joinChunkTexts(texts.map((part) => ({ text: part.text === "" ? "" : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
+        const joined = joinChunkTexts(texts.map((part) => ({ text: part.text === "" ? "" : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
+        const text = result.polish ? await this.polished(joined, result.polish, signal) : joined;
+        if (!isCurrent()) return;
         await this.paste(text, targetApp, signal);
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
@@ -736,6 +747,27 @@ export class DictationController extends Observable {
       }
       log.error(`DictationController: ${mode} failed: ${errorName(error)}`);
       this.fail(error instanceof Error && error.message !== "" ? error.message : "Dictation failed. Please try again.");
+    }
+  }
+
+  /** A long dictation's joined text (its chunks' cleanups), polished as a whole by the cleanup prompt
+   * if that answers within `chunkPolishTimeout` (owner, 2026-10-03: "a final polished pass if time
+   * permits"): the chunks' seams read as one text. Else, or when it fails or comes back empty, `text`
+   * as it is: a failed polish never costs the user their dictation, as a failed cleanup doesn't. */
+  private async polished(text: string, polish: Polish, signal: AbortSignal): Promise<string> {
+    const started = performance.now();
+    try {
+      const polishedText = trimWhitespace(await withTimeout(this.chunkPolishTimeout, (timeout) => polish(text, AbortSignal.any([signal, timeout]))));
+      if (polishedText === "") {
+        log.debug("DictationController: polish came back empty; pasting the chunks' cleanups");
+        return text;
+      }
+      log.debug(() => `DictationController: polished in ${elapsed(started)} (${charCount(text)} → ${charCount(polishedText)} chars)`);
+      return polishedText;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      log.debug(`DictationController: polish ${error instanceof TimeoutError ? "ran out of time" : `failed (${errorName(error)})`} after ${elapsed(started)}; pasting the chunks' cleanups`);
+      return text;
     }
   }
 
@@ -900,12 +932,18 @@ export class DictationController extends Observable {
     try {
       await this.deliver(generation, async () => {
         const parts: TranscribedPart[] = [];
+        let lost: unknown = null;
         for (const chunk of chunks) {
           const outcome = await chunk.outcome;
-          if ("error" in outcome) return settled({ parts, lost: outcome.error });
+          if ("error" in outcome) {
+            lost = outcome.error;
+            break;
+          }
           parts.push({ transcription: outcome.transcription, overlapped: chunk.overlapped });
         }
-        return settled({ parts, lost: null });
+        // Prepared by the first chunk, which every part here went with.
+        const { polish } = parts.length > 1 ? await this.preparedUpload(true) : { polish: null };
+        return settled({ parts, lost, polish });
       });
     } finally {
       notice.end();
@@ -1569,7 +1607,13 @@ type ConfirmationAnswer = "confirmed" | "declined" | "unanswered" | { spoken: st
 /** Sends a recording, or a chunk of one, with what every upload of the dictation sends (`prepareUpload`). */
 interface Upload {
   send: (flac: Uint8Array, signal: AbortSignal) => Promise<Transcription>;
+  /** A long dictation's polish (`polished`), under the same account and with the same cleanup
+   * variables as its chunks; null when the upload takes no cleanup. */
+  polish: Polish | null;
 }
+
+/** Runs the cleanup prompt over `text`, and returns its reply. */
+type Polish = (text: string, signal: AbortSignal) => Promise<string>;
 
 /** A transcribed recording, or chunk of one, and whether it starts inside the one before it. */
 interface TranscribedPart {

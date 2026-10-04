@@ -120,6 +120,10 @@ export const chunkRetryDelays: readonly number[] = [1_000, 2_000, 5_000, 10_000]
  * words, looked for among the last and first `chunkOverlapSearchWords` words of each. */
 export const chunkOverlapSearchWords = 80;
 export const chunkOverlapMinimumRun = 3;
+/** A long dictation's joined text is polished once more as a whole if that takes no longer than this
+ * (ms) after the chunks are in; else the chunks' own cleanups are pasted as they are (owner,
+ * 2026-10-03: "a final polished pass if time permits… not longer than 5 seconds"). */
+export const chunkPolishTimeout = 5_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
 /** A microphone start that fails is tried again for this long after the dictation's key-down, then

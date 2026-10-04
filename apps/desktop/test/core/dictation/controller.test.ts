@@ -5237,6 +5237,82 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(used).toEqual([["raw 0", "Part 0.", "raw 1", "Part 1.", "raw 2", "Part 2."]]);
     });
 
+    /** Owner, 2026-10-03: "a final polished pass if time permits". Once its chunks are in, their
+     * cleanups, joined, go through the cleanup prompt once more as a whole, with the dictation's cleanup
+     * variables, and its reply is pasted. */
+    test("is polished as a whole once its chunks are in, and the polish is pasted", async () => {
+      prefs.value = { ...defaultSettings(), dictionary: ["Xyvora"] };
+      completions.enqueue(200, reply("Part zero, part one and part two."));
+      const backend = new ChunkBackend(part);
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part zero, part one and part two."]);
+      expect(controller.phase).toEqual(idle);
+      expect(completions.requests).toHaveLength(1);
+      const { role, content, dictation, ...variables } = completions.message(0) ?? {};
+      expect({ role, content, dictation }).toEqual({ role: "system", content: "system_prompt_dictate_cleanup", dictation: "Part 0. Part 1. Part 2." });
+      expect(variables).toEqual(backend.sent[0]?.body.cleanup);
+      expect(variables.dictionary).toBe("Xyvora");
+      expect(completions.body(0).disable_tools).toBe(true);
+    });
+
+    /** The polish is only if time permits: one that fails, comes back empty or takes longer than
+     * `chunkPolishTimeout` leaves the chunks' cleanups, joined, to be pasted, and the dictation ends as
+     * ever. One running out of time is canceled. */
+    test.each([
+      { outcome: "is refused", answer: (stub: StubTransport) => stub.enqueue(500, { error: "failed" }) },
+      { outcome: "fails in its stream", answer: (stub: StubTransport) => stub.enqueue(200, Fixtures.completionsStream(JSON.stringify({ error: "failed" }))) },
+      { outcome: "comes back empty", answer: (stub: StubTransport) => stub.enqueue(200, reply(" ")) },
+      {
+        outcome: "runs out of time",
+        answer: (stub: StubTransport) => {
+          stub.honorsCancel = true;
+          stub.gate = () => new Promise(() => {});
+        },
+      },
+    ])("a polish that $outcome leaves the chunks' cleanups pasted", async ({ outcome, answer }) => {
+      answer(completions);
+      const backend = new ChunkBackend(part);
+      const { controller, capture, pastes } = makeLong(backend);
+      controller.chunkPolishTimeout = 200;
+
+      await startHearing(controller, capture, pausedSpeech(2, 12, 12, 5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1. Part 2."]);
+      expect(controller.phase).toEqual(idle);
+      expect(completions.requests).toHaveLength(1);
+      if (outcome === "runs out of time") expect(completions.requests[0]?.signal?.aborted).toBe(true);
+    });
+
+    /** A cancel while the polish runs ends the dictation: nothing is pasted, and the polish's request
+     * stops. */
+    test("canceled while it is polished, it pastes nothing", async () => {
+      completions.honorsCancel = true;
+      completions.gate = () => new Promise(() => {});
+      const backend = new ChunkBackend(part);
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(3, 12, 5));
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      controller.handle("finish");
+      expect(await eventually(() => completions.requests.length === 1)).toBe(true);
+      controller.handle("cancel");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      await sleep(50);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(idle);
+      expect(completions.requests[0]?.signal?.aborted).toBe(true);
+    });
+
     /** Speech with no pause is cut anyway, and the next chunk starts before the cut: the words both
      * heard are kept once. */
     test("speech with no pause is cut with an overlap, and the overlap's words are pasted once", async () => {
@@ -5375,6 +5451,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(backend.chunks).toBe(4);
       expect(completionsVars(0)?.user_request).toBe(`${texts[0]} ${texts[3]}`);
+      // Agent mode reads the transcript: nothing is polished.
+      expect(completions.requests.map((_, index) => completions.message(index)?.content)).not.toContain("system_prompt_dictate_cleanup");
     });
 
     /** Speech much softer than the speech before it (the user leaning back, or speaking low) is
@@ -5497,6 +5575,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(await eventually(() => settled(controller))).toBe(true);
       expect(pastes).toEqual([pasted]);
       expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      // The text pasted is polished when it is of two chunks or more (this backend's polish fails).
+      expect(completions.requests.map((_, index) => completions.message(index)?.dictation)).toEqual(pasted === "Part 0." ? [] : [pasted]);
     });
 
     /** The chunks after the first that gave up are no longer needed: their requests stop. */

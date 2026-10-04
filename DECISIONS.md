@@ -3092,6 +3092,18 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   taken out; one inside a chunk stays. Chunks join with a space, or none where Chinese, Japanese,
   Thai, Lao, Khmer or Burmese text meets. Each chunk's cleaned text is pasted (its transcript where
   the cleanup failed, ADR-DESK-008).
+- **The polish (owner, 2026-10-03: "one final cleanup pass after the full dictation, even in the
+  chunked case… a little bit wasteful, but nice to have"; "a final polished pass if time permits… not
+  longer than 5 seconds"; "this should not change any of the backend mechanisms").** In dictation
+  mode, a text of two chunks or more (joined as above) goes once more through the same cleanup
+  prompt, `system_prompt_dictate_cleanup`, which the app calls itself at `POST /completions/chat`
+  (as before ADR-DESK-039's amendment of 2026-09-29), with the dictation's cleanup variables and the
+  joined text as its `dictation`, under the dictation's account. Its reply is pasted if it comes
+  within `chunkPolishTimeout` (5 s) of the chunks being in; one that fails, comes back empty or runs
+  out of time (its request is canceled) leaves the joined text to be pasted, as a failed cleanup
+  leaves the transcript (ADR-DESK-008). The owner chose to polish the cleaned text, not to clean the
+  raw transcript a second way, and the 5 s over a longer wait. Agent mode polishes nothing; a single
+  recording, or one chunk left before a chunk that gave up, already had its whole cleanup.
 - **Every chunk is sent**, a long silence's too (owner, 2026-10-03, on review: "send every chunk"):
   the model decides what was said, as for one recording (ADR-DESK-005: no loudness gate). Chunks
   judged silent by their loudness were skipped at first, but speech much softer than the speech
@@ -3146,6 +3158,9 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
 - Each chunk is a request of its own and counts toward usage as one; an overlap's 15 s are
   transcribed twice.
 - The cleanup sees one chunk at a time: a sentence cut at a forced cut is cleaned in two halves.
+  The polish reads the whole text, if it can within 5 s: a light-tier model writes the text out
+  again, so a long dictation (several minutes) may run out of time and keep its chunks' cleanups.
+  It is one more completions request per long dictation, and up to 5 s more at the spinner.
 - 10 minutes at 16 kHz is about 19 MB of samples kept in memory until the release.
 - A chunk is cut only after 10 s of speech, so a pause cut is never shorter; a forced cut leaves the
   next chunk at least its overlap.
