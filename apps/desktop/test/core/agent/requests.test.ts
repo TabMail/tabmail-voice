@@ -3,9 +3,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DesktopAgent } from "../../../src/core/agent/requests.js";
 import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
-import { AgentError, type AgentToolID, agentToolIDs, EditTool, screenHiddenNote } from "../../../src/core/agent/tools.js";
+import { AgentError, type AgentToolID, agentToolIDs, agentTools, EditTool, screenHiddenNote } from "../../../src/core/agent/tools.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient, type ServerToolEvent, type ToolCall } from "../../../src/core/backend/completions.js";
 import { screen } from "../../support/screens.js";
@@ -478,5 +480,42 @@ describe("the answer's tool loop", () => {
     );
 
     expect(completions.requests).toHaveLength(1);
+  });
+});
+
+/** The same cases are projected by Rust's viewport suite; changing the native refusal
+ * representation must not silently change which writing tool can request and paste. */
+describe("terminal selection writing boundary", () => {
+  const fixture = JSON.parse(readFileSync(join(__dirname, "../../../native/shared/context/terminal-action-cases.json"), "utf8")) as {
+    cases: { name: string; expected: { selectedText: string; selectionComplete: boolean } }[];
+  };
+  test("has refused and readable positive-control cases", () => {
+    expect(fixture.cases).toHaveLength(5);
+    expect(fixture.cases.filter((item) => item.expected.selectionComplete)).toHaveLength(1);
+  });
+  test.each(fixture.cases)("$name reaches the intended writing boundary", async ({ expected }) => {
+    const context = screen({ selectedText: expected.selectedText, selectionRedacted: !expected.selectionComplete });
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply("friendlier text"));
+    const pastes: string[] = [];
+    const writeAndDeliver = async () => {
+      const offered = DesktopAgent.tools(context, ["edit", "compose"], false);
+      const tool = await DesktopAgent.tool(request, offered, context, "", client, account, Fixtures.userID);
+      const text = await DesktopAgent.write(tool, request, context, false, "", "", client, account, Fixtures.userID);
+      await agentTools[tool].deliver(text, { paste: async (value) => { pastes.push(value); }, emailApp: null,
+        thunderbird: null as never, showAnswer: () => {}, signal: new AbortController().signal });
+    };
+    if (expected.selectionComplete) {
+      await writeAndDeliver();
+      expect(completions.requests).toHaveLength(1);
+      expect(completions.message(0)?.content).toBe("system_prompt_desktop_edit");
+      expect(pastes).toEqual(["friendlier text"]);
+    } else {
+      const error = await thrown(writeAndDeliver());
+      expect(error).toBeInstanceOf(AgentError);
+      expect((error as AgentError).kind).toBe("secretInSelection");
+      expect(completions.requests).toHaveLength(0);
+      expect(pastes).toEqual([]);
+    }
   });
 });

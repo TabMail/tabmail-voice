@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import VoiceHelperSupport
+import Foundation
 
 /// What the user excludes from screen reading (ADR-DESK-045, ADR-DESK-047): apps, by identifier, and
 /// websites, by host. Every request that reads another app carries both lists, and nothing excluded
@@ -22,6 +23,7 @@ struct ScreenExclusions: Sendable, Equatable {
     init(params: JSON, method: String) throws {
         appIDs = try Self.strings(params, "excludedAppIDs", method)
         hosts = try Self.strings(params, "excludedHosts", method)
+        _ = try query([:])
     }
 
     private static func strings(_ params: JSON, _ name: String, _ method: String) throws -> [String] {
@@ -31,37 +33,44 @@ struct ScreenExclusions: Sendable, Equatable {
         return strings
     }
 
-    /// Whether the app is excluded. Identifiers are compared whole and without regard to case, as
-    /// macOS does; an app without one can't be excluded.
+    /// Provider identity/URL acquisition stays native; comparisons share one policy.
     func excludesApp(_ identifier: String?) -> Bool {
-        guard let id = identifier?.lowercased() else { return false }
-        return appIDs.contains { $0.lowercased() == id }
+        decision("app", identifier.map { $0 as Any } ?? NSNull())
     }
 
-    /// Whether a page on `host` is excluded: an excluded host itself, or a subdomain of one, without
-    /// regard to case or to a trailing dot. A page without a host can't be excluded.
     func excludesHost(_ host: String?) -> Bool {
-        guard let name = host.map(Self.normalized), !name.isEmpty else { return false }
-        return hosts.contains { excluded in
-            let site = Self.normalized(excluded)
-            return !site.isEmpty && (name == site || name.hasSuffix("." + site))
-        }
+        decision("host", host.map { $0 as Any } ?? NSNull())
     }
 
-    /// Whether a page is excluded: one on an excluded host, and one whose address the app did not
-    /// give when asked. What can't be told safe is not read.
     func excludes(_ page: PageHost) -> Bool {
+        let kind: String
         switch page {
-        case .unknown: true
-        case .noHost: false
-        case let .host(name): excludesHost(name)
+        case .unknown: kind = "unknown"
+        case .noHost: kind = "noHost"
+        case .host: kind = "host"
         }
+        do {
+            let result = try query(["page": kind, "host": page.name ?? ""])
+            return result["page"] as? Bool ?? true
+        } catch { return true }
     }
 
-    private static func normalized(_ host: String) -> String {
-        let name = host.lowercased()
-        return name.hasSuffix(".") ? String(name.dropLast()) : name
+    private func decision(_ key: String, _ value: Any) -> Bool {
+        do { return try query([key: value])[key] as? Bool ?? true }
+        catch { return true } // A core failure can never allow a provider read.
     }
+
+    private func query(_ fields: [String: Any]) throws -> [String: Any] {
+        var input = fields
+        input["excludedAppIDs"] = appIDs
+        input["excludedHosts"] = hosts
+        let data = try Redactor.request(JSONSerialization.data(withJSONObject: input), operation: .policy)
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw Redactor.Failure.refused
+        }
+        return result
+    }
+
 }
 
 /// What a web area says of its page's address: its host (for a page that is not a web page, its

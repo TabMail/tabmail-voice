@@ -13,27 +13,44 @@ find_package(nlohmann_json 3.11 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ICU REQUIRED COMPONENTS uc i18n)
 add_executable(voice-hotkey src/hotkey.cpp)
-target_link_libraries(voice-hotkey PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(voice-hotkey PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads voice-core)
 target_compile_options(voice-hotkey PRIVATE -Wall -Wextra -Werror)
 add_executable(voice-linux src/system.cpp)
-target_link_libraries(voice-linux PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n)
+target_link_libraries(voice-linux PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
 target_compile_options(voice-linux PRIVATE -Wall -Wextra -Werror)
 pkg_check_modules(SPARQL REQUIRED IMPORTED_TARGET tinysparql-3.0)
 add_executable(voice-files src/files.cpp)
 target_link_libraries(voice-files PRIVATE PkgConfig::SPARQL nlohmann_json::nlohmann_json)
 target_compile_options(voice-files PRIVATE -Wall -Wextra -Werror)
+pkg_check_modules(EBOOK REQUIRED IMPORTED_TARGET libebook-1.2 libecal-2.0)
+add_executable(voice-productivity src/productivity.cpp)
+target_link_libraries(voice-productivity PRIVATE PkgConfig::EBOOK nlohmann_json::nlohmann_json)
+target_compile_options(voice-productivity PRIVATE -Wall -Wextra -Werror)
 include(CTest)
+include(../shared/rust/VoiceCore.cmake)
+if(BUILD_TESTING)
+  add_executable(voice-productivity-process-tests ../shared/productivity/process-test.cpp)
+  target_link_libraries(voice-productivity-process-tests PRIVATE nlohmann_json::nlohmann_json)
+  add_test(NAME voice-productivity-process COMMAND voice-productivity-process-tests)
+endif()
+
 if(BUILD_TESTING)
   add_executable(voice-gesture-tests ../windows/tests/gesture.cpp)
   target_include_directories(voice-gesture-tests PRIVATE ../shared/hotkey ../windows/src)
   target_compile_options(voice-gesture-tests PRIVATE -Wall -Wextra -Werror)
-  add_test(NAME voice-gesture COMMAND voice-gesture-tests)
+  target_link_libraries(voice-gesture-tests PRIVATE nlohmann_json::nlohmann_json voice-core)
+  add_test(NAME voice-gesture COMMAND voice-gesture-tests "${CMAKE_CURRENT_SOURCE_DIR}/../shared/hotkey/gesture-cases.json")
   add_executable(voice-redactor-tests tests/redactor.cpp)
-  target_link_libraries(voice-redactor-tests PRIVATE nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  target_link_libraries(voice-redactor-tests PRIVATE nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
   target_compile_options(voice-redactor-tests PRIVATE -Wall -Wextra -Werror)
   add_test(NAME voice-redactor COMMAND voice-redactor-tests "${CMAKE_CURRENT_SOURCE_DIR}/../shared/privacy/redaction-cases.json")
   find_program(DBUS_RUN_SESSION dbus-run-session REQUIRED)
   find_program(PYTHON_EXECUTABLE python3 REQUIRED)
+  add_library(voice-productivity-fault SHARED tests/productivity-fault.cpp)
+  target_link_libraries(voice-productivity-fault PRIVATE PkgConfig::EBOOK ${CMAKE_DL_LIBS})
+  target_compile_options(voice-productivity-fault PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME voice-productivity COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/productivity.py" $<TARGET_FILE:voice-productivity> $<TARGET_FILE:voice-productivity-fault>)
+  set_tests_properties(voice-productivity PROPERTIES TIMEOUT 60)
   add_executable(voice-accessibility-bridge-tests tests/accessibility-bridge.cpp)
   target_link_libraries(voice-accessibility-bridge-tests PRIVATE PkgConfig::ATSPI Threads::Threads)
   target_compile_options(voice-accessibility-bridge-tests PRIVATE -Wall -Wextra -Werror)
@@ -45,12 +62,12 @@ if(BUILD_TESTING)
   add_test(NAME voice-input-session COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- $<TARGET_FILE:voice-input-session-tests>)
   set_tests_properties(voice-input-session PROPERTIES TIMEOUT 12)
   add_executable(voice-shortcut-tests tests/portal-hotkey.cpp)
-  target_link_libraries(voice-shortcut-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads)
+  target_link_libraries(voice-shortcut-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads voice-core)
   target_compile_options(voice-shortcut-tests PRIVATE -Wall -Wextra -Werror)
   add_test(NAME voice-shortcut COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/shortcut-output.py" $<TARGET_FILE:voice-shortcut-tests>)
   set_tests_properties(voice-shortcut PROPERTIES TIMEOUT 12)
   add_executable(voice-gnome-controls-tests tests/gnome-controls.cpp)
-  target_link_libraries(voice-gnome-controls-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads)
+  target_link_libraries(voice-gnome-controls-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads voice-core)
   target_compile_options(voice-gnome-controls-tests PRIVATE -Wall -Wextra -Werror)
   add_test(NAME voice-gnome-controls COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/gnome-controls-output.py" $<TARGET_FILE:voice-gnome-controls-tests>)
   set_tests_properties(voice-gnome-controls PROPERTIES TIMEOUT 8)
@@ -89,25 +106,37 @@ if(BUILD_TESTING)
   set_tests_properties(voice-system-protocol PROPERTIES RUN_SERIAL TRUE TIMEOUT 20)
   add_executable(voice-context-tests ../windows/tests/screen-context.cpp)
   target_include_directories(voice-context-tests PRIVATE ../shared/context)
+  target_link_libraries(voice-context-tests PRIVATE nlohmann_json::nlohmann_json voice-core)
   target_compile_options(voice-context-tests PRIVATE -Wall -Wextra -Werror)
-  add_test(NAME voice-context COMMAND voice-context-tests)
+  add_test(NAME voice-context COMMAND voice-context-tests "${CMAKE_CURRENT_SOURCE_DIR}/../shared/context/context-cases.json")
   add_executable(voice-privacy-tests tests/privacy.cpp)
-  target_link_libraries(voice-privacy-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json)
+  target_link_libraries(voice-privacy-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json voice-core)
   target_compile_options(voice-privacy-tests PRIVATE -Wall -Wextra -Werror)
-  add_test(NAME voice-privacy COMMAND voice-privacy-tests "${CMAKE_CURRENT_SOURCE_DIR}/../shared/privacy/host-exclusion-cases.json")
+  add_test(NAME voice-privacy COMMAND voice-privacy-tests "${CMAKE_CURRENT_SOURCE_DIR}/../shared/privacy/host-exclusion-cases.json" "${CMAKE_CURRENT_SOURCE_DIR}/../shared/privacy/address-cases.json")
   add_executable(voice-screen-tests tests/screen.cpp)
-  target_link_libraries(voice-screen-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  target_link_libraries(voice-screen-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
   target_compile_options(voice-screen-tests PRIVATE -Wall -Wextra -Werror)
   add_test(NAME voice-screen COMMAND voice-screen-tests)
+  add_executable(voice-live-source-tests tests/live-source.cpp)
+  target_link_libraries(voice-live-source-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
+  target_compile_options(voice-live-source-tests PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-live-source-tests PRIVATE
+    -Wl,--wrap=atspi_accessible_get_name
+    -Wl,--wrap=atspi_accessible_clear_cache -Wl,--wrap=atspi_accessible_get_text_iface
+    -Wl,--wrap=atspi_text_get_character_count -Wl,--wrap=atspi_text_get_n_selections
+    -Wl,--wrap=atspi_text_get_selection -Wl,--wrap=atspi_text_get_text
+    -Wl,--wrap=atspi_accessible_get_state_set -Wl,--wrap=atspi_text_get_bounded_ranges
+    -Wl,--wrap=atspi_text_get_caret_offset -Wl,--wrap=atspi_text_get_character_extents)
+  add_test(NAME voice-live-source COMMAND voice-live-source-tests)
   add_executable(voice-screen-collection-tests tests/screen-collection.cpp)
-  target_link_libraries(voice-screen-collection-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  target_link_libraries(voice-screen-collection-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
   target_compile_options(voice-screen-collection-tests PRIVATE -Wall -Wextra -Werror)
   target_link_options(voice-screen-collection-tests PRIVATE
     -Wl,--wrap=atspi_accessible_get_collection_iface -Wl,--wrap=atspi_collection_get_matches
     -Wl,--wrap=g_array_unref -Wl,--wrap=atspi_accessible_clear_cache)
   add_test(NAME voice-screen-collection COMMAND voice-screen-collection-tests)
   add_executable(voice-browser-accessibility-tests tests/browser-accessibility.cpp)
-  target_link_libraries(voice-browser-accessibility-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n)
+  target_link_libraries(voice-browser-accessibility-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
   target_compile_options(voice-browser-accessibility-tests PRIVATE -Wall -Wextra -Werror)
   target_link_options(voice-browser-accessibility-tests PRIVATE
     -Wl,--wrap=atspi_accessible_clear_cache -Wl,--wrap=atspi_accessible_get_attributes
@@ -116,7 +145,7 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_document_get_document_attributes)
   add_test(NAME voice-browser-accessibility COMMAND voice-browser-accessibility-tests)
   add_executable(voice-foreground-fixture src/system.cpp tests/foreground-provider.cpp)
-  target_link_libraries(voice-foreground-fixture PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n)
+  target_link_libraries(voice-foreground-fixture PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
   target_compile_options(voice-foreground-fixture PRIVATE -Wall -Wextra -Werror)
   target_link_options(voice-foreground-fixture PRIVATE
     -Wl,--wrap=atspi_init
@@ -135,12 +164,16 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_accessible_get_process_id
     -Wl,--wrap=atspi_accessible_get_collection_iface
     -Wl,--wrap=atspi_accessible_get_component_iface
+    -Wl,--wrap=atspi_component_get_extents
+    -Wl,--wrap=atspi_text_get_character_extents
+    -Wl,--wrap=atspi_text_get_bounded_ranges
     -Wl,--wrap=atspi_accessible_get_document_iface
     -Wl,--wrap=atspi_document_get_document_attributes
     -Wl,--wrap=atspi_accessible_get_name
     -Wl,--wrap=atspi_accessible_get_text_iface
     -Wl,--wrap=atspi_text_get_character_count
     -Wl,--wrap=atspi_text_get_caret_offset
+    -Wl,--wrap=atspi_text_get_selection
     -Wl,--wrap=atspi_text_get_n_selections
     -Wl,--wrap=atspi_text_get_text
 )

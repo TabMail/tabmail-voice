@@ -1,0 +1,4 @@
+module CVoiceCore [system] {
+    header "../../../shared/rust/include/voice_core.h"
+    export *
+}

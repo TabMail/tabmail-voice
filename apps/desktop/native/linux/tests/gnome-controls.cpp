@@ -21,9 +21,19 @@ int main() {
     }, nullptr, nullptr, {nullptr}};
     const auto registration = g_dbus_connection_register_object(bus.get(), "/ai/tabmail/Voice/Caret", info->interfaces[0], &table, &states, nullptr, &error.value); require(registration);
     g_dbus_node_info_unref(info);
-    const auto drain = [] {
-        const auto end = g_get_monotonic_time() + 30000;
-        while (g_get_monotonic_time() < end) { while(g_main_context_iteration(nullptr, false)) {} g_usleep(1000); }
+    const auto drain = [&] {
+        // A timer is not evidence that an asynchronous bus message arrived.
+        // The first ordered daemon reply follows the action; dispatching it can
+        // enqueue SetRecording. The second follows that resulting method call.
+        for (int pass = 0; pass < 2; ++pass) {
+            Error barrierError;
+            auto reply = g_dbus_connection_call_sync(bus.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "GetId", nullptr, G_VARIANT_TYPE("(s)"), G_DBUS_CALL_FLAGS_NONE,
+                1000, nullptr, &barrierError.value);
+            require(reply && !barrierError.value);
+            g_variant_unref(reply);
+            while (g_main_context_iteration(nullptr, false)) {}
+        }
     };
     const auto action = [&](const char* value) {
         require(g_dbus_connection_emit_signal(bus.get(), nullptr, "/ai/tabmail/Voice/Caret", "ai.tabmail.Voice.Caret", "Action", g_variant_new("(s)", value), &error.value)); drain();
@@ -58,6 +68,15 @@ int main() {
         // Menu-started recording has no active native gesture, but still owns keys.
         controls.setRecording(true); drain();
         action("toggleMode"); action("cancel");
+    }
+    for (const auto initial : {Action::startAgent, Action::startAgentHandsFree}) {
+        Output output; Gesture gesture; GnomeControls controls(output, gesture);
+        const auto before = states.size();
+        controls.emit(initial); drain();
+        require(states.size() == before + 1 && states.back());
+        action("toggleMode");
+        action("cancel");
+        require(states.size() == before + 2 && !states.back());
     }
     g_dbus_connection_unregister_object(bus.get(), registration);
 }

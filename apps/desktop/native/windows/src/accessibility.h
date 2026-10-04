@@ -8,8 +8,11 @@
 #include "Privacy/PageScan.h"
 #include "Privacy/ScreenAccess.h"
 #include "accessible_text.h"
+#include "uia_caret_source.h"
+#include "edit_caret_source.h"
 #include <UIAutomation.h>
 #include <string>
+#include <string_view>
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -18,6 +21,7 @@
 #include "microphone.h"
 #include "text.h"
 #include "screen_context.h"
+#include "../../shared/context/SemanticText.h"
 #include "helper_config.h"
 #include <vector>
 
@@ -198,14 +202,16 @@ public:
         const bool isEditable = element && !protectedFocus && editable(element.Get());
         // A page that has the focus itself and can't be edited is no field: the walk reads
         // it as it is laid out, and only what is selected in it is kept, as on the Mac.
-        // In a terminal the focused pane is read as a field of the lines in view, not by its
-        // caret: the text around a terminal's caret is the end of its scrollback.
+        // Terminals use visible native ranges and an independent caret anchor, before the
+        // generic field reader can request scrollback or whole-field context.
         const std::wstring app = executableName(window);
         const bool terminal = std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
             [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
+        if (terminal) return readTerminalScreen(window, element.Get(), app, exclusions, started);
         const bool pageInFocus = element && !protectedFocus && !isEditable && !terminal && isDocument(element.Get());
         std::optional<std::array<std::string, 3>> parts;
         std::string pageSelection;
+        bool selectionUnavailable = false;
         auto logical = isEditable ? AccessibleText::focused(window, automation.Get()) : std::nullopt;
         if (logical) {
             if (!logical->valid()) return nullptr;
@@ -216,16 +222,16 @@ public:
             if (refusedPages(window, logical->metadata(), exclusions, 1500, false)) return hiddenScreen();
             // A field that can't be shown safe gives no caret text, and the rest of the
             // window is still read, as for a field read through UI Automation below.
-            if (safeTextSubtree(logical->metadata(), started, 1500)) parts = logical->parts();
+            if (safeTextSubtree(logical->metadata(), started, 1500)) parts = logical->parts(selectionUnavailable, started);
             else std::cerr << "debug accessible text: protected or incomplete subtree\n";
         } else if (isEditable) {
-            if (safeTextSubtree(element.Get(), started, 1500)) parts = textParts(element.Get());
-        } else if (pageInFocus) pageSelection = selectedInPage(element.Get(), exclusions);
-        else if (element && !protectedFocus && terminal) parts = readOnlyParts(element.Get());
+            if (safeTextSubtree(element.Get(), started, 1500)) parts = textParts(element.Get(), selectionUnavailable, started);
+        } else if (pageInFocus) pageSelection = selectedInPage(element.Get(), exclusions, selectionUnavailable, started);
+        else if (element && !protectedFocus && terminal) parts = readOnlyParts(element.Get(), selectionUnavailable, started);
         const std::string left = parts ? (*parts)[0] : "";
         const std::string selection = parts ? (*parts)[1] : pageSelection;
         const std::string right = parts ? (*parts)[2] : "";
-        VisibleContext context;
+        VisibleContext context({left, selection, right});
         const std::string caretText = left + "‸" + selection + (selection.empty() ? "" : "‸") + right;
         // Only a page that is excluded, or whose address is unknown, is reported as hidden;
         // a read that stopped because the window lost the foreground is no context.
@@ -246,7 +252,8 @@ public:
             if (password != protectedFocus || !unchanged || (logical && !logical->valid())) return nullptr;
         }
         std::array<std::string, 3> caret{left, selection, right};
-        const bool selectionRedacted = privacy::ScreenPrivacy::apply(context, caret);
+        const bool redactionChangedSelection = privacy::ScreenPrivacy::apply(context, caret);
+        const bool selectionRedacted = selectionUnavailable || redactionChangedSelection;
         const auto rendered = context.render();
         const auto summary = "Windows screen context: " + std::to_string(context.nodes) + " nodes, " +
             std::to_string(context.count()) + " blocks, " + std::to_string(rendered.size()) + " bytes, " +
@@ -313,10 +320,13 @@ private:
         Automation* owner;
         ComPtr<IUIAutomationTreeWalker> walker;
         ULONGLONG started, budget;
+        bool protectedNode = false;
+        ComPtr<IUIAutomationCacheRequest> passwordCache;
         bool withinBudget() const { return GetTickCount64() - started <= budget; }
         bool isPassword(const Node& node) {
             BOOL password = TRUE;
-            require(node->get_CurrentIsPassword(&password));
+            require(passwordCache ? node->get_CachedIsPassword(&password) : node->get_CurrentIsPassword(&password));
+            protectedNode = protectedNode || password != FALSE;
             return password != FALSE;
         }
         std::optional<PageHost> page(const Node& node) { return owner->pageHost(node.Get()); }
@@ -324,11 +334,13 @@ private:
             std::vector<Node> result;
             if (!limit || !withinBudget()) return result;
             Node child;
-            require(walker->GetFirstChildElement(node.Get(), &child));
+            require(passwordCache ? walker->GetFirstChildElementBuildCache(node.Get(), passwordCache.Get(), &child)
+                                  : walker->GetFirstChildElement(node.Get(), &child));
             while (child && result.size() < limit && withinBudget()) {
                 result.push_back(child);
                 Node next;
-                require(walker->GetNextSiblingElement(child.Get(), &next));
+                require(passwordCache ? walker->GetNextSiblingElementBuildCache(child.Get(), passwordCache.Get(), &next)
+                                      : walker->GetNextSiblingElement(child.Get(), &next));
                 child = next;
             }
             return result;
@@ -337,7 +349,30 @@ private:
     bool safeTextSubtree(IUIAutomationElement* root, ULONGLONG started, ULONGLONG budget) {
         PageTree tree{this, {}, started, budget};
         require(automation->get_RawViewWalker(&tree.walker));
-        return privacy::safeTextSubtree(tree, ComPtr<IUIAutomationElement>(root));
+        // Fetch only the password metadata with each raw-tree navigation result.
+        // The cache is local to this census and covers one element, never a
+        // materialized subtree or provider text. This saves a cross-process
+        // property call per node while retaining the same node/time bounds.
+        require(automation->CreateCacheRequest(&tree.passwordCache));
+        require(tree.passwordCache->AddProperty(UIA_IsPasswordPropertyId));
+        require(tree.passwordCache->put_TreeScope(TreeScope_Element));
+        ComPtr<IUIAutomationCondition> raw;
+        require(automation->get_RawViewCondition(&raw));
+        require(tree.passwordCache->put_TreeFilter(raw.Get()));
+        if (!tree.withinBudget()) {
+            std::cerr << "debug aggregate text refused: time budget\n";
+            return false;
+        }
+        ComPtr<IUIAutomationElement> cachedRoot;
+        require(root->BuildUpdatedCache(tree.passwordCache.Get(), &cachedRoot));
+        if (!cachedRoot) throw std::runtime_error("missing aggregate metadata");
+        const auto safe = privacy::safeTextSubtree(tree, cachedRoot);
+        if (!safe) {
+            // Categories only: never log provider text or accessibility identity.
+            std::cerr << "debug aggregate text refused: "
+                << (tree.protectedNode ? "protected descendant" : !tree.withinBudget() ? "time budget" : "incomplete census") << '\n';
+        }
+        return safe;
     }
     bool refusedPages(HWND window, IUIAutomationElement* focus, const ScreenExclusions& exclusions,
                       ULONGLONG budget, bool field, std::optional<PageHost>* focusedPage = nullptr) {
@@ -385,60 +420,20 @@ private:
         }
         return true;
     }
-    static std::string boundedText(BSTR text, size_t limit) {
-        if (!text) return {};
-        size_t length = std::min(static_cast<size_t>(SysStringLen(text)), limit);
-        // The UIA API counts UTF-16 units. Do not split an emoji at our limit.
-        if (length > 0 && text[length - 1] >= 0xd800 && text[length - 1] <= 0xdbff) --length;
-        return utf8(std::wstring(text, length));
-    }
-    // A piece of text is kept whole, as on the Mac: only the whole read is bounded.
     static std::string elementName(IUIAutomationElement* element) {
-        BSTR name = nullptr;
-        if (FAILED(element->get_CurrentName(&name))) return {};
-        const auto result = boundedText(name, VisibleContext::maxBytes);
-        SysFreeString(name);
-        return result;
+        struct Name { BSTR value = nullptr; ~Name() { SysFreeString(value); } } name;
+        if (FAILED(element->get_CurrentName(&name.value)) || !name.value) return {};
+        return readUtf16Snapshot(std::wstring_view(name.value, SysStringLen(name.value))).text;
     }
-    static std::string visibleField(IUIAutomationElement* element) {
+    static void appendVisibleField(IUIAutomationElement* element, VisibleContext& context,
+                                   std::optional<ContextFrame> frame, ULONGLONG started) {
         ComPtr<IUIAutomationTextPattern> text;
-        if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text))) || !text) return {};
-        ComPtr<IUIAutomationTextRange> document;
-        if (FAILED(text->get_DocumentRange(&document)) || !document) return {};
-        // A field's whole text, as on the Mac; of a long one (a terminal's scrollback) only
-        // what is in view. One extra unit tells a whole field from a longer one.
-        const int fieldLimit = static_cast<int>(HelperConfig::contextMaxFieldChars);
-        BSTR whole = nullptr;
-        if (SUCCEEDED(document->GetText(fieldLimit + 1, &whole))) {
-            const auto length = whole ? SysStringLen(whole) : 0;
-            const auto all = length <= HelperConfig::contextMaxFieldChars ? boundedText(whole, HelperConfig::contextMaxFieldChars) : std::string();
-            SysFreeString(whole);
-            if (length <= HelperConfig::contextMaxFieldChars) return all;
-        }
-        ComPtr<IUIAutomationTextRangeArray> ranges;
-        if (FAILED(text->GetVisibleRanges(&ranges)) || !ranges) return {};
-        int count = 0;
-        if (FAILED(ranges->get_Length(&count))) return {};
-        std::string result;
-        size_t remaining = HelperConfig::contextMaxFieldChars;
-        for (int index = 0; index < std::min(count, 64) && remaining > 0; ++index) {
-            ComPtr<IUIAutomationTextRange> range;
-            if (FAILED(ranges->GetElement(index, &range)) || !range) continue;
-            clampRange(range.Get(), document.Get());
-            BSTR value = nullptr;
-            if (FAILED(range->GetText(static_cast<int>(remaining), &value))) continue;
-            const auto length = value ? std::min(static_cast<size_t>(SysStringLen(value)), remaining) : 0;
-            const auto part = boundedText(value, remaining);
-            SysFreeString(value);
-            remaining -= length;
-            if (!part.empty()) {
-                if (!result.empty()) result += "\n";
-                result += part;
-            }
-        }
-        return result;
+        const auto status = element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text));
+        if (status == UIA_E_NOTSUPPORTED || (SUCCEEDED(status) && !text)) return;
+        require(status);
+        UiaCaretSource::appendField(text.Get(), context, frame, started);
     }
-    static std::string controlText(IUIAutomationTextPattern* document, IUIAutomationElement* element, const RECT& frame) {
+    static std::string controlText(IUIAutomationTextPattern* document, IUIAutomationElement* element, const RECT& frame, ULONGLONG started) {
         if (!document) return {};
         ComPtr<IUIAutomationTextRange> range;
         if (FAILED(document->RangeFromChild(element, &range)) || !range) return {};
@@ -461,16 +456,13 @@ private:
         }
         SafeArrayDestroy(rectangles);
         if (!valid || !visible) return {};
-        BSTR text = nullptr;
-        if (FAILED(range->GetText(1000, &text))) return {};
-        const auto result = boundedText(text, 1000);
-        SysFreeString(text);
+        const auto result = UiaCaretSource::rangeSource(range.Get(), started);
         // An embedded-object marker is not a visible caption.
         return result == "\xEF\xBF\xBC" ? "" : result;
     }
     // What is selected in a page that has the focus itself. Empty when nothing is, when the
     // provider gives no single text selection, or when what holds it can't be shown safe.
-    std::string selectedInPage(IUIAutomationElement* page, const ScreenExclusions& exclusions) {
+    std::string selectedInPage(IUIAutomationElement* page, const ScreenExclusions& exclusions, bool& selectionUnavailable, ULONGLONG started) {
         CONTROLTYPEID type = 0;
         if (FAILED(page->get_CurrentControlType(&type)) || type != UIA_DocumentControlTypeId) return {};
         ComPtr<IUIAutomationTextPattern> pattern;
@@ -494,20 +486,22 @@ private:
             require(automation->get_RawViewWalker(&tree.walker));
             if (privacy::holdsExcludedPage(tree, enclosing, exclusions, true)) return {};
             if (!privacy::safeTextSubtree(tree, enclosing)) return {};
-            clampRange(selected.Get(), whole.Get());
-            return rangeText(selected.Get());
+            const auto value = UiaCaretSource::selectedText(pattern.Get(), selected.Get(), whole.Get(), started);
+            if (value) return *value;
+            selectionUnavailable = true;
+            return CaretSource::unavailable().parts[1];
         } catch (const std::exception&) {
             return {};
         }
     }
     // The text around the caret in a terminal's focused pane, which is no editable field.
     // None when it gives no text selection or can't be shown safe.
-    std::optional<std::array<std::string, 3>> readOnlyParts(IUIAutomationElement* element) {
+    std::optional<std::array<std::string, 3>> readOnlyParts(IUIAutomationElement* element, bool& selectionUnavailable, ULONGLONG started) {
         ComPtr<IUIAutomationTextPattern> pattern;
         if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) || !pattern) return std::nullopt;
         try {
             if (!safeTextSubtree(element, GetTickCount64(), HelperConfig::contextSelectionScanMs)) return std::nullopt;
-            return textParts(element);
+            return textParts(element, selectionUnavailable, started);
         } catch (const std::exception&) {
             return std::nullopt;
         }
@@ -532,11 +526,6 @@ private:
     // table row. A page's list item is no row: it is walked into.
     static bool isRow(CONTROLTYPEID type, bool web) {
         return type == UIA_DataItemControlTypeId || (!web && type == UIA_ListItemControlTypeId);
-    }
-    static std::string trimmed(const std::string& text) {
-        const auto first = text.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) return {};
-        return text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
     }
     // Where an element is, and whether it can show text there: in the window, not off screen.
     // A box at most a pixel thin shows nothing (screen-reader-only text, a list item
@@ -581,26 +570,26 @@ private:
     // Text of a heading, link or row gathered from what is under it, as the walk reads it:
     // its text, its fields' and in a page its controls' captions. None when a page of an
     // excluded website is among them.
-    std::optional<std::string> subtreeText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, const char* separator, bool web,
+    bool subtreeText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, SemanticText& reducer, bool web,
                                            IUIAutomationTextPattern* document, const WalkFrame& within, ULONGLONG started,
                                            const ScreenExclusions& exclusions, VisibleContext& context) {
-        std::vector<std::string> pieces;
-        size_t length = 0;
         bool outOfTime = false;
         std::vector<ComPtr<IUIAutomationElement>> stack;
         const auto push = [&](IUIAutomationElement* parent) {
             auto children = childrenOf(walker, parent, 5001 - std::min<size_t>(context.nodes, 5000), started, outOfTime);
             for (auto child = children.rbegin(); child != children.rend(); ++child) stack.push_back(std::move(*child));
         };
-        push(root);
-        while (!stack.empty() && length < HelperConfig::contextMaxBlockChars && context.nodes < 5000 && !outOfTime) {
+        if (context.nodes < 5000 && GetTickCount64() - started <= 1500) push(root);
+        else outOfTime = GetTickCount64() - started > 1500;
+        while (!stack.empty() && reducer.decision() == SemanticText::Decision::descendants && context.nodes < 5000 && !outOfTime) {
+            if (GetTickCount64() - started > 1500) { outOfTime = true; break; }
             const auto element = std::move(stack.back());
             stack.pop_back();
             ++context.nodes;
             auto* node = element.Get();
             BOOL password = TRUE;
             if (FAILED(node->get_CurrentIsPassword(&password)) || password) continue;
-            if (const auto page = pageHost(node); page && exclusions.excludes(*page)) return std::nullopt;
+            if (const auto page = pageHost(node); page && exclusions.excludes(*page)) return false;
             CONTROLTYPEID type = 0;
             if (FAILED(node->get_CurrentControlType(&type)) || isChrome(type, web)) continue;
             const auto place = placement(node, within.window, within.hiddenThickness);
@@ -609,33 +598,141 @@ private:
             std::string piece;
             bool read = false;
             if (web && isControl(type)) {
-                piece = safeTextSubtree(node, started, 1500) ? controlText(document, node, place->frame) : "";
+                piece = safeTextSubtree(node, started, 1500) ? controlText(document, node, place->frame, started) : "";
                 read = !piece.empty();
             } else if (type == UIA_TextControlTypeId) {
                 piece = safeTextSubtree(node, started, 1500) ? elementName(node) : "";
                 read = !piece.empty();
             } else if (type == UIA_EditControlTypeId && safeTextSubtree(node, started, 1500)) {
-                piece = visibleField(node);
-                read = true;
+                VisibleContext field;
+                appendVisibleField(node, field, {}, started);
+                for (const auto& parts : field.fieldSources()) {
+                    if (reducer.decision() != SemanticText::Decision::descendants) break;
+                    reducer.offerProjected(SemanticText::Event::descendant, parts);
+                }
+                continue;
             }
             if (!read) { push(node); continue; }
-            piece = trimmed(piece);
-            if (!piece.empty() && (pieces.empty() || piece != pieces.back())) {
-                length += piece.size();
-                pieces.push_back(std::move(piece));
+            reducer.offer(SemanticText::Event::descendant, piece);
+        }
+        if (reducer.decision() == SemanticText::Decision::descendants)
+            reducer.offer(stack.empty() && !outOfTime && context.nodes < 5000 ? SemanticText::Event::complete : SemanticText::Event::interrupted);
+        if (outOfTime) context.stopped = "time budget";
+        else if (!stack.empty() && context.nodes >= 5000) context.stopped = "node budget";
+        return true;
+    }
+    std::optional<nlohmann::json> semanticText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, SemanticText::Kind kind, bool web,
+                                           IUIAutomationTextPattern* document, const WalkFrame& within, ULONGLONG started,
+                                           const ScreenExclusions& exclusions, VisibleContext& context) {
+        SemanticText reducer(kind);
+        const auto rootText = [&] { return safeTextSubtree(root, started, 1500) ? elementName(root) : std::string(); };
+        if (reducer.decision() == SemanticText::Decision::root) reducer.offer(SemanticText::Event::root, rootText());
+        if (reducer.decision() == SemanticText::Decision::descendants &&
+            !subtreeText(root, walker, reducer, web, document, within, started, exclusions, context)) return std::nullopt;
+        if (reducer.decision() == SemanticText::Decision::root) reducer.offer(SemanticText::Event::root, rootText());
+        return std::optional<nlohmann::json>(std::in_place, reducer.projectedSource());
+    }
+    JSON readTerminalScreen(HWND window, IUIAutomationElement* focus, const std::wstring& app,
+                            const ScreenExclusions& exclusions, ULONGLONG started) {
+        ComPtr<IUIAutomationElement> root;
+        require(automation->ElementFromHandle(window, &root));
+        ComPtr<IUIAutomationTreeWalker> walker;
+        require(automation->get_RawViewWalker(&walker));
+        RECT windowFrame{};
+        if (!root || !GetWindowRect(window, &windowFrame)) return nullptr;
+        const auto valid = [&] {
+            RECT currentFrame{};
+            auto current = ownedFocus(window);
+            return GetTickCount64()-started<=1500 && GetForegroundWindow()==window &&
+                GetWindowRect(window,&currentFrame) && EqualRect(&windowFrame,&currentFrame) &&
+                ((focus && current && same(focus,current.Get())) || (!focus && !current));
+        };
+        PageTree privacyTree{this,walker,started,1500};
+        if (privacy::holdsExcludedPage(privacyTree,root,exclusions,true)) return hiddenScreen();
+        std::vector<ComPtr<IUIAutomationElement>> focusPath;
+        ComPtr<IUIAutomationElement> ancestor=focus;
+        while (ancestor && focusPath.size()<200 && valid()) {
+            focusPath.push_back(ancestor);
+            if (same(ancestor.Get(),root.Get())) break;
+            ComPtr<IUIAutomationElement> parent;
+            require(walker->GetParentElement(ancestor.Get(),&parent)); ancestor=parent;
+        }
+        const auto limits=core::request({{"limits",true}},voice_core_viewport_json);
+        size_t remaining=limits.at("bytes").get<size_t>(),visited=0;
+        const size_t maxSurfaces=limits.at("surfaces").get<size_t>();
+        struct Entry { ComPtr<IUIAutomationElement> node; RECT clip; };
+        struct Capture { ComPtr<IUIAutomationElement> node; ComPtr<IUIAutomationTextPattern> pattern; ContextFrame frame; bool focused; JSON value; };
+        std::vector<Entry> stack{{root,windowFrame}},geometry;
+        std::vector<ComPtr<IUIAutomationElement>> seen;
+        std::vector<Capture> captures;
+        JSON surfaces=JSON::array(),focusedID=nullptr,caret={{"status","unavailable"}};
+        bool complete=true;
+        const auto geometryStable=[&] {
+            for (const auto& item:geometry) {
+                RECT now{}; BOOL offscreen=TRUE;
+                if (FAILED(item.node->get_CurrentBoundingRectangle(&now)) || !EqualRect(&now,&item.clip) ||
+                    FAILED(item.node->get_CurrentIsOffscreen(&offscreen)) || offscreen) return false;
             }
+            return valid();
+        };
+        while (!stack.empty()) {
+            if (!valid() || visited>=5000) { complete=false;break; }
+            auto entry=std::move(stack.back()); stack.pop_back();
+            if (std::any_of(seen.begin(),seen.end(),[&](const auto& prior){return same(prior.Get(),entry.node.Get());})) continue;
+            seen.push_back(entry.node);++visited;
+            BOOL password=TRUE; require(entry.node->get_CurrentIsPassword(&password));
+            if (password) {complete=false;continue;}
+            const auto place=placement(entry.node.Get(),entry.clip,GetDpiForWindow(window)/96.0);
+            if (!place || !place->shown || !place->geometry) continue;
+            geometry.push_back({entry.node,place->frame});
+            RECT clip{};
+            if (!IntersectRect(&clip,&entry.clip,&place->frame)) continue;
+            if (const auto page=pageHost(entry.node.Get());page && exclusions.excludes(*page)) return hiddenScreen();
+            ComPtr<IUIAutomationTextPattern> pattern;
+            if (SUCCEEDED(entry.node->GetCurrentPatternAs(UIA_TextPatternId,IID_PPV_ARGS(&pattern))) && pattern) {
+                // A clipped ancestor cannot be trusted solely from GetVisibleRanges.
+                // Refuse this aggregate until a provider-specific range clip is proven.
+                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get(),started,1500)) {complete=false;continue;}
+                if (surfaces.size()>=maxSurfaces || remaining==0) {complete=false;break;}
+                if (!geometryStable()) return nullptr;
+                const bool ownsFocus=std::any_of(focusPath.begin(),focusPath.end(),[&](const auto& node){return same(node.Get(),entry.node.Get());});
+                JSON value;
+                try { value=UiaCaretSource::viewportSurface(pattern.Get(),surfaces.size(),*place->geometry,ownsFocus,remaining,started); }
+                catch(const std::exception&) {complete=false;continue;}
+                for (const auto& run:value.at("surface").at("runs")) {
+                    const auto bytes=run.at("text").get_ref<const std::string&>().size();
+                    if(bytes>remaining) return nullptr;
+                    remaining-=bytes;
+                }
+                if(ownsFocus) {focusedID=surfaces.size();caret=value.at("caret");}
+                surfaces.push_back(value.at("surface"));
+                captures.push_back({entry.node,pattern,*place->geometry,ownsFocus,value});
+                continue;
+            }
+            if(stack.size()>=5000-visited) {complete=false;break;}
+            auto children=privacyTree.children(entry.node,5000-visited-stack.size());
+            for(auto child=children.rbegin();child!=children.rend();++child) stack.push_back({*child,clip});
         }
-        std::string joined;
-        for (const auto& piece : pieces) {
-            if (!joined.empty()) joined += separator;
-            joined += piece;
+        for(size_t i=0;i<captures.size();++i) {
+            const auto& capture=captures[i];
+            if(!geometryStable() || !safeTextSubtree(capture.node.Get(),started,1500)) return nullptr;
+            try {
+                if(UiaCaretSource::viewportSurface(capture.pattern.Get(),i,capture.frame,capture.focused,limits.at("bytes").get<size_t>(),started)!=capture.value) return nullptr;
+            } catch(const std::exception&) {return nullptr;}
         }
-        if (joined.size() > HelperConfig::contextMaxBlockChars) {
-            size_t cut = HelperConfig::contextMaxBlockChars;
-            while (cut > 0 && (static_cast<unsigned char>(joined[cut]) & 0xc0) == 0x80) --cut;
-            joined.resize(cut);
-        }
-        return joined;
+        if(!geometryStable()) return nullptr;
+        if(privacy::holdsExcludedPage(privacyTree,root,exclusions,true)) return hiddenScreen();
+        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),started,1500)) return nullptr;
+        wchar_t title[513]{};GetWindowTextW(window,title,513);
+        if(!valid()) return nullptr;
+        const auto projected=core::request({{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},
+            {"complete",complete && !surfaces.empty()}},voice_core_viewport_json);
+        const auto rendered=projected.at("renderedText").get<std::string>();
+        return {{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",privacy::ScreenPrivacy::redact(utf8(title))},
+            {"host",nullptr},{"terminalProgram",nullptr},{"focusedRole","terminal"},{"textBeforeCaret",""},{"textAfterCaret",""},
+            {"selectedText",projected.at("selectedText")},{"selectionRedacted",!projected.at("selectionComplete").get<bool>()},
+            {"terminalViewport",projected},{"renderedText",rendered},{"logDescription",rendered},
+            {"summary","terminal surfaces="+std::to_string(surfaces.size())+" nodes="+std::to_string(visited)}};
     }
     // The focused element as the walk treats it. `element` is null when the window has none.
     struct FocusRead {
@@ -733,7 +830,7 @@ private:
                 // A terminal's pane: the lines in view, as a field.
                 ComPtr<IUIAutomationTextPattern> pane;
                 if (SUCCEEDED(node->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pane))) && pane) {
-                    if (place->shown && safeTextSubtree(node, started, 1500)) context.append(ContextKind::field, visibleField(node), geometry);
+                    if (place->shown && safeTextSubtree(node, started, 1500)) appendVisibleField(node, context, geometry, started);
                     continue;
                 }
             }
@@ -744,7 +841,7 @@ private:
                     if (privacy::holdsExcludedPage(tree, entry.element, exclusions, true)) return refuse();
                 }
                 if (web && control) {
-                    const auto caption = safeTextSubtree(node, started, 1500) ? controlText(entry.document.Get(), node, place->frame) : "";
+                    const auto caption = safeTextSubtree(node, started, 1500) ? controlText(entry.document.Get(), node, place->frame, started) : "";
                     if (!caption.empty()) {
                         context.append(ContextKind::text, caption, geometry);
                         continue;
@@ -752,24 +849,22 @@ private:
                 }
                 if (type == UIA_EditControlTypeId) {
                     if (safeTextSubtree(node, started, 1500)) {
-                        context.append(ContextKind::field, visibleField(node), geometry);
+                        appendVisibleField(node, context, geometry, started);
                         continue;
                     }
                     // Descend safely instead of aggregating a protected child.
                 }
                 if (row) {
                     // Its cells as one block; a row that gives none is read by its name.
-                    auto cells = subtreeText(node, walker.Get(), " | ", web, entry.document.Get(), within, started, exclusions, context);
+                    auto cells = semanticText(node, walker.Get(), SemanticText::Kind::row, web, entry.document.Get(), within, started, exclusions, context);
                     if (!cells) return refuse();
-                    if (cells->empty() && safeTextSubtree(node, started, 1500)) cells = elementName(node);
-                    context.append(ContextKind::row, *cells, geometry);
+                    context.appendSemantic(ContextKind::row, *cells, geometry);
                     continue;
                 }
                 // A web control's Name can be an undrawn aria-label. Read its
                 // visible text descendants instead, as the Mac reference does
                 // for controls whose accessibility title is a description.
                 if (type == UIA_TextControlTypeId || type == UIA_HyperlinkControlTypeId) {
-                    auto name = safeTextSubtree(node, started, 1500) ? elementName(node) : "";
                     VARIANT heading;
                     VariantInit(&heading);
                     const HRESULT status = node->GetCurrentPropertyValue(UIA_HeadingLevelPropertyId, &heading);
@@ -777,14 +872,16 @@ private:
                         heading.lVal >= HeadingLevel1 && heading.lVal <= HeadingLevel9;
                     VariantClear(&heading);
                     const bool isLink = type == UIA_HyperlinkControlTypeId;
-                    // A heading or link without a name is the text under it, as one block.
-                    if (trimmed(name).empty() && (isHeading || isLink)) {
-                        const auto gathered = subtreeText(node, walker.Get(), " ", web, entry.document.Get(), within, started, exclusions, context);
+                    if (isHeading || isLink) {
+                        const auto gathered = semanticText(node, walker.Get(), isHeading ? SemanticText::Kind::heading : SemanticText::Kind::link,
+                                                           web, entry.document.Get(), within, started, exclusions, context);
                         if (!gathered) return refuse();
-                        name = *gathered;
+                        context.appendSemantic(isHeading ? ContextKind::heading : ContextKind::link, *gathered, geometry);
+                        continue;
                     }
-                    context.append(isHeading ? ContextKind::heading : isLink ? ContextKind::link : ContextKind::text, name, geometry);
-                    if (isHeading || isLink || !trimmed(name).empty()) continue;
+                    const auto name = safeTextSubtree(node, started, 1500) ? elementName(node) : "";
+                    context.append(ContextKind::text, name, geometry);
+                    if (!normalizedContextText(name).empty()) continue;
                 }
             }
             bool outOfTime = false;
@@ -1013,83 +1110,22 @@ private:
         return text;
     }
 
-    static std::optional<std::array<std::string, 3>> editText(IUIAutomationElement* element) {
+    static std::optional<std::array<std::string, 3>> editText(IUIAutomationElement* element, bool& selectionUnavailable, ULONGLONG started) {
         UIA_HWND native = nullptr;
         require(element->get_CurrentNativeWindowHandle(&native));
-        const HWND edit = static_cast<HWND>(native);
-        wchar_t name[16]{};
-        if (!edit || !GetClassNameW(edit, name, 16) || _wcsicmp(name, L"Edit") != 0) return std::nullopt;
-        const auto style = GetWindowLongPtrW(edit, GWL_STYLE);
-        if ((style & (ES_PASSWORD | ES_READONLY)) || !IsWindowEnabled(edit)) return std::nullopt;
-        const auto send = [edit](UINT message, WPARAM value, LPARAM data) {
-            DWORD_PTR result = 0;
-            if (!SendMessageTimeoutW(edit, message, value, data, SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT, 200, &result)) {
-                throw std::runtime_error("edit control did not answer");
-            }
-            return result;
-        };
-        // Only the built-in Edit class and system messages: no process memory access, custom
-        // messages, or arbitrary provider output. Refuse long fields instead of reading unbounded.
-        const auto length = send(WM_GETTEXTLENGTH, 0, 0);
-        if (length > 6000) return std::nullopt;
-        std::wstring text(static_cast<size_t>(length) + 1, L'\0');
-        const auto read = send(WM_GETTEXT, static_cast<WPARAM>(text.size()), reinterpret_cast<LPARAM>(text.data()));
-        if (read > length) return std::nullopt;
-        text.resize(static_cast<size_t>(read));
-        const auto selected = send(EM_GETSEL, 0, 0);
-        if (selected == static_cast<DWORD_PTR>(-1)) return std::nullopt;
-        const auto start = static_cast<size_t>(LOWORD(selected));
-        const auto end = static_cast<size_t>(HIWORD(selected));
-        if (start > end || end > text.size() || (GetWindowLongPtrW(edit, GWL_STYLE) & (ES_PASSWORD | ES_READONLY))) return std::nullopt;
-        return std::array<std::string, 3>{utf8(text.substr(start > 2000 ? start - 2000 : 0, std::min<size_t>(start, 2000))),
-            utf8(text.substr(start, std::min<size_t>(end - start, 2000))), utf8(text.substr(end, 2000))};
+        const auto result = EditCaretSource::read(static_cast<HWND>(native), started);
+        if (!result) return std::nullopt;
+        selectionUnavailable = result->selectionUnavailable;
+        return result->parts;
     }
-    static std::optional<std::array<std::string, 3>> textParts(IUIAutomationElement* element) {
+    static std::optional<std::array<std::string, 3>> textParts(IUIAutomationElement* element, bool& selectionUnavailable, ULONGLONG started) {
         ComPtr<IUIAutomationTextPattern> pattern;
-        if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) || !pattern) return editText(element);
-        ComPtr<IUIAutomationTextRangeArray> selections;
-        require(pattern->GetSelection(&selections));
-        if (!selections) return std::nullopt;
-        int count = 0;
-        require(selections->get_Length(&count));
-        if (count != 1) return std::nullopt;
-        ComPtr<IUIAutomationTextRange> selected, document, before, after;
-        require(selections->GetElement(0, &selected));
-        require(pattern->get_DocumentRange(&document));
-        if (!selected || !document) return std::nullopt;
-        clampRange(selected.Get(), document.Get());
-        require(document->Clone(&before));
-        require(document->Clone(&after));
-        require(before->MoveEndpointByRange(TextPatternRangeEndpoint_End, selected.Get(), TextPatternRangeEndpoint_Start));
-        require(after->MoveEndpointByRange(TextPatternRangeEndpoint_Start, selected.Get(), TextPatternRangeEndpoint_End));
-        // Move the start toward the caret before reading, so the bound contains nearby text
-        // rather than the first page of a long document. Every provider read has a finite cap.
-        require(before->MoveEndpointByRange(TextPatternRangeEndpoint_Start, selected.Get(), TextPatternRangeEndpoint_Start));
-        int moved = 0;
-        require(before->MoveEndpointByUnit(TextPatternRangeEndpoint_Start, TextUnit_Character, -2000, &moved));
-        // Chromium can move the endpoint outside the focused control into its enclosing
-        // page. Keep context inside the focused field's original document range.
-        int relative = 0;
-        require(before->CompareEndpoints(TextPatternRangeEndpoint_Start, document.Get(), TextPatternRangeEndpoint_Start, &relative));
-        if (relative < 0) require(before->MoveEndpointByRange(TextPatternRangeEndpoint_Start, document.Get(), TextPatternRangeEndpoint_Start));
-        clampRange(before.Get(), document.Get());
-        clampRange(after.Get(), document.Get());
-        const auto left = rangeText(before.Get());
-        const auto selection = rangeText(selected.Get());
-        const auto right = rangeText(after.Get());
-        if (left + selection + right == "\xEF\xBF\xBC" && emptyValue(element)) return std::array<std::string, 3>{};
-        return std::array<std::string, 3>{left, selection, right};
-    }
-    static std::string rangeText(IUIAutomationTextRange* range) {
-        BSTR text = nullptr;
-        require(range->GetText(2000, &text));
-        std::wstring value;
-        if (text) {
-            const auto length = SysStringLen(text);
-            if (length > 2000) { SysFreeString(text); throw std::runtime_error("provider exceeded text bound"); }
-            value.assign(text, length); SysFreeString(text);
-        }
-        return utf8(value);
+        if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) || !pattern) return editText(element, selectionUnavailable, started);
+        auto result = UiaCaretSource::read(pattern.Get(), started);
+        selectionUnavailable = result.selectionUnavailable;
+        if (!result.selectionUnavailable && result.parts[0] + result.parts[1] + result.parts[2] == "\xEF\xBF\xBC" && emptyValue(element))
+            return std::array<std::string, 3>{};
+        return result.parts;
     }
     ComPtr<IUIAutomation> automation;
 };

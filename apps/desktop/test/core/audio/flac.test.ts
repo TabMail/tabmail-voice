@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { createHash } from "node:crypto";
+import { deepStrictEqual } from "node:assert";
 import { describe, expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
 import { FLACEncoder } from "../../../src/core/audio/flac.js";
@@ -137,7 +138,8 @@ describe("FLACEncoder", () => {
     const samples = noise(130 * config.flacBlockSize, 1_000, 3);
     const decoded = decodeFLAC(encode(samples));
     expect(decoded.frames).toBe(130);
-    expect(decoded.pcm).toEqual(pcmOf(samples));
+    // Native typed-array comparison checks every byte without enumerating PCM properties.
+    deepStrictEqual(decoded.pcm, pcmOf(samples));
   });
 
   /** The frame header names common rates outright and codes others in kHz, Hz or tens of Hz. */

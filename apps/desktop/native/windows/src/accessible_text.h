@@ -8,6 +8,7 @@
 #include "../vendor/ia2/AccessibleText.h"
 #include "microphone.h"
 #include "text.h"
+#include "../../shared/context/CaretSource.h"
 #include <optional>
 #include <array>
 #include <algorithm>
@@ -76,15 +77,20 @@ public:
         return result;
     }
 
-    std::optional<std::array<std::string, 3>> parts() const {
+    std::optional<std::array<std::string, 3>> parts(bool& selectionUnavailable, ULONGLONG started) const {
         const auto before = selection();
-        if (!before) return std::nullopt;
+        if (!before) { selectionUnavailable = true; return CaretSource::unavailable().parts; }
         const auto [length, start, end] = *before;
-        auto left = range(std::max(0L, start - 2000), start);
-        auto selected = range(start, start + std::min(2000L, end - start));
-        auto right = range(end, end + std::min(2000L, length - end));
-        if (selection() != before || !valid()) return std::nullopt;
-        return std::array<std::string, 3>{fragment(std::move(left)), fragment(std::move(selected)), fragment(std::move(right))};
+        auto result = readUtf16Caret(static_cast<size_t>(length), static_cast<size_t>(start), static_cast<size_t>(end),
+            [&](size_t from, size_t to) {
+                if (GetTickCount64() - started > 1500) throw std::runtime_error("screen context time budget");
+                auto value = range(static_cast<long>(from), static_cast<long>(to));
+                if (GetTickCount64() - started > 1500) throw std::runtime_error("screen context time budget");
+                return value;
+            });
+        if (selection() != before || !valid()) result = CaretSource::unavailable();
+        selectionUnavailable = result.selectionUnavailable;
+        return result.parts;
     }
 
 private:
@@ -146,10 +152,6 @@ private:
         SysFreeString(value);
         return result;
     }
-    static std::string fragment(std::wstring value) {
-        if (!value.empty() && value.front() >= 0xdc00 && value.front() <= 0xdfff) value.erase(0, 1);
-        if (!value.empty() && value.back() >= 0xd800 && value.back() <= 0xdbff) value.pop_back();
-        return utf8(value);
-    }
+
 };
 }

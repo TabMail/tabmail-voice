@@ -8,6 +8,7 @@ import type { ScriptRunner } from "./macos/appleScript.js";
 import type { EventStore } from "./calendar.js";
 import type { ContactStore } from "./contacts.js";
 import type { EmailOpener } from "./email.js";
+import type { NoteStore } from "./notes.js";
 import type { FileStore } from "./files.js";
 import type { ConnectorID } from "./registry.js";
 import type { WebFetch, WebOpener } from "./web.js";
@@ -89,6 +90,7 @@ export function isJSONObject(value: unknown): value is Record<string, unknown> {
 export interface ConnectorServices {
   eventStore: EventStore;
   contactStore: ContactStore;
+  noteStore: NoteStore;
   fileStore: FileStore;
   /** The user's home folder, which the model reads as `~`. */
   home: string;

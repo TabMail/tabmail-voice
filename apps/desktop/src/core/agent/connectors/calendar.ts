@@ -31,6 +31,8 @@ export interface ReminderItem {
  * ADR-DESK-024). Access is asked the first time a tool needs it; without it, a call throws saying
  * where to allow it, and the model tells the user. */
 export interface EventStore {
+  /** Fixed provider destination when writes do not use the user's default calendar. */
+  readonly calendarWriteDestination?: string | undefined;
   /** The events overlapping `start` to `end`, oldest first. */
   events(start: Date, end: Date): Promise<CalendarEvent[]>;
   /** Adds `event` to the default calendar (its `calendar` is ignored) and returns it as saved. */
@@ -65,7 +67,7 @@ export class EventStoreError extends Error {
 export const calendarConnector = defineConnector({
   id: "calendar",
   order: 10,
-  platforms: ["darwin"],
+  platforms: ["darwin", "win32", "linux"],
   displayName: "Calendar",
   settingsDescription: "Answers from your calendars, and adds events you ask for once you confirm.",
   tools: ({ eventStore }: Pick<ConnectorServices, "eventStore">): ConnectorTool[] => [new CalendarReadTool(eventStore, () => new Date()), new CalendarEventCreateTool(eventStore)],
@@ -74,7 +76,7 @@ export const calendarConnector = defineConnector({
 export const remindersConnector = defineConnector({
   id: "reminders",
   order: 20,
-  platforms: ["darwin"],
+  platforms: ["darwin", "linux"],
   displayName: "Reminders",
   settingsDescription: "Answers from your reminders, and adds ones you ask for once you confirm.",
   tools: ({ eventStore }: Pick<ConnectorServices, "eventStore">): ConnectorTool[] => [new RemindersReadTool(eventStore), new ReminderCreateTool(eventStore)],
@@ -131,7 +133,10 @@ export class CalendarEventCreateTool implements ConnectorTool {
   readonly connector = "calendar";
   readonly progressLabel = "Adding the event";
 
-  constructor(private readonly store: EventStore) {}
+  private readonly writeDestination: string | undefined;
+  constructor(private readonly store: EventStore) {
+    this.writeDestination = store.calendarWriteDestination;
+  }
 
   /** Null only for arguments `run` rejects before adding anything. */
   confirmation(args: Record<string, unknown>): string | null {
@@ -142,6 +147,7 @@ export class CalendarEventCreateTool implements ConnectorTool {
       return null;
     }
     const lines = ["Add this event to your calendar?", event.title];
+    if (this.writeDestination) lines.push(`Destination: ${this.writeDestination}`);
     if (event.isAllDay) {
       const first = LocalDateTime.spoken(event.start, false);
       const last = LocalDateTime.spoken(event.end, false);
@@ -157,7 +163,7 @@ export class CalendarEventCreateTool implements ConnectorTool {
 
   async run(args: Record<string, unknown>): Promise<string> {
     const saved = await this.store.addEvent(CalendarEventCreateTool.draft(args));
-    return `Added "${saved.title}" to the ${saved.calendar} calendar: ${describeWhen(saved)}.`;
+    return `Added "${saved.title}" to ${this.writeDestination ?? `the ${saved.calendar} calendar`}: ${describeWhen(saved)}.`;
   }
 
   /** The event the arguments describe. A day for `start_iso` (or `all_day`) makes it all day, through

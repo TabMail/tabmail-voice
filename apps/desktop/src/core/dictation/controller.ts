@@ -327,6 +327,10 @@ export class DictationController extends Observable {
         return this.start();
       case "startHandsFree":
         return this.start(true);
+      case "startAgent":
+        return this.start(false, "agent");
+      case "startAgentHandsFree":
+        return this.start(true, "agent");
       case "listenHandsFree":
         return this.listenHandsFree();
       case "finish":
@@ -361,11 +365,16 @@ export class DictationController extends Observable {
    * like any hold. With the chat window open it is a follow-up: an agent request from the start,
    * which keeps the window open, and shows no tips. While the chat window asks a tool's question,
    * it records the user's answer to it instead (`startSpokenAnswer`). */
-  start(handsFree = false): void {
+  start(handsFree = false, initialMode: DictationMode = "dictation"): void {
     // With a question showing, the hotkey answers it aloud.
     if (this.confirmationReply !== null) return this.startSpokenAnswer(handsFree);
     if (this.secondTapTimer !== null) {
       if (handsFree) {
+        // Explicit agent intent also applies when reusing the first tap's audio.
+        // An ordinary second tap preserves a mode already selected with Space.
+        if (initialMode === "agent") this.currentMode = "agent";
+        if (this.currentMode === "agent") void this.lookUpEmailApp();
+        this.updateTools();
         this.latchHandsFree();
         return;
       }
@@ -392,7 +401,7 @@ export class DictationController extends Observable {
     this.abort = new AbortController();
     const isFollowUp = this.currentChat !== null;
     if (isFollowUp) this.keepChatOpen();
-    this.currentMode = isFollowUp ? "agent" : "dictation";
+    this.currentMode = isFollowUp ? "agent" : initialMode;
     this.emailApp = null;
     this.emailAppRead = null;
     this.screenRead = null;
@@ -412,7 +421,7 @@ export class DictationController extends Observable {
       this.changed();
     });
     this.dueTips = ["agentAndHistory"];
-    if (isFollowUp) void this.lookUpEmailApp();
+    if (this.currentMode === "agent") void this.lookUpEmailApp();
     this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which

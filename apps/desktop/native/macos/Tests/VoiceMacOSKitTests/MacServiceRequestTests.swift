@@ -12,6 +12,29 @@ import VoiceHelperSupport
 /// error, not converted: a trapping conversion would crash the helper, and with it the dictation.
 @MainActor
 struct MacServiceRequestTests {
+    @Test func theAcquiredKeyboardLanguageReachesTheReplyUnchanged() async throws {
+        let before = KeyboardLanguage.current()
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let service = MacService.register(on: channel)
+        await channel.handle(line: Data(#"{"id":9,"method":"keyboardLanguage","params":{}}"#.utf8))
+        #expect(KeyboardLanguage.current() == before)
+
+        let replies = lines.withLock { $0 }
+        #expect(replies.count == 1)
+        let data = try #require(replies.first)
+        let reply = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(reply["id"] as? Int == 9)
+        #expect(reply["error"] == nil)
+        let result = try #require(reply["result"] as? [String: Any])
+        if let before {
+            #expect(result["code"] as? String == before)
+        } else {
+            #expect(result["code"] is NSNull)
+        }
+        withExtendedLifetime(service) {}
+    }
+
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })

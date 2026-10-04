@@ -52,7 +52,7 @@ LRESULT CALLBACK keyboard(int code, WPARAM message, LPARAM data) {
         owns = down || swallowed[key];
         if (down) swallowed[key] = true;
         else swallowed[key] = false;
-        action = gesture.modifier(down, monotonicSeconds());
+        action = gesture.modifier(down, monotonicSeconds(), modifier.agentIntent());
     } else if (down) {
         owns = swallowed[key] || gesture.owns(key);
         if (owns) swallowed[key] = true;
@@ -92,6 +92,7 @@ JSON handle(const std::string& method, const JSON& params) {
         }
         modifier.selected = selected;
         if (!hook) modifier.seedControls((GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0, (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0);
+        if (!hook) modifier.seedShifts((GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0, (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0);
         if (!hook) hook = SetWindowsHookExW(WH_KEYBOARD_LL, keyboard, GetModuleHandleW(nullptr), 0);
         return {{"installed", hook != nullptr}};
     }

@@ -352,3 +352,14 @@ describe("connectors", () => {
     expect(tools.map((tool) => tool.confirmation(valid) !== null)).toEqual([false, true, false, true]);
   });
 });
+
+test("calendar writes disclose their fixed local provider destination", async () => {
+  const provider = Object.assign(store, { calendarWriteDestination: "TabMail Voice calendar (local to this PC)" });
+  const tool = new CalendarEventCreateTool(provider);
+  const args = { title: "Synthetic", start_iso: iso(at(10)), calendar: "Cloud account" };
+  provider.calendarWriteDestination = "Changed after tool construction";
+  expect(tool.confirmation(args)).toContain("Destination: TabMail Voice calendar (local to this PC)");
+  expect(tool.confirmation(args)).not.toContain("Cloud account");
+  expect(await tool.run(args)).toContain("to TabMail Voice calendar (local to this PC):");
+  expect(store.added[0]?.calendar).toBe("");
+});

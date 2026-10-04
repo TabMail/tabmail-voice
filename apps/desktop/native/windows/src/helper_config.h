@@ -10,12 +10,10 @@ inline constexpr uint32_t accessibilityRequestTimeoutMs = 1000;
 inline constexpr uint32_t accessibilityRetryIntervalMs = 1000;
 inline constexpr unsigned accessibilityMaxAttempts = 5;
 // Longest visible text kept from one text field or terminal (UTF-16 units).
-inline constexpr size_t contextMaxFieldChars = 20000;
 // Longest text gathered for one heading, link or table row (bytes of UTF-8).
-inline constexpr size_t contextMaxBlockChars = 1000;
 // Longest the look through what holds a selection, before its text is asked for (ms).
 inline constexpr unsigned long long contextSelectionScanMs = 200;
-// Terminal apps: the focused pane is read as a field of the lines in view. A console
+// Terminal apps use visible-range acquisition and shared viewport projection. A console
 // window belongs to the program running in it, so the shells are listed too.
 inline constexpr const wchar_t* terminalApps[] = {
     L"WindowsTerminal.exe", L"conhost.exe", L"cmd.exe", L"powershell.exe", L"pwsh.exe", L"wsl.exe",

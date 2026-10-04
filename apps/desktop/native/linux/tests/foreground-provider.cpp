@@ -15,7 +15,9 @@ struct Item { AtspiRole role; AtspiAccessible* parent; std::string text; std::ve
 std::map<AtspiAccessible*, Item> items;
 AtspiAccessible *desktop, *apps[2], *windows[2], *documents[2], *fields[2], *secret;
 int active = 0, failures = 0;
-bool exposed = false;
+bool exposed = false, loseFocusOnText = false, focusLost = false;
+bool mutateSelectionOnText = false;
+int selectionStart = -1, selectionEnd = -1;
 unsigned calls[2] = {};
 AtspiEventListenerCB callback;
 gpointer callbackData;
@@ -46,6 +48,26 @@ void activate(int index, int failCount) {
 gboolean command(gint fd, GIOCondition, gpointer) {
     char value;
     if (::read(fd, &value, 1) != 1) return G_SOURCE_REMOVE;
+    if (value == 'l' || value == 'v' || value == 'q' || value == 'c' || value == 'U') {
+        const auto before = value == 'v' ? std::string(300000, 'a') + ". Before " : std::string("Before ");
+        std::string selected(value == 'q' ? 262139 : 20001, 'x');
+        if (value == 'c' || value == 'U') {
+            selected.clear();
+            for (int i = 0; i < (value == 'U' ? 65535 : 7000); ++i) selected += value == 'U' ? "😀" : "😀é";
+        }
+        const auto after = value == 'v' ? std::string(" after! ") + std::string(300000, 'b') : std::string(" after");
+        items.at(fields[active]).text = before + selected + after;
+        selectionStart = before.size(); selectionEnd = selectionStart + g_utf8_strlen(selected.c_str(), -1);
+    }
+    if (value == 't') items.at(fields[active]).role = ATSPI_ROLE_TERMINAL;
+    if (value == 'm') mutateSelectionOnText = true;
+    if (value == 'z') {
+        items.at(fields[active]).role = ATSPI_ROLE_ENTRY;
+        items.at(fields[active]).text = "Synthetic field content";
+        selectionStart = selectionEnd = -1; mutateSelectionOnText = false;
+    }
+    if (value == 'f') loseFocusOnText = true;
+    if (value == 'g') { loseFocusOnText = false; focusLost = false; }
     if (value == 'a') activate(0, 0);
     if (value == 'b') activate(1, 0);
     if (value == 'r') activate(0, 1);
@@ -94,7 +116,7 @@ extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*
     auto states = atspi_state_set_new(nullptr);
     atspi_state_set_add(states, ATSPI_STATE_SHOWING);
     if (active >= 0 && value == windows[active]) atspi_state_set_add(states, ATSPI_STATE_ACTIVE);
-    if (active >= 0 && exposed && value == fields[active]) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
+    if (active >= 0 && exposed && !focusLost && value == fields[active]) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
     return states;
 }
 extern "C" gint __wrap_atspi_accessible_get_child_count(AtspiAccessible* root, GError**) { return children(root).size(); }
@@ -102,7 +124,24 @@ extern "C" AtspiAccessible* __wrap_atspi_accessible_get_child_at_index(AtspiAcce
 extern "C" AtspiAccessible* __wrap_atspi_accessible_get_parent(AtspiAccessible* value, GError**) { return ref(items.at(value).parent); }
 extern "C" guint __wrap_atspi_accessible_get_process_id(AtspiAccessible*, GError**) { return 0; }
 extern "C" AtspiCollection* __wrap_atspi_accessible_get_collection_iface(AtspiAccessible*) { return nullptr; }
-extern "C" AtspiComponent* __wrap_atspi_accessible_get_component_iface(AtspiAccessible*) { return nullptr; }
+extern "C" AtspiComponent* __wrap_atspi_accessible_get_component_iface(AtspiAccessible* value) {
+    if (active < 0 || items.at(fields[active]).role != ATSPI_ROLE_TERMINAL) return nullptr;
+    return reinterpret_cast<AtspiComponent*>(ref(value));
+}
+extern "C" AtspiRect* __wrap_atspi_component_get_extents(AtspiComponent*, AtspiCoordType, GError**) {
+    auto result=g_new0(AtspiRect,1);result->width=1000;result->height=800;return result;
+}
+extern "C" AtspiRect* __wrap_atspi_text_get_character_extents(AtspiText*,gint,AtspiCoordType,GError**) {
+    auto result=g_new0(AtspiRect,1);result->x=10;result->y=10;result->width=8;result->height=16;return result;
+}
+extern "C" GArray* __wrap_atspi_text_get_bounded_ranges(AtspiText*,gint,gint,gint,gint,
+    AtspiCoordType,AtspiTextClipType,AtspiTextClipType,GError**) {
+    auto result=g_array_new(FALSE,FALSE,sizeof(AtspiTextRange));
+    // The viewport displays a bounded selection interval, with earlier/later
+    // document content off screen. Long selections extend beyond this viewport.
+    AtspiTextRange span{selectionStart,std::min(selectionEnd,selectionStart+30000),g_strdup("synthetic visible interval")};
+    g_array_append_val(result,span);return result;
+}
 extern "C" AtspiDocument* __wrap_atspi_accessible_get_document_iface(AtspiAccessible* value) { return reinterpret_cast<AtspiDocument*>(ref(value)); }
 extern "C" GHashTable* __wrap_atspi_document_get_document_attributes(AtspiDocument*, GError**) {
     auto result = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
@@ -110,10 +149,19 @@ extern "C" GHashTable* __wrap_atspi_document_get_document_attributes(AtspiDocume
 }
 extern "C" gchar* __wrap_atspi_accessible_get_name(AtspiAccessible* value, GError**) { if (value == secret) std::abort(); return g_strdup(items.at(value).text.c_str()); }
 extern "C" AtspiText* __wrap_atspi_accessible_get_text_iface(AtspiAccessible* value) { if (value == secret || (active >= 0 && value == fields[active] && !items.at(value).live.empty())) std::abort(); return reinterpret_cast<AtspiText*>(ref(value)); }
-extern "C" gint __wrap_atspi_text_get_character_count(AtspiText* value, GError**) { return items.at(reinterpret_cast<AtspiAccessible*>(value)).text.size(); }
-extern "C" gint __wrap_atspi_text_get_caret_offset(AtspiText* value, GError** error) { return __wrap_atspi_text_get_character_count(value, error); }
-extern "C" gint __wrap_atspi_text_get_n_selections(AtspiText*, GError**) { return 0; }
+extern "C" gint __wrap_atspi_text_get_character_count(AtspiText* value, GError**) { return g_utf8_strlen(items.at(reinterpret_cast<AtspiAccessible*>(value)).text.c_str(), -1); }
+extern "C" gint __wrap_atspi_text_get_caret_offset(AtspiText* value, GError** error) { return selectionEnd >= 0 ? selectionEnd : __wrap_atspi_text_get_character_count(value, error); }
+extern "C" gint __wrap_atspi_text_get_n_selections(AtspiText*, GError**) { return selectionStart >= 0 ? 1 : 0; }
+extern "C" AtspiRange* __wrap_atspi_text_get_selection(AtspiText*, gint, GError**) {
+    auto selected = g_new0(AtspiRange, 1);
+    selected->start_offset = selectionStart; selected->end_offset = selectionEnd;
+    return selected;
+}
 extern "C" gchar* __wrap_atspi_text_get_text(AtspiText* value, gint from, gint to, GError**) {
+    // Both ordinary field and selection acquisition use this provider. The
+    // dedicated live-source fixture asserts selection-only request boundaries.
+    if (loseFocusOnText) focusLost = true;
+    if (mutateSelectionOnText) { ++selectionStart; mutateSelectionOnText = false; }
     const auto& text = items.at(reinterpret_cast<AtspiAccessible*>(value)).text;
-    return g_strdup(text.substr(from, to - from).c_str());
+    return g_utf8_substring(text.c_str(), from, to);
 }

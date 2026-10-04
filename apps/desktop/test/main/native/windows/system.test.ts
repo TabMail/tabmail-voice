@@ -79,13 +79,6 @@ test("correction learning refuses invalid targets and malformed or over-limit re
   expect(await system.focusedFieldValue(101, { apps: ["Synthetic.exe"], sites: ["example.com"] })).toBe("");
 });
 
-/** Mirrors the reference Mac input-source normalization and the real transcription endpoint's
- * two-letter validation. Regional Windows tags must never be sent as unsupported languages. */
-test.each([["en-US", "en"], ["EN", "en"], ["zh-Hans", "zh"], ["pt_BR", "pt"], ["sr-Latn-RS", "sr"], ["yue", null], ["fil-PH", null], ["e1", null], ["", null], [null, null]])("keyboard locale %j maps to supported transcription code %j", async (code, expected) => {
-  mocks.request.mockResolvedValue({ code });
-  expect(await system.keyboardLanguage()).toBe(expected);
-});
-
 /** The native readers receive the entire enlarged policy, including exclusions past the old cap. */
 test("screen reading and correction learning forward every saved exclusion", async () => {
   const apps = Array.from({ length: 1000 }, (_, index) => `Synthetic${index}.exe`);

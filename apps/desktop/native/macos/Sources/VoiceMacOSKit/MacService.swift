@@ -23,7 +23,7 @@ import VoiceHelperSupport
 ///   reading, which is not read. Secret-looking text is taken out of it (`Redactor`).
 /// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
 ///   clipboard after `restoreDelay` seconds.
-/// - `keyboardLanguage` → `{code}`: the active keyboard input source's language, or null.
+/// - `keyboardLanguage` → `{code}`: the active input source's raw locale, or null; the app normalizes it.
 /// - `fullUserName` → `{name}`: the user account's full name, empty when it has none.
 /// - `globeRead` → `{value}` (null when this macOS lacks the calls); `globeUpdate {value}` → `{}`.
 /// - `startActivator` → `{}`: asks Gecko and Electron apps to build their accessibility tree as they
@@ -103,7 +103,7 @@ public enum MacService {
                 HelperLog.debug("FocusedField: the app is excluded from screen reading; not read")
                 return ["value": .null]
             }
-            return await Task.detached { ["value": screen.focusedField(pid, maxLength, exclusions).map { .string(Redactor.redact($0)) } ?? .null] }.value
+            return await Task.detached { ["value": screen.focusedField(pid, maxLength, exclusions).flatMap { try? Redactor.redact($0) }.map(JSON.string) ?? .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,
@@ -276,13 +276,13 @@ extension ScreenContext {
     /// What the app receives: the fields, and the text already rendered for the prompts and the logs,
     /// all of it with secret-looking text taken out (`redacted`: ADR-DESK-046).
     var json: JSON {
-        let context = redacted
-        return context.json(selectionRedacted: context.selectedText != selectedText)
+        guard let context = try? redacted else { return ["hidden": .bool(true)] }
+        return (try? context.json(selectionRedacted: selectionUnavailable || context.selectedText != selectedText)) ?? ["hidden": .bool(true)]
     }
 
-    private func json(selectionRedacted: Bool) -> JSON {
+    private func json(selectionRedacted: Bool) throws -> JSON {
         func optional(_ value: String?) -> JSON { value.map(JSON.string) ?? .null }
-        return [
+        var fields: [String: JSON] = [
             "appName": .string(appName),
             "bundleID": optional(bundleID),
             "windowTitle": optional(windowTitle),
@@ -295,9 +295,11 @@ extension ScreenContext {
             // over the real one.
             "selectionRedacted": .bool(selectionRedacted),
             "textAfterCaret": .string(textAfterCaret),
-            "renderedText": .string(renderedText()),
+            "renderedText": .string(try renderedText()),
             "summary": .string(summary),
-            "logDescription": .string(logDescription),
+            "logDescription": .string(try logDescription),
         ]
+        if let terminalViewport { fields["terminalViewport"] = terminalViewport }
+        return .object(fields)
     }
 }

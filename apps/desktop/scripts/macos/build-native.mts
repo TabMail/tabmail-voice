@@ -8,6 +8,7 @@ import { join } from "node:path";
 
 /** Builds the existing Apple silicon Swift helpers. */
 export function buildNative(root: string): void {
+  execFileSync("cargo", ["build", "--release", "--locked", "--target", "aarch64-apple-darwin"], { cwd: join(root, "native/shared/rust"), stdio: "inherit" });
   const helpers = ["voice-hotkey", "voice-macos", "voice-microphone"];
   const swift = ["build", "-c", "release", "--arch", "arm64", "--package-path", join(root, "native/macos")];
   execFileSync("swift", swift, { stdio: "inherit" });

@@ -4,6 +4,15 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import PackageDescription
+import Foundation
+
+#if arch(arm64)
+let rustTarget = "aarch64-apple-darwin"
+#else
+let rustTarget = "x86_64-apple-darwin"
+#endif
+let rustLibrary = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .appendingPathComponent("../shared/rust/target/\(rustTarget)/release").standardizedFileURL.path
 
 /// TabMail Voice's macOS helpers: small executables the Electron app starts and talks to over
 /// stdin/stdout, one JSON object a line (ADR-DESK-032). `voice-hotkey` owns the keyboard event tap;
@@ -21,10 +30,11 @@ let package = Package(
         .executable(name: "voice-microphone", targets: ["VoiceMicrophone"]),
     ],
     targets: [
+        .systemLibrary(name: "CVoiceCore"),
         .target(name: "VoiceHelperSupport", swiftSettings: strict),
-        .target(name: "VoiceHotkeyKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
+        .target(name: "VoiceHotkeyKit", dependencies: ["VoiceHelperSupport", "CVoiceCore"], swiftSettings: strict, linkerSettings: [.unsafeFlags(["-L", rustLibrary]), .linkedLibrary("tabmail_voice_core")]),
         .executableTarget(name: "VoiceHotkey", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
-        .target(name: "VoiceMacOSKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
+        .target(name: "VoiceMacOSKit", dependencies: ["VoiceHelperSupport", "CVoiceCore"], swiftSettings: strict, linkerSettings: [.unsafeFlags(["-L", rustLibrary]), .linkedLibrary("tabmail_voice_core")]),
         .executableTarget(name: "VoiceMacOS", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .target(name: "VoiceMicrophoneKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
         .executableTarget(name: "VoiceMicrophone", dependencies: ["VoiceMicrophoneKit", "VoiceHelperSupport"], swiftSettings: strict),

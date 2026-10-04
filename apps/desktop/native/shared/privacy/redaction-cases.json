@@ -4966,6 +4966,79 @@
     "{redacted}",
     " end"
    ]
+  },
+  {
+   "name": "explicit sharp-s spelling paßword",
+   "text": [
+    "paßword: ",
+    "hunter",
+    "2x"
+   ],
+   "expected": [
+    "paßword: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "explicit sharp-s spelling paßwd",
+   "text": [
+    "paßwd: ",
+    "hunter",
+    "2x"
+   ],
+   "expected": [
+    "paßwd: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "explicit sharp-s spelling paßphrase",
+   "text": [
+    "paßphrase: ",
+    "hunter",
+    "2x"
+   ],
+   "expected": [
+    "paßphrase: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "explicit sharp-s spelling acceß_key",
+   "text": [
+    "acceß_key: ",
+    "hunter",
+    "2x"
+   ],
+   "expected": [
+    "acceß_key: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "explicit sharp-s spelling PAẞWORD",
+   "text": [
+    "PAẞWORD: ",
+    "hunter",
+    "2x"
+   ],
+   "expected": [
+    "PAẞWORD: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "sharp-s unrelated name stays",
+   "text": [
+    "paßport: ",
+    "hunter",
+    "2x"
+   ],
+   "expected": [
+    "paßport: ",
+    "hunter",
+    "2x"
+   ]
   }
  ],
  "lineCases": [
@@ -5645,6 +5718,151 @@
     [
      [
       "{redacted}"
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "fragmented sharp-s spelling paßword",
+   "lines": [
+    [
+     [
+      "paßword: "
+     ],
+     [
+      "hunter"
+     ],
+     [
+      "2x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "paßword: "
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      ""
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "fragmented sharp-s spelling paßwd",
+   "lines": [
+    [
+     [
+      "paßwd: "
+     ],
+     [
+      "hunter"
+     ],
+     [
+      "2x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "paßwd: "
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      ""
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "fragmented sharp-s spelling paßphrase",
+   "lines": [
+    [
+     [
+      "paßphrase: "
+     ],
+     [
+      "hunter"
+     ],
+     [
+      "2x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "paßphrase: "
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      ""
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "fragmented sharp-s spelling acceß_key",
+   "lines": [
+    [
+     [
+      "acceß_key: "
+     ],
+     [
+      "hunter"
+     ],
+     [
+      "2x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "acceß_key: "
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      ""
+     ]
+    ]
+   ]
+  },
+  {
+   "name": "fragmented sharp-s spelling PAẞWORD",
+   "lines": [
+    [
+     [
+      "PAẞWORD: "
+     ],
+     [
+      "hunter"
+     ],
+     [
+      "2x"
+     ]
+    ]
+   ],
+   "expected": [
+    [
+     [
+      "PAẞWORD: "
+     ],
+     [
+      "{redacted}"
+     ],
+     [
+      ""
      ]
     ]
    ]

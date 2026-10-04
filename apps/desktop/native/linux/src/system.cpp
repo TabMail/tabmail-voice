@@ -118,7 +118,10 @@ int main() {
                     const auto value = tree.field(target->focus, limit);
                     return value ? JSON{{"value", voice::privacy::ScreenPrivacy::redact(*value)}} : JSON(nullptr); // Local-only correction learning; never backend context.
                 });
-            reply(method == "focusedFieldValue" && result == voice::hiddenScreen() ? JSON{{"value", nullptr}} : result, true);
+            // A provider read may yield to another window while accessibility IPC is in flight.
+            // Never return the previous window as the current screen/correction field.
+            const auto checked = target && foreground.matches(target->token) ? result : JSON(nullptr);
+            reply(method == "focusedFieldValue" && checked == voice::hiddenScreen() ? JSON{{"value", nullptr}} : checked, true);
         } else {
             throw std::runtime_error("unknown method");
         }

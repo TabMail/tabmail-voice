@@ -155,3 +155,58 @@ are revealed in Files rather than opened.
 
 References: [LocalSearch endpoint](https://gnome.pages.gitlab.gnome.org/localsearch/endpoint.html)
 and [TinySPARQL connection API](https://tracker.api.gnome.org/class.SparqlConnection.html).
+
+### Native productivity stores
+
+`voice-productivity` is a one-request helper for Evolution Data Server. Contacts
+use EBook's query builder and bounded cursors across enabled address books; creates
+use the default writable address book. The shared Contacts tools own confirmation.
+The helper does not retry writes, and the caller reports ambiguous failures without
+claiming that nothing was saved. Provider errors and request contents are not logged.
+
+Build with `libebook1.2-dev`; Debian packages require `libebook-1.2-21t64` and
+`evolution-data-server`. The parent limits the helper to 30 seconds and 1 MiB of
+output, separate from hotkey/audio processing. Unsupported cursor providers fail
+explicitly instead of loading an unbounded address book. Results follow each
+provider's family/given-name cursor order, visiting enabled sources in registry
+order; this is not a global merge of every account's sort order.
+
+The `voice-productivity` CTest uses a private D-Bus session and temporary HOME/XDG
+stores, exercising actual local EDS creation/search, accent matching, result bounds,
+query escaping and invalid-write refusal. It does not read the desktop's accounts.
+Notes uses the EDS memo lists through ECal. Creation targets the default writable
+memo list. Search uses a streaming view, collecting at most 1,000 matches and
+512 KiB of JSON with 32 KiB per text field. An overflow, provider failure, changed
+snapshot or incomplete view is refused, not silently truncated. Each view has a
+10-second deadline inside the parent's 30-second process deadline. This reads EDS
+memos, not arbitrary installed notes apps. Add `libecal2.0-dev` when building and
+`libecal-2.0-3` at runtime.
+
+Reminders uses EDS task lists with the same bounded view. The shared tools retain
+confirmation, sorting and due-date formatting. Reads omit completed/cancelled
+items; a due-before filter excludes undated tasks. Writes use the default writable
+task list and preserve date-only versus timed values, with minute precision on
+creation to match EventKit. Provider timezone identifiers are resolved through
+ECal. Existing GNOME Online Accounts/EDS configuration determines available lists;
+this does not provision a new remote account.
+
+Calendar tools use EDS calendars. Creates preserve the shared inclusive all-day
+end convention while storing EDS's exclusive DTEND. Reads collect a completed
+view and fetch complete recurring series by UID through error-returning APIs.
+EDS expands RRULE/RDATE/EXDATE; the adapter applies exact and RANGE exceptions,
+retaining original recurrence identity, final overlap filtering and cancellation.
+Recurring masters are discovered independently of unmodified overlap so a shifted
+occurrence cannot disappear from a narrow query. The read can therefore reach
+limits on a calendar containing many recurring series, even for a short interval.
+Initial snapshots are capped at 1,000 components/512 KiB; complete-series retrieval
+at 2,000 counted components/1 MiB, and output at 1,000 occurrences/512 KiB. Expansion
+also stops after 10,000 visited occurrences per component. Exceeding a bound fails
+the entire request without returning partial results. All calls remain inside the
+parent process deadline.
+
+The private-store test covers recurrence exclusions, moved and cancelled instances,
+RANGE shifts and changed duration, DST, all-day dates and excessive recurrence.
+A test-only preload library injects UID/timezone provider failures to verify that
+they cannot become an empty-success response; it is not packaged with the app.
+See the [EDS recurrence API](https://gnome.pages.gitlab.gnome.org/evolution-data-server/libecal/func.recur_generate_instances_sync.html)
+and [complete-series API](https://gnome.pages.gitlab.gnome.org/evolution-data-server/libecal/method.Client.get_objects_for_uid_sync.html).

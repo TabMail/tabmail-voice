@@ -14,6 +14,6 @@ export function buildNative(root: string): void {
   execFileSync("cmake", ["--build", build, "--parallel", "2"], { stdio: "inherit" });
   const destination = join(root, "dist/helpers");
   mkdirSync(destination, { recursive: true });
-  for (const helper of ["voice-hotkey", "voice-linux", "voice-files"]) copyFileSync(join(build, helper), join(destination, helper));
+  for (const helper of ["voice-hotkey", "voice-linux", "voice-files", "voice-productivity"]) copyFileSync(join(build, helper), join(destination, helper));
   process.stdout.write(`Copied Linux helpers to ${destination}\n`);
 }

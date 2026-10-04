@@ -79,7 +79,8 @@
         "to": "helpers",
         "filter": [
           "voice-hotkey.exe",
-          "voice-windows.exe"
+          "voice-windows.exe",
+          "voice-productivity.exe"
         ]
       },
       {
@@ -114,7 +115,8 @@
         "filter": [
           "voice-hotkey",
           "voice-linux",
-          "voice-files"
+          "voice-files",
+          "voice-productivity"
         ]
       }
     ],
@@ -141,6 +143,9 @@
       "libpulse0",
       "libibus-1.0-5",
       "libtinysparql-3.0-0",
+      "libebook-1.2-21t64",
+      "libecal-2.0-3",
+      "evolution-data-server",
       "localsearch",
       "libicu78",
       "xdg-desktop-portal",

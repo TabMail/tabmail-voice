@@ -60,7 +60,7 @@ public:
             }, nullptr);
     }
     void emit(Action action) {
-        if (action == Action::start || action == Action::startHandsFree || action == Action::listenHandsFree)
+        if (action == Action::start || action == Action::startHandsFree || action == Action::startAgent || action == Action::startAgentHandsFree || action == Action::listenHandsFree)
             setRecording(true);
         else if (action == Action::finish || action == Action::cancel || action == Action::closeChat || action == Action::showHistory)
             setRecording(false);

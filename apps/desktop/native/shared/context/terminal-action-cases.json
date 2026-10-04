@@ -1,0 +1,195 @@
+{
+  "cases": [
+    {
+      "name": "recognizable secret",
+      "source": {
+        "complete": true,
+        "focusedSurface": 1,
+        "caret": {
+          "status": "unavailable"
+        },
+        "surfaces": [
+          {
+            "id": 1,
+            "frame": [
+              0,
+              0,
+              400,
+              200
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "token=abc123456789",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": [
+                {
+                  "run": 0,
+                  "start": 0,
+                  "end": 18
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "selectedText": "[redacted]",
+        "selectionComplete": false
+      }
+    },
+    {
+      "name": "incomplete selection",
+      "source": {
+        "complete": true,
+        "focusedSurface": 1,
+        "caret": {
+          "status": "unavailable"
+        },
+        "surfaces": [
+          {
+            "id": 1,
+            "frame": [
+              0,
+              0,
+              400,
+              200
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "visible selected",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": false,
+              "ranges": [
+                {
+                  "run": 0,
+                  "start": 0,
+                  "end": 16
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "selectedText": "[redacted]",
+        "selectionComplete": false
+      }
+    },
+    {
+      "name": "readable selection",
+      "source": {
+        "complete": true,
+        "focusedSurface": 1,
+        "caret": {
+          "status": "unavailable"
+        },
+        "surfaces": [
+          {
+            "id": 1,
+            "frame": [
+              0,
+              0,
+              400,
+              200
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "hello world",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": [
+                {
+                  "run": 0,
+                  "start": 0,
+                  "end": 11
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "selectedText": "hello world",
+        "selectionComplete": true
+      }
+    },
+    {
+      "name": "incomplete capture without focused surface",
+      "source": {
+        "complete": false,
+        "focusedSurface": null,
+        "caret": {
+          "status": "unavailable"
+        },
+        "surfaces": []
+      },
+      "expected": {
+        "selectedText": "[redacted]",
+        "selectionComplete": false
+      }
+    },
+    {
+      "name": "selection endpoints inside recognizable secret",
+      "source": {
+        "complete": true,
+        "focusedSurface": 1,
+        "caret": {
+          "status": "unavailable"
+        },
+        "surfaces": [
+          {
+            "id": 1,
+            "frame": [
+              0,
+              0,
+              400,
+              200
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "token=abc123456789",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": [
+                {
+                  "run": 0,
+                  "start": 8,
+                  "end": 12
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "selectedText": "[redacted]",
+        "selectionComplete": false
+      }
+    }
+  ]
+}

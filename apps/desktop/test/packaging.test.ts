@@ -8,6 +8,14 @@ import { describe, expect, test } from "vitest";
 
 const root = join(__dirname, "..");
 
+test("Windows packages every helper the main process can launch", () => {
+  const source = readFileSync(join(root, "src/main/index.ts"), "utf8");
+  const launched = [...new Set([...source.matchAll(/"(voice-[a-z-]+\.exe)"/g)].map(match => match[1]))].sort();
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { extraResources: { from: string; filter?: string[] }[] } };
+  expect(launched).toEqual(["voice-hotkey.exe", "voice-productivity.exe", "voice-windows.exe"]);
+  expect(builder.win.extraResources.find(resource => resource.from === "dist/helpers")?.filter?.slice().sort()).toEqual(launched);
+});
+
 /** What the packaged Mac app declares for the access it asks for (`voice-macos` for Calendar,
  * Reminders and Contacts, osascript for Notes and Messages): macOS ends a process that asks for
  * Calendar, Reminders or Contacts without the app's usage string, and the hardened runtime refuses
@@ -43,7 +51,7 @@ describe("the Mac app's packaging", () => {
     const linuxBuild = readFileSync(join(root, "scripts/linux/build-native.mts"), "utf8");
     const linux = JSON.parse(/for \(const helper of (\[[^\]]*\])\)/.exec(linuxBuild)?.[1] ?? "null") as string[];
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; filter: string[] }[] } };
-    expect(linux).toEqual(["voice-hotkey", "voice-linux", "voice-files"]);
+    expect(linux).toEqual(["voice-hotkey", "voice-linux", "voice-files", "voice-productivity"]);
     expect(builder.linux.extraResources.find(({ from }) => from === "dist/helpers")?.filter).toEqual(linux);
     expect([...new Set(spawned)].sort()).toEqual([...new Set([...products, ...linux])].sort());
     expect([...copied].sort()).toEqual([...products].sort());

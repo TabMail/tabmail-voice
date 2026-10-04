@@ -26,7 +26,7 @@ std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -61,7 +61,8 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
         const auto boolean = [&](bool value) { result->vt = VT_BOOL; result->boolVal = value ? VARIANT_TRUE : VARIANT_FALSE; };
         const auto number = [&](LONG value) { result->vt = VT_I4; result->lVal = value; };
         if (property == UIA_IsPasswordPropertyId) boolean(password);
-        else if (property == UIA_IsEnabledPropertyId || property == UIA_IsControlElementPropertyId || property == UIA_IsContentElementPropertyId || property == UIA_IsKeyboardFocusablePropertyId) boolean(true);
+        else if (property == UIA_IsControlElementPropertyId || property == UIA_IsContentElementPropertyId) boolean(!rawOnly);
+        else if (property == UIA_IsEnabledPropertyId || property == UIA_IsKeyboardFocusablePropertyId) boolean(true);
         else if (property == UIA_IsOffscreenPropertyId) boolean(false);
         else if (property == UIA_HasKeyboardFocusPropertyId) boolean(id == focus);
         else if (property == UIA_ControlTypePropertyId) number(type);
@@ -150,12 +151,13 @@ void configure(const std::string& mode) {
     } else if (mode.starts_with("password-")) {
         int container = 0;
         if (mode == "password-row") container = add(0, UIA_DataItemControlTypeId);
-        if (mode == "password-link") container = add(0, UIA_HyperlinkControlTypeId);
+        if (mode.starts_with("password-link")) container = add(0, UIA_HyperlinkControlTypeId);
         if (mode == "password-web-control") { const int page = add(0, UIA_DocumentControlTypeId); container = add(page, UIA_ButtonControlTypeId); }
         const int label = add(container, UIA_TextControlTypeId);
         // Its own text: a block that repeats the one before it is left out of the read.
-        if (mode == "password-row" || mode == "password-link") nodes.at(label)->text = L"Synthetic cell text";
+        if (mode == "password-row" || mode.starts_with("password-link")) nodes.at(label)->text = L"Synthetic cell text";
         const int secret = add(container, UIA_EditControlTypeId, true);
+        if (mode == "password-link-raw") nodes.at(secret)->rawOnly = true;
         add(secret, UIA_TextControlTypeId); nodes.back()->forbidden = true;
     } else {
         int parent = 0;

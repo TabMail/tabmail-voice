@@ -1,5 +1,20 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-#pragma once
-#include "../../../shared/privacy/Redactors.generated.h"
+
+mod address;
+mod context;
+mod ffi;
+mod gesture;
+mod policy;
+pub mod privacy;
+mod semantic;
+
+mod source_window;
+
+pub mod source;
+
+mod viewport;
+
+#[cfg(test)]
+mod allocation_tests;

@@ -5,15 +5,7 @@
 import * as config from "../../../config.js";
 import { LocalDateTime } from "../../../util/localDateTime.js";
 import type { ScriptRunner } from "./appleScript.js";
-import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "../contract.js";
-
-/** A note in Apple Notes, as the notes tools read them. */
-export interface NoteItem {
-  title: string;
-  folder: string;
-  changed: Date | null;
-  text: string;
-}
+import type { NoteItem, NoteStore } from "../notes.js";
 
 /** The AppleScripts behind the notes tools (ADR-DESK-028), and how their results read back. Each takes
  * its values as arguments (`ScriptRunner`). */
@@ -72,77 +64,14 @@ function escaped(text: string): string {
   return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-export const notesConnector = defineConnector({
-  id: "notes",
-  order: 60,
-  platforms: ["darwin"],
-  displayName: "Notes",
-  settingsDescription: "Answers from your notes, and adds ones you ask for once you confirm.",
-  tools: ({ scriptRunner }: Pick<ConnectorServices, "scriptRunner">): ConnectorTool[] => [new NotesSearchTool(scriptRunner), new NotesCreateTool(scriptRunner)],
-});
-
-/** Finds notes in Apple Notes (`notes_search`), for "what did I write down about the offsite". */
-export class NotesSearchTool implements ConnectorTool {
-  readonly name = "notes_search";
-  readonly connector = "notes";
-  readonly progressLabel = "Looking in your notes";
-
+/** AppleScript is confined to the macOS provider; tool behavior is shared. */
+export class MacNoteStore implements NoteStore {
   constructor(private readonly runner: ScriptRunner) {}
-
-  confirmation(): null {
-    return null;
+  async search(query: string, signal: AbortSignal): Promise<NoteItem[]> {
+    return NotesScripts.notes(await this.runner.run(NotesScripts.search, [query], signal));
   }
-
-  /** The newest `notesSearchMaxResults` matches, each in full; more say so. */
-  async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
-    const query = Arguments.text(args, "query");
-    if (query === null) throw ToolArgumentError.missing("query");
-    const found = NotesScripts.notes(await this.runner.run(NotesScripts.search, [query], signal)).sort((a, b) => (b.changed?.getTime() ?? -Infinity) - (a.changed?.getTime() ?? -Infinity));
-    if (found.length === 0) return `No notes match "${query}".`;
-    const limit = config.notesSearchMaxResults;
-    const sections = [`Notes matching "${query}", newest first:`, ...found.slice(0, limit).map(describe)];
-    if (found.length > limit) sections.push(`(${found.length - limit} more notes match; search with more of the words.)`);
-    return sections.join("\n\n");
-  }
-}
-
-function describe(note: NoteItem): string {
-  const changed = note.changed === null ? "" : `, changed ${LocalDateTime.describe(note.changed)}`;
-  return `"${note.title}" (${note.folder}${changed}):\n${note.text}`;
-}
-
-/** Adds a note to Apple Notes' default folder (`notes_create`), once the user confirms what the chat
- * window shows: the question and the note come from the same draft. */
-export class NotesCreateTool implements ConnectorTool {
-  readonly name = "notes_create";
-  readonly connector = "notes";
-  readonly progressLabel = "Adding the note";
-
-  constructor(private readonly runner: ScriptRunner) {}
-
-  /** Null only for arguments `run` rejects before adding anything. */
-  confirmation(args: Record<string, unknown>): string | null {
-    let draft: { title: string; text: string };
-    try {
-      draft = NotesCreateTool.draft(args);
-    } catch {
-      return null;
-    }
-    return `Add this note?\n${draft.title}\n${draft.text}`;
-  }
-
-  async run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> {
-    const draft = NotesCreateTool.draft(args);
-    const [title = draft.title, folder] = (await this.runner.run(NotesScripts.create, [NotesScripts.html(draft.title, draft.text)], signal)).split(NotesScripts.fieldSeparator);
-    return `Added the note "${title}"${folder === undefined ? "" : ` in the ${folder} folder`}.`;
-  }
-
-  /** The note the arguments describe: a title and a body. */
-  static draft(args: Record<string, unknown>): { title: string; text: string } {
-    const title = Arguments.text(args, "title");
-    if (title === null) throw ToolArgumentError.missing("title");
-    const text = Arguments.text(args, "body");
-    if (text === null) throw ToolArgumentError.missing("body");
-    return { title, text };
+  async add(title: string, text: string, signal: AbortSignal): Promise<{ title: string; folder?: string }> {
+    const [savedTitle = title, folder] = (await this.runner.run(NotesScripts.create, [NotesScripts.html(title, text)], signal)).split(NotesScripts.fieldSeparator);
+    return { title: savedTitle, folder };
   }
 }

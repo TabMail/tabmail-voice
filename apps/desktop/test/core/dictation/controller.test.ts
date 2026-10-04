@@ -1440,6 +1440,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
   });
 
+  test.each(["startAgent", "startAgentHandsFree"] as const)("%s starts in agent mode without a delayed toggle", (action) => {
+    const { controller } = makeController();
+    controller.handle(action);
+    expect(controller.mode).toBe("agent");
+    expect(controller.phase.kind).toBe(action === "startAgent" ? "arming" : "listening");
+    controller.handle("toggleMode");
+    expect(controller.mode).toBe("dictation");
+    controller.handle("cancel");
+  });
+
+  test("agent second tap changes initial intent while reusing the microphone", () => {
+    const { controller } = makeController();
+    controller.handle("start");
+    controller.handle("finish");
+    controller.handle("startAgentHandsFree");
+    expect(controller.mode).toBe("agent");
+    expect(controller.phase.kind).toBe("listening");
+    controller.handle("cancel");
+  });
+
   describe("agent mode (Space during the hold)", () => {
     /** One agent-mode request, spoken over `context`: the controller, what was pasted, and every phase
      * it went through. `prepare` runs on the controller before the hold. */

@@ -1,0 +1,288 @@
+{
+  "description": "One semantic acquisition contract for every platform. Kind 1 row, 2 heading, 3 link; event 1 root, 2 descendant, 3 complete traversal, 4 interrupted traversal; decision 1 root, 2 descendants, 3 complete, 4 budget full. Expected is private source, before combined redaction/presentation limiting.",
+  "cases": [
+    {
+      "name": "row cells preserve content over a generic name",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 2,
+          "text": " Alice ",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "Ready",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 3,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "Alice | Ready",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "complete empty row asks for fallback",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 2,
+          "text": "​",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 3,
+          "text": "",
+          "decision": 1,
+          "repeat": 1
+        },
+        {
+          "event": 1,
+          "text": " root only ",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "root only",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "interrupted empty row never asks for fallback",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 4,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "interrupted row retains approved prefix",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 2,
+          "text": "kept",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 4,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "kept",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "heading uses approved root",
+      "kind": 2,
+      "initial": 1,
+      "events": [
+        {
+          "event": 1,
+          "text": " Title​",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "Title",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "link uses approved root",
+      "kind": 3,
+      "initial": 1,
+      "events": [
+        {
+          "event": 1,
+          "text": "label",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "label",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "blank root gathers descendants",
+      "kind": 2,
+      "initial": 1,
+      "events": [
+        {
+          "event": 1,
+          "text": "",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "one",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "two",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 3,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "one two",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "canonical adjacent duplicate across blanks",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 2,
+          "text": "é",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": " ",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "é",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "other",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "é",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 3,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "é | other | é",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "internal whitespace is retained",
+      "kind": 3,
+      "initial": 1,
+      "events": [
+        {
+          "event": 1,
+          "text": "",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": " one\n two ",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 2,
+          "text": "three",
+          "decision": 2,
+          "repeat": 1
+        },
+        {
+          "event": 3,
+          "text": "",
+          "decision": 3,
+          "repeat": 1
+        }
+      ],
+      "expected": {
+        "text": "one\n two three",
+        "repeat": 1
+      }
+    },
+    {
+      "name": "exact multibyte grapheme budget stops acquisition",
+      "kind": 2,
+      "initial": 1,
+      "events": [
+        {
+          "event": 1,
+          "text": "é",
+          "decision": 4,
+          "repeat": 20000
+        }
+      ],
+      "expected": {
+        "text": "é",
+        "repeat": 20000
+      }
+    },
+    {
+      "name": "one over keeps final source for redaction",
+      "kind": 1,
+      "initial": 2,
+      "events": [
+        {
+          "event": 2,
+          "text": "x",
+          "decision": 4,
+          "repeat": 20001
+        }
+      ],
+      "expected": {
+        "text": "x",
+        "repeat": 20001
+      }
+    }
+  ]
+}
