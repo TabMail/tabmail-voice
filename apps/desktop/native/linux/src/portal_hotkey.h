@@ -139,8 +139,8 @@ class PortalHotkey {
                                 self->modeDown = down;
                                 if (down) {
                                     self->modeHold = !self->gesture.active();
-                                    if (self->modeHold) emit(self->gesture.modifier(true, time));
-                                    emit(self->gesture.keyPressed(32, false));
+                                    if (self->modeHold) emit(self->gesture.modifier(true, time, true));
+                                    else emit(self->gesture.keyPressed(32, false));
                                 } else if (self->modeHold) {
                                     self->modeHold = false; emit(self->gesture.modifier(false, time));
                                 }

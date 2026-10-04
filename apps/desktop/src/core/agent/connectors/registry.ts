@@ -11,7 +11,7 @@ import { contactsConnector } from "./contacts.js";
 import { emailConnector } from "./email.js";
 import { filesConnector } from "./files.js";
 import { messagesConnector } from "./macos/messages.js";
-import { notesConnector } from "./macos/notes.js";
+import { notesConnector } from "./notes.js";
 import { webConnector } from "./web.js";
 
 /** Every connector's id. */

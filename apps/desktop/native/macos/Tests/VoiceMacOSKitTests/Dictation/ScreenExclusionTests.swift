@@ -139,7 +139,7 @@ struct ScreenExclusionTests {
         #expect(reads.fields.withLock { $0 } == [8, 99])
     }
 
-    @Test func excludedAppsAreMatchedWholeWhateverTheCase() {
+    @Test func excludedAppsAreMatchedWholeWhateverTheCase() throws {
         #expect(ScreenExclusions(appIDs: ["org.example.bank", "COM.EXAMPLE.vault"]).excludesApp("com.example.Vault"))
         #expect(!ScreenExclusions().excludesApp("com.example.vault"))
         #expect(!ScreenExclusions(appIDs: ["com.example", "com.example.vault.helper", "example.vault"]).excludesApp("com.example.vault"))
@@ -147,6 +147,19 @@ struct ScreenExclusionTests {
         // A website's host excludes no app, and an app's identifier no website.
         #expect(!ScreenExclusions(hosts: ["com.example.vault"]).excludesApp("com.example.vault"))
         #expect(!ScreenExclusions(appIDs: ["example.com"]).excludesHost("example.com"))
+    }
+
+    @Test func sharedUnicodePolicyAndFailureRefusal() throws {
+        let policy = ScreenExclusions(appIDs: ["Straße", "é"], hosts: ["Straße.example"])
+        #expect(policy.excludesApp("STRASSE"))
+        #expect(policy.excludesApp("e\u{301}"))
+        #expect(policy.excludesHost("sub.STRASSE.example."))
+        // Nonthrowing read guards must refuse when the shared core rejects input.
+        #expect(policy.excludesApp("invalid\0identity"))
+        #expect(policy.excludesHost(String(repeating: "x", count: 32769)))
+        #expect(throws: (any Error).self) {
+            try ScreenExclusions(params: .object(["excludedAppIDs": .array([.string("bad\0id")]), "excludedHosts": .array([])]), method: "readScreen")
+        }
     }
 
     // MARK: Websites
@@ -184,12 +197,12 @@ struct ScreenExclusionTests {
         var context = ScreenContext(appName: "Example")
         let read = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: focused, focusPath: focusPath,
                                             excluding: ScreenExclusions(hosts: hosts), started: Date(), into: &context)
-        return (read, context.renderedText())
+        return (read, try! context.renderedText())
     }
 
     /// A window showing a page of an excluded website is refused whole, in focus or not: with the
     /// caret in the browser's address field the page is still on screen.
-    @Test func aWindowShowingAnExcludedWebsiteIsNotRead() {
+    @Test func aWindowShowingAnExcludedWebsiteIsNotRead() throws {
         let shown = page("vault.example.com", "account 1234")
         let window = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Toolbar"]), shown])
         #expect(!walk(window, excluding: ["example.org", "Example.com"]).read)
@@ -202,7 +215,7 @@ struct ScreenExclusionTests {
     }
 
     /// The page the caret is in is on the focus path, which the walk goes into without reading it.
-    @Test func aFocusedPageOfAnExcludedWebsiteIsNotRead() {
+    @Test func aFocusedPageOfAnExcludedWebsiteIsNotRead() throws {
         let field = FakeElement("AXTextField", [kAXValueAttribute: "typed"])
         let area = FakeElement("AXWebArea", ["host": "vault.example.com"], children: [field])
         let window = FakeElement("AXWindow", children: [area])
@@ -211,7 +224,7 @@ struct ScreenExclusionTests {
     }
 
     /// A page of an excluded website framed inside another page.
-    @Test func anExcludedWebsiteFramedInAnotherPageIsNotRead() {
+    @Test func anExcludedWebsiteFramedInAnotherPageIsNotRead() throws {
         let outer = FakeElement("AXWebArea", ["host": "example.org"], children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]),
             FakeElement("AXGroup", children: [page("pay.example.com", "card 4242")]),
@@ -240,12 +253,12 @@ struct ScreenExclusionTests {
             return tree.string(element, name)
         }
         func page(of webArea: FakeElement) -> PageHost { tree.page(of: webArea) }
-        func fieldText(of element: FakeElement, windowFrame: CGRect?) -> String? {
+        func fieldSource(of element: FakeElement, windowFrame: CGRect?) -> [String]? {
             asked.texts += 1
             asked.elements.insert(ObjectIdentifier(element))
-            return tree.fieldText(of: element, windowFrame: windowFrame)
+            return tree.fieldSource(of: element, windowFrame: windowFrame)
         }
-        func caretWindow(of element: FakeElement) -> (String, String, String)? {
+        func caretWindow(of element: FakeElement) -> SharedContext.CaretWindow? {
             asked.caret += 1
             asked.elements.insert(ObjectIdentifier(element))
             return tree.caretWindow(of: element)
@@ -257,19 +270,17 @@ struct ScreenExclusionTests {
     private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
 
     private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement], excluding hosts: [String],
-                        started: Date = Date(),
-                        terminalPane: ((inout ScreenContext) -> Bool)? = nil) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
+                        started: Date = Date()) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
         let start = ScreenContext(appName: "Example")
         let tree = RecordingTree()
         let context = ScreenContextReader.gather(window: window, focused: focused, focusPath: focusPath, in: tree,
-                                                 excluding: ScreenExclusions(hosts: hosts), started: started, from: start,
-                                                 terminalPane: terminalPane)
+                                                 excluding: ScreenExclusions(hosts: hosts), started: started, from: start)
         return (context != nil, context ?? start, tree.asked)
     }
 
     /// A window too large or too slow to walk to its end keeps what was read: only a page of an
     /// excluded website refuses a read, not the budget.
-    @Test func aReadStoppedByItsBudgetIsKept() {
+    @Test func aReadStoppedByItsBudgetIsKept() throws {
         let texts = (0 ..< HelperConfig.contextNodeBudget + 10).map { FakeElement("AXStaticText", [kAXValueAttribute: "line \($0)"]) }
         let large = gather(FakeElement("AXWindow", [kAXTitleAttribute: "Large"], children: texts), focused: nil, focusPath: [], excluding: ["example.com"])
         #expect(large.read)
@@ -287,7 +298,7 @@ struct ScreenExclusionTests {
 
     /// With the caret in a page of an excluded website, nothing is asked of the app: not the text
     /// around the caret, not the window's title, no element's text.
-    @Test func thePageTheCaretIsInIsCheckedBeforeAnythingIsRead() {
+    @Test func thePageTheCaretIsInIsCheckedBeforeAnythingIsRead() throws {
         let field = FakeElement("AXTextField", Self.caret.merging([kAXValueAttribute: "account 1234 balance 99"]) { $1 })
         let group = FakeElement("AXGroup", children: [field])
         let area = FakeElement("AXWebArea", ["host": "vault.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Vault"]), group])
@@ -303,11 +314,11 @@ struct ScreenExclusionTests {
         #expect(read.asked.caret == 1)
         #expect(read.context.windowTitle == "Vault - Example Browser")
         #expect(read.context.host == "vault.example.com")
-        #expect(read.context.renderedText() == "Vault\n» account 1234 ‸balance‸ 99")
+        #expect(try read.context.renderedText() == "Vault\n» account 1234 ‸balance‸ 99")
     }
 
     /// A page clicked on, or with text selected in it, has the focus itself: it is the page checked.
-    @Test func aPageThatHasTheFocusItselfIsNotRead() {
+    @Test func aPageThatHasTheFocusItselfIsNotRead() throws {
         let area = FakeElement("AXWebArea", Self.caret.merging(["host": "vault.example.com"]) { $1 },
                                children: [FakeElement("AXStaticText", [kAXValueAttribute: "account 1234 balance 99"])])
         let window = FakeElement("AXWindow", [kAXTitleAttribute: "Vault"], children: [area])
@@ -328,7 +339,7 @@ struct ScreenExclusionTests {
     /// A page that has the focus itself is read like any page: what it shows, in order, with the
     /// heading and the field in it. Safari and Chrome give no text around the caret there, and the
     /// page's text is not the caret's.
-    @Test func aPageThatHasTheFocusItselfIsReadLikeAnyPage() {
+    @Test func aPageThatHasTheFocusItselfIsReadLikeAnyPage() throws {
         func page(_ attributes: [String: String]) -> (window: FakeElement, area: FakeElement) {
             let area = FakeElement("AXWebArea", attributes.merging(["host": "news.example.org"]) { $1 }, children: [
                 FakeElement("AXHeading", [kAXTitleAttribute: "Headlines"]),
@@ -343,7 +354,7 @@ struct ScreenExclusionTests {
         let read = gather(plain.window, focused: plain.area, focusPath: [plain.window], excluding: ["example.com"])
         #expect(read.read)
         #expect(read.context.host == "news.example.org")
-        #expect(read.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
+        #expect(try read.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
         #expect(!read.context.blocks.contains { $0.kind == .caret })
 
         // A caret in the page with text selected (Firefox gives the page's text around it): the
@@ -354,12 +365,12 @@ struct ScreenExclusionTests {
         #expect(chosen.read)
         #expect(chosen.context.selectedText == "balance")
         #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
-        #expect(chosen.context.renderedText() == "» ‸balance‸\n## Headlines\naccount 1234 balance 99\n> search")
+        #expect(try chosen.context.renderedText() == "» ‸balance‸\n## Headlines\naccount 1234 balance 99\n> search")
 
         // A caret with nothing selected adds no caret block.
         let caret = page(["caretBefore": "account 1234 ", "caretSelected": "", "caretAfter": "balance 99"])
         let placed = gather(caret.window, focused: caret.area, focusPath: [caret.window], excluding: ["example.com"])
-        #expect(placed.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
+        #expect(try placed.context.renderedText() == "## Headlines\naccount 1234 balance 99\n> search")
         #expect(placed.context.textBeforeCaret.isEmpty && placed.context.textAfterCaret.isEmpty)
 
         // A page that can be edited (a mail being written, an editor's document) is the field the
@@ -370,7 +381,7 @@ struct ScreenExclusionTests {
             let written = gather(editor.window, focused: editor.area, focusPath: [editor.window], excluding: ["example.com"])
             #expect(written.read)
             #expect(written.context.textBeforeCaret == "account 1234 " && written.context.textAfterCaret == " 99")
-            #expect(written.context.renderedText() == (selection.isEmpty ? "» account 1234 ‸ 99" : "» account 1234 ‸balance‸ 99"))
+            #expect(try written.context.renderedText() == (selection.isEmpty ? "» account 1234 ‸ 99" : "» account 1234 ‸balance‸ 99"))
         }
         // One on an excluded website is still refused, by the walk on its own too.
         let vault = FakeElement("AXWebArea", Self.caret.merging(["editable": "1", "host": "vault.example.com"]) { $1 })
@@ -383,13 +394,13 @@ struct ScreenExclusionTests {
         let area = FakeElement("AXWebArea", ["host": "news.example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Page"]), field])
         let window = FakeElement("AXWindow", children: [area])
         let typed = gather(window, focused: field, focusPath: [area, window], excluding: ["example.com"])
-        #expect(typed.context.renderedText() == "Page\n» account 1234 ‸balance‸ 99")
+        #expect(try typed.context.renderedText() == "Page\n» account 1234 ‸balance‸ 99")
         #expect(typed.context.textBeforeCaret == "account 1234 ")
     }
 
     /// A focused element that is no field (a list, a row, a group, a button) is read like any
     /// element, where it is: it is no empty caret block with nothing under it read.
-    @Test func aFocusedElementThatIsNoFieldIsReadLikeAnyElement() {
+    @Test func aFocusedElementThatIsNoFieldIsReadLikeAnyElement() throws {
         let secret = FakeElement("AXTextField", [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "placeholder-secret"])
         func mail(_ attributes: [String: String] = [:]) -> (window: FakeElement, list: FakeElement, row: FakeElement) {
             let row = FakeElement("AXRow", children: [
@@ -407,13 +418,13 @@ struct ScreenExclusionTests {
         for (focused, path) in [(plain.list, [plain.window]), (plain.row, [plain.list, plain.window])] {
             let read = gather(plain.window, focused: focused, focusPath: path, excluding: [])
             #expect(read.read)
-            #expect(read.context.renderedText() == whole)
+            #expect(try read.context.renderedText() == whole)
             #expect(!read.context.blocks.contains { $0.kind == .caret })
             // A password field inside the focused element is asked for nothing.
             #expect(!read.asked.elements.contains(ObjectIdentifier(secret)))
         }
         // The same with no focus at all: the focus takes nothing away.
-        #expect(gather(plain.window, focused: nil, focusPath: [], excluding: []).context.renderedText() == whole)
+        #expect(try gather(plain.window, focused: nil, focusPath: [], excluding: []).context.renderedText() == whole)
 
         // Something selected in it is kept, as the caret block before it; the text around the
         // selection is the element's own, read once, by the walk.
@@ -421,16 +432,16 @@ struct ScreenExclusionTests {
         let chosen = gather(selected.window, focused: selected.list, focusPath: [selected.window], excluding: [])
         #expect(chosen.context.selectedText == "balance")
         #expect(chosen.context.textBeforeCaret.isEmpty && chosen.context.textAfterCaret.isEmpty)
-        #expect(chosen.context.renderedText() == "Inbox\n» ‸balance‸\n| Sender One | Quarterly plan\n> search")
+        #expect(try chosen.context.renderedText() == "Inbox\n» ‸balance‸\n| Sender One | Quarterly plan\n> search")
 
         // A focused button is skipped outside web content like any button, and read inside it.
         let button = FakeElement("AXButton", [kAXTitleAttribute: "Send"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Inner"])])
         let native = FakeElement("AXWindow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
         let skipped = gather(native, focused: button, focusPath: [native], excluding: [])
-        #expect(skipped.context.renderedText() == "Draft")
+        #expect(try skipped.context.renderedText() == "Draft")
         let area = FakeElement("AXWebArea", ["host": "example.org"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "Draft"]), button])
         let web = FakeElement("AXWindow", children: [area])
-        #expect(gather(web, focused: button, focusPath: [area, web], excluding: []).context.renderedText() == "Draft\nSend")
+        #expect(try gather(web, focused: button, focusPath: [area, web], excluding: []).context.renderedText() == "Draft\nSend")
 
         // Outside the window it is not read, as any element there.
         let frame = CGRect(x: 0, y: 0, width: 400, height: 300)
@@ -438,20 +449,20 @@ struct ScreenExclusionTests {
         let framed = FakeElement("AXWindow", frame: frame, children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Draft"], frame: CGRect(x: 0, y: 10, width: 100, height: 16)), away,
         ])
-        #expect(gather(framed, focused: away, focusPath: [framed], excluding: []).context.renderedText() == "Draft")
+        #expect(try gather(framed, focused: away, focusPath: [framed], excluding: []).context.renderedText() == "Draft")
 
         // A field in focus is still the caret block and is not walked into, whatever its role.
         for role in ["AXComboBox", "AXTextArea", "AXTextField"] {
             let field = FakeElement(role, Self.caret, children: [FakeElement("AXStaticText", [kAXValueAttribute: "inner"])])
             let window = FakeElement("AXWindow", children: [field])
             let typed = gather(window, focused: field, focusPath: [window], excluding: [])
-            #expect(typed.context.renderedText() == "» account 1234 ‸balance‸ 99")
+            #expect(try typed.context.renderedText() == "» account 1234 ‸balance‸ 99")
         }
     }
 
     /// The walk into a page that has the focus refuses an excluded page framed in it, on its own,
     /// and reads nothing inside a password field there.
-    @Test func theWalkIntoAFocusedPageRefusesAnExcludedPageFramedInIt() {
+    @Test func theWalkIntoAFocusedPageRefusesAnExcludedPageFramedInIt() throws {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
         let outer = FakeElement("AXWebArea", ["host": "example.org"], children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Checkout"]), FakeElement("AXGroup", children: [frame]),
@@ -472,7 +483,7 @@ struct ScreenExclusionTests {
     }
 
     /// An excluded page framed in another page, with the focus in it or on it.
-    @Test func anExcludedFramedPageInFocusIsNotRead() {
+    @Test func anExcludedFramedPageInFocusIsNotRead() throws {
         let field = FakeElement("AXTextField", Self.caret)
         let frame = FakeElement("AXWebArea", Self.caret.merging(["host": "pay.example.com"]) { $1 }, children: [field])
         let group = FakeElement("AXGroup", children: [frame])
@@ -493,7 +504,7 @@ struct ScreenExclusionTests {
 
     /// With the caret outside every page (the browser's address field), a page of an excluded
     /// website elsewhere in the window still refuses the window; a page not excluded gives the host.
-    @Test func aWindowIsRefusedForAPageTheCaretIsNotIn() {
+    @Test func aWindowIsRefusedForAPageTheCaretIsNotIn() throws {
         let address = FakeElement("AXTextField", Self.caret)
         let window = FakeElement("AXWindow", [kAXTitleAttribute: "Vault"], children: [address, page("vault.example.com", "account 1234")])
         #expect(!gather(window, focused: address, focusPath: [window], excluding: ["example.com"]).read)
@@ -502,7 +513,7 @@ struct ScreenExclusionTests {
         let read = gather(window, focused: address, focusPath: [window], excluding: ["example.org"])
         #expect(read.read)
         #expect(read.context.host == "vault.example.com")
-        #expect(read.context.renderedText() == "» account 1234 ‸balance‸ 99\naccount 1234")
+        #expect(try read.context.renderedText() == "» account 1234 ‸balance‸ 99\naccount 1234")
         // No window: the caret's text alone.
         let alone = gather(nil, focused: address, focusPath: [], excluding: ["example.com"])
         #expect(alone.read && alone.context.textBeforeCaret == "account 1234 " && alone.context.blocks.isEmpty)
@@ -608,10 +619,12 @@ struct ScreenExclusionTests {
         #expect(!refused.read && refused.context.blocks.isEmpty)
         #expect(!walk(shown.window, excluding: ["example.com"]).read)
 
-        // Not excluded: it is read by its label, as before, and not walked into.
+        // Common row policy prefers permitted descendants; other semantic kinds
+        // use an approved root label. The excluded variant above still refuses.
         let read = walk(shown.window, excluding: ["example.net"])
         #expect(read.read)
-        #expect(read.text.contains("Pay now") && !read.text.contains("card 4242"))
+        if role == "AXRow" { #expect(read.text.contains("card 4242") && !read.text.contains("Pay now")) }
+        else { #expect(read.text.contains("Pay now") && !read.text.contains("card 4242")) }
 
         // One too thin to show anything is not read and not looked through, as before.
         let thin = window(frame: CGRect(x: 0, y: 0, width: 200, height: 1))
@@ -681,6 +694,18 @@ struct ScreenExclusionTests {
         guard !inRow || role == "AXStaticText" || role == "AXButton" else { return }
         let marker = HelperConfig.contextHiddenMarker
         let budget = HelperConfig.contextNodeBudget
+        if role == "AXRow" && !inRow {
+            // Descendant-first traversal reaches the excluded page before the
+            // fillers. A budget stop with no text must never read the root label.
+            #expect(!read(fillers: budget, behind: "pay.example.com").read)
+            let partial = read(fillers: budget + 1, behind: nil)
+            #expect(partial.read && partial.text == "Outer")
+            let exhausted = read(fillers: budget, behind: nil)
+            #expect(exhausted.read && exhausted.text == "Outer")
+            let complete = read(fillers: budget - 6, behind: nil)
+            #expect(complete.read && complete.text.contains("Pay now") && complete.text.hasSuffix("\nAfter"))
+            return
+        }
         for hidden in [read(fillers: budget, behind: "pay.example.com"), read(fillers: budget + 1, behind: nil)] {
             #expect(hidden.read)
             #expect(hidden.text.contains(marker) && !hidden.text.contains("Pay now"))
@@ -704,27 +729,9 @@ struct ScreenExclusionTests {
         #expect(read.read && read.text == "Outer\n> \(HelperConfig.contextHiddenMarker)")
     }
 
-    /// A terminal's caret comes from tmux when tmux has the pane; otherwise the terminal's field is
-    /// read around the caret and its visible lines kept as a plain field.
-    @Test func aTerminalsCaretComesFromItsPaneWhenThereIsOne() {
-        let terminal = FakeElement("AXTextArea", Self.caret.merging([kAXValueAttribute: "$ ls"]) { $1 })
-        let window = FakeElement("AXWindow", children: [terminal])
-        let pane = gather(window, focused: terminal, focusPath: [window], excluding: []) { context in
-            context.textBeforeCaret = "$ "
-            return true
-        }
-        #expect(pane.read && pane.asked.caret == 0)
-        #expect(pane.context.renderedText() == "» $ ‸")
-
-        let none = gather(window, focused: terminal, focusPath: [window], excluding: []) { _ in false }
-        #expect(none.read && none.asked.caret == 1)
-        #expect(none.context.textBeforeCaret == "account 1234 ")
-        #expect(none.context.renderedText() == "> $ ls")
-    }
-
     /// A password field is asked for no text, and neither is anything inside it: in the window, in
     /// a row, as a control with a title, and with the focus. What is beside it is asked and read.
-    @Test func noTextIsAskedOfAPasswordField() {
+    @Test func noTextIsAskedOfAPasswordField() throws {
         let secure = [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String, kAXValueAttribute: "placeholder-secret", kAXTitleAttribute: "placeholder-secret"]
         func field() -> FakeElement {
             FakeElement("AXTextField", secure, children: [FakeElement("AXStaticText", [kAXValueAttribute: "placeholder-secret"])])
@@ -744,30 +751,12 @@ struct ScreenExclusionTests {
             for child in password.children { #expect(!read.asked.elements.contains(ObjectIdentifier(child))) }
         }
         #expect(read.asked.elements.contains(ObjectIdentifier(name)) && read.asked.elements.contains(ObjectIdentifier(label)))
-        #expect(read.context.renderedText().contains("name1") && read.context.renderedText().contains("Sign in"))
-        #expect(!read.context.renderedText().contains("placeholder") && read.context.selectedText.isEmpty)
-    }
-
-    /// A terminal's own password prompt is a password field: the terminal's reader, which asks for
-    /// the focused field's value, is not run for it.
-    @Test func aTerminalsPasswordPromptIsNotGivenToItsReader() {
-        func paneReads(_ attributes: [String: String]) -> (count: Int, caret: Int, before: String) {
-            let field = FakeElement("AXTextField", Self.caret.merging(attributes) { $1 })
-            let window = FakeElement("AXWindow", children: [field])
-            var count = 0
-            let read = gather(window, focused: field, focusPath: [window], excluding: []) { context in
-                count += 1
-                context.textBeforeCaret = "from the pane"
-                return true
-            }
-            return (count, read.asked.caret, read.context.textBeforeCaret)
-        }
-        #expect(paneReads([kAXSubroleAttribute: kAXSecureTextFieldSubrole as String]) == (0, 0, ""))
-        #expect(paneReads([:]) == (1, 0, "from the pane"))
+        #expect(try read.context.renderedText().contains("name1") && read.context.renderedText().contains("Sign in"))
+        #expect(try !read.context.renderedText().contains("placeholder") && read.context.selectedText.isEmpty)
     }
 
     /// The field read for correction learning: a password field's value is never asked for.
-    @Test func aPasswordFieldsValueIsNotAskedForCorrections() {
+    @Test func aPasswordFieldsValueIsNotAskedForCorrections() throws {
         func value(_ attributes: [String: String]) -> (value: String?, asked: Int) {
             let field = FakeElement("AXTextField", attributes.merging([kAXValueAttribute: "hunter2x"]) { $1 })
             let tree = RecordingTree()
@@ -782,7 +771,7 @@ struct ScreenExclusionTests {
     /// A page that frames an excluded one and has the focus itself, or a focused group that holds
     /// one: the walk goes into a focused element that is no field only after its caret's text was
     /// asked for, so it is looked into before anything is read.
-    @Test func anExcludedPageInsideTheFocusedElementIsNotRead() {
+    @Test func anExcludedPageInsideTheFocusedElementIsNotRead() throws {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
         let outer = FakeElement("AXWebArea", Self.caret.merging(["host": "example.org"]) { $1 }, children: [FakeElement("AXGroup", children: [frame])])
         let window = FakeElement("AXWindow", [kAXTitleAttribute: "Checkout"], children: [outer])
@@ -801,7 +790,7 @@ struct ScreenExclusionTests {
 
     /// Past the walk's budgets the focused element is taken to hold no excluded page, as a walk
     /// stopped by them keeps its read.
-    @Test func theLookInsideTheFocusedElementKeepsToTheBudgets() {
+    @Test func theLookInsideTheFocusedElementKeepsToTheBudgets() throws {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"])
         func holds(_ element: FakeElement, intoPages: Bool = true, since started: Date = Date()) -> Bool {
             ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
@@ -833,7 +822,7 @@ struct ScreenExclusionTests {
 
     /// A page whose address the app failed to give can't be told safe: it is treated as excluded,
     /// wherever it is. A page that has no address is read.
-    @Test func aPageWhoseAddressIsUnknownIsNotRead() {
+    @Test func aPageWhoseAddressIsUnknownIsNotRead() throws {
         func window(_ attributes: [String: String]) -> (window: FakeElement, area: FakeElement, field: FakeElement) {
             let field = FakeElement("AXTextField", Self.caret.merging([kAXValueAttribute: "typed"]) { $1 })
             let area = FakeElement("AXWebArea", attributes, children: [FakeElement("AXStaticText", [kAXValueAttribute: "Page"]), field])
@@ -847,7 +836,7 @@ struct ScreenExclusionTests {
         #expect(!gather(unknown.window, focused: nil, focusPath: [], excluding: ["example.com"]).read)
         #expect(!gather(unknown.window, focused: nil, focusPath: [], excluding: []).read)
         let read = gather(plain.window, focused: plain.field, focusPath: [plain.area, plain.window], excluding: ["example.com"])
-        #expect(read.read && read.context.host == nil && read.context.renderedText().contains("Page"))
+        #expect(try read.read && read.context.host == nil && read.context.renderedText().contains("Page"))
         // Inside a row with no label of its own, and inside the focused element.
         let row = FakeElement("AXWindow", children: [FakeElement("AXRow", children: [FakeElement("AXWebArea", ["hostUnknown": "1"])])])
         #expect(!gather(row, focused: nil, focusPath: [], excluding: []).read)
@@ -869,7 +858,7 @@ struct ScreenExclusionTests {
 
     /// What the app's answer says of a page: only an answer that it has no address is no host; any
     /// other failure (the app too slow, or gone) leaves the page unknown.
-    @Test func aFailedAddressLookupLeavesThePageUnknown() {
+    @Test func aFailedAddressLookupLeavesThePageUnknown() throws {
         let address = URL(string: "https://vault.example.com/login")! as CFURL
         #expect(ScreenContextReader.page(.success, address: address) == .host("vault.example.com"))
         #expect(ScreenContextReader.page(.success, address: nil) == .noHost)
@@ -882,12 +871,28 @@ struct ScreenExclusionTests {
         }
     }
 
+    @Test func sharedAddressClassification() throws {
+        struct Corpus: Decodable {
+            struct Item: Decodable { let address: String?; let kind: String; let host: String }
+            let cases: [Item]
+        }
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../shared/privacy/address-cases.json").standardizedFileURL
+        for item in try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: file)).cases {
+            let page = item.address.map { ScreenContextReader.addressHost(ofAddress: $0 as CFString) } ?? .unknown
+            let expected: PageHost = item.kind == "host" ? .host(item.host) : item.kind == "noHost" ? .noHost : .unknown
+            #expect(page == expected, "\(item.address ?? "unavailable")")
+        }
+        #expect(ScreenContextReader.page(.success, address: 7 as CFNumber) == .unknown)
+        #expect(ScreenContextReader.page(.success, address: "https://" as CFString) == .unknown)
+    }
+
     /// A page's address as the app gives it (a URL or its text) to the host that is matched.
-    @Test func aPagesHostComesFromItsAddress() {
+    @Test func aPagesHostComesFromItsAddress() throws {
         func host(_ address: String) -> String? { ScreenContextReader.host(ofAddress: address as CFString) }
         #expect(host("https://vault.example.com/login?next=a@b#c") == "vault.example.com")
         #expect(host("http://user:secret@example.com:8443/") == "example.com")
-        #expect(host("HTTPS://Example.COM/") == "Example.COM")
+        #expect(host("HTTPS://Example.COM/") == "example.com")
         // The match drops a trailing dot and the case; a name outside ASCII comes in its `xn--` form.
         #expect(ScreenExclusions(hosts: ["example.com"]).excludesHost(host("https://Vault.Example.COM./")))
         #expect(host("https://b\u{FC}cher.example/") == "xn--bcher-kva.example")
@@ -903,7 +908,7 @@ struct ScreenExclusionTests {
 
     /// With the caret in a browser's address field, the page the window shows is beside the field,
     /// not above it: the field is not read when its window shows a page of an excluded website.
-    @Test func aFieldInAWindowShowingAnExcludedWebsiteIsNotRead() {
+    @Test func aFieldInAWindowShowingAnExcludedWebsiteIsNotRead() throws {
         func value(_ page: FakeElement, excluding hosts: [String]) -> (value: String?, asked: Int) {
             let address = FakeElement("AXTextField", [kAXValueAttribute: "vault.example.com/items"])
             let toolbar = FakeElement("AXToolbar", children: [address])
@@ -930,7 +935,7 @@ struct ScreenExclusionTests {
 
     /// The focused field read for correction learning: in a page of an excluded website, or that
     /// page itself, its text is never asked for.
-    @Test func theFocusedFieldOfAnExcludedWebsiteIsNotRead() {
+    @Test func theFocusedFieldOfAnExcludedWebsiteIsNotRead() throws {
         let field = FakeElement("AXTextField", [kAXValueAttribute: "account 1234"])
         let area = FakeElement("AXWebArea", ["host": "vault.example.com", kAXValueAttribute: "page text"], children: [field])
         let window = FakeElement("AXWindow", children: [area])

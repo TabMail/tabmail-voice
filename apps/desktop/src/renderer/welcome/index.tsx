@@ -131,7 +131,7 @@ function ConsentPage({ state }: { state: WelcomeState }) {
         <li>
           <ViewfinderIcon size={config.welcomeLabelIconSize} />
           <span>
-            The text in the window in front, with the app’s name, the window’s title, the website’s address and the program running in a terminal, so names and terms are spelled as they appear there.
+            The text in the window in front, with the app’s name, the window’s title and the website’s address, so names and terms are spelled as they appear there.
             This is screen reading: it’s on unless you switch it off in the Features step or in Settings.
           </span>
         </li>

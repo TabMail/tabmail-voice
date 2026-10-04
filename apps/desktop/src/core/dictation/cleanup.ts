@@ -5,7 +5,7 @@
 import type { CleanupVariables } from "../backend/transcription.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
-import type { ScreenContext } from "./screenContext.js";
+import type { ScreenContext, TerminalViewport } from "./screenContext.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 
 /**
@@ -71,15 +71,50 @@ const lineBreak = /(?<!\r)\n/;
 
 /** The screen within `config.cleanupContextBefore` before the caret and `config.cleanupContextAfter`
  * after it, cut between characters: the paragraph the dictation lands in and what is around it, with
- * one caret marker where the dictation goes (`placeCaret`). Empty only without a screen read. */
+ * one inserted caret marker where the dictation goes. Empty without a screen read or an exact terminal caret. */
 export function textAroundCaret(context: ScreenContext | null): string {
   if (context === null) return "";
-  const { text, caret } = placeCaret(context);
+  const placed = context.terminalViewport === undefined ? placeCaret(context) : placeTerminalCaret(context.terminalViewport);
+  if (placed === null) return "";
+  const { text, caret } = placed;
   const segments = characters.segment(text);
   const start = caret <= config.cleanupContextBefore ? 0 : (segments.containing(caret - config.cleanupContextBefore)?.index ?? 0);
   const afterCaret = caret + caretMarker.length + config.cleanupContextAfter;
   const end = afterCaret >= text.length ? text.length : (segments.containing(afterCaret)?.index ?? text.length);
   return text.slice(start, end);
+}
+
+/** A typed terminal anchor is authoritative. Unavailable means no around-caret
+ * context; the complete safe viewport remains available for Answer and debug. */
+function placeTerminalCaret(viewport: TerminalViewport): { text: string; caret: number } | null {
+  if (viewport.caret.status !== "exact") return null;
+  const rendered = viewport.renderedText;
+  const at = viewport.caret.renderedOffset;
+  const boundary = (offset: number): boolean => Number.isSafeInteger(offset) && offset >= 0 && offset <= rendered.length
+    && !(offset > 0 && offset < rendered.length && /[\uD800-\uDBFF]/.test(rendered[offset - 1] ?? "") && /[\uDC00-\uDFFF]/.test(rendered[offset] ?? ""));
+  if (!boundary(at)) return null;
+  const surfaceID = viewport.caret.surface;
+  const surface = viewport.surfaces.find((item) => item.id === surfaceID);
+  const runID = viewport.caret.run;
+  const run = surface?.runs.find((item) => item.id === runID);
+  if (run === undefined || viewport.caret.offset < 0 || viewport.caret.offset > run.text.length
+      || run.renderedOffset + viewport.caret.offset !== at
+      || !boundary(run.renderedOffset) || !boundary(run.renderedOffset + run.text.length)
+      || rendered.slice(run.renderedOffset, run.renderedOffset + run.text.length) !== run.text) return null;
+  const ranges = viewport.selectionComplete && surface?.selection.complete === true ? surface.selection.ranges : [];
+  let sourceOffset = 0;
+  let caret = at;
+  let text = "";
+  for (const range of ranges) {
+    const start = range.renderedStart;
+    const end = range.renderedEnd;
+    if (range.redacted || !boundary(start) || !boundary(end) || start < sourceOffset || end < start) return null;
+    text += rendered.slice(sourceOffset, start);
+    caret -= Math.max(0, Math.min(at, end) - Math.min(at, start));
+    sourceOffset = end;
+  }
+  text += rendered.slice(sourceOffset);
+  return { text: text.slice(0, caret) + caretMarker + text.slice(caret), caret };
 }
 
 /**

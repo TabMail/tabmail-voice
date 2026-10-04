@@ -5,7 +5,7 @@
 #include "output.h"
 int main() {
     voice::Output output;
-    for (auto action : {voice::Action::start, voice::Action::startHandsFree,
+    for (auto action : {voice::Action::start, voice::Action::startHandsFree, voice::Action::startAgent, voice::Action::startAgentHandsFree,
          voice::Action::listenHandsFree, voice::Action::finish, voice::Action::cancel,
          voice::Action::toggleMode, voice::Action::closeChat, voice::Action::showHistory}) output.action(action);
     output.send({{"done", true}});

@@ -28,13 +28,17 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert value, 'native fixture exited unexpectedly'
         return value
 
-    def request(method, params=None):
+    def request(method, params=None, refused=False):
         global sequence
         sequence += 1
         child.stdin.write(json.dumps({'id': sequence, 'method': method, 'params': params or policy}) + '\n')
         child.stdin.flush()
         reply = json.loads(line(child.stdout))
-        assert reply['id'] == sequence and 'error' not in reply, reply
+        assert reply['id'] == sequence, reply
+        if refused:
+            assert 'error' in reply and 'result' not in reply, reply
+            return None
+        assert 'error' not in reply, reply
         return reply['result']
 
     def command(value):
@@ -63,6 +67,43 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert command('a') == (2, 0)
         assert 'First synthetic app' in request('readScreen')['renderedText']
         assert field() == {'value': 'Synthetic field content'}
+        for mode in ('l', 'v'):
+            command(mode)
+            screen = request('readScreen')
+            assert screen['selectedText'] == 'x' * 20001, 'native acquisition preserves the entire long selection'
+            assert screen['selectionRedacted'] is False
+            assert len(screen['textBeforeCaret']) <= 2000 and len(screen['textAfterCaret']) <= 2000
+        command('t')
+        for mode in ('l', 'v', 'c', 'q', 'U'):
+            command(mode)
+            screen = request('readScreen')
+            expected = '[redacted]' if mode in ('q', 'U') else ('😀é' * 7000 if mode == 'c' else 'x' * 20001)
+            assert screen['selectedText'] == expected, 'terminal selection uses common complete-or-refuse policy'
+            assert screen['selectionRedacted'] is (mode in ('q', 'U'))
+            assert screen['textBeforeCaret'] == '' and screen['textAfterCaret'] == '', 'terminal selection never publishes adjacent source'
+        command('l')
+        command('m')
+        screen = request('readScreen')
+        assert screen['selectionRedacted'] is True and screen['selectedText'] == '[redacted]', 'changed terminal selection is unavailable'
+        command('z')
+        command('c')
+        screen = request('readScreen')
+        assert screen['selectedText'] == '😀é' * 7000, 'native chunk boundaries preserve non-BMP and combining text'
+        assert screen['selectionRedacted'] is False
+        command('m')
+        screen = request('readScreen')
+        assert screen['selectionRedacted'] is True and screen['selectedText'] == '[redacted]', 'changed selection uses the shared refusal marker and disables Edit'
+        for mode in ('q', 'U'):
+            command(mode)
+            screen = request('readScreen')
+            assert screen['selectionRedacted'] is True and screen['selectedText'] == '[redacted]', 'scalar or UTF-8 oversized selection uses the shared refusal marker, never a prefix'
+        command('z')
+        command('f')
+        assert request('readScreen') is None, 'foreground change during text read refuses stale screen'
+        command('g')
+        command('f')
+        assert field() is None, 'foreground change during field read refuses stale correction text'
+        command('g')
         # A different app gets its own activation request, without an identity allowlist.
         assert command('b') == (2, 1)
         assert 'Second synthetic app' in request('readScreen')['renderedText']

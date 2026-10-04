@@ -10,6 +10,7 @@ import type { ScreenRead } from "../../../core/dictation/screenContext.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { NativeMicrophone } from "../microphone.js";
+import { keyboardLanguageCode } from "../keyboardLanguage.js";
 
 /** Native Windows device and foreground-window operations, through voice-windows.exe. */
 export class WindowsSystem {
@@ -29,10 +30,7 @@ export class WindowsSystem {
 
   async keyboardLanguage(): Promise<string | null> {
     const reply = await this.helper.request<{ code?: unknown } | null>("keyboardLanguage");
-    // Match the Mac input-source contract and the backend's ISO-639-1 input.
-    // Windows LCIDToLocaleName supplies a region/script tag such as en-US.
-    const primary = typeof reply?.code === "string" ? reply.code.split(/[-_]/u)[0]?.toLowerCase() : null;
-    return primary && /^[a-z]{2}$/u.test(primary) ? primary : null;
+    return keyboardLanguageCode(reply?.code);
   }
 
   async fullUserName(): Promise<string> {

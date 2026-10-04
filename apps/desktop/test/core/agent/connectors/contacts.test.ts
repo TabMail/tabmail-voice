@@ -166,3 +166,14 @@ describe("connectors", () => {
     expect(tools.map((tool) => tool.confirmation(valid) !== null)).toEqual([false, true]);
   });
 });
+
+test("contact writes disclose the provider destination, not a model-supplied destination", async () => {
+  const provider = Object.assign(store, { writeDestination: "TabMail Voice contacts (local to this PC)" });
+  const tool = new ContactsAddTool(provider);
+  const args = { first_name: "Synthetic", destination: "Cloud account" };
+  provider.writeDestination = "Changed after tool construction";
+  expect(tool.confirmation(args)).toContain("Destination: TabMail Voice contacts (local to this PC)");
+  expect(tool.confirmation(args)).not.toContain("Cloud account");
+  expect(await tool.run(args)).toContain("to TabMail Voice contacts (local to this PC).");
+  expect(store.added).toEqual([card({ firstName: "Synthetic" })]);
+});

@@ -93,7 +93,7 @@ public final class HotkeyMonitor {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             action = nil
         case .flagsChanged:
-            action = gesture.modifierChanged(keyCode: keyCode, isDown: isHotkeyFlagSet(flags), at: time)
+            action = gesture.modifierChanged(keyCode: keyCode, isDown: isHotkeyFlagSet(flags), at: time, agent: flags.contains(.maskShift))
         case .keyDown:
             if gesture.owns(keyCode: keyCode) {
                 swallowedKeyUps.insert(keyCode)

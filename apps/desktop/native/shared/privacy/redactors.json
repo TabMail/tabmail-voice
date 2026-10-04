@@ -2,10 +2,10 @@
   "comment": [
     "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046).",
     "Each redactor is applied to the whole text, in this order, replacing every match with `replacement`, in which {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
-    "Patterns keep to what ICU, ECMAScript and PCRE all read the same way: character classes written out, groups, alternation, counted repeats, \\s and lookahead (\\s differs between engines on rare characters, U+0085 and U+FEFF, and ICU folds a few more letters into ASCII ones when ignoring case: the long s, the Kelvin sign, the sharp s). No \\b, \\w or \\d (ICU counts every script's letters and digits, ECMAScript only ASCII's: a key beside a Japanese word would be kept by one and not the other), no lookbehind, no named groups, no Unicode classes, no inline flags. Where a key must not start inside a word, the pattern takes the character before it as group 1 and the replacement puts it back.",
-    "`ignoreCase` is the only flag. Every platform's helper is generated from this file (`npm run gen:redactors`) and must pass redaction-cases.json.",
+    "Patterns use the pinned Rust fancy-regex engine on every platform. Native adapters never interpret them. Keep patterns linear on hostile text; the Rust conformance and timing tests are authoritative.",
+    "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
-    "No open-ended count ({16,}) and no \\s* or \\s+ outside a class: ICU runs those with a stack frame per repetition, and on a run of some 200,000 characters gives up and matches nothing more. Write [..]{16}[..]* and [\\s]*, which it runs as one loop. The generator refuses the other forms.",
+    "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
     "private-key-block is last: its cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
   ],
   "placeholder": "[redacted]",
@@ -34,7 +34,7 @@
     {
       "name": "named-value",
       "description": "A value given to a name that says it is secret (password=, api_key:, \"token\": \"…\"). The name stays. Only a value with a digit and at least 6 characters, so that \"Password: required\" stays.",
-      "pattern": "((?:password|passwd|pwd|passphrase|secret[_-]?key|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credentials?)[\"']?[\\s]*[=:][\\s]*[\"']?)(?=[^\\s\"']{0,200}[0-9])[^\\s\"']{6}[^\\s\"']*",
+      "pattern": "((?:pa(?:ss|ß)word|pa(?:ss|ß)wd|pwd|pa(?:ss|ß)phrase|secret[_-]?key|secret|token|api[_-]?key|acce(?:ss|ß)[_-]?key|private[_-]?key|credentials?)[\"']?[\\s]*[=:][\\s]*[\"']?)(?=[^\\s\"']{0,200}[0-9])[^\\s\"']{6}[^\\s\"']*",
       "ignoreCase": true,
       "replacement": "$1{placeholder}"
     },

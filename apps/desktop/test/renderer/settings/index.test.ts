@@ -693,19 +693,20 @@ describe("Settings page", () => {
     expect(visibleText()).not.toContain("Debug mode");
   });
 
-  /** Under the hotkey: the Globe key's note while fn is the hotkey, then the recording's. */
+  /** Under the hotkey: the Globe note when applicable, direct agent mode, and recording privacy. */
   test("the hotkey's notes", async () => {
     const globe = "While fn is the hotkey";
+    const directAgent = "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.";
     const recording = "Your recording is sent to TabMail for transcription and isn’t stored.";
     const notes = () => [...document.querySelectorAll("main > div:not([hidden]) .card-section")].find((card) => card.textContent?.includes("Hold to dictate"))?.querySelectorAll(".group-caption");
 
     await settingsPage({ error: null }, signedIn, { ...signedIn, hotkey: "function" });
     await act(async () => button("Dictation").click());
-    expect([...(notes() ?? [])].map((note) => note.textContent?.slice(0, globe.length))).toEqual([globe, recording.slice(0, globe.length)]);
+    expect([...(notes() ?? [])].map((note) => note.textContent?.slice(0, globe.length))).toEqual([globe, directAgent.slice(0, globe.length), recording.slice(0, globe.length)]);
 
     await settingsPage({ error: null }, signedIn);
     await act(async () => button("Dictation").click());
-    expect([...(notes() ?? [])].map((note) => note.textContent)).toEqual([recording]);
+    expect([...(notes() ?? [])].map((note) => note.textContent)).toEqual([directAgent, recording]);
   });
 
   /** A sign-in half done, or a sign-out warning, is still there after a look at another section. */
@@ -790,6 +791,8 @@ describe("Settings page", () => {
   test("the notes are the Swift app's", async () => {
     const notes = () => [...document.querySelectorAll("main .caption")].map((note) => note.textContent);
     const always = [
+      // Owner-requested direct agent shortcut extends the original Swift UI.
+      "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.",
       "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
       "Your recording is sent to TabMail for transcription and isn’t stored.",
       "Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.",

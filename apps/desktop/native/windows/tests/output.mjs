@@ -19,7 +19,7 @@ try {
     if (message.done) { child.stdin.end(); break; }
     messages.push(message);
   }
-  assert.deepEqual(messages, ["start", "startHandsFree", "listenHandsFree", "finish", "cancel", "toggleMode", "closeChat", "showHistory"].map((action) => ({ event: "action", action })));
+  assert.deepEqual(messages, ["start", "startHandsFree", "startAgent", "startAgentHandsFree", "listenHandsFree", "finish", "cancel", "toggleMode", "closeChat", "showHistory"].map((action) => ({ event: "action", action })));
   assert.deepEqual(await exit, [0, null]);
   assert.equal(stderr, "");
   process.stdout.write("all emitted hotkey actions retain their wire meaning\n");

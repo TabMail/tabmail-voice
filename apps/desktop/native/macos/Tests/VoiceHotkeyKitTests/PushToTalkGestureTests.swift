@@ -25,6 +25,17 @@ struct PushToTalkGestureTests {
         (gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: clock.tick()), gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: clock.tick()))
     }
 
+    @Test func agentDoubleTapKeepsHandsFreeAndHistorySemantics() {
+        var gesture = makeGesture()
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 1) == .start)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 1.05) == .finish)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 1.1, agent: true) == .startAgentHandsFree)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 1.11, agent: true) == nil)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 1.15) == .listenHandsFree)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: 1.2, agent: true) == .showHistory)
+        #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: false, at: 1.25) == nil)
+    }
+
     @Test func pressThenReleaseStartsThenFinishes() {
         var gesture = makeGesture()
         #expect(gesture.modifierChanged(keyCode: hotkeyCode, isDown: true, at: clock.tick()) == .start)

@@ -1931,6 +1931,10 @@ the first engine of a fresh process always worked. So a process runs one engine.
 - Not closed: what the audio system itself takes to start a Bluetooth headset's microphone; and a
   prepare that now and then takes seconds with no device change seen (issue #101).
 
+### Amendment 2026-10-03: one native gesture algorithm
+
+The Rust static library now owns the push-to-talk, double/triple-tap, agent-intent, cancellation and semantic key-ownership transitions. Swift and C++ use an allocation-free C value-state interface, preserving value-copy/reset behavior and caller-supplied monotonic time. Native adapters keep key codes, Globe/AltGr filtering, event taps/hooks/portal lifecycle and swallowed key-up ledgers; reconfiguration still follows each monitor's existing contract. Shared traces were run against both prior implementations before their duplicate transition bodies were removed. This avoids a second state-machine implementation without adding per-key JSON, threads, callbacks or a daemon.
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
@@ -2789,6 +2793,8 @@ Apps are known by bundle identifier, compared without regard to case.
 
 ## ADR-DESK-046: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
 
+**2026-10-03 amendment — shared Rust implementation:** The canonical JSON and screen-read privacy boundary remain. Every native helper now links the same Rust static library for matching and UTF-16 redistribution. Native ICU matching, generated Swift/C++ definition files and the ECMAScript conformance implementation are superseded; Rust tests own definition validation, corpus/mutations and hostile-text timing. Platform suites exercise that library through its C ABI. Keep provider access and pre-read password/exclusion checks native.
+
 **Context:** The screen read skips password fields (ADR-DESK-007, amended 2026-09-30) and excluded
 apps (ADR-DESK-045), but a secret shown as plain text is read like any other text and sent with the
 dictation: an API key printed in a terminal, a token on a dashboard, a private key open in an
@@ -2983,6 +2989,17 @@ texts and buttons, about twice as many questions to the app).)*
 without hiding the window, which is what the Mac helper does. The Windows helper answers "hidden"
 for it, before checking that the page is inside the window and shown; neither helper reads that
 page, so the Mac's answer loses nothing and reads more. The Windows helper is to follow: #97.)*
+
+**ADR-DESK-047 amendment — shared address classification (2026-10-03):**
+Provider address acquisition and unavailable/absent evidence stay native. The Rust
+core classifies supplied addresses with the pinned WHATWG `url` parser; malformed
+or recovered ambiguous addresses are unknown, never absent. Empty addresses remain
+absent. HTTP(S) uses canonical hostnames; non-web addresses match their scheme,
+preserving extension/file/vault exclusions. Exclusion matching keeps the original
+Unicode-folded comparison and recognizes IDNA/numeric aliases, so canonicalization
+cannot discard a stored exclusion. IDNA conversion precedes full case folding.
+The shared address/host fixtures pin this policy across all native adapters and the
+app; platform parser differences are recorded in the consolidation plan.
 
 ## ADR-DESK-048: Every color in one palette file; one time for every color change
 

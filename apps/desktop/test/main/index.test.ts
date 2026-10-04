@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { ConnectorTool } from "../../src/core/agent/connectors/contract.js";
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
 import { mailtoURL } from "../../src/core/agent/connectors/email.js";
 import type { AudioCapture } from "../../src/core/audio/recorder.js";
@@ -54,7 +55,7 @@ const app = vi.hoisted(() => ({
   opened: [] as string[],
   openFailure: null as Error | null,
   emailHandler: "",
-  connectorTools: [] as { name: string; connector: string; run(args: Record<string, unknown>, signal: AbortSignal): Promise<string> }[],
+  connectorTools: [] as ConnectorTool[],
   scripts: [] as { source: string; args: readonly string[] }[],
   /** `app.getPath("appData")`, where VS Code keeps its settings; null for none. */
   appData: null as string | null,
@@ -1249,9 +1250,15 @@ describe("main process wiring", () => {
   test.each(["win32", "linux"] as const)("shared Answer tools and switches work on %s", async (platform) => {
     await launch(platform);
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["files_search", "file_open", "email_compose", "web_read", "web_open"]);
-    expect(state("settings").connectors).toEqual(["files", "email", "web"]);
-    expect(state("welcome").connectors).toEqual(["files", "email", "web"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open"]);
+    if (platform === "win32") {
+      const create = app.connectorTools.find((tool) => tool.name === "calendar_event_create");
+      const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" });
+      expect(confirmation).toContain("Destination: TabMail Voice calendar (local to this PC)");
+    }
+    const expectedConnectors = ["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web"];
+    expect(state("settings").connectors).toEqual(expectedConnectors);
+    expect(state("welcome").connectors).toEqual(expectedConnectors);
     const web = app.connectorTools.find((tool) => tool.name === "web_open");
     expect(web).toBeDefined();
     expect(await web?.run({ url: "https://example.com/page" }, signal)).toContain("Opened");

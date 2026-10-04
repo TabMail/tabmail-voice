@@ -1,0 +1,282 @@
+{
+  "description": "Shared native exclusion validation and full Unicode case-fold contract. Provider address acquisition remains native; URI classification is shared. Policy refusal must prevent provider reads.",
+  "cases": [
+    {
+      "name": "validation before provider read",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": []
+      },
+      "output": {}
+    },
+    {
+      "name": "app case and whole identity",
+      "input": {
+        "excludedAppIDs": [
+          "Com.Example.App"
+        ],
+        "excludedHosts": [],
+        "app": "com.example.app"
+      },
+      "output": {
+        "app": true
+      }
+    },
+    {
+      "name": "app identity is not a prefix",
+      "input": {
+        "excludedAppIDs": [
+          "Com.Example.App"
+        ],
+        "excludedHosts": [],
+        "app": "com.example.app.helper"
+      },
+      "output": {
+        "app": false
+      }
+    },
+    {
+      "name": "full fold sharp s",
+      "input": {
+        "excludedAppIDs": [
+          "Straße"
+        ],
+        "excludedHosts": [
+          "Straße.example"
+        ],
+        "app": "STRASSE",
+        "host": "sub.STRASSE.example."
+      },
+      "output": {
+        "app": true,
+        "host": true
+      }
+    },
+    {
+      "name": "full fold final sigma",
+      "input": {
+        "excludedAppIDs": [
+          "Σ"
+        ],
+        "excludedHosts": [
+          "Σ.example"
+        ],
+        "app": "ς",
+        "host": "sub.ς.example."
+      },
+      "output": {
+        "app": true,
+        "host": true
+      }
+    },
+    {
+      "name": "full fold ligature",
+      "input": {
+        "excludedAppIDs": [
+          "ﬃ"
+        ],
+        "excludedHosts": [
+          "ﬃ.example"
+        ],
+        "app": "FFI",
+        "host": "sub.FFI.example."
+      },
+      "output": {
+        "app": true,
+        "host": true
+      }
+    },
+    {
+      "name": "full fold dotted capital I",
+      "input": {
+        "excludedAppIDs": [
+          "İ"
+        ],
+        "excludedHosts": [
+          "İ.example"
+        ],
+        "app": "i̇",
+        "host": "sub.i̇.example."
+      },
+      "output": {
+        "app": true,
+        "host": true
+      }
+    },
+    {
+      "name": "full fold Kelvin sign",
+      "input": {
+        "excludedAppIDs": [
+          "K"
+        ],
+        "excludedHosts": [
+          "K.example"
+        ],
+        "app": "k",
+        "host": "sub.k.example."
+      },
+      "output": {
+        "app": true,
+        "host": true
+      }
+    },
+    {
+      "name": "dotless I remains distinct",
+      "input": {
+        "excludedAppIDs": [
+          "I"
+        ],
+        "excludedHosts": [],
+        "app": "ı"
+      },
+      "output": {
+        "app": false
+      }
+    },
+    {
+      "name": "canonical equivalence preserves Mac exclusions",
+      "input": {
+        "excludedAppIDs": [
+          "é"
+        ],
+        "excludedHosts": [],
+        "app": "é"
+      },
+      "output": {
+        "app": true
+      }
+    },
+    {
+      "name": "missing identity cannot match",
+      "input": {
+        "excludedAppIDs": [
+          ""
+        ],
+        "excludedHosts": [],
+        "app": null,
+        "host": null
+      },
+      "output": {
+        "app": false,
+        "host": false
+      }
+    },
+    {
+      "name": "unknown page refused",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [],
+        "page": "unknown"
+      },
+      "output": {
+        "page": true
+      }
+    },
+    {
+      "name": "page explicitly lacks host",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [],
+        "page": "noHost"
+      },
+      "output": {
+        "page": false
+      }
+    },
+    {
+      "name": "page host is excluded",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [
+          "example.test"
+        ],
+        "page": "host",
+        "host": "a.example.test"
+      },
+      "output": {
+        "page": true,
+        "host": true
+      }
+    },
+    {
+      "name": "only one trailing dot stripped",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [
+          "example.test"
+        ],
+        "host": "example.test.."
+      },
+      "output": {
+        "host": false
+      }
+    },
+    {
+      "name": "missing arrays",
+      "input": {},
+      "refused": true
+    },
+    {
+      "name": "missing host list",
+      "input": {
+        "excludedAppIDs": []
+      },
+      "refused": true
+    },
+    {
+      "name": "wrong app type",
+      "input": {
+        "excludedAppIDs": [
+          1
+        ],
+        "excludedHosts": []
+      },
+      "refused": true
+    },
+    {
+      "name": "wrong hosts type",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": null
+      },
+      "refused": true
+    },
+    {
+      "name": "nul policy",
+      "input": {
+        "excludedAppIDs": [
+          "a\u0000b"
+        ],
+        "excludedHosts": []
+      },
+      "refused": true
+    },
+    {
+      "name": "nul candidate",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [],
+        "app": "a\u0000b"
+      },
+      "refused": true
+    },
+    {
+      "name": "unknown page enum",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [],
+        "page": "other"
+      },
+      "refused": true
+    },
+    {
+      "name": "missing page host",
+      "input": {
+        "excludedAppIDs": [],
+        "excludedHosts": [],
+        "page": "host"
+      },
+      "refused": true
+    }
+  ]
+}

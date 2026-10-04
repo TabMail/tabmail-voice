@@ -27,8 +27,8 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   `registry.ts` there is AUTO-GENERATED (`npm run gen:registries`, run before build, typecheck and
   test): never edit it by hand (ADR-DESK-044).
 - **What looks like a secret is defined once, in `apps/desktop/native/shared/privacy/redactors.json`**
-  (ADR-DESK-046). Every helper's list is AUTO-GENERATED from it (`npm run gen:redactors`): never edit
-  a `Redactors.generated.*` file or copy a pattern into a helper by hand, and add a case to
+  (ADR-DESK-046, shared-core amendment). Every helper links the Rust implementation in
+  `native/shared/rust`; definitions are compiled directly there. Do not restore native regex matching. Do not copy a pattern into a helper by hand; add a case to
   `redaction-cases.json` with every pattern. What must not be read (password fields, excluded apps
   and websites, secret-looking text) is refused or removed in the helper, never in the Electron app;
   a rule the app and the helpers both apply (which hosts a site covers) has its cases in

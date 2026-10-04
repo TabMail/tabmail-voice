@@ -12,6 +12,7 @@ import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
 import type { ScreenRead } from "../../../core/dictation/screenContext.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
+import { keyboardLanguageCode } from "../keyboardLanguage.js";
 
 /** What `voice-macos` does for the app (`MacService` in the helper), typed. */
 export class MacSystem {
@@ -31,8 +32,8 @@ export class MacSystem {
   }
 
   async keyboardLanguage(): Promise<string | null> {
-    const { code } = await this.helper.request<{ code: string | null }>("keyboardLanguage");
-    return code;
+    const reply = await this.helper.request<{ code?: unknown } | null>("keyboardLanguage");
+    return keyboardLanguageCode(reply?.code);
   }
 
   /** The user account's full name, empty when it has none. */

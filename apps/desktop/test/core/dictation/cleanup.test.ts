@@ -257,3 +257,55 @@ describe("DictationCleanup.pasted", () => {
     expect(DictationCleanup.pasted(transcript, null)).toBe(transcript);
   });
 });
+
+describe("terminal viewport caret", () => {
+  const viewport = (status: "exact" | "outsideViewport" | "unavailable" | "withheld" = "exact"): NonNullable<ScreenContext["terminalViewport"]> => ({
+    renderedText: "» literal ‸\n> same\n> same",
+    complete: true,
+    caret: status === "exact" ? { status, surface: 1, run: 1, offset: 15, renderedOffset: 15 } : { status },
+    selectedText: "",
+    selectionComplete: true,
+    surfaces: [{ id: 1, frame: [0, 0, 300, 200], runs: [{ id: 1, text: "» literal ‸\n> same\n> same", connected: false, complete: true, renderedOffset: 0 }], selection: { complete: true, ranges: [] } }],
+  });
+  test("uses the typed offset despite literal markers and duplicate lines", () => {
+    const terminalViewport = viewport();
+    expect(textAroundCaret(screen({ renderedText: "» unrelated ‸", terminalViewport }))).toBe("» literal ‸\n> s‸ame\n> same");
+  });
+  test.each(["outsideViewport", "unavailable", "withheld"] as const)("does not guess an %s caret", (status) => {
+    expect(textAroundCaret(screen({ renderedText: "» guess ‸", textBeforeCaret: "guess", terminalViewport: viewport(status) }))).toBe("");
+  });
+  test("keeps selection independent from the native caret", () => {
+    const terminalViewport = viewport();
+    terminalViewport.surfaces[0]!.selection.ranges = [{ run: 1, start: 2, end: 9, renderedStart: 2, renderedEnd: 9, redacted: false }];
+    expect(textAroundCaret(screen({ terminalViewport }))).toBe("»  ‸\n> s‸ame\n> same");
+  });
+  test.each([
+    ["before", "界😀 ", "界😀 ‸left  right"],
+    ["inside", "界😀 left sel", "界😀 left ‸ right"],
+    ["after", "界😀 left selected right", "界😀 left  right‸"],
+  ])("keeps a Unicode caret %s an independent selection across connected runs", (_where, prefix, expected) => {
+    const terminalViewport = viewport();
+    const left = "界😀 left ";
+    const right = "selected right";
+    terminalViewport.renderedText = left + right;
+    const renderedOffset = prefix!.length;
+    const inRight = renderedOffset >= left.length;
+    terminalViewport.caret = { status: "exact", surface: 1, run: inRight ? 2 : 1,
+      offset: inRight ? renderedOffset - left.length : renderedOffset, renderedOffset };
+    terminalViewport.selectedText = "selected";
+    terminalViewport.surfaces[0]!.runs = [
+      { id: 1, text: left, connected: false, complete: true, renderedOffset: 0 },
+      { id: 2, text: right, connected: true, complete: true, renderedOffset: left.length },
+    ];
+    terminalViewport.surfaces[0]!.selection.ranges = [{ run: 2, start: 0, end: 8,
+      renderedStart: left.length, renderedEnd: left.length + 8, redacted: false }];
+    expect(textAroundCaret(screen({ terminalViewport }))).toBe(expected);
+  });
+  test("refuses malformed or split-surrogate native coordinates", () => {
+    const terminalViewport = viewport();
+    terminalViewport.renderedText = "😀x";
+    terminalViewport.surfaces[0]!.runs[0]!.text = "😀x";
+    terminalViewport.caret = { status: "exact", surface: 1, run: 1, offset: 1, renderedOffset: 1 };
+    expect(textAroundCaret(screen({ terminalViewport }))).toBe("");
+  });
+});

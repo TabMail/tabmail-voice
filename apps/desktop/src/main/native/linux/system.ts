@@ -9,6 +9,7 @@ import type { ScreenRead } from "../../../core/dictation/screenContext.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { NativeMicrophone } from "../microphone.js";
+import { keyboardLanguageCode } from "../keyboardLanguage.js";
 
 /** Native Ubuntu device and focused-field operations, through voice-linux. */
 export class LinuxSystem {
@@ -31,13 +32,7 @@ export class LinuxSystem {
 
   async keyboardLanguage(): Promise<string | null> {
     const reply = await this.helper.request<{ code?: unknown } | null>("keyboardLanguage");
-    // Match the Mac input-source contract and the backend's ISO-639-1 input.
-    // Linux input sources may include a region/script tag such as en-US.
-    if (typeof reply?.code !== "string") return null;
-    try {
-      const primary = new Intl.Locale(reply.code.replaceAll("_", "-")).language;
-      return /^[a-z]{2}$/u.test(primary) ? primary : null;
-    } catch { return null; }
+    return keyboardLanguageCode(reply?.code);
   }
 
   async fullUserName(): Promise<string> {

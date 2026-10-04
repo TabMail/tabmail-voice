@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import Foundation
+import VoiceHelperSupport
 
 /// What was on screen when a dictation started: the app, where in it, the text around the caret
 /// and the visible text in reading order, laid out in lines as on screen. User content: never stored, and logged only to the debug
@@ -17,24 +18,41 @@ struct ScreenContext: Sendable, Equatable {
         var text: String
         /// Where it is on screen (Accessibility coordinates, y down), when the app reports it.
         var frame: CGRect? = nil
+        /// Private contiguous recognition source; removed by shared finalization.
+        var source: [String]? = nil
+        var runs: [SharedSemanticText.Run]? = nil
 
         /// Text that flows within a line; headings, rows, fields and the caret block start their own.
         var isInline: Bool { kind == .text || kind == .link }
     }
 
+    /// Already redacted and projected by shared Rust; never holds native source.
+    var terminalViewport: JSON?
     var appName: String
     var bundleID: String?
     var windowTitle: String?
     /// Host of the web page (browsers and web-based apps).
     var host: String?
-    /// Foreground program of the terminal's active tmux pane.
+    /// Legacy optional wire field; native viewport acquisition leaves it unavailable.
     var terminalProgram: String?
     var focusedRole: String?
     var textBeforeCaret = ""
     var selectedText = ""
+    /// Acquisition could not prove that the entire selection was retained. Disables Edit.
+    var selectionUnavailable = false
     var textAfterCaret = ""
     var blocks: [Block] = []
     var nodesVisited = 0
+    var coreFailed = false
+    var sourceBytes: Int?
+    var textBudgetFull = false
+    mutating func prepareTextBudget() {
+        guard sourceBytes == nil, !coreFailed else { return }
+        do {
+            let result = try SharedContext.reserveCaret([textBeforeCaret, selectedText, textAfterCaret])
+            sourceBytes = result.used; textBudgetFull = result.budgetFull
+        } catch { coreFailed = true; stoppedEarly = "shared core refused" }
+    }
     /// Why the walk stopped before covering the window, if it did.
     var stoppedEarly: String?
     var seconds: Double = 0
@@ -45,6 +63,8 @@ struct ScreenContext: Sendable, Equatable {
     /// Places the focused field at its spot in the reading order: the text around the caret with
     /// the caret marked (a selection is bracketed by markers).
     mutating func appendCaret(frame: CGRect? = nil) {
+        prepareTextBudget()
+        guard !coreFailed else { return }
         let caret = selectedText.isEmpty ? Self.caretMarker : Self.caretMarker + selectedText + Self.caretMarker
         blocks.append(Block(kind: .caret, text: textBeforeCaret + caret + textAfterCaret, frame: frame))
     }
@@ -52,42 +72,49 @@ struct ScreenContext: Sendable, Equatable {
     /// Adds visible text, skipping blanks and the repeats accessibility trees are full of (a link
     /// titled "Inbox" whose child text is also "Inbox").
     mutating func append(_ kind: Block.Kind, _ text: String, frame: CGRect? = nil) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != blocks.last?.text else { return }
-        blocks.append(Block(kind: kind, text: trimmed, frame: frame))
+        prepareTextBudget()
+        guard !coreFailed, let used = sourceBytes else { return }
+        do {
+            let result = try SharedContext.admit(text, previous: blocks.last?.kind == .caret ? nil : blocks.last?.text, used: used)
+            sourceBytes = result.used; textBudgetFull = result.budgetFull
+            if textBudgetFull { stoppedEarly = "text budget" }
+            if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame)) }
+        } catch { coreFailed = true; stoppedEarly = "shared core refused" }
+    }
+
+    mutating func appendSemantic(_ kind: Block.Kind, _ source: SharedSemanticText.Projection, frame: CGRect? = nil) {
+        prepareTextBudget()
+        guard !coreFailed, let used = sourceBytes else { return }
+        do {
+            let result = try SharedContext.admitSemantic(source, kind: kind, used: used, previous: blocks.last)
+            sourceBytes = result.used; textBudgetFull = result.budgetFull
+            if textBudgetFull { stoppedEarly = "text budget" }
+            if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame, runs: result.runs)) }
+        } catch { coreFailed = true; stoppedEarly = "shared core refused" }
+    }
+
+    mutating func appendField(_ parts: [String], frame: CGRect? = nil) {
+        prepareTextBudget()
+        guard !coreFailed, let used = sourceBytes else { return }
+        do {
+            let result = try SharedContext.admitField(parts, used: used)
+            sourceBytes = result.used; textBudgetFull = result.budgetFull
+            if textBudgetFull { stoppedEarly = "text budget" }
+            if !result.parts[1].isEmpty {
+                blocks.append(Block(kind: .field, text: result.parts[1], frame: frame, source: result.parts))
+            }
+        } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
 
     /// The visible text laid out as on screen: text and links side by side on one line are joined
     /// (a chat message's author and time), everything else starts a line, and a jump back up the
     /// window (the next pane or column) leaves a blank line. Headings are marked, links bracketed,
     /// row cells joined.
-    func renderedText() -> String {
-        var text = ""
-        for (index, block) in blocks.enumerated() {
-            if index > 0 { text += Self.separator(between: blocks[index - 1], and: block) }
-            switch block.kind {
-            case .heading: text += "## \(block.text)"
-            case .link: text += "[\(block.text)]"
-            case .row: text += "| \(block.text)"
-            case .field: text += block.text.split(separator: "\n", omittingEmptySubsequences: false).map { "> \($0)" }.joined(separator: "\n")
-            case .caret: text += block.text.split(separator: "\n", omittingEmptySubsequences: false).map { "» \($0)" }.joined(separator: "\n")
-            case .text: text += block.text
-            }
-        }
-        return text
-    }
-
-    /// A space when both flow inline and the second sits on the first's line, to its right (the
-    /// first may wrap onto several lines: then its last one); a blank line when the second is
-    /// wholly above the first; otherwise a line break. Without frames with a size, a line break.
-    static func separator(between first: Block, and second: Block) -> String {
-        guard let a = first.frame, let b = second.frame, !a.isEmpty, !b.isEmpty else { return "\n" }
-        let overlap = min(a.maxY, b.maxY) - max(a.minY, b.minY)
-        if first.isInline, second.isInline, b.minX >= a.minX,
-           overlap >= min(a.height, b.height) * HelperConfig.contextSameLineOverlap {
-            return " "
-        }
-        return b.maxY <= a.minY ? "\n\n" : "\n"
+    func renderedText() throws -> String {
+        guard !coreFailed else { throw Redactor.Failure.refused }
+        if let terminalViewport, let rendered = terminalViewport["renderedText"]?.string { return rendered }
+        let caret = blocks.contains(where: { $0.source != nil || $0.runs != nil }) ? [textBeforeCaret, selectedText, textAfterCaret] : nil
+        return try SharedContext.process(blocks: blocks, caret: caret).rendered
     }
 
     /// Whether an element can show its text. Web apps keep hidden text in the tree in boxes at most
@@ -114,13 +141,15 @@ struct ScreenContext: Sendable, Equatable {
     /// Everything read, for the debug log file (`Log.content`): the fields, the text around the caret
     /// and the visible text as the prompts receive it.
     var logDescription: String {
+        get throws {
         "app \(appName) (\(bundleID ?? "-")), window title \(windowTitle ?? "-"), host \(host ?? "-"), "
             + "terminal program \(terminalProgram ?? "-"), focused \(focusedRole ?? "-")"
             + (stoppedEarly.map { ", stopped: \($0)" } ?? "") + "\n"
             + "--- text before the caret ---\n\(textBeforeCaret)\n"
             + "--- selected text ---\n\(selectedText)\n"
             + "--- text after the caret ---\n\(textAfterCaret)\n"
-            + "--- visible text ---\n\(renderedText())"
+            + "--- visible text ---\n\(try renderedText())"
+    }
     }
 
     /// Up to `maxChars` on each side of the selection. Accessibility ranges count UTF-16 units;
@@ -153,61 +182,4 @@ struct ScreenContext: Sendable, Equatable {
         return low < lineCount ? low : nil
     }
 
-    /// The active pane of a tmux client: where the user is typing and where its cursor is.
-    struct TmuxPane: Equatable {
-        var id: String
-        var tty: String
-        var cursorX: Int
-        var cursorY: Int
-
-        /// The `tmux list-clients -F` format `activePane(fromTmuxClients:)` parses.
-        static let clientFormat = "#{client_activity} #{pane_id} #{pane_tty} #{cursor_x} #{cursor_y}"
-    }
-
-    /// The pane of the most recently active tmux client (the terminal the user is typing in).
-    static func activePane(fromTmuxClients output: String) -> TmuxPane? {
-        output.split(separator: "\n")
-            .compactMap { line -> (Int, TmuxPane)? in
-                let parts = line.split(separator: " ")
-                guard parts.count == 5, let activity = Int(parts[0]), let x = Int(parts[3]), let y = Int(parts[4]) else { return nil }
-                return (activity, TmuxPane(id: String(parts[1]), tty: String(parts[2]), cursorX: x, cursorY: y))
-            }
-            .max { $0.0 < $1.0 }?.1
-    }
-
-    /// Splits a pane's visible text (`tmux capture-pane -p`) at the cursor cell. Columns count
-    /// characters, so a wide (CJK, emoji) character before the cursor on its line shifts it by one.
-    static func splitAtCursor(_ screen: String, line: Int, column: Int) -> (before: String, after: String) {
-        var lines = screen.components(separatedBy: "\n")
-        while lines.count > line + 1, lines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeLast() }
-        guard line < lines.count else { return (lines.joined(separator: "\n"), "") }
-        let current = lines[line].padding(toLength: max(lines[line].count, column), withPad: " ", startingAt: 0)
-        let cut = current.index(current.startIndex, offsetBy: column)
-        let before = (lines[..<line] + [String(current[..<cut])]).joined(separator: "\n")
-        let after = ([String(current[cut...])] + lines[(line + 1)...]).joined(separator: "\n")
-        return (before, after)
-    }
-
-    /// Whether the tmux pane is what the terminal in front shows: most of the pane's non-blank
-    /// lines appear in the terminal's text (side by side with other panes, so as substrings).
-    /// A tmux attached in another tab or window fails this.
-    static func paneIsOnScreen(pane: String, screen: String, sampleLines: Int, requiredShare: Double) -> Bool {
-        let lines = pane.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .suffix(sampleLines)
-        guard !lines.isEmpty else { return false }
-        let found = lines.filter { screen.contains($0) }.count
-        return Double(found) >= Double(lines.count) * requiredShare
-    }
-
-    /// From `ps -o pid=,tpgid=,comm= -t <tty>`: the terminal's foreground process-group leader.
-    static func foregroundProgram(fromPS output: String) -> String? {
-        for line in output.split(separator: "\n") {
-            let parts = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard parts.count == 3, parts[0] == parts[1] else { continue }
-            return (String(parts[2]) as NSString).lastPathComponent
-        }
-        return nil
-    }
 }

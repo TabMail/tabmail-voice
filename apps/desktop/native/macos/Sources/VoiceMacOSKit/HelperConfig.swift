@@ -24,9 +24,6 @@ enum HelperConfig {
     static let contextNodeBudget = 5_000
     /// …or after this long (seconds). It runs in the background while the user speaks.
     static let contextTimeBudget: Double = 1.5
-    /// Longest a helper command (tmux, ps) may run while reading the context (seconds); they
-    /// normally answer in milliseconds.
-    static let contextCommandTimeout: Double = 0.5
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
     static let contextMaxFocusDepth = 200
     /// Characters kept on each side of the caret.
@@ -34,7 +31,6 @@ enum HelperConfig {
     /// Longest visible text kept from one text field or terminal.
     static let contextMaxFieldChars = 20_000
     /// Longest text gathered for one heading, link or table row.
-    static let contextMaxBlockChars = 1_000
     /// What the screen read puts in place of a part of the window it does not read for privacy
     /// (a field that frames a page of an excluded website, or an element read in one piece that is
     /// too large to look through for one), so the reader knows something is there.
@@ -58,21 +54,12 @@ enum HelperConfig {
     /// Elements at most this thin (points) show nothing: web apps keep screen-reader-only text,
     /// list items scrolled out of view and hover-only actions in 1-point boxes.
     static let contextHiddenMaxThickness: CGFloat = 1
-    /// Two pieces of text are on one line when they overlap by this share of the shorter's height.
-    static let contextSameLineOverlap: CGFloat = 0.5
-    /// Terminal apps: their foreground program is looked up through tmux.
+    /// Terminal apps use native visible-range and caret acquisition.
     static let terminalBundleIDs: Set<String> = [
         "com.googlecode.iterm2", "com.apple.Terminal", "com.mitchellh.ghostty", "com.github.wez.wezterm",
         "net.kovidgoyal.kitty", "org.alacritty",
     ]
-    /// A tmux pane counts as the terminal in front when this share of its last non-blank lines
-    /// (up to `tmuxPaneSampleLines`) appears in the front terminal's text.
-    static let tmuxPaneSampleLines = 12
-    static let tmuxPaneRequiredShare = 0.75
-    /// How much of the front terminal's text (from the end) the pane lines are looked for in.
-    static let tmuxScreenTailChars = 60_000
-    /// Where tmux is installed (Homebrew on Apple silicon, Homebrew on Intel, system).
-    static let tmuxPaths = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
+
 
     // MARK: Caret
 

@@ -5,6 +5,8 @@
 #include "gesture.h"
 #include "modifier.h"
 #include <iostream>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 
@@ -18,8 +20,55 @@ void doubleTap(Gesture& g) {
     check(g.modifier(true, 1.2) == Action::startHandsFree, "second press starts hands free");
     check(g.modifier(false, 1.3) == Action::listenHandsFree, "second tap keeps listening");
 }
-int main() {
+int main(int argc, char** argv) {
     try {
+        check(argc == 2, "shared gesture fixture path required");
+        std::ifstream input(argv[1]);
+        const auto cases = nlohmann::json::parse(input);
+        check(cases.size() == 7, "complete gesture trace census");
+        for (const auto& trace : cases) {
+            Gesture g;
+            g.tapMaxDuration = trace.at("tapMaxDuration");
+            g.doubleTapWindow = trace.at("doubleTapWindow");
+            for (const auto& step : trace.at("steps")) {
+                std::optional<Action> action;
+                const auto event = step.at("event").get<std::string>();
+                if (event == "down" || event == "up") action = g.modifier(event == "down", step.at("time"), step.value("agent", false));
+                else if (event == "key") action = g.keyPressed(step.at("key"), step.value("repeat", false));
+                else if (event == "chat") g.chatOpen = step.at("chat");
+                else if (event == "ended") g.dictationEnded();
+                else throw std::runtime_error("unknown trace event");
+                const nlohmann::json actual = action ? nlohmann::json(voice::actionName(*action)) : nlohmann::json(nullptr);
+                check(actual == step.at("action"), trace.at("name").get<std::string>().c_str());
+                check((g.holding != 0) == step.at("holding") && (g.handsFree != 0) == step.at("handsFree"), "trace state");
+                check(g.owns(32) == step.at("space") && g.owns(27) == step.at("escape"), "trace ownership");
+            }
+        }
+        for (const unsigned shift : {0xa0u, 0xa1u}) {
+            voice::ModifierChoice choice;
+            check(choice.bypass(shift, true, false) && choice.agentIntent(), "either Shift selects agent");
+            auto g = gesture();
+            check(g.modifier(true, 1, choice.agentIntent()) == Action::startAgent, "Shift starts agent");
+            check(!g.modifier(true, 1.1, true), "agent repeat ignored");
+            check(choice.bypass(shift, false, false) && !choice.agentIntent(), "Shift release passes through");
+            check(g.active(), "Shift release preserves hold");
+            check(g.keyPressed(32, false) == Action::toggleMode, "agent Space toggles");
+            check(g.modifier(false, 2) == Action::finish, "agent finishes on hotkey release");
+            check(choice.bypass(shift, true, false), "late Shift never cancels or toggles");
+            choice.seedShifts(false, false);
+            check(!choice.agentIntent(), "seed clears stale Shift state");
+            choice.bypass(shift, true, true);
+            check(!choice.agentIntent(), "injected Shift cannot select agent");
+        }
+        {
+            auto g = gesture();
+            g.modifier(true, 1); g.modifier(false, 1.05);
+            check(g.modifier(true, 1.1, true) == Action::startAgentHandsFree, "agent double tap intent");
+            check(g.modifier(false, 1.15) == Action::listenHandsFree, "agent double tap latches");
+            check(g.modifier(true, 1.2, true) == Action::showHistory, "agent triple tap preserves history");
+            check(!g.modifier(false, 1.25), "history release owned");
+        }
+
         {
             auto g = gesture();
             check(!g.modifier(false, 0), "unmatched release ignored");

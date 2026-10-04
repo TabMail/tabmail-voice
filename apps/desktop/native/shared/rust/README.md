@@ -1,0 +1,182 @@
+# Shared native core
+
+The existing Swift and C++ helpers link this Rust static library. No new daemon or Electron addon is involved. Native adapters retain accessibility, audio, clipboard, credentials and OS lifecycle ownership.
+
+## Build and test
+
+Install Rust through rustup; `rust-toolchain.toml` pins the compiler and components. Run `cargo test --release --locked` and `cargo clippy --all-targets --locked -- -D warnings` in this directory. Release mode is the shipped profile used by the hostile-input timing gate.
+
+The macOS build script and `scripts/swift-errors.sh` build the Rust target before SwiftPM. For a direct SwiftPM invocation, first run `cargo build --release --locked --target aarch64-apple-darwin` here (or `x86_64-apple-darwin` on Intel), then run SwiftPM in `native/macos`. CMake builds and links the matching Rust target for Linux and Windows, and adds `voice-rust-core` to CTest. Cross-compilation requires the selected rustup target and native linker toolchain.
+
+## Redaction contract
+
+`../privacy/redactors.json` is embedded directly, compiled once with fancy-regex, and applied in order. Native helpers do not interpret its patterns. The fixed engine operation counter is disabled because it rejects benign larger pages; seek optimization remains disabled. Trusted patterns must pass all hostile-text and continuation gates. A real engine stack failure withholds the unprocessed tail and logs only the canonical rule name.
+
+`voice_core_redact_json` takes UTF-8 JSON arrays of lines containing adjacent fragments. Matching precedes fragment redistribution. Boundary mapping uses the existing UTF-16 contract; invalid encoding or boundaries refuse the operation. The ABI validates shape, bounds and version, catches panics with a payload-free hook, and returns an owned output buffer. The caller must free it exactly once with `voice_core_buffer_free`; a nonzero status never permits a raw-text fallback. Pointer validity and non-overlapping input/output memory are the native caller's responsibility, as documented in `include/voice_core.h`.
+
+The Rust corpus also holds the former generator/schema checks, per-rule and case-flag mutations, source-fixture secrecy checks, and scalar/fragmented idempotence. Native tests still run the corpus through the linked ABI and retain handler-level privacy tests.
+
+## Screen context
+
+`voice_core_context_json` accepts already-permitted blocks, optionally with three caret fragments. It redacts the combined text before inserting layout markers, preserves frames, and marks a redacted blank selection. Rendering, line overlap, column separation and block prefixes have one Rust implementation. The same API normalizes complete text and admits whole bounded source fragments against one shared UTF-8 budget; canonical-equivalent duplicate detection precedes admission. Foundation whitespace semantics, including U+200B, are used across platforms. The former configurable `join` operation has been removed. Pinned `unicode-segmentation` supplies UAX #29 boundaries. Native code controls provider traversal and privacy/visibility preflight. `../context/context-cases.json` runs through the Rust and native ABI suites.
+
+### Common semantic acquisition
+
+`voice_core_semantic_new/offer/finish/free` implement one streaming policy. Rows request approved descendants first and request a root label only after a complete, empty traversal. Headings and links request an approved root label first; a normalized blank root requests descendants. Interrupted traversal retains only the approved prefix and never requests a row fallback. Native code must obey the returned acquisition decision and continue to apply privacy checks before obtaining each value.
+
+The core owns whitespace trimming, canonical adjacent duplicate detection, separators, extended-grapheme counting and budget stops. There are no OS/unit/separator/overflow options. A semantic block stops acquisition at 20,000 graphemes or 256 KiB of joined UTF-8 text; each incoming fragment has a 256 KiB acquisition bound. The final accepted fragment stays whole for combined-screen redaction, so the joined source may exceed the presentation bound by at most one bounded fragment. Invalid UTF-8, invalid protocol events and oversized fragments refuse the operation, poison the owner and cannot become an empty successful result. Wrappers own handles exclusively and release them with scoped cleanup.
+
+**Finish returns private source, not publishable context.** This distinction is required: clipping through a synthetic access key before redaction leaves an unmatched prefix. Shared presentation limits must run after combined redaction. All three production readers now use the Swift/C++ wrappers and this common acquisition contract. `../context/semantic-cases.json` runs the same traces through every wrapper. Shared admission reserves caret source exactly once and stops subsequent acquisition after the final whole fragment crosses 256 KiB. Combined redaction precedes shared presentation clipping: ordinary blocks share the remaining UTF-8 allowance, semantic blocks additionally obey the grapheme limit, and caret presentation retains the full selected text with up to 2,000 nearest graphemes on each side. Oversized caret source is refused; rendered layout syntax can expand beyond the source-byte allowance. Field, caret, static text and name adapters on all three platforms now use shared source policy. Native provider acceptance and packaged validation are tracked separately.
+
+### Incomplete source windows
+
+The context API accepts `window: {text, startKnown, endKnown}` for at most 256 KiB of UTF-8 recognition source. Both edge facts are required. Complete windows retain every byte. At an open edge, Rust retains only the middle closed by actual source punctuation (`. , ; ! ?`) followed by Unicode whitespace; whitespace alone cannot terminate the canonical named-value and PEM continuation patterns. The closing punctuation remains in source so later composition does not erase that boundary. A window without a closed middle is unavailable. Returned offsets are UTF-8 byte offsets into the original window.
+
+`sourceText` is private input for subsequent combined redaction, not a publishable result. The response also reports unknown/withheld edges and unavailable content. Native adapters must map a selection against the retained range and report an incomplete selection as unavailable, never as a shorter selection. The caret operation below supplies this mapping. Adapter migration is tracked separately; the API alone does not make a truncated native result complete.
+
+Tests insert all candidate delimiters at every scalar cut of a positive witness for each canonical rule and reject matches crossing the restart boundary. Changes to the redactors require reconsidering this boundary contract as well as the shared redaction corpus. Native ABI fixtures cover complete Unicode source, open edges, and unavailable windows.
+
+## Caret recognition source and presentation
+
+`limits` exposes `sourceWindowBytes` (256 KiB per side), `selectionSourceBytes` (screen bytes minus the six bytes for selection markers), and `caretSourceBytes` (the selection allowance plus both side allowances). `read_caret` validates each component independently; a selection exceeding its allowance is refused intact. `reserveCaret` computes the prospective presented caret size on a private copy. It does not truncate the caller's recognition source. Combined redaction receives the full bounded sides before the existing nearest-2,000-grapheme presentation step. The aggregate recognition allowance includes both source-only sides separately from ordinary screen source admission.
+
+Native adapters use these shared allowances. They must still establish source-edge facts; a truncated provider result cannot become complete merely because it fits an allowance.
+
+`caretWindow: {parts: [before, selected, after], startKnown, endKnown}` maps the same shared recognition boundaries across contiguous caret partitions. It returns private source parts and `selectionUnavailable`. If an open edge intersects a nonempty selection, all caret source is withheld and the selection becomes the refusal marker; retaining adjacent text after replacing only a selection could erase a secret prefix needed to redact that adjacent text. If an empty caret itself lies outside the retained range, all caret context is withheld so distant safe source is not misrepresented as immediately adjacent text. Adapters must carry this flag through finalization to disable Edit. Other approved screen blocks remain usable.
+
+Linux focused caret acquisition now uses the shared Rust source planner and bounded 4,096-character AT-SPI requests, preserving complete selections rather than a 20,000-character prefix/refusal policy. It rechecks character count, selection endpoints/count, caret offset and focused state after acquisition. AT-SPI character offsets and reads stay native; Rust owns range planning, byte accounting, assembly, incomplete-edge handling and presentation. Linux terminal selections also use the collector with the selected interval as the complete source domain, recheck selection metadata, and propagate explicit refusal. Non-focused fields also use the shared field planner and source projection described below. Provider state can change between rechecks; these are observable consistency checks, not an atomic snapshot guarantee.
+
+macOS focused caret acquisition uses the same shared limits through bounded UTF-16 ranges. Plain fields use character count, selection and `AXStringForRange`; marker-based editors resolve the field and selection endpoints, retain the provider's document-relative origin, and verify every generated marker's index before requesting text. Native chunks retain surrogate pairs across boundaries. Short ranges, changed endpoints, lost focus and deadline expiry refuse the caret; the unavailable-selection flag disables Edit after ordinary redaction. These adapters require actual-application validation, and macOS visible-field/terminal acquisition still needs migration. Snapshot rechecks cannot detect all same-length or ABA changes and do not provide an atomic snapshot.
+
+### Shared native-offset acquisition
+
+`voice_core_source_utf16_new` and `voice_core_source_scalar_new` construct the same collector with the provider’s native offset unit. `voice_core_source_next/finish/free` share chunk planning, assembly, surrogate-boundary handling, byte accounting and complete-selection refusal. UTF-16 providers use `voice_core_source_utf16_offer`; scalar-offset providers supply valid UTF-8 through `voice_core_source_utf8_offer`. Encoding mismatches poison the handle; offset representation never selects a different policy. `next` requests a bounded native span; the adapter obtains that span without decoding or clipping it and offers the code units. Short, oversized or malformed input refuses the operation; invalid offers poison the exclusive handle. A zero-length next request means acquisition is complete. Finish returns the existing private caret-window JSON and still requires combined redaction. Handles and returned buffers have separate scoped ownership.
+
+macOS plain-range and indexed-marker readers use this collector through a thin Swift transport; Linux AT-SPI uses the same collector through the scalar C++ transport. Windows IA2 uses the C++ transport while preserving its provider snapshot, privacy and focus checks; UIA uses the same source budgets and shared caret-window mapping, with bounded native range reads because UIA endpoints are opaque and Character movement can promote to larger units. It checks document boundaries, selection endpoints and selected content before returning private source. Page selections use that same selection allowance, check against the privacy-approved range before and after acquisition, and refuse oversized or changed results intact without acquiring adjacent text. Win32 Edit also uses the shared UTF-16 collector. Because standard Edit exposes whole-text transfer rather than arbitrary ranges, it bounds the UTF-16 transfer length by the shared aggregate source allowance before allocating, then feeds bounded chunks from that snapshot to Rust. Full DWORD selection endpoints avoid the packed-message 65,535-character limit. Changed length, selection, text or protection state refuses the result. Larger fields require the range-capable accessibility providers; this fallback does not claim arbitrary-size field support. Native adapters retain actual provider access, character-offset conversion, deadlines, privacy preflight and identity checks. No platform can select a different collection budget.
+
+## Exclusion policy
+
+`voice_core_policy_json` requires `excludedAppIDs` and `excludedHosts` arrays, even for a validation-only request. Optional `app`, `host`, and `page` queries return exclusion decisions. `page` is one of `unknown` (refuse), `noHost` (allow), or `host` (requires a host string). Native adapters validate the policy before any provider metadata or text access, and refuse on core failure. Individual strings are bounded to 32 KiB and cannot contain NUL. Unknown or invalid UTF-8 input is refused by the ABI.
+
+Comparison uses [Unicode canonical caseless matching](https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/) (NFD, full case fold, NFD), preserving both Linux's full case folding and Swift's canonical-equivalent String comparison. The pure Rust `icu_casemap` 2.3.0 and `unicode-normalization` 0.1.25 crates supply Unicode data; neither calls native ICU or performs regex matching. Their licenses are Unicode-3.0 and MIT/Apache-2.0 respectively. The single regex engine remains fancy-regex. Hosts strip exactly one trailing dot and match whole hosts or dot-delimited subdomains; app identifiers match whole. `../privacy/policy-cases.json` records Unicode, validation and unknown-page cases alongside the existing host corpus. Host matching also recognizes canonical IDNA and numeric aliases, computed before full case folding; original comparisons remain supported. App-identity and address acquisition remain native.
+
+## Address classification
+
+`voice_core_address_json` accepts `{address: string | null}` and returns `{kind, host}`. Null is unavailable/unknown, empty is explicitly absent/noHost. Present addresses use the pinned WHATWG `url` 2.5.8 parser. Syntax recovery is refused except embedded credentials; controls, invalid types and addresses beyond 32 KiB cannot authorize reading. HTTP(S) returns canonical domain/IP text, other valid schemes return the scheme token. Provider absence/error evidence and native string conversion remain in the adapters. `../privacy/address-cases.json` exercises the same classification through all three native adapters.
+
+## Gesture state
+
+`voice_core_gesture_modifier`, `voice_core_gesture_key`, `voice_core_gesture_owns` and `voice_core_gesture_ended` operate on a caller-owned fixed-size state value. They allocate nothing, retain no pointers and return scalar actions. Native monitors normalize key identity and timestamps, maintain physical key-up ownership, and own event/portal lifecycles. Swift/C++ traces use `../hotkey/gesture-cases.json`.
+
+## Timing validation
+
+Run the macOS release suite with `swift test -c release --no-parallel` from `native/macos` when evaluating wall-clock redaction limits. Swift Testing otherwise runs unrelated corpus, large-input and provider tests concurrently; their CPU contention can obscure the engine's timing. Keep the release hostile-text limit at two seconds. An isolated timing pass does not replace the full functional suite. This does not disable concurrency exercised inside an individual test.
+
+
+## Field source acquisition
+
+`voice_core_field_utf16_new` and `voice_core_field_scalar_new` reuse the same source planner with a field interval `[start,end)` inside a document of `count` native units. They never request adjacent source. Fields use the common source-window byte allowance, independently of the complete-selection allowance. `finish` returns private JSON `{text,complete}`: `complete` says whether the requested interval was fully acquired, not whether the interval covers the whole document. An incomplete whole-field attempt allows a native visible-range fallback. Short or malformed provider responses still poison the owner.
+
+Rust derives document-edge facts from the supplied interval, treats an acquisition cutoff as an unknown end, and withholds ambiguous boundary portions through the common recognition-window policy. A complete visible interval may consequently return less text than was acquired. All returned text must still pass combined screen redaction. Mac top-level ordinary fields now use the shared field policy and source projection described below. Fields inside semantic aggregation and the ordinary Windows/Linux readers also use shared source projection. Provider visibility discovery and snapshot validation remain native.
+
+
+`voice_core_visible_field_utf16_new` / `voice_core_visible_field_scalar_new` acquire bounded adjacent recognition source around a visible target. They return `{parts:[before,visible,after],complete}`. If the target exceeds its allowance, the collector never joins text from beyond the omitted tail. Unknown source edges use the common recognition-window rule before mapping back into the parts. `complete` describes target acquisition; conservative boundary withholding can still remove visible text.
+
+`fieldPlan` chooses whether a trusted native count permits a whole-field probe and whether complete text fits the shared whole-field grapheme policy. `admitField` accounts for all private bytes without changing source whitespace. A context field block carries matching `text` and `source:[before,text,after]`; finalization redacts those contiguous parts together with the screen, then keeps only the visible part and discards source metadata. Rendering a projected field also finalizes it; a caret block requires its real caret parts. Each field part is at most the source-window allowance, and aggregate block recognition input has a finite shared cap. Offscreen recognition text never enters the rendered field.
+
+The Mac adapter prefers supported numeric ranges and visible-range metadata, retains the line-geometry fallback, and uses one native whole-value snapshot for value-only providers. AX has no length-limited whole-value operation, so this preserves capability without claiming a pre-receipt allocation cap. Downstream copies and matching remain bounded. Numeric and visibility rechecks detect observed changes but are not atomic-snapshot guarantees. The line-geometry fallback assumes monotonic line tops and bounds its target at the window bottom; provider verification remains required.
+
+
+Indexed field visibility uses the context `fieldRanges` request with `{count, ranges}`.
+The core accepts at most 64 pairs, validates offsets, sorts and merges touching or
+overlapping spans, and preserves gaps. Native adapters retain their native offset
+units and acquire source only after privacy approval. Linux top-level fields use this contract and `fieldPlan`. Windows top-level fields
+use `fieldPlan`, `opaqueProbes`, and `fieldWindow` over native UIA ranges. Semantic
+aggregation retains projected source through the shared semantic collector. AT-SPI GetBoundedRanges is content-bearing and does not bound
+provider/IPC allocation; the native adapter discards and releases its content,
+then uses exact scalar chunks for the bounded shared collector.
+
+Opaque range transports use `opaqueProbes: true` for descending movement probe sizes
+and `fieldWindow: {parts, startKnown, endKnown}` to apply the same source projection
+as the indexed collector. Native movement counts are not interpreted as UTF-16
+positions. Native adapters validate actual returned text and endpoint containment;
+all private parts still require combined redaction before publication.
+
+
+Semantic projected source uses `voice_core_semantic_offer_projected` with JSON
+`[privateBefore, visible, privateAfter]`, and `voice_core_semantic_finish_projected`
+returns `{text, runs}`. Each run is `[text, visible]`; normalization whitespace
+remains private source, and only visible runs contribute to display text. Equal
+visible strings with different private context are not duplicates. Legacy string
+finish refuses once a projected fragment is accepted. `admitSemantic` accepts a
+semantic block containing `kind`, `text`, and `runs`, and charges every source byte.
+Final context redaction removes all run metadata. Native row/heading/link callers on all three platforms now retain these runs for
+embedded fields. Static text and labels also use the bounded block source collector; native APIs that return whole strings cannot promise a pre-receipt allocation ceiling.
+
+## Terminal viewport
+
+Native AX, UIA and AT-SPI adapters acquire the displayed terminal and pass it to
+shared Rust. No live terminal path executes tmux or discovers a pane/PTY.
+Tmux/process metadata parsers and cell-column projection are removed. Exact
+caret positions must come from the native provider's text offsets; matching
+pane text or process activity cannot authorize acquisition.
+
+`voice_core_viewport_json` consumes only already-authorized visible source. Native
+adapters must prove privacy, focus identity, viewport clipping, native offset
+mapping and capture stability before calling it. It never acquires hidden text.
+The request contains:
+
+- `complete`: whether the native capture covered the visible viewport;
+- `focusedSurface`: capture-local numeric surface identity, or null;
+- `caret`: `{status: "exact", surface, run, offset}` using run-local UTF-16
+  insertion offsets, or a status of `outsideViewport`, `unavailable`, `withheld`;
+- `surfaces`: each has numeric `id`, finite `[x,y,width,height]` `frame`, `runs`, and
+  `selection: {complete, ranges: [{run,start,end}]}`. Selection ranges are ordered,
+  nonoverlapping, and independent of the caret;
+- each run has numeric `id`, `text`, `connected`, `startKnown`, `endKnown`.
+  `connected` means source-contiguous with the preceding run, with no inserted
+  character (an actual newline must be in the text). The first run is not connected.
+  `startKnown` and `endKnown` remain validated boolean source metadata. Native
+  viewport adapters set both false. They do not trigger visible-text clipping:
+  the visible-screen contract redacts recognizable secrets in captured text,
+  while a fragment cut at a capture edge may not be recognizable. No hidden
+  adjacent text is acquired to extend recognition.
+
+Limits are 64 surfaces, 1,024 total runs, and the shared semantic source byte
+limit across all run text. Oversized or invalid requests refuse instead of silently
+truncating. Native collectors must enforce these bounds while acquiring text.
+Runs separated by a hidden gap are never coalesced or read through that gap.
+
+The result preserves surface/run identity and whitespace, returns only redacted
+text, and gives `renderedText`, per-run `renderedOffset`, exact caret
+`renderedOffset` when available, and per-selection `renderedStart`/`renderedEnd`.
+All offsets are UTF-16; literal marker glyphs remain ordinary text. Layout labels
+are inserted after redaction. `complete` records native acquisition omissions;
+redaction replacements themselves do not mean acquisition was incomplete.
+A caret inside a redaction match is withheld.
+The anchor redactor conservatively withholds even retained prefixes within a match.
+
+`selectedText` is actionable only when `selectionComplete` is true for the focused
+surface. Hidden, withheld, redacted or disjoint selections keep Edit unavailable;
+retained visible intersections remain annotations where exact boundaries survive.
+Refused selections return the existing `[redacted]` marker and false
+`selectionComplete`, preventing a writing consumer from mistaking refusal for an
+empty selection and choosing Compose. The native helper propagates that refusal
+through its existing selection guard. An incomplete capture that could not
+establish a focused surface also refuses selection, rather than representing it
+as an empty, complete selection and accidentally enabling Compose.
+
+The TS cleanup consumer accepts optional `ScreenContext.terminalViewport` and uses
+its exact typed position. An explicit unavailable/outside/withheld state never
+falls back to marker search or appending a caret. Native terminal routes do not
+use generic caret/field acquisition; all three routes emit the typed viewport.
+Collector coverage, actual installed-provider evidence and review repairs remain
+required before claiming complete cross-platform capability.
+
+For AT-SPI, the viewport request may specify `offsetUnit: "scalar"`; the core
+validates and converts run-local caret and selection offsets to UTF-16. Omission
+or `"utf16"` retains the AX/UIA convention. Output offsets are always UTF-16.
+`{limits:true}` returns the common `bytes`, `runs`, and `surfaces` acquisition
+limits without processing text.
+
+Run `python3 scripts/macos/test-ownership.py` from `apps/desktop` as a separate macOS ownership check. It builds its Debug helper inputs itself. It is intentionally not a Swift test post-hook: coverage and release test configurations must retain SwiftPM’s own linking and exit status.

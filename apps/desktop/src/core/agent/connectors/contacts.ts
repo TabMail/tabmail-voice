@@ -24,6 +24,8 @@ export function displayName(contact: ContactCard): string {
  * the first time a tool needs it; without it, a call throws saying where to allow it, and the model
  * tells the user. */
 export interface ContactStore {
+  /** Fixed provider destination when writes do not use the user's default container. */
+  readonly writeDestination?: string | undefined;
   /** Contacts whose name (either way round), company or an email address contains `query`, ignoring
    * case and accents, at most `limit`, in the user's sort order. */
   search(query: string, limit: number): Promise<ContactCard[]>;
@@ -52,7 +54,7 @@ export class ContactStoreError extends Error {
 export const contactsConnector = defineConnector({
   id: "contacts",
   order: 30,
-  platforms: ["darwin"],
+  platforms: ["darwin", "linux", "win32"],
   displayName: "Contacts",
   settingsDescription: "Finds people’s details in your contacts, and adds ones you ask for once you confirm.",
   tools: ({ contactStore }: Pick<ConnectorServices, "contactStore">): ConnectorTool[] => [new ContactsSearchTool(contactStore), new ContactsAddTool(contactStore)],
@@ -103,7 +105,10 @@ export class ContactsAddTool implements ConnectorTool {
   readonly connector = "contacts";
   readonly progressLabel = "Adding the contact";
 
-  constructor(private readonly store: ContactStore) {}
+  private readonly writeDestination: string | undefined;
+  constructor(private readonly store: ContactStore) {
+    this.writeDestination = store.writeDestination;
+  }
 
   /** Null only for arguments `run` rejects before adding anything. */
   confirmation(args: Record<string, unknown>): string | null {
@@ -115,6 +120,7 @@ export class ContactsAddTool implements ConnectorTool {
     }
     const name = displayName(contact);
     const lines = ["Add this contact?"];
+    if (this.writeDestination) lines.push(`Destination: ${this.writeDestination}`);
     if (name !== "") lines.push(name);
     if (contact.organization !== "" && contact.organization !== name) lines.push(contact.organization);
     // Every field the contact is added with is shown: text the user never saw could carry anything.
@@ -123,7 +129,7 @@ export class ContactsAddTool implements ConnectorTool {
 
   async run(args: Record<string, unknown>): Promise<string> {
     const saved = await this.store.add(ContactsAddTool.draft(args));
-    return `Added ${describeContact(saved)} to the contacts.`;
+    return `Added ${describeContact(saved)} to ${this.writeDestination ?? "the contacts"}.`;
   }
 
   /** The contact the arguments describe: at least a name, a company or an email address, and one

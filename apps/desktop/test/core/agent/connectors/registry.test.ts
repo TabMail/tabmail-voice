@@ -11,8 +11,17 @@ import { connectorByID, connectorIDs, connectors, connectorsForPlatform, isConne
 import { connectorDeclarations, connectorRegistry } from "../../../../scripts/gen-registries.mjs";
 import { FakeScriptRunner } from "../../../support/stubs.js";
 
-/** What the connectors' tools are made over: none of it is called here, only handed to the tools. */
-const services = { home: "/Users/example", scriptRunner: new FakeScriptRunner() } as unknown as ConnectorServices;
+/** Constructors may inspect provider metadata; registry discovery must never call a provider. */
+const unexpectedProviderCall = async (): Promise<never> => { throw new Error("Registry discovery called a provider"); };
+const services = {
+  home: "/Users/example",
+  scriptRunner: new FakeScriptRunner(),
+  eventStore: {
+    events: unexpectedProviderCall, addEvent: unexpectedProviderCall,
+    openReminders: unexpectedProviderCall, addReminder: unexpectedProviderCall,
+  } satisfies ConnectorServices["eventStore"],
+  contactStore: { search: unexpectedProviderCall, add: unexpectedProviderCall } satisfies ConnectorServices["contactStore"],
+} as unknown as ConnectorServices;
 
 /** The list of connectors is generated from their own files (ADR-DESK-044): a new connector is one
  * file, and the registry can't fall behind it. */
@@ -45,7 +54,7 @@ describe("the connector registry", () => {
   test("platform capabilities retain every Mac connector and expose shared tools on both ports", () => {
     expect(connectorsForPlatform("darwin").map(({ id }) => id)).toEqual(connectorIDs);
     for (const platform of ["win32", "linux"] as const) {
-      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(["files", "email", "web"]);
+      expect(connectorsForPlatform(platform).map(({ id }) => id)).toEqual(["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web"]);
     }
     expect(connectorsForPlatform("freebsd")).toEqual([]);
   });

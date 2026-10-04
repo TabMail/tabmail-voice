@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { app, BrowserWindow, screen } from "electron";
+import { app, BrowserWindow, screen, clipboard } from "electron";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -282,12 +282,16 @@ async function main() {
     process.stdout.write(`Windows Electron field/context/caret/refusal/recovery checks passed after ${id} requests in ${Date.now() - startedAt} ms\n`);
     await window.webContents.executeJavaScript('document.getElementById("editor").value = "Before selected after. 🙂"');
     await focus("editor", 7, 15);
+    // Own a synthetic clipboard payload: delayed formats from the user's
+    // desktop or a VM bridge must not become part of this provider fixture.
+    await clipboard.writeText("Synthetic clipboard before insertion");
     assert.deepEqual(await request("insert", { window: target, text: "inserted", restoreDelay: 200, deadline: Date.now() + 2000 }), {});
     assert.equal(await window.webContents.executeJavaScript('document.getElementById("editor").value'), "Before inserted after. 🙂", "native paste replaces the actual Chromium selection");
+    assert.equal(await clipboard.readText(), "Synthetic clipboard before insertion", "paste restores the fixture clipboard");
     const exited = once(helper, "exit"); helper.stdin.end();
     assert.deepEqual(await exited, [0, null]);
     assert.equal(pending.size, 0);
-    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug screen access: excluded or unknown page not read\ndebug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
+    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug screen access: excluded or unknown page not read\ndebug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");
     if (activator) {
       const stopped = once(activator, "exit"); activator.stdin.end();

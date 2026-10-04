@@ -31,7 +31,22 @@ export function excludedSite(value: unknown): string | null {
 export function coversHost(site: string, host: string): boolean {
   const name = host.toLowerCase().replace(/\.$/, "");
   const excluded = site.toLowerCase().replace(/\.$/, "");
-  return name !== "" && excluded !== "" && (name === excluded || name.endsWith(`.${excluded}`));
+  if (name === "" || excluded === "") return false;
+  if (name === excluded || name.endsWith(`.${excluded}`)) return true;
+  const canonicalName = canonicalHost(host.toLowerCase());
+  const canonicalSite = canonicalHost(site.toLowerCase());
+  return canonicalName !== null && canonicalSite !== null &&
+    (canonicalName === canonicalSite || canonicalName.endsWith(`.${canonicalSite}`));
+}
+
+/** The native URL classifier emits canonical IDNs/numeric addresses. Retain the
+ * literal match above and recognize those aliases so stored exclusions survive. */
+function canonicalHost(host: string): string | null {
+  if (/[\s\p{Cc}@/\\?#]/u.test(host) || (host.includes(":") && !host.startsWith("["))) return null;
+  try {
+    const url = new URL(`http://${host}/`);
+    return url.port === "" && url.username === "" && url.password === "" ? url.hostname.replace(/\.$/, "") : null;
+  } catch { return null; }
 }
 
 /** Whether `host` is excluded in every installation (`config.builtInExcludedSites`). */

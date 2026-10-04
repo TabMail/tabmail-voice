@@ -5,9 +5,27 @@
 import { errorName, isDebugLogging, log } from "../log.js";
 import type { ScreenExclusions } from "./excludedSites.js";
 
+/** Shared-Rust projection of approved visible terminal text. Offsets are UTF-16
+ * insertion boundaries, never terminal cell columns or marker searches. */
+export interface TerminalViewport {
+  renderedText: string;
+  complete: boolean;
+  caret: { status: "exact"; surface: number; run: number; offset: number; renderedOffset: number }
+    | { status: "outsideViewport" | "unavailable" | "withheld" };
+  selectedText: string;
+  selectionComplete: boolean;
+  surfaces: {
+    id: number;
+    frame: number[];
+    runs: { id: number; text: string; connected: boolean; complete: boolean; renderedOffset: number }[];
+    selection: { complete: boolean; ranges: { run: number; start: number; end: number; redacted: boolean; renderedStart: number; renderedEnd: number }[] };
+  }[];
+}
+
 /** What was on screen in the app in front when a dictation started, as the platform helper read it
  * (macOS: `readScreen`). The helper renders the text for the prompts and the logs itself. */
 export interface ScreenContext {
+  terminalViewport?: TerminalViewport;
   appName: string;
   bundleID: string | null;
   windowTitle: string | null;

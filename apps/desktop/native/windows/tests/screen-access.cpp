@@ -57,10 +57,29 @@ static int run(int argc, char** argv) {
         app = L"Notes.exe";
         expect(voice::screenAccess(allowed, 42, identity, read, true) == JSON{{"synthetic", true}}, "allowed correction field read");
         expect(lookups == 6 && reads == 4, "each allowed field read uses checked target");
-        expect(voice::ScreenExclusions(JSON{{"excludedAppIDs", {""}}, {"excludedHosts", JSON::array()}}).appIDs.size() == 1, "empty strings remain valid policy entries");
+        expect(voice::ScreenExclusions(JSON{{"excludedAppIDs", {""}}, {"excludedHosts", JSON::array()}}).excludesApp(L""), "empty strings remain valid policy entries");
     } catch (...) { std::cerr.rdbuf(original); throw; }
     std::cerr.rdbuf(original);
-    expect(argc == 2, "host conformance file provided");
+    const voice::ScreenExclusions unicodePolicy(JSON{{"excludedAppIDs", {"Straße", "é"}}, {"excludedHosts", {"Straße.example"}}});
+    expect(unicodePolicy.excludesApp(L"STRASSE"), "full Unicode folding");
+    expect(unicodePolicy.excludesApp(L"e\u0301"), "canonical equivalence");
+    expect(unicodePolicy.excludesHost(L"sub.STRASSE.example."), "Unicode host suffix");
+    expect(argc == 3, "host and address conformance files provided");
+    std::ifstream addressFile(argv[2]); const auto addresses = JSON::parse(addressFile);
+    for (const auto& item : addresses.at("cases")) {
+        voice::PageHost page;
+        if (!item["address"].is_null()) {
+            const auto text = item["address"].get<std::string>();
+            // Preserve embedded NUL for the adapter's refusal test; paste conversion rejects it earlier.
+            const int size = static_cast<int>(text.size());
+            const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), size, nullptr, 0);
+            std::wstring address(static_cast<size_t>(count), L'\0');
+            if (count) MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), size, address.data(), count);
+            page = voice::hostOfAddress(address);
+        }
+        const std::string kind = page.kind == voice::PageHost::Kind::host ? "host" : page.kind == voice::PageHost::Kind::noHost ? "noHost" : "unknown";
+        expect(kind == item["kind"].get<std::string>() && voice::utf8(page.name) == item["host"].get<std::string>(), "shared address conformance");
+    }
     std::ifstream input(argv[1]);
     const auto cases = JSON::parse(input);
     for (const auto& item : cases["cases"]) {

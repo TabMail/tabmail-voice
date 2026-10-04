@@ -4,6 +4,7 @@
 
 import ApplicationServices
 import Foundation
+import Darwin
 import VoiceHelperSupport
 
 /// Reads a `ScreenContext` from an app through Accessibility. Blocking: call off the main thread.
@@ -20,12 +21,24 @@ enum ScreenContextReader {
         start.focusedRole = focused.flatMap { string($0, kAXRoleAttribute) }
         let focusPath = focused.map(ancestors) ?? []
         let window = CaretLocator.attribute(app, kAXFocusedWindowAttribute).map { $0 as! AXUIElement }
-        // In a tmux terminal the active pane is read from tmux: the terminal's own text is every
-        // pane side by side, and its caret index drifts (iTerm2 drops trailing spaces).
-        let isTerminal = bundleID.map(HelperConfig.terminalBundleIDs.contains) ?? false
-        guard var context = gather(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(), excluding: exclusions,
-                                   started: started, from: start,
-                                   terminalPane: isTerminal ? { readTmuxPane(showingIn: focused, into: &$0) } : nil) else {
+        return read(window: window, focused: focused, focusPath: focusPath, in: LiveScreenTree(),
+            current: { name in
+                guard let value = CaretLocator.attribute(app, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+                return (value as! AXUIElement)
+            }, excluding: exclusions, started: started, from: start)
+    }
+
+    /// Dispatch after native focus acquisition, shared by live AX and collector fixtures.
+    static func read<Tree: TerminalTree>(window: Tree.Element?, focused: Tree.Element?, focusPath: [Tree.Element],
+                                        in tree: Tree, current: (String) -> Tree.Element?,
+                                        excluding exclusions: ScreenExclusions, started: Date,
+                                        from start: ScreenContext) -> ScreenContext? {
+        if start.bundleID.map(HelperConfig.terminalBundleIDs.contains) ?? false {
+            return TerminalViewportReader.read(window: window, focused: focused, focusPath: focusPath,
+                in: tree, current: current, excluding: exclusions, started: started, from: start)
+        }
+        guard var context = gather(window: window, focused: focused, focusPath: focusPath, in: tree, excluding: exclusions,
+                                   started: started, from: start) else {
             HelperLog.debug("ScreenContext: the window shows a page of an excluded website, or one whose address is unknown; not read")
             return nil
         }
@@ -37,21 +50,15 @@ enum ScreenContextReader {
     /// the window shows a page of an excluded website: the page in focus is checked before anything
     /// is read (the caret's text, the window's title), and any other page as the walk reaches it;
     /// nothing gathered is given back then.
-    /// `terminalPane` reads a terminal's caret from tmux, and says whether it did.
     static func gather<Tree: ScreenTree>(window: Tree.Element?, focused: Tree.Element?, focusPath: [Tree.Element], in tree: Tree,
-                                         excluding exclusions: ScreenExclusions, started: Date, from start: ScreenContext,
-                                         terminalPane: ((inout ScreenContext) -> Bool)? = nil) -> ScreenContext? {
+                                         excluding exclusions: ScreenExclusions, started: Date, from start: ScreenContext) -> ScreenContext? {
         let hosts = focused.map { pageHosts(of: $0, above: focusPath, in: tree) } ?? []
         if hosts.contains(where: exclusions.excludes) { return nil }
         if let focused, holdsExcludedPage(focused, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
             return nil
         }
         var context = start
-        // A focused password field is asked for no text: not by the terminal's reader either (a
-        // terminal's own password prompt is one), which asks for the field's value.
-        let isPassword = focused.map { isPasswordField($0, in: tree) } ?? false
-        let paneRead = isPassword ? false : terminalPane?(&context) ?? false
-        if let focused, !paneRead {
+        if let focused {
             readCaret(of: focused, in: tree, into: &context)
             // A focused element that is no field (a page clicked on, a list, a row) is read by the
             // walk like any element: the text around its caret is its own, which the walk reads as
@@ -66,10 +73,8 @@ enum ScreenContextReader {
         // shell page, which the walk reaches first).
         context.host = hosts.first?.name
         guard let window else { return context }
-        context.windowTitle = tree.string(window, kAXTitleAttribute)
-        // Without tmux, a terminal's caret window is the end of its scrollback, not what's on
-        // screen: keep its visible lines as a plain field instead of placing the caret.
-        let read = walk(window, in: tree, frame: tree.frame(of: window), focused: terminalPane != nil && !paneRead ? nil : focused,
+        context.windowTitle = tree.sourceString(window, kAXTitleAttribute)
+        let read = walk(window, in: tree, frame: tree.frame(of: window), focused: focused,
                         focusPath: focusPath, excluding: exclusions, started: started, into: &context)
         return read ? context : nil
     }
@@ -136,45 +141,63 @@ enum ScreenContextReader {
             return
         }
         guard let window = tree.caretWindow(of: element) else { return }
-        (context.textBeforeCaret, context.selectedText, context.textAfterCaret) = window
+        guard window.parts.count == 3 else { context.coreFailed = true; return }
+        context.textBeforeCaret = window.parts[0]
+        context.selectedText = window.parts[1]
+        context.textAfterCaret = window.parts[2]
+        context.selectionUnavailable = window.selectionUnavailable
     }
 
     /// Web-based editors (Chromium, WebKit, Gecko) report the caret as a text-marker range and
     /// often give rich-text fields no plain value, so markers are asked first; plain fields
-    /// answer with their value and selected range.
-    fileprivate static func caretWindow(of element: AXUIElement) -> (String, String, String)? {
+    /// answer with their character count and parameterized string ranges.
+    fileprivate static func caretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? {
         markerCaretWindow(of: element) ?? valueCaretWindow(of: element)
     }
 
-    private static func markerCaretWindow(of element: AXUIElement) -> (String, String, String)? {
-        func marker(_ name: String, _ range: CFTypeRef) -> CFTypeRef? { CaretLocator.parameterized(element, name, range) }
-        func text(_ range: CFTypeRef) -> String? { CaretLocator.parameterized(element, "AXStringForTextMarkerRange", range) as? String }
-        func text(from start: CFTypeRef, to end: CFTypeRef) -> String? {
-            CaretLocator.parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers", [start, end] as CFArray).flatMap(text)
-        }
-        guard let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
-              let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element),
-              let start = marker("AXStartTextMarkerForTextMarkerRange", whole),
-              let end = marker("AXEndTextMarkerForTextMarkerRange", whole),
-              let selectionStart = marker("AXStartTextMarkerForTextMarkerRange", selection),
-              let selectionEnd = marker("AXEndTextMarkerForTextMarkerRange", selection),
-              let before = text(from: start, to: selectionStart),
-              let selected = text(selection),
-              let after = text(from: selectionEnd, to: end) else { return nil }
-        let limit = HelperConfig.contextCaretWindowChars
-        return (String(before.suffix(limit)), selected, String(after.prefix(limit)))
+    private static func markerCaretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? {
+        let started = Date()
+        func withinBudget() -> Bool { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget }
+        return MarkerCaretSource.read(snapshot: {
+            guard withinBudget(),
+                  let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
+                  let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element),
+                  withinBudget() else { return nil }
+            return (selection, whole)
+        }, parameterized: { name, value in
+            guard withinBudget() else { return nil }
+            let result = CaretLocator.parameterized(element, name, value)
+            return withinBudget() ? result : nil
+        }, focused: {
+            withinBudget() && (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+        })
     }
 
-    private static func valueCaretWindow(of element: AXUIElement) -> (String, String, String)? {
-        guard let value = string(element, kAXValueAttribute),
-              let rangeValue = CaretLocator.attribute(element, kAXSelectedTextRangeAttribute),
-              CFGetTypeID(rangeValue) == AXValueGetTypeID() else { return nil }
-        var range = CFRange()
-        guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range) else { return nil }
-        return ScreenContext.caretWindow(
-            in: value, selection: NSRange(location: range.location, length: range.length),
-            maxChars: HelperConfig.contextCaretWindowChars
-        )
+    private static func valueCaretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? {
+        func snapshot() -> (Int, NSRange)? {
+            guard let count = int(CaretLocator.attribute(element, kAXNumberOfCharactersAttribute)),
+                  let value = CaretLocator.attribute(element, kAXSelectedTextRangeAttribute),
+                  CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+            var range = CFRange()
+            guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+            return (count, NSRange(location: range.location, length: range.length))
+        }
+        guard let initial = snapshot() else { return nil }
+        let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
+        let started = Date()
+        do {
+            let result = try BoundedCaretSource.read(count: initial.0, selection: initial.1) { requested in
+                guard Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget else { return nil }
+                var range = CFRange(location: requested.location, length: requested.length)
+                guard let parameter = AXValueCreate(.cfRange, &range),
+                      let value = CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString,
+                      Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget else { return nil }
+                return value
+            }
+            guard let final = snapshot(), final.0 == initial.0, final.1 == initial.1,
+                  (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true else { return unavailable }
+            return result
+        } catch { return unavailable }
     }
 
     // MARK: Visible text
@@ -202,8 +225,11 @@ enum ScreenContextReader {
                                        focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
                                        into context: inout ScreenContext) -> Bool {
         // Each element with whether it is inside a web area.
+        context.prepareTextBudget()
         var stack = [(window, false)]
         while let (element, inWeb) = stack.popLast() {
+            if context.coreFailed { return true }
+            if context.textBudgetFull { context.stoppedEarly = "text budget"; return true }
             if context.nodesVisited >= HelperConfig.contextNodeBudget { context.stoppedEarly = "node budget"; return true }
             if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; return true }
             context.nodesVisited += 1
@@ -243,28 +269,37 @@ enum ScreenContextReader {
                     let held = look()
                     if held == .excluded { return false }
                     context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker
-                        : tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
+                        : tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
                 }
                 continue
             case "AXHeading", "AXLink", "AXRow":
                 if shown {
                     let kind: ScreenContext.Block.Kind = role == "AXHeading" ? .heading : role == "AXLink" ? .link : .row
-                    var text = label(of: element, in: tree)
-                    // Read by its label, nothing inside it is reached: a page in it is looked for.
-                    // Without a label its text is gathered, which finds a page on its way and
-                    // marks a field that frames one.
-                    if text != nil {
-                        let held = look()
-                        if held == .excluded { return false }
-                        if held == .notSeenWhole { text = HelperConfig.contextHiddenMarker }
+                    do {
+                        let reducer = try SharedSemanticText(kind == .row ? .row : kind == .heading ? .heading : .link)
+                        // Rust requests the source. Approval precedes each aggregate label read.
+                        func rootLabel() -> String? {
+                            let held = look()
+                            if held == .excluded { return nil }
+                            return held == .notSeenWhole ? HelperConfig.contextHiddenMarker : label(of: element, in: tree) ?? ""
+                        }
+                        if try reducer.decision == .root {
+                            guard let root = rootLabel() else { return false }
+                            try reducer.offer(.root, root)
+                        }
+                        if try reducer.decision == .descendants {
+                            guard try subtreeText(of: element, in: tree, reducer: reducer, inWeb: inWeb, windowFrame: windowFrame,
+                                                  excluding: exclusions, started: started, context: &context) else { return false }
+                        }
+                        if try reducer.decision == .root {
+                            guard let root = rootLabel() else { return false }
+                            try reducer.offer(.root, root)
+                        }
+                        context.appendSemantic(kind, try reducer.projectedSource(), frame: frame)
+                    } catch {
+                        context.coreFailed = true; context.stoppedEarly = "shared core refused"
+                        return true
                     }
-                    if text == nil {
-                        text = subtreeText(of: element, in: tree, separator: kind == .row ? " | " : " ", inWeb: inWeb,
-                                           excluding: exclusions, started: started, context: &context)
-                        // A page of an excluded website is framed in it.
-                        if text == nil { return false }
-                    }
-                    context.append(kind, text ?? "", frame: frame)
                 }
                 continue
             case "AXTextArea", "AXTextField":
@@ -274,8 +309,10 @@ enum ScreenContextReader {
                 if shown {
                     let hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
                                                    within: HelperConfig.contextTimeBudget, since: started)
-                    if let text = hidden ? HelperConfig.contextHiddenMarker : tree.fieldText(of: element, windowFrame: windowFrame) {
-                        context.append(.field, text, frame: frame)
+                    if hidden {
+                        context.append(.field, HelperConfig.contextHiddenMarker, frame: frame)
+                    } else if let source = tree.fieldSource(of: element, windowFrame: windowFrame) {
+                        context.appendField(source, frame: frame)
                     }
                 }
                 continue
@@ -321,21 +358,29 @@ enum ScreenContextReader {
     /// Text of a heading, link or row gathered from its descendants, as `walk` reads it: its text,
     /// and its fields' and text views' (a native chat app's message is a text area in its table
     /// row). Nil when a page of an excluded website is among them.
-    private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, separator: String, inWeb: Bool,
+    private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, reducer: SharedSemanticText, inWeb: Bool, windowFrame: CGRect?,
                                                       excluding exclusions: ScreenExclusions, started: Date,
-                                                      context: inout ScreenContext) -> String? {
-        var parts: [String] = []
-        var length = 0
+                                                      context: inout ScreenContext) throws -> Bool {
+        if context.nodesVisited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget {
+            context.stoppedEarly = context.nodesVisited >= HelperConfig.contextNodeBudget ? "node budget" : "time budget"
+            try reducer.offer(.interrupted)
+            return true
+        }
         var stack = Array(tree.children(of: root).reversed())
-        while let element = stack.popLast(), length < HelperConfig.contextMaxBlockChars,
-              context.nodesVisited < HelperConfig.contextNodeBudget {
+        while try reducer.decision == .descendants, !stack.isEmpty {
+            if context.nodesVisited >= HelperConfig.contextNodeBudget { context.stoppedEarly = "node budget"; break }
+            if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; break }
+            let element = stack.removeLast()
             context.nodesVisited += 1
             let role = tree.string(element, kAXRoleAttribute) ?? ""
-            if role == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return nil }
+            if role == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return false }
             if isSkipped(role, inWeb: inWeb) || isPasswordField(element, in: tree) { continue }
+            let frame = tree.frame(of: element)
+            if let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
+            let shown = frame.map(ScreenContext.isShown) ?? true
+            if !shown { continue }
             let title = inWeb && HelperConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
             if role == "AXStaticText" || role == "AXTextField" || role == "AXTextArea" || title != nil {
-                let shown = tree.frame(of: element).map(ScreenContext.isShown) ?? true
                 // A field is read by its value and not walked into, so a page framed in it is looked
                 // for: a field holding one is not read, and the row says that something there is hidden.
                 // A piece of text or a titled control that holds one refuses the window, as in the
@@ -346,113 +391,121 @@ enum ScreenContextReader {
                                                within: HelperConfig.contextTimeBudget, since: started)
                 } else if shown {
                     switch lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
-                    case .excluded: return nil
+                    case .excluded: return false
                     case .notSeenWhole: hidden = true
                     case .none: break
                     }
                 }
-                let text = hidden ? HelperConfig.contextHiddenMarker
-                    : (title ?? tree.string(element, kAXValueAttribute) ?? label(of: element, in: tree))?
-                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if shown, !text.isEmpty, text != parts.last {
-                    parts.append(text)
-                    length += text.count
+                if !hidden && (role == "AXTextField" || role == "AXTextArea") {
+                    if let parts = tree.fieldSource(of: element, windowFrame: windowFrame) {
+                        try reducer.offerProjected(.descendant, parts)
+                    } else if let label = label(of: element, in: tree) {
+                        // Value-less native fields can still expose an approved caption.
+                        try reducer.offer(.descendant, label)
+                    }
+                } else {
+                    let text = hidden ? HelperConfig.contextHiddenMarker
+                        : (title ?? tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree)) ?? ""
+                    try reducer.offer(.descendant, text)
                 }
                 continue
             }
             stack.append(contentsOf: tree.children(of: element).reversed())
         }
-        return String(parts.joined(separator: separator).prefix(HelperConfig.contextMaxBlockChars))
-    }
-
-    /// A field's text, or for a long one (a terminal's scrollback) only the lines inside the window;
-    /// nil when a long field can't report its lines.
-    fileprivate static func visibleText(of element: AXUIElement, windowFrame: CGRect?) -> String? {
-        guard let value = string(element, kAXValueAttribute), !value.isEmpty else { return nil }
-        let string = value as NSString
-        guard string.length > HelperConfig.contextMaxFieldChars, let windowFrame else {
-            return value
+        if try reducer.decision == .descendants {
+            let complete = stack.isEmpty && context.nodesVisited < HelperConfig.contextNodeBudget && Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget
+            try reducer.offer(complete ? .complete : .interrupted)
         }
-        guard let lastLine = int(CaretLocator.parameterized(element, kAXLineForIndexParameterizedAttribute as String, (string.length - 1) as CFNumber)) else {
-            return nil
-        }
-        func lineRange(_ line: Int) -> CFRange? {
-            guard let value = CaretLocator.parameterized(element, kAXRangeForLineParameterizedAttribute as String, line as CFNumber),
-                  CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
-            var range = CFRange()
-            return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil
-        }
-        func lineTop(_ line: Int) -> CGFloat? {
-            guard let range = lineRange(line), range.length > 0 else { return nil }
-            return CaretLocator.bounds(of: range, in: element)?.minY
-        }
-        guard let first = ScreenContext.firstVisibleLine(lineCount: lastLine + 1, windowTop: windowFrame.minY, lineTop: lineTop),
-              let start = lineRange(first)?.location else {
-            return nil
-        }
-        let length = min(string.length - start, HelperConfig.contextMaxFieldChars)
-        return string.substring(with: string.rangeOfComposedCharacterSequences(for: NSRange(location: start, length: length)))
-    }
-
-    // MARK: Terminal
-
-    /// The most recently active tmux client's pane: its foreground program ("claude") and its
-    /// visible text split at the cursor. False when tmux isn't running, has no client, or its pane
-    /// isn't what the focused terminal shows (tmux attached in another tab or window).
-    private static func readTmuxPane(showingIn terminal: AXUIElement?, into context: inout ScreenContext) -> Bool {
-        guard let terminal, let terminalText = string(terminal, kAXValueAttribute),
-              let tmux = HelperConfig.tmuxPaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }),
-              let clients = run(tmux, ["list-clients", "-F", ScreenContext.TmuxPane.clientFormat]),
-              let pane = ScreenContext.activePane(fromTmuxClients: clients),
-              let screen = run(tmux, ["capture-pane", "-p", "-t", pane.id]) else { return false }
-        guard ScreenContext.paneIsOnScreen(
-            pane: screen, screen: String(terminalText.suffix(HelperConfig.tmuxScreenTailChars)),
-            sampleLines: HelperConfig.tmuxPaneSampleLines, requiredShare: HelperConfig.tmuxPaneRequiredShare
-        ) else {
-            HelperLog.debug("ScreenContext: tmux pane \(pane.id) is not the terminal in front")
-            return false
-        }
-        if let processes = run("/bin/ps", ["-o", "pid=,tpgid=,comm=", "-t", (pane.tty as NSString).lastPathComponent]) {
-            context.terminalProgram = ScreenContext.foregroundProgram(fromPS: processes)
-        }
-        (context.textBeforeCaret, context.textAfterCaret) = ScreenContext.splitAtCursor(screen, line: pane.cursorY, column: pane.cursorX)
         return true
     }
 
-    /// A command's output, or nil when it fails or hasn't finished within `timeout` seconds (then
-    /// it is stopped). Waiting for the end of the output isn't enough: a tmux client hands its
-    /// output to the tmux server, so while that server is stopped the output never ends, even once
-    /// the client is killed.
-    static func run(_ path: String, _ arguments: [String], timeout: Double = HelperConfig.contextCommandTimeout) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        let exited = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in exited.signal() }
-        do { try process.run() } catch { return nil }
-
-        let deadline = Date().addingTimeInterval(timeout)
-        let reader = output.fileHandleForReading
-        var data = Data()
-        while true {
-            let remaining = Int32(deadline.timeIntervalSinceNow * 1000)
-            var request = pollfd(fd: reader.fileDescriptor, events: Int16(POLLIN), revents: 0)
-            guard remaining > 0, poll(&request, 1, remaining) > 0 else { return stop(process, path) }
-            let chunk = reader.availableData
-            if chunk.isEmpty { break }
-            data.append(chunk)
+    /// OS capability/visibility adapter; no native text clipping or byte policy.
+    fileprivate static func visibleSource(of element: AXUIElement, windowFrame: CGRect?) -> [String]? {
+        let started = Date()
+        func withinBudget() -> Bool { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget }
+        func attribute(_ name: String) throws -> CFTypeRef? {
+            var value: CFTypeRef?
+            switch AXUIElementCopyAttributeValue(element, name as CFString, &value) {
+            case .success: return value
+            case .attributeUnsupported, .noValue, .notImplemented: return nil
+            default: throw Redactor.Failure.refused
+            }
         }
-        guard exited.wait(timeout: .now() + max(0, deadline.timeIntervalSinceNow)) == .success else { return stop(process, path) }
-        return process.terminationStatus == 0 ? String(data: data, encoding: .utf8) : nil
-    }
-
-    private static func stop(_ process: Process, _ path: String) -> String? {
-        process.terminate()
-        HelperLog.debug("ScreenContext: \((path as NSString).lastPathComponent) didn't finish in time; stopped")
-        return nil
+        do {
+            func characterCount() throws -> Int? {
+                guard let value = try attribute(kAXNumberOfCharactersAttribute) else { return nil }
+                guard CFGetTypeID(value) != CFBooleanGetTypeID(), let number = value as? NSNumber,
+                      number.intValue >= 0, number.doubleValue == Double(number.intValue) else { throw Redactor.Failure.refused }
+                return number.intValue
+            }
+            let count = try characterCount()
+            var names: CFArray?
+            let status = AXUIElementCopyParameterizedAttributeNames(element, &names)
+            guard status == .success || status == .notImplemented else { return nil }
+            let ranged = (names as? [String])?.contains(kAXStringForRangeParameterizedAttribute as String) == true
+            let reader: ((NSRange) -> NSString?)? = ranged ? { requested in
+                var range = CFRange(location: requested.location, length: requested.length)
+                guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+                return CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
+            } : nil
+            func visible(_ count: Int) -> NSRange? {
+                guard withinBudget() else { return nil }
+                guard let windowFrame else { return NSRange(location: 0, length: count) }
+                guard windowFrame.minY.isFinite, windowFrame.maxY.isFinite else { return nil }
+                do {
+                    if let value = try attribute(kAXVisibleCharacterRangeAttribute) {
+                        guard CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+                        var range = CFRange()
+                        guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+                        return NSRange(location: range.location, length: range.length)
+                    }
+                } catch { return nil }
+                guard count > 0, let lastLine = int(CaretLocator.parameterized(element, kAXLineForIndexParameterizedAttribute as String, (count - 1) as CFNumber)),
+                      lastLine >= 0, lastLine < count else { return nil }
+                func lineRange(_ line: Int) -> CFRange? {
+                    guard withinBudget(), let value = CaretLocator.parameterized(element, kAXRangeForLineParameterizedAttribute as String, line as CFNumber),
+                          CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+                    var range = CFRange()
+                    return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil
+                }
+                var geometryFailed = false
+                func lineTop(_ line: Int) -> CGFloat? {
+                    guard let range = lineRange(line), range.length > 0,
+                          let top = CaretLocator.bounds(of: range, in: element)?.minY, top.isFinite else {
+                        geometryFailed = true
+                        return nil
+                    }
+                    return top
+                }
+                // Retains the reference route for providers with monotonic line
+                // geometry (not a guarantee for arbitrary multi-column layouts).
+                guard let first = ScreenContext.firstVisibleLine(lineCount: lastLine + 1, windowTop: windowFrame.minY, lineTop: lineTop),
+                      let start = lineRange(first)?.location, start >= 0, start <= count else { return nil }
+                let below = ScreenContext.firstVisibleLine(lineCount: lastLine + 1, windowTop: windowFrame.maxY, lineTop: lineTop)
+                guard !geometryFailed else { return nil }
+                let end: Int
+                if let below {
+                    guard let location = lineRange(below)?.location else { return nil }
+                    end = location
+                } else { end = count }
+                guard end >= start, end <= count else { return nil }
+                return NSRange(location: start, length: end - start)
+            }
+            var visibleSnapshot: (Int, NSRange)?
+            let result = try BoundedFieldReader.read(count: count, whole: {
+                (try? attribute(kAXValueAttribute)) as? NSString
+            }, range: reader, visible: { actualCount in
+                guard let interval = visible(actualCount) else { return nil }
+                visibleSnapshot = (actualCount, interval)
+                return interval
+            }, valid: {
+                guard withinBudget() else { return false }
+                guard let count else { return true }
+                return (try? characterCount()) == count
+            })
+            if let (actualCount, interval) = visibleSnapshot, visible(actualCount) != interval { return nil }
+            return result?.parts
+        } catch { return nil }
     }
 
     // MARK: Attributes
@@ -468,7 +521,7 @@ enum ScreenContextReader {
     /// unknown, which is read as excluded.
     static func page(_ result: AXError, address: CFTypeRef?) -> PageHost {
         switch result {
-        case .success: address.flatMap(host(ofAddress:)).map(PageHost.host) ?? .noHost
+        case .success: address.map(addressHost(ofAddress:)) ?? .noHost
         case .noValue, .attributeUnsupported: .noHost
         default: .unknown
         }
@@ -477,15 +530,28 @@ enum ScreenContextReader {
     /// The host of a page's address as the app gives it (a URL, or its text), or for a non-web
     /// page its scheme.
     static func host(ofAddress value: CFTypeRef) -> String? {
-        let url = CFGetTypeID(value) == CFURLGetTypeID() ? value as? URL : (value as? String).flatMap(URL.init(string:))
-        guard let url, let scheme = url.scheme?.lowercased() else { return nil }
-        // Only web pages have a meaningful host; an extension or app page has a random ID there.
-        return ["http", "https"].contains(scheme) ? url.host : scheme
+        addressHost(ofAddress: value).name
+    }
+
+    static func addressHost(ofAddress value: CFTypeRef) -> PageHost {
+        let address: String?
+        if CFGetTypeID(value) == CFURLGetTypeID() { address = (value as? URL)?.absoluteString }
+        else { address = value as? String }
+        guard let address else { return .unknown }
+        do {
+            let data = try Redactor.request(JSONSerialization.data(withJSONObject: ["address": address]), operation: .address)
+            guard let result = try JSONSerialization.jsonObject(with: data) as? [String: String] else { return .unknown }
+            switch result["kind"] {
+            case "noHost": return .noHost
+            case "host": return result["host"].map(PageHost.host) ?? .unknown
+            default: return .unknown
+            }
+        } catch { return .unknown }
     }
 
     private static func label<Tree: ScreenTree>(of element: Tree.Element, in tree: Tree) -> String? {
         for name in [kAXTitleAttribute, kAXDescriptionAttribute] {
-            if let text = tree.string(element, name), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
+            if let text = tree.sourceString(element, name), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
         }
         return nil
     }
@@ -495,7 +561,7 @@ enum ScreenContextReader {
     /// (an icon button's "Copy") comes as its description, and was seen as the title as well in an
     /// Electron app.
     private static func drawnTitle<Tree: ScreenTree>(of element: Tree.Element, in tree: Tree) -> String? {
-        drawnTitle(title: tree.string(element, kAXTitleAttribute), description: tree.string(element, kAXDescriptionAttribute))
+        drawnTitle(title: tree.sourceString(element, kAXTitleAttribute), description: tree.string(element, kAXDescriptionAttribute))
     }
 
     static func drawnTitle(title: String?, description: String?) -> String? {
@@ -518,15 +584,23 @@ protocol ScreenTree {
     func children(of element: Element) -> [Element]
     func frame(of element: Element) -> CGRect?
     func string(_ element: Element, _ name: String) -> String?
+    func sourceString(_ element: Element, _ name: String) -> String?
     /// What a web area says of its page's address.
     func page(of webArea: Element) -> PageHost
     /// A text field's visible text.
-    func fieldText(of element: Element, windowFrame: CGRect?) -> String?
+    func fieldSource(of element: Element, windowFrame: CGRect?) -> [String]?
     /// The focused field's text before the caret, selected, and after it.
-    func caretWindow(of element: Element) -> (String, String, String)?
+    func caretWindow(of element: Element) -> SharedContext.CaretWindow?
     func isSame(_ first: Element, _ second: Element) -> Bool
     /// Whether the element's text can be changed: a web area that is itself an editor's document.
     func isEditable(_ element: Element) -> Bool
+}
+
+extension ScreenTree {
+    func sourceString(_ element: Element, _ name: String) -> String? {
+        guard let value = string(element, name) else { return nil }
+        return try? BoundedCaretSource.snapshot(value as NSString)
+    }
 }
 
 struct LiveScreenTree: ScreenTree {
@@ -538,13 +612,18 @@ struct LiveScreenTree: ScreenTree {
 
     func string(_ element: AXUIElement, _ name: String) -> String? { CaretLocator.attribute(element, name) as? String }
 
-    func page(of webArea: AXUIElement) -> PageHost { ScreenContextReader.page(of: webArea) }
-
-    func fieldText(of element: AXUIElement, windowFrame: CGRect?) -> String? {
-        ScreenContextReader.visibleText(of: element, windowFrame: windowFrame)
+    func sourceString(_ element: AXUIElement, _ name: String) -> String? {
+        guard let value = CaretLocator.attribute(element, name) as? NSString else { return nil }
+        return try? BoundedCaretSource.snapshot(value)
     }
 
-    func caretWindow(of element: AXUIElement) -> (String, String, String)? { ScreenContextReader.caretWindow(of: element) }
+    func page(of webArea: AXUIElement) -> PageHost { ScreenContextReader.page(of: webArea) }
+
+    func fieldSource(of element: AXUIElement, windowFrame: CGRect?) -> [String]? {
+        ScreenContextReader.visibleSource(of: element, windowFrame: windowFrame)
+    }
+
+    func caretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? { ScreenContextReader.caretWindow(of: element) }
 
     /// An element whose value the app lets be set: observed true for an editable web area in WebKit
     /// and Gecko, false for a page that is only read.

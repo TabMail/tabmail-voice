@@ -7,8 +7,14 @@
 using JSON = nlohmann::json;
 static void expect(bool value) { if (!value) throw std::runtime_error("privacy contract failed"); }
 int main(int argc, char** argv) {
-    expect(argc == 2);
+    expect(argc == 3);
     std::ifstream file(argv[1]); JSON corpus; file >> corpus;
+    std::ifstream addressFile(argv[2]); JSON addresses; addressFile >> addresses;
+    for (const auto& item : addresses.at("cases")) {
+        const auto page = voice::hostOfAddress(item["address"].is_null() ? std::nullopt : std::optional(item["address"].get<std::string>()));
+        const std::string kind = page.kind == voice::PageHost::Kind::host ? "host" : page.kind == voice::PageHost::Kind::noHost ? "noHost" : "unknown";
+        expect(kind == item["kind"].get<std::string>() && page.name == item["host"].get<std::string>());
+    }
     unsigned positive = 0, negative = 0;
     for (const auto& item : corpus.at("cases")) {
         const voice::ScreenExclusions exclusions({{"excludedAppIDs", JSON::array()}, {"excludedHosts", JSON::array({item.at("site")})}});
@@ -17,6 +23,10 @@ int main(int argc, char** argv) {
         expect(exclusions.excludesHost(item.at("host")) == expected);
     }
     expect(positive > 0 && negative > 0 && positive + negative == corpus.at("cases").size());
+    const voice::ScreenExclusions unicodePolicy(JSON{{"excludedAppIDs", {"Straße", "é"}}, {"excludedHosts", {"Straße.example"}}});
+    expect(unicodePolicy.excludesApp("STRASSE"));
+    expect(unicodePolicy.excludesApp("e\u0301"));
+    expect(unicodePolicy.excludesHost("sub.STRASSE.example."));
     const JSON valid{{"excludedAppIDs", {"ORG.GNOME.TextEditor.desktop"}}, {"excludedHosts", {"secret.example", "vault"}}};
     unsigned identityCalls = 0, readCalls = 0;
     const auto identify = [&](int) -> std::optional<std::string> { ++identityCalls; return "org.gnome.texteditor.desktop"; };

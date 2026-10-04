@@ -5,7 +5,8 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { ScriptError } from "../../../../src/core/agent/connectors/macos/appleScript.js";
 import { ToolArgumentError } from "../../../../src/core/agent/connectors/contract.js";
-import { NotesCreateTool, NotesScripts, notesConnector, NotesSearchTool } from "../../../../src/core/agent/connectors/macos/notes.js";
+import { NotesCreateTool, notesConnector, NotesSearchTool } from "../../../../src/core/agent/connectors/notes.js";
+import { NotesScripts, MacNoteStore } from "../../../../src/core/agent/connectors/macos/notes.js";
 import * as config from "../../../../src/core/config.js";
 import { LocalDateTime } from "../../../../src/core/util/localDateTime.js";
 import { FakeScriptRunner } from "../../../support/stubs.js";
@@ -34,7 +35,7 @@ function iso(date: Date): string {
 
 describe("the connector", () => {
   test("Notes has notes_search and notes_create", () => {
-    expect(notesConnector.tools({ scriptRunner: runner }).map((tool) => [tool.name, tool.connector])).toEqual([
+    expect(notesConnector.tools({ noteStore: new MacNoteStore(runner) }).map((tool) => [tool.name, tool.connector])).toEqual([
       ["notes_search", "notes"],
       ["notes_create", "notes"],
     ]);
@@ -72,7 +73,7 @@ describe("notes_search", () => {
     const now = new Date();
     const dayAgo = LocalDateTime.addingDays(now, -1);
     runner.result = [record("Older", "Work", iso(dayAgo), "First"), record("Undated", "Notes", "", "Middle"), record("Newer", "Work", iso(now), "Second\nline")].join(NotesScripts.noteSeparator);
-    const tool = new NotesSearchTool(runner);
+    const tool = new NotesSearchTool(new MacNoteStore(runner));
 
     const result = await tool.run({ query: " Offsite " }, signal);
 
@@ -89,7 +90,7 @@ describe("notes_search", () => {
   });
 
   test("no match says so", async () => {
-    expect(await new NotesSearchTool(runner).run({ query: "offsite" }, signal)).toBe('No notes match "offsite".');
+    expect(await new NotesSearchTool(new MacNoteStore(runner)).run({ query: "offsite" }, signal)).toBe('No notes match "offsite".');
   });
 
   /** A search matching more than the model is shown stops at the newest ones and says there are more. */
@@ -100,7 +101,7 @@ describe("notes_search", () => {
       .reverse()
       .join(NotesScripts.noteSeparator);
 
-    const result = await new NotesSearchTool(runner).run({ query: "note" }, signal);
+    const result = await new NotesSearchTool(new MacNoteStore(runner)).run({ query: "note" }, signal);
 
     const shown = result.split("\n\n").slice(1, -1);
     expect(shown.map((section) => section.split(" (")[0])).toEqual(Array.from({ length: limit }, (_, index) => `"Note ${index}"`));
@@ -113,14 +114,14 @@ describe("notes_search", () => {
     const now = new Date();
     runner.result = Array.from({ length: limit }, (_, index) => record(`Note ${index}`, "Notes", iso(new Date(now.getTime() - index * 60_000)), "Text")).join(NotesScripts.noteSeparator);
 
-    const result = await new NotesSearchTool(runner).run({ query: "note" }, signal);
+    const result = await new NotesSearchTool(new MacNoteStore(runner)).run({ query: "note" }, signal);
 
     expect(result.split("\n\n").slice(1).map((section) => section.split(" (")[0])).toEqual(Array.from({ length: limit }, (_, index) => `"Note ${index}"`));
     expect(result).not.toContain("more notes match");
   });
 
   test("a search without a query runs nothing", async () => {
-    await expect(new NotesSearchTool(runner).run({ query: " " }, signal)).rejects.toEqual(ToolArgumentError.missing("query"));
+    await expect(new NotesSearchTool(new MacNoteStore(runner)).run({ query: " " }, signal)).rejects.toEqual(ToolArgumentError.missing("query"));
     expect(runner.runs).toEqual([]);
   });
 
@@ -128,7 +129,7 @@ describe("notes_search", () => {
   test("a refusal is passed on", async () => {
     runner.failure = ScriptError.noAccess("Notes");
 
-    await expect(new NotesSearchTool(runner).run({ query: "offsite" }, signal)).rejects.toThrow("TabMail Voice can't use Notes. Allow it in System Settings › Privacy & Security › Automation.");
+    await expect(new NotesSearchTool(new MacNoteStore(runner)).run({ query: "offsite" }, signal)).rejects.toThrow("TabMail Voice can't use Notes. Allow it in System Settings › Privacy & Security › Automation.");
   });
 });
 
@@ -137,7 +138,7 @@ describe("notes_create", () => {
    * request's run. */
   test("the confirmed note is added", async () => {
     runner.result = record("Groceries", "Notes");
-    const tool = new NotesCreateTool(runner);
+    const tool = new NotesCreateTool(new MacNoteStore(runner));
     const args = { title: "Groceries", body: "Milk\nEggs" };
 
     const question = tool.confirmation(args);
@@ -150,10 +151,31 @@ describe("notes_create", () => {
 
   /** A note without a title or text asks nothing and adds nothing. */
   test.each([{ body: "Milk" }, { title: "Groceries" }, { title: "Groceries", body: " \n" }, { title: 7, body: "Milk" }])("%j adds nothing", async (args) => {
-    const tool = new NotesCreateTool(runner);
+    const tool = new NotesCreateTool(new MacNoteStore(runner));
 
     expect(tool.confirmation(args)).toBeNull();
     await expect(tool.run(args, signal)).rejects.toBeInstanceOf(ToolArgumentError);
     expect(runner.runs).toEqual([]);
+  });
+});
+
+describe("shared native Notes contract", () => {
+  test("uses a provider without AppleScript and passes cancellation to it", async () => {
+    const calls: unknown[] = [];
+    const store = {
+      async search(query: string, receivedSignal: AbortSignal) {
+        calls.push([query, receivedSignal]);
+        return [{ title: "Synthetic memo", folder: "Personal", changed: null, text: "Memo body" }];
+      },
+      async add(title: string, text: string, receivedSignal: AbortSignal) {
+        calls.push([title, text, receivedSignal]);
+        return { title, folder: "Personal" };
+      },
+    };
+    expect(await new NotesSearchTool(store).run({ query: "memo" }, signal)).toContain('"Synthetic memo" (Personal):\nMemo body');
+    const create = new NotesCreateTool(store);
+    expect(create.confirmation({ title: "Memo", body: "Body" })).toBe("Add this note?\nMemo\nBody");
+    expect(await create.run({ title: "Memo", body: "Body" }, signal)).toBe('Added the note "Memo" in the Personal folder.');
+    expect(calls).toEqual([["memo", signal], ["Memo", "Body", signal]]);
   });
 });

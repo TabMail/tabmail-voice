@@ -11,10 +11,14 @@ struct Element {
     std::vector<Element*> children;
     bool editable = false;
     std::optional<voice::ContextFrame> bounds = {};
+    std::string selected = {};
+    bool visible = true, fieldAvailable = true;
 };
 struct Tree {
     using Node = Element*;
     unsigned counts = 0, selections = 0, values = 0, titles = 0;
+    unsigned terminalSelections = 0;
+    std::optional<voice::CaretText> caretOverride;
     bool budget = true;
     Node expireAfterLabel = nullptr, expireAfterPage = nullptr;
     bool withinBudget() { return budget; }
@@ -27,11 +31,36 @@ struct Tree {
         return node->children;
     }
     bool editable(Node node) { return node->editable; }
-    bool shown(Node) { return true; }
+    bool shown(Node node) { return node->visible; }
     std::optional<voice::ContextFrame> frame(Node node) { return node->bounds; }
     std::string label(Node node) { if (node == expireAfterLabel) budget = false; if (node->role == ATSPI_ROLE_FRAME) ++titles; else ++values; return node->label; }
-    std::optional<std::string> field(Node node, int) { ++counts; ++values; return node->label; }
-    std::optional<voice::CaretText> caret(Node node) { if (node->role != ATSPI_ROLE_ENTRY && !node->editable) return {}; ++counts; ++selections; ++values; return voice::CaretText{{"Reply ", "synthetic", " after"}}; }
+    std::optional<std::string> field(Node node, int) { ++counts; if (!node->fieldAvailable) return {}; ++values; return node->label; }
+    JSON viewportSurface(Node node,size_t id,voice::ContextFrame frame,bool focused,size_t budget) {
+        ++counts;
+        if(!node->fieldAvailable || node->label.size()>budget) throw std::runtime_error("synthetic viewport unavailable");
+        ++values;
+        JSON ranges=JSON::array();
+        if(!node->selected.empty()) {
+            const auto at=node->label.find(node->selected);
+            if(at==std::string::npos) throw std::runtime_error("fixture selection outside source");
+            ranges.push_back({{"run",0},{"start",g_utf8_strlen(node->label.substr(0,at).c_str(),-1)},
+                {"end",g_utf8_strlen(node->label.substr(0,at+node->selected.size()).c_str(),-1)}});
+        }
+        JSON caret={{"status","unavailable"}};
+        if(focused && node->label.starts_with("first line\n> hello")) caret={{"status","exact"},{"surface",id},{"run",0},{"offset",18}};
+        return {{"surface",{{"id",id},{"frame",{frame.x,frame.y,frame.width,frame.height}},
+            {"runs",JSON::array({{{"id",0},{"text",node->label},{"connected",false},{"startKnown",false},{"endKnown",false}}})},
+            {"selection",{{"complete",!caretOverride || !caretOverride->selectionUnavailable},{"ranges",ranges}}}}},{"caret",caret},{"offsetUnit","scalar"}};
+    }
+    std::optional<voice::CaretText> selection(Node node) { ++terminalSelections; if (caretOverride) return caretOverride; return voice::CaretText{{"", node->selected, ""}}; }
+    std::optional<voice::CaretText> caret(Node node) { if (node->role != ATSPI_ROLE_ENTRY && !node->editable) return {}; ++counts; ++selections; ++values; if (caretOverride) return caretOverride; return voice::CaretText{{"Reply ", "synthetic", " after"}}; }
+};
+struct ProjectedTree : Tree {
+    void appendFieldSource(Node node, const std::optional<voice::ContextFrame>&, voice::VisibleContext& context,
+                           const std::optional<voice::ContextFrame>& frame) {
+        ++values;
+        context.appendField({"password: ", node->label, ""}, frame);
+    }
 };
 struct CollectionTree : Tree {
     std::optional<std::vector<Node>> census;
@@ -41,8 +70,107 @@ struct CollectionTree : Tree {
 };
 static void expect(bool value, const char* description) { if (!value) throw std::runtime_error(description); }
 int main() {
+    expect(voice::completeProviderRange("é😀", 7, 9), "AT-SPI spans count Unicode scalars, not UTF-8 bytes");
+    expect(voice::completeProviderRange("", 7, 7), "complete empty range is valid");
+    expect(!voice::completeProviderRange("prefix", 0, 10), "short provider response cannot become a complete selection");
+    expect(!voice::completeProviderRange("extra", 0, 4), "overlong provider response is refused");
+    expect(!voice::completeProviderRange(nullptr, 0, 0), "missing response is not an empty range");
+    expect(!voice::completeProviderRange("\xff", 0, 1), "invalid UTF-8 cannot satisfy a native character span");
+    expect(!voice::completeProviderRange("", -1, -1), "negative native offsets are invalid");
+    expect(!voice::completeProviderRange("", 2, 1), "reversed native offsets are invalid");
+
+    {
+        Element first{ATSPI_ROLE_TEXT, " same ", {}, {}};
+        Element second{ATSPI_ROLE_TEXT, " same ", {}, {}};
+        Element last{ATSPI_ROLE_TEXT, "must not be read after refusal", {}, {}};
+        Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&first, &second, &last}};
+        Tree tree;
+        size_t visited = 0;
+        auto rowText = [&](std::optional<voice::ContextFrame> window = {}) {
+            visited = 0;
+            return voice::semanticLabel(tree, &row, voice::SemanticText::Kind::row, visited, window);
+        };
+        expect(rowText() == "same | must not be read after refusal", "shared row normalization and canonical adjacent deduplication");
+        last.visible = false; tree = Tree{};
+        expect(rowText() == "same" && tree.counts == 2, "hidden semantic descendants are not read");
+        last.visible = true; last.bounds = voice::ContextFrame{200, 200, 20, 20}; tree = Tree{};
+        expect(rowText(voice::ContextFrame{0, 0, 100, 100}) == "same" && tree.counts == 2, "off-window semantic descendants are not read");
+        last.bounds = voice::ContextFrame{0, 0, 20, 1}; tree = Tree{};
+        expect(rowText() == "same" && tree.counts == 2, "clipped semantic descendants are not read");
+        row.label = "Root label"; tree = Tree{};
+        expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
+        tree = Tree{}; visited = 0;
+        expect(voice::semanticLabel(tree, &row, voice::SemanticText::Kind::heading, visited) == "Root label" && tree.counts == 0,
+            "heading root prevents all descendant value reads");
+        row.label.clear(); first.label = std::string(10000, 'a'); second.label = std::string(10000, 'b'); tree = Tree{};
+        last.bounds.reset();
+        expect(rowText() == first.label + " | " + second.label && tree.counts == 2,
+            "budget stop keeps the final complete source fragment and prevents later value reads");
+    }
     const voice::AppIdentity app{"synthetic.desktop", "Synthetic"};
     const voice::ScreenExclusions policy(JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", {"secret.example"}}});
+    {
+        Element field{ATSPI_ROLE_ENTRY, "syntheticSecret123", {}, {}};
+        Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&field}};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&row}};
+        Element focus{ATSPI_ROLE_PUSH_BUTTON, "", {}, {}};
+        ProjectedTree tree;
+        const auto screen = voice::gatherScreen(tree, &window, &focus, {&window}, app, policy);
+        expect(screen["renderedText"] == "| [redacted]", "production semantic walk preserves projected field recognition source");
+    }
+    {
+        Element entry{ATSPI_ROLE_ENTRY, "", {}, {}, true};
+        Element window{ATSPI_ROLE_FRAME, "Synthetic", {}, {&entry}};
+        Tree tree;
+        tree.caretOverride = voice::CaretText{{"before", "", "after"}, true};
+        auto screen = voice::gatherScreen(tree, &window, &entry, {&window}, app, policy);
+        expect(screen["selectionRedacted"] == true && screen["selectedText"] == "",
+            "unavailable selection disables Edit even when final redaction changes no bytes");
+        tree.caretOverride = voice::CaretText{{"before ", std::string(20001, 'x'), " after"}, false};
+        screen = voice::gatherScreen(tree, &window, &entry, {&window}, app, policy);
+        expect(screen["selectedText"] == std::string(20001, 'x') && screen["selectionRedacted"] == false,
+            "full selection crosses the old native 20000-character limit intact");
+    }
+    {
+        Element terminal{ATSPI_ROLE_TERMINAL, "first line\n> hello world\nstatus bar", {}, {}, true};
+        Element terminalWindow{ATSPI_ROLE_FRAME, "Synthetic terminal", {}, {&terminal}};
+        terminal.bounds=voice::ContextFrame{0,0,400,200};terminalWindow.bounds=terminal.bounds;
+        Tree terminalTree;
+        auto screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen["terminalViewport"]["caret"]["status"]=="exact" && screen["terminalViewport"]["caret"]["offset"]==18,
+            "live terminal dispatch preserves reference typed caret");
+        expect(screen["renderedText"]=="[Terminal surface 0]\nfirst line\n> hello world\nstatus bar" && terminalTree.selections==0 && terminalTree.terminalSelections==0,
+            "terminal never enters generic caret/selection or field path");
+        terminal.selected="hello";terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen["selectedText"]=="hello" && screen["textBeforeCaret"]=="" && screen["textAfterCaret"]=="", "selection remains independent on wire");
+        terminalTree=Tree{};terminalTree.caretOverride=voice::CaretText::unavailable();
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen["selectedText"]=="[redacted]" && screen["selectionRedacted"]==true,"incomplete terminal selection disables edit");
+        terminal.selected.clear();terminal.label="build passed\ntoken=syntheticSecret123";terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen.dump().find("syntheticSecret123")==std::string::npos && screen["terminalViewport"]["caret"]["status"]=="unavailable","source is redacted before any wire/log fields");
+        Element other{ATSPI_ROLE_TERMINAL,terminal.label,{}, {}};other.bounds=terminal.bounds;
+        other.visible=false;terminalWindow.children.push_back(&other);terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen["terminalViewport"]["surfaces"].size()==1 && terminalTree.counts==2,"hidden terminal is never acquired; visible one is revalidated");
+        other.visible=true;terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen["terminalViewport"]["surfaces"].size()==2,"identical visible terminal surfaces are not text-deduplicated");
+        terminalWindow.children.pop_back();terminal.fieldAvailable=false;terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen["renderedText"]=="" && screen["terminalViewport"]["complete"]==false,"unavailable terminal source has no legacy fallback");
+        terminal.fieldAvailable=true;
+        Element child{ATSPI_ROLE_TEXT,"child is not independently read",{}, {},true};terminal.children={&child};terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&child,{&terminal,&terminalWindow},app,policy);
+        expect(screen["terminalViewport"]["surfaces"].size()==1 && screen.dump().find(child.label)==std::string::npos,"child focus binds its containing terminal");
+        child.role=ATSPI_ROLE_PASSWORD_TEXT;terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(terminalTree.counts==0 && screen.dump().find("build passed")==std::string::npos,"nested password prevents aggregate terminal acquisition");
+        child.role=ATSPI_ROLE_DOCUMENT_WEB;child.page=voice::hostOfAddress("https://secret.example/");terminalTree=Tree{};
+        screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
+        expect(screen==voice::hiddenScreen() && terminalTree.counts==0 && terminalTree.titles==0,"excluded terminal page refuses before content");
+    }
     Element field{ATSPI_ROLE_ENTRY, "Synthetic field", {}, {}};
     Element password{ATSPI_ROLE_PASSWORD_TEXT, "must never be read", {}, {}};
     Element heading{ATSPI_ROLE_HEADING, "Conversation", {}, {}};

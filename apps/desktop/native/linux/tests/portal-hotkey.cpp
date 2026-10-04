@@ -55,7 +55,8 @@ int main() {
     for (auto api = info->interfaces; *api; ++api) require(g_dbus_connection_register_object(bus.get(), std::string((*api)->name).ends_with("Session") ? session : path, *api, &table, &fixture, nullptr, &error.value));
     g_dbus_node_info_unref(info);
     Output output; Gesture gesture; gesture.tapMaxDuration = 0.2; gesture.doubleTapWindow = 0.3;
-    PortalHotkey portal(output, gesture);
+    std::vector<Action> actions;
+    PortalHotkey portal(output, gesture, [&](Action action) { actions.push_back(action); output.action(action); });
     g_timeout_add_seconds(8, [](gpointer) -> gboolean { std::_Exit(2); }, nullptr);
     require(!portal.configure("F8"));
     while (portal.busy()) g_main_context_iteration(nullptr, true);
@@ -87,15 +88,28 @@ int main() {
     require(portal.ready() && fixture.binds == binds + 1); // Restarts bind the same saved IDs again.
     emit("Activated", 5000, "mode-F8");
     while (!gesture.holding) g_main_context_iteration(nullptr, true);
+    require(actions.back() == Action::startAgent); // One initial-intent action, no synthetic Space.
+    const auto beforeRepeat = actions.size();
     emit("Activated", 5100, "mode-F8"); // Repeat must not lose ownership of the held gesture.
     emit("Deactivated", 5400, "mode-F8");
     while (gesture.holding) g_main_context_iteration(nullptr, true);
-    require(!gesture.active());
+    require(!gesture.active() && actions.size() == beforeRepeat + 1 && actions.back() == Action::finish);
     emit("Activated", 6000); emit("Deactivated", 6050);
     emit("Activated", 6100); emit("Deactivated", 6150);
     while (!gesture.handsFree) g_main_context_iteration(nullptr, true);
+    const auto beforeMode = actions.size();
+    emit("Activated", 6200, "mode-F8");
+    while (actions.size() == beforeMode) g_main_context_iteration(nullptr, true);
+    require(actions.back() == Action::toggleMode && gesture.handsFree);
+    emit("Deactivated", 6250, "mode-F8");
     emit("Activated", 6300, "cancel-F8");
     while (gesture.handsFree) g_main_context_iteration(nullptr, true);
     require(!gesture.active());
+    require(actions.back() == Action::cancel);
+    gesture.chatOpen = true;
+    const auto beforeClose = actions.size();
+    emit("Activated", 6500, "cancel-F8");
+    while (actions.size() == beforeClose) g_main_context_iteration(nullptr, true);
+    require(actions.back() == Action::closeChat);
     std::cerr << "shortcut permission refusal, retry, press/release and revoked-session cleanup passed\n";
 }

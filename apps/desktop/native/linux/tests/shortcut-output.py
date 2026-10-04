@@ -9,5 +9,5 @@ result = subprocess.run([sys.argv[1]], capture_output=True, text=True, timeout=1
 assert result.returncode == 0, result.stderr
 messages = [json.loads(line) for line in result.stdout.splitlines()]
 actions = [message["action"] for message in messages if message.get("event") == "action"]
-assert actions == ["start", "finish", "start", "cancel", "start", "toggleMode", "finish", "start", "finish", "startHandsFree", "listenHandsFree", "cancel"], actions
+assert actions == ["start", "finish", "start", "cancel", "startAgent", "finish", "start", "finish", "startHandsFree", "listenHandsFree", "toggleMode", "cancel", "closeChat"], actions
 print("Ordered shortcut actions and active-recording revocation cancellation passed")

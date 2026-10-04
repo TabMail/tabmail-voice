@@ -43,6 +43,29 @@ struct HotkeyMonitorTests {
         monitor.handle(.flagsChanged, keyCode: keyCode ?? rightOption, flags: down ? flag : [], isRepeat: false, at: time ?? clock.tick())
     }
 
+    @Test func shiftSelectsAgentOnlyAtTheHotkeyDownEdge() async {
+        for hotkey in DictationHotkey.allCases {
+            for shift in [UInt16(kVK_Shift), UInt16(kVK_RightShift)] {
+                for releaseShiftFirst in [true, false] {
+                    let (monitor, actions) = makeMonitor(hotkey)
+                    let base: CGEventFlags = hotkey == .function ? .maskSecondaryFn : .maskAlternate
+                    #expect(monitor.handle(.flagsChanged, keyCode: shift, flags: .maskShift, isRepeat: false, at: 1))
+                    #expect(monitor.handle(.flagsChanged, keyCode: hotkey.keyCode, flags: [base, .maskShift], isRepeat: false, at: 2))
+                    if releaseShiftFirst {
+                        #expect(monitor.handle(.flagsChanged, keyCode: shift, flags: base, isRepeat: false, at: 3))
+                    }
+                    #expect(monitor.handle(.flagsChanged, keyCode: hotkey.keyCode, flags: releaseShiftFirst ? [] : .maskShift, isRepeat: false, at: 4))
+                    #expect(await dispatched(actions) == [.startAgent, .finish])
+                }
+            }
+        }
+        let (monitor, actions) = makeMonitor()
+        #expect(hotkey(monitor, down: true))
+        #expect(monitor.handle(.flagsChanged, keyCode: UInt16(kVK_Shift), flags: [.maskShift, .maskAlternate], isRepeat: false, at: clock.tick()))
+        #expect(hotkey(monitor, down: false))
+        #expect(await dispatched(actions) == [.start, .finish])
+    }
+
     @Test func spaceDuringAHoldIsKeptFromTheAppAndSwitchesTheMode() async {
         let (monitor, actions) = makeMonitor()
 

@@ -1,0 +1,135 @@
+{
+  "description": "Shared page classification. Provider absence is empty; unavailable is null. Malformed present addresses refuse. Web hosts use WHATWG canonicalization; non-web addresses match their scheme.",
+  "cases": [
+    {
+      "address": "",
+      "kind": "noHost",
+      "host": ""
+    },
+    {
+      "address": "https://Example.COM/a",
+      "kind": "host",
+      "host": "example.com"
+    },
+    {
+      "address": "https://user:synthetic@secret.example:443/a",
+      "kind": "host",
+      "host": "secret.example"
+    },
+    {
+      "address": "http://",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "https:///secret.example",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "https:secret.example",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "secret.example",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "//secret.example/a",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": " https://secret.example ",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "https://secret.example\\evil.test",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "https://secret.example%2eevil.test/",
+      "kind": "host",
+      "host": "secret.example.evil.test"
+    },
+    {
+      "address": "https://secret.example./",
+      "kind": "host",
+      "host": "secret.example."
+    },
+    {
+      "address": "https://bücher.example/",
+      "kind": "host",
+      "host": "xn--bcher-kva.example"
+    },
+    {
+      "address": "http://127.1/",
+      "kind": "host",
+      "host": "127.0.0.1"
+    },
+    {
+      "address": "http://0x7f000001/",
+      "kind": "host",
+      "host": "127.0.0.1"
+    },
+    {
+      "address": "https://[::1]/",
+      "kind": "host",
+      "host": "::1"
+    },
+    {
+      "address": "HTTPS://EXAMPLE.COM/",
+      "kind": "host",
+      "host": "example.com"
+    },
+    {
+      "address": "file:///tmp/synthetic",
+      "kind": "host",
+      "host": "file"
+    },
+    {
+      "address": "vault://item/synthetic",
+      "kind": "host",
+      "host": "vault"
+    },
+    {
+      "address": "mailto:synthetic@example.invalid",
+      "kind": "host",
+      "host": "mailto"
+    },
+    {
+      "address": "https://secret.example:99999/",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "https://secret.example\u0000.evil.test/",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "https://secret.example\n.evil.test/",
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": null,
+      "kind": "unknown",
+      "host": ""
+    },
+    {
+      "address": "about:blank",
+      "kind": "host",
+      "host": "about"
+    },
+    {
+      "address": "chrome-extension://synthetic/page",
+      "kind": "host",
+      "host": "chrome-extension"
+    }
+  ]
+}

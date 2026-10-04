@@ -1,0 +1,436 @@
+{
+  "cases": [
+    {
+      "name": "all markers",
+      "request": {
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "Heading"
+          },
+          {
+            "kind": "text",
+            "text": "text"
+          },
+          {
+            "kind": "link",
+            "text": "link"
+          },
+          {
+            "kind": "row",
+            "text": "cell | cell"
+          },
+          {
+            "kind": "field",
+            "text": "first\n"
+          },
+          {
+            "kind": "caret",
+            "text": "‸"
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "## Heading\ntext\n[link]\n| cell | cell\n> first\n> \n» ‸"
+      }
+    },
+    {
+      "name": "half overlap",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "a",
+            "frame": [
+              0,
+              100,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "b",
+            "frame": [
+              60,
+              110,
+              50,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "a [b]"
+      }
+    },
+    {
+      "name": "sliver overlap",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "a",
+            "frame": [
+              0,
+              100,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "b",
+            "frame": [
+              60,
+              111,
+              50,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "a\nb"
+      }
+    },
+    {
+      "name": "column jump",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "a",
+            "frame": [
+              0,
+              500,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "b",
+            "frame": [
+              600,
+              480,
+              50,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "a\n\nb"
+      }
+    },
+    {
+      "name": "missing and zero frames",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "a"
+          },
+          {
+            "kind": "text",
+            "text": "b",
+            "frame": [
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "c",
+            "frame": [
+              1,
+              0,
+              40,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "a\nb\nc"
+      }
+    },
+    {
+      "name": "split selection",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "password:"
+          },
+          {
+            "kind": "caret",
+            "text": "ignored"
+          }
+        ],
+        "caret": [
+          "hunter",
+          "2x",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "password:\n» [redacted]‸[redacted]‸",
+        "caret": [
+          "[redacted]",
+          "[redacted]",
+          ""
+        ],
+        "selectionRedacted": true
+      }
+    },
+    {
+      "name": "absent caret block",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "password:"
+          }
+        ],
+        "caret": [
+          "hunter",
+          "2x",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "password:",
+        "caret": [
+          "[redacted]",
+          "[redacted]",
+          ""
+        ],
+        "selectionRedacted": true
+      }
+    },
+    {
+      "name": "ordinary whitespace selection",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "ignored"
+          }
+        ],
+        "caret": [
+          "before",
+          " \n",
+          "after"
+        ]
+      },
+      "expected": {
+        "rendered": "» before‸ \n» ‸after",
+        "caret": [
+          "before",
+          " \n",
+          "after"
+        ],
+        "selectionRedacted": false
+      }
+    },
+    {
+      "name": "Mac Unicode whitespace",
+      "request": {
+        "normalize": "​ hello "
+      },
+      "expected": {
+        "text": "hello",
+        "truncated": false
+      }
+    },
+    {
+      "name": "canonical adjacent fragment duplicate",
+      "request": {
+        "normalize": " é ",
+        "previous": "é"
+      },
+      "expected": {
+        "text": "",
+        "truncated": false
+      }
+    },
+    {
+      "name": "complete source admission crosses presentation budget",
+      "request": {
+        "admit": "a🙂tail",
+        "used": 262140
+      },
+      "expected": {
+        "text": "a🙂tail",
+        "used": 262149,
+        "budgetFull": true
+      }
+    },
+    {
+      "name": "canonical duplicate spends no source budget",
+      "request": {
+        "admit": " é ",
+        "previous": "é",
+        "used": 17
+      },
+      "expected": {
+        "text": "",
+        "used": 17,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "one shared limits contract",
+      "request": {
+        "limits": true
+      },
+      "expected": {
+        "screenBytes": 262144,
+        "semanticGraphemes": 20000,
+        "caretSideGraphemes": 2000,
+        "blockSourceBytes": 524291
+      }
+    },
+    {
+      "name": "caret reservation includes markers once",
+      "request": {
+        "reserveCaret": [
+          "left",
+          "selected",
+          "right"
+        ]
+      },
+      "expected": {
+        "used": 23,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "complete source window keeps UTF8 offsets",
+      "request": {
+        "window": {
+          "text": "é😀",
+          "startKnown": true,
+          "endKnown": true
+        }
+      },
+      "expected": {
+        "sourceText": "é😀",
+        "sourceStartByte": 0,
+        "sourceEndByte": 6,
+        "prefixWithheld": false,
+        "suffixWithheld": false,
+        "unavailable": false
+      }
+    },
+    {
+      "name": "incomplete source keeps recognition-closed middle",
+      "request": {
+        "window": {
+          "text": "token123. Safe! unfinished456",
+          "startKnown": false,
+          "endKnown": false
+        }
+      },
+      "expected": {
+        "sourceText": ". Safe! ",
+        "sourceStartByte": 8,
+        "sourceEndByte": 16,
+        "prefixWithheld": true,
+        "suffixWithheld": true,
+        "unavailable": false
+      }
+    },
+    {
+      "name": "open source without restart marker is unavailable",
+      "request": {
+        "window": {
+          "text": "secret123",
+          "startKnown": true,
+          "endKnown": false
+        }
+      },
+      "expected": {
+        "sourceText": "",
+        "sourceStartByte": 0,
+        "sourceEndByte": 0,
+        "prefixWithheld": false,
+        "suffixWithheld": true,
+        "unavailable": true
+      }
+    },
+    {
+      "name": "caret reservation excludes recognition-only sides",
+      "request": {
+        "reserveCaret": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "chosen",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      },
+      "expected": {
+        "used": 4012,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "common acquisition source allowances",
+      "request": {
+        "limits": true
+      },
+      "expected": {
+        "sourceWindowBytes": 262144,
+        "selectionSourceBytes": 262138,
+        "caretSourceBytes": 786426
+      }
+    },
+    {
+      "name": "caret source edges preserve complete Unicode selection",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "unknown😀. Before ",
+            "選択",
+            " after! unfinished"
+          ],
+          "startKnown": false,
+          "endKnown": false
+        }
+      },
+      "expected": {
+        "parts": [
+          ". Before ",
+          "選択",
+          " after! "
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "caret source edge never changes selection target",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "unknown",
+            "secret. visible",
+            " after"
+          ],
+          "startKnown": false,
+          "endKnown": true
+        }
+      },
+      "expected": {
+        "parts": [
+          "",
+          "[redacted]",
+          ""
+        ],
+        "selectionUnavailable": true
+      }
+    }
+  ]
+}

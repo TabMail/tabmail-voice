@@ -10,9 +10,7 @@
   "private": true,
   "main": "dist/node/main/index.js",
   "scripts": {
-    "gen:registries": "node scripts/gen-registries.mts && node scripts/gen-redactors.mts",
-    "gen:redactors": "node scripts/gen-redactors.mts",
-    "precompile:native": "npm run gen:redactors",
+    "gen:registries": "node scripts/gen-registries.mts",
     "compile:native": "node scripts/build-native.mts",
     "prebuild:main": "npm run gen:registries",
     "build:main": "node -e \"require('node:fs').rmSync('dist/node', { recursive: true, force: true })\" && tsc -p tsconfig.main.json",

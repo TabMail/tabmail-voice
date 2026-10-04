@@ -61,6 +61,7 @@ import { macPermissions } from "./native/macos/permissions.js";
 import { windowsPermissions } from "./native/windows/permissions.js";
 import { WindowsSystem } from "./native/windows/system.js";
 import { LinuxFileStore, linuxSearchRunner } from "./native/linux/files.js";
+import { NativeContactStore, NativeEventStore, NativeNoteStore, productivityRunner } from "./native/productivity.js";
 import { LinuxSystem } from "./native/linux/system.js";
 import { LinuxPermissions } from "./native/linux/permissions.js";
 import { LinuxAutostart } from "./native/linux/autostart.js";
@@ -68,6 +69,7 @@ import { linuxFallbackAnchor } from "./native/linux/overlayArea.js";
 import { shellPlacementArea } from "./native/windows/overlayArea.js";
 import { ShellGeometry } from "./native/windows/shellGeometry.js";
 import { WindowsFileStore } from "./native/windows/files.js";
+import { MacNoteStore } from "../core/agent/connectors/macos/notes.js";
 import { osascript } from "./native/macos/osascript.js";
 import { nodeProfileFiles } from "./storage/profileFiles.js";
 import { TrayMenu } from "./tray.js";
@@ -212,12 +214,13 @@ function launch(): void {
     // Native connectors require a platform implementation; shared web/email tools use Electron.
     connectorTools: platformConnectors.flatMap((connector) =>
       connector.tools({
-        eventStore: mac.eventStore,
-        contactStore: mac.contactStore,
+        eventStore: process.platform === "win32" ? new NativeEventStore(productivityRunner(join(helpers, "voice-productivity.exe")), "TabMail Voice calendar (local to this PC)") : process.platform === "linux" ? new NativeEventStore(productivityRunner(join(helpers, "voice-productivity"))) : mac.eventStore,
+        contactStore: process.platform === "win32" ? new NativeContactStore(productivityRunner(join(helpers, "voice-productivity.exe")), "TabMail Voice contacts (local to this PC)") : process.platform === "linux" ? new NativeContactStore(productivityRunner(join(helpers, "voice-productivity"))) : mac.contactStore,
         fileStore: process.platform === "win32" ? new WindowsFileStore(homedir()) : process.platform === "linux" ? new LinuxFileStore(homedir(), linuxSearchRunner(join(helpers, "voice-files"))) : mac.fileStore,
         home: homedir(),
         emailOpener,
         scriptRunner: osascript,
+        noteStore: process.platform === "linux" ? new NativeNoteStore(productivityRunner(join(helpers, "voice-productivity"))) : new MacNoteStore(osascript),
         webFetch: liveWebFetch,
         webOpener: { open: (url) => shell.openExternal(url) },
       }),
