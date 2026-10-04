@@ -244,12 +244,12 @@ function launch(): void {
     if (system instanceof LinuxSystem) return system.caretAnchor();
     const pid = await system.frontmostApp();
     if (system instanceof WindowsSystem) {
-      try {
-        if (await shellGeometry?.refresh()) overlay.refreshPlacement();
-      } catch (error: unknown) {
-        // Keep the last known shell exclusion, but do not discard a usable caret.
+      // Shell geometry updates placement independently; a slow reply must not delay the caret.
+      void shellGeometry?.refresh().then((changed) => {
+        if (changed) overlay.refreshPlacement();
+      }).catch((error: unknown) => {
         log.debug(`main: shell geometry lookup failed: ${errorName(error)}`);
-      }
+      });
     }
     return pid === null ? null : system.caretAnchor(pid);
   }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined);

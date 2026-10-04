@@ -1723,6 +1723,98 @@ test.each([null,{},Array(17).fill({x:0,y:0,width:1,height:1}),[null],[{x:NaN,y:0
 });
 
 
+
+test("slow shell geometry must not withhold an immediately available caret", async () => {
+  await launch("win32");
+  const helper = app.helpers.get("voice-windows")!;
+  helper.replies.set("frontmostApp", { window: 42 });
+  helper.replies.set("caretAnchor", { x: 500, y: 300, width: 1, height: 20 });
+  const shellReply = Promise.withResolvers<Rect[]>();
+  helper.replies.set("shellExclusionBounds", shellReply.promise);
+  const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
+  let visible = false;
+  let bounds = { x: 0, y: 0, width: 1, height: 1 };
+  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {} };
+  const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
+  const real = new RealOverlay(surface, captured.locate, captured.place);
+  captured.refreshPlacement = () => real.refreshPlacement();
+  real.update({ kind: "arming" });
+  await new Promise(resolve => setTimeout(resolve, config.minimumHoldDuration));
+  real.update({ kind: "listening" });
+  expect.soft(visible).toBe(true);
+  expect.soft(real.pillPlace.pill.x).toBe(500.5);
+  const atReveal = { ...bounds };
+  shellReply.resolve([]);
+  for (let i = 0; i < 24; i++) await new Promise<void>(queueMicrotask);
+  expect.soft(bounds).toEqual(atReveal);
+  expect.soft(helper.requests.filter(r => r.method === "caretAnchor").map(r => r.params)).toEqual([{ window: 42 }]);
+  expect.soft(app.clipboard).toEqual([]);
+  expect.soft(helper.requests.some(r => r.method === "insert")).toBe(false);
+});
+
+
+test.each(["rejected", "malformed", "no foreground"])("arming refresh %s preserves usable state", async scenario => {
+  await launch("win32");
+  const helper = app.helpers.get("voice-windows")!;
+  helper.replies.set("frontmostApp", scenario === "no foreground" ? null : { window: 42 });
+  const caret = { x: 800, y: 300, width: 1, height: 20 };
+  helper.replies.set("caretAnchor", caret);
+  const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
+  const area = { x: 0, y: 0, width: 1440, height: 900 };
+  helper.replies.set("shellExclusionBounds", [{ x: 0, y: 0, width: 400, height: 900 }]);
+  helper.events.get("shellGeometryChanged")!({ event: "shellGeometryChanged" });
+  await vi.waitFor(() => expect(captured.place(area)).toEqual({ x: 424, y: 0, width: 1016, height: 900 }));
+  const saved = captured.place(area);
+  const reply = Promise.withResolvers<Rect[]>();
+  helper.replies.set("shellExclusionBounds", scenario === "malformed" ? [null] : scenario === "no foreground" ? [] : reply.promise);
+  const pending = captured.locate();
+  for (let i = 0; i < 16; i++) await new Promise<void>(queueMicrotask);
+  if (scenario === "rejected") reply.reject(new Error("synthetic failure"));
+  expect(await pending).toEqual(scenario === "no foreground" ? null : caret);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(captured.place(area)).toEqual(scenario === "no foreground" ? area : saved);
+  helper.replies.set("shellExclusionBounds", []);
+  await captured.locate();
+  await vi.waitFor(() => expect(captured.place(area)).toEqual(area));
+  expect(helper.requests.filter(r => r.method === "shellExclusionBounds")).toHaveLength(3);
+  expect(app.clipboard).toEqual([]);
+  expect(helper.requests.some(r => r.method === "insert" || r.method === "readScreen")).toBe(false);
+});
+
+test("an old shell reply cannot revive a canceled hold or overwrite newer geometry", async () => {
+  await launch("win32");
+  const helper = app.helpers.get("voice-windows")!;
+  helper.replies.set("frontmostApp", { window: 42 });
+  helper.replies.set("caretAnchor", { x: 800, y: 300, width: 1, height: 20 });
+  const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
+  let visible = false; let bounds = { x: 0, y: 0, width: 1, height: 1 };
+  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {} };
+  const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
+  const real = new RealOverlay(surface, captured.locate, captured.place);
+  captured.refreshPlacement = () => real.refreshPlacement();
+  const old = Promise.withResolvers<Rect[]>();
+  helper.replies.set("shellExclusionBounds", old.promise);
+  real.update({ kind: "arming" });
+  for (let i = 0; i < 16; i++) await new Promise<void>(queueMicrotask);
+  real.update({ kind: "idle" });
+  helper.replies.set("shellExclusionBounds", []);
+  helper.events.get("shellGeometryChanged")!({ event: "shellGeometryChanged" });
+  for (let i = 0; i < 16; i++) await new Promise<void>(queueMicrotask);
+  const area = { x: 0, y: 0, width: 1440, height: 900 };
+  old.resolve([area]);
+  for (let i = 0; i < 24; i++) await new Promise<void>(queueMicrotask);
+  expect(visible).toBe(false);
+  expect(captured.place(area)).toEqual(area);
+  real.update({ kind: "arming" });
+  for (let i = 0; i < 24; i++) await new Promise<void>(queueMicrotask);
+  real.update({ kind: "listening" });
+  expect(visible).toBe(true);
+  expect(real.pillPlace.pill.x).toBe(800.5);
+  expect(app.clipboard).toEqual([]);
+  expect(helper.requests.some(r => r.method === "insert")).toBe(false);
+});
+
+
 test("Linux helper exit invalidates established permission readiness", async () => {
   vi.doUnmock("../../src/core/onboarding/permissions.js");
   await launch("linux");
