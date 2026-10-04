@@ -173,6 +173,17 @@ use generic caret/field acquisition; all three routes emit the typed viewport.
 Collector coverage, actual installed-provider evidence and review repairs remain
 required before claiming complete cross-platform capability.
 
+Current terminal provider evidence:
+
+| Provider | Installed-helper checks | Remaining qualification |
+|---|---|---|
+| macOS AX | Native adapter fixtures cover visible-range clipping, source offsets and shared projection; a separate live AX probe has not completed authorization | Real terminal reference validation remains required; synthetic adapters do not prove an application's AX contract |
+| Windows Terminal UIA | ASCII/Unicode exact caret, visible blank rows, hidden scrollback exclusion, duplicate split panes, complete explicit selection and focus returning to the left pane | A non-collapsed TextPattern selection does not establish an independent caret, so it returns unavailable; ancestor-clipped aggregate ranges remain refused |
+| GNOME VTE / AT-SPI | Duplicate split panes, exact Unicode caret, explicit selection with independently exact caret, pane focus changes, hidden-pane and old-history exclusion | Tested with VTE 0.84 in an isolated GNOME session and the installed caret extension; other terminal providers and concurrent focus races need their own evidence |
+
+These checks exercise the installed native helpers. They do not by themselves
+establish the complete installed Electron interaction or every terminal provider.
+
 For AT-SPI, the viewport request may specify `offsetUnit: "scalar"`; the core
 validates and converts run-local caret and selection offsets to UTF-16. Omission
 or `"utf16"` retains the AX/UIA convention. Output offsets are always UTF-16.

@@ -43,11 +43,45 @@ output redirection (from `apps/desktop`):
 node native/windows/tests/terminal-caret.mjs native/windows/build/Release/voice-windows.exe
 ```
 
-Keep that tab focused until `TERMINAL_CARET_PASS`. The test writes synthetic output
-and verifies horizontal cursor movement, a new line, unchanged foreground identity
-and refusal of field learning. It does not capture terminal text, use the clipboard
-or inject input. This interactive check is separate from CTest, whose redirected
-output cannot establish the terminal cursor contract.
+Keep that tab focused until `TERMINAL_CARET_AND_VIEWPORT_PASS`. The test writes
+synthetic output and verifies horizontal cursor movement, a new line, unchanged
+foreground identity and refusal of field learning. It then fills the viewport
+with synthetic rows and reads the displayed text, checking exact UTF-16 caret
+offsets for ASCII and Unicode, exclusion of old scrollback, and retention of blank
+rows below the caret. It does not use the clipboard or inject input. This
+interactive check is separate from CTest, whose redirected output cannot establish
+the terminal cursor contract. A passing single-pane run does not establish split
+pane, explicit selection or ancestor-clipping behavior.
+
+For split panes, use a disposable Windows Terminal tab with two vertical panes.
+From `apps/desktop`, run this in the left pane (it stays alive for two minutes):
+
+```powershell
+node native/windows/tests/terminal-splits.mjs --left
+```
+
+Then run this in the right pane, keeping that pane focused:
+
+```powershell
+node native/windows/tests/terminal-splits.mjs native/windows/build/Release/voice-windows.exe terminal-splits-result.json
+```
+
+Once the right prompt changes to `selected terminal`, press Ctrl+Shift+A. Wait
+for the evidence file's `explicit-selection` stage, then press Escape and
+Alt+Left. The fixture verifies both identical panes, exact Unicode caret offsets,
+selection confined to the right pane, truthful unavailable caret during selection,
+and the left pane's caret after focus returns. It records synthetic evidence and
+sets `passed: true` only after all assertions; each interactive wait is bounded.
+Windows Terminal's TextPattern provider has no independently available caret while
+output is selected. Run this fixture without other activity in that tab.
+
+An ancestor-clipped aggregate remains refused. UIA's
+[bounding rectangles](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtextrange-getboundingrectangles)
+can represent partially visible lines, and
+[endpoint movement](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtextrange-moveendpointbyunit)
+can substitute a larger supported unit. Neither proves a UTF-16 clipping boundary.
+Supporting that case requires a proven provider range mapping; it is not covered
+by the ordinary split-pane test.
 
 ## Calendar, contacts and reminders
 

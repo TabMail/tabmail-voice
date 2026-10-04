@@ -1,0 +1,116 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Requires GTK3/VTE and a private GNOME session with the Voice caret extension.
+# Do not run against a personal desktop: the fixture intentionally changes focus.
+import sys,subprocess,tempfile,time,json,select
+if '--fixture' in sys.argv:
+ import gi
+ gi.require_version('Gtk','3.0');gi.require_version('Vte','2.91')
+ from gi.repository import Gtk,Vte,GLib
+ window=Gtk.Window(title='Synthetic screen fixture');window.set_default_size(1000,420)
+ box=Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL,spacing=8);window.add(box)
+ terminal=Vte.Terminal();right=Vte.Terminal()
+ for pane in (terminal,right):
+  pane.set_scrollback_lines(2000);box.pack_start(pane,True,True,0)
+ window.show_all();terminal.grab_focus()
+ def feed():
+  terminal.feed(('hidden-history-sentinel\r\n'+'old-line\r\n'*500+'\x1b[2J\x1b[Hfirst line\r\n> hello world\r\nvisible-terminal-sentinel\r\nstatus bar\x1b[2;8H').encode());right.feed(('first line\r\n> hello world\r\nvisible-terminal-sentinel\r\nstatus bar\x1b[2;8H').encode());return False
+ GLib.timeout_add(500,feed)
+ def command(stream, condition):
+  action=stream.readline().strip()
+  if action=='select':right.select_all()
+  elif action=='right':right.grab_focus()
+  elif action=='left':terminal.grab_focus()
+  elif action=='change':right.feed(('\x1b[2J\x1b[Hfirst line\r\n界😀 e\u0301 > hello world\r\nchanged-right-sentinel\x1b[2;15H').encode())
+  elif action=='hide':terminal.hide();right.grab_focus()
+  return True
+ GLib.io_add_watch(sys.stdin,GLib.IO_IN,command)
+ Gtk.main();sys.exit()
+import argparse
+parser=argparse.ArgumentParser(description='Run only inside an isolated synthetic GNOME/AT-SPI session.')
+parser.add_argument('--helper',required=True)
+parser.add_argument('--diagnostics',required=True)
+args=parser.parse_args()
+helper=args.helper
+with tempfile.TemporaryFile(mode='w+t') as diagnostic:
+ native=subprocess.Popen([helper],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
+ fixture=subprocess.Popen([sys.executable,__file__,'--fixture'],stdin=subprocess.PIPE,stdout=diagnostic,stderr=diagnostic,text=True)
+ seq=0
+ try:
+  def request():
+   global seq
+   seq+=1;native.stdin.write(json.dumps({'id':seq,'method':'readScreen','params':{'excludedAppIDs':[],'excludedHosts':[]}})+'\n');native.stdin.flush()
+   deadline=time.monotonic()+5
+   while time.monotonic()<deadline:
+    if not select.select([native.stdout],[],[],max(0,deadline-time.monotonic()))[0]:break
+    reply=json.loads(native.stdout.readline())
+    if reply.get('id')==seq:return reply
+   raise RuntimeError('helper request timeout')
+  deadline=time.monotonic()+15;screen=None
+  while time.monotonic()<deadline:
+   time.sleep(.3);reply=request();screen=reply.get('result')
+   if screen and 'visible-terminal-sentinel' in screen.get('renderedText',''):break
+  def capture_until(predicate):
+   deadline=time.monotonic()+8
+   while time.monotonic()<deadline:
+    time.sleep(.15);value=request().get('result')
+    if value and predicate(value):return value
+   raise AssertionError(value)
+  def viewport(value):return value['terminalViewport']
+  def target(value):
+   v=viewport(value);c=v['caret'];assert c['status']=='exact',v
+   surface=next(s for s in v['surfaces'] if s['id']==c['surface'])
+   run=next(r for r in surface['runs'] if r['id']==c['run'])
+   before=run['text'].encode('utf-16-le')[:c['offset']*2].decode('utf-16-le')
+   return surface,before
+  def send(action):fixture.stdin.write(action+'\n');fixture.stdin.flush()
+  def record(stage,value):
+   assert viewport(value)['complete'],value
+   assert 'hidden-history-sentinel' not in json.dumps(value),value
+   print(json.dumps({'stage':stage,'screen':value}),flush=True)
+  screen=capture_until(lambda s:len(viewport(s)['surfaces'])==2)
+  record('duplicate-splits',screen)
+  assert viewport(screen)['complete'],screen
+  assert screen['renderedText'].count('visible-terminal-sentinel')==2,screen
+  assert 'hidden-history-sentinel' not in json.dumps(screen),screen
+  left,before=target(screen);assert before.endswith('> hello'),before
+  assert left['frame'][0]==min(s['frame'][0] for s in viewport(screen)['surfaces']),screen
+  send('right')
+  screen=capture_until(lambda s:viewport(s)['caret']['status']=='exact' and target(s)[0]['frame'][0]>left['frame'][0])
+  right,before=target(screen);assert before.endswith('> hello'),before
+  record('right-focus',screen)
+  send('change')
+  screen=capture_until(lambda s:'changed-right-sentinel' in s['renderedText'])
+  right,before=target(screen);assert before.endswith('界😀 e\u0301 > hello'),before
+  assert screen['renderedText'].count('visible-terminal-sentinel')==1,screen
+  record('right-mutated-unicode',screen)
+  send('select')
+  screen=capture_until(lambda s:bool(s.get('selectedText')))
+  record('explicit-selection',screen)
+  assert 'changed-right-sentinel' in screen['selectedText'],screen
+  assert 'visible-terminal-sentinel' not in screen['selectedText'],screen
+  assert not screen['selectionRedacted'],screen
+  assert viewport(screen)['selectionComplete'],screen
+  selected,before=target(screen)
+  assert selected['frame'][0]==right['frame'][0],screen
+  assert before.endswith('界😀 e\u0301 > hello'),before
+  send('left')
+  screen=capture_until(lambda s:viewport(s)['caret']['status']=='exact' and target(s)[0]['frame'][0]==left['frame'][0])
+  assert target(screen)[1].endswith('> hello'),screen
+  record('focus-returned-left',screen)
+  send('hide')
+  screen=capture_until(lambda s:len(viewport(s)['surfaces'])==1)
+  record('hidden-left',screen)
+  assert 'visible-terminal-sentinel' not in screen['renderedText'],screen
+  assert 'changed-right-sentinel' in screen['renderedText'],screen
+  assert target(screen)[1].endswith('界😀 e\u0301 > hello'),screen
+  print(json.dumps({'passed':True,'test':'installed VTE splits selection and focus','duplicateSplits':True,'focusIdentity':True,'unicodeCaret':True,'selection':True,'hiddenSurfaceExcluded':True}),flush=True)
+ finally:
+  fixture.terminate();native.terminate()
+  for child in (fixture,native):
+   try:child.wait(timeout=3)
+   except subprocess.TimeoutExpired:child.kill();child.wait()
+  diagnostic.seek(0)
+  open(args.diagnostics,'w').write(diagnostic.read())
