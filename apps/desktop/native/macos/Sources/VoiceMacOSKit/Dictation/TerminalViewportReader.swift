@@ -44,12 +44,12 @@ enum TerminalViewportReader {
         return Capture(ranges: ranges, texts: texts)
     }
 
-    /// Geometry-only visibility planning. Whole line bounds are the fast path;
-    /// partially clipped lines require per-unit geometry before any text read.
+    /// Geometry-only visibility planning. A contained single-line range is the
+    /// fast path; clipped or multiline ranges are subdivided before any text read.
     /// Missing geometry refuses the plan rather than reading a bounding interval
     /// that could contain scrollback or horizontally hidden text.
     static func visibleRanges(lines: [NSRange], clip: CGRect,
-                              bounds: (NSRange) -> CGRect?, valid: () -> Bool) -> [NSRange]? {
+                              bounds: (NSRange) -> CGRect?, isSingleLine: (NSRange) -> Bool = { _ in true }, valid: () -> Bool) -> [NSRange]? {
         guard clip.width > 0, clip.height > 0 else { return nil }
         var result: [NSRange] = []
         func append(_ range: NSRange) {
@@ -63,12 +63,16 @@ enum TerminalViewportReader {
             if frame.maxY <= clip.minY || frame.minY >= clip.maxY { return true }
             // A contained range proves visibility for all its units. Subdivide only
             // at clipping edges instead of issuing one AX request for every glyph.
-            if clip.contains(frame), frame.height > 0 { append(range); return true }
+            // Multiline providers can report endpoint-only horizontal bounds.
+            // Ask for line identity only when a box can prove acceptance/pruning.
             let horizontal = frame.width == 0 ? frame.minX >= clip.minX && frame.minX <= clip.maxX : frame.maxX > clip.minX && frame.minX < clip.maxX
-            if !horizontal { return true }
             if range.length <= 1 {
-                append(range)
+                if horizontal { append(range) }
                 return true
+            }
+            if frame.width > 0 {
+                if clip.contains(frame), frame.height > 0, isSingleLine(range) { append(range); return true }
+                if !horizontal, isSingleLine(range) { return true }
             }
             let left = range.length / 2
             return visit(NSRange(location: range.location, length: left)) &&
@@ -147,7 +151,6 @@ extension TerminalViewportReader {
             guard metadataValid() else { return nil }
             return source.parameter(name, value)
         }
-        func lineRange(_ line: Int) -> NSRange? { range(parameter(kAXRangeForLineParameterizedAttribute as String, line as CFNumber)) }
         func bounds(_ range: NSRange) -> CGRect? {
             guard metadataValid() else { return nil }
             return source.bounds(CFRange(location: range.location, length: range.length))
@@ -172,23 +175,23 @@ extension TerminalViewportReader {
                 "runs": [["id": 0, "text": "", "connected": false, "startKnown": .bool(startKnown), "endKnown": .bool(endKnown)]],
                 "selection": ["complete": .bool(selectionSnapshot == empty), "ranges": []]], caret: caret)
         }
-        diagnosticStage = "line-index"
-        guard let last = integer(parameter(kAXLineForIndexParameterizedAttribute as String, (countSnapshot - 1) as CFNumber)),
-              last < countSnapshot else { return nil }
-        func lineTop(_ line: Int) -> CGFloat? { lineRange(line).flatMap(bounds)?.minY }
-        diagnosticStage = "visible-line-search"
-        guard let first = ScreenContext.firstVisibleLine(lineCount: last + 1, windowTop: clip.minY, lineTop: lineTop) else { return nil }
-        let below = ScreenContext.firstVisibleLine(lineCount: last + 1, windowTop: clip.maxY, lineTop: lineTop) ?? last + 1
-        let begin = max(0, first - 1) // Include an intersecting partial first row.
-        guard below >= begin, below - begin <= runLimit else { return nil }
-        diagnosticStage = "line-ranges"
-        var lines: [NSRange] = []
-        for line in begin..<below {
-            guard let range = lineRange(line), NSMaxRange(range) <= countSnapshot else { return nil }
-            lines.append(range)
-        }
         diagnosticStage = "visible-geometry"
-        guard let ranges = visibleRanges(lines: lines, clip: clip, bounds: bounds, valid: metadataValid), ranges.count <= runLimit else { return nil }
+        let lines = [NSRange(location: 0, length: countSnapshot)]
+        func plan() -> [NSRange]? {
+            var lineCache: [Int: Int] = [:]
+            func line(_ index: Int) -> Int? {
+                if let cached = lineCache[index] { return cached }
+                let result = integer(parameter(kAXLineForIndexParameterizedAttribute as String, index as CFNumber))
+                lineCache[index] = result
+                return result
+            }
+            func singleLine(_ range: NSRange) -> Bool {
+                guard let first = line(range.location), let last = line(NSMaxRange(range) - 1) else { return false }
+                return first == last
+            }
+            return visibleRanges(lines: lines, clip: clip, bounds: bounds, isSingleLine: singleLine, valid: metadataValid)
+        }
+        guard let ranges = plan(), ranges.count <= runLimit else { return nil }
         let read: (NSRange) -> NSString? = { requested in
             var range = CFRange(location: requested.location, length: requested.length)
             guard let parameter = AXValueCreate(.cfRange, &range), valid() else { return nil }
@@ -196,18 +199,9 @@ extension TerminalViewportReader {
         }
         // Three UTF-8 bytes per UTF-16 unit is the maximum conversion expansion.
         diagnosticStage = "bounded-text"
-        // iTerm rebuilds its scrollback index for character-count queries. Take
-        // those snapshots at capture boundaries, not once per visible fragment.
-        // Each text read still validates focus/frames, and capture reads every
-        // interval twice before any result can be accepted.
-        guard valid(), count() == countSnapshot, selection() == selectionSnapshot,
-              let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
-                                     read: read, valid: valid),
-              count() == countSnapshot, selection() == selectionSnapshot,
-              visibleRanges(lines: lines, clip: clip, bounds: bounds, valid: metadataValid) == ranges else { return nil }
-        diagnosticStage = "recheck-lines"
-        // Line metadata can change without text/count changing (resize/scroll).
-        for (line, expected) in zip(begin..<below, lines) { guard lineRange(line) == expected else { return nil } }
+        guard let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
+                                     read: read, valid: { valid() && count() == countSnapshot && selection() == selectionSnapshot }),
+              plan() == ranges else { return nil }
         diagnosticStage = "selection-caret"
         var runs: [JSON] = []
         var selections: [JSON] = []
