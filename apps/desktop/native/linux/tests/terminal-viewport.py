@@ -5,6 +5,8 @@
 # Requires GTK3/VTE and a private GNOME session with the Voice caret extension.
 # Do not run against a personal desktop: the fixture intentionally changes focus.
 import sys,subprocess,tempfile,time,json,select
+BASE_LINES=['first line','> hello world','visible-terminal-sentinel','status bar']
+CHANGED_LINES=['first line','界😀 e\u0301 > hello world','changed-right-sentinel']
 if '--fixture' in sys.argv:
  import gi
  gi.require_version('Gtk','3.0');gi.require_version('Vte','2.91')
@@ -16,14 +18,17 @@ if '--fixture' in sys.argv:
   pane.set_scrollback_lines(2000);box.pack_start(pane,True,True,0)
  window.show_all();terminal.grab_focus()
  def feed():
-  terminal.feed(('hidden-history-sentinel\r\n'+'old-line\r\n'*500+'\x1b[2J\x1b[Hfirst line\r\n> hello world\r\nvisible-terminal-sentinel\r\nstatus bar\x1b[2;8H').encode());right.feed(('first line\r\n> hello world\r\nvisible-terminal-sentinel\r\nstatus bar\x1b[2;8H').encode());return False
+  shown='\r\n'.join(BASE_LINES)+'\x1b[2;8H'
+  terminal.feed(('hidden-history-sentinel\r\n'+'old-line\r\n'*500+'\x1b[2J\x1b[H'+shown).encode());right.feed(shown.encode())
+  print(json.dumps({'rows':terminal.get_row_count(),'rightRows':right.get_row_count()}),flush=True)
+  return False
  GLib.timeout_add(500,feed)
  def command(stream, condition):
   action=stream.readline().strip()
   if action=='select':right.select_all()
   elif action=='right':right.grab_focus()
   elif action=='left':terminal.grab_focus()
-  elif action=='change':right.feed(('\x1b[2J\x1b[Hfirst line\r\n界😀 e\u0301 > hello world\r\nchanged-right-sentinel\x1b[2;15H').encode())
+  elif action=='change':right.feed(('\x1b[2J\x1b[H'+'\r\n'.join(CHANGED_LINES)+'\x1b[2;15H').encode())
   elif action=='hide':terminal.hide();right.grab_focus()
   return True
  GLib.io_add_watch(sys.stdin,GLib.IO_IN,command)
@@ -36,7 +41,7 @@ args=parser.parse_args()
 helper=args.helper
 with tempfile.TemporaryFile(mode='w+t') as diagnostic:
  native=subprocess.Popen([helper],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
- fixture=subprocess.Popen([sys.executable,__file__,'--fixture'],stdin=subprocess.PIPE,stdout=diagnostic,stderr=diagnostic,text=True)
+ fixture=subprocess.Popen([sys.executable,__file__,'--fixture'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  seq=0
  try:
   def request():
@@ -64,13 +69,30 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostic:
    surface=next(s for s in v['surfaces'] if s['id']==c['surface'])
    run=next(r for r in surface['runs'] if r['id']==c['run'])
    before=run['text'].encode('utf-16-le')[:c['offset']*2].decode('utf-16-le')
+   assert c['renderedOffset']==run['renderedOffset']+c['offset'],value
+   rendered=value['renderedText'].encode('utf-16-le')
+   assert rendered[run['renderedOffset']*2:c['renderedOffset']*2].decode('utf-16-le')==before,value
    return surface,before
   def send(action):fixture.stdin.write(action+'\n');fixture.stdin.flush()
   def record(stage,value):
    assert viewport(value)['complete'],value
    assert 'hidden-history-sentinel' not in json.dumps(value),value
+   for surface in viewport(value)['surfaces']:
+    changed=stage not in ('duplicate-splits','right-focus') and (stage=='hidden-left' or surface['frame'][0]>left_x)
+    expected=changed_text if changed else base_text
+    assert len(surface['runs'])==1,value
+    run=surface['runs'][0]
+    assert run['text']==expected,value
+    raw=value['renderedText'].encode('utf-16-le');start=run['renderedOffset']*2
+    assert raw[start:start+len(expected.encode('utf-16-le'))].decode('utf-16-le')==expected,value
    print(json.dumps({'stage':stage,'screen':value}),flush=True)
   screen=capture_until(lambda s:len(viewport(s)['surfaces'])==2)
+  assert select.select([fixture.stdout],[],[],5)[0],'fixture geometry timeout'
+  geometry=json.loads(fixture.stdout.readline());rows=geometry['rows']
+  assert isinstance(rows,int) and 4<rows<500 and geometry['rightRows']==rows,geometry
+  def expected_text(lines):return '\n'.join(lines+['']*(rows-len(lines)))+'\n'
+  base_text=expected_text(BASE_LINES);changed_text=expected_text(CHANGED_LINES)
+  left_x=min(s['frame'][0] for s in viewport(screen)['surfaces'])
   record('duplicate-splits',screen)
   assert viewport(screen)['complete'],screen
   assert screen['renderedText'].count('visible-terminal-sentinel')==2,screen
@@ -93,12 +115,20 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostic:
   assert 'visible-terminal-sentinel' not in screen['selectedText'],screen
   assert not screen['selectionRedacted'],screen
   assert viewport(screen)['selectionComplete'],screen
+  assert screen['selectedText']==changed_text[:-1],screen
+  assert viewport(screen)['selectedText']==screen['selectedText'],screen
   selected,before=target(screen)
+  ranges=selected['selection']['ranges'];assert len(ranges)==1,screen
+  span=ranges[0];run=selected['runs'][0]
+  assert span['run']==run['id'] and span['start']==0 and span['end']==len(changed_text[:-1].encode('utf-16-le'))//2,screen
+  assert span['renderedStart']==run['renderedOffset'] and span['renderedEnd']==run['renderedOffset']+span['end'],screen
   assert selected['frame'][0]==right['frame'][0],screen
   assert before.endswith('界😀 e\u0301 > hello'),before
   send('left')
   screen=capture_until(lambda s:viewport(s)['caret']['status']=='exact' and target(s)[0]['frame'][0]==left['frame'][0])
   assert target(screen)[1].endswith('> hello'),screen
+  assert screen['selectedText']==viewport(screen)['selectedText']=='',screen
+  assert viewport(screen)['selectionComplete'] and not screen['selectionRedacted'],screen
   record('focus-returned-left',screen)
   send('hide')
   screen=capture_until(lambda s:len(viewport(s)['surfaces'])==1)
@@ -106,6 +136,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostic:
   assert 'visible-terminal-sentinel' not in screen['renderedText'],screen
   assert 'changed-right-sentinel' in screen['renderedText'],screen
   assert target(screen)[1].endswith('界😀 e\u0301 > hello'),screen
+  assert screen['selectedText']==viewport(screen)['selectedText']==changed_text[:-1],screen
   print(json.dumps({'passed':True,'test':'installed VTE splits selection and focus','duplicateSplits':True,'focusIdentity':True,'unicodeCaret':True,'selection':True,'hiddenSurfaceExcluded':True}),flush=True)
  finally:
   fixture.terminate();native.terminate()
