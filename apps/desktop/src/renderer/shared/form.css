@@ -2,40 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-/* The app's windows, in the look of a macOS grouped form, light and dark. */
+/* The app's windows, in the look of a macOS grouped form, light and dark. Every color is a
+ * variable from the palette's light and dark themes (`core/palette.ts`, set by `shared/theme.ts`). */
 :root {
   color-scheme: light dark;
-  --background: #ececec;
-  --group: #ffffff;
-  --separator: rgba(0, 0, 0, 0.1);
-  --text: rgba(0, 0, 0, 0.85);
-  --secondary: rgba(0, 0, 0, 0.5);
-  --accent: #007aff;
-  --allowed: #28a745;
-  --error: #d70015;
-  --control: #ffffff;
-  --control-border: rgba(0, 0, 0, 0.15);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #1e1e1e;
-    --group: #2a2a2a;
-    --separator: rgba(255, 255, 255, 0.1);
-    --text: rgba(255, 255, 255, 0.85);
-    --secondary: rgba(255, 255, 255, 0.55);
-    --accent: #0a84ff;
-    --allowed: #32d74b;
-    --error: #ff453a;
-    --control: rgba(255, 255, 255, 0.1);
-    --control-border: rgba(255, 255, 255, 0.15);
-  }
 }
 
 html,
 body {
   margin: 0;
-  background: var(--background);
+  background: var(--window);
   color: var(--text);
   font: 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -104,13 +80,13 @@ button {
   background: var(--control);
   color: var(--text);
   font: inherit;
-  box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--control-shadow);
 }
 
 button.default {
   border-color: transparent;
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 button:disabled {

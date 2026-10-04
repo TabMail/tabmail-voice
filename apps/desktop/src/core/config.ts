@@ -67,9 +67,63 @@ export const logFileMaxBytes = 50_000_000;
 /** Debug builds only: the latest recording's file name in the temporary directory, overwritten each
  * time ("Play Last Recording"). */
 export const debugLastRecordingFileName = "TabMail-last-dictation.wav";
-/** Recording stops and is sent automatically at this length: the backend transcribes at most
- * 120 s of audio, until chunking arrives (issue #1). */
-export const maxRecordingDuration = 120_000;
+/** Recording stops and is sent automatically at this length (10 minutes). A recording longer than
+ * the backend transcribes at once is sent in chunks (ADR-DESK-049). */
+export const maxRecordingDuration = 600_000;
+/** The longest recording sent as one request, never chunked: a spoken answer to the chat window's
+ * question. The backend's model transcribes at most 120 s at once (backend ADR-022). */
+export const maxUnchunkedDuration = 120_000;
+
+// MARK: Long dictations (ADR-DESK-049)
+
+/** The chunker reads the recording's loudness in frames this long (ms). */
+export const chunkFrameDuration = 20;
+/** A frame quieter than this fraction of the way from the recording's room level to its voice level
+ * is quiet. The levels are the recording's own: these percentiles of its frames' loudness. */
+export const chunkPauseLevel = 0.3;
+export const chunkFloorPercentile = 0.1;
+export const chunkSpeechPercentile = 0.9;
+/** The voice level is taken over frames at least this far (dB) above the room level; with none,
+ * nothing is speech yet. Quiet microphones measured 7–10 dB apart. */
+export const chunkMinimumRange = 3;
+/** A quiet shorter than this (ms) between louder frames, a gap between syllables or words, counts as
+ * speech. */
+export const chunkSpeechGap = 300;
+/** A louder stretch no longer than this (ms) inside a pause is the room's noise (a click, the room's
+ * own swing) and leaves the pause going: on a quiet microphone the room's frames reach a few dB over
+ * the quiet line, so the owner's real pauses of a second or two had no second of frames all under
+ * it (2026-10-03: 80–90% quiet, the rest a frame or two at a time) and were never cut at. Kept to a
+ * plosive's burst, shorter than any vowel, as a cut must be in a pause for sure (owner, 2026-10-03:
+ * "really high precision, even if some recall could be lower"). */
+export const chunkPauseBlip = 40;
+/** A chunk is cut at a pause this long (ms; owner, 2026-10-03: "a second pause")… */
+export const chunkPauseDuration = 1_000;
+/** …once it holds this much speech (ms; owner, 2026-10-03: "only after 10s+"). */
+export const chunkMinimumSpeech = 10_000;
+/** With no such pause, a chunk is cut at this length (ms), so it and the overlap the next one starts
+ * with stay within the backend model's 120 s. */
+export const chunkMaxDuration = 105_000;
+/** That cut lands on the quietest window this long (ms) in the chunk's last `chunkForcedCutSearch`
+ * (ms)… */
+export const chunkForcedCutWindow = 300;
+export const chunkForcedCutSearch = 5_000;
+/** …and the next chunk starts this much speech earlier (ms; owner, 2026-10-03: "15s of non
+ * silence"), but never more than `chunkMaxOverlap` (ms) earlier, so the join finds the same words in
+ * both. */
+export const chunkOverlapSpeech = 15_000;
+export const chunkMaxOverlap = 30_000;
+/** A chunk that fails on the server's side while the user is still dictating is tried again after
+ * each of these waits (ms), the last repeating, for as long as the dictation goes on (owner,
+ * 2026-10-03); after the release it gets `transcriptionRetryDelays` more. */
+export const chunkRetryDelays: readonly number[] = [1_000, 2_000, 5_000, 10_000];
+/** Overlapping chunks are joined where their texts share a run of at least `chunkOverlapMinimumRun`
+ * words, looked for among the last and first `chunkOverlapSearchWords` words of each. */
+export const chunkOverlapSearchWords = 80;
+export const chunkOverlapMinimumRun = 3;
+/** A long dictation's joined text is polished once more as a whole if that takes no longer than this
+ * (ms) after the chunks are in; else the chunks' own cleanups are pasted as they are (owner,
+ * 2026-10-03: "a final polished pass if time permits… not longer than 5 seconds"). */
+export const chunkPolishTimeout = 5_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
 /** A microphone start that fails is tried again for this long after the dictation's key-down, then
@@ -132,8 +186,9 @@ export const transcriptionRequestTimeout = 45_000;
 /** A transcription that failed on the server's side (a 5xx: the speech model behind the backend was
  * rate limited or failed) or lost its connection is tried again after each of these waits, in
  * milliseconds, before the dictation fails: owner, 2026-09-29, rather than make the user say it
- * again. */
-export const transcriptionRetryDelays: readonly number[] = [500, 1_500];
+ * again. About a minute in all (owner, 2026-10-03: "we definitely need more retries … we should not
+ * lose the end"): the provider's rate limits come in bursts of seconds. */
+export const transcriptionRetryDelays: readonly number[] = [500, 1_500, 3_000, 5_000, 10_000, 10_000, 15_000, 15_000];
 /** How long after the first server error the pill says it is retrying: a retry that answers sooner
  * shows nothing but a dictation taking a moment longer (owner, 2026-10-02: the note on every brief
  * rate limit was the annoying part, not the wait). */
@@ -401,8 +456,6 @@ export const settingsWindowSize = { width: 700, height: 500 };
 export const settingsSidebarWidth = 200;
 export const settingsAppIconSize = 36;
 export const settingsSectionIconSize = 16;
-/** The window's own color where macOS's frosted material is not drawn (Windows, Linux). */
-export const settingsWindowColor = { light: "#f4f3f8", dark: "#1f1e24" };
 export const contextDebugWindowSize = { width: 720, height: 560 };
 
 // MARK: Overlay
@@ -421,13 +474,10 @@ export const pillBorderWidth = 1;
 export const pillGlowOpacity = 0.35;
 export const pillGlowRadius = 8;
 /** In agent mode the pill glows as neon, a sign of the mode (owner, 2026-09-28: "make the sort of the
- * neon glow very apparent for the pills"): a tight bright glow in a wide one. Red-pink rather than the
- * brand's blue and purple, so it stands apart from dictation's pill (owner, 2026-09-29: "right now it's
- * not as apparent"; chosen from eight colors tried). The bubbles keep the plain glow. */
+ * neon glow very apparent for the pills"): a tight bright glow in a wide one, in `palette`'s
+ * `agentPillGlowInner` and `agentPillGlowOuter` (owner, 2026-09-29: "right now it's not as
+ * apparent"). The bubbles keep the plain glow. */
 export const agentPillGlowInnerRadius = 4;
-/** The glows' colors, red, green and blue (0–255). */
-export const agentPillGlowInnerColor: readonly [number, number, number] = [0xff, 0x2d, 0x55];
-export const agentPillGlowOuterColor: readonly [number, number, number] = [0xff, 0, 0x6e];
 export const agentPillGlowInnerOpacity = 0.9;
 export const agentPillGlowOuterRadius = 16;
 export const agentPillGlowOuterOpacity = 0.75;
@@ -462,16 +512,15 @@ export const waveformLevelExponent = 1;
 export const waveformGain = 1;
 /** The bars always ripple this much (0…1) while listening, so the pill looks alive between words. */
 export const waveformIdleLevel = 0.05;
-/** The bars are a washed-out grey-blue (#9DB3C9) until a voice is heard, then ease to a vivid iOS
- * system blue (#0A84FF) over this long: a sign the dictation is recording (owner, 2026-10-02, chosen
- * from a page of candidates; was the brand blue, then purple, then a muted crimson). Red, green and
- * blue, 0–255. A voice is a reading this
- * many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
+/** Every color change in the overlay eases over this long, in seconds: the waveform's, from
+ * `palette.waveformWaiting` to `palette.waveformVoiced` once a voice is heard, and the thinking
+ * circle's, to and from its retry colors (owner, 2026-10-03: "the transition time should be a
+ * variable configured globally"). */
+export const colorTransitionSeconds = 0.4;
+/** The bars take their recording color (`palette.waveformVoiced`) once a voice is heard: a reading
+ * this many dB above the room's noise (a floor of its own in `LevelEnvelope`, left without the first
  * this many readings, ≈ 0.34 s, where a start-up blip would hold it low); loudness only, so a loud
  * noise counts too, and a very quiet mic's speech (2–5 dB above its noise) may not. */
-export const waveformWaitingColor: readonly [number, number, number] = [0x9d, 0xb3, 0xc9];
-export const waveformVoicedColor: readonly [number, number, number] = [0x0a, 0x84, 0xff];
-export const waveformColorTransitionSeconds = 0.4;
 export const waveformVoiceAboveNoiseDecibels = 6;
 export const waveformVoiceWarmupReadings = 4;
 /** Each bar's ripple speed differs by up to this fraction, so the motion looks organic. */
@@ -487,14 +536,11 @@ export const thinkingRimWidth = 2.5;
 export const thinkingArcFraction = 0.7;
 export const thinkingRevolutionsPerSecond = 1.2;
 export const thinkingTrackOpacity = 0.2;
-/** The arc runs from blue to this point on the blue → purple gradient. */
+/** The arc runs from blue to this point on the blue → purple gradient. While a transcription is
+ * tried again after a server error, the arc and its track fade to `palette.retryArcStart` →
+ * `palette.retryArcEnd`, a sign of the retry before its note takes the circle's place (owner,
+ * 2026-10-02). */
 export const thinkingArcEndColor = 0.6;
-/** While a transcription is tried again after a server error, the arc and its track move this far
- * along the gradient toward purple, a hint of the retry before its note takes the circle's place
- * (owner, 2026-10-02). */
-export const thinkingRetryColorShift = 0.3;
-/** Pill fill: a soft off-white (pure white glared). */
-export const pillFillWhite = 0.96;
 /** The overlay stays up this long after the dictation ends, for the exit animation. */
 export const overlayDismissDuration = Math.round(swirlGatherSeconds * 1000) + 100;
 /** Agent mode's bubbles in a row under the pill, one per tool and connector: icon-only circles,
@@ -572,6 +618,13 @@ export const setNameTip: TipSettings = {
   displayDuration: 4_000,
   maxDisplays: null,
 };
+/** What's new: long dictations are sent in parts as the user talks (ADR-DESK-049), shown once, ahead
+ * of the other tips (owner, 2026-10-03: "really punchy"), long enough to read twice. */
+export const longDictationsTip: TipSettings = {
+  lines: ["New: dictate up to 10 minutes,", "sent in parts as you talk"],
+  displayDuration: 6_000,
+  maxDisplays: 1,
+};
 /** The longest name the welcome wizard and Settings take for the user. */
 export const userNameMaxLength = 100;
 /** A hold this long shows the double-tap tip: this user dictates at length, and need not hold. */
@@ -594,23 +647,14 @@ export const tipHeight = tipBoxHeight(tipLineCount);
 export const tipHorizontalPadding = 10;
 export const tipSpacing = 5;
 export const tipCornerRadius = 8;
-/** Near-black fill, a hairline light border, and a soft drop shadow. */
-export const tipFillWhite = 0.11;
-export const tipFillOpacity = 0.94;
-export const tipBorderOpacity = 0.12;
-export const tipShadowOpacity = 0.3;
+/** A soft drop shadow, in `palette.tip.shadow`; the tip's colors are `palette.tip`'s. */
 export const tipShadowRadius = 5;
 export const tipShadowOffsetY = 2;
-/** White text, the keycap's word a little brighter than the action's. */
-export const tipTextOpacity = 0.78;
-export const tipKeyTextOpacity = 0.95;
 /** The keycap: a raised key, a lighter fill with a light border. */
 export const tipKeyFontSize = 12;
 export const tipKeyPadding = 5;
 export const tipKeyHeight = 17;
 export const tipKeyCornerRadius = 3.5;
-export const tipKeyFillOpacity = 0.14;
-export const tipKeyBorderOpacity = 0.22;
 /** The tooltip's arrow, pointing at the pill. */
 export const tipArrowWidth = 10;
 export const tipArrowHeight = 5;

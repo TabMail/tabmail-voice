@@ -14,6 +14,7 @@ import icon from "../../../resources/icon.png";
 import { send, useWindowState } from "../shared/bridge.js";
 import { BookIcon, ConnectorIcon, LockShieldIcon, MicrophoneIcon, ToolIcon, ViewfinderIcon } from "../shared/icons.js";
 import { NameField } from "../shared/nameField.js";
+import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 import "./index.css";
 
@@ -125,7 +126,7 @@ function ConsentPage({ state }: { state: WelcomeState }) {
       <ul className="sends">
         <li>
           <MicrophoneIcon size={config.welcomeLabelIconSize} />
-          <span>Your voice, while you hold the dictation key, to turn it into text.</span>
+          <span>Your voice, while you hold the dictation key, to turn it into text. A long dictation is sent in parts while you speak, so its text is ready as soon as you finish.</span>
         </li>
         <li>
           <ViewfinderIcon size={config.welcomeLabelIconSize} />
@@ -238,4 +239,5 @@ function Rail({ state }: { state: WelcomeState }) {
 }
 
 const root = document.getElementById("root");
+applyPalette(document);
 if (root) createRoot(root).render(<Welcome />);

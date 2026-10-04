@@ -4,6 +4,7 @@
 
 import { createRoot } from "react-dom/client";
 import { useWindowState } from "../shared/bridge.js";
+import { applyPalette } from "../shared/theme.js";
 import "../shared/form.css";
 
 /** Debug builds only: the last captured screen context (`ScreenContextDebugView.swift`). */
@@ -34,4 +35,5 @@ function Section({ title, text }: { title: string; text: string }) {
 }
 
 const root = document.getElementById("root");
+applyPalette(document);
 if (root) createRoot(root).render(<ContextDebug />);

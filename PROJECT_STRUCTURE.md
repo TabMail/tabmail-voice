@@ -48,7 +48,7 @@ apps/desktop/
 ├── native/windows/          CMake/MSVC helpers: Win32 hotkey, WASAPI audio, UI Automation; native tests and build instructions in README.md
 ├── src/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app (folders: ADR-DESK-044)
-│   │   ├── config.ts, log.ts, settings.ts   Every tunable number; the debug-gated log; the settings every part reads
+│   │   ├── config.ts, palette.ts, log.ts, settings.ts   Every tunable number; every color (ADR-DESK-048); the debug-gated log; the settings every part reads
 │   │   ├── agent/                   Agent mode (ADR-DESK-011)
 │   │   │   ├── requests.ts              `DesktopAgent`: picks the tool, has it write, runs Answer's tool loop
 │   │   │   ├── tools.ts                 Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
@@ -60,12 +60,12 @@ apps/desktop/
 │   │   │       ├── index.ts                 What the app reads: `connectors`, `connectorIDs`, `isConnectorID`, `connectorByID`
 │   │   │       ├── macos/appleScript.ts     `ScriptRunner`, for Notes and Messages
 │   │   │       └── thunderbird/             `ThunderbirdRelay` (`relay.ts`, to TabMail's chat) and `EmailClient` (the email app it drives); its native connector goes here (ADR-DESK-037)
-│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `screenContext.ts`; `excludedApps.ts` (the apps the screen is never read in: ADR-DESK-045); `excludedSites.ts` (the websites it is never read on, and `ScreenExclusions`, both lists as a dictation takes them: ADR-DESK-047); `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
-│   │   ├── audio/                   Recording (`recorder.ts`), waveform level, WAV and FLAC
+│   │   ├── dictation/               The dictation state machine (`controller.ts`, settings snapshotted at key-down); `cleanup.ts` (the cleanup's variables, what gets pasted); `chunkJoin.ts` (a long dictation's chunk texts joined: ADR-DESK-049); `screenContext.ts`; `excludedApps.ts` (the apps the screen is never read in: ADR-DESK-045); `excludedSites.ts` (the websites it is never read on, and `ScreenExclusions`, both lists as a dictation takes them: ADR-DESK-047); `pasteHistory.ts` (the texts pasted or copied, in memory, for the triple tap: ADR-DESK-043)
+│   │   ├── audio/                   Recording (`recorder.ts`), where a long dictation is cut into chunks (`chunker.ts`: ADR-DESK-049), waveform level, WAV and FLAC
 │   │   ├── backend/                 Sign-in (`account.ts`), the transcription and completions clients, their errors, HTTP
 │   │   ├── dictionary/              The user's dictionary (`entries.ts`); the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
 │   │   ├── hotkey/                  The hotkey, the modes and the gesture's actions (`bindings.ts`); macos/globeKeyAction.ts (the Globe key's own action while fn is it) (ADR-DESK-031)
-│   │   ├── onboarding/              The welcome wizard, permissions, tips, VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
+│   │   ├── onboarding/              The welcome wizard, permissions, tips (the one-time what's-new tip among them), VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
 │   │   ├── ui/                      Where the overlay sits; what the tray menu shows
 │   │   └── util/                    observable, keyValueStore, timeout, text, localDateTime (the backend's dates in the local zone)
 │   ├── main/                The main process (Node + Electron)
@@ -85,7 +85,7 @@ apps/desktop/
 │       ├── overlay/                 The pill, waveform, swirl, tips, bubbles and chat window
 │       ├── settings/, welcome/, history/ (the paste history), contextDebug/
 │       ├── audio/                   The microphone off macOS: getUserMedia → captureWorklet
-│       └── shared/                  The bridge to `window.voice`, the brand, icons, the name field, form.css
+│       └── shared/                  The bridge to `window.voice`, the brand, the palette's theme as CSS variables (`theme.ts`), icons, the name field, form.css
 └── test/                    Vitest, mirroring src/ (a module's test in the same folder); support/ (stubs, fixtures' builders, fake Thunderbird, a fake helper); packaging.test.ts
 ```
 
@@ -128,7 +128,10 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    restoring the clipboard (`TextInserter`); with another app in front than at key-down
    (`focusChanged`), nothing is pasted and the text is left on the clipboard, with a note at the mouse
    pointer (phase `copied`). Either way the text joins the paste history. If the cleanup failed for any reason, the transcript
-   is pasted as heard (`DictationCleanup`).
+   is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is
+   cut into chunks at pauses as it is recorded (`Chunker`), each sent with its cleanup while the user
+   goes on and retried in the background; at the release the last chunk is sent and the texts are
+   joined in order (`joinChunkTexts`), up to the first chunk that gave up (ADR-DESK-049).
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing
    is inserted.
 

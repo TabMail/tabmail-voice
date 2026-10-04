@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import * as config from "../../../src/core/config.js";
+import { palette } from "../../../src/core/palette.js";
 
 /** `settings/index.css` without comments. */
 const css = readFileSync(join(import.meta.dirname, "../../../src/renderer/settings/index.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -86,38 +86,24 @@ describe("Settings stylesheet", () => {
   });
 
   /** In light mode the notes (`form.css`'s `.caption`, in `--secondary`) and "Allowed" hold small
-   * text's 4.5:1 on the window's color and on the white cards, set on `.settings` (inside `:root`,
-   * so they hold whichever stylesheet loads last). */
+   * text's 4.5:1 on the window's color and on the white cards (the palette's light theme, which the
+   * welcome wizard and the paste history share). */
   test("notes and Allowed keep small-text contrast in light mode", () => {
-    const light = mediaBlock("(prefers-color-scheme: light)");
-    const secondary = value(light, ".settings", "--secondary");
-    const allowed = value(light, ".settings", "--allowed");
-    expect(secondary).toBeDefined();
-    expect(allowed).toBeDefined();
-    for (const background of [config.settingsWindowColor.light, "#ffffff"]) {
-      expect(contrast(secondary ?? "", background)).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(allowed ?? "", background)).toBeGreaterThanOrEqual(4.5);
+    for (const background of [palette.light.window, palette.light.group]) {
+      expect(contrast(palette.light.secondary, background)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(palette.light.allowed, background)).toBeGreaterThanOrEqual(4.5);
     }
-    // form.css's own values, which these replace, fall short.
-    expect(contrast("rgba(0, 0, 0, 0.5)", config.settingsWindowColor.light)).toBeLessThan(4.5);
-    expect(contrast("#28a745", "#ffffff")).toBeLessThan(4.5);
   });
 
-  /** In dark mode the text, the notes and "Allowed" (`form.css`'s dark colors) hold small text's
-   * 4.5:1 on the window's color and on the cards, and an off switch's white thumb stands 3:1 from
-   * its track on a card. (`form.css`'s error red, 4.2:1 on a dark card, predates this page.) */
+  /** In dark mode the text, the notes and "Allowed" hold small text's 4.5:1 on the window's color
+   * and on the cards, and an off switch's white thumb stands 3:1 from its track on a card. (The
+   * error red, 4.2:1 on a dark card, predates this page.) */
   test("text and an off switch stay legible in dark mode", () => {
-    const form = readFileSync(join(import.meta.dirname, "../../../src/renderer/shared/form.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-    const formDark = form.slice(form.indexOf("@media (prefers-color-scheme: dark)"));
-    const card = value(formDark, ":root", "--group") ?? "";
-    expect(card).toMatch(/^#/);
-    for (const name of ["--text", "--secondary", "--allowed"]) {
-      const color = value(formDark, ":root", name);
-      expect(color, name).toBeDefined();
-      for (const background of [config.settingsWindowColor.dark, card]) expect(contrast(color ?? "", background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
+    const { dark } = palette;
+    for (const [name, color] of Object.entries({ text: dark.text, secondary: dark.secondary, allowed: dark.allowed })) {
+      for (const background of [dark.window, dark.group]) expect(contrast(color, background), `${name} on ${background}`).toBeGreaterThanOrEqual(4.5);
     }
-    const track = value(mediaBlock("(prefers-color-scheme: dark)"), ":root", "--switch-off") ?? "";
-    expect(contrast("#ffffff", opaque(track, card))).toBeGreaterThanOrEqual(3);
+    expect(contrast(dark.onAccent, opaque(dark.switchOff, dark.group))).toBeGreaterThanOrEqual(3);
   });
 
   /** Focus is Chromium's own ring (the browser's default indicator, in the system accent), except in
@@ -159,16 +145,17 @@ describe("Settings stylesheet", () => {
   /** The chosen section's label is white on its gradient, and hovering it keeps that gradient: the
    * hover's gray goes only on the other sections, whatever the rules' order. */
   test("the chosen section stays white on its gradient, hovered or not", () => {
-    expect(value(css, ".sidebar button.nav.selected", "color")).toBe("white");
+    expect(value(css, ".sidebar button.nav.selected", "color")).toBe("var(--on-accent)");
+    expect(palette.light.onAccent).toBe("#FFFFFF");
     expect(declaring(css, /background:\s*var\(--hover\)/)).toEqual([".sidebar button.nav:not(.selected):hover"]);
   });
 
   /** An off switch's white thumb stands out 3:1 from its track (a control's state, WCAG 1.4.11), on
    * the lightest card, in light mode. */
   test("an off switch's thumb stands out from its track", () => {
-    expect(value(css, "input.switch::before", "background")).toBe("white");
+    expect(value(css, "input.switch::before", "background")).toBe("var(--on-accent)");
     expect(value(css, "input.switch", "background")).toBe("var(--switch-off)");
-    expect(contrast(value(css, ":root", "--switch-off") ?? "", "#ffffff")).toBeGreaterThanOrEqual(3);
+    expect(contrast(palette.light.onAccent, palette.light.switchOff)).toBeGreaterThanOrEqual(3);
   });
 
   /** An on switch differs from an off one by its thumb's place, not color alone: the thumb crosses

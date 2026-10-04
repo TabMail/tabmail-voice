@@ -99,7 +99,7 @@ multilingual accuracy than Apple's on-device model.
 - A failed transcription loses that recording (no retry queue yet). (Since ADR-DESK-039 a server
   error or dropped connection is retried twice before it does.) Chunking long dictations
   (transcribe ~20–30 s pieces as they complete, retry a failed piece alone) is tracked in
-  issue #1 (P3).
+  issue #1 (P3). (Done in ADR-DESK-049: cut at pauses, sent while the user speaks.)
 - macOS 15+ (the macOS 26 floor existed only for `SpeechAnalyzer`).
 
 **Amendment 2026-09-27 — the length cap is 120 s.** Owner: *"there was a bug before about this
@@ -109,6 +109,11 @@ back end… we should do it for two minutes for now until the chunking arrives i
 at most 120 s of audio (backend ADR-022), so a longer recording was uploaded only to fail.
 `maxRecordingDuration` is 120 s in both apps (`DictationConfig`, `config.ts`), for a hold and
 hands-free alike; the recorder keeps nothing past it. Raise it once chunking (issue #1) lands.
+
+**Amendment 2026-10-03 — 10 minutes, in chunks.** Chunking arrived on the app's side (ADR-DESK-049):
+a dictation is cut into chunks under the backend's 120 s and sent while the user speaks, so
+`maxRecordingDuration` is 10 minutes. A spoken answer to a confirmation stays one upload, capped at
+`maxUnchunkedDuration` (120 s).
 
 ## ADR-DESK-006: Boot the microphone at key-down, reveal the overlay at the caret after the hold
 
@@ -1023,7 +1028,7 @@ for agent mode; this one is for dictation, and Space still switches the mode.
 
 **Consequences:**
 - Hands-free listening is capped like a hold (`maxRecordingDuration`, 120 s since the ADR-DESK-005
-  amendment of 2026-09-27), then transcribed.
+  amendment of 2026-09-27, 10 minutes since ADR-DESK-049), then transcribed.
 - While hands-free, Space never reaches the app: typing in the meantime loses its spaces.
 - ~~A first tap is still a discarded recording start (the microphone boots and stops); a double tap
   starts it twice.~~ Superseded by the amendment below.
@@ -2340,7 +2345,8 @@ time; measured first (below).
   stays WAV.
 - **Retry on a server error.** A transcription that fails with a 5xx (the speech model behind the
   backend rate limited, overloaded or failed) or a dropped connection is sent again after
-  `transcriptionRetryDelays` (0.5 s, then 1.5 s), the same recording and request, while the pill
+  `transcriptionRetryDelays` (0.5 s, then 1.5 s; *eight tries over about a minute since 2026-10-03,
+  see the amendment below*), the same recording and request, while the pill
   shows "Server error, retrying…" (the `retrying` phase), back to transcribing once a retry
   answers; after the last it fails with the server's error as before. Nothing else is retried:
   signed out, no subscription, over quota or throttled (the backend's own 429), a refused request,
@@ -2362,6 +2368,9 @@ time; measured first (below).
   this dictation hit a server error). Tests: `controller.test.ts` › a canceled dictation's retry
   neither shows on nor clears the next dictation's; a dropped answer's retry still in flight stops
   saying it is retrying; each answer spoken aloud starts with no voice heard.)*
+  *(Later, owner 2026-10-03 (ADR-DESK-048): the shift toward purple was too close to blue to notice;
+  the arc and track now fade to fuchsia, `palette.retryArcStart` → `palette.retryArcEnd`, over
+  `colorTransitionSeconds`, and back when a retry answers.)*
 - **Release tail 150 ms** (was 300 ms), owner's choice.
 
 **Consequences:**
@@ -2374,6 +2383,20 @@ time; measured first (below).
   reports usage only on success.
 - Supersedes ADR-DESK-005's "A failed transcription loses that recording (no retry queue yet)" for
   server errors; its WAV upload is now FLAC.
+
+**Amendment 2026-10-03 — more and longer retries (owner).** *"We definitely need more retries …
+lengthen them, and we should not lose the end."* Measured the same day, the speech model's provider
+refused about one try in three as rate limited, in bursts of seconds, and two tries 2 s apart could
+not outlast one. `transcriptionRetryDelays` is now 0.5, 1.5, 3, 5, 10, 10, 15 and 15 s, about a
+minute in all, with the retry note up from 2 s; the user can cancel at any time. A recording's 504
+is still not retried (above). A long dictation's chunk after the release retries its 504 too, as
+while recording (ADR-DESK-049).
+*(Later the same day: the backend now retries the speech model's own 429 for its 30 s window and
+then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
+that code as a failure of the speech model, not this account's limit (`BackendError` `failed`, 429;
+the account's 429s stay `rateLimited`). Like a 504, the backend already waited, so a recording does
+not try it again; a long dictation's chunk does, while recording and after the release
+(`backendWaited`, ADR-DESK-049).)*
 
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
@@ -2967,7 +2990,6 @@ without hiding the window, which is what the Mac helper does. The Windows helper
 for it, before checking that the page is inside the window and shown; neither helper reads that
 page, so the Mac's answer loses nothing and reads more. The Windows helper is to follow: #97.)*
 
-
 **ADR-DESK-047 amendment — shared address classification (2026-10-03):**
 Provider address acquisition and unavailable/absent evidence stay native. The Rust
 core classifies supplied addresses with the pinned WHATWG `url` parser; malformed
@@ -2978,3 +3000,186 @@ Unicode-folded comparison and recognizes IDNA/numeric aliases, so canonicalizati
 cannot discard a stored exclusion. IDNA conversion precedes full case folding.
 The shared address/host fixtures pin this policy across all native adapters and the
 app; platform parser differences are recorded in the consolidation plan.
+
+## ADR-DESK-048: Every color in one palette file; one time for every color change
+
+**Context:** Owner, 2026-10-03: the retry's shift toward purple on the thinking circle
+(ADR-DESK-039) did not show; from a page of candidates the owner chose fuchsia, asked that it fade
+in "just like the voice" (the waveform's 0.4 s ease, ADR-DESK-006's 2026-10-02 amendment), with "the
+transition time … a variable configured globally", and asked for "a palette file for both the iOS
+and the Voice app, similarly to Thunderbird, so that we can actually adjust the colors easily from
+the palette". Colors were spread across `config.ts` (the waveform's, agent mode's glow, the Settings
+window's) and `renderer/shared/brand.ts` (the brand blue and purple).
+
+**Decision:**
+- **`src/core/palette.ts`** holds every named color the app draws with, as `#RRGGBB`: the brand
+  blue and purple, the waveform's waiting and recording colors, the retry's arc colors, agent mode's
+  glow, and the Settings window's own colors. `brand.ts` reads the brand colors from it, and its
+  `rgba(hex, alpha)` takes a palette color. Opacities and the color change's time stay tunable
+  numbers in `config.ts`. As Thunderbird's `theme/palette/palette.data.json` and iOS's
+  `Theme/Palette.swift` (ADR-IOS-085's 2026-10-03 amendment).
+- **`colorTransitionSeconds`** (0.4 s, renamed from `waveformColorTransitionSeconds`) is how long
+  every color change in the overlay eases: the waveform's, and the thinking circle's.
+- **The retry's colors fade.** The thinking circle draws its two sets of colors as two layers
+  (`RimLayer`) circling together, the brand's and the retry's (`palette.retryArcStart` #C026D3 →
+  `palette.retryArcEnd` #E0399E, the track in the start color), one fading out as the other fades in
+  over `colorTransitionSeconds`, since a CSS gradient can't ease from one color to another.
+  `thinkingRetryColorShift` is gone.
+- **One theme for every window** (owner, same day: "include the gray and shadows into the palette
+  and unify it so that there's a single sort of a palette theme"). The palette's `light` and `dark`
+  themes hold the windows' grays, text, accent, control fills, borders and shadows;
+  `renderer/shared/theme.ts` gives each page them as CSS variables (`controlBorder` is
+  `--control-border`) in one constructed stylesheet (`applyPalette`, before the page renders), since
+  the pages' Content Security Policy (`style-src 'self'`) refuses a `<style>` element. Settings, the
+  welcome wizard, the paste history and the screen-read window follow the system's light and dark;
+  the overlay keeps the light theme in both, as it did. The stylesheets declare no colors of their
+  own (a Windows contrast theme's system colors aside), and the overlay's tips (`palette.tip`) and
+  pill fill (`palette.pillFill`) left `config.ts`'s gray levels and opacities.
+- Unifying settled the values the windows had disagreed on: the window color is Settings'
+  `#F4F3F8` / `#1F1E24` everywhere (the wizard and history were `#ececec` / `#1e1e1e`), and the
+  notes gray (0.6) and "Allowed" green (`#1E7E34`) Settings darkened in light mode for 4.5:1 apply
+  to every window. The overlay's chat window took the light theme's values too: its text and Cancel
+  0.85 black (was black), its caption and close glyph the notes gray (0.6, were 0.55 and 0.5), and its
+  spinner's ring the control border (0.15, was 0.2).
+
+**Consequences:**
+- A color is changed in `palette.ts` alone; `theme.test.ts` fails on a color written in any
+  stylesheet or component (the brand's `brand.ts` helpers and a ring's opaque mask aside), and on a
+  variable a stylesheet reads that nothing gives.
+- The wizard's and history's background is a touch lighter and cooler than before; their notes and
+  "Allowed" a touch darker in light mode.
+- The thinking circle draws two arcs at once; the hidden one is fully transparent.
+- Tests: `overlay/index.test.ts` › the waveform takes its recording colour once a voice is heard, and
+  the circle the retry's colours while a retry runs (red-verified against a retry layer never shown
+  and against no fade). The `overlay-transcribing-retry` preview shows the retry's circle.
+  `shared/theme.test.ts` (no color outside the palette, every variable given, windows follow light
+  and dark while the overlay stays light; red-verified against a color written in a stylesheet and
+  in a component, a variable nothing gives, and the overlay given the dark theme), and
+  `settings/style.test.ts`'s contrast checks, which now read the palette's themes.
+
+
+## ADR-DESK-049: Long dictations, cut into chunks at pauses and sent while the user speaks
+
+**Context:** A dictation stopped at 120 s, the most the backend's transcription takes at once
+(ADR-DESK-005, amended 2026-09-27; issue #1). Owner, 2026-10-03: the recording can be longer; the app
+splits it into parts under the backend's limit and joins their texts. OpenWhispr, looked at for
+comparison, cuts only after recording, into fixed 240 s pieces with no overlap, and joins them with
+spaces, so a word at a cut is split and lost; its own issues propose cutting at the quietest moment.
+
+**Decision:** `maxRecordingDuration` is 10 minutes. As it is recorded, a dictation is cut into
+chunks (`Chunker`, `src/core/audio/chunker.ts`), each sent at once, as a whole request with its own
+cleanup (backend ADR-027), while the user goes on; the texts are joined in order at the release
+(`joinChunkTexts`, `src/core/dictation/chunkJoin.ts`). A dictation never cut is one upload, as before.
+
+- **Where it is cut (owner, 2026-10-03: "a second pause should be enforced… only after 10s+ for
+  chunks").** Loudness is read in `chunkFrameDuration` frames against the recording's own levels,
+  never a fixed one (ADR-DESK-005 found none): the 10th percentile of its frames is the room, the
+  90th percentile of those at least `chunkMinimumRange` above it the voice, and a frame less than
+  `chunkPauseLevel` of the way up is quiet; a quiet run shorter than `chunkSpeechGap` (between
+  syllables and words) is speech, and louder frames no longer than `chunkPauseBlip` (40 ms) inside a
+  quiet run are quiet. Once a chunk holds `chunkMinimumSpeech` (10 s) of speech, it is cut
+  in the middle of the next `chunkPauseDuration` (1 s) of quiet. Measured on the owner's recordings
+  with room gaps between them: 1.1 s and 1.5 s gaps cut, always inside the gap; 0.7 s gaps never;
+  reading the whole of a 10-minute recording takes 15–22 ms. Those gaps were spliced room audio; a
+  real dictation's pauses are not that clean (owner's test, 2026-10-03: a 32 s dictation with
+  several 1–2 s pauses after 10 s+ of speech was never cut). On its USB microphone the room was
+  −31.5 dB, the voice −19 dB, the line −27.8 dB, and every pause was 80–90% quiet, the rest room
+  noise 0–4 dB over the line a frame or two at a time; the longest all-quiet run was 0.54 s. Letting
+  blips of up to `chunkPauseBlip` through cut it at 13.5 s and 27.4 s, both inside its pauses.
+  The tolerance is kept to a plosive's burst, shorter than any vowel, since a cut must be in a
+  pause for sure (owner, 2026-10-03: "really high precision, even if some recall could be lower");
+  louder stretches past it end the pause as before. The levels are relative, so speech
+  much softer than what came before, with few frames at the room's level, can read as quiet: a
+  pause cut can land in it and split a word or two, with no overlap to recover them (reproduced
+  with synthetic audio in review, 2026-10-03; real speech dips to the room between words). Every
+  chunk is still sent.
+- **No pause (owner: "if a continuous speech goes over 2 minutes… overlapping things").** A chunk
+  that reaches `chunkMaxDuration` (105 s, under the backend's 120 s) is cut at the quietest
+  `chunkForcedCutWindow` of its last `chunkForcedCutSearch`, and the next chunk starts
+  `chunkOverlapSpeech` (15 s) of speech earlier, at most `chunkMaxOverlap`. The join keeps the
+  words both heard once: it matches the longest run of at least `chunkOverlapMinimumRun` words
+  (lower case, letters and digits only) within `chunkOverlapSearchWords` of the seam, keeping the
+  run's first word as the earlier chunk wrote it and the rest as the later one did (owner's smoke
+  test, 2026-10-03: "capitalization mid breaks"; the later chunk's text starts with a capital, as
+  any text does, so taking its copy wrote "you can Test the" at every overlap seam), and with no
+  such run joins the two whole (owner: "better than losing things"). A chunk overlaps only the one
+  just before it: after an empty one (a long silence) it is joined whole, or matching it
+  against an earlier chunk's words would cut out the speech between.
+- **The join.** An ellipsis where two chunks meet is the cut's pause, written by the model, and is
+  taken out; one inside a chunk stays. Chunks join with a space, or none where Chinese, Japanese,
+  Thai, Lao, Khmer or Burmese text meets. Each chunk's cleaned text is pasted (its transcript where
+  the cleanup failed, ADR-DESK-008).
+- **The polish (owner, 2026-10-03: "one final cleanup pass after the full dictation, even in the
+  chunked case… a little bit wasteful, but nice to have"; "a final polished pass if time permits… not
+  longer than 5 seconds"; "this should not change any of the backend mechanisms").** In dictation
+  mode, a text of two chunks or more (joined as above) goes once more through the same cleanup
+  prompt, `system_prompt_dictate_cleanup`, which the app calls itself at `POST /completions/chat`
+  (as before ADR-DESK-039's amendment of 2026-09-29), with the dictation's cleanup variables and the
+  joined text as its `dictation`, under the dictation's account. Its reply is pasted if it comes
+  within `chunkPolishTimeout` (5 s) of the chunks being in; one that fails, comes back empty or runs
+  out of time (its request is canceled) leaves the joined text to be pasted, as a failed cleanup
+  leaves the transcript (ADR-DESK-008). The owner chose to polish the cleaned text, not to clean the
+  raw transcript a second way, and the 5 s over a longer wait. Agent mode polishes nothing; a single
+  recording, or one chunk left before a chunk that gave up, already had its whole cleanup.
+- **Every chunk is sent**, a long silence's too (owner, 2026-10-03, on review: "send every chunk"):
+  the model decides what was said, as for one recording (ADR-DESK-005: no loudness gate). Chunks
+  judged silent by their loudness were skipped at first, but speech much softer than the speech
+  before it fell under the recording's levels and was lost without a word; the cost of sending is a
+  request per 105 s of silence, and a silence the model may hear a stray word in.
+- **Each chunk is normalized on its own** (ADR-DESK-040) and FLAC-encoded as it is cut (ADR-DESK-039).
+- **Retries (owner: "continuous retries until even the last chunk or the user release is done…
+  until the final give up").** While the user dictates, a chunk's server error, dropped connection,
+  backend timeout (504) or the speech model's rate limit outlasting the backend's own 30 s of retries
+  (429 `transcription_rate_limited`, backend ADR-022; found in review 2026-10-03, where one such 429
+  threw away the rest of a dictation) is tried again after each of `chunkRetryDelays`, the last repeating,
+  quietly: nobody waits for it yet. From the release, a chunk still failing gets the
+  `transcriptionRetryDelays` tries one recording gets, about a minute of waits (ADR-DESK-039, amendment
+  2026-10-03; each try the backend holds for its whole 30 s window, a 504 or that 429, adds its 30 s,
+  so a chunk failing that way every time keeps the pill transcribing for up to about 5.5 minutes,
+  9 tries × 30 s plus the waits, until the user cancels; found in review, 2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
+  at the release, so its backend timeout comes after it (owner: "we should not lose the end").
+  Any other failure (signed out, over quota or the account's own rate limit, refused) gives up at once.
+- **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
+  the up to successful part").** The chunks before the first that gave up are pasted, and the pill
+  says `partlyTranscribedMessage` (`partlyCopiedMessage` when the text was copied instead, the user
+  having switched apps, ADR-DESK-042); the chunks after it are not, so the text has no hole. Once
+  the text is known, the retry note ends and the chunks still running are cancelled, before the
+  paste or the agent's run. The first
+  chunk giving up loses the dictation, as one recording's failure does. Agent mode carries out a
+  request whole or not at all: a lost chunk fails it.
+- Cancelling cancels every chunk's request. The chunks already answered have been transcribed and
+  cleaned up, as any dictation is.
+- A spoken answer to a confirmation (ADR-DESK-036) stays one upload, capped at
+  `maxUnchunkedDuration` (120 s).
+
+**Consequences:**
+- A long dictation's text is ready about as soon as its last chunk is transcribed: the earlier ones
+  are done while the user speaks.
+- The audio goes to the same place as before and none of it is stored (root ADR-004), but it leaves
+  sooner: a long dictation cancelled after a cut has already sent the chunks before it, each with
+  the cleanup's context (the text around the cursor and on screen, as every dictation sends; before
+  chunking, a cancelled hold sent nothing). The welcome wizard's consent page says a long dictation
+  is sent in parts while the user speaks; users who consented before are told once, by a tip under
+  the pill at their next dictation, ahead of the other tips (`longDictations`: "New: dictate up to
+  10 minutes, sent in parts as you talk"), and are never asked again. Owner, 2026-10-03: a launch
+  dialog was "poorly formatted… too long and sloppy"; "an ordinary tooltip that shows with high
+  priority only once". The tip is too short to say that a part already sent is transcribed and
+  cleaned up even if the user cancels; the consent page and this ADR say it. A user still in the
+  welcome wizard at launch never gets the tip.
+- After a chunk gives up for good while the user is still speaking, the later chunks are still
+  sent (and count toward usage) until the release, though they will not be pasted: nothing is
+  shown until the release.
+- A long dictation's chunks always carry the cleanup's variables, in agent mode too: the first is
+  sent before the release, and Space can switch the mode back to dictation after it. Agent mode
+  uses only the transcript.
+- Each chunk is a request of its own and counts toward usage as one; an overlap's 15 s are
+  transcribed twice.
+- The cleanup sees one chunk at a time: a sentence cut at a forced cut is cleaned in two halves.
+  The polish reads the whole text, if it can within 5 s: a light-tier model writes the text out
+  again, so a long dictation (several minutes) may run out of time and keep its chunks' cleanups.
+  It is one more completions request per long dictation, and up to 5 s more at the spinner.
+- 10 minutes at 16 kHz is about 19 MB of samples kept in memory until the release.
+- A chunk is cut only after 10 s of speech, so a pause cut is never shorter; a forced cut leaves the
+  next chunk at least its overlap.
+- The model's real limit is unmeasured past the 120 s cap: `chunkMaxDuration` stays under it.
+- iOS does the same (`tabmail-ios` ADR-IOS-087), from the same rules and numbers.

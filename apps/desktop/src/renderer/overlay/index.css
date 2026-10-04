@@ -62,8 +62,8 @@ body {
   overflow: hidden;
   white-space: normal;
   font-weight: 500;
-  /* The pill is light in light and dark mode alike. */
-  color: black;
+  /* The pill is light in light and dark mode alike: the palette's light theme. */
+  color: var(--text);
 }
 
 .badge,
@@ -98,7 +98,8 @@ body {
   flex: none;
 }
 
-.rim {
+.rim,
+.rim-layer {
   position: absolute;
   inset: 0;
   border-radius: 50%;
@@ -184,7 +185,7 @@ body {
   border-style: solid;
   border-color: transparent;
   /* Light in light and dark mode alike, as the pill. */
-  color: black;
+  color: var(--text);
 }
 
 .chat-scroll {
@@ -219,7 +220,7 @@ body {
   display: flex;
   align-items: center;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.55);
+  color: var(--secondary);
 }
 
 .chat-text {
@@ -265,8 +266,8 @@ body {
   flex: none;
   box-sizing: border-box;
   border-style: solid;
-  border-color: rgba(0, 0, 0, 0.2);
-  border-top-color: rgba(0, 0, 0, 0.55);
+  border-color: var(--control-border);
+  border-top-color: var(--secondary);
   border-radius: 50%;
 }
 
@@ -275,7 +276,7 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--fill-subtle);
 }
 
 .chat-confirmation-buttons {
@@ -292,12 +293,12 @@ body {
 }
 
 .chat-cancel {
-  background: rgba(0, 0, 0, 0.06);
-  color: black;
+  background: var(--hover);
+  color: var(--text);
 }
 
 .chat-confirm {
-  color: white;
+  color: var(--on-accent);
 }
 
 .chat-timeout {
@@ -315,8 +316,8 @@ body {
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.06);
-  color: rgba(0, 0, 0, 0.5);
+  background: var(--hover);
+  color: var(--secondary);
   font-weight: 600;
   cursor: pointer;
 }

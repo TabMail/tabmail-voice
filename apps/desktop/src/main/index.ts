@@ -194,11 +194,12 @@ function launch(): void {
   );
 
   const history = new PasteHistory();
+  const tips = new TipBook(store);
   const controller = new DictationController({
     permissions,
     settings: () => settings.dictation(account.email),
     account,
-    tips: new TipBook(store),
+    tips,
     paste: (text, signal, target) => system instanceof WindowsSystem || system instanceof LinuxSystem ? system.paste(text, signal, target) : system.paste(text, signal),
     copy: (text) => copyText(text),
     history,
@@ -878,6 +879,10 @@ function launch(): void {
   permissions.startPollingAccessibility();
   updater?.start();
 
-  // The welcome wizard asks for consent and the permissions; it opens until finished.
-  if (!settings.hasFinishedWelcome) showWelcome();
+  // The welcome wizard asks for consent and the permissions; it opens until finished. Its consent page
+  // says what's new, so the tip that tells a user who set the app up before never shows to this one.
+  if (!settings.hasFinishedWelcome) {
+    tips.markLearned("longDictations");
+    showWelcome();
+  }
 }

@@ -9,13 +9,15 @@ import { type BubbleKey, bubbleName, bubbleOrder } from "../../core/agent/bubble
 import { connectorByID, isConnectorID } from "../../core/agent/connectors/index.js";
 import { type AgentToolID, agentTools } from "../../core/agent/tools.js";
 import * as config from "../../core/config.js";
+import { palette } from "../../core/palette.js";
 import type { DictationHotkey } from "../../core/hotkey/bindings.js";
 import { bubbleRow, bubbleRowOpacity, bubbleTooltipCenter, grownBubble, hintCenter, hintCenterOver, type Point, type Rect, type Size, tipGoesAbove, underBubbles } from "../../core/ui/overlayGeometry.js";
 import { type DictationTip, tipDetails, tipLines } from "../../core/onboarding/tips.js";
 import type { ChatPlacement, OverlayState } from "../../shared/ipc.js";
-import { brandBlue, brandColor, brandGradient, gray, rgba } from "../shared/brand.js";
+import { brandBlue, brandColor, brandGradient, rgba } from "../shared/brand.js";
 import { send, useWindowState } from "../shared/bridge.js";
 import { ClipboardIcon, ConnectorIcon, ExclamationIcon, SparklesIcon, ToolIcon } from "../shared/icons.js";
+import { applyPalette } from "../shared/theme.js";
 import "./index.css";
 
 /**
@@ -378,7 +380,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
         width,
         borderRadius: config.chatCornerRadius,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+        background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
         boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
       }}
     >
@@ -625,10 +627,10 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent }: { mode: 
     borderRadius: config.pillHeight / 2,
     borderWidth: config.pillBorderWidth,
     // A light pill in light and dark mode alike, in a gradient border.
-    background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
+    background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${mode.kind === "transcribing" || mode.kind === "running" ? "transparent" : brandGradient} border-box`,
     // Neon red-pink in agent mode, a sign of the mode.
     boxShadow: isAgent
-      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(config.agentPillGlowInnerColor, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(config.agentPillGlowOuterColor, config.agentPillGlowOuterOpacity)}`
+      ? `0 0 ${config.agentPillGlowInnerRadius}px ${rgba(palette.agentPillGlowInner, config.agentPillGlowInnerOpacity)}, 0 0 ${config.agentPillGlowOuterRadius}px ${rgba(palette.agentPillGlowOuter, config.agentPillGlowOuterOpacity)}`
       : `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
     transition: `${springTransition(["padding"])}, box-shadow ${config.pillSpringResponseSeconds}s ease-out`,
   };
@@ -698,7 +700,7 @@ function LanguageBadge({ code }: { code: string }) {
         width: diameter,
         height: diameter,
         borderWidth: config.pillBorderWidth,
-        background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${brandGradient} border-box`,
+        background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
       }}
     >
       <span className="gradient-text" style={{ fontSize: config.languageBadgeFontSize, backgroundImage: brandGradient }}>
@@ -733,8 +735,8 @@ function Waveform({ level, hasVoice }: { level: number; hasVoice: boolean }) {
             width: config.overlayMeterBarWidth,
             height: config.overlayMeterMinBarHeight,
             borderRadius: config.overlayMeterBarWidth / 2,
-            backgroundColor: rgba(hasVoice ? config.waveformVoicedColor : config.waveformWaitingColor),
-            transition: `background-color ${config.waveformColorTransitionSeconds}s ease-in-out`,
+            backgroundColor: rgba(hasVoice ? palette.waveformVoiced : palette.waveformWaiting),
+            transition: `background-color ${config.colorTransitionSeconds}s ease-in-out`,
           }}
         />
       ))}
@@ -763,24 +765,36 @@ function ringMask(width: number): string {
 }
 
 /** Loading indicator on the thinking circle's rim: a blue → violet arc with a fading tail, circling
- * over a faint blue ring; both moved toward purple while a server error is tried again. */
+ * over a faint blue ring; while a server error is tried again, both fade to the retry's colors
+ * (`palette.retryArcStart` → `palette.retryArcEnd`). A gradient can't ease from one color to
+ * another, so the two sets of colors are two layers circling together, one fading out as the other
+ * fades in, over `colorTransitionSeconds`. */
 function SpinningRim({ isRetrying }: { isRetrying: boolean }) {
+  return (
+    <>
+      <RimLayer start={brandColor(0)} end={brandColor(config.thinkingArcEndColor)} track={brandColor(0, config.thinkingTrackOpacity)} transparent={brandColor(0, 0)} isShown={!isRetrying} />
+      <RimLayer start={rgba(palette.retryArcStart)} end={rgba(palette.retryArcEnd)} track={rgba(palette.retryArcStart, config.thinkingTrackOpacity)} transparent={rgba(palette.retryArcStart, 0)} isShown={isRetrying} />
+    </>
+  );
+}
+
+/** One set of the thinking circle's colors: its track and its arc, shown or faded out. */
+function RimLayer({ start, end, track, transparent, isShown }: { start: string; end: string; track: string; transparent: string; isShown: boolean }) {
   const width = config.thinkingRimWidth;
   const arc = 360 * config.thinkingArcFraction;
   const ring: CSSProperties = { mask: ringMask(width) };
-  const shift = isRetrying ? config.thinkingRetryColorShift : 0;
   return (
-    <>
-      <div className="rim" style={{ ...ring, background: brandColor(shift, config.thinkingTrackOpacity) }} />
+    <div className="rim-layer" style={{ opacity: isShown ? 1 : 0, transition: `opacity ${config.colorTransitionSeconds}s ease-in-out` }}>
+      <div className="rim" style={{ ...ring, background: track }} />
       <div
         className="rim spinning"
         style={{
           ...ring,
-          background: `conic-gradient(${brandColor(shift, 0)} 0deg, ${brandColor(shift)} ${arc / 2}deg, ${brandColor(config.thinkingArcEndColor + shift)} ${arc}deg, transparent ${arc}deg)`,
+          background: `conic-gradient(${transparent} 0deg, ${start} ${arc / 2}deg, ${end} ${arc}deg, transparent ${arc}deg)`,
           animationDuration: `${1 / config.thinkingRevolutionsPerSecond}s`,
         }}
       />
-    </>
+    </div>
   );
 }
 
@@ -837,7 +851,7 @@ function Bubble({
           width: diameter,
           height: diameter,
           borderWidth: config.pillBorderWidth,
-          background: `linear-gradient(${gray(config.pillFillWhite)}, ${gray(config.pillFillWhite)}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
+          background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${isRunning ? "transparent" : brandGradient} border-box`,
           boxShadow: `0 0 ${config.pillGlowRadius}px ${brandColor(1, config.pillGlowOpacity)}`,
           transform: `scale(${isRunning ? config.agentBubbleRunningScale : isHovered ? config.agentBubbleHoverScale : 1})`,
           opacity: isHovered ? 1 : opacity * (isDimmed ? config.agentBubbleIdleOpacity : 1),
@@ -869,17 +883,17 @@ function BubbleTooltip({ name, description, bubble, canvas }: { name: string; de
         padding: config.bubbleTooltipPadding,
         gap: config.bubbleTooltipLineSpacing,
         borderRadius: config.tipCornerRadius,
-        background: gray(config.tipFillWhite, config.tipFillOpacity),
-        border: `${config.pillBorderWidth}px solid ${gray(1, config.tipBorderOpacity)}`,
-        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)}`,
+        background: palette.tip.fill,
+        border: `${config.pillBorderWidth}px solid ${palette.tip.border}`,
+        boxShadow: `0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${palette.tip.shadow}`,
         // Hidden until measured, so it never shows for a frame where it doesn't belong.
         visibility: size.width > 0 ? "visible" : "hidden",
       }}
     >
-      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: gray(1, config.tipKeyTextOpacity) }}>
+      <span className="bubble-tooltip-name" style={{ fontSize: config.bubbleTooltipNameFontSize, color: palette.tip.keyText }}>
         {name}
       </span>
-      <span style={{ fontSize: config.bubbleTooltipFontSize, color: gray(1, config.tipTextOpacity) }}>{description}</span>
+      <span style={{ fontSize: config.bubbleTooltipFontSize, color: palette.tip.text }}>{description}</span>
     </div>
   );
 }
@@ -915,9 +929,9 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
   const lines = tipLines(tip, hotkey, gnomeRecordingKeys);
   return (
     <div ref={ref} className="tip" style={{ ...(pointsDown ? { paddingBottom: config.tipArrowHeight } : { paddingTop: config.tipArrowHeight }), visibility: size.width > 0 ? "visible" : "hidden" }}>
-      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${gray(0, config.tipShadowOpacity)})` }}>
+      <svg className="tip-shape" width={size.width} height={size.height} style={{ filter: `drop-shadow(0 ${config.tipShadowOffsetY}px ${config.tipShadowRadius}px ${palette.tip.shadow})` }}>
         {/* The outline mirrored top to bottom, its arrow at the pill under it; the shadow still falls down. */}
-        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={gray(config.tipFillWhite, config.tipFillOpacity)} stroke={gray(1, config.tipBorderOpacity)} strokeWidth={config.pillBorderWidth} />
+        <path transform={pointsDown ? `translate(0 ${size.height}) scale(1 -1)` : undefined} d={tooltipPath(size)} fill={palette.tip.fill} stroke={palette.tip.border} strokeWidth={config.pillBorderWidth} />
       </svg>
       <div
         className="tip-lines"
@@ -927,7 +941,7 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
           <div key={index} className="tip-line" style={{ gap: config.tipSpacing, height: config.tipLineHeight }}>
             {line.map((part, partIndex) =>
               "words" in part ? (
-                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: gray(1, config.tipTextOpacity) }}>
+                <span key={partIndex} style={{ fontSize: config.tipFontSize, color: palette.tip.text }}>
                   {part.words}
                 </span>
               ) : (
@@ -936,13 +950,13 @@ function TipTooltip({ tip, hotkey, pointsDown, gnomeRecordingKeys }: { gnomeReco
                   className="keycap"
                   style={{
                     fontSize: config.tipKeyFontSize,
-                    color: gray(1, config.tipKeyTextOpacity),
+                    color: palette.tip.keyText,
                     padding: `0 ${config.tipKeyPadding}px`,
                     height: config.tipKeyHeight,
                     borderRadius: config.tipKeyCornerRadius,
                     borderWidth: config.pillBorderWidth,
-                    borderColor: gray(1, config.tipKeyBorderOpacity),
-                    background: gray(1, config.tipKeyFillOpacity),
+                    borderColor: palette.tip.keyBorder,
+                    background: palette.tip.keyFill,
                   }}
                 >
                   {part.key}
@@ -1022,4 +1036,6 @@ function GatheringSwirl({ dispersing, leaving = false }: { dispersing: boolean; 
 }
 
 const root = document.getElementById("root");
+// The overlay is light in light and dark mode alike.
+applyPalette(document, false);
 if (root) createRoot(root).render(<Overlay />);
