@@ -60,11 +60,18 @@ try {
   assert.equal(pasted.error, undefined, "native insertion succeeds");
   assert.equal((await command("value")).text, "Before Synthetic inserted text after.");
   assert.deepEqual(await command("clipboard"), original, "original text and registered binary formats restored");
-  for (const mode of ["password", "readOnly", "button"]) {
+  for (const mode of ["password"]) {
     await command(mode);
     assert.ok((await request("insert", params()).result).error, `${mode} insertion refused`);
     assert.equal((await command("value")).text, "Before selected after.");
     assert.deepEqual(await command("clipboard"), original, "refusal preserves every seeded format");
+  }
+  for (const mode of ["readOnly", "button"]) {
+    await command(mode);
+    assert.equal((await request("insert", params()).result).error, undefined,
+      `${mode} receives a normal paste command without editable-field eligibility`);
+    assert.equal((await command("value")).text, "Before selected after.", "non-editable target ignores paste");
+    assert.deepEqual(await command("clipboard"), original, "ignored paste restores every seeded format");
   }
   await command("editable");
   for (const extra of [{ window: 0 }, { window: window + 1 }, { window: -1 }, { deadline: Date.now() - 1 }, { text: "" }, { text: "bad\0text" }]) {

@@ -82,23 +82,6 @@ public:
         ComPtr<IUIAutomationTextEditPattern> edit;
         return SUCCEEDED(element->GetCurrentPatternAs(UIA_TextEditPatternId, IID_PPV_ARGS(&edit))) && edit;
     }
-    // A terminal canvas accepts keyboard input without exposing an editable value.
-    // Keep this separate from editable(): terminal output is not a whole-field value.
-    bool acceptsInput(HWND window, IUIAutomationElement* element) {
-        if (editable(element)) return true;
-        if (!element || !caretEligible(element) || _wcsicmp(executableName(window).c_str(), L"WindowsTerminal.exe") != 0) return false;
-        BOOL password = TRUE;
-        require(element->get_CurrentIsPassword(&password));
-        if (password) return false;
-        CONTROLTYPEID type = 0;
-        require(element->get_CurrentControlType(&type));
-        if (type != UIA_TextControlTypeId) return false;
-        struct ClassName { BSTR value = nullptr; ~ClassName() { SysFreeString(value); } } name;
-        require(element->get_CurrentClassName(&name.value));
-        if (!name.value || std::wstring_view(name.value, SysStringLen(name.value)) != L"TermControl") return false;
-        ComPtr<IUIAutomationTextPattern> text;
-        return SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&text))) && text;
-    }
     JSON caret(HWND window) {
         const char* refusal = nullptr;
         auto element = focused(window, &refusal);
