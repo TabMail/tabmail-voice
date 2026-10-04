@@ -210,6 +210,45 @@ private final class TerminalAXFixture {
 }
 
 struct TerminalAXAdapterTests {
+    @Test func expensiveProviderSnapshotsAreBoundedAcrossClippedFragments() throws {
+        let provider = TerminalAXFixture()
+        let source = provider.source
+        var counts = 0
+        let wrapped = TerminalViewportReader.Source(attribute: { name in
+            if name == kAXNumberOfCharactersAttribute { counts += 1 }
+            return source.attribute(name)
+        }, parameter: source.parameter, bounds: source.bounds)
+        let result = try #require(TerminalViewportReader.surface(wrapped, id: 0,
+            clip: CGRect(x: 10, y: 10, width: 20, height: 20), focused: true,
+            startKnown: false, endKnown: false, valid: { true }))
+        #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string } == [" h", "ta"])
+        #expect(provider.reads.count == 4)
+        #expect(counts == 4)
+        #expect(provider.forbidden.isEmpty)
+    }
+
+    @Test func countOrSelectionMutationDuringCaptureRejectsTheResult() {
+        for changeCount in [true, false] {
+            let provider = TerminalAXFixture()
+            let source = provider.source
+            let changed = TerminalViewportReader.Source(attribute: { name in
+                if changeCount, name == kAXNumberOfCharactersAttribute, !provider.reads.isEmpty {
+                    return NSNumber(value: provider.text.length + 1)
+                }
+                if !changeCount, name == kAXSelectedTextRangeAttribute, !provider.reads.isEmpty {
+                    var range = CFRange(location: 9, length: 1)
+                    return AXValueCreate(.cfRange, &range)
+                }
+                return source.attribute(name)
+            }, parameter: source.parameter, bounds: source.bounds)
+            #expect(TerminalViewportReader.surface(changed, id: 0,
+                clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+                startKnown: false, endKnown: false, valid: { true }) == nil)
+            #expect(!provider.reads.isEmpty)
+            #expect(provider.forbidden.isEmpty)
+        }
+    }
+
     @Test func geometryPlanningRevalidatesBeforeAnyTextRead() {
         let provider = TerminalAXFixture()
         let original = provider.source

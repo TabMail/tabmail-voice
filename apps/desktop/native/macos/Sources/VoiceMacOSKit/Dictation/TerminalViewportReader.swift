@@ -196,8 +196,14 @@ extension TerminalViewportReader {
         }
         // Three UTF-8 bytes per UTF-16 unit is the maximum conversion expansion.
         diagnosticStage = "bounded-text"
-        guard let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
-                                     read: read, valid: { valid() && count() == countSnapshot && selection() == selectionSnapshot }),
+        // iTerm rebuilds its scrollback index for character-count queries. Take
+        // those snapshots at capture boundaries, not once per visible fragment.
+        // Each text read still validates focus/frames, and capture reads every
+        // interval twice before any result can be accepted.
+        guard valid(), count() == countSnapshot, selection() == selectionSnapshot,
+              let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
+                                     read: read, valid: valid),
+              count() == countSnapshot, selection() == selectionSnapshot,
               visibleRanges(lines: lines, clip: clip, bounds: bounds, valid: metadataValid) == ranges else { return nil }
         diagnosticStage = "recheck-lines"
         // Line metadata can change without text/count changing (resize/scroll).
