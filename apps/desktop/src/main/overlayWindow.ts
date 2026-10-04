@@ -17,8 +17,8 @@ export type OverlaySurface = Pick<BrowserWindow,
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
- * hold is arming (the caret is looked up then, so the overlay appears there the moment the hold is
- * revealed), shown from listening on, and hidden once the exit animation has played. While the chat
+ * hold is arming (the caret is looked up then), shown from listening on using the caret if ready
+ * or the fallback position otherwise, and hidden once the exit animation has played. While the chat
  * window is open the overlay grows to show it over the pill, which stays where it was, and takes the
  * mouse. The window never takes focus, so the target field keeps it and receives the paste.
  */
@@ -28,9 +28,6 @@ export class OverlayWindowController {
   private requestedPill = false;
   private lookupGeneration = 0;
   private lookupPending = false;
-  /** The hold was revealed before the caret lookup finished: show once it does, so the overlay
-   * never flashes at the mouse pointer and then jumps. */
-  private showWhenLocated = false;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   /** The overlay last opened above the caret's line (`opensUpward`), which the view places its tip
    * by (`tipGoesAbove`). */
@@ -105,7 +102,6 @@ export class OverlayWindowController {
         this.anchor = null;
         this.lookupGeneration += 1;
         this.lookupPending = false;
-        this.showWhenLocated = false;
         return;
       case "copied":
         // Not pasted where the user spoke: the note goes where the user is now, at the mouse
@@ -113,7 +109,6 @@ export class OverlayWindowController {
         this.cancelHide();
         this.lookupGeneration += 1;
         this.lookupPending = false;
-        this.showWhenLocated = false;
         this.anchor = this.pointer();
         this.show();
         return;
@@ -126,8 +121,10 @@ export class OverlayWindowController {
       default:
         if (this.window.isVisible()) return;
         if (this.lookupPending) {
-          this.showWhenLocated = true;
-          return;
+          // The reveal must not wait for accessibility. Keep this hold at its fallback
+          // position rather than jumping when a late caret lookup eventually finishes.
+          this.lookupGeneration += 1;
+          this.lookupPending = false;
         }
         this.show();
     }
@@ -164,7 +161,6 @@ export class OverlayWindowController {
   private showChat(): void {
     this.lookupGeneration += 1;
     this.lookupPending = false;
-    this.showWhenLocated = false;
     const anchor = this.anchor ?? this.pointer();
     if (!this.hasPlacementArea(anchor)) { this.window.hide(); return; }
     const workArea = this.workArea(anchor);
@@ -201,7 +197,6 @@ export class OverlayWindowController {
   }
 
   private show(): void {
-    this.showWhenLocated = false;
     if (!this.hasPlacementArea(this.anchor ?? this.pointer())) { this.window.hide(); return; }
     this.position();
     this.window.showInactive();
@@ -212,7 +207,6 @@ export class OverlayWindowController {
     const current = this.lookupGeneration;
     this.anchor = null;
     this.lookupPending = true;
-    this.showWhenLocated = false;
     void this.locateCaret()
       .catch((error: unknown) => {
         log.debug(`OverlayWindowController: caret lookup failed: ${errorName(error)}`);
@@ -222,8 +216,6 @@ export class OverlayWindowController {
         if (this.lookupGeneration !== current) return;
         this.anchor = caret;
         this.lookupPending = false;
-        if (this.showWhenLocated) this.show();
-        else if (this.window.isVisible()) this.position();
       });
   }
 

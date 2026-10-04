@@ -82,6 +82,7 @@ describe("OverlayWindowController", () => {
       async () => ({ x: 100, y: 300, width: 1, height: 20 }),
       (area) => shellPlacementArea(area, exclusions));
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(overlay.visible()).toBe(true));
     const original = { ...overlay.bounds() };
@@ -114,6 +115,7 @@ describe("OverlayWindowController", () => {
     controller.onPlace = () => placed.push(controller.opensUpward);
 
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     expect(controller.opensUpward).toBe(true);
@@ -121,6 +123,7 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "idle" });
     caret = { x: 400, y: 300, width: 1, height: 16 };
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(2));
 
@@ -147,6 +150,7 @@ describe("OverlayWindowController", () => {
     for (const next of carets) {
       caret = next;
       controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(placed).toHaveLength(carets.indexOf(next) + 1));
       controller.update({ kind: "idle" });
@@ -180,6 +184,7 @@ describe("OverlayWindowController", () => {
     const placed: unknown[] = [];
     controller.onPlace = () => placed.push(controller.chatPlacement);
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     const canvas = overlay.bounds();
@@ -195,6 +200,7 @@ describe("OverlayWindowController", () => {
 
     controller.update({ kind: "idle" }, false);
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     controller.update({ kind: "running", tool: "answer" }, true);
     expect(overlay.opacity()).toBe(0);
@@ -214,6 +220,7 @@ describe("OverlayWindowController", () => {
     expect(atPointer.workArea).toEqual(workArea);
 
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     const pill = pillOnScreen(overlay.bounds());
@@ -231,6 +238,7 @@ describe("OverlayWindowController", () => {
     // the place says so, for the paste history to open where the chat would (red-verified).
     caret.y = workArea.y + workArea.height - 20;
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(2));
     expect(controller.pillPlace.bubblesUnder).toBe(false);
@@ -247,6 +255,7 @@ describe("OverlayWindowController", () => {
     const placed: unknown[] = [];
     controller.onPlace = () => placed.push(controller.chatPlacement);
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(placed).toHaveLength(1));
     expect(overlay.ignoresMouse()).toBe(true);
@@ -293,6 +302,7 @@ describe("OverlayWindowController", () => {
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, async () => caret);
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(overlay.visible()).toBe(true));
     const pill = pillOnScreen(overlay.bounds());
@@ -316,6 +326,7 @@ describe("OverlayWindowController", () => {
     const controller = new OverlayWindowController(overlay.window, async () => null);
     try {
       controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(overlay.visible()).toBe(true));
       const pill = pillOnScreen(overlay.bounds());
@@ -340,6 +351,7 @@ describe("OverlayWindowController", () => {
       const overlay = recordingWindow();
       const controller = new OverlayWindowController(overlay.window, async () => caret);
       controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(overlay.visible()).toBe(true));
       const pill = pillOnScreen(overlay.bounds());
@@ -373,6 +385,7 @@ describe("OverlayWindowController", () => {
       const overlay = recordingWindow();
       const controller = new OverlayWindowController(overlay.window, async () => caret);
       controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(overlay.visible()).toBe(true));
       const pill = overlay.bounds();
@@ -405,6 +418,7 @@ describe("OverlayWindowController", () => {
       const overlay = recordingWindow();
       const controller = new OverlayWindowController(overlay.window, async () => caret);
       controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
       controller.update({ kind: "listening" });
       await vi.waitFor(() => expect(overlay.visible()).toBe(true));
       const atCaret = overlay.bounds();
@@ -431,6 +445,7 @@ describe("OverlayWindowController", () => {
     const overlay = recordingWindow();
     const controller = new OverlayWindowController(overlay.window, () => caret.promise);
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "idle" }, true);
     const opened = overlay.bounds();
     expect(opened.width).toBe(config.chatWidth + 2 * config.chatShadowMargin);
@@ -447,6 +462,7 @@ test("a shell exclusion region constrains the shared pill and interactive chat",
   const overlay = recordingWindow();
   const controller = new OverlayWindowController(overlay.window, async () => ({ x: 750, y: 200, width: 1, height: 20 }), () => area);
   controller.update({ kind: "arming" });
+  await new Promise<void>(queueMicrotask);
   controller.update({ kind: "listening" });
   await vi.waitFor(() => expect(overlay.visible()).toBe(true));
   expect(controller.pillPlace.workArea).toEqual(area);
@@ -465,6 +481,7 @@ test("no usable area never shows an overlay behind the shell", async () => {
   const locate = vi.fn(async () => ({ x: 750, y: 200, width: 1, height: 20 }));
   const controller = new OverlayWindowController(overlay.window, locate, () => null);
   controller.update({ kind: "arming" });
+  await new Promise<void>(queueMicrotask);
   controller.update({ kind: "listening" });
   await vi.waitFor(() => expect(locate).toHaveResolved());
   expect(overlay.visible()).toBe(false);
@@ -492,12 +509,13 @@ test("placement refresh recovers chat after Search leaves no usable area", () =>
   expect(overlay.visible()).toBe(false);
 });
 
-test("placement refresh does not reveal an idle or arming overlay", () => {
+test("placement refresh does not reveal an idle or arming overlay", async () => {
   const overlay = recordingWindow();
   const controller = new OverlayWindowController(overlay.window, async () => null);
   controller.refreshPlacement();
   expect(overlay.visible()).toBe(false);
   controller.update({ kind: "arming" });
+  await new Promise<void>(queueMicrotask);
   controller.refreshPlacement();
   expect(overlay.visible()).toBe(false);
 });
@@ -530,6 +548,7 @@ test("Linux fallback stays on the selected display when the pointer moves, and p
     let caret: Rect | null = null;
     const controller = new OverlayWindowController(overlay.window, async () => caret, undefined, linuxFallbackAnchor);
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(overlay.visible()).toBe(true));
     const first = controller.pillPlace;
@@ -537,12 +556,14 @@ test("Linux fallback stays on the selected display when the pointer moves, and p
     controller.update({ kind: "idle" });
     screenNow.pointer = { x: -1300, y: 850 };
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(overlay.visible()).toBe(true));
     expect(controller.pillPlace).toEqual(first);
     controller.update({ kind: "idle" });
     caret = { x: -1200, y: 200, width: 1, height: 20 };
     controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
     controller.update({ kind: "listening" });
     await vi.waitFor(() => expect(controller.pillPlace.pill.x).toBe(-1199.5));
     expect(overlay.ignoresMouse()).toBe(true);
@@ -550,4 +571,40 @@ test("Linux fallback stays on the selected display when the pointer moves, and p
     screenNow.workArea = workArea;
     screenNow.pointer = pointerAtRest;
   }
+});
+
+
+test("listening reveals immediately despite a stalled caret, and a late caret cannot move it", async () => {
+  const caret = deferred<Rect | null>();
+  const overlay = recordingWindow();
+  const controller = new OverlayWindowController(overlay.window, () => caret.promise);
+  controller.update({ kind: "arming" });
+  expect(overlay.visible()).toBe(false);
+  controller.update({ kind: "listening" });
+  expect(overlay.visible()).toBe(true);
+  const shown = { ...overlay.bounds() };
+  expect(controller.pillPlace.pill.x).toBe(pointerAtRest.x + 0.5);
+  caret.resolve({ x: 40, y: 40, width: 1, height: 20 });
+  await new Promise<void>(queueMicrotask);
+  expect(overlay.bounds()).toEqual(shown);
+  expect(overlay.visible()).toBe(true);
+});
+
+test("an old slow caret cannot overwrite a later hold's ready caret", async () => {
+  const old = deferred<Rect | null>();
+  const fresh = { x: 400, y: 300, width: 1, height: 20 };
+  const locate = vi.fn().mockImplementationOnce(() => old.promise).mockResolvedValue(fresh);
+  const overlay = recordingWindow();
+  const controller = new OverlayWindowController(overlay.window, locate);
+  controller.update({ kind: "arming" });
+  controller.update({ kind: "listening" });
+  controller.update({ kind: "idle" });
+  controller.update({ kind: "arming" });
+  await new Promise<void>(queueMicrotask);
+  controller.update({ kind: "listening" });
+  expect(controller.pillPlace.pill.x).toBe(fresh.x + 0.5);
+  const shown = { ...overlay.bounds() };
+  old.resolve({ x: 40, y: 40, width: 1, height: 20 });
+  await new Promise<void>(queueMicrotask);
+  expect(overlay.bounds()).toEqual(shown);
 });
