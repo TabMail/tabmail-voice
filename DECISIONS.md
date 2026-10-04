@@ -3104,8 +3104,10 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   (429 `transcription_rate_limited`, backend ADR-022; found in review 2026-10-03, where one such 429
   threw away the rest of a dictation) is tried again after each of `chunkRetryDelays`, the last repeating,
   quietly: nobody waits for it yet. From the release, a chunk still failing gets the
-  `transcriptionRetryDelays` tries one recording gets, about a minute (ADR-DESK-039, amendment
-  2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
+  `transcriptionRetryDelays` tries one recording gets, about a minute of waits (ADR-DESK-039, amendment
+  2026-10-03; each try the backend holds for its whole 30 s window, a 504 or that 429, adds its 30 s,
+  so a chunk failing that way every time keeps the pill transcribing for up to about 5.5 minutes,
+  9 tries × 30 s plus the waits, until the user cancels; found in review, 2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
   at the release, so its backend timeout comes after it (owner: "we should not lose the end").
   Any other failure (signed out, over quota or the account's own rate limit, refused) gives up at once.
 - **A chunk that gives up (owner: "if it continuously fails completely, paste nothing… paste only
