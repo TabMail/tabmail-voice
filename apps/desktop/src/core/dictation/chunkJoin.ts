@@ -26,7 +26,9 @@ const unspacedScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{
  * - Chunks cut at a pause are joined with a space, or none between scripts written without spaces.
  * - A chunk that starts inside the one before it (no pause to cut at) holds the same speech as the
  *   end of that one: the two are joined where their words first run together for at least
- *   `chunkOverlapMinimumRun` words, the run kept once. With no such run they are joined whole
+ *   `chunkOverlapMinimumRun` words, the run kept once: its first word as the earlier chunk wrote it,
+ *   mid-sentence, since a chunk's first word comes capitalised as the start of its text (owner,
+ *   2026-10-03: "capitalization mid breaks"), the rest as the later one did. With no such run they are joined whole
  *   (owner, 2026-10-03: "better than losing things"): a few words may repeat, none are lost.
  * - An empty chunk adds nothing, and the chunk after it is joined whole: it overlaps only the empty
  *   one, so matching it against an earlier chunk's words would cut out the speech between them.
@@ -59,9 +61,10 @@ function joinedWith(left: string, right: string): string {
   return unspacedScript.test(last) || unspacedScript.test(first) ? `${left}${right}` : `${left} ${right}`;
 }
 
-/** `left` and `right`, which both hold the speech around a cut, joined at the start of the longest
- * run of words the end of one and the start of the other share. Each side is cut at a word's place
- * in its own text, so its line breaks and spacing stay as they were. */
+/** `left` and `right`, which both hold the speech around a cut, joined on the longest run of words
+ * the end of one and the start of the other share: `left` up to the run's first word, `right` from
+ * its second. Each side is cut at a word's place in its own text, so its line breaks and spacing
+ * stay as they were. */
 function joinOverlapping(left: string, right: string): string {
   const leftWords = [...left.matchAll(/\S+/gu)];
   const rightWords = [...right.matchAll(/\S+/gu)].slice(0, config.chunkOverlapSearchWords);
@@ -74,8 +77,9 @@ function joinOverlapping(left: string, right: string): string {
     return joinedWith(left, right);
   }
   log.debug(() => `ChunkJoin: overlapping chunks joined on a run of ${run.length} words`);
-  const leftEnd = leftWords[leftFrom + run.left]?.index ?? left.length;
-  const rightStart = rightWords[run.right]?.index ?? 0;
+  // A run holds at least `chunkOverlapMinimumRun` (more than one) words, so both have a second word.
+  const leftEnd = leftWords[leftFrom + run.left + 1]?.index ?? left.length;
+  const rightStart = rightWords[run.right + 1]?.index ?? right.length;
   return joinedWith(trimWhitespace(left.slice(0, leftEnd)), right.slice(rightStart));
 }
 

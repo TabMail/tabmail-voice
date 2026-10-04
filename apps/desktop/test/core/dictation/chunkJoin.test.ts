@@ -50,7 +50,17 @@ describe("joinChunkTexts", () => {
   test("the overlap match ignores the capitals and punctuation a cut changes", () => {
     const left = "Then we talked about the budget, and the plan for. Next";
     const right = "About the budget and the plan for next quarter.";
-    expect(joinChunkTexts([paused(left), overlapping(right)])).toBe("Then we talked About the budget and the plan for next quarter.");
+    expect(joinChunkTexts([paused(left), overlapping(right)])).toBe("Then we talked about the budget and the plan for next quarter.");
+  });
+
+  /** A later chunk's text starts with a capital, as any text does, though its first words are
+   * mid-sentence: the shared run starts as the earlier chunk wrote it (owner, 2026-10-03:
+   * "capitalization mid breaks"), and a name keeps its capital, as both wrote it. */
+  test("an overlap join keeps the earlier text's case where the later one starts", () => {
+    const left = "I want to read something long again so that you can test the forced";
+    const right = "Something long again so that you can test the forced cuts and how well it does.";
+    expect(joinChunkTexts([paused(left), overlapping(right)])).toBe("I want to read something long again so that you can test the forced cuts and how well it does.");
+    expect(joinChunkTexts([paused("we asked Robin about the budget for next"), overlapping("Robin about the budget for next quarter.")])).toBe("we asked Robin about the budget for next quarter.");
   });
 
   test("overlapping chunks with no shared run are joined whole: words may repeat, none are lost", () => {

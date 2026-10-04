@@ -3081,7 +3081,10 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   `chunkForcedCutWindow` of its last `chunkForcedCutSearch`, and the next chunk starts
   `chunkOverlapSpeech` (15 s) of speech earlier, at most `chunkMaxOverlap`. The join keeps the
   words both heard once: it matches the longest run of at least `chunkOverlapMinimumRun` words
-  (lower case, letters and digits only) within `chunkOverlapSearchWords` of the seam, and with no
+  (lower case, letters and digits only) within `chunkOverlapSearchWords` of the seam, keeping the
+  run's first word as the earlier chunk wrote it and the rest as the later one did (owner's smoke
+  test, 2026-10-03: "capitalization mid breaks"; the later chunk's text starts with a capital, as
+  any text does, so taking its copy wrote "you can Test the" at every overlap seam), and with no
   such run joins the two whole (owner: "better than losing things"). A chunk overlaps only the one
   just before it: after an empty one (a long silence) it is joined whole, or matching it
   against an earlier chunk's words would cut out the speech between.
