@@ -210,6 +210,41 @@ private final class TerminalAXFixture {
 }
 
 struct TerminalAXAdapterTests {
+    @Test func geometryPlanningRevalidatesBeforeAnyTextRead() {
+        let provider = TerminalAXFixture()
+        let original = provider.source
+        var stillValid = true
+        let changed = TerminalViewportReader.Source(attribute: original.attribute, parameter: original.parameter,
+            bounds: { range in stillValid = false; return original.bounds(range) })
+        let result = TerminalViewportReader.surface(changed, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, geometryValid: { true }, valid: { stillValid })
+        #expect(result == nil)
+        #expect(provider.reads.isEmpty)
+        #expect(provider.forbidden.isEmpty)
+    }
+
+    @Test func geometryDeadlineRefusesWithoutTextAcquisition() {
+        let provider = TerminalAXFixture()
+        let result = TerminalViewportReader.surface(provider.source, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, geometryValid: { false }, valid: { true })
+        #expect(result == nil)
+        #expect(provider.reads.isEmpty)
+    }
+
+    @Test func geometryQueriesDoNotRepeatCrossProcessFocusValidation() throws {
+        let provider = TerminalAXFixture()
+        provider.lines[1] = String(repeating: "x", count: 4096)
+        var validations = 0
+        let result = try #require(TerminalViewportReader.surface(provider.source, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, valid: { validations += 1; return true }))
+        #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string }.joined() == String(repeating: "x", count: 40) + "status bar\n")
+        #expect(validations < 20)
+        #expect(provider.forbidden.isEmpty)
+    }
+
     @Test func displayedLinesAndNativeCaretReachFinalWireWithoutTmux() throws {
         let provider = TerminalAXFixture()
         let wire = try provider.wire()
@@ -288,7 +323,7 @@ private final class TerminalCollectorFixture: TerminalTree {
         element.attributes["selectedChildrenKnown"] == nil ? nil : element.children.filter { $0.attributes["selected"] != nil }
     }
     func terminalSurface(_ element: FakeElement, id: Int, clip: CGRect, focused: Bool,
-                         byteBudget: Int, valid: () -> Bool) -> TerminalViewportReader.Surface? {
+                         byteBudget: Int, geometryValid: () -> Bool, valid: () -> Bool) -> TerminalViewportReader.Surface? {
         acquisitions.append(element)
         onAcquire?()
         guard let provider = providers[ObjectIdentifier(element)] else { return nil }
@@ -296,7 +331,7 @@ private final class TerminalCollectorFixture: TerminalTree {
         let translated = TerminalViewportReader.Source(attribute: source.attribute, parameter: source.parameter,
             bounds: { range in source.bounds(range)?.offsetBy(dx: element.frame?.minX ?? 0, dy: 0) })
         return TerminalViewportReader.surface(translated, id: id, clip: clip, focused: focused,
-                                              startKnown: false, endKnown: false, byteBudget: byteBudget, valid: valid)
+                                              startKnown: false, endKnown: false, byteBudget: byteBudget, geometryValid: geometryValid, valid: valid)
     }
     func read(_ window: FakeElement, focused: FakeElement, path: [FakeElement],
               currentFocus: (() -> FakeElement)? = nil, exclusions: [String] = [],
