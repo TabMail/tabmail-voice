@@ -921,6 +921,9 @@ export class DictationController extends Observable {
     release.markReleased();
     const chunks = this.chunks;
     const chunkAbort = this.chunkAbort;
+    // This dictation's upload, which its first chunk prepared and every part went with. Taken now: a
+    // dictation started while the chunks are awaited prepares its own.
+    const upload = this.upload;
     // Once the text is known, the retry note and any chunk after one that gave up end at once, not
     // after the paste or the agent's run.
     const settled = <T>(result: T): T => {
@@ -941,8 +944,7 @@ export class DictationController extends Observable {
           }
           parts.push({ transcription: outcome.transcription, overlapped: chunk.overlapped });
         }
-        // Prepared by the first chunk, which every part here went with.
-        const { polish } = parts.length > 1 ? await this.preparedUpload(true) : { polish: null };
+        const { polish } = parts.length > 1 && upload ? await upload : { polish: null };
         return settled({ parts, lost, polish });
       });
     } finally {

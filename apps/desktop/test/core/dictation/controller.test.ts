@@ -5141,7 +5141,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * as `liveTransport`'s does. */
     class ChunkBackend {
       private readonly audio: string[] = [];
-      readonly sent: { chunk: number; attempt: number; signal: AbortSignal | undefined; body: Record<string, unknown> }[] = [];
+      readonly sent: { chunk: number; attempt: number; signal: AbortSignal | undefined; authorization: string | undefined; body: Record<string, unknown> }[] = [];
       /** Requests neither answered nor canceled yet. */
       inFlight = 0;
 
@@ -5154,7 +5154,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         let chunk = this.audio.indexOf(audio);
         if (chunk === -1) chunk = this.audio.push(audio) - 1;
         const attempt = this.attempts(chunk);
-        this.sent.push({ chunk, attempt, signal: request.signal, body });
+        this.sent.push({ chunk, attempt, signal: request.signal, authorization: request.headers.Authorization, body });
         this.inFlight += 1;
         const reply = await new Promise<ChunkReply>((resolve, reject) => {
           request.signal?.addEventListener("abort", () => reject(new TransportError("canceled")), { once: true });
@@ -5190,9 +5190,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return concat(...seconds.flatMap((length, index) => (index === seconds.length - 1 ? [speech(length, rand)] : [speech(length, rand), room(1.5, rand)])));
     }
 
-    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"] } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
+    function makeLong(backend: ChunkBackend, options: { chunkRetryDelays?: number[]; paste?: DictationDependencies["paste"]; account?: AccountModel } = {}): ReturnType<typeof makeController> & { capture: CountingCapture; phases: Phase[] } {
       const capture = new CountingCapture();
-      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste });
+      const made = makeController({ capture, transcriptionTransport: backend.transport, paste: options.paste, account: options.account });
       made.controller.chunkRetryDelays = options.chunkRetryDelays ?? [1];
       made.controller.transcriptionRetryDelays = [1, 1];
       made.controller.transcriptionRetryNoticeDelay = 0;
@@ -5706,6 +5706,95 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
       expect(await eventually(() => settled(controller) && pasted.length === 2)).toBe(true);
       expect(pasted).toEqual(["Part 0. Part 1.", "Part 2. Part 3."]);
+      expect(controller.phase).toEqual(idle);
+    });
+
+    /** A canceled long dictation whose last chunk ends late (its sign-in refresh, which no cancel
+     * stops, returning once the next dictation has started) leaves that dictation's upload alone:
+     * the next, a request in agent mode, is sent without the cleanup it does not use. */
+    test("a canceled long dictation ending late leaves the next one's upload alone", async () => {
+      const account = signedIn(auth);
+      const validToken = account.validToken.bind(account);
+      const refreshed = deferred<void>();
+      let holding = false;
+      let held = 0;
+      account.validToken = async (forceRefresh) => {
+        if (holding) {
+          held += 1;
+          await refreshed.promise;
+        }
+        return validToken(forceRefresh);
+      };
+      const backend = new ChunkBackend(part);
+      const { controller, capture } = makeLong(backend, { account });
+
+      await startHearing(controller, capture, pausedSpeech(47, 12, 12, 0.5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      holding = true;
+      controller.handle("finish");
+      expect(await eventually(() => held === 1)).toBe(true);
+      holding = false;
+      controller.handle("cancel");
+      expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
+      await startHearing(controller, capture, speech(3, random(48)), "agent");
+      refreshed.resolve();
+      await sleep(50);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller) && backend.chunks === 3)).toBe(true);
+      expect(backend.sent.at(-1)?.chunk).toBe(2);
+      expect(backend.sent.at(-1)?.body.cleanup).toBeUndefined();
+    });
+
+    /** The user signed out and into another account during a long dictation: its later chunks are
+     * not sent under the other account (ADR-DESK-008), and the chunks before are pasted. */
+    test("an account switch while it is recorded sends no later chunk under the other account", async () => {
+      const account = signedIn(auth);
+      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+      const backend = new ChunkBackend(async (chunk) => {
+        if (chunk === 0) {
+          account.signOut();
+          await account.verify(Fixtures.email, "123456");
+        }
+        return part(chunk);
+      });
+      const { controller, capture, pastes } = makeLong(backend, { account });
+
+      await startHearing(controller, capture, pausedSpeech(49, 12, 0.5));
+      expect(await eventually(() => backend.attempts(0) === 1 && account.session?.userID === "user-2")).toBe(true);
+      capture.feed(pausedSpeech(50, 4));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(backend.sent.map((sent) => sent.authorization)).toEqual(["Bearer access-1"]);
+      expect(pastes).toEqual(["Part 0."]);
+      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+    });
+
+    /** The user signed out and into another account as the last chunk answered: the polish is not
+     * sent under the other account, and the chunks' cleanups are pasted. */
+    test("an account switch before the polish sends it under no other account", async () => {
+      const account = signedIn(auth);
+      auth.enqueue(200, Fixtures.sessionJSON({ access: "access-b", refresh: "refresh-b", userID: "user-2" }));
+      completions.enqueue(200, reply("Polished under the other account."));
+      const backend = new ChunkBackend(async (chunk) => {
+        if (chunk === 2) {
+          account.signOut();
+          await account.verify(Fixtures.email, "123456");
+        }
+        return part(chunk);
+      });
+      const { controller, capture, pastes } = makeLong(backend, { account });
+
+      await startHearing(controller, capture, pausedSpeech(51, 12, 12, 5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(account.session?.userID).toBe("user-2");
+      expect(backend.sent.map((sent) => sent.authorization)).toEqual(["Bearer access-1", "Bearer access-1", "Bearer access-1"]);
+      expect(completions.authorizations).toEqual([]);
+      expect(pastes).toEqual(["Part 0. Part 1. Part 2."]);
       expect(controller.phase).toEqual(idle);
     });
 
