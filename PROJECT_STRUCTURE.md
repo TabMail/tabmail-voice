@@ -64,7 +64,7 @@ apps/desktop/
 │   │   ├── backend/                 Sign-in (`account.ts`), the transcription and completions clients, their errors, HTTP
 │   │   ├── dictionary/              The user's dictionary (`entries.ts`); the words a correction respells; the watch of the pasted-into field that learns them; the names and terms picked from the screen read (ADR-DESK-038)
 │   │   ├── hotkey/                  The hotkey, the modes and the gesture's actions (`bindings.ts`); macos/globeKeyAction.ts (the Globe key's own action while fn is it) (ADR-DESK-031)
-│   │   ├── onboarding/              The welcome wizard, permissions, tips, the one-time What's-new notice (`whatsNew.ts`), VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
+│   │   ├── onboarding/              The welcome wizard, permissions, tips (the one-time what's-new tip among them), VS Code settings that hide the caret and the wizard's fix (with `jsonc-parser`)
 │   │   ├── ui/                      Where the overlay sits; what the tray menu shows
 │   │   └── util/                    observable, keyValueStore, timeout, text, localDateTime (the backend's dates in the local zone)
 │   ├── main/                The main process (Node + Electron)

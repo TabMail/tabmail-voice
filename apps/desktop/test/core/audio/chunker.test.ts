@@ -126,6 +126,26 @@ describe("Chunker", () => {
     expectCovers(audio, cuts, last);
   });
 
+  /** The blips count toward the pause's second: a pause just over `chunkPauseDuration` in all, whose
+   * quiet frames alone fall short of it, is cut at (the owner's pauses were about 85% quiet frames). */
+  test("a pause's blips count toward its second", () => {
+    const rand = random(13);
+    const blip = config.chunkPauseBlip / 1000;
+    const blips: Int16Array[] = [];
+    for (let index = 0; index < 4; index += 1) blips.push(room(0.2, rand), speech(blip, rand, 0.9));
+    const pauseStart = 12 * rate;
+    const pause = concat(...blips, room(0.1, rand));
+    const quiet = pause.length - 4 * blip * rate;
+    expect(pause.length).toBeGreaterThan((config.chunkPauseDuration / 1000) * rate);
+    expect(quiet).toBeLessThan((config.chunkPauseDuration / 1000) * rate);
+    const audio = concat(speech(12, rand), pause, speech(5, rand));
+    const { cuts, last } = chunk(audio);
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0]?.end).toBeGreaterThan(pauseStart);
+    expect(cuts[0]?.end).toBeLessThan(pauseStart + pause.length);
+    expectCovers(audio, cuts, last);
+  });
+
   /** With no pause at all, a chunk is cut at `chunkMaxDuration`, and the next starts about
    * `chunkOverlapSpeech` of speech earlier, so the cut's words are heard whole in one of them. */
   test("speech with no pause is cut at the maximum length, the next chunk overlapping it", () => {
