@@ -31,6 +31,9 @@ describe("joinChunkTexts", () => {
   test("an empty or ellipsis-only chunk adds nothing and leaves no double space", () => {
     expect(joinChunkTexts([paused("One."), paused("   "), paused("…"), paused("Two.")])).toBe("One. Two.");
     expect(joinChunkTexts([paused(""), paused("Only this.")])).toBe("Only this.");
+    // A first chunk of only an ellipsis (a silence the model heard as a pause) leaves no leading space.
+    expect(joinChunkTexts([paused("…"), paused("Two.")])).toBe("Two.");
+    expect(joinChunkTexts([paused("..."), overlapping("Two.")])).toBe("Two.");
   });
 
   test("scripts written without spaces are joined without one", () => {
