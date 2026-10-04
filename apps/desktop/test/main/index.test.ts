@@ -1589,6 +1589,140 @@ test.each(["blocks", "recovers"] as const)("shell event %s revealed placement wh
 });
 
 
+test.each(["initial shell state", "failed close refresh", "helper restart"])("placement recovers for %s", async (scenario) => {
+  await launch("win32");
+  const helper = app.helpers.get("voice-windows")!;
+  const area = { x: 0, y: 0, width: 1440, height: 900 };
+  helper.replies.set("frontmostApp", { window: 42 });
+  helper.replies.set("caretAnchor", { x: 100, y: 100, width: 1, height: 20 });
+  const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
+  let visible = false;
+  let bounds = { x: 0, y: 0, width: 1, height: 1 };
+  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {} };
+  const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
+  const real = new RealOverlay(surface, captured.locate, captured.place);
+  captured.refreshPlacement = () => real.refreshPlacement();
+  const emit = () => helper.events.get("shellGeometryChanged")?.({ event: "shellGeometryChanged" });
+  if (scenario !== "initial shell state") {
+    helper.replies.set("shellExclusionBounds", [area]);
+    emit();
+    await vi.waitFor(() => expect(captured.place(area)).toBeNull());
+    real.update({ kind: "arming" });
+    for (let i = 0; i < 16; i++) await new Promise<void>(queueMicrotask);
+    real.update({ kind: "listening" });
+    expect(visible).toBe(false);
+    if (scenario === "failed close refresh") {
+      const failed = Promise.withResolvers<Rect[]>();
+      helper.replies.set("shellExclusionBounds", failed.promise);
+      emit();
+      failed.reject(new Error("synthetic dependency timeout"));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    } else {
+      helper.onExit?.();
+      helper.onStart?.();
+    }
+    // The restarted watcher seeds its baseline from the now-closed shell;
+    // the failed-close watcher already recorded that same baseline before emitting.
+    helper.replies.set("shellExclusionBounds", []);
+    real.update({ kind: "idle" });
+  } else {
+    // ShellWatch seeds previous with this state and sends no initial event.
+    helper.replies.set("shellExclusionBounds", [area]);
+  }
+  real.update({ kind: "arming" });
+  for (let i = 0; i < 16; i++) await new Promise<void>(queueMicrotask);
+  real.update({ kind: "listening" });
+  expect.soft(captured.place(area)).toEqual(scenario === "initial shell state" ? null : area);
+  expect.soft(visible).toBe(scenario !== "initial shell state");
+  helper.replies.set("shellExclusionBounds", []);
+  emit();
+  await vi.waitFor(() => expect(captured.place(area)).toEqual(area));
+  await vi.waitFor(() => expect(visible).toBe(true));
+  expect(app.clipboard).toEqual([]);
+  expect(helper.requests.some(r => r.method === "insert")).toBe(false);
+});
+
+
+test.each(["darwin", "win32"] as const)("ready %s caret keeps its foreground target and placement", async (platform) => {
+  await launch(platform);
+  const helper=app.helpers.get(platform === "win32" ? "voice-windows" : "voice-macos")!;
+  helper.replies.set("frontmostApp", platform === "win32" ? {window:42} : {pid:42});
+  const caret={x:500,y:300,width:1,height:20};
+  helper.replies.set("caretAnchor",caret);
+  const shellReply=Promise.withResolvers<Rect[]>();
+  if (platform === "win32") {
+    helper.replies.set("shellExclusionBounds",shellReply.promise);
+    helper.events.get("shellGeometryChanged")?.({event:"shellGeometryChanged"});
+  }
+  const captured=app.overlay as unknown as {locate:()=>Promise<Rect|null>;place?:(area:Rect)=>Rect|null};
+  let visible=false;let bounds={x:0,y:0,width:1,height:1};
+  const surface={isVisible:()=>visible,showInactive:()=>{visible=true;},hide:()=>{visible=false;},setBounds:(next:Rect)=>{bounds=next;},getBounds:()=>bounds,setOpacity(){},setIgnoreMouseEvents(){}};
+  const {OverlayWindowController:RealOverlay}=await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
+  const real=new RealOverlay(surface,captured.locate,captured.place);
+  shellReply.resolve([]);
+  real.update({kind:"arming"});
+  for(let i=0;i<16;i++) await new Promise<void>(queueMicrotask);
+  real.update({kind:"listening"});
+  expect.soft(visible).toBe(true);
+  expect.soft(real.pillPlace.pill.x).toBe(500.5);
+  expect.soft(helper.requests.filter(r=>r.method==="caretAnchor").map(r=>r.params)).toEqual([platform === "win32" ? {window:42} : {pid:42}]);
+  expect.soft(app.clipboard).toEqual([]);
+  expect.soft(helper.requests.some(r=>r.method==="insert")).toBe(false);
+  shellReply.resolve([]);
+});
+
+test("overlapping shell close must finish with recovered placement", async()=>{
+  await launch("win32");
+  const helper=app.helpers.get("voice-windows")!;
+  const area={x:0,y:0,width:1440,height:900};
+  helper.replies.set("frontmostApp",{window:42});
+  const caret=Promise.withResolvers<Rect|null>();
+  helper.replies.set("caretAnchor",caret.promise);
+  const captured=app.overlay as unknown as {locate:()=>Promise<Rect|null>;place:(area:Rect)=>Rect|null;refreshPlacement:()=>void};
+  let visible=false;let bounds={x:0,y:0,width:1,height:1};const states:boolean[]=[];
+  const surface={isVisible:()=>visible,showInactive:()=>{visible=true;states.push(true);},hide:()=>{visible=false;states.push(false);},setBounds:(next:Rect)=>{bounds=next;},getBounds:()=>bounds,setOpacity(){},setIgnoreMouseEvents(){}};
+  const {OverlayWindowController:RealOverlay}=await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
+  const real=new RealOverlay(surface,captured.locate,captured.place);
+  captured.refreshPlacement=()=>real.refreshPlacement();
+  helper.replies.set("shellExclusionBounds", []);
+  real.update({kind:"arming"});
+  for(let i=0;i<16;i++) await new Promise<void>(queueMicrotask);
+  real.update({kind:"listening"});expect(visible).toBe(true);
+  const first=Promise.withResolvers<Rect[]>();
+  helper.replies.set("shellExclusionBounds",first.promise);
+  const emit=()=>helper.events.get("shellGeometryChanged")?.({event:"shellGeometryChanged"});
+  const before=helper.requests.filter(r=>r.method==="shellExclusionBounds").length;
+  emit();
+  expect(helper.requests.filter(r=>r.method==="shellExclusionBounds")).toHaveLength(before+1);
+  helper.replies.set("shellExclusionBounds",[]);
+  emit();
+  first.resolve([area]);
+  for(let i=0;i<24;i++) await new Promise<void>(queueMicrotask);
+  expect.soft(states).toContain(false);
+  expect.soft(captured.place(area)).toEqual(area);
+  expect.soft(visible).toBe(true);
+  expect.soft(helper.requests.filter(r=>r.method==="shellExclusionBounds")).toHaveLength(before+2);
+  expect.soft(helper.requests.some(r=>r.method==="insert")).toBe(false);
+  caret.resolve(null);
+});
+
+test.each([null,{},Array(17).fill({x:0,y:0,width:1,height:1}),[null],[{x:NaN,y:0,width:10,height:10}],[{x:0,y:0,width:0,height:10}]])("malformed shell input retains exclusions then accepts a valid event %j",async(invalid)=>{
+  await launch("win32");
+  const helper=app.helpers.get("voice-windows")!;
+  const area={x:0,y:0,width:1440,height:900};
+  const captured=app.overlay as unknown as {place:(area:Rect)=>Rect|null};
+  const emit=()=>helper.events.get("shellGeometryChanged")?.({event:"shellGeometryChanged"});
+  helper.replies.set("shellExclusionBounds",[area]);emit();
+  await vi.waitFor(()=>expect(captured.place(area)).toBeNull());
+  helper.replies.set("shellExclusionBounds",invalid);emit();
+  await new Promise(resolve=>setTimeout(resolve,0));
+  expect(captured.place(area)).toBeNull();
+  helper.replies.set("shellExclusionBounds",[]);emit();
+  await vi.waitFor(()=>expect(captured.place(area)).toEqual(area));
+  expect(app.clipboard).toEqual([]);
+});
+
+
 test("Linux helper exit invalidates established permission readiness", async () => {
   vi.doUnmock("../../src/core/onboarding/permissions.js");
   await launch("linux");
