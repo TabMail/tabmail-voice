@@ -53,6 +53,27 @@ interactive check is separate from CTest, whose redirected output cannot establi
 the terminal cursor contract. A passing single-pane run does not establish split
 pane, explicit selection or ancestor-clipping behavior.
 
+Windows Terminal insertion accepts a focused, visible, enabled `TermControl`
+text provider in `WindowsTerminal.exe`, even though it has no editable-value
+pattern. This is separate from correction learning: terminal output is still not
+an editable whole-field value. Password, read-only value, focus, integrity,
+deadline and clipboard preservation checks remain in force. This does not establish
+insertion support for legacy Console Host or elevated terminals.
+
+To check insertion without dictation, open a disposable Windows Terminal tab with
+its title fixed to `TabMail Terminal Insertion Fixture` (`--title` plus
+`--suppressApplicationTitle`), then run:
+
+```powershell
+node native/windows/tests/terminal-paste.mjs native/windows/build/Release/voice-windows.exe terminal-paste-result.json
+```
+
+Keep it focused until `TERMINAL_INSERTION_PASS`. The fixture consumes ASCII and
+Unicode paste in raw input mode and never sends Enter to a shell. It checks exact
+received text, retained focus and refusal of correction learning. The helper
+preserves the prior clipboard through its normal insertion path. Run this only
+in a disposable tab with no other activity.
+
 For split panes, use a disposable Windows Terminal tab with two vertical panes.
 From `apps/desktop`, run this in the left pane (it stays alive for two minutes):
 

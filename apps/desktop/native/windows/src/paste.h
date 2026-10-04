@@ -36,7 +36,7 @@ inline void paste(HWND window, const std::wstring& text, unsigned restoreDelay, 
     std::cerr << "debug paste stage: focus-check\n";
     Automation automation;
     auto field = automation.focused(window);
-    if (!field || !automation.editable(field.Get())) throw std::runtime_error("target is not editable");
+    if (!field || !automation.acceptsInput(window, field.Get())) throw std::runtime_error("target is not editable");
     DWORD pid = 0;
     GetWindowThreadProcessId(window, &pid);
     if (!pid || integrity(pid) > integrity(GetCurrentProcessId())) throw std::runtime_error("target integrity refused");
@@ -45,7 +45,7 @@ inline void paste(HWND window, const std::wstring& text, unsigned restoreDelay, 
             throw std::runtime_error("paste is no longer current");
         }
         auto current = automation.focused(window);
-        if (!current || !automation.editable(current.Get()) || !automation.same(field.Get(), current.Get())) {
+        if (!current || !automation.acceptsInput(window, current.Get()) || !automation.same(field.Get(), current.Get())) {
             throw std::runtime_error("focused field changed");
         }
         for (const int key : {VK_LCONTROL, VK_RCONTROL, VK_LSHIFT, VK_RSHIFT, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN}) {
