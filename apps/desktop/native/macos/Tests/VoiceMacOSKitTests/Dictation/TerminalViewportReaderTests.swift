@@ -56,6 +56,17 @@ struct TerminalViewportReaderTests {
         }, valid: { true })
         #expect(result == [NSRange(location: 6, length: 2)])
     }
+    @Test func clippedLongLineUsesRangeProofsInsteadOfPerCharacterAXCalls() {
+        var calls = 0
+        let ranges = TerminalViewportReader.visibleRanges(lines: [NSRange(location: 0, length: 4096)],
+            clip: CGRect(x: 8, y: 0, width: 32752, height: 20), bounds: { range in
+                calls += 1
+                return CGRect(x: range.location * 8, y: 0, width: range.length * 8, height: 20)
+            }, valid: { true })
+        #expect(ranges == [NSRange(location: 1, length: 4094)])
+        #expect(calls < 100)
+    }
+
     @Test func wholeVisibleLinesPreserveSpacesAndBlankRows() {
         let text = "> hello world\n  \nstatus bar" as NSString
         let range = NSRange(location: 0, length: text.length)
