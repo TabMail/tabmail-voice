@@ -1445,24 +1445,85 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
   });
 
-  test.each(["startAgent", "startAgentHandsFree"] as const)("%s starts in agent mode without a delayed toggle", (action) => {
-    const { controller } = makeController();
-    controller.handle(action);
-    expect(controller.mode).toBe("agent");
-    expect(controller.phase.kind).toBe(action === "startAgent" ? "arming" : "listening");
-    controller.handle("toggleMode");
-    expect(controller.mode).toBe("dictation");
-    controller.handle("cancel");
+  describe("direct-agent startup outcomes", () => {
+    test.each([
+      ["startAgent", false], ["startAgentHandsFree", false], ["reused", false],
+      ["startAgent", true], ["startAgentHandsFree", true], ["reused", true],
+    ] as const)("%s exposes the eventual tool while listening and delivers it; selection=%s", async (action, selection) => {
+      const capture = new CountingCapture(true);
+      const { controller, pastes, copies, history } = makeController({ capture });
+      const context = deferred<ScreenContext>();
+      controller.captureContext = () => context.promise;
+      transcription.enqueue(200, { text: "Write the result." });
+      completions.enqueue(200, reply("Final result."));
+      if (action === "reused") {
+        controller.handle("start");
+        controller.handle("finish");
+        controller.handle("startAgentHandsFree");
+      } else controller.handle(action);
+      expect(controller.mode).toBe("agent");
+      expect(controller.tools).toEqual([]);
+      expect(capture.starts).toBe(1);
+      context.resolve(selection ? selectionScreen("old words") : screen("START"));
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      const tool = selection ? "edit" : "compose";
+      expect(await eventually(() => controller.tools.includes(tool))).toBe(true);
+      expect(controller.tools).toEqual([tool]);
+      expect(transcription.requests).toHaveLength(0);
+      expect(completions.requests).toHaveLength(0);
+      controller.handle("toggleMode");
+      expect(controller.mode).toBe("dictation");
+      expect(controller.tools).toEqual([]);
+      controller.handle("toggleMode");
+      expect(controller.mode).toBe("agent");
+      expect(controller.tools).toEqual([tool]);
+      controller.handle("finish");
+      expect(await eventually(() => settled(controller) && pastes.length === 1)).toBe(true);
+      expect(controller.phase).toEqual(idle);
+      expect(pastes).toEqual(["Final result."]);
+      expect(copies).toEqual([]);
+      expect(history.entries.map((entry) => entry.text)).toEqual(["Final result."]);
+      expect(completionsVars(0)?.content).toBe(`system_prompt_desktop_${tool}`);
+      expect(completionsVars(0)?.user_request).toBe("Write the result.");
+      expect(capture.starts).toBe(1);
+      expect(capture.stops).toBeGreaterThan(0);
+    });
   });
 
-  test("agent second tap changes initial intent while reusing the microphone", () => {
-    const { controller } = makeController();
-    controller.handle("start");
-    controller.handle("finish");
-    controller.handle("startAgentHandsFree");
-    expect(controller.mode).toBe("agent");
-    expect(controller.phase.kind).toBe("listening");
-    controller.handle("cancel");
+
+  test.each([
+    ["startAgent", false], ["startAgentHandsFree", false], ["reused", false],
+    ["startAgent", true], ["startAgentHandsFree", true], ["reused", true],
+  ] as const)("%s streams before release and delivers in final mode; switch=%s", async (action, switchToDictation) => {
+    const capture = new CountingCapture();
+    const { controller, pastes, copies, history } = makeController({ capture });
+    controller.captureContext = async () => screen("STREAM");
+    transcription.enqueue(200, { text: "raw first", cleaned_text: "Clean first." });
+    transcription.enqueue(200, { text: "raw second", cleaned_text: "Clean second." });
+    completions.enqueue(200, Fixtures.reply("Final result."));
+    try {
+      if (action === "reused") { controller.handle("start"); controller.handle("finish"); controller.handle("startAgentHandsFree"); }
+      else controller.handle(action);
+      expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+      expect(await eventually(() => controller.tools.includes("compose"))).toBe(true);
+      const rand = random(9876);
+      capture.feed(concat(speech(12, rand), room(1.5, rand), speech(3, rand)));
+      expect(await eventually(() => transcription.requests.length === 1)).toBe(true);
+      expect(controller.mode).toBe("agent");
+      expect(controller.phase.kind).toBe("listening");
+      expect(pastes).toEqual([]); expect(history.entries).toEqual([]); expect(completions.requests).toHaveLength(0);
+      expect(transcription.body(0).cleanup).toMatchObject({ app_name: "Example Notes STREAM" });
+      if (switchToDictation) { controller.handle("toggleMode"); expect(controller.tools).toEqual([]); }
+      controller.handle("finish");
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+      expect(pastes).toEqual(["Final result."]); expect(copies).toEqual([]);
+      expect(history.entries.map((entry) => entry.text)).toEqual(["Final result."]);
+      expect(capture.starts).toBe(1); expect(capture.stops).toBeGreaterThan(0);
+      expect(transcription.requests).toHaveLength(2); expect(completions.requests).toHaveLength(1);
+      expect(completions.message(0)).toMatchObject(switchToDictation
+        ? { content: "system_prompt_dictate_cleanup", dictation: "Clean first. Clean second." }
+        : { content: "system_prompt_desktop_compose", user_request: "raw first raw second" });
+    } finally { controller.handle("cancel"); }
   });
 
   describe("agent mode (Space during the hold)", () => {
