@@ -126,7 +126,7 @@ function ConsentPage({ state }: { state: WelcomeState }) {
       <ul className="sends">
         <li>
           <MicrophoneIcon size={config.welcomeLabelIconSize} />
-          <span>Your voice, while you hold the dictation key, to turn it into text.</span>
+          <span>Your voice, while you hold the dictation key, to turn it into text. A long dictation is sent in parts while you speak, so its text is ready as soon as you finish.</span>
         </li>
         <li>
           <ViewfinderIcon size={config.welcomeLabelIconSize} />

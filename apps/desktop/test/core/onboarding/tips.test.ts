@@ -8,7 +8,7 @@ import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
 import { type DictationTip, TipBook, tipDetails, tipKeycap, tipLines, tipParts } from "../../../src/core/onboarding/tips.js";
 
 describe("TipBook", () => {
-  test.each<DictationTip>(["agentAndHistory", "doubleTap"])("%s shows at most its max displays", (tip) => {
+  test.each<DictationTip>(["agentAndHistory", "doubleTap", "longDictations"])("%s shows at most its max displays", (tip) => {
     const store = new MemoryStore();
     const tips = new TipBook(store);
     const maxDisplays = tipDetails[tip].maxDisplays;
@@ -41,7 +41,7 @@ describe("TipBook", () => {
   });
 
   test("the tips' words, limits and durations come from the config", () => {
-    expect(tipDetails).toEqual({ agentAndHistory: config.agentAndHistoryTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip, setName: config.setNameTip });
+    expect(tipDetails).toEqual({ agentAndHistory: config.agentAndHistoryTip, doubleTap: config.doubleTapTip, handsFree: config.handsFreeTip, setName: config.setNameTip, longDictations: config.longDictationsTip });
   });
 });
 

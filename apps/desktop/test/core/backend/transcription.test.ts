@@ -142,6 +142,8 @@ describe("TranscriptionClient", () => {
     [403, "consent_required", "accountSetupRequired", undefined],
     [403, "Access denied", "accessDenied", undefined],
     [429, "rate_limited", "rateLimited", undefined],
+    // The speech model's rate limit outlasting the backend's retries: not this account's limit.
+    [429, "transcription_rate_limited", "failed", 429],
     [400, "audio_too_large", "recordingTooLong", undefined],
     [502, "transcription_failed", "failed", 502],
   ])("maps HTTP %i %s", async (status, code, kind, failedStatus) => {

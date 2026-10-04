@@ -199,7 +199,9 @@ vi.mock("../../src/core/backend/http.js", () => ({
 vi.mock("../../src/main/storage/jsonFileStore.js", () => ({
   JSONFileStore: class {
     get(key: string) {
-      return key === "hasFinishedWelcome" ? true : app.stored.get(key);
+      // Set up, unless a test stores otherwise.
+      if (key === "hasFinishedWelcome" && !app.stored.has(key)) return true;
+      return app.stored.get(key);
     }
     set(key: string, value: unknown) {
       app.stored.set(key, value);
@@ -1343,6 +1345,19 @@ describe("main process wiring", () => {
     expect(ended()).toBe(1);
     controller?.onNothingListening?.();
     expect(ended()).toBe(2);
+  });
+
+  /** ADR-DESK-049: what's new about long dictations is a tip shown once at a dictation, to a user
+   * who set the app up before; one still in the welcome wizard reads it on the consent page, and
+   * never gets the tip. Nothing is shown at launch. */
+  test.each([
+    { finishedWelcome: true, tipShows: true },
+    { finishedWelcome: false, tipShows: false },
+  ])("set up before: $finishedWelcome; the what's-new tip may show: $tipShows", async ({ finishedWelcome, tipShows }) => {
+    app.stored.set("hasFinishedWelcome", finishedWelcome);
+    await launch("darwin");
+    expect(app.dialogs).toEqual([]);
+    expect(app.stored.get("tip.longDictations.learned") === true).toBe(!tipShows);
   });
 
   describe("updates (ADR-DESK-041)", () => {

@@ -16,6 +16,9 @@ import { charCount, trimWhitespace } from "../util/text.js";
  * which the backend runs in the transcription request, under its own deadline (backend ADR-027).
  */
 export const DictationCleanup = {
+  /** The backend prompt, run by the backend in the transcription request, and by the app itself over
+   * a long dictation's joined text (`POST /completions/chat`, its `dictation` variable). */
+  prompt: "system_prompt_dictate_cleanup",
   /** The cleanup's variables, sent with the recording. Anything not known is sent empty; the prompt
    * reads an empty field as unknown. */
   variables(context: ScreenContext | null, dictionary: readonly string[]): CleanupVariables {
