@@ -48,10 +48,10 @@ let checks = 0;
 try {
   for (const mode of ["row-hidden", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
-    "open-page", "open-page-focus", "text-document"]) {
-    // Page cases run as a browser (the fixture built as msedge.exe); only a browser's
-    // documents are pages. A text document runs as an ordinary app.
-    fixture = client(mode === "text-document" ? process.argv[3] : process.argv[4], [mode]);
+    "page-gecko", "open-page", "open-page-focus", "text-document"]) {
+    // The fixture's process is no known browser: a page is told by its web framework, whichever
+    // app runs it.
+    fixture = client(process.argv[3], [mode]);
     const initial = await fixture.next();
     assert.deepEqual(await request("frontmostApp"), { window: initial.window }, `${mode}: fixture owns foreground`);
     fixture.child.stdin.write("reset\n"); await fixture.next();

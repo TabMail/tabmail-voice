@@ -3042,6 +3042,17 @@ cannot discard a stored exclusion. IDNA conversion precedes full case folding.
 The shared address/host fixtures pin this policy across all native adapters and the
 app; platform parser differences are recorded in the consolidation plan.
 
+**ADR-DESK-047 amendment — which Windows documents are pages (2026-10-05):**
+UI Automation gives Notepad's and Word's text as a Document too, and the Windows helper took
+every document for a web page: one without an address hid the whole screen as of an unknown
+address (Notepad read as hidden in the Windows smoke test). A document is now a web page only when
+its UI framework (`UIA_FrameworkIdPropertyId`) is a browser engine's, `Chrome` (every Chromium
+browser and Electron app) or `Gecko` (Firefox and its forks), `HelperConfig::webFrameworks`; any
+other document is read like the rest of the screen, and the app exclusion still applies to it. A
+document whose framework can't be read is a page of an unknown address (fail closed). This keeps
+the Mac's rule (a web area is a page, in an app or a browser alike) instead of a list of browser
+names, which would read an excluded site in any browser not on the list.
+
 ## ADR-DESK-048: Every color in one palette file; one time for every color change
 
 **Context:** Owner, 2026-10-03: the retry's shift toward purple on the thinking circle

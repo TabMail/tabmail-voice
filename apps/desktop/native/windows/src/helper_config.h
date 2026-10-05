@@ -20,11 +20,11 @@ inline constexpr unsigned long long terminalReadBudgetMs = (std::numeric_limits<
 // Longest a paste waits to save the clipboard before typing the text instead (ms). An owner that
 // renders late (a VM's clipboard agent) can hold the clipboard open for up to 30 s.
 inline constexpr unsigned clipboardSnapshotWaitMs = 500;
-// Browsers. Only their documents are web pages with an address to check against the
-// excluded sites; any other app's document (Notepad, Word, an Electron app) is never a page.
-inline constexpr const wchar_t* browserApps[] = {
-    L"msedge.exe", L"chrome.exe", L"firefox.exe", L"brave.exe", L"opera.exe", L"vivaldi.exe", L"arc.exe", L"chromium.exe",
-};
+// The UI Automation frameworks of web content (UIA_FrameworkIdPropertyId): Chromium's, in every
+// Chromium browser and Electron app, and Gecko's (Firefox and its forks). Only their documents are
+// web pages with an address to check against the excluded sites; any other document (Notepad's,
+// Word's) is read like the rest of the screen.
+inline constexpr const wchar_t* webFrameworks[] = {L"Chrome", L"Gecko"};
 // Terminal apps use visible-range acquisition and shared viewport projection. A console
 // window belongs to the program running in it, so the shells are listed too.
 inline constexpr const wchar_t* terminalApps[] = {

@@ -140,18 +140,10 @@ if(WIN32)
     if(MSVC)
       target_compile_options(voice-privacy-fixture PRIVATE /W4 /WX /utf-8)
     endif()
-    # The same fixture as a browser: only a browser's documents are web pages.
-    add_executable(voice-privacy-browser-fixture tests/privacy-fixture.cpp)
-    set_target_properties(voice-privacy-browser-fixture PROPERTIES OUTPUT_NAME msedge RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/browser-fixture")
-    target_compile_definitions(voice-privacy-browser-fixture PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(voice-privacy-browser-fixture PRIVATE nlohmann_json::nlohmann_json user32 ole32 oleaut32 uiautomationcore uuid gdi32)
-    if(MSVC)
-      target_compile_options(voice-privacy-browser-fixture PRIVATE /W4 /WX /utf-8)
-    endif()
     find_program(NODE_EXECUTABLE node REQUIRED)
     add_test(NAME voice-output COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/output.mjs $<TARGET_FILE:voice-output-fixture>)
     add_test(NAME voice-privacy-provider COMMAND ${NODE_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/privacy-provider.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-privacy-fixture> $<TARGET_FILE:voice-privacy-browser-fixture>)
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/privacy-provider.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-privacy-fixture>)
     add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs $<TARGET_FILE:voice-windows> $<TARGET_FILE:voice-ui-fixture>)
     add_test(NAME voice-paste COMMAND ${NODE_EXECUTABLE}
