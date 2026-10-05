@@ -11,7 +11,7 @@ import type { ScreenContext } from "../dictation/screenContext.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 import { connectors } from "./connectors/index.js";
 import type { ConnectorTool } from "./connectors/contract.js";
-import { AgentError, type AgentToolID, isAgentToolID, selection, agentTools } from "./tools.js";
+import { AgentError, type AgentToolID, isAgentToolID, selection, selectedTextVariable, agentTools } from "./tools.js";
 
 /**
  * Agent mode on the backend: the tool for the spoken request is chosen (`tool`), then has the
@@ -152,7 +152,7 @@ export const DesktopAgent = {
         app_name: context?.appName ?? "",
         web_host: context?.host ?? "",
         window_title: context?.windowTitle ?? "",
-        selected_text: selection(context),
+        selected_text: selectedTextVariable(context),
         user_request: request,
         conversation,
       },
