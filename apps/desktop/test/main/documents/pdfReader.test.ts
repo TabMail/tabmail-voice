@@ -60,6 +60,20 @@ test("passes the parser's context to native redaction and returns only the range
 });
 
 /** A start past the last page says how many pages there are, and sends nothing to redact. */
+/** A lone surrogate the PDF's text carries (or a context cut through a pair) still lets the page be
+ * read: the helper refuses text that isn't well-formed, so it gets none. */
+test("text with a lone surrogate is still read", async () => {
+  const request = vi.fn(async (_method: string, params: Record<string, string>) => {
+    if (Object.values(params).some((value) => !value.isWellFormed())) throw new Error("malformed request");
+    return { text: params.text };
+  });
+  const { path, parse, reader } = await setup(request as unknown as HelperClient["request"]);
+  parse.mockResolvedValue({ totalPages: 3, pages: [{ number: 2, text: "Caf\uD800e." }], nextPage: 3, truncated: false, before: "\uDC00Earlier.\n\n", after: "\n\nLater.\uD83D" });
+  const signal = new AbortController().signal;
+  const result = JSON.parse(await (await reader.prepare(path, signal)).read({ startPage: 2, pageCount: 1 }, signal));
+  expect(result.document_text).toBe("Caf\uFFFDe.");
+});
+
 test("a start past the end says how many pages the PDF has", async () => {
   const request = vi.fn();
   const { path, parse, reader } = await setup(request);

@@ -120,16 +120,7 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
             if before.len() + text.len() + after.len() > DOCUMENT_TEXT_BYTES {
                 return Err(1);
             }
-            // The text is redacted from its own start first: a rule that holds only at the
-            // start of a text (a key's body read without its header) must still hold when
-            // the text before does not start in the same place.
-            let text = if before.is_empty() {
-                text.to_owned()
-            } else {
-                let own = vec![vec![text.to_owned(), after.to_owned()]];
-                privacy::redact(&own).map_err(|_| 3u32)?[0][0].clone()
-            };
-            let parts = vec![vec![before.to_owned(), text, after.to_owned()]];
+            let parts = vec![vec![before.to_owned(), text.to_owned(), after.to_owned()]];
             let result = privacy::redact(&parts).map_err(|_| 3u32)?;
             serde_json::to_vec(&serde_json::json!({"text": result[0][1]})).map_err(|_| 3)
         })
@@ -828,37 +819,57 @@ mod tests {
         }
     }
     #[test]
-    fn a_text_starting_inside_a_key_body_is_redacted_whatever_the_text_before() {
-        // A key printed across three pages, each with a footer; the middle page is read with
-        // the end of the first before it.
-        let body = |from: usize, count: usize| {
-            (from..from + count)
-                .map(|i| format!("Qx7Lm2Vp9Rt4Wz8Kc3Nf6Hj1Bd5Gs0Ya+Te/Uo2Ie9Pr4Mw7Lk3Ji6Hu1Gy5Ft0Dr{i:02}"))
-                .collect::<Vec<_>>()
+    fn no_key_line_is_returned_whatever_the_pages_read_and_their_layout() {
+        // A key printed across three pages, read as the PDF reader does: the pages asked for,
+        // joined by a blank line, with the end of the page before and the page after as context.
+        let line = |page: usize, row: usize| {
+            format!("Qx7Lm2Vp9Rt4Wz8Kc3Nf6Hj1Bd5Gs0Ya+Te/Uo2Ie9Pr4Mw7Lk3Ji6Hu1Gy5Ft0Dr{page}{row}")
         };
-        let before = format!(
-            "Key backup\n-----BEGIN PRIVATE KEY-----\n{}\nPage 1 of 3.\n\n",
-            body(0, 3).join("\n")
-        );
-        let text = format!("{}\nPage 2 of 3.", body(10, 3).join("\n"));
-        let after = format!("\n\n{}\n-----END PRIVATE KEY-----", body(20, 2).join("\n"));
-        let input = serde_json::to_vec(
-            &serde_json::json!({"before": before, "text": text, "after": after}),
-        )
-        .unwrap();
-        let mut output = Buffer::empty();
-        let status =
-            unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
-        assert_eq!(status, 0);
-        let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
-        let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        let returned = reply["text"].as_str().unwrap().to_owned();
-        unsafe {
-            voice_core_buffer_free(output);
-        }
-        assert!(returned.contains("[redacted]"));
-        for line in body(10, 3) {
-            assert!(!returned.contains(&line[..40]), "a key line of the requested text was returned");
+        for layout in ["footer", "header", "none"] {
+            let pages = (1..=3)
+                .map(|number| {
+                    let mut lines = (0..3).map(|row| line(number, row)).collect::<Vec<_>>();
+                    if number == 1 {
+                        lines.splice(0..0, ["Key backup".into(), "-----BEGIN PRIVATE KEY-----".into()]);
+                    }
+                    if number == 3 {
+                        lines.push("-----END PRIVATE KEY-----".into());
+                    }
+                    match layout {
+                        "footer" => lines.push(format!("Page {number} of 3")),
+                        "header" => lines.insert(0, format!("Key backup, page {number} of 3")),
+                        _ => {}
+                    }
+                    lines.join("\n")
+                })
+                .collect::<Vec<_>>();
+            for (first, last) in [(1, 3), (1, 2), (2, 2), (2, 3), (3, 3)] {
+                let before = if first > 1 { format!("{}\n\n", pages[first - 2]) } else { String::new() };
+                let text = pages[first - 1..last].join("\n\n");
+                let after = if last < 3 { format!("\n\n{}", pages[last]) } else { String::new() };
+                let input = serde_json::to_vec(
+                    &serde_json::json!({"before": before, "text": text, "after": after}),
+                )
+                .unwrap();
+                let mut output = Buffer::empty();
+                let status =
+                    unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
+                assert_eq!(status, 0);
+                let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
+                let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                let returned = reply["text"].as_str().unwrap().to_owned();
+                unsafe {
+                    voice_core_buffer_free(output);
+                }
+                for number in 1..=3 {
+                    for row in 0..3 {
+                        assert!(
+                            !returned.contains(&line(number, row)[..40]),
+                            "{layout} layout, pages {first}-{last}: a key line was returned"
+                        );
+                    }
+                }
+            }
         }
     }
     #[test]

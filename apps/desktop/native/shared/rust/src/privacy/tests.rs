@@ -69,8 +69,8 @@ fn every_rule_and_case_flag_has_an_observable_fixture() {
             "removal {}",
             rule["name"]
         );
-        // Address-password has no case-dependent literal in its grammar.
-        if rule["name"] == "address-password" {
+        // Neither has a case-dependent literal in its grammar.
+        if rule["name"] == "address-password" || rule["name"] == "private-key-lines" {
             continue;
         }
         let mut flipped = definitions.clone();

@@ -44,9 +44,9 @@ function start() {
   return { promise, abort };
 }
 
-test("uses a disposable process with suppressed logs and bounded heap", async () => {
+test("uses a disposable process with suppressed logs", async () => {
   const { promise } = start();
-  expect(electron.fork.mock.calls[0]?.[2]).toMatchObject({ stdio: "ignore", execArgv: ["--max-old-space-size=256"] });
+  expect(electron.fork.mock.calls[0]?.[2]).toMatchObject({ stdio: "ignore" });
   expect(child.postMessage).toHaveBeenCalledWith({ bytes: new Uint8Array([1]), range });
   child.emit("message", { ok: true, result });
   expect(await promise).toEqual(result);
@@ -80,13 +80,6 @@ test.each([null, { ok: true, result: { ...result, pages: [{ number: 1, text: "a"
   child.emit("message", message);
   await expect(promise).rejects.toThrow(/^(?:This )?PDF /u);
   expect(child.kill).toHaveBeenCalledOnce();
-});
-
-/** The parser of hostile bytes gets none of the app's environment: only what Windows needs to run. */
-test("the worker starts with an empty environment", () => {
-  void start().promise.catch(() => {});
-  const expected = process.platform === "win32" && process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {};
-  expect(electron.fork.mock.calls[0]?.[2]?.env).toEqual(expected);
 });
 
 test("input past the file size limit starts no process", async () => {

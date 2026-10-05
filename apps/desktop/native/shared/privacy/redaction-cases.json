@@ -5109,7 +5109,7 @@
    ]
   },
   {
-   "name": "a key's body after a page footer, through its end line, goes",
+   "name": "a key's body before and after a page footer goes, through its end line",
    "text": [
     "Server notes\n",
     "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
@@ -5126,9 +5126,7 @@
    ],
    "expected": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "{redacted}",
     "\nPage 1 of 2\n",
     "{redacted}",
     " after"
@@ -5205,7 +5203,7 @@
     "Server notes\n",
     "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6==",
     "\n",
     "-----end ",
     "private key-----"
@@ -5214,14 +5212,14 @@
     "Server notes\n",
     "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
     "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "a1B2c3D4e5F6==",
     "\n",
     "-----end ",
     "private key-----"
    ]
   },
   {
-   "name": "base64 lines after the start of a text are not a key's body",
+   "name": "base64 lines after the start of a text go too, as a key's body would",
    "text": [
     "Server notes\n",
     "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
@@ -5230,9 +5228,7 @@
    ],
    "expected": [
     "Server notes\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
-    "\n",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+    "{redacted}"
    ]
   },
   {
@@ -5251,6 +5247,55 @@
     "{redacted}",
     "\n-----end ",
     "private key-----"
+   ]
+  },
+  {
+   "name": "a page in the middle of a printed key, between a running header and a footer, goes",
+   "text": [
+    "Confidential.\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nPage 2 of 3.\n\nConfidential.\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "Confidential.\n",
+    "{redacted}",
+    "\nPage 2 of 3.\n\nConfidential.\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a list of long hashes goes, as a key's body would",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend of list"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}",
+    "\nend of list"
+   ]
+  },
+  {
+   "name": "one long line of base64 alone stays",
+   "text": [
+    "Checksum:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
+   ],
+   "expected": [
+    "Checksum:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
    ]
   }
  ],

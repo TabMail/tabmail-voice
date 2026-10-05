@@ -6,7 +6,7 @@
     "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
     "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
-    "private-key-block comes after the others, then private-key-end, and private-key-body last (it starts only at the start of the text): private-key-block's cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
+    "private-key-block comes after the others, then private-key-end, private-key-body (it starts only at the start of the text) and private-key-lines last: private-key-block's cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it. private-key-body goes before private-key-lines so that a text starting part-way through a key's line loses that part too."
   ],
   "placeholder": "[redacted]",
   "redactors": [
@@ -135,6 +135,13 @@
       "pattern": "^[A-Za-z0-9+/=]*(?:\\s*\\n\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*\\n\\s*[A-Za-z0-9+/=]+)?(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?",
       "ignoreCase": false,
       "replacement": "{placeholder}"
+    },
+    {
+      "name": "private-key-lines",
+      "description": "A private key's body wherever it is, whatever is around it (a page of a printed key between a running header and a footer, several pages of one read together): two or more full lines of base64 one after another. Its last, shorter line and its end line go with private-key-end. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05: \"redact key bodies anywhere\"); one such line alone stays.",
+      "pattern": "(^|\\n)[ \\t]*[A-Za-z0-9+/]{40,}={0,2}(?:[ \\t]*\\r?\\n[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+",
+      "ignoreCase": false,
+      "replacement": "$1{placeholder}"
     }
   ]
 }

@@ -70,12 +70,10 @@ export async function extractPDFDocument(
         page.cleanup();
       }
     };
-    // The redactor's context is cut on UTF-16 units; never leave half a surrogate pair at a cut.
-    const whole = (text: string) => text.replace(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/gu, "");
     if (range.startPage > 1) {
       let tail = "";
       await read(range.startPage - 1, (part) => { tail = (tail + part).slice(-contextLimit); return true; });
-      tail = whole(tail.trimEnd());
+      tail = tail.trimEnd();
       // Pages are joined with a blank line, as the text returned is.
       if (tail !== "") result.before = `${tail}\n\n`;
     }
@@ -102,7 +100,7 @@ export async function extractPDFDocument(
       after = after.trimStart();
       if (after !== "") after = `\n\n${after}`;
     }
-    result.after = whole(after.slice(0, contextLimit));
+    result.after = after.slice(0, contextLimit);
     return result;
   } catch (error) {
     // Parser errors may contain document contents. Only known classifications

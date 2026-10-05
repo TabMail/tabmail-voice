@@ -58,23 +58,3 @@ test("past the budget, the rest of the cut page is the redactor's context", asyn
   expect(result).toMatchObject({ truncated: true, nextPage: 2, after: "OVERFLOWCONTINUATION\n" });
   expect(result.pages[0]!.text).toHaveLength(pdfMaxTextBytes - 5);
 });
-
-test("context cut through a character pair leaves neither half", async () => {
-  // Page 2 is the after-context: its cut lands between the halves of an emoji.
-  read.mockResolvedValueOnce({ done: false, value: { items: [{ str: "Page one.", hasEOL: false }] } })
-    .mockResolvedValueOnce({ done: true })
-    .mockResolvedValueOnce({ done: false, value: { items: [{ str: `y${"\u{1F600}".repeat(pdfRedactionContext)}`, hasEOL: false }] } })
-    .mockResolvedValue({ done: true });
-  const after = (await extractPDF(new Uint8Array([1]), { startPage: 1, pageCount: 1 })).after;
-  expect(after.isWellFormed()).toBe(true);
-  expect(after).toBe(`\n\ny${"\u{1F600}".repeat((pdfRedactionContext - 4) / 2)}`);
-  // Page 1 is the before-context of page 2: its cut lands between the halves too.
-  read.mockReset();
-  read.mockResolvedValueOnce({ done: false, value: { items: [{ str: `${"\u{1F600}".repeat(pdfRedactionContext)}z`, hasEOL: false }] } })
-    .mockResolvedValueOnce({ done: true })
-    .mockResolvedValueOnce({ done: false, value: { items: [{ str: "Page two.", hasEOL: false }] } })
-    .mockResolvedValue({ done: true });
-  const before = (await extractPDF(new Uint8Array([1]), { startPage: 2, pageCount: 1 })).before;
-  expect(before.isWellFormed()).toBe(true);
-  expect(before).toBe(`${"\u{1F600}".repeat((pdfRedactionContext - 2) / 2)}z\n\n`);
-});

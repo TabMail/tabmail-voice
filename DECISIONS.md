@@ -3368,9 +3368,9 @@ approves the exact file. `src/main/documents/`:
   Preparing it reads only its metadata; the read opens it without following a symlink, checks it is
   the same file, and reads that descriptor.
 - **The parser** (`pdfProcess.ts`, `pdfWorker.ts`, `pdfRealm.ts`): each read runs in a new Electron
-  utility process with an empty environment, no stdio, a bounded heap, a parent-owned deadline and a
-  working-set watchdog. In it PDF.js runs inside a QuickJS interpreter with one fixed WebAssembly
-  memory, with no fetch, rendering, fonts or workers; its host functions are text decoding and
+  utility process with no stdio, a parent-owned deadline and a working-set watchdog; what bounds the
+  parser's memory is that watchdog and the interpreter's arena. In it PDF.js runs inside a QuickJS
+  interpreter with one fixed WebAssembly memory, with no fetch, rendering, fonts or workers; its host functions are text decoding and
   encoding and the bundled predefined CJK CMaps (`bundledCMap`, by file name only). Errors leave the
   process as classifications, never parser messages. The reply is bounded and checked page by page.
 - **The text** (`pdfExtraction.ts`, `pdfReader.ts`): at most `pdfMaxTextBytes`, streamed page by
@@ -3382,10 +3382,11 @@ approves the exact file. `src/main/documents/`:
   found: a text that starts inside a key's body (two or more full lines of base64 at its very start)
   is redacted up to the key's end line (`private-key-body`, owner 2026-10-05: "redact key bodies
   anywhere"); it applies to screen reads too, where a window scrolled past a key's header starts
-  inside its body. A page that begins with other long base64 lines (a list of hashes) loses them too.
-  The range is first redacted from its own start, then again with the context: a context that holds
-  a key's header but ends in a page footer would otherwise hide where the requested page begins, and
-  the middle page of a key printed across three pages would go out whole.
+  inside its body. And two or more full lines of base64 one after another go wherever they are
+  (`private-key-lines`): a page of a printed key between a running header and a footer starts with
+  neither a header nor its body, and whatever pages are read, with whatever layout, no line of a key
+  comes back. The owner's cost: any such run goes, a list of long hashes or a base64 blob included;
+  one such line alone stays.
 
 **Rationale:** The sandbox bounds what a malicious PDF can do to time, memory and a refusal; it
 needs no native addon (PDF.js's optional canvas addon is left out of the package). Redacting with

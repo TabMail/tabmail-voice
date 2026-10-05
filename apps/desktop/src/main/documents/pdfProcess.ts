@@ -5,7 +5,7 @@
 import { app, utilityProcess } from "electron";
 import { join } from "node:path";
 import type { PDFRange, PDFText } from "../../core/agent/connectors/pdf.js";
-import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessHeapMiB, pdfProcessMemoryKiB, pdfProcessPollInterval, pdfProcessTimeout, pdfRedactionContext } from "../../core/config.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessMemoryKiB, pdfProcessPollInterval, pdfProcessTimeout, pdfRedactionContext } from "../../core/config.js";
 import { CancellationError } from "../../core/util/timeout.js";
 
 /** Parent-owned limits remain effective when the parser's event loop is blocked.
@@ -17,8 +17,6 @@ export function parsePDF(bytes: Uint8Array, range: PDFRange, signal: AbortSignal
     const child = utilityProcess.fork(join(__dirname, "pdfWorker.js"), [], {
       serviceName: "TabMail PDF reader",
       stdio: "ignore",
-      env: process.platform === "win32" && process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {},
-      execArgv: [`--max-old-space-size=${pdfProcessHeapMiB}`],
     });
     let settled = false;
     const finish = (error: Error | null, result?: PDFText) => {

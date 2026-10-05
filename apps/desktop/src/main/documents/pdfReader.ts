@@ -32,10 +32,12 @@ export class LocalPDFReader implements PDFReader {
         });
         // Redact one combined value so a secret spanning page boundaries cannot
         // escape by being processed as separate pages. Keep page metadata outside text.
-        const extracted = result.pages.map((page) => page.text).join("\n\n");
+        // The helper refuses text that isn't well-formed: a lone surrogate, in the PDF's text or
+        // where a context was cut, becomes U+FFFD.
+        const extracted = result.pages.map((page) => page.text).join("\n\n").toWellFormed();
         let redacted: string;
         try {
-          redacted = await this.redactor.redact(extracted, signal, { before: result.before, after: result.after });
+          redacted = await this.redactor.redact(extracted, signal, { before: result.before.toWellFormed(), after: result.after.toWellFormed() });
         } catch {
           // Never return parser text or a helper error that might contain it.
           throw new Error("PDF text could not be safely redacted. No document text was shared.");
