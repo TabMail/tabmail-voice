@@ -8,6 +8,7 @@
 // (`ScreenReader` in the app, ADR-DESK-053). It keeps its own record of what has focus; EOF ends it.
 #include <atspi/atspi.h>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include "channel.h"
 #include "focused_read.h"
@@ -22,10 +23,17 @@ int main() {
     // yet stays the target: the reader asks the extension, as the helper does (ADR-DESK-052).
     voice::GnomeCaret gnomeCaret;
     voice::Foreground foreground([&] { return gnomeCaret.holding(); });
-    voice::Channel channel(output, [&](const std::string& method, const nlohmann::json& params, voice::Channel::Reply reply, int64_t) {
+    const auto serve = [&](const std::string& method, const nlohmann::json& params, voice::Channel::Reply reply, int64_t) {
         if (method != "readScreen") throw std::runtime_error("unknown method");
         reply(voice::focusedRead(method, params, foreground), true);
-    });
+    };
+    // Requests are served only once Foreground's start-up idle has found what has focus. The app
+    // restarts this program for every read that supersedes another and writes that read at once;
+    // stdin outranks an idle, so served from the start the read would find no target and come back
+    // empty. Idles of one priority run in the order they were added.
+    std::optional<voice::Channel> channel;
+    auto open = [&] { channel.emplace(output, serve); };
+    g_idle_add([](gpointer data) -> gboolean { (*static_cast<decltype(open)*>(data))(); return G_SOURCE_REMOVE; }, &open);
     atspi_event_main();
     return 0;
 }

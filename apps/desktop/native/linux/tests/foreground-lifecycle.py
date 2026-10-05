@@ -77,6 +77,9 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
 
     try:
         if reader:
+            # Sent the moment the reader starts, as the app does after restarting it for a read that
+            # supersedes another: the read waits for the reader to find what has focus.
+            assert 'First synthetic app' in screen()['renderedText'], 'a read sent as the reader starts finds the app in front'
             for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText'):
                 request(method, refused=True)
         else:

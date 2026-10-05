@@ -1763,7 +1763,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
     });
 
-    /** Agent mode waits for the whole screen read, however long it takes, and offers no writing tool
+    /** Agent mode waits for the whole screen read, up to `agentScreenWait`, and offers no writing tool
      * until it is done: the selection it carries decides between Edit and Compose. */
     test("agent mode waits for the whole screen read", async () => {
       transcription.enqueue(200, { text: request });
@@ -1784,6 +1784,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual(["edit"]);
       expect(pastes).toEqual(["Could we ship on Friday?"]);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.");
+    });
+
+    /** A screen read still not done `agentScreenWait` after the transcript (an app that never
+     * answers) does not hold the request up: it goes on without the screen. */
+    test("agent mode goes on without a screen read that never ends", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("We ship on Friday."));
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = () => new Promise<ScreenContext | null>(() => {});
+      controller.contextWait = 0;
+      controller.agentScreenWait = 300;
+
+      await holdAndRelease(controller, "agent");
+
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
+      expect(completions.requests).toHaveLength(1);
+      expect(completionsVars(0)?.selected_text).toBe("");
+      expect(pastes).toEqual(["We ship on Friday."]);
     });
 
     /** Space switches the mode only while the key is held: back and forth, with the tools following. */

@@ -15,8 +15,9 @@ The helper reports installation only after the portal accepts every binding.
 GNOME's AT-SPI keyboard monitor is restricted, so no raw keyboard watcher is used.
 Unrelated typing does not cancel a held dictation on this portal backend.
 `voice-linux`
-provides microphone capture, focused-window identity, screen context, correction
-learning and clipboard insertion through the common newline JSON helper protocol.
+provides microphone capture, focused-window identity, correction learning and clipboard
+insertion through the common newline JSON helper protocol. `voice-screen-reader`, a program of
+its own, reads the screen and nothing else (ADR-DESK-053).
 
 Install Node.js 24, CMake, Ninja, a C++20 compiler and the development packages for
 AT-SPI (2.56 or later), GLib/GIO, PulseAudio, IBus (`libibus-1.0-dev`), ICU and nlohmann-json. From the app:
@@ -117,8 +118,8 @@ other assistive clients may depend on it.
 
 The Debian package uses electron-builder's custom AppArmor profile option. It
 uses a named profile with explicit `allow all` and Electron's user-namespace allowance, and
-executes only `voice-linux` with the ordinary unconfined desktop label (`Ux`, with
-loader environment cleanup). Otherwise the helper inherits the Electron label,
+executes only `voice-linux` and `voice-screen-reader` with the ordinary unconfined desktop label
+(`Ux`, with loader environment cleanup). Otherwise a helper inherits the Electron label,
 which Snap's AT-SPI peer rules reject even though the parent profile itself is
 unconfined. The explicit allow-all form honors this transition on the target kernel; its
 `unconfined` and `default_allow` modes retained the inherited label in guest testing.
