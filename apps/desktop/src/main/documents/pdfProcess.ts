@@ -75,7 +75,9 @@ function validPDFText(value: unknown, range: PDFRange): value is PDFText {
   if (typeof value !== "object" || value === null || !("pages" in value) || !Array.isArray(value.pages) ||
     !("totalPages" in value) || !Number.isSafeInteger(value.totalPages) || Number(value.totalPages) < 1 ||
     !("truncated" in value) || typeof value.truncated !== "boolean" || !("nextPage" in value) ||
-    value.pages.length < 1 || value.pages.length > pdfMaxPages || value.pages.length > range.pageCount) return false;
+    value.pages.length > pdfMaxPages || value.pages.length > range.pageCount) return false;
+  // No pages only for a start past the last page.
+  if (value.pages.length === 0) return range.startPage > Number(value.totalPages) && value.nextPage === null && value.truncated === false;
   let size = 0;
   for (const [index, page] of value.pages.entries()) {
     if (typeof page !== "object" || page === null || page.number !== range.startPage + index || page.number > Number(value.totalPages) || typeof page.text !== "string") return false;

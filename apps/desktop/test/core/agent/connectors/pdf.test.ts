@@ -24,3 +24,14 @@ test.each([{ path: "a", start_page: 0 }, { path: "a", page_count: 11 }, { path: 
   await expect(new PDFReadTool({ prepare }).confirmation(args, new AbortController().signal)).rejects.toThrow();
   expect(prepare).not.toHaveBeenCalled();
 });
+
+/** A request canceled while its file was being prepared asks nothing and can't be run. */
+test("a request canceled during preparation is never asked or run", async () => {
+  const read = vi.fn();
+  const controller = new AbortController();
+  const tool = new PDFReadTool({ prepare: async () => { controller.abort(); return { path: "/home/example/real.pdf", read }; } });
+  const args = { path: "~/real.pdf" };
+  await expect(tool.confirmation(args, controller.signal)).rejects.toThrow("canceled");
+  await expect(tool.run(args, new AbortController().signal)).rejects.toThrow("confirmation");
+  expect(read).not.toHaveBeenCalled();
+});

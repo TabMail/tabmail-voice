@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { pdfRealmTimerMax } from "../../core/config.js";
+
 /** Trusted bootstrap evaluated inside the fixed-memory interpreter. Rendering,
  * fetch, native workers and decompression APIs are intentionally unavailable. */
 export const pdfRealmPrelude = String.raw`
@@ -21,7 +23,6 @@ globalThis.TextDecoder = class {
   decode(input = new Uint8Array(), options = {}) {
     if (options.stream) { hostRefuse(); throw new Error("Streaming decoder unavailable"); }
     if (!(input instanceof ArrayBuffer) && !ArrayBuffer.isView(input)) throw new TypeError("Expected buffer");
-    if (input.byteLength > 20 * 1024 * 1024) { hostRefuse(); throw new Error("Decoder bound"); }
     const bytes = input instanceof ArrayBuffer ? input : input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength);
     return hostDecode(bytes, this.encoding, this.fatal, this.ignoreBOM);
   }
@@ -44,7 +45,7 @@ globalThis.TextEncoder = class {
   const timers = new Map(); let next = 1;
   globalThis.setTimeout = (callback, delay = 0, ...args) => {
     if (typeof callback !== "function") throw new TypeError("Function required");
-    if (timers.size >= 256) { hostRefuse(); throw new Error("Timer bound"); }
+    if (timers.size >= ${pdfRealmTimerMax}) { hostRefuse(); throw new Error("Timer bound"); }
     const id = next++;
     const ms = Math.min(2147483647, Math.max(0, Number(delay) || 0));
     timers.set(id, { callback, args, due: Date.now() + ms }); return id;
@@ -58,19 +59,40 @@ globalThis.TextEncoder = class {
     return timers.size;
   };
 }
-`;
-
-export const pdfClonePrelude = String.raw`
-import clone from "clone/index.js";
-globalThis.structuredClone = (value, options = {}) => {
-  const transfer = options?.transfer === undefined ? [] : Array.from(options.transfer);
-  const seen = new Set();
-  for (const buffer of transfer) {
-    if (!(buffer instanceof ArrayBuffer) || seen.has(buffer)) throw new DOMException("Invalid transfer", "DataCloneError");
-    buffer.slice(0, 0); seen.add(buffer);
-  }
-  const result = clone(value);
-  for (const buffer of transfer) buffer.transfer(0);
-  return result;
-};
+{
+  // pdf.js's in-process worker port clones every message. Binary data stays
+  // binary, so a document is never expanded into a per-byte copy inside the
+  // fixed arena. Every buffer is copied while the value is walked, and the
+  // transferred ones are detached only after it, so no view meets a detached
+  // buffer (structured clone, HTML 2.7).
+  const fail = () => { throw new DOMException("Value cannot be cloned", "DataCloneError"); };
+  globalThis.structuredClone = (value, options) => {
+    const transfer = options?.transfer === undefined ? [] : Array.from(options.transfer);
+    const moving = new Set();
+    for (const buffer of transfer) {
+      if (!(buffer instanceof ArrayBuffer) || moving.has(buffer) || buffer.detached) fail();
+      moving.add(buffer);
+    }
+    const copies = new Map();
+    const copy = item => {
+      if (typeof item === "function" || typeof item === "symbol") fail();
+      if (item === null || typeof item !== "object") return item;
+      if (copies.has(item)) return copies.get(item);
+      const fill = (result, entries) => { copies.set(item, result); entries(result); return result; };
+      if (item instanceof ArrayBuffer) return fill(item.slice(0), () => {});
+      if (ArrayBuffer.isView(item)) {
+        return fill(new item.constructor(copy(item.buffer), item.byteOffset, item instanceof DataView ? item.byteLength : item.length), () => {});
+      }
+      if (item instanceof Date) return fill(new Date(item.getTime()), () => {});
+      if (item instanceof RegExp) return fill(new RegExp(item.source, item.flags), () => {});
+      if (item instanceof Error) return fill(new Error(item.message), result => { result.name = item.name; });
+      if (item instanceof Map) return fill(new Map(), result => { for (const [key, entry] of item) result.set(copy(key), copy(entry)); });
+      if (item instanceof Set) return fill(new Set(), result => { for (const entry of item) result.add(copy(entry)); });
+      return fill(Array.isArray(item) ? new Array(item.length) : {}, result => { for (const key of Object.keys(item)) result[key] = copy(item[key]); });
+    };
+    const result = copy(value);
+    for (const buffer of moving) buffer.transfer(0);
+    return result;
+  };
+}
 `;

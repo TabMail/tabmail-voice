@@ -786,6 +786,8 @@ export const pdfProcessHeapMiB = 256;
 export const pdfRealmMemoryPages = 4_096;
 export const pdfRealmStackBytes = 1024 * 1024;
 export const pdfRealmEncodingLabelMax = 64;
+/** Timers the parser may have pending at once; more is refused as a runaway document. */
+export const pdfRealmTimerMax = 256;
 /** Explicit document text the native redactor takes (the Rust core refuses more), how long it gets,
  * and the largest reply accepted. */
 export const redactionTextMaxBytes = 128 * 1024;

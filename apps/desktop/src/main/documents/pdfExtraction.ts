@@ -26,8 +26,9 @@ export async function extractPDFDocument(
   });
   try {
     const document = await task.promise;
-    if (range.startPage > document.numPages) throw new Error("The requested page is outside this PDF.");
     const result: PDFText = { totalPages: document.numPages, pages: [], nextPage: null, truncated: false };
+    // Past the last page: no pages, and the page count so the caller can say where the PDF ends.
+    if (range.startPage > document.numPages) return result;
     let remaining = textLimit;
     const end = Math.min(document.numPages, range.startPage + range.pageCount - 1);
     for (let number = range.startPage; number <= end; number += 1) {

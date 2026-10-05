@@ -2975,6 +2975,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat).toBeNull();
         });
 
+        /** A preparation that fails because its request ended is that request's end, not a failure. */
+        test("preparation failing after its request was closed reports no failure", async () => {
+          let fail!: (error: Error) => void;
+          const pending = new Promise<string | null>((_resolve, reject) => { fail = reject; });
+          let preparing = false;
+          const errors: string[] = [];
+          configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
+          try {
+            const tool = Object.assign(new FakeLoopTool(), { confirmation: () => { preparing = true; return pending; } });
+            const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+            expect(await eventually(() => preparing)).toBe(true);
+            controller.closeChat();
+            fail(new Error("PDF reading was canceled."));
+            await done;
+            expect(tool.runs).toEqual([]);
+            expect(errors.filter((text) => text.includes("preparation failed"))).toEqual([]);
+          } finally {
+            configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+          }
+        });
+
         test("failed preparation is reported without running the tool", async () => {
           const tool = Object.assign(new FakeLoopTool(), { confirmation: async () => { throw new Error("The file is unavailable."); } });
           const { done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);

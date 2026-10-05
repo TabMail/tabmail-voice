@@ -127,8 +127,13 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
                 edge("endKnown")?,
                 DOCUMENT_TEXT_BYTES,
             )?;
+            // Text outside the range is withheld unread; say so, so the caller can tell
+            // the reader that some of the document was left out.
+            let withheld =
+                !text[..range.start].trim().is_empty() || !text[range.end..].trim().is_empty();
             let result = privacy::redact(&vec![vec![text[range].to_owned()]]).map_err(|_| 3u32)?;
-            serde_json::to_vec(&serde_json::json!({"text": result[0][0]})).map_err(|_| 3)
+            serde_json::to_vec(&serde_json::json!({"text": result[0][0], "withheld": withheld}))
+                .map_err(|_| 3)
         })
     }
 }
@@ -829,20 +834,30 @@ mod tests {
         for (input, expected) in [
             (
                 serde_json::json!({"text": "token=syntheticPrivate123"}),
-                Some("token=[redacted]"),
+                Some(("token=[redacted]", false)),
             ),
-            (serde_json::json!({"text": ""}), Some("")),
+            (serde_json::json!({"text": ""}), Some(("", false))),
             (
                 serde_json::json!({"text":"syntheticPrivate123. Public.","startKnown":false,"endKnown":true}),
-                Some(". Public."),
+                Some((". Public.", true)),
             ),
             (
                 serde_json::json!({"text":"Public. syntheticPrivate123","startKnown":true,"endKnown":false}),
-                Some("Public. "),
+                Some(("Public. ", true)),
             ),
             (
                 serde_json::json!({"text":"syntheticPrivate123","startKnown":false,"endKnown":false}),
-                Some(""),
+                Some(("", true)),
+            ),
+            (
+                // Text with no sentence delimiter at an unknown edge is withheld whole.
+                serde_json::json!({"text":"会議は金曜日です。資料を確認してください。","startKnown":true,"endKnown":false}),
+                Some(("", true)),
+            ),
+            (
+                // Only whitespace outside the range: nothing was withheld.
+                serde_json::json!({"text":"  . Public.","startKnown":false,"endKnown":true}),
+                Some((". Public.", false)),
             ),
             (
                 serde_json::json!({"text":"Public.","startKnown":null}),
@@ -860,11 +875,14 @@ mod tests {
             let mut output = Buffer::empty();
             let status =
                 unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
-            if let Some(text) = expected {
+            if let Some((text, withheld)) = expected {
                 assert_eq!(status, 0);
                 let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
                 let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-                assert_eq!(reply, serde_json::json!({"text": text}));
+                assert_eq!(
+                    reply,
+                    serde_json::json!({"text": text, "withheld": withheld})
+                );
             } else {
                 assert_eq!(status, 1);
                 assert!(output.data.is_null());

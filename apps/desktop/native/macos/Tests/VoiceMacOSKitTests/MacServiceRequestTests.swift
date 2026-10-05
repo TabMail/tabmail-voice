@@ -45,7 +45,7 @@ struct MacServiceRequestTests {
         await channel.handle(line: try JSONEncoder().encode(oversized))
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == 3)
-        #expect((replies.first?["result"] as? [String: String]) == ["text": "token=[redacted]"])
+        #expect(replies.first?["result"] as? NSDictionary == ["text": "token=[redacted]", "withheld": false])
         #expect(replies.dropFirst().allSatisfy { $0["error"] != nil && $0["result"] == nil })
         withExtendedLifetime(service) {}
     }
@@ -54,19 +54,20 @@ struct MacServiceRequestTests {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
         let service = MacService.register(on: channel)
-        for (id, text, start, end, expected) in [
-            (1, "syntheticPrivate123. Public.", false, true, ". Public."),
-            (2, "Public. syntheticPrivate123", true, false, "Public. "),
-            (3, "syntheticPrivate123", false, false, "")
+        for (id, text, start, end, expected, withheld) in [
+            (1, "syntheticPrivate123. Public.", false, true, ". Public.", true),
+            (2, "Public. syntheticPrivate123", true, false, "Public. ", true),
+            (3, "syntheticPrivate123", false, false, "", true),
+            (4, "Public. Visible.", true, true, "Public. Visible.", false)
         ] {
             let params: JSON = .object(["text": .string(text), "startKnown": .bool(start), "endKnown": .bool(end)])
             let request: JSON = .object(["id": .number(Double(id)), "method": .string("redactText"), "params": params])
             await channel.handle(line: try JSONEncoder().encode(request))
             let line = try #require(lines.withLock { $0.last })
             let reply = try #require(JSONSerialization.jsonObject(with: line) as? [String: Any])
-            #expect((reply["result"] as? [String: String]) == ["text": expected])
+            #expect(reply["result"] as? NSDictionary == ["text": expected, "withheld": withheld])
         }
-        #expect(lines.withLock { $0.count } == 3)
+        #expect(lines.withLock { $0.count } == 4)
         withExtendedLifetime(service) {}
     }
 

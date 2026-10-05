@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { describe, expect, test } from "vitest";
-import { pdfMaxPages, pdfMaxTextBytes } from "../../../src/core/config.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes } from "../../../src/core/config.js";
 import { extractPDFInRealm as extractPDF } from "../../../src/main/documents/pdfRealm.js";
 
 import { extractPDF as referencePDF } from "./referencePDF.js";
@@ -46,6 +46,10 @@ test.each([['in', 'voice', 'invoice'], ['Public. sk-', 'SyntheticFixture1234', '
   const stream = `BT /F1 12 Tf 30 700 Td (${left}) Tj /F2 12 Tf (${right}) Tj ET`;
   const result = await readPDF(pdf([stream], "", false, true), { startPage: 1, pageCount: 1 });
   expect(result.pages).toEqual([{ number: 1, text: expected }]);
+});
+
+test("a start past the last page returns no pages and the page count", async () => {
+  expect(await readPDF(pdf(["one", "two", "three"]), { startPage: 5, pageCount: 1 })).toEqual({ totalPages: 3, pages: [], nextPage: null, truncated: false });
 });
 
 test("empty page has no invented OCR text", async () => {
@@ -100,3 +104,41 @@ test("does not execute embedded JavaScript or follow an external open action", a
 });
 
 });
+
+/** One page of text and an image whose data brings the file to just under `documentMaxBytes`. */
+function imagePDF(size: number): Uint8Array {
+  const text = "BT /F1 12 Tf 30 700 Td (Report page with an image.) Tj ET";
+  const head = (image: number) => [
+    "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Count 1 /Kids [4 0 R] >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Resources << /Font << /F1 3 0 R >> /XObject << /Im1 6 0 R >> >> /Contents 5 0 R >>",
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    `<< /Type /XObject /Subtype /Image /Width 1024 /Height ${Math.ceil(image / 1024)} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode /Length ${image} >>\nstream\n`,
+  ];
+  const build = (image: number) => {
+    const parts: Buffer[] = [Buffer.from("%PDF-1.4\n")];
+    const offsets: number[] = [];
+    let length = parts[0]!.length;
+    const add = (part: Buffer) => { parts.push(part); length += part.length; };
+    head(image).forEach((object, i) => {
+      offsets.push(length);
+      add(Buffer.from(`${i + 1} 0 obj\n${object}`));
+      if (i === 5) add(Buffer.alloc(image, 0x5a));
+      add(Buffer.from(i === 5 ? "\nendstream\nendobj\n" : "\nendobj\n"));
+    });
+    add(Buffer.from(`xref\n0 7\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${length}\n%%EOF\n`));
+    return Buffer.concat(parts);
+  };
+  // The header's numbers grow with the image; settle the image size until the file is exact.
+  let image = size - build(0).length;
+  for (let built = build(image); built.length !== size; built = build(image)) image += size - built.length;
+  return new Uint8Array(build(image));
+}
+
+/** Files up to the advertised limit read: the document's bytes are never expanded per byte inside
+ * the parser's fixed memory. */
+test("the bounded parser reads a PDF just under the file size limit", async () => {
+  const bytes = imagePDF(documentMaxBytes - 1024);
+  expect(bytes.byteLength).toBe(documentMaxBytes - 1024);
+  const result = await extractPDF(bytes, { startPage: 1, pageCount: 1 });
+  expect(result.pages).toEqual([{ number: 1, text: "Report page with an image." }]);
+}, 60_000);

@@ -61,14 +61,15 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         return request('focusedFieldValue', {**policy, 'window': target['window'], 'maxLength': 20000})
 
     try:
-        assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
-        assert request('redactText', {'text': ''}) == {'text': ''}
-        for text, start, end, expected in [
-            ('syntheticPrivate123. Public.', False, True, '. Public.'),
-            ('Public. syntheticPrivate123', True, False, 'Public. '),
-            ('syntheticPrivate123', False, False, ''),
+        assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]', 'withheld': False}
+        assert request('redactText', {'text': ''}) == {'text': '', 'withheld': False}
+        for text, start, end, expected, withheld in [
+            ('syntheticPrivate123. Public.', False, True, '. Public.', True),
+            ('Public. syntheticPrivate123', True, False, 'Public. ', True),
+            ('syntheticPrivate123', False, False, '', True),
+            ('Public. Visible.', True, True, 'Public. Visible.', False),
         ]:
-            assert request('redactText', {'text': text, 'startKnown': start, 'endKnown': end}) == {'text': expected}
+            assert request('redactText', {'text': text, 'startKnown': start, 'endKnown': end}) == {'text': expected, 'withheld': withheld}
         request('redactText', {'text': 'Public.', 'startKnown': None}, refused=True)
         request('redactText', {'text': None}, refused=True)
         request('redactText', {'text': '😀' * 32769}, refused=True)

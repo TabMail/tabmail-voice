@@ -116,3 +116,33 @@ test("an active worker receives approved bytes, returns text, and terminates", a
   expect(await pending).toEqual(result);
   expect(alive).toBe(false);
 });
+
+/** The worker's reason reaches the agent: a password-protected PDF says so, not "could not be read". */
+test("a password refusal from the worker is reported as one", async () => {
+  const { promise } = start();
+  child.emit("message", { ok: false, reason: "password" });
+  await expect(promise).rejects.toThrow(/^This PDF requires a password\.$/u);
+});
+
+/** The worker has just parsed a hostile file: its pages must be the ones asked for, in order. */
+test.each([
+  ["a page out of sequence", { startPage: 1, pageCount: 2 }, { totalPages: 3, pages: [{ number: 1, text: "a" }, { number: 3, text: "b" }], nextPage: 3, truncated: false }],
+  ["a first page that wasn't asked for", { startPage: 2, pageCount: 1 }, { totalPages: 3, pages: [{ number: 1, text: "a" }], nextPage: 3, truncated: false }],
+  ["more pages than asked for", { startPage: 1, pageCount: 1 }, { totalPages: 3, pages: [{ number: 1, text: "a" }, { number: 2, text: "b" }], nextPage: 3, truncated: false }],
+  ["a page past the PDF's end", { startPage: 1, pageCount: 2 }, { totalPages: 1, pages: [{ number: 1, text: "a" }, { number: 2, text: "b" }], nextPage: null, truncated: false }],
+  ["no pages within the PDF", { startPage: 1, pageCount: 1 }, { totalPages: 3, pages: [], nextPage: null, truncated: false }],
+  ["no pages past the end, but a next page", { startPage: 5, pageCount: 1 }, { totalPages: 3, pages: [], nextPage: 6, truncated: false }],
+])("refuses a worker reply with %s", async (_name, asked, reply) => {
+  const pending = parsePDF(new Uint8Array([1]), asked, new AbortController().signal);
+  spawn();
+  child.emit("message", { ok: true, result: reply });
+  await expect(pending).rejects.toThrow(/^This PDF could not be read\.$/u);
+});
+
+test("accepts no pages for a start past the PDF's end", async () => {
+  const pending = parsePDF(new Uint8Array([1]), { startPage: 5, pageCount: 1 }, new AbortController().signal);
+  spawn();
+  const reply = { totalPages: 3, pages: [], nextPage: null, truncated: false };
+  child.emit("message", { ok: true, result: reply });
+  expect(await pending).toEqual(reply);
+});

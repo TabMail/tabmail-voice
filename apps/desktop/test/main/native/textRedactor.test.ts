@@ -15,8 +15,8 @@ function redactor(request: ReturnType<typeof vi.fn>) {
 }
 
 test("returns only the native redacted result without queuing across restart", async () => {
-  const request = vi.fn().mockResolvedValue({ text: "token=[redacted]" });
-  expect(await redactor(request).redact(text, signal())).toBe("token=[redacted]");
+  const request = vi.fn().mockResolvedValue({ text: "token=[redacted]", withheld: false });
+  expect(await redactor(request).redact(text, signal())).toEqual({ text: "token=[redacted]", withheld: false });
   expect(request).toHaveBeenCalledExactlyOnceWith("redactText", { text }, textRedactionTimeout);
 });
 
@@ -25,7 +25,12 @@ test.each(["exited", "timeout", "failed"] as const)("%s refuses without exposing
   await expect(redactor(request).redact(text, signal())).rejects.toThrow(/^Document text could not be safely redacted\.$/u);
 });
 
-test.each([null, {}, { text: null }, { text: 1 }, { text: "x".repeat(1024 * 1024 + 1) }])("malformed result is a refusal", async (reply) => {
+test("whether edge text was withheld is carried through", async () => {
+  const request = vi.fn().mockResolvedValue({ text: "", withheld: true });
+  expect(await redactor(request).redact(text, signal(), { startKnown: true, endKnown: false })).toEqual({ text: "", withheld: true });
+});
+
+test.each([null, {}, { text: null }, { text: 1 }, { text: "x".repeat(1024 * 1024 + 1), withheld: false }, { text: "x" }, { text: "x", withheld: "no" }])("malformed result is a refusal", async (reply) => {
   await expect(redactor(vi.fn().mockResolvedValue(reply)).redact(text, signal())).rejects.toThrow("could not be safely redacted");
 });
 

@@ -1059,7 +1059,6 @@ export class DictationController extends Observable {
 
   /** Runs `tool`, confirmed if it asks: the chat window says what it does, and its app's bubble runs. */
   private async runTool(tool: ConnectorTool, args: Record<string, unknown>, isCurrent: () => boolean, signal: AbortSignal): Promise<string> {
-    if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
     log.debug(`DictationController: running ${tool.name}`);
     this.updateChat({ activity: tool.progressLabel });
     this.appStarted(tool.connector);

@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { test, expect, vi, afterEach } from "vitest";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, rm, truncate } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fstatSync } from "node:fs";
@@ -76,4 +76,14 @@ test.each(["cancel", "read error"])("a mid-read %s refuses bytes and closes the 
   expect(error).toBeInstanceOf(Error);
   expect(result).toBeUndefined();
   expect(await readFile(f.path)).toEqual(f.before);
+});
+
+/** A file cut short between chunks reads 0 bytes from then on: the read is refused, never retried
+ * forever. */
+test("a file truncated mid-read is refused, not read forever", async () => {
+  const f = await prepare();
+  state.afterRead = () => truncate(f.path, 65536);
+  await expect(f.document.read(f.signal)).rejects.toThrow("unchanged");
+  expect(state.reads).toBe(2);
+  for (const fd of state.descriptors) expect(() => fstatSync(fd)).toThrow(/EBADF/u);
 });

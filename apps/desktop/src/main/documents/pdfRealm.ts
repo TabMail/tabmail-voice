@@ -3,14 +3,13 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { readFileSync } from "node:fs";
-import { dirname, join, posix } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import variant from "@jitl/quickjs-wasmfile-release-sync";
 import { newQuickJSWASMModuleFromVariant, newVariant, type QuickJSHandle } from "quickjs-emscripten-core";
 import type { PDFRange, PDFText } from "../../core/agent/connectors/pdf.js";
 import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessTimeout, pdfRealmEncodingLabelMax, pdfRealmMemoryPages, pdfRealmStackBytes } from "../../core/config.js";
 import { extractPDFDocument } from "./pdfExtraction.js";
-import { pdfClonePrelude, pdfRealmPrelude } from "./pdfRealmPrelude.js";
+import { pdfRealmPrelude } from "./pdfRealmPrelude.js";
 
 // Node exposes this runtime API but this main-process project omits DOM typings.
 declare const WebAssembly: { Memory: new (limits: { initial: number; maximum: number }) => {
@@ -76,12 +75,7 @@ async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText
       ["pdf", readFileSync(require.resolve("pdfjs-dist/legacy/build/pdf.mjs"), "utf8")],
       ["worker", readFileSync(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"), "utf8")],
     ]);
-    const cloneRoot = join(dirname(require.resolve("@ungap/structured-clone")), "..", "esm");
-    for (const file of ["index.js", "serialize.js", "deserialize.js", "types.js"]) {
-      modules.set(`clone/${file}`, readFileSync(join(cloneRoot, file), "utf8"));
-    }
-    runtime.setModuleLoader(name => modules.get(name) ?? fail(), (base, requested) =>
-      base.startsWith("clone/") && requested.startsWith("./") ? posix.join(posix.dirname(base), requested) : requested);
+    runtime.setModuleLoader(name => modules.get(name) ?? fail(), (_base, requested) => requested);
     const lengthFunction = context.evalCode("((get, apply) => value => apply(get, value, []))(Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get, Reflect.apply)");
     if (lengthFunction.error) { lengthFunction.error.dispose(); return fail(); }
     bufferLength = lengthFunction.value;
@@ -109,11 +103,6 @@ async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText
     evaluate(pdfRealmPrelude);
     evaluate(readFileSync(require.resolve("abort-controller/dist/abort-controller.umd.js"), "utf8"));
     evaluate(readFileSync(require.resolve("web-streams-polyfill/polyfill"), "utf8"));
-    evaluate(pdfClonePrelude, "clone-bootstrap.mjs", true);
-    while (runtime.hasPendingJob()) {
-      const result = runtime.executePendingJobs(1);
-      if (result.error) { result.error.dispose(); return fail(); }
-    }
     const input = context.newArrayBuffer(Uint8Array.from(bytes).buffer);
     context.setProp(context.global, "pdfInput", input); input.dispose();
     // Serialize only our trusted, dependency-explicit function, never document text.
