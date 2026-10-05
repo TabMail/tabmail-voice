@@ -141,7 +141,7 @@ connectors remain unavailable. Thunderbird connectivity is outside this work.
 
 ## Updates
 
-Packaged builds look for updates at `https://cdn.tabmail.ai/releases/voice/linux-${arch}/latest-linux-<arch>.yml`
+Packaged builds look for updates at `https://cdn.tabmail.ai/releases/voice/linux-${arch}/` (`latest-linux.yml` on x64, `latest-linux-arm64.yml` on ARM)
 (ADR-DESK-050) once the package carries a public key in `resources/linux/update-keys/`; without
 one, updates are off. The feed's `signature` is Ed25519 over the package's name, architecture,
 version and SHA-512. `install-update` (packaged under `linux/`, root-owned) checks it as the user

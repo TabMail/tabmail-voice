@@ -3290,7 +3290,7 @@ the feed's own SHA-512.
   installs when the app quits, or at once with Restart Now, quietly and for this user (no
   administrator), and the new version opens. The web installer is off.
 - **Linux** (`DebUpdater` for the download only, feed `https://cdn.tabmail.ai/releases/voice/linux-${arch}`,
-  `latest-linux-<arch>.yml`): the feed also carries `signature`, Ed25519, base64, over
+  `latest-linux.yml` on x64, `latest-linux-arm64.yml` on ARM): the feed also carries `signature`, Ed25519, base64, over
   `TabMail Voice update\npackage: tabmail-voice\narchitecture: <arch>\nversion: <x.y.z>\nsha512: <base64>\n`.
   `install-update` (`resources/linux/install-update`, root-owned under `/opt` with the public keys in
   `update-keys/` beside it) checks, on a copy it made itself, the signature against those keys, the

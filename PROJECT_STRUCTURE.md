@@ -169,5 +169,5 @@ Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) w
 JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
 dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
 Packaged builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/` (`latest-mac.yml`,
-`latest.yml` on Windows, `latest-linux-<arch>.yml`) with `electron-updater`, sending no installation
+`latest.yml` on Windows, `latest-linux.yml` or `latest-linux-arm64.yml`) with `electron-updater`, sending no installation
 ID (ADR-DESK-041, ADR-DESK-050).
