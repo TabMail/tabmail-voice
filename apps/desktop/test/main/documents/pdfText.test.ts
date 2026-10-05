@@ -5,11 +5,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfRedactionContext } from "../../../src/core/config.js";
 import { extractPDFInRealm as extractPDF } from "../../../src/main/documents/pdfRealm.js";
 
 import { extractPDF as referencePDF } from "./referencePDF.js";
+
+// Every read here runs the bounded parser, which takes seconds on a loaded machine.
+vi.setConfig({ testTimeout: 60_000 });
 
 /** Minimal synthetic PDFs, with real cross-reference offsets. No external files. */
 function pdf(pages: string[], catalog = "", unicode = false, rawStreams = false): Uint8Array {

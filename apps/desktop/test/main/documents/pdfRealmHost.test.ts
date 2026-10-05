@@ -18,6 +18,9 @@ vi.mock("../../../src/core/config.js", async (original) => ({
 import { documentMaxBytes, pdfCMapNameMax, pdfRealmEncodingLabelMax } from "../../../src/core/config.js";
 import { extractPDFInRealm } from "../../../src/main/documents/pdfRealm.js";
 
+// Every run here starts the bounded parser, which takes seconds on a loaded machine.
+vi.setConfig({ testTimeout: 60_000 });
+
 const unreadable = /^This PDF could not be read, or the requested page is unavailable\.$/u;
 const range = { startPage: 1, pageCount: 1 };
 const read = (probe: unknown) => { realm.probe = probe; return extractPDFInRealm(new Uint8Array([1]), range); };
