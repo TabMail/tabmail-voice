@@ -205,6 +205,10 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "running", tool: "answer" }, true);
     expect(overlay.opacity()).toBe(0);
     controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    expect(overlay.visible()).toBe(true);
     expect(overlay.opacity()).toBe(1);
   });
 
@@ -247,7 +251,8 @@ describe("OverlayWindowController", () => {
   /** The overlay takes the mouse, as the chat window, opened over the pill at the caret the request
    * was spoken over, only while the chat is open; the pill stays where it was as it opens and as it
    * fits the height the chat window measures, and closed it lets every click through again (the
-   * pointer's moves still reaching the page, for a bubble's hover), at the pill's size, hidden. */
+   * pointer's moves still reaching the page, for a bubble's hover), and a chat's height measured
+   * after it closed doesn't resize it. */
   test("the chat window takes the mouse only while it is open, and the pill stays put", async () => {
     const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
     const overlay = recordingWindow();
@@ -285,9 +290,60 @@ describe("OverlayWindowController", () => {
     expect(controller.chatPlacement).toBeNull();
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
-    expect(overlay.visible()).toBe(false);
-    expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
+    const closed = overlay.bounds();
     controller.fitChat(200);
+    expect(overlay.bounds()).toEqual(closed);
+  });
+
+  /** Hidden as the chat window closes, the overlay's last frame would still be the chat, which then
+   * showed for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
+   * blinks"). It stays up, transparent and click-through, while its page draws the chat away, and is
+   * hidden after that; the next hold's pill shows opaque, at the pill's size. */
+  test("a closed chat window is drawn away before the overlay hides", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+
+      controller.update({ kind: "idle" }, false);
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(0);
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.overlayDismissDuration - 1);
+      expect(overlay.visible()).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(overlay.visible()).toBe(false);
+
+      controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
+      controller.update({ kind: "listening" });
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(1);
+      expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A hold started just as the chat window closes doesn't hide the overlay before its page has drawn
+   * the chat away either: it stays transparent until the pill shows. */
+  test("a hold started as the chat window closes shows its pill without the chat", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+    controller.update({ kind: "running", tool: "answer" }, true);
+    controller.fitChat(120);
+    const opaque = overlay.opaqueFrames().length;
+
+    controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "arming" });
+    expect(overlay.visible()).toBe(true);
+    expect(overlay.opacity()).toBe(0);
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    expect(overlay.opacity()).toBe(1);
+    expect(overlay.opaqueFrames().slice(opaque)).toEqual([overlay.bounds()]);
     expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
   });
 

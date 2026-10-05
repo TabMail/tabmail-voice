@@ -41,6 +41,11 @@ export class OverlayWindowController {
   /** The chat window opened and its page hasn't measured it yet: the overlay is transparent meanwhile,
    * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is). */
   private chatUnmeasured = false;
+  /** The chat window closed and the overlay stays up, transparent and click-through, until it is
+   * hidden or shown again: hidden at once, its last frame would still be the chat, which would then
+   * show for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
+   * blinks"). Meanwhile the page draws it closed. */
+  private chatClosing = false;
   private measuredChatHeight: number | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
@@ -113,13 +118,14 @@ export class OverlayWindowController {
         this.show();
         return;
       case "arming":
-        // A new hold during the previous exit animation: start clean, at the new caret.
+        // A new hold during the previous exit animation: start clean, at the new caret. A chat
+        // window just closed stays up, transparent, while its page draws it closed.
         this.cancelHide();
-        this.window.hide();
+        if (!this.chatClosing) this.window.hide();
         this.lookUpCaret();
         return;
       default:
-        if (this.window.isVisible()) return;
+        if (this.window.isVisible() && !this.chatClosing) return;
         if (this.lookupPending) {
           // The reveal must not wait for accessibility. Keep this hold at its fallback
           // position rather than jumping when a late caret lookup eventually finishes.
@@ -170,6 +176,7 @@ export class OverlayWindowController {
     const shift = { x: Math.round(origin.x) - origin.x, y: Math.round(origin.y) - origin.y };
     const bubblesUnder = bubblesFitUnder(anchor, config.pillHeight, workArea);
     this.chat = { pill: { x: pill.x + shift.x, y: pill.y + shift.y }, workArea, side: chatSide(pill.y, bubblesUnder, workArea), bubblesUnder };
+    this.chatClosing = false;
     this.chatUnmeasured = true;
     this.window.setOpacity(0);
     this.window.setIgnoreMouseEvents(false);
@@ -186,19 +193,20 @@ export class OverlayWindowController {
 
   private hideChat(): void {
     this.chat = null;
-    if (this.chatUnmeasured) {
-      this.chatUnmeasured = false;
-      this.window.setOpacity(1);
-    }
+    this.chatUnmeasured = false;
+    this.chatClosing = true;
+    this.window.setOpacity(0);
     // Click-through again, the pointer's moves still reaching the page (a bubble's hover).
     this.window.setIgnoreMouseEvents(true, { forward: true });
-    this.window.hide();
-    this.window.setBounds({ ...this.window.getBounds(), ...config.overlayCanvasSize });
   }
 
   private show(): void {
     if (!this.hasPlacementArea(this.anchor ?? this.pointer())) { this.window.hide(); return; }
     this.position();
+    if (this.chatClosing) {
+      this.chatClosing = false;
+      this.window.setOpacity(1);
+    }
     this.window.showInactive();
   }
 
