@@ -3302,7 +3302,9 @@ the feed's own SHA-512.
   new version. Nothing installs by itself, and `DebUpdater`'s install is never called. Its exit codes
   say why it refused (3 not signed by a key here, 4 not the signed package, 5 not newer, 6 the
   package manager failed), as do `pkexec`'s (126 dismissed: the update stays ready, nothing failed;
-  127 not authorized). The package depends on `openssl` and `pkexec`. The app's AppArmor profile lets
+  127 not authorized). The authentication dialog says "Authentication is required to install a
+  TabMail Voice update." (a polkit action for the packaged script, `auth_admin` every time), not the
+  script's command line with its signature. The package depends on `openssl` and `pkexec`. The app's AppArmor profile lets
   `pkexec` leave it (`Ux`): dpkg, under the inherited profile, couldn't replace the files it names.
 - **Linux updates stay off until a key ships.** The app turns them on only when `update-keys/` holds a
   `.pem`. The private key never enters the repository; the release signs each feed with it. A key is

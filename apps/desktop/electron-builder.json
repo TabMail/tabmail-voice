@@ -177,7 +177,8 @@
       "pkexec"
     ],
     "fpm": [
-      "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai"
+      "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai",
+      "resources/linux/ai.tabmail.voice.install-update.policy=/usr/share/polkit-1/actions/ai.tabmail.voice.install-update.policy"
     ]
   },
   "nsis": {

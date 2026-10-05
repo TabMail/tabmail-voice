@@ -146,7 +146,9 @@ Packaged builds look for updates at `https://cdn.tabmail.ai/releases/voice/linux
 one, updates are off. The feed's `signature` is Ed25519 over the package's name, architecture,
 version and SHA-512. `install-update` (packaged under `linux/`, root-owned) checks it as the user
 once the `.deb` is downloaded, and again as root, on its own copy, when the user installs it from
-the menu or the question through `pkexec`; then `apt-get install` installs it, with any missing
+the menu or the question through `pkexec` (its polkit action,
+`resources/linux/ai.tabmail.voice.install-update.policy`, gives the dialog its message and asks for an
+administrator every time); then `apt-get install` installs it, with any missing
 dependency from the system's own sources, and the app opens the new version. Nothing installs
 by itself, and an older or equal version is refused. `test/main/native/linux/installUpdate.test.ts`
 runs the real script on Linux.

@@ -103,6 +103,20 @@ describe("the Mac app's packaging", () => {
     expect(adapter).toContain('"/usr/bin/pkexec"');
   });
 
+  /** The administrator's authentication dialog says what it is for, not install-update's command line
+   * with its signature: a polkit action for the packaged script, installed where polkit reads them,
+   * asking for an administrator every time (ADR-DESK-050). */
+  test("Linux asks for an administrator to install an update, in words", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { productName: string; deb: { fpm: string[] } };
+    const policy = readFileSync(join(root, "resources/linux/ai.tabmail.voice.install-update.policy"), "utf8");
+
+    expect(builder.deb.fpm).toContain("resources/linux/ai.tabmail.voice.install-update.policy=/usr/share/polkit-1/actions/ai.tabmail.voice.install-update.policy");
+    // The path pkexec runs: the package installs the app under /opt/<productName>.
+    expect(policy).toContain(`<annotate key="org.freedesktop.policykit.exec.path">/opt/${builder.productName}/resources/linux/install-update</annotate>`);
+    expect(policy).toContain("<message>Authentication is required to install a TabMail Voice update.</message>");
+    expect([...policy.matchAll(/<allow_(?:any|inactive|active)>([^<]*)</g)].map(([, value]) => value)).toEqual(["auth_admin", "auth_admin", "auth_admin"]);
+  });
+
   /** Squirrel.Mac installs an update only if its own version is not lower than the running app's, so
    * whoever can write to the CDN can't roll the app back to an older signed build (ADR-DESK-041). It
    * then refuses any version but x.y.z, the running app's included. */
