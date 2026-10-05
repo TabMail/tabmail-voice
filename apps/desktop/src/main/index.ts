@@ -898,6 +898,8 @@ function launch(): void {
 
   let quitting = false;
   app.on("before-quit", (event) => {
+    // Every time, the last just before the library's quit-time install.
+    updater?.quitting();
     if (quitting) return;
     event.preventDefault();
     quitting = true;

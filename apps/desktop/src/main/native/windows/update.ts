@@ -32,7 +32,7 @@ interface InstallerSignature {
  * `Updater` holds newer than the running app. A feed can't so name an older signed installer as
  * newer. The installer kept is proven again before it is offered: the library keeps one it already
  * had, its SHA-512 the feed's, without the first proof. It installs, for this user and without an
- * administrator, when the app quits, and only once proven.
+ * administrator, when the app quits, and only once proven (`Updater.quitting`).
  */
 export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; helper: string; run: RunFile }): UpdatePlatform {
   const { source, helper, run } = options;
@@ -60,8 +60,6 @@ export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; he
     installsOnQuit: true,
     verify: async (update) => {
       const reason = update.downloadedFile === undefined ? "nothing was downloaded" : await check(update.downloadedFile, update.version);
-      // The library installs what it kept when the app quits: only once proven.
-      source.autoInstallOnAppQuit = reason === null;
       if (reason !== null) throw new UpdateError(`Version ${update.version} isn't signed by TabMail, so it wasn't installed.`);
     },
     install: () => {

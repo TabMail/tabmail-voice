@@ -24,6 +24,8 @@ const signal = new AbortController().signal;
 const app = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, argument: unknown) => unknown>(),
   listeners: new Map<string, ((...args: unknown[]) => void)[]>(),
+  /** The app's own events (`before-quit`), by name. */
+  appEvents: new Map<string, (...args: unknown[]) => void>(),
   credential: null as string | null,
   refusesDelete: false,
   helpers: new Map<string, { options: { name: string; restartExitCode?: number }; onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
@@ -105,7 +107,9 @@ vi.mock("electron", async () => {
       getVersion: () => app.version,
       getApplicationNameForProtocol: () => app.emailHandler,
       dock: { hide() {} },
-      on() {},
+      on: (event: string, handler: (...args: unknown[]) => void) => {
+        app.appEvents.set(event, handler);
+      },
       quit() {},
       exit: (code: number) => {
         app.exits.push(code);
@@ -434,6 +438,7 @@ afterEach(() => {
   if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
   app.handlers.clear();
   app.listeners.clear();
+  app.appEvents.clear();
   app.helpers.clear();
   app.capture = null;
   app.paste = null;
@@ -1466,12 +1471,21 @@ describe("main process wiring", () => {
         expect(typeof updater?.verifyUpdateCodeSignature).toBe("function");
         expect(app.trayState?.().update).toEqual({ kind: "idle" });
 
+        // A download refused (not newer) doesn't install when the app quits.
+        updater?.emit("update-downloaded", { version: "0.0.0", downloadedFile: "C:\\cache\\old.exe" });
+        await settle();
+        const quit = () => app.appEvents.get("before-quit")?.({ preventDefault() {} });
+        quit();
+        expect(updater?.autoInstallOnAppQuit).toBe(false);
+
         updater?.emit("update-available", { version: "9.9.9" });
         updater?.emit("update-downloaded", { version: "9.9.9", downloadedFile: "C:\\cache\\installer.exe" });
         await settle();
         // The helper proved the installer kept.
         expect(runs.map(([file, args]) => [file.endsWith("voice-windows.exe"), args])).toEqual([[true, ["--verify-update", "C:\\cache\\installer.exe"]]]);
         expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+        // The app's quit (this time after its cleanup began) installs the proven one.
+        quit();
         expect(updater?.autoInstallOnAppQuit).toBe(true);
         expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready.", buttons: ["Restart Now", "Later"] })]);
         app.trayActions?.installUpdate();

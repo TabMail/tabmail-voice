@@ -111,6 +111,8 @@ export class Updater {
   constructor(private readonly options: UpdaterOptions) {
     const { source } = options.platform;
     source.autoDownload = true;
+    // On while running: the library arms its quit-time install only when a download finishes with
+    // this on. What actually installs at the quit is decided as the app quits (`quitting`).
     source.autoInstallOnAppQuit = options.platform.installsOnQuit;
     // Never install an older version, whatever a feed says (`channel` would turn this on).
     source.allowDowngrade = false;
@@ -157,6 +159,13 @@ export class Updater {
   /** The user stopped dictating or closed the chat window: a question that waited is asked now. */
   appIsFree(): void {
     this.offer();
+  }
+
+  /** The app is quitting (`before-quit`, ahead of the library's `quit`): only a proven update installs
+   * now. What the library kept but this refused (not newer, not ours) or hasn't proven yet doesn't;
+   * it keeps an installer it already had without the proof a download gets. */
+  quitting(): void {
+    if (this.options.platform.installsOnQuit) this.options.platform.source.autoInstallOnAppQuit = this.current.kind === "ready";
   }
 
   /** An install begun before this launch either happened (this is that version, or newer) or didn't:

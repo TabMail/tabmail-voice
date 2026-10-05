@@ -3288,9 +3288,13 @@ the feed's own SHA-512.
   product version is the offered version's four-part form (x.y.z.0). Otherwise the library deletes the
   download, and the user sees "Version x.y.z isn't signed by TabMail, so it wasn't installed." The
   library skips that check for an installer it already has whose SHA-512 is the feed's, so the
-  installer kept is proven the same way again (`UpdatePlatform.verify`) before it is offered, and the
-  library installs it at the quit only once proven (`autoInstallOnAppQuit`); a feed can't name a
-  cached older installer as newer either. It
+  installer kept is proven the same way again (`UpdatePlatform.verify`) before it is offered; a feed
+  can't name a cached older installer as newer either. What the library kept installs at the quit
+  only when the update is ready (proven): `autoInstallOnAppQuit` stays on while the app runs, since
+  the library arms its quit-time install only for a download that finishes with it on, and as the app
+  quits (`before-quit`, ahead of the library's `quit`) `Updater.quitting` turns it off unless the
+  state is ready. An installer refused, not newer, or still being proven never installs at the quit.
+  It
   installs when the app quits, or at once with Restart Now, quietly and for this user (no
   administrator), and the new version opens. The web installer is off. The library calls that check
   only when the installed `app-update.yml` names a publisher, so the feed configuration names

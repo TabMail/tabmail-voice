@@ -534,14 +534,59 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
   });
 
   /** The library refuses an older feed; a download that isn't newer is never even proven. */
-  test.each(["1.0.0", "0.9.9", "1.1.0-beta", "1.1"])("a download of %s is refused unproven", async (version) => {
+  test.each(["1.0.0", "0.9.9", "1.1.0-beta", "1.1"])("a download of %s is refused unproven, and doesn't install at the quit", async (version) => {
     const { platform, updater } = setUpOn(true);
 
     platform.downloads(version);
     await settle();
+    updater.quitting();
 
     expect(platform.verified).toEqual([]);
     expect(updater.state).toEqual({ kind: "failed", version, message: `Version ${version} isn't newer than this one.` });
+    expect(platform.source.autoInstallOnAppQuit).toBe(false);
+  });
+
+  /** The library arms its quit-time install as each download finishes, with the flag on; only as
+   * the app quits does the flag say whether what it kept installs: only a proven update. */
+  test("only a proven update installs at the quit; the flag stays on while running", async () => {
+    const { platform, updater } = setUpOn(true);
+    const proof = Promise.withResolvers<undefined>();
+    platform.proof = () => proof.promise;
+
+    platform.downloads("1.1.0");
+    await settle();
+    expect(platform.source.autoInstallOnAppQuit).toBe(true);
+    updater.quitting();
+    expect(platform.source.autoInstallOnAppQuit).toBe(false);
+
+    proof.resolve(undefined);
+    await settle();
+    updater.quitting();
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: true });
+    expect(platform.source.autoInstallOnAppQuit).toBe(true);
+  });
+
+  test("a refused proof doesn't install at the quit", async () => {
+    const { platform, updater } = setUpOn(true);
+    platform.proof = () => Promise.reject(new UpdateError("Version 1.1.0 isn't signed by TabMail, so it wasn't installed."));
+
+    platform.downloads("1.1.0");
+    await settle();
+    updater.quitting();
+
+    expect(updater.state).toMatchObject({ kind: "failed", version: "1.1.0" });
+    expect(platform.source.autoInstallOnAppQuit).toBe(false);
+  });
+
+  test("where installing needs an administrator, even a ready update doesn't install at the quit", async () => {
+    const { platform, updater } = setUpOn(false);
+
+    platform.downloads("1.1.0");
+    await settle();
+    updater.quitting();
+
+    expect(updater.state).toEqual({ kind: "ready", version: "1.1.0", installsOnQuit: false });
+    expect(platform.source.autoInstallOnAppQuit).toBe(false);
   });
 
   test("Windows refusing the installer's signature in the download is shown as unsigned", async () => {

@@ -112,8 +112,8 @@ describe("Windows updates (ADR-DESK-050)", () => {
 
   /** The library keeps an installer it already had (its SHA-512 the feed's) without calling
    * `verifyUpdateCodeSignature`, so a feed could name a cached older installer as newer: the one
-   * kept is proven again before it is offered, and isn't installed when the app quits unless it is.
-   * A proven one is; the install is quiet and opens the new version. */
+   * kept is proven again before it is offered. A proven one installs quietly and opens the new
+   * version. (What installs at the quit: installAtQuit.test.ts.) */
   test.each<[string, Awaited<ReturnType<RunFile>> | Error, string | undefined, boolean]>([
     ["signed by TabMail as the version offered", { code: 0, stdout: JSON.stringify(signed) }, "C:\\cache\\installer.exe", true],
     ["an older signed installer", { code: 0, stdout: JSON.stringify({ ...signed, productVersion: "1.0.0.0" }) }, "C:\\cache\\installer.exe", false],
@@ -124,14 +124,11 @@ describe("Windows updates (ADR-DESK-050)", () => {
     const logged = vi.spyOn(log, "error").mockImplementation(() => {});
     try {
       const { source, platform, calls } = setUp(reply);
-      // Installed at the quit by the last proven update's leave.
-      source.autoInstallOnAppQuit = true;
 
       const verified = platform.verify({ version: "1.2.3", ...(path === undefined ? {} : { downloadedFile: path }) });
 
       if (proven) await expect(verified).resolves.toBeUndefined();
       else await expect(verified).rejects.toThrow(new UpdateError("Version 1.2.3 isn't signed by TabMail, so it wasn't installed."));
-      expect(source.autoInstallOnAppQuit).toBe(proven);
       expect(calls).toEqual(path === undefined ? [] : [["C:\\helpers\\voice-windows.exe", ["--verify-update", path], config.updateVerifyTimeout]]);
       if (proven) {
         await platform.install({ version: "1.2.3" });
