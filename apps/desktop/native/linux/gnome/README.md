@@ -19,10 +19,14 @@ The helper allows 25 ms for the bus call; the app bounds the entire request to 2
 Right Alt is the dictation key by default on GNOME, and GNOME integration is part of
 the app's keyboard permission there. While Right Alt is the dictation key, the extension also holds it for the helper,
 because the portal cannot bind a lone modifier: `Alt_R` starts a dictation and
-`<Shift>Alt_R` starts agent mode, both without autorepeat. Mutter reports the press
-but not the release, so while the key is down, and only then, the extension reads
-the modifier state every 20 ms and reports the release. Only the `Alt_R` keysym is
-held; where Right Alt is AltGr, it keeps typing characters. Cancelling a recording
+`<Shift>Alt_R` starts agent mode, both without autorepeat (and the same with `<Alt>`,
+which Sticky Keys adds after a lone Right Alt). Mutter reports the press but not the
+release, so while the key is down the extension holds the whole keyboard with a Shell
+modal grab: Space switches the mode, Escape cancels, other keys are swallowed, and the
+release of Right Alt ends the hold and is reported. Meanwhile the window in front has
+no keyboard focus; `Holding` tells the helper, which keeps that window as the target.
+Only the `Alt_R` keysym is held; where Right Alt is AltGr the Shell can't hold it, and
+the helper reports `hotkeyUnavailable` so Settings can say so. Cancelling a recording
 leaves the dictation key held. A screen lock, a lost helper or disabling the extension
 lets it go, with a release if it was down; when the extension is enabled or the screen
 unlocks, it broadcasts `ready` and the helper asks for the key again.

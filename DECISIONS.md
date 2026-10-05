@@ -3424,8 +3424,10 @@ on, and Allow Keyboard Control turns it on first (owner's choice over keeping F8
   Its reply, and `hotkeyInstallationChanged`, say whether the Shell holds the key; the app's
   keyboard permission is that, as it is the portal's binding for F8 and F9.
 - The release is read from the modifier state every 20 ms while the key is down, and only then.
+  *(Superseded by the keyboard-hold amendment below: the release now comes from the key event.)*
   The press and release drive the shared gesture (ADR-DESK-032) as any other key does.
 - Only the `Alt_R` keysym: where Right Alt is AltGr, it keeps typing characters, as on Windows.
+  *(Amended below: the Shell can't hold it there, and Settings says so.)*
 - The key outlives each recording, its Escape and its chat. A screen lock, the helper leaving or the
   extension being disabled lets it go (with a release if it was down); the extension broadcasts
   `ready` when it is enabled or the screen unlocks, and the helper asks for the key again.
@@ -3443,4 +3445,32 @@ Wayland. The 20 ms read runs only while the key is held, so an idle desktop pays
   Shift shortcut there; Shift with the dictation key still starts agent mode on every platform.
 - Right Alt is taken by TabMail Voice while it is the dictation key, so it no longer acts as Alt in
   other shortcuts.
-- A release is noticed up to 20 ms late.
+- A release is noticed up to 20 ms late. *(Superseded below: the release is a key event.)*
+
+**Amendment (owner, 2026-10-05) — the extension holds the whole keyboard while Right Alt is down.**
+Review found three faults in the accelerator-only design, all reproduced on GNOME 50 in the VM: Space and
+Escape during a hold reached GNOME as Alt+Space and Alt+Escape (window menu, window switch); with Sticky
+Keys on, a lone Right Alt latched Alt, so the release poll saw Alt still down and no release was sent; and
+on a layout where Right Alt is AltGr the grab silently failed. Owner: "grab the keyboard", like a game.
+
+- On the `Alt_R` accelerator the extension takes a Shell modal grab (`Main.pushModal` on its own actor,
+  `Shell.ActionMode.NONE`) for the hold. While it holds: Space sends `toggleMode`, Escape sends `cancel`,
+  every other key is swallowed, and the release of Right Alt (or of Meta_R, which it becomes with Shift
+  down) ends the hold and sends `hotkeyUp`. A revoked grab (the screen locks, another modal takes over)
+  ends it the same way. The 20 ms poll is gone.
+- The grab is a stage grab, so it takes the pointer too for the hold, and the window in front loses
+  keyboard focus to the Shell until the release. The caret is read once before the grab and returned
+  while it holds (`Read`).
+- `Alt_R`, `<Shift>Alt_R`, `<Alt>Alt_R` and `<Shift><Alt>Alt_R` are grabbed: Sticky Keys latches Alt after
+  a lone Right Alt, so the next press carries the Alt modifier.
+- The helper never treats the Shell as the target. It asks the extension `Holding` (a bounded D-Bus
+  call): while the Shell holds the keyboard, focus events are ignored and the window in front stays the
+  target for the caret, the screen read and the field read (`Foreground::targets`); a paste still needs
+  that window's real focus (`Foreground::matches`), which it has again after the release.
+- Where Right Alt is AltGr, `SetHotkey` fails; the helper reports `hotkeyUnavailable` and Settings says
+  Right Alt types characters with this layout and to choose F8 or F9. The report clears once a key is
+  held or another key is chosen.
+
+Rationale: a modal grab is the Shell's own way to own the keyboard for a moment, so no GNOME shortcut sees
+Space or Escape and the release comes from the key itself, with or without Sticky Keys. Consequence:
+during a hold no other key reaches any app, and a click goes nowhere until Right Alt is released.

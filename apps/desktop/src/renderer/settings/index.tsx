@@ -128,6 +128,7 @@ function DictationPane({ state }: { state: SettingsState }) {
           state.hotkey !== "F8" && state.hotkey !== "F9" && "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.",
           // Ubuntu: the portal cannot bind a lone modifier, so GNOME integration holds Right Alt.
           state.hotkey === "rightAlt" && state.gnomeIntegration !== undefined && state.gnomeIntegration !== "ready" && "Right Alt works once GNOME integration is enabled in Permissions.",
+          state.hotkey === "rightAlt" && state.hotkeyUnavailable === true && "Right Alt types characters with this keyboard layout (AltGr), so it can’t be the dictation key. Choose F8 or F9.",
           "Your recording is sent to TabMail for transcription and isn’t stored.",
         ]}
       >

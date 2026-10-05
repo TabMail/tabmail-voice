@@ -78,6 +78,21 @@ public:
         g_variant_unref(value);
         return rect;
     }
+    /** Whether the Shell holds the keyboard for the dictation key, held down now (asked and answered
+     * before returning, at most `timeoutMilliseconds`). The window in front has no keyboard focus
+     * meanwhile, yet it stays the dictation's target. No Shell, or no answer: false. */
+    bool holding() {
+        if (!state->bus) return false;
+        Error error;
+        auto value = g_dbus_connection_call_sync(state->bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
+            "ai.tabmail.Voice.Caret", "Holding", nullptr, G_VARIANT_TYPE("(b)"), G_DBUS_CALL_FLAGS_NO_AUTO_START,
+            timeoutMilliseconds, state->cancel.get(), &error.value);
+        if (!value) return false;
+        gboolean held = FALSE;
+        g_variant_get(value, "(b)", &held);
+        g_variant_unref(value);
+        return held;
+    }
 private:
     void rectangle(const char* method, GVariant* args, Channel::Reply reply) {
         if (!state->bus) { if (args) g_variant_unref(g_variant_ref_sink(args)); reply(nullptr, true); return; }

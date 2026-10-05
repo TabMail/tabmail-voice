@@ -38,8 +38,8 @@ int main() {
     voice::Output output;
     voice::Microphone microphone(output);
     voice::KeyboardLanguage keyboardLanguage;
-    voice::Foreground foreground;
     voice::GnomeCaret gnomeCaret;
+    voice::Foreground foreground([&] { return gnomeCaret.holding(); });
     voice::InputSession input(output);
     voice::Inserter inserter(input, [&](uint64_t token) { return foreground.matches(token); }, [&] {
         const auto target = foreground.target(); return target && target->terminal;
@@ -92,7 +92,7 @@ int main() {
             const auto elapsed = [started] {
                 return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
             };
-            const bool matched = target && foreground.matches(target->token);
+            const bool matched = target && foreground.targets(target->token);
             const auto caret = matched ? voice::caretInWindow(target->focus) : std::nullopt;
             // Geometry and timing only, never field text.
             std::cerr << "debug accessibility: caret " << (!target ? "no target" : !matched ? "stale target" : caret ? "read" : "unavailable")
@@ -106,7 +106,7 @@ int main() {
             }
         } else if (method == "frontmostApp") {
             const auto target = foreground.target();
-            const bool focused = target && foreground.matches(target->token);
+            const bool focused = target && foreground.targets(target->token);
             // Opaque per-process window tokens, never window titles or field text.
             // Distinguish a missing provider result from a genuine target change.
             std::cerr << "debug accessibility: frontmost target "
@@ -120,7 +120,7 @@ int main() {
                     return target->app ? std::optional<std::string>(target->app->id) : std::nullopt;
                 },
                 [&](const auto& target, const voice::ScreenExclusions& policy) -> JSON {
-                    if (!foreground.matches(target->token)) return nullptr;
+                    if (!foreground.targets(target->token)) return nullptr;
                     if (method == "focusedFieldValue") {
                         if (!params.contains("window") || !params["window"].is_number_unsigned() || params["window"] != target->token ||
                             !params.contains("maxLength") || !params["maxLength"].is_number_integer()) return nullptr;
@@ -143,7 +143,7 @@ int main() {
                 });
             // A provider read may yield to another window while accessibility IPC is in flight.
             // Never return the previous window as the current screen/correction field.
-            const auto checked = target && foreground.matches(target->token) ? result : JSON(nullptr);
+            const auto checked = target && foreground.targets(target->token) ? result : JSON(nullptr);
             reply(method == "focusedFieldValue" && checked == voice::hiddenScreen() ? JSON{{"value", nullptr}} : checked, true);
         } else {
             throw std::runtime_error("unknown method");

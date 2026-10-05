@@ -9,8 +9,10 @@ class Signals {
     next = 0;
     connect(name, callback) { const id = ++this.next; this.callbacks.set(id, {name, callback}); return id; }
     disconnect(id) { assert.ok(this.callbacks.delete(id)); }
-    emit(name, ...args) { for (const item of this.callbacks.values()) if (item.name === name) item.callback(this, ...args); }
+    emit(name, ...args) { return [...this.callbacks.values()].filter(item => item.name === name).map(item => item.callback(this, ...args)); }
 }
+const KEY = {space: 0x20, Escape: 0xff1b, Alt_R: 0xffea, Meta_R: 0xffe8, a: 0x61};
+const FLAG_REPEATED = 8;
 async function fixture(failExport = false) {
     const window = Object.assign(new Signals(), {get_frame_rect: () => ({x: 100, y: 100, width: 500, height: 400}),
         get_client_content_rect: () => ({x: 110, y: 140, width: 480, height: 350})});
@@ -23,20 +25,23 @@ async function fixture(failExport = false) {
     let exported = false;
     let exportXML, exportPath;
     const grabs = new Map(), allowed = new Map(), actions = [];
-    let lostOwner = null, failKey = null, nextGrab = 100, nextTimer = 0;
-    const timers = new Map(), pointer = {mods: 0};
+    let lostOwner = null, failKey = null, nextGrab = 100, revokeAtOnce = false;
+    // The Shell's modal stack: the keyboard hold pushes one, and nothing else does here.
+    const modals = [], added = [];
+    class Actor extends Signals {
+        constructor(props) { super(); Object.assign(this, props); this.destroyed = false; }
+        destroy() { this.destroyed = true; }
+    }
     display.grab_accelerator = key => {
         if (key === failKey) return 0;
         const id = ++nextGrab; grabs.set(id, key); return id;
     };
     display.ungrab_accelerator = id => assert.ok(grabs.delete(id));
-    const context = vm.createContext({global: {display, stage: {}, get_pointer: () => [0, 0, pointer.mods]}});
+    const context = vm.createContext({global: {display, stage: {}}});
     const dependencies = {
-        'gi://GLib': {default: {Variant: class {constructor(type, value) {this.type = type; this.value = value;}},
-            PRIORITY_DEFAULT: 0, SOURCE_CONTINUE: true, SOURCE_REMOVE: false,
-            timeout_add(_priority, interval, callback) { const id = ++nextTimer; timers.set(id, {interval, callback}); return id; },
-            source_remove: id => assert.ok(timers.delete(id))}},
-        'gi://Clutter': {default: {ModifierType: {MOD1_MASK: 8}}},
+        'gi://GLib': {default: {Variant: class {constructor(type, value) {this.type = type; this.value = value;}}}},
+        'gi://Clutter': {default: {Actor, EventFlags: {FLAG_REPEATED}, EVENT_STOP: true,
+            KEY_space: KEY.space, KEY_Escape: KEY.Escape, KEY_Alt_R: KEY.Alt_R, KEY_Meta_R: KEY.Meta_R}},
         'gi://Meta': {default: {KeyBindingFlags: {IGNORE_AUTOREPEAT: 1}, external_binding_name_for_action: id => String(id)}},
         'gi://Shell': {default: {ActionMode: {NORMAL: 1, NONE: 0}}},
         'gi://St': {default: {ThemeContext: {get_for_stage: () => theme}}},
@@ -47,7 +52,14 @@ async function fixture(failExport = false) {
             export(_bus, path) { exportPath = path; if (failExport) throw new Error("synthetic export failure"); exported = true; }, unexport() { exported = false; },
         }); }}}},
         'resource:///org/gnome/shell/extensions/extension.js': {Extension: class {}},
-        'resource:///org/gnome/shell/ui/main.js': {inputMethod, overview, sessionMode, wm: {allowKeybinding: (id, mode) => allowed.set(id, mode)}},
+        'resource:///org/gnome/shell/ui/main.js': {inputMethod, overview, sessionMode, wm: {allowKeybinding: (id, mode) => allowed.set(id, mode)},
+            layoutManager: {uiGroup: {add_child: actor => added.push(actor)}},
+            pushModal(actor, params) {
+                const grab = Object.assign(new Signals(), {revoked: revokeAtOnce, is_revoked() { return this.revoked; }});
+                modals.push({actor, params, grab});
+                return grab;
+            },
+            popModal(grab) { assert.equal(modals.pop()?.grab, grab, 'the hold pops its own modal'); }},
         'resource:///org/gnome/shell/misc/ibusManager.js': {getIBusManager: () => ibus},
     };
     const module = new vm.SourceTextModule(source, {context});
@@ -78,16 +90,15 @@ async function fixture(failExport = false) {
         extension.SetHotkeyAsync([active], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    // Runs the pending release checks once, as the main loop would after their interval.
-    const tick = () => {
-        for (const [id, {callback}] of [...timers]) if (!callback()) timers.delete(id);
-    };
+    // A key event to the actor holding the keyboard; what its handlers returned.
+    const key = (type, symbol, repeated = false) => modals.at(-1).actor.emit(`key-${type}-event`,
+        {get_key_symbol: () => symbol, get_flags: () => (repeated ? FLAG_REPEATED : 0)});
     const chat = (open, owner = ':1.42') => {
         let result;
         extension.SetChatOpenAsync([open], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    return {theme, recording, chat, hotkey, tick, timers, pointer, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    return {theme, recording, chat, hotkey, key, modals, added, revokeAtOnce: value => {revokeAtOnce = value;}, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -265,28 +276,55 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
 
 const sent = f => f.actions.map(([destination, , , , value]) => `${destination} ${value.value[0]}`);
 const grabOf = (f, key) => [...f.grabs].find(([, name]) => name === key)?.[0];
+const RIGHT_ALT = ['Alt_R', '<Shift>Alt_R', '<Alt>Alt_R', '<Shift><Alt>Alt_R'];
 
-test('Right Alt is held to dictate, with Shift for agent mode, and its release is read from the modifiers', async () => {
+test('Right Alt held takes the whole keyboard: Space switches mode, Escape cancels, the rest is swallowed, its release ends the hold', async () => {
     const f = await fixture();
+    f.caret();
     assert.equal(f.hotkey(true), true);
-    assert.deepEqual([...f.grabs.values()], ['Alt_R', '<Shift>Alt_R']);
+    assert.deepEqual([...f.grabs.values()], RIGHT_ALT);
     assert.ok([...f.allowed.values()].every(mode => mode === 1));
-    f.pointer.mods = 8;
+    assert.equal(f.extension.Holding(), false);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
     assert.deepEqual(sent(f), [':1.42 hotkeyDown']);
-    assert.equal(f.timers.size, 1);
-    assert.equal([...f.timers.values()][0].interval, 20);
+    assert.equal(f.modals.length, 1);
+    assert.equal(f.modals[0].params.actionMode, 0, 'no Shell keybinding runs during the hold');
+    assert.deepEqual(f.added, [f.modals[0].actor]);
+    assert.equal(f.modals[0].actor.reactive, true);
+    assert.equal(f.extension.Holding(), true);
+    // The app in front lost its keyboard focus to the hold: the caret read as the key went down stays.
+    f.inputMethod.currentFocus = null;
+    assert.equal(JSON.parse(f.extension.Read()).x, 200);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
-    assert.equal(f.timers.size, 1, 'one release check while held');
-    f.tick(); f.tick();
-    assert.deepEqual(sent(f), [':1.42 hotkeyDown'], 'still held: no repeat, no release');
-    f.pointer.mods = 0; f.tick();
-    assert.deepEqual(sent(f).slice(1), [':1.42 hotkeyUp']);
-    assert.equal(f.timers.size, 0);
-    f.pointer.mods = 8 | 1;
+    assert.equal(f.modals.length, 1, 'one hold');
+    assert.deepEqual(f.key('press', KEY.space), [true]);
+    assert.deepEqual(f.key('press', KEY.space, true), [true], 'a held Space repeats nothing');
+    assert.deepEqual(f.key('release', KEY.space), [true]);
+    assert.deepEqual(f.key('press', KEY.a), [true], 'another key reaches no app');
+    assert.deepEqual(f.key('release', KEY.a), [true]);
+    assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 toggleMode']);
+    assert.deepEqual(f.key('release', KEY.Alt_R), [true]);
+    assert.deepEqual(sent(f).slice(2), [':1.42 hotkeyUp']);
+    assert.equal(f.modals.length, 0);
+    assert.ok(f.added[0].destroyed);
+    assert.equal(f.extension.Holding(), false);
+    assert.equal(f.extension.Read(), 'null', 'after the hold the caret is read live again');
+    f.extension.disable();
+});
+
+test('Shift with Right Alt is agent mode, and its release (Meta_R with Shift down) ends the hold', async () => {
+    const f = await fixture();
+    f.hotkey(true);
     f.display.emit('accelerator-activated', grabOf(f, '<Shift>Alt_R'));
-    f.pointer.mods = 1; f.tick();
-    assert.deepEqual(sent(f).slice(2), [':1.42 hotkeyAgentDown', ':1.42 hotkeyUp']);
+    f.key('release', KEY.Meta_R);
+    assert.deepEqual(sent(f), [':1.42 hotkeyAgentDown', ':1.42 hotkeyUp']);
+    // A latched Alt (Sticky Keys) is on the next press: it still starts a hold.
+    f.display.emit('accelerator-activated', grabOf(f, '<Alt>Alt_R'));
+    f.key('release', KEY.Alt_R);
+    f.display.emit('accelerator-activated', grabOf(f, '<Shift><Alt>Alt_R'));
+    f.key('release', KEY.Alt_R);
+    assert.deepEqual(sent(f).slice(2), [':1.42 hotkeyDown', ':1.42 hotkeyUp', ':1.42 hotkeyAgentDown', ':1.42 hotkeyUp']);
+    assert.equal(f.modals.length, 0);
     assert.equal(f.hotkey(false, ':1.99'), false, 'another client cannot release it');
     assert.equal(f.hotkey(false), true);
     assert.equal(f.grabs.size, 0);
@@ -294,40 +332,79 @@ test('Right Alt is held to dictate, with Shift for agent mode, and its release i
     f.extension.disable();
 });
 
+test('Escape during the hold cancels and lets go of the recording keys; the hold lasts until Right Alt is up', async () => {
+    const f = await fixture();
+    f.hotkey(true);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    assert.equal(f.recording(true), true);
+    assert.equal(f.chat(true), true);
+    f.key('press', KEY.Escape);
+    assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 cancel']);
+    assert.deepEqual([...f.grabs.values()], RIGHT_ALT, 'the recording keys and the chat\'s Escape are let go');
+    assert.equal(f.modals.length, 1);
+    f.key('release', KEY.Alt_R);
+    assert.deepEqual(sent(f).slice(2), [':1.42 hotkeyUp']);
+    f.extension.disable();
+});
+
+test('a keyboard the Shell cannot give leaves the press doing nothing; a grab over the hold ends it', async () => {
+    const f = await fixture();
+    f.hotkey(true);
+    f.revokeAtOnce(true);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    assert.deepEqual(sent(f), []);
+    assert.equal(f.modals.length, 0);
+    assert.ok(f.added[0].destroyed);
+    assert.equal(f.extension.Holding(), false);
+    f.revokeAtOnce(false);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    // A system dialog takes the keys over the hold, Right Alt's release among them.
+    f.modals[0].grab.emit('notify::revoked');
+    assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 hotkeyUp']);
+    assert.equal(f.modals.length, 0);
+    f.extension.disable();
+});
+
 test('the dictation key outlives each dictation, its Escape and its chat', async () => {
     const f = await fixture();
     f.hotkey(true);
     assert.equal(f.recording(true), true);
-    assert.deepEqual([...f.grabs.values()].sort(), ['<Shift>Alt_R', 'Alt_R', 'Escape', 'space']);
+    assert.deepEqual([...f.grabs.values()].sort(), [...RIGHT_ALT, 'Escape', 'space'].sort());
     f.display.emit('accelerator-activated', grabOf(f, 'Escape'));
     assert.deepEqual(sent(f), [':1.42 cancel']);
-    assert.deepEqual([...f.grabs.values()], ['Alt_R', '<Shift>Alt_R']);
+    assert.deepEqual([...f.grabs.values()], RIGHT_ALT);
     f.chat(true); f.recording(true); f.recording(false); f.chat(false);
-    assert.deepEqual([...f.grabs.values()], ['Alt_R', '<Shift>Alt_R']);
+    assert.deepEqual([...f.grabs.values()], RIGHT_ALT);
     f.failGrab('space');
     assert.equal(f.recording(true), false);
-    assert.deepEqual([...f.grabs.values()], ['Alt_R', '<Shift>Alt_R'], 'a recording key that cannot be had leaves the dictation key');
+    assert.deepEqual([...f.grabs.values()], RIGHT_ALT, 'a recording key that cannot be had leaves the dictation key');
+    assert.deepEqual(sent(f).slice(1), [], 'only the dictation key says it is unavailable');
     f.failGrab(null);
     assert.equal(f.recording(true), true);
     f.extension.disable();
 });
 
-test('a dictation key that cannot be had keeps the keys already held', async () => {
+test('a dictation key that cannot be had keeps the keys already held, and the helper is told why', async () => {
     const f = await fixture();
     f.recording(true);
-    f.failGrab('<Shift>Alt_R');
+    // Right Alt is AltGr on this layout: the Shell has no Alt_R key to hold.
+    f.failGrab('Alt_R');
     assert.equal(f.hotkey(true), false);
     assert.deepEqual([...f.grabs.values()], ['space', 'Escape']);
+    assert.deepEqual(sent(f), [':1.42 hotkeyUnavailable']);
+    f.failGrab('<Shift>Alt_R');
+    assert.equal(f.hotkey(true, ':1.99'), false, 'another client is refused without a reason');
+    assert.deepEqual(sent(f), [':1.42 hotkeyUnavailable']);
     f.extension.disable();
 });
 
-test('a lock, a lost helper or disabling releases a held key; unlocking asks helpers again', async () => {
+test('a lock, a lost helper or disabling ends a hold; unlocking asks helpers again', async () => {
     const f = await fixture();
-    f.hotkey(true); f.pointer.mods = 8;
+    f.hotkey(true);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
     f.sessionMode.isLocked = true; f.sessionMode.emit('updated');
     assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 hotkeyUp']);
-    assert.equal(f.timers.size, 0);
+    assert.equal(f.modals.length, 0);
     assert.equal(f.grabs.size, 0);
     assert.equal(f.hotkey(true), false);
     f.sessionMode.isLocked = false; f.sessionMode.emit('updated');
@@ -335,12 +412,12 @@ test('a lock, a lost helper or disabling releases a held key; unlocking asks hel
     assert.equal(f.hotkey(true), true);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
     f.disconnectOwner();
-    assert.equal(f.timers.size, 0);
+    assert.equal(f.modals.length, 0);
     assert.equal(f.grabs.size, 0);
     f.hotkey(true);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
     f.extension.disable();
-    assert.equal(f.timers.size, 0);
+    assert.equal(f.modals.length, 0);
     assert.equal(f.grabs.size, 0);
     assert.deepEqual(sent(f).slice(-1), [':1.42 hotkeyUp']);
 });

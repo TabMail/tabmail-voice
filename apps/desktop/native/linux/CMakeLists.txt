@@ -177,6 +177,7 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_text_get_selection
     -Wl,--wrap=atspi_text_get_n_selections
     -Wl,--wrap=atspi_text_get_text
+    -Wl,--wrap=g_dbus_connection_call_sync
 )
   add_test(NAME voice-foreground-lifecycle COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/foreground-lifecycle.py" $<TARGET_FILE:voice-foreground-fixture>)
   set_tests_properties(voice-foreground-lifecycle PROPERTIES TIMEOUT 20)

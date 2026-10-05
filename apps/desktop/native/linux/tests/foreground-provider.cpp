@@ -14,6 +14,9 @@ namespace {
 struct Item { AtspiRole role; AtspiAccessible* parent; std::string text; std::vector<AtspiAccessible*> live; std::optional<std::vector<AtspiAccessible*>> cache; };
 std::map<AtspiAccessible*, Item> items;
 AtspiAccessible *desktop, *apps[2], *windows[2], *documents[2], *fields[2], *secret;
+// The Shell's own window and the actor that holds the keyboard for the dictation key.
+AtspiAccessible *shellWindow, *shellPanel;
+bool holding = false;
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
 bool mutateSelectionOnText = false, containerFocused = false;
@@ -84,6 +87,23 @@ gboolean command(gint fd, GIOCondition, gpointer) {
     }
     if (value == 'd' && active >= 0) { event("window:deactivate", windows[active]); active = -1; }
     if (value == 'p') { items.at(fields[active]).live = {secret}; }
+    // The Shell takes the keyboard for the dictation key, as GNOME reports it: its window and the
+    // actor holding the keyboard get focus, the window in front loses it. Then it lets go.
+    if (value == 'h' && active >= 0) {
+        holding = true;
+        event("window:activate", shellWindow); event("object:state-changed:focused", shellPanel, 1);
+        focusLost = true; event("object:state-changed:focused", fields[active], 0); event("window:deactivate", windows[active]);
+    }
+    if (value == 'H' && active >= 0) {
+        holding = false;
+        event("object:state-changed:focused", shellPanel, 0); event("window:deactivate", shellWindow);
+        focusLost = false; event("object:state-changed:focused", fields[active], 1); event("window:activate", windows[active]);
+    }
+    // The focus moves to the Shell's own window with no hold (its overview).
+    if (value == 'S' && active >= 0) {
+        event("window:activate", shellWindow); event("object:state-changed:focused", shellPanel, 1);
+        focusLost = true; event("object:state-changed:focused", fields[active], 0);
+    }
     if (value == 'u') items.at(fields[active]).live.clear();
     const auto reply = std::to_string(calls[0]) + " " + std::to_string(calls[1]) + "\n";
     if (::write(acknowledgments, reply.data(), reply.size()) != static_cast<ssize_t>(reply.size())) std::abort();
@@ -100,6 +120,8 @@ extern "C" int __wrap_atspi_init() {
         fields[i] = node(ATSPI_ROLE_ENTRY, documents[i], "Synthetic field content");
     }
     secret = node(ATSPI_ROLE_PASSWORD_TEXT, nullptr, "synthetic-private-password");
+    shellWindow = node(ATSPI_ROLE_WINDOW, node(ATSPI_ROLE_APPLICATION, desktop, "gnome-shell"));
+    shellPanel = node(ATSPI_ROLE_PANEL, shellWindow);
     control = std::stoi(g_getenv("VOICE_FIXTURE_CONTROL")); acknowledgments = std::stoi(g_getenv("VOICE_FIXTURE_ACK"));
     g_unix_fd_add(control, G_IO_IN, command, nullptr);
     return 0;
@@ -108,6 +130,14 @@ extern "C" void __wrap_atspi_event_main() { auto loop = g_main_loop_new(nullptr,
 extern "C" AtspiEventListener* __real_atspi_event_listener_new(AtspiEventListenerCB, gpointer, GDestroyNotify);
 extern "C" AtspiEventListener* __wrap_atspi_event_listener_new(AtspiEventListenerCB cb, gpointer data, GDestroyNotify destroy) {
     callback = cb; callbackData = data; return __real_atspi_event_listener_new(cb, data, destroy);
+}
+// The Shell answers whether it holds the keyboard; the helper's other Shell calls get no Shell.
+extern "C" GVariant* __real_g_dbus_connection_call_sync(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*,
+    GVariant*, const GVariantType*, GDBusCallFlags, gint, GCancellable*, GError**);
+extern "C" GVariant* __wrap_g_dbus_connection_call_sync(GDBusConnection* bus, const gchar* name, const gchar* path, const gchar* interface,
+    const gchar* method, GVariant* args, const GVariantType* type, GDBusCallFlags flags, gint timeout, GCancellable* cancel, GError** error) {
+    if (std::string(method) == "Holding") return g_variant_ref_sink(g_variant_new("(b)", holding));
+    return __real_g_dbus_connection_call_sync(bus, name, path, interface, method, args, type, flags, timeout, cancel, error);
 }
 extern "C" gboolean __wrap_atspi_event_listener_register(AtspiEventListener*, const gchar*, GError**) { return TRUE; }
 extern "C" gboolean __wrap_atspi_event_listener_deregister(AtspiEventListener*, const gchar*, GError**) { return TRUE; }

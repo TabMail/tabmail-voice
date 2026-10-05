@@ -104,13 +104,15 @@ int main() {
         controls.setHotkey(true, [&](nlohmann::json value, bool success) { require(success); replied = value; }); drain();
         require(calls.hotkey == std::vector<bool>{true} && replied && (*replied)["installed"] == true);
         action("hotkeyUp");
+        // The Shell couldn't hold Right Alt (AltGr on this layout): the app is told, once.
+        action("hotkeyUnavailable");
         action("hotkeyDown"); action("hotkeyDown");
         action("ready");
         require(calls.hotkey == std::vector<bool>({true, true}));
         replied.reset();
         controls.setHotkey(false, [&](nlohmann::json value, bool) { replied = value; }); drain();
         require(calls.hotkey == std::vector<bool>({true, true, false}) && replied && (*replied)["installed"] == false);
-        action("hotkeyDown"); action("ready");
+        action("hotkeyDown"); action("ready"); action("hotkeyUnavailable");
         require(calls.hotkey == std::vector<bool>({true, true, false}));
     }
     {

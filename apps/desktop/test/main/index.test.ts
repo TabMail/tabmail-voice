@@ -609,6 +609,17 @@ describe("main process wiring", () => {
     expect(app.overlay?.hitTest).toBe(hitTest);
   });
 
+  test("on Linux, Right Alt the Shell can't hold reaches the open Settings window", async () => {
+    await launch("linux");
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { hotkeyUnavailable?: boolean };
+    expect(state().hotkeyUnavailable).toBeUndefined();
+    const pushed: unknown[] = [];
+    app.listeners.set("voice:state", [(_event, name, pushedState) => { if (name === "settings") pushed.push((pushedState as { hotkeyUnavailable?: boolean }).hotkeyUnavailable); }]);
+    app.helpers.get("voice-hotkey")!.events.get("hotkeyUnavailable")?.({ event: "hotkeyUnavailable" });
+    expect(pushed).toEqual([true]);
+    expect(state().hotkeyUnavailable).toBe(true);
+  });
+
   test("Linux placement prefers the focused element's caret, asked before the screen read, over compositor geometry", async () => {
     await launch("linux");
     const accessible = app.helpers.get("voice-linux")!, compositor = app.helpers.get("voice-hotkey")!;

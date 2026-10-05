@@ -154,7 +154,7 @@ function launch(): void {
     return handle && handle.length >= 4 ? `x11:${handle.readUInt32LE(0).toString(16)}` : "";
   }, gnomeIntegration) : null;
   const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : linuxPermissions ?? macPermissions);
-  if (linuxPermissions) linuxPermissions.onChange = () => permissions.refresh();
+  if (linuxPermissions) linuxPermissions.onChange = () => { permissions.refresh(); pushSettingsWindows(); };
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
   const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
   const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), process.env.APPIMAGE ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
@@ -380,6 +380,7 @@ function launch(): void {
       vscodeFix: vscodeFix(),
       ...(process.platform === "linux" ? { keyboardPermission: linuxKeyboardPermission() } : {}),
       ...(gnomeIntegration ? { gnomeIntegration: gnomeIntegration.state } : {}),
+      ...(linuxPermissions?.hotkeyUnavailable ? { hotkeyUnavailable: true } : {}),
       openAtLogin: linuxAutostart?.enabled ?? app.getLoginItemSettings().openAtLogin,
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,

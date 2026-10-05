@@ -78,6 +78,20 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert command('a') == (2, 0)
         assert 'First synthetic app' in request('readScreen')['renderedText']
         assert field() == {'value': 'Synthetic field content'}
+        # The Shell holds the keyboard while the dictation key is down: the focus moves to the Shell
+        # and back, and the window in front stays the target, with the same token, throughout.
+        window = request('frontmostApp')['window']
+        command('h')
+        assert request('frontmostApp') == {'window': window}, 'the target stays while the Shell holds the keyboard'
+        assert 'First synthetic app' in request('readScreen')['renderedText'], 'the screen is read while the Shell holds the keyboard'
+        command('H')
+        assert request('frontmostApp') == {'window': window}, 'the target keeps its token after the hold'
+        # Without a hold, the Shell's own window is no target, and the window it took the focus from
+        # is no longer one either.
+        command('S')
+        assert request('frontmostApp') is None, 'the Shell is never the target'
+        command('H')
+        assert request('frontmostApp') == {'window': window}
         for mode in ('l', 'v'):
             command(mode)
             screen = request('readScreen')

@@ -855,6 +855,13 @@ describe("GNOME integration", () => {
     expect(asked).toBe(state === "available" || state === "restart");
   });
 
+  test.each([true, undefined] as const)("Right Alt the Shell can't hold says to choose F8 or F9 (%s)", async (unavailable) => {
+    const shown: SettingsState = { ...signedIn, hotkey: "rightAlt", availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: "ready", ...(unavailable ? { hotkeyUnavailable: true } : {}) };
+    await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Dictation").click());
+    expect(visibleText().includes("Right Alt types characters with this keyboard layout (AltGr), so it can’t be the dictation key. Choose F8 or F9.")).toBe(unavailable === true);
+  });
+
   test("F8 never asks for the integration", async () => {
     const shown: SettingsState = { ...signedIn, hotkey: "F8", availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: "available" };
     await settingsPage({ error: null }, shown, shown);

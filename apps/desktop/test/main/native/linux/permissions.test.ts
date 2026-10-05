@@ -9,14 +9,28 @@ function fixture() {
   let event: (message: Record<string, unknown>) => void = () => {};
   const request = vi.fn<HelperClient["request"]>();
   const helper = { request, on: (_name: string, handler: typeof event) => { event = handler; } };
-  let shortcutEvent: (message: Record<string, unknown>) => void = () => {};
+  const shortcutEvents = new Map<string, (message: Record<string, unknown>) => void>();
   const shortcutRequest = vi.fn<HelperClient["request"]>().mockResolvedValue({ installed: true });
-  const shortcut = { request: shortcutRequest, on: (_name: string, handler: typeof shortcutEvent) => { shortcutEvent = handler; } };
+  const shortcut = { request: shortcutRequest, on: (name: string, handler: (message: Record<string, unknown>) => void) => { shortcutEvents.set(name, handler); } };
   const permissions = new LinuxPermissions(helper as unknown as HelperClient, shortcut as unknown as HelperClient);
+  const shortcutEvent = (message: Record<string, unknown>) => shortcutEvents.get("hotkeyInstallationChanged")?.(message);
   shortcutEvent({ installed: true });
   const change = vi.fn(); permissions.onChange = change;
-  return { permissions, request, change, shortcutRequest, shortcutEvent, event: (granted: unknown) => event({ granted }) };
+  return { permissions, request, change, shortcutRequest, shortcutEvent, unavailable: () => shortcutEvents.get("hotkeyUnavailable")?.({}), event: (granted: unknown) => event({ granted }) };
 }
+
+test("Right Alt the Shell can't hold is reported until a dictation key is held or another is chosen", () => {
+  const f = fixture();
+  expect(f.permissions.hotkeyUnavailable).toBe(false);
+  f.unavailable();
+  expect(f.permissions.hotkeyUnavailable).toBe(true); expect(f.change).toHaveBeenCalledTimes(1);
+  f.shortcutEvent({ installed: true });
+  expect(f.permissions.hotkeyUnavailable).toBe(false);
+  f.unavailable(); f.permissions.resetHotkey();
+  expect(f.permissions.hotkeyUnavailable).toBe(false);
+  f.unavailable(); f.shortcutEvent({ installed: false });
+  expect(f.permissions.hotkeyUnavailable).toBe(true);
+});
 
 test("keyboard permission follows native grants and revocation, never truthy malformed events", () => {
   const f = fixture();
@@ -77,9 +91,10 @@ function gnomeFixture(initial: "checking" | "available" | "restart" | "ready" | 
   let event: (message: Record<string, unknown>) => void = () => {};
   const request = vi.fn<HelperClient["request"]>().mockImplementation(async () => { event({ granted: true }); return { granted: true }; });
   const helper = { request, on: (_name: string, handler: typeof event) => { event = handler; } };
-  let shortcutEvent: (message: Record<string, unknown>) => void = () => {};
+  const shortcutEvents = new Map<string, (message: Record<string, unknown>) => void>();
+  const shortcutEvent = (message: Record<string, unknown>) => shortcutEvents.get("hotkeyInstallationChanged")?.(message);
   const shortcutRequest = vi.fn<HelperClient["request"]>().mockImplementation(async () => { shortcutEvent({ installed: true }); return { installed: true }; });
-  const shortcut = { request: shortcutRequest, on: (_name: string, handler: typeof shortcutEvent) => { shortcutEvent = handler; } };
+  const shortcut = { request: shortcutRequest, on: (name: string, handler: (message: Record<string, unknown>) => void) => { shortcutEvents.set(name, handler); } };
   const permissions = new LinuxPermissions(helper as unknown as HelperClient, shortcut as unknown as HelperClient, () => "", gnome);
   return { permissions, gnome, request, shortcutRequest, shortcutEvent: (installed: boolean) => shortcutEvent({ installed }), event: (granted: boolean) => event({ granted }) };
 }

@@ -19,10 +19,14 @@ export class LinuxPermissions implements PermissionSystem {
   private granted = false;
   private shortcutGranted = false;
   private requesting = false;
+  /** The Shell couldn't hold Right Alt: it is AltGr on this keyboard layout (it types characters).
+   * Cleared when a dictation key is held or another one is chosen. */
+  hotkeyUnavailable = false;
   onChange: (() => void) | undefined;
 
   constructor(private readonly helper: HelperClient, private readonly hotkey: HelperClient, private readonly parentWindow: () => string = () => "", private readonly gnome: GnomeRequirement | null = null) {
     hotkey.on("hotkeyInstallationChanged", (message) => { this.updateHotkey(message.installed === true); });
+    hotkey.on("hotkeyUnavailable", () => { this.hotkeyUnavailable = true; this.onChange?.(); });
     helper.on("insertionPermissionChanged", (message) => this.update(message.granted === true));
   }
 
@@ -56,11 +60,12 @@ export class LinuxPermissions implements PermissionSystem {
     });
   }
   openSettings(): void {}
-  resetHotkey(): void { this.updateHotkey(false); }
+  resetHotkey(): void { this.hotkeyUnavailable = false; this.updateHotkey(false); }
   /** GNOME releases older than the extension supports go without it. */
   private gnomeReady(): boolean { return this.gnome === null || this.gnome.state === "ready" || this.gnome.state === "unsupported"; }
   reset(): void { this.update(false); }
   private updateHotkey(value: boolean): void {
+    if (value) this.hotkeyUnavailable = false;
     if (this.shortcutGranted === value) return;
     this.shortcutGranted = value; this.onChange?.();
   }
