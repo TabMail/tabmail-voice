@@ -10,7 +10,8 @@
 # key in update-keys/ beside this script (root-owned, installed with the package); <sha512> is the
 # package's SHA-512, base64, as the feed gives it. Everything is checked on a copy of the package
 # this script made itself, so what is checked is what is installed: in `install` mode the copy is
-# root's, out of reach of whoever downloaded the update. apt-get then installs it, with whatever
+# root's, out of reach of whoever downloaded the update, and no one else can read it until it is
+# proven (root copies whatever regular file it is given). apt-get then installs it, with whatever
 # packages it needs from the system's own sources, and never an older version.
 #
 # Exit codes: 0 done; 2 misused; 3 not signed by a key here; 4 the package isn't the signed one;
@@ -39,12 +40,11 @@ lockWait=120
 architecture=$(dpkg --print-architecture)
 keys=$(dirname -- "$(readlink -f -- "$0")")/update-keys
 
+# A downloaded file, not a link to one or anything else.
+[ -f "$deb" ] && [ ! -L "$deb" ] || exit 4
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 cp -- "$deb" "$work/update.deb" 2>/dev/null || exit 4
-# apt-get reads the package as its own unprivileged user.
-chmod 0755 "$work"
-chmod 0644 "$work/update.deb"
 
 printf 'TabMail Voice update\npackage: %s\narchitecture: %s\nversion: %s\nsha512: %s\n' \
   "$package" "$architecture" "$version" "$sha512" > "$work/message"
@@ -69,6 +69,9 @@ if [ -n "$installed" ] && ! dpkg --compare-versions "$version" gt "$installed"; 
 fi
 [ "$mode" = install ] || exit 0
 
+# Proven: apt-get reads the package as its own unprivileged user.
+chmod 0755 "$work"
+chmod 0644 "$work/update.deb"
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   -o DPkg::Lock::Timeout="$lockWait" "$work/update.deb" > /dev/null 2>&1 || exit 6
 [ "$(dpkg-query -W -f '${Version}' "$package" 2>/dev/null)" = "$version" ] || exit 6

@@ -4,7 +4,7 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, generateKeyPairSync, type KeyObject, sign } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -13,6 +13,21 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
  * Debian's tools, so it runs on Linux (the packaged tests run it in the Ubuntu VM). `install` mode,
  * as root, is exercised by the installed-upgrade test (ADR-DESK-050). */
 const hasDebianTools = process.platform === "linux" && spawnSync("dpkg", ["--version"]).status === 0;
+
+/** Run as root, the script copies whatever regular file it is named: nothing it copies is readable
+ * by anyone else until the package is proven ours, the copy's permissions opened only once every
+ * check has passed, for apt-get. Read from the script itself, so it holds on every platform. */
+test("install-update opens its copy to others only once it is proven", () => {
+  const lines = readFileSync(join(__dirname, "../../../../resources/linux/install-update"), "utf8").split("\n");
+  const proven = lines.indexOf('[ "$mode" = install ] || exit 0');
+  const opened = lines.flatMap((line, index) => (/^\s*chmod\b/.test(line) ? [index] : []));
+  expect(proven).toBeGreaterThan(0);
+  expect(opened).toHaveLength(2);
+  expect(Math.min(...opened)).toBeGreaterThan(proven);
+  // Every refusal comes before it.
+  const refusals = lines.flatMap((line, index) => (/\|\| exit [345]\b|then$/.test(line) && !line.trimStart().startsWith("#") ? [index] : []));
+  expect(Math.max(...refusals)).toBeLessThan(proven);
+});
 
 describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
   // Made before the tests, and only where they run: the collection runs on every platform.
@@ -100,6 +115,13 @@ describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
       return ["verify", other, version, hash, signature({ version, sha512: hash })];
     }, 4],
     ["that isn't there", () => ["verify", join(root, "missing.deb"), version, goodHash, signature({ version, sha512: goodHash })], 4],
+    ["given as a link to a signed one", () => {
+      const link = join(root, "link.deb");
+      rmSync(link, { force: true });
+      symlinkSync(good, link);
+      return ["verify", link, version, goodHash, signature({ version, sha512: goodHash })];
+    }, 4],
+    ["given as a directory", () => ["verify", root, version, goodHash, signature({ version, sha512: goodHash })], 4],
     ["with a version that isn't x.y.z", () => ["verify", good, "999.0.0-1", goodHash, signature({ version: "999.0.0-1", sha512: goodHash })], 4],
     ["installed by a user who isn't root", () => ["install", good, version, goodHash, signature({ version, sha512: goodHash })], 2],
     ["asked something else", () => ["remove", good, version, goodHash, signature({ version, sha512: goodHash })], 2],
