@@ -1489,6 +1489,22 @@ describe("main process wiring", () => {
       expect(app.trayState?.().update).toBeNull();
     });
 
+    /** Only a `.pem` file is a key: the folder ships with its README. */
+    test("a packaged Linux build whose key folder holds no .pem doesn't update", async () => {
+      const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
+      try {
+        mkdirSync(join(resources, "linux", "update-keys"), { recursive: true });
+        writeFileSync(join(resources, "linux", "update-keys", "README.md"), "Put the release's public key here.");
+        writeFileSync(join(resources, "linux", "update-keys", "release.pem.txt"), "not a key file");
+        await launchPackaged("linux", resources);
+
+        expect(app.autoUpdater).toBeNull();
+        expect(app.trayState?.().update).toBeNull();
+      } finally {
+        rmSync(resources, { recursive: true, force: true });
+      }
+    });
+
     test("a packaged Linux build with an update key installs with an administrator, never at the quit", async () => {
       const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
       try {

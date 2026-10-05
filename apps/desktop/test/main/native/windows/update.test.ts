@@ -74,6 +74,7 @@ describe("Windows updates (ADR-DESK-050)", () => {
 
   test.each<[string, Awaited<ReturnType<RunFile>> | Error, string]>([
     ["exits with an error", { code: 1, stdout: "" }, "the signature couldn't be read"],
+    ["exits with an error after a valid answer", { code: 1, stdout: JSON.stringify(signed) }, "the signature couldn't be read"],
     ["can't run", new Error("ENOENT"), "the signature couldn't be read"],
     ["answers garbage", { code: 0, stdout: "not json" }, "the signature couldn't be read"],
     ["answers without the fields", { code: 0, stdout: JSON.stringify({ signatureValid: true }) }, "the signature couldn't be read"],
