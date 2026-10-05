@@ -293,7 +293,10 @@ async function main() {
     await focus("editor", 7, 15);
     await clipboard.writeText("Synthetic clipboard before insertion");
     assert.deepEqual(await request("insert", { window: target, text: "inserted", deadline: Date.now() + 2000 }), {});
-    assert.equal(await window.webContents.executeJavaScript('document.getElementById("editor").value'), "Before inserted after. 🙂", "native paste replaces the actual Chromium selection");
+    // The helper answers once the paste keys are sent; Chromium takes the paste when it handles them.
+    const editorValue = () => window.webContents.executeJavaScript('document.getElementById("editor").value');
+    for (const by = Date.now() + 4000; await editorValue() !== "Before inserted after. 🙂" && Date.now() < by;) await delay(20);
+    assert.equal(await editorValue(), "Before inserted after. 🙂", "native paste replaces the actual Chromium selection");
     assert.equal(await clipboard.readText(), "inserted", "the text stays on the clipboard");
     const exited = [once(helper, "exit"), once(reader, "exit")]; helper.stdin.end(); reader.stdin.end();
     for (const exit of exited) assert.deepEqual(await exit, [0, null]);

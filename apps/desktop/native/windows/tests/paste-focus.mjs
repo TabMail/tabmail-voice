@@ -43,7 +43,9 @@ try {
   assert.equal(initial.firstEmpty && initial.secondEmpty && initial.clipboardOriginal, true);
   const params = () => ({ window, text: "Synthetic focus paste", deadline: Date.now() + 2500 });
   assert.equal((await request("insert", params())).error, undefined, "stable logical focus accepts paste without editable patterns");
-  const stable = await command("stats");
+  // The helper answers once the paste keys are sent; the field takes the paste when it handles them.
+  let stable = await command("stats");
+  for (const by = Date.now() + 4000; !stable.firstExact && Date.now() < by; stable = await command("stats")) await pause(20);
   assert.equal(stable.firstExact && stable.secondEmpty && stable.clipboardPasted, true, "positive control delivers exact text, which stays on the clipboard");
 
   // A held clipboard: the paste waits to open it. Focus moves during that wait, and the check
