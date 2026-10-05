@@ -84,7 +84,8 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         command('l')
         command('m')
         screen = request('readScreen')
-        assert screen['selectionRedacted'] is True and screen['selectedText'] == '[redacted]', 'changed terminal selection is unavailable'
+        # A terminal keeps what it read at key-down, even if the selection moves meanwhile (owner, 2026-10-05).
+        assert screen['selectionRedacted'] is False and screen['selectedText'] == 'x' * 20001, 'changed terminal selection keeps the key-down read'
         command('z')
         command('c')
         screen = request('readScreen')

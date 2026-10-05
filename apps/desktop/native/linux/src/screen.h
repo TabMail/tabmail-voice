@@ -10,6 +10,7 @@
 #include "../../shared/privacy/ScreenPrivacy.h"
 #include <array>
 #include <cmath>
+#include <iostream>
 #include <limits>
 #include <optional>
 
@@ -33,6 +34,9 @@ public:
     }
     bool same(const Node& first, const Node& second) { return voice::same(first, second); }
     bool withinBudget() const { return std::chrono::steady_clock::now() < deadline; }
+    // A terminal read has no deadline: it runs while the user speaks, and the app decides how long
+    // to wait for it when it sends (owner, 2026-10-05).
+    void withoutDeadline() { deadline = std::chrono::steady_clock::time_point::max(); }
     AtspiRole role(const Node& node) { check(); return voice::role(node); }
     bool isPassword(const Node& node) { return role(node) == ATSPI_ROLE_PASSWORD_TEXT; }
     std::vector<Node> children(const Node& node, size_t limit) { check(); return voice::children(node, limit); }
@@ -235,6 +239,31 @@ public:
             if (!std::isfinite(coordinate) || coordinate < std::numeric_limits<int>::min() || coordinate > std::numeric_limits<int>::max())
                 throw std::runtime_error("terminal geometry");
         if (clip.width <= 0 || clip.height <= 0) throw std::runtime_error("terminal viewport empty");
+        // GTK4 terminals (Ptyxis) answer no bounded ranges: the visible text is then the whole
+        // lines under the viewport's top-left and bottom-left points.
+        const auto spansAtPoints = [&]() -> std::vector<std::array<int,2>> {
+            const auto offsetAt = [&](double x, double y) {
+                check(); Error error;
+                const int offset = atspi_text_get_offset_at_point(text.get(), static_cast<int>(x), static_cast<int>(y), ATSPI_COORD_TYPE_WINDOW, &error.value);
+                error.check(); check(); return offset;
+            };
+            const auto line = [&](int offset) {
+                check(); Error error;
+                const auto release = [](AtspiTextRange* value) { if (value) { g_free(value->content); g_free(value); } };
+                std::unique_ptr<AtspiTextRange,decltype(release)> value(
+                    atspi_text_get_string_at_offset(text.get(), offset, ATSPI_TEXT_GRANULARITY_LINE, &error.value), release);
+                error.check(); check();
+                if (!value || value->start_offset < 0 || value->end_offset < value->start_offset) throw std::runtime_error("terminal line unavailable");
+                return std::array<int,2>{value->start_offset, std::min(value->end_offset, count)};
+            };
+            const int top = offsetAt(clip.x + 1, clip.y + 1);
+            int bottom = offsetAt(clip.x + 1, clip.y + clip.height - 1);
+            if (top < 0 || top > count) throw std::runtime_error("terminal visible range");
+            if (bottom < 0 || bottom > count) bottom = count; // Below the last line of output.
+            const auto first = line(top), last = bottom < count ? line(bottom) : std::array<int,2>{count, count};
+            if (last[1] < first[0]) throw std::runtime_error("terminal visible range");
+            return {{first[0], last[1]}};
+        };
         const auto spansNow = [&] {
             check(); Error error;
             auto values = atspi_text_get_bounded_ranges(text.get(), static_cast<int>(clip.x), static_cast<int>(clip.y),
@@ -243,8 +272,12 @@ public:
             const auto release = [](GArray* array) { if (!array) return;
                 for (guint i=0;i<array->len;++i) g_free(g_array_index(array,AtspiTextRange,i).content);
                 g_array_unref(array); };
-            std::unique_ptr<GArray,decltype(release)> owned(values,release); error.check(); check();
-            if (!values || values->len > rangeLimit) throw std::runtime_error("terminal visible ranges");
+            std::unique_ptr<GArray,decltype(release)> owned(values,release); check();
+            if (error.value || !values || (values->len == 0 && count > 0)) {
+                std::cerr << "debug screen: terminal has no bounded ranges, reading the lines at the viewport's corners\n";
+                return spansAtPoints();
+            }
+            if (values->len > rangeLimit) throw std::runtime_error("terminal visible ranges");
             std::vector<std::array<int,2>> result;
             for(guint i=0;i<values->len;++i) {
                 const auto& value=g_array_index(values,AtspiTextRange,i);
@@ -255,7 +288,6 @@ public:
             return result;
         };
         const auto spans=spansNow();
-        std::vector<std::string> captured;
         auto runs=nlohmann::json::array(), selections=nlohmann::json::array();
         nlohmann::json anchor={{"status","unavailable"}};
         size_t remaining=limit; bool selectionComplete=true;
@@ -264,7 +296,6 @@ public:
             const auto length=static_cast<size_t>(span[1]-span[0]);
             if(length > budget / 4) throw std::runtime_error("terminal source budget");
             auto value=readScalarField(length,0,length,[&](size_t from,size_t to){
-                if(countNow()!=count) throw std::runtime_error("terminal count changed");
                 return range(text,span[0]+static_cast<int>(from),span[0]+static_cast<int>(to));
             });
             if(!value.complete || value.text.size()>budget) throw std::runtime_error("terminal source incomplete");
@@ -284,7 +315,7 @@ public:
             static_cast<double>((*caretFrame)[1])+(*caretFrame)[3]>clip.y && (*caretFrame)[1]<clip.y+clip.height;
         if(caretFrame && !caretVisible) anchor={{"status","outsideViewport"}};
         for(size_t i=0;i<spans.size();++i) {
-            const auto& span=spans[i]; const auto value=readVisible(span,remaining); remaining-=value.size(); captured.push_back(value);
+            const auto& span=spans[i]; const auto value=readVisible(span,remaining); remaining-=value.size();
             runs.push_back({{"id",i},{"text",value},{"connected",i>0 && spans[i-1][1]==span[0]},{"startKnown",false},{"endKnown",false}});
             if(caretVisible && caret>=span[0] && caret<span[1]) anchor={{"status","exact"},{"surface",id},{"run",i},{"offset",caret-span[0]}};
             for(size_t j=0;j<selected.size();++j) {
@@ -295,9 +326,7 @@ public:
             }
         }
         for(size_t j=0;j<selected.size();++j) selectionComplete=selectionComplete && covered[j]==selected[j][1];
-        for(size_t i=0;i<spans.size();++i) if(readVisible(spans[i],limit)!=captured[i]) throw std::runtime_error("terminal source changed");
-        if(countNow()!=count || selectionsNow()!=selected || caretNow()!=caret || caretFrameNow()!=caretFrame || spansNow()!=spans || !shown(node))
-            throw std::runtime_error("terminal snapshot changed");
+        // Read once and kept, even if output arrives meanwhile (owner, 2026-10-05: the screen as at key-down).
         check();
         return {{"surface",{{"id",id},{"frame",{clip.x,clip.y,clip.width,clip.height}},{"runs",runs},
             {"selection",{{"complete",selectionComplete},{"ranges",selections}}}}},{"caret",anchor},{"offsetUnit","scalar"}};
@@ -378,7 +407,7 @@ public:
     }
 
 private:
-    const std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+    std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
     void check() const { if (!withinBudget()) throw ScreenBudgetExceeded(); }
     std::string range(const Object<AtspiText>& text, int from, int to) {
         check(); Error error;
@@ -499,6 +528,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
     if constexpr (!requires { tree.viewportSurface(focus, size_t{}, ContextFrame{}, true, size_t{}); }) {
         return nullptr;
     } else {
+        if constexpr (requires { tree.withoutDeadline(); }) tree.withoutDeadline();
         if (!safeSubtree(tree,window,exclusions,false)) return nullptr;
         const auto windowFrame=tree.frame(window);
         if(!windowFrame || windowFrame->width<=0 || windowFrame->height<=0) return nullptr;
@@ -510,15 +540,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         using Node=typename Tree::Node;
         std::vector<std::pair<Node,ContextFrame>> stack{{window,*windowFrame}};
         std::vector<Node> seen;
-        std::vector<std::pair<Node,ContextFrame>> geometry;
-        const auto stableGeometry=[&] {
-            return std::all_of(geometry.begin(),geometry.end(),[&](const auto& entry){
-                const auto now=tree.frame(entry.first);const auto& old=entry.second;
-                return now && now->x==old.x && now->y==old.y && now->width==old.width && now->height==old.height;
-            });
-        };
-        struct Snapshot { Node node; ContextFrame clip; size_t id; bool focused; JSON value; };
-        std::vector<Snapshot> snapshots;
+        std::vector<Node> read;
         while(!stack.empty()) {
             if(!tree.withinBudget() || visited>=5000) { complete=false; break; }
             auto [node,clip]=stack.back();stack.pop_back();
@@ -529,7 +551,6 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
             if(auto page=tree.page(node);page && exclusions.excludes(*page)) throw PrivacyHidden{};
             const auto frame=tree.frame(node);
             if(frame) {
-                geometry.emplace_back(node,*frame);
                 const double right=std::min(clip.x+clip.width,frame->x+frame->width),bottom=std::min(clip.y+clip.height,frame->y+frame->height);
                 clip.x=std::max(clip.x,frame->x);clip.y=std::max(clip.y,frame->y);clip.width=right-clip.x;clip.height=bottom-clip.y;
                 if(clip.width<=0 || clip.height<=0) continue;
@@ -539,18 +560,21 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
                 if(surfaces.size()>=maxSurfaces || remaining==0) {complete=false;break;}
                 const bool ownsFocus=tree.same(node,focus) || std::any_of(path.begin(),path.end(),[&](const auto& parent){return tree.same(parent,node);});
                 const size_t id=surfaces.size();
-                if(!stableGeometry()) return nullptr;
                 JSON value;
                 try { value=tree.viewportSurface(node,id,clip,ownsFocus,remaining); }
                 catch(const ScreenBudgetExceeded&) {complete=false;break;}
-                catch(const std::exception&) {complete=false;continue;}
+                catch(const std::exception& error) {
+                    // A fixed reason, never text.
+                    std::cerr << "debug screen: terminal surface refused: " << error.what() << "\n";
+                    complete=false;continue;
+                }
                 const auto& surface=value.at("surface");
                 for(const auto& run:surface.at("runs")) {
                     const auto bytes=run.at("text").template get_ref<const std::string&>().size();
                     if(bytes>remaining) throw std::runtime_error("terminal aggregate budget");
                     remaining-=bytes;
                 }
-                surfaces.push_back(surface);snapshots.push_back({node,clip,id,ownsFocus,value});
+                surfaces.push_back(surface);read.push_back(node);
                 if(ownsFocus) {focusedID=id;caret=value.at("caret");}
                 continue;
             }
@@ -558,16 +582,9 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
             auto children=tree.children(node,5000-visited-stack.size());
             for(auto it=children.rbegin();it!=children.rend();++it) stack.emplace_back(*it,clip);
         }
-        // Revalidate the entire admitted set, not just each surface in isolation.
-        for(const auto& snapshot:snapshots) {
-            if(!tree.withinBudget() || !stableGeometry() || !tree.shown(snapshot.node) || !safeSubtree(tree,snapshot.node,exclusions,true)) return nullptr;
-            try {
-                if(tree.viewportSurface(snapshot.node,snapshot.id,snapshot.clip,snapshot.focused,limits.at("bytes").get<size_t>())!=snapshot.value) return nullptr;
-            } catch(const std::exception&) {return nullptr;}
-        }
-        const auto finalFrame=tree.frame(window);
-        if(!tree.withinBudget() || !stableGeometry() || !finalFrame || finalFrame->x!=windowFrame->x || finalFrame->y!=windowFrame->y ||
-            finalFrame->width!=windowFrame->width || finalFrame->height!=windowFrame->height || !safeSubtree(tree,window,exclusions,false)) return nullptr;
+        // Privacy is checked again at the end; the text is not read again.
+        for(const auto& node:read) if(!safeSubtree(tree,node,exclusions,true)) return nullptr;
+        if(!safeSubtree(tree,window,exclusions,false)) return nullptr;
         const auto projected=core::request({{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"offsetUnit","scalar"},
             {"complete",complete && !surfaces.empty()}},voice_core_viewport_json);
         const auto title=privacy::ScreenPrivacy::redact(tree.label(window));

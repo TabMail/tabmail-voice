@@ -126,7 +126,8 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_text_get_character_count -Wl,--wrap=atspi_text_get_n_selections
     -Wl,--wrap=atspi_text_get_selection -Wl,--wrap=atspi_text_get_text
     -Wl,--wrap=atspi_accessible_get_state_set -Wl,--wrap=atspi_text_get_bounded_ranges
-    -Wl,--wrap=atspi_text_get_caret_offset -Wl,--wrap=atspi_text_get_character_extents)
+    -Wl,--wrap=atspi_text_get_caret_offset -Wl,--wrap=atspi_text_get_character_extents
+    -Wl,--wrap=atspi_text_get_offset_at_point -Wl,--wrap=atspi_text_get_string_at_offset)
   add_test(NAME voice-live-source COMMAND voice-live-source-tests)
   add_executable(voice-screen-collection-tests tests/screen-collection.cpp)
   target_link_libraries(voice-screen-collection-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
