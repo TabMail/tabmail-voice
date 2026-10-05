@@ -21,7 +21,7 @@ Electron 44, React 19, Vite, Vitest, electron-builder; npm (`npx -y npm@11.19.1 
 ```
 apps/desktop/
 ├── package.json, electron-builder.json, tsconfig.{base,main,renderer,test}.json, vite.config.mts, vitest.config.mts, eslint.config.mjs
-├── resources/               App icon, tray template images, DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources)
+├── resources/               App icon, tray template images, DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources); linux/install-update and linux/update-keys/ (ADR-DESK-050)
 ├── scripts/
 │   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
@@ -72,12 +72,13 @@ apps/desktop/
 │   │   ├── index.ts                 Wires everything: helpers, controller, windows, IPC, tray
 │   │   ├── audioCapture.ts          The microphone, one session per try of a dictation's start (a failed start is tried again for about two seconds): through `voice-microphone` on macOS, `voice-windows` on Windows, the hidden audio window elsewhere
 │   │   ├── windows.ts, overlayWindow.ts, tray.ts   The windows, the overlay at the caret, the menu-bar menu
-│   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, installed at the quit, "Restart now?" once ready (ADR-DESK-041)
+│   │   ├── updater.ts               Packaged builds: updates from cdn.tabmail.ai, on every platform: when to look, the download, the states, the question, failures and retries (ADR-DESK-041, ADR-DESK-050); each OS's proof and install in `native/<os>/update.ts`
 │   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts (at once for a helper that exits to be started afresh)
 │   │   │   ├── microphone.ts         Shared native audio wire adapter and chunk decoder
-│   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters
-│   │   │   └── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters
+│   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters; update.ts (Squirrel.Mac's proof)
+│   │   │   ├── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters; update.ts (the installer's Authenticode signature, through `voice-windows.exe --verify-update`)
+│   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters; update.ts (`install-update`, through `pkexec` to install)
 │   │   └── storage/                 keychainSessionStore.ts (the sign-in; windows/sessionCredential.ts stores compressed binary sessions within Credential Manager’s blob bound), jsonFileStore.ts (settings), logFile.ts (the debug log), profileFiles.ts (Thunderbird's)
 │   ├── preload/index.ts     `window.voice` (sandboxed: imports only electron; channel names written out)
 │   ├── shared/ipc.ts        Window states, commands, audio messages, channels, boundary checks
@@ -167,5 +168,6 @@ message and pastes nothing. No agent call has a deadline.
 Talks to the TabMail backend (`/dictation/transcribe`, `X-Client-Type: macos`) with a Supabase
 JWT from `auth.tabmail.ai`. Settings has a "Debug mode" switch, shown only to allowed accounts (ADR-DESK-018): it sends
 dictation to dev.tabmail.ai and shows the menu's Start Dictation and debug items.
-Packaged builds update themselves from `cdn.tabmail.ai/releases/voice/macos-arm64/latest-mac.yml`
-(`electron-updater`), sending no installation ID (ADR-DESK-041).
+Packaged builds update themselves from `cdn.tabmail.ai/releases/voice/<os>-<arch>/` (`latest-mac.yml`,
+`latest.yml` on Windows, `latest-linux-<arch>.yml`) with `electron-updater`, sending no installation
+ID (ADR-DESK-041, ADR-DESK-050).
