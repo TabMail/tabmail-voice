@@ -181,6 +181,23 @@ describe("AudioRecorder", () => {
     }
   });
 
+  /** Once finished, the recorder takes no more audio, whatever still delivers it, so nothing after the
+   * last chunk is cut and sent. */
+  test("audio arriving after the finish is not recorded and cuts no chunk", () => {
+    const chunks: RecordedChunk[] = [];
+    const recorder = new AudioRecorder(config.recordingSampleRate, config.maxRecordingDuration, (chunk) => chunks.push(chunk));
+    const rand = random(7);
+    const said = speech(12, rand);
+    recorder.append(said);
+    expect(recorder.finish().pcm.length / 2).toBe(said.length);
+
+    // Enough for a cut, had it been recorded: a pause after 12 s of speech, then more speech.
+    recorder.append(concat(room(1.5, rand), speech(2, rand)));
+
+    expect(chunks).toEqual([]);
+    expect(recorder.finish().pcm.length / 2).toBe(said.length);
+  });
+
   test("keeps the loudest chunk's level", () => {
     const recorder = new AudioRecorder();
     recorder.append(tone(0.1, 0.001));

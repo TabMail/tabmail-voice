@@ -98,6 +98,10 @@ export class AudioRecorder {
   private peakLevel = 0;
   private firstChunkAt: number | null = null;
   private truncated = false;
+  /** `finish` was called: whatever is appended after is not the dictation's, and must cut no chunk
+   * after the last. The capture stops delivering before the finish today, so this keeps "finish is
+   * final" true for any capture source, as iOS's recorder must for its audio thread. */
+  private finished = false;
   private readonly chunker: Chunker | null;
 
   constructor(
@@ -111,6 +115,7 @@ export class AudioRecorder {
   }
 
   append(samples: Float32Array, now: number = performance.now()): void {
+    if (this.finished) return;
     this.firstChunkAt ??= now;
     if (this.truncated) return;
     this.peakLevel = Math.max(this.peakLevel, level(samples));
@@ -137,6 +142,7 @@ export class AudioRecorder {
    * loudest sample sets the gain, so it is encoded here rather than as it arrives (about 1.4 ms per
    * second of audio). Cut into chunks, only the last chunk is encoded here. */
   finish(): Recording {
+    this.finished = true;
     const samples = this.samples.slice(0, this.frames);
     const last = this.chunker?.finish(this.frames) ?? null;
     if (last !== null) {

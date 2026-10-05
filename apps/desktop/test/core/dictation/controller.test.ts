@@ -708,8 +708,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
     [400, `{"error":"invalid_request"}`, "Dictation failed. Please try again."],
     // The backend's own timeout: it already waited for the speech model.
     [504, `{"error":"transcription_timeout"}`, "Dictation failed. Please try again."],
-    // The speech model's rate limit, which the backend already retried for 30 s.
-    [429, `{"error":"transcription_rate_limited"}`, "Dictation failed. Please try again."],
     [200, `{"unexpected":true}`, "TabMail returned an unexpected response."],
   ])("a failed transcription (%i %s) is neither cleaned up nor pasted, nor tried again", async (status, body, message) => {
     transcription.enqueue(status, body);
@@ -779,6 +777,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["a 500", () => transcription.enqueue(500, "")],
       ["a 502", () => transcription.enqueue(502, { error: "transcription_failed" })],
       ["a 503", () => transcription.enqueue(503, { error: "transcription_unavailable" })],
+      // The speech model's rate limit outlasting the backend's own retries: answered as a 502, and
+      // tried again, until the backend began retrying it itself (2026-10-03).
+      ["the speech model's rate limit", () => transcription.enqueue(429, { error: "transcription_rate_limited" })],
       ["a dropped connection", dropsConnection],
     ])("is tried again after %s, and the retry's text pasted", async (_, fail) => {
       fail();

@@ -2397,12 +2397,16 @@ not outlast one. `transcriptionRetryDelays` is now 0.5, 1.5, 3, 5, 10, 10, 15 an
 minute in all, with the retry note up from 2 s; the user can cancel at any time. A recording's 504
 is still not retried (above). A long dictation's chunk after the release retries its 504 too, as
 while recording (ADR-DESK-049).
-*(Later the same day: the backend now retries the speech model's own 429 for its 30 s window and
-then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
+*(Later the same day: the backend now retries the speech model's own 429 for its 30 s window (10 s
+since 2026-10-04) and then answers 429 `transcription_rate_limited`, where it answered 502 (backend ADR-022). The app reads
 that code as a failure of the speech model, not this account's limit (`BackendError` `failed`, 429;
 the account's 429s stay `rateLimited`). Like a 504, the backend already waited, so a recording does
 not try it again; a long dictation's chunk does, while recording and after the release
 (`backendWaited`, ADR-DESK-049).)*
+*(2026-10-04, owner: "retry should not have changed". That made a recording stop retrying what it
+had always retried: the speech model's rate limit, answered as a 502 until the backend began
+retrying it itself. A recording tries that 429 again as it did the 502 (`isServerError`); only its
+504 is still not retried (`backendTimedOut`). A long dictation's chunk retries both, as before.)*
 
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
 
@@ -3133,14 +3137,19 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   before it fell under the recording's levels and was lost without a word; the cost of sending is a
   request per 105 s of silence, and a silence the model may hear a stray word in.
 - **Each chunk is normalized on its own** (ADR-DESK-040) and FLAC-encoded as it is cut (ADR-DESK-039).
+- **Nothing is recorded after the finish** (2026-10-04, from review; owner: "close the edge case"):
+  `AudioRecorder` takes no audio once finished, so nothing appended late could cut and send a chunk
+  after the last. Here the capture already stops delivering before the finish (`SessionAudioCapture`
+  drops its callback at once), so this keeps "finish is final" true for any capture source; on iOS a
+  tap block can still run as the microphone stops, and the same guard closes a real race there.
 - **Retries (owner: "continuous retries until even the last chunk or the user release is done…
   until the final give up").** While the user dictates, a chunk's server error, dropped connection,
-  backend timeout (504) or the speech model's rate limit outlasting the backend's own 30 s of retries
+  backend timeout (504) or the speech model's rate limit outlasting the backend's own 10 s of retries
   (429 `transcription_rate_limited`, backend ADR-022; found in review 2026-10-03, where one such 429
   threw away the rest of a dictation) is tried again after each of `chunkRetryDelays`, the last repeating,
   quietly: nobody waits for it yet. From the release, a chunk still failing gets the
   `transcriptionRetryDelays` tries one recording gets, about a minute of waits (ADR-DESK-039, amendment
-  2026-10-03; each try the backend holds for its whole 30 s window, a 504 or that 429, adds its 30 s,
+  2026-10-03; each try the backend holds, up to 30 s for a 504 and about 10 s for that 429, adds that time,
   so a chunk failing that way every time keeps the pill transcribing for up to about 5.5 minutes,
   9 tries × 30 s plus the waits, until the user cancels; found in review, 2026-10-03), with the pill's retry note, on the same failures, a 504 and that 429 included: the last chunk is sent
   at the release, so its backend timeout comes after it (owner: "we should not lose the end").
