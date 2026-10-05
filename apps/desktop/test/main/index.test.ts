@@ -2092,14 +2092,24 @@ test("GNOME activation, readiness hints and recording ownership are wired to the
     expect(keyboard().agentShortcut).toBeUndefined();
     expect(keyboard().description).toBe("Turns on GNOME integration and allows the dictation key, pasting, and clipboard restoration.");
     expect(keyboard().instructions).toBe("This turns on GNOME integration; then allow keyboard interaction in the next system prompt.");
+    // F8 or F9 on GNOME is the portal's shortcut, which has its own approval.
+    await send({ type: "setHotkey", hotkey: "F8" });
+    expect(keyboard().instructions).toBe("This turns on GNOME integration; then approve the dictation shortcut, then allow keyboard interaction in the next system prompt.");
+    await send({ type: "setHotkey", hotkey: "rightAlt" });
     // GNOME integration is part of the keyboard permission.
     hotkey.events.get("hotkeyInstallationChanged")!({ installed: true });
     app.helpers.get("voice-linux")!.events.get("insertionPermissionChanged")!({ granted: true });
     expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
     // Turned on but not yet loaded by the Shell: only a new session finishes it.
     hotkey.replies.set("gnomeIntegration", false);
+    const welcomePushed: string[] = [];
+    app.listeners.set("voice:state", [(_event, name, pushedState) => {
+      if (name === "welcome") welcomePushed.push((pushedState as { keyboardPermission: { instructions: string } }).keyboardPermission.instructions);
+    }]);
     await send({ type: "enableGnomeIntegration" });
     expect(state("settings")).toMatchObject({ gnomeIntegration: "restart" });
+    // The open welcome guide is told at once, not only when it next asks.
+    expect(welcomePushed.at(-1)).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
     expect(keyboard().instructions).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
     hotkey.replies.set("gnomeIntegration", true);
     await send({ type: "enableGnomeIntegration" });

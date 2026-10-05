@@ -43,7 +43,8 @@ The package manager owns these files and removes them when the app is uninstalle
 Open TabMail Voice Settings → Permissions → GNOME integration → Enable to activate
 it for the current user. This leaves other extensions unchanged. Newly installed or
 updated extensions may require logging out and back in. Settings checks the live
-extension protocol before reporting Enabled; files on disk alone are insufficient.
+extension protocol (`Version`, now 2) before reporting Enabled; files on disk alone are insufficient,
+and an older extension the Shell still runs after an upgrade reads as needing a log-out.
 GNOME version validation remains enabled. Allow Keyboard Control in the welcome guide
 or Settings enables it first. F8 and F9, through the portal, remain available as
 dictation keys, but the keyboard permission on GNOME needs the extension either way.

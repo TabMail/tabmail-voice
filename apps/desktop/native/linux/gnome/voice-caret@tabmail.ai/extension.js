@@ -163,7 +163,7 @@ export default class VoiceCaret extends Extension {
         return JSON.stringify({...rect, source: 'accessibility'});
     }
 
-    Version() { return 1; }
+    Version() { return 2; }
 
     /** Space and Escape while dictating. */
     SetRecordingAsync([active], invocation) {

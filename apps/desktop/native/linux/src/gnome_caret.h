@@ -41,7 +41,9 @@ public:
                 auto value = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), result, &error.value);
                 guint version = 0;
                 if (value) { g_variant_get(value, "(u)", &version); g_variant_unref(value); }
-                (*reply)(version == 1, true);
+                // 2: the extension holds Right Alt (SetHotkey, Holding). A Shell still running an older
+                // extension until the next login is not ready, so Settings asks for one.
+                (*reply)(version == 2, true);
             }, new Channel::Reply(std::move(reply)));
     }
 

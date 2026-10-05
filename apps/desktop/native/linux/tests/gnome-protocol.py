@@ -30,7 +30,7 @@ info = Gio.DBusNodeInfo.new_for_xml('''<node><interface name="ai.tabmail.Voice.C
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal></interface></node>''')
-state = {'version': 1, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
+state = {'version': 2, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
          'recording': False, 'owner': None, 'language': 'ko', 'language_calls': 0, 'hotkey': []}
 
 
@@ -123,8 +123,10 @@ try:
     hotkey.quiet()  # let the async session connection resolve
     assert hotkey.request('gnomeIntegration')['result'] is True
     assert hotkey.request('caretAnchor')['result'] == state['rect']
-    state['version'] = 99
-    assert hotkey.request('gnomeIntegration')['result'] is False
+    # An extension loaded before an upgrade keeps running until the next login: not ready.
+    for version in (1, 99):
+        state['version'] = version
+        assert hotkey.request('gnomeIntegration')['result'] is False
     state['rect'] = {'x': 1, 'y': 1, 'width': -1, 'height': 20}
     assert hotkey.request('caretAnchor')['result'] is None
     assert 'error' in hotkey.request('setRecording', {'active': 'yes'})

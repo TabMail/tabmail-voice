@@ -272,7 +272,9 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<method name="SetChatOpen"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="FromWindow"><arg type="d" direction="in"\/><arg type="d" direction="in"\/><arg type="d" direction="in"\/><arg type="d" direction="in"\/><arg type="s" direction="out"\/><\/method>/);
     assert.match(xml, /<signal name="Action"><arg type="s"\/><\/signal>/);
-    assert.equal(f.extension.Version(), 1);
+    assert.match(xml, /<method name="SetHotkey"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
+    assert.match(xml, /<method name="Holding"><arg type="b" direction="out"\/><\/method>/);
+    assert.equal(f.extension.Version(), 2);
     assert.equal(f.recording(true), true);
     f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
     assert.deepEqual(f.actions[0].slice(0, 4), [':1.42', path, 'ai.tabmail.Voice.Caret', 'Action']);

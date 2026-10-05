@@ -107,6 +107,12 @@ test.each(["checking", "available", "restart", "unavailable"] as const)("on GNOM
   expect(f.permissions.readAccessibility()).toBe(true);
 });
 
+test("on GNOME, Allow is not granted at once while integration is not on, though the key and pasting are", () => {
+  const f = gnomeFixture("available", "restart");
+  f.shortcutEvent(true); f.event(true);
+  expect(f.permissions.askForAccessibility()).toBe(false);
+});
+
 test("GNOME releases without the extension go without it", () => {
   const f = gnomeFixture("unsupported", "unsupported");
   f.shortcutEvent(true); f.event(true);
