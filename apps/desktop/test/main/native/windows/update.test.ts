@@ -7,7 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 import * as config from "../../../../src/core/config.js";
 import { log } from "../../../../src/core/log.js";
 import { refusal, type WindowsUpdateSource, windowsUpdatePlatform } from "../../../../src/main/native/windows/update.js";
-import type { RunFile } from "../../../../src/main/updater.js";
+import { type RunFile, UpdateError } from "../../../../src/main/updater.js";
 
 /** `NsisUpdater` as the adapter sees it. */
 class FakeNsis extends EventEmitter {
@@ -109,11 +109,35 @@ describe("Windows updates (ADR-DESK-050)", () => {
     expect(refusal({ ...signed, ...change }, "1.2.3")).toBe(reason);
   });
 
-  test("the proof is done in the download; the install is quiet, and opens the new version", async () => {
-    const { source, platform } = setUp({ code: 0, stdout: "" });
+  /** The library keeps an installer it already had (its SHA-512 the feed's) without calling
+   * `verifyUpdateCodeSignature`, so a feed could name a cached older installer as newer: the one
+   * kept is proven again before it is offered, and isn't installed when the app quits unless it is.
+   * A proven one is; the install is quiet and opens the new version. */
+  test.each<[string, Awaited<ReturnType<RunFile>> | Error, string | undefined, boolean]>([
+    ["signed by TabMail as the version offered", { code: 0, stdout: JSON.stringify(signed) }, "C:\\cache\\installer.exe", true],
+    ["an older signed installer", { code: 0, stdout: JSON.stringify({ ...signed, productVersion: "1.0.0.0" }) }, "C:\\cache\\installer.exe", false],
+    ["another publisher's", { code: 0, stdout: JSON.stringify({ ...signed, commonName: "Someone Else" }) }, "C:\\cache\\installer.exe", false],
+    ["one whose signature can't be read", new Error("ENOENT"), "C:\\cache\\installer.exe", false],
+    ["no file at all", { code: 0, stdout: JSON.stringify(signed) }, undefined, false],
+  ])("the installer kept is proven before it is offered: %s", async (_case, reply, path, proven) => {
+    const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+    try {
+      const { source, platform, calls } = setUp(reply);
+      // Installed at the quit by the last proven update's leave.
+      source.autoInstallOnAppQuit = true;
 
-    await expect(platform.verify({ version: "1.2.3" })).resolves.toBeUndefined();
-    await platform.install({ version: "1.2.3" });
-    expect(source.installedWith).toEqual([true, true]);
+      const verified = platform.verify({ version: "1.2.3", ...(path === undefined ? {} : { downloadedFile: path }) });
+
+      if (proven) await expect(verified).resolves.toBeUndefined();
+      else await expect(verified).rejects.toThrow(new UpdateError("Version 1.2.3 isn't signed by TabMail, so it wasn't installed."));
+      expect(source.autoInstallOnAppQuit).toBe(proven);
+      expect(calls).toEqual(path === undefined ? [] : [["C:\\helpers\\voice-windows.exe", ["--verify-update", path], config.updateVerifyTimeout]]);
+      if (proven) {
+        await platform.install({ version: "1.2.3" });
+        expect(source.installedWith).toEqual([true, true]);
+      }
+    } finally {
+      logged.mockRestore();
+    }
   });
 });

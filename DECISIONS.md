@@ -3286,7 +3286,11 @@ the feed's own SHA-512.
   signed product version. The app keeps it only when it is valid, both names are
   `windowsUpdatePublisher` ("Lisem AI LTD", as the release's signing certificate names them) and the
   product version is the offered version's four-part form (x.y.z.0). Otherwise the library deletes the
-  download, and the user sees "Version x.y.z isn't signed by TabMail, so it wasn't installed." It
+  download, and the user sees "Version x.y.z isn't signed by TabMail, so it wasn't installed." The
+  library skips that check for an installer it already has whose SHA-512 is the feed's, so the
+  installer kept is proven the same way again (`UpdatePlatform.verify`) before it is offered, and the
+  library installs it at the quit only once proven (`autoInstallOnAppQuit`); a feed can't name a
+  cached older installer as newer either. It
   installs when the app quits, or at once with Restart Now, quietly and for this user (no
   administrator), and the new version opens. The web installer is off. The library calls that check
   only when the installed `app-update.yml` names a publisher, so the feed configuration names

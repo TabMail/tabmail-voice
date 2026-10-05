@@ -4,7 +4,7 @@
 
 import * as config from "../../../core/config.js";
 import { errorName, log } from "../../../core/log.js";
-import { type RunFile, type UpdateInfo, type UpdatePlatform, type UpdateSource } from "../../updater.js";
+import { type RunFile, UpdateError, type UpdatePlatform, type UpdateSource } from "../../updater.js";
 
 /** `electron-updater`'s `NsisUpdater`, as far as the Windows adapter uses it. */
 export interface WindowsUpdateSource extends UpdateSource {
@@ -30,7 +30,9 @@ interface InstallerSignature {
  * (the chain to a trusted root, revocation included) and reads its signed version; it is kept only
  * when signed by `windowsUpdatePublisher` and its own version is the one the feed offered, which
  * `Updater` holds newer than the running app. A feed can't so name an older signed installer as
- * newer. It installs, for this user and without an administrator, when the app quits.
+ * newer. The installer kept is proven again before it is offered: the library keeps one it already
+ * had, its SHA-512 the feed's, without the first proof. It installs, for this user and without an
+ * administrator, when the app quits, and only once proven.
  */
 export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; helper: string; run: RunFile }): UpdatePlatform {
   const { source, helper, run } = options;
@@ -40,23 +42,28 @@ export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; he
   source.on("update-available", (info) => {
     offered = info.version;
   });
-  source.verifyUpdateCodeSignature = async (_publisherNames, path) => {
-    if (offered === null) return "no update was offered";
+  /** Why the installer at `path` isn't ours and `version`, or null when it is. */
+  const check = async (path: string, version: string): Promise<string | null> => {
     try {
-      const reason = refusal(await readSignature(run, helper, path), offered);
+      const reason = refusal(await readSignature(run, helper, path), version);
       // The library's own log is off; the reason is said here.
-      if (reason !== null) log.error(`Updater: ${offered} refused: ${reason}`);
+      if (reason !== null) log.error(`Updater: ${version} refused: ${reason}`);
       return reason;
     } catch (error) {
       log.error(`Updater: the installer's signature couldn't be read: ${errorName(error)}`);
       return "the signature couldn't be read";
     }
   };
+  source.verifyUpdateCodeSignature = (_publisherNames, path) => (offered === null ? Promise.resolve("no update was offered") : check(path, offered));
   return {
     source,
     installsOnQuit: true,
-    // Done before the download was kept: `update-downloaded` comes only for a verified installer.
-    verify: (_update: UpdateInfo) => Promise.resolve(),
+    verify: async (update) => {
+      const reason = update.downloadedFile === undefined ? "nothing was downloaded" : await check(update.downloadedFile, update.version);
+      // The library installs what it kept when the app quits: only once proven.
+      source.autoInstallOnAppQuit = reason === null;
+      if (reason !== null) throw new UpdateError(`Version ${update.version} isn't signed by TabMail, so it wasn't installed.`);
+    },
     install: () => {
       // Quietly, and the new version opens once installed.
       source.quitAndInstall(true, true);

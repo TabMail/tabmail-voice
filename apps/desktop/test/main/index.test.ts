@@ -1443,25 +1443,42 @@ describe("main process wiring", () => {
     /** Windows: the NSIS updater, its library's signature check replaced by the app's own, the
      * installer quiet and the new version opened after it. */
     test("a packaged Windows build updates through its own installer, proven by the app", async () => {
-      await launchPackaged("win32");
-      const updater = app.autoUpdater;
+      const runs: [string, string[]][] = [];
+      const signed = { signatureValid: true, commonName: config.windowsUpdatePublisher, organization: config.windowsUpdatePublisher, productVersion: "9.9.9.0" };
+      vi.doMock("../../src/main/native/windows/update.js", async (original) => {
+        const real = await original<typeof import("../../src/main/native/windows/update.js")>();
+        return {
+          ...real,
+          windowsUpdatePlatform: (options: Parameters<typeof real.windowsUpdatePlatform>[0]) =>
+            real.windowsUpdatePlatform({ ...options, run: async (file, args) => { runs.push([file, args]); return { code: 0, stdout: JSON.stringify(signed) }; } }),
+        };
+      });
+      try {
+        await launchPackaged("win32");
+        const updater = app.autoUpdater;
 
-      expect(updater?.kind).toBe("nsis");
-      expect(updater?.logger).toBeNull();
-      expect(updater?.disableWebInstaller).toBe(true);
-      expect(updater?.allowDowngrade).toBe(false);
-      expect(updater?.autoInstallOnAppQuit).toBe(true);
-      expect(updater?.requestHeaders).toEqual({ "x-user-staging-id": "none" });
-      expect(typeof updater?.verifyUpdateCodeSignature).toBe("function");
-      expect(app.trayState?.().update).toEqual({ kind: "idle" });
+        expect(updater?.kind).toBe("nsis");
+        expect(updater?.logger).toBeNull();
+        expect(updater?.disableWebInstaller).toBe(true);
+        expect(updater?.allowDowngrade).toBe(false);
+        expect(updater?.autoInstallOnAppQuit).toBe(true);
+        expect(updater?.requestHeaders).toEqual({ "x-user-staging-id": "none" });
+        expect(typeof updater?.verifyUpdateCodeSignature).toBe("function");
+        expect(app.trayState?.().update).toEqual({ kind: "idle" });
 
-      updater?.emit("update-available", { version: "9.9.9" });
-      updater?.emit("update-downloaded", { version: "9.9.9" });
-      await settle();
-      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
-      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready.", buttons: ["Restart Now", "Later"] })]);
-      app.trayActions?.installUpdate();
-      expect(updater?.installedWith).toEqual([true, true]);
+        updater?.emit("update-available", { version: "9.9.9" });
+        updater?.emit("update-downloaded", { version: "9.9.9", downloadedFile: "C:\\cache\\installer.exe" });
+        await settle();
+        // The helper proved the installer kept.
+        expect(runs.map(([file, args]) => [file.endsWith("voice-windows.exe"), args])).toEqual([[true, ["--verify-update", "C:\\cache\\installer.exe"]]]);
+        expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+        expect(updater?.autoInstallOnAppQuit).toBe(true);
+        expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready.", buttons: ["Restart Now", "Later"] })]);
+        app.trayActions?.installUpdate();
+        expect(updater?.installedWith).toEqual([true, true]);
+      } finally {
+        vi.doUnmock("../../src/main/native/windows/update.js");
+      }
     });
 
     /** Linux updates only once the package carries a key to check them with. */
