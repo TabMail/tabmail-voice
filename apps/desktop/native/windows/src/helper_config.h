@@ -21,6 +21,9 @@ inline constexpr unsigned long long terminalReadBudgetMs = (std::numeric_limits<
 // Longest one accessibility request may run before the helper ends itself, so a provider that
 // stops answering can't hold the queue (ms).
 inline constexpr unsigned long long accessibilityWatchdogMs = 2500;
+// Longest a paste waits for another program to close the clipboard (ms), never past the paste's
+// deadline. A paste's watchdog gets this on top of its deadline, so the wait is never what ends the helper.
+inline constexpr unsigned long long clipboardOpenWaitMs = 500;
 // The UI Automation frameworks (UIA_FrameworkIdPropertyId) of an app's own native controls, never
 // web content: a document of one of these (Notepad's and Word's text are Win32) is no web page and
 // is read like the rest of the screen. Every other document is a web page whose address is checked

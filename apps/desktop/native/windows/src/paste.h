@@ -5,6 +5,7 @@
 #include "accessibility.h"
 #include "clipboard.h"
 #include "helper_config.h"
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -68,7 +69,8 @@ inline void paste(HWND window, const std::wstring& text, uint64_t deadline, cons
     // The clipboard is written, never read: what it held is replaced, and the text stays on it.
     Clipboard clipboard;
     std::cerr << "debug paste stage: clipboard-open\n";
-    clipboard.open();
+    const auto now = unixMilliseconds();
+    clipboard.open(std::min<unsigned long long>(HelperConfig::clipboardOpenWaitMs, deadline > now ? deadline - now : 0));
     std::cerr << "debug paste stage: final-focus-check\n";
     guard();
     std::cerr << "debug paste stage: clipboard-write\n";

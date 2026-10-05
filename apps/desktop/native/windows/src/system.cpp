@@ -128,8 +128,9 @@ public:
                         if (deadline <= now || deadline - now > 5000) throw std::runtime_error("invalid paste deadline");
                         {
                             std::lock_guard lock(mutex);
-                            // Paste checks its insertion deadline before mutation and input.
-                            busyUntil = GetTickCount64() + (deadline - now);
+                            // Paste checks its insertion deadline before mutation and input; its clipboard
+                            // wait ends at the deadline, and this margin keeps the watchdog clear of it.
+                            busyUntil = GetTickCount64() + (deadline - now) + voice::HelperConfig::clipboardOpenWaitMs;
                         }
                         voice::paste(window, voice::utf16(params["text"].get<std::string>()), deadline, [this] { return canceled.load(); });
                         result = JSON::object();

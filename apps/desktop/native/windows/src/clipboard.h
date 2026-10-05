@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
+#include "helper_config.h"
 #include <windows.h>
 #include <stdexcept>
 #include <cstring>
@@ -67,8 +68,8 @@ public:
         if (!window) throw std::runtime_error("clipboard owner failed");
     }
     ~Clipboard() { close(); DestroyWindow(window); }
-    void open() {
-        const auto end = GetTickCount64() + 500;
+    void open(unsigned long long waitMs = HelperConfig::clipboardOpenWaitMs) {
+        const auto end = GetTickCount64() + waitMs;
         while (!OpenClipboard(window)) {
             if (GetTickCount64() >= end) throw std::runtime_error("clipboard busy");
             clipboardWait(5);
