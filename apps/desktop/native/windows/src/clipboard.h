@@ -8,6 +8,11 @@
 #include <stdexcept>
 #include <cstring>
 #include <utility>
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <thread>
 
 namespace voice {
 // Clipboard ownership sends synchronous window messages. Pump them during waits so a
@@ -133,8 +138,12 @@ public:
         if (!sequence) throw std::runtime_error("clipboard sequence unavailable");
     }
     void restoreSnapshot() { open(); restoreHeld(); close(); }
+    std::vector<ClipboardItem> take() { return std::move(saved); }
+    void adopt(std::vector<ClipboardItem> items) { saved = std::move(items); }
+    // The clipboard as it was could not be saved: it is not put back.
+    void forget() { restorable = false; }
     void restore() {
-        if (!changed) return;
+        if (!changed || !restorable) return;
         open();
         if (GetClipboardSequenceNumber() == sequence && GetClipboardOwner() == window) restoreHeld();
         close();
@@ -147,8 +156,43 @@ private:
         changed = false;
     }
     HWND window = nullptr;
-    bool opened = false, changed = false;
+    bool opened = false, changed = false, restorable = true;
     DWORD sequence = 0;
     std::vector<ClipboardItem> saved;
+};
+// The clipboard as it was, saved on a thread of its own: a clipboard owner that renders late
+// keeps GetClipboardData (and the clipboard, held open by the reader) waiting for up to 30 s.
+// `read` waits `milliseconds`; past that the reader goes on alone and its result is dropped.
+struct ClipboardSave {
+    enum class Outcome { saved, unpreservable, unavailable };
+    Outcome outcome;
+    std::vector<ClipboardItem> items;
+    static ClipboardSave read(unsigned milliseconds) {
+        struct Shared {
+            std::mutex lock;
+            std::condition_variable done;
+            bool finished = false;
+            Outcome outcome = Outcome::unavailable;
+            std::vector<ClipboardItem> items;
+        };
+        auto shared = std::make_shared<Shared>();
+        std::thread([shared] {
+            auto outcome = Outcome::unavailable;
+            std::vector<ClipboardItem> items;
+            try {
+                Clipboard clipboard;
+                clipboard.open();
+                try { clipboard.snapshot(); items = clipboard.take(); outcome = Outcome::saved; }
+                catch (const std::exception&) { outcome = Outcome::unpreservable; }
+            } catch (const std::exception&) {}
+            std::lock_guard<std::mutex> guard(shared->lock);
+            shared->finished = true; shared->outcome = outcome; shared->items = std::move(items);
+            shared->done.notify_all();
+        }).detach();
+        std::unique_lock<std::mutex> guard(shared->lock);
+        if (!shared->done.wait_for(guard, std::chrono::milliseconds(milliseconds), [&] { return shared->finished; }))
+            return {Outcome::unavailable, {}};
+        return {shared->outcome, std::move(shared->items)};
+    }
 };
 }

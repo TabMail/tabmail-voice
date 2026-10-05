@@ -4,6 +4,7 @@
 #pragma once
 #include "accessibility.h"
 #include "clipboard.h"
+#include "helper_config.h"
 #include <functional>
 #include <iostream>
 
@@ -31,6 +32,27 @@ inline DWORD integrity(DWORD pid) {
     const auto count = *GetSidSubAuthorityCount(label->Label.Sid);
     if (!count) throw std::runtime_error("target integrity invalid");
     return *GetSidSubAuthority(label->Label.Sid, count - 1);
+}
+// Types `text` into the focused field, for when the clipboard can't be used. On one line: a typed
+// line break is a key press, which in a single-line field (a search box, a chat) submits it, so
+// every line break, or character that may act as one, is typed as a space (owner, 2026-10-05).
+inline void typeText(const std::wstring& text) {
+    std::vector<INPUT> keys;
+    const auto key = [&](wchar_t unit, DWORD flags) {
+        INPUT input{}; input.type = INPUT_KEYBOARD;
+        input.ki.wScan = unit; input.ki.dwFlags = KEYEVENTF_UNICODE | flags;
+        keys.push_back(input);
+    };
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == L'\r' && i + 1 < text.size() && text[i + 1] == L'\n') continue;
+        // A tab moves focus out of a form field, so it is a space too.
+        const bool lineBreak = text[i] == L'\r' || text[i] == L'\n' || text[i] == L'\v' || text[i] == L'\f' || text[i] == L'\t' ||
+            text[i] == L'\x85' || text[i] == L'\x2028' || text[i] == L'\x2029';
+        const wchar_t unit = lineBreak ? L' ' : text[i];
+        key(unit, 0); key(unit, KEYEVENTF_KEYUP);
+    }
+    if (keys.empty()) return;
+    if (SendInput(static_cast<UINT>(keys.size()), keys.data(), sizeof(INPUT)) != keys.size()) throw std::runtime_error("native insertion failed");
 }
 inline void paste(HWND window, const std::wstring& text, unsigned restoreDelay, uint64_t deadline, const std::function<bool()>& canceled) {
     std::cerr << "debug paste stage: focus-check\n";
@@ -62,11 +84,24 @@ inline void paste(HWND window, const std::wstring& text, unsigned restoreDelay, 
     GUITHREADINFO focus{}; focus.cbSize = sizeof(focus);
     const DWORD thread = GetWindowThreadProcessId(window, nullptr);
     if (!GetGUIThreadInfo(thread, &focus) || !focus.hwndFocus) throw std::runtime_error("focus unavailable");
+    std::cerr << "debug paste stage: clipboard-snapshot\n";
+    auto save = ClipboardSave::read(HelperConfig::clipboardSnapshotWaitMs);
+    if (save.outcome == ClipboardSave::Outcome::unavailable) {
+        // Not saved in time, or held by another program: the clipboard can't be used, so type.
+        std::cerr << "debug paste stage: clipboard unavailable, typing the text\n";
+        guard();
+        typeText(text);
+        std::cerr << "debug paste stage: complete (typed)\n";
+        return;
+    }
     Clipboard clipboard;
+    if (save.outcome == ClipboardSave::Outcome::saved) clipboard.adopt(std::move(save.items));
+    else {
+        std::cerr << "debug paste stage: clipboard not saved, pasting without restoring it\n";
+        clipboard.forget();
+    }
     std::cerr << "debug paste stage: clipboard-open\n";
     clipboard.open();
-    std::cerr << "debug paste stage: clipboard-snapshot\n";
-    clipboard.snapshot();
     std::cerr << "debug paste stage: final-focus-check\n";
     guard();
     try {

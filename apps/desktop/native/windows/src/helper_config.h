@@ -13,6 +13,9 @@ inline constexpr unsigned accessibilityMaxAttempts = 5;
 // Longest text gathered for one heading, link or table row (bytes of UTF-8).
 // Longest the look through what holds a selection, before its text is asked for (ms).
 inline constexpr unsigned long long contextSelectionScanMs = 200;
+// Longest a paste waits to save the clipboard before typing the text instead (ms). An owner that
+// renders late (a VM's clipboard agent) can hold the clipboard open for up to 30 s.
+inline constexpr unsigned clipboardSnapshotWaitMs = 500;
 // Browsers. Only their documents are web pages with an address to check against the
 // excluded sites; any other app's document (Notepad, Word, an Electron app) is never a page.
 inline constexpr const wchar_t* browserApps[] = {

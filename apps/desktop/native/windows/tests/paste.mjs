@@ -109,25 +109,46 @@ try {
   assert.equal((await changing.result).error, undefined);
   assert.equal((await command("clipboard")).text, "Synthetic newer copy", "newer copy preserved");
   assert.equal((await command("value")).text, "Before Synthetic inserted text after.");
-  // A slow clipboard owner must not consume the separate restoration budget.
-  // The target still has time to receive the paste before the insertion deadline.
+  // A clipboard that can't be saved in time (an owner rendering late, as a VM's clipboard agent
+  // does, or another program holding it open) is left alone: the text is typed instead, as one
+  // line, since a typed line break or tab could submit a form or move focus.
+  const until = async (label, expected) => {
+    const by = Date.now() + 4000;
+    let value;
+    while ((value = (await command("value")).text) !== expected) {
+      assert.ok(Date.now() < by, `${label} (field holds ${JSON.stringify(value)})`);
+      await pause(20);
+    }
+  };
+  // A late owner: whether the save waits it out or gives up and types, the text arrives and the
+  // owner's clipboard survives. (Another reader in a VM may make it render first.)
   await command("editable");
   await command("delayed");
-  const delayed = await request("insert", params({ restoreDelay: 800, deadline: Date.now() + 3000 })).result;
-  assert.equal(delayed.error, undefined, "delayed rendering and restoration fit the insertion budget");
-  assert.equal((await command("value")).text, "Before Synthetic inserted text after.");
-  assert.equal((await command("clipboard")).text, "Synthetic delayed clipboard", "delayed original is restored");
+  const late = await request("insert", params({ restoreDelay: 800, deadline: Date.now() + 3000 })).result;
+  assert.equal(late.error, undefined, "a late clipboard owner does not block insertion");
+  await until("late clipboard owner: the text arrives", "Before Synthetic inserted text after.");
+  assert.equal((await command("clipboard")).text, "Synthetic delayed clipboard", "the late owner's clipboard survives");
+  // A clipboard held open by another program can't be saved within the wait: typed, as one line.
   await command("editable");
-  await command("delayed");
-  const expired = await request("insert", params({ restoreDelay: 800, deadline: Date.now() + 2000 })).result;
-  assert.ok(expired.error, "delayed rendering does not authorize insertion after its deadline");
+  await command("lock");
+  const held = await request("insert", params({ text: "Synthetic\ninserted\r\ntext\tand\u2028more" })).result;
+  assert.equal(held.error, undefined, "a clipboard held by another program does not block insertion");
+  await until("held clipboard: typed, line breaks and tabs as spaces", "Before Synthetic inserted text and more after.");
+  await command("unlock");
+  assert.equal((await command("clipboard")).text, "Synthetic delayed clipboard", "a held clipboard is never written");
+  // A deadline that ends while the clipboard is still being saved sends nothing.
+  await command("editable");
+  await command("lock");
+  const expired = await request("insert", params({ deadline: Date.now() + 300 })).result;
+  assert.ok(expired.error, "the clipboard wait does not authorize insertion after its deadline");
+  await command("unlock");
   assert.equal((await command("value")).text, "Before selected after.", "expired request never sends input");
-  assert.equal((await command("clipboard")).text, "Synthetic delayed clipboard", "expired request leaves original clipboard intact");
+  assert.equal((await command("clipboard")).text, "Synthetic delayed clipboard", "expired request leaves the clipboard intact");
   assert.equal((await request("frontmostApp").result).result.window, window, "helper remains available after a refused late insertion");
   const exits = [once(fixture, "exit"), once(helper, "exit")];
   fixture.stdin.end(); helper.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
-  assert.equal(pending.size, 0); assert.equal(errors.replaceAll("\r\n", "\n").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "", "only categorical insertion diagnostics are emitted");
+  assert.equal(pending.size, 0); assert.equal(errors.replaceAll("\r\n", "\n").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete|clipboard unavailable, typing the text|complete \(typed\))\n/gmu, ""), "", "only categorical insertion diagnostics are emitted");
   process.stdout.write("Windows insertion, clipboard formats, cancellation, privacy, refusal and newer-copy checks passed\n");
 } finally {
   clearTimeout(timeout); helper.kill(); fixture.kill(); helperLines.close(); fixtureLines.close();

@@ -46,11 +46,13 @@ try {
   const stable = await command("stats");
   assert.equal(stable.firstExact && stable.secondEmpty && stable.clipboardOriginal, true, "positive control delivers exact text and restores clipboard");
 
+  // A held clipboard: the paste waits to save it, then would type the text instead. Focus moves
+  // during that wait, and the check before typing refuses.
   await command("lock");
   const offset = helper.errors().length;
   const pending = request("insert", params());
   const deadline = Date.now() + 1000;
-  while (!helper.errors().slice(offset).includes("paste stage: clipboard-open")) {
+  while (!helper.errors().slice(offset).includes("paste stage: clipboard-snapshot")) {
     assert.ok(Date.now() < deadline, "initial UIA identity is captured before changing focus");
     await pause(5);
   }
