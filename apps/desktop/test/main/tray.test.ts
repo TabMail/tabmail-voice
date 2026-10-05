@@ -9,16 +9,22 @@ import { type TrayActions, TrayMenu } from "../../src/main/tray.js";
 type Item = { label?: string; type?: string; enabled?: boolean; click?: () => void };
 
 /** The menu, icons and tooltip as the tray last got them. */
-const tray = vi.hoisted(() => ({ items: [] as Item[], icons: [] as unknown[], toolTip: "", themeChanged: [] as (() => void)[] }));
+const tray = vi.hoisted(() => ({ items: [] as Item[], icons: [] as unknown[], toolTip: "", themeChanged: [] as (() => void)[], dark: false }));
 
 vi.mock("electron", () => ({
   Menu: { buildFromTemplate: (items: Item[]) => items },
   nativeImage: {
     // Each image names its file; on Linux its pixels say which one it was (the marked one is fainter).
-    createFromPath: (path: string) => ({ file: path.split("/").at(-1), setTemplateImage() {}, toBitmap: () => Buffer.from([10, 20, 30, path.endsWith("Marked.png") ? 64 : 128]), getSize: () => ({ width: 1, height: 1 }) }),
+    createFromPath: (path: string) => ({
+      file: path.split("/").at(-1),
+      template: false,
+      setTemplateImage(template: boolean) { this.template = template; },
+      toBitmap: () => Buffer.from([10, 20, 30, path.endsWith("Marked.png") ? 64 : 128]),
+      getSize: () => ({ width: 1, height: 1 }),
+    }),
     createFromBitmap: (bitmap: Buffer) => ({ bitmap }),
   },
-  nativeTheme: { shouldUseDarkColors: false, on(_event: string, listener: () => void) { tray.themeChanged.push(listener); } },
+  nativeTheme: { get shouldUseDarkColors() { return tray.dark; }, on(_event: string, listener: () => void) { tray.themeChanged.push(listener); } },
   Tray: class {
     constructor(icon: unknown) { tray.icons.push(icon); }
     setImage(icon: unknown) { tray.icons.push(icon); }
@@ -132,6 +138,28 @@ describe("TrayMenu's permission mark", () => {
     expect(tray.toolTip).toBe("TabMail Voice");
   });
 
+  /** Only a missing permission marks it: signing in and finishing setup have their own menu items. */
+  test.each([
+    ["signed out", { isSignedIn: false }],
+    ["setup unfinished", { hasConsented: false }],
+  ])("%s with both permissions granted shows the plain icon", (_name, state) => {
+    menu(null, () => ({ ...ready, ...state }));
+
+    expect(icon()).toBe("trayTemplate.png");
+    expect(tray.toolTip).toBe("TabMail Voice");
+  });
+
+  /** macOS tints a template image for the menu bar; an untinted black dot would vanish in a dark one.
+   * The marked file's name doesn't end in "Template", so Electron wouldn't tell on its own. */
+  test.each([
+    ["plain", ready],
+    ["marked", { ...ready, microphoneGranted: false }],
+  ])("the %s icon is a template image", (_name, state) => {
+    menu(null, () => state);
+
+    expect(tray.icons.at(-1)).toMatchObject({ template: true });
+  });
+
   test.each([
     ["the microphone", { microphoneGranted: false }],
     ["accessibility", { accessibilityTrusted: false }],
@@ -155,14 +183,22 @@ describe("TrayMenu's permission mark", () => {
     expect(tray.icons.length).toBe(set);
   });
 
-  test("Linux colours the marked icon for its panel, and keeps the mark when the theme changes", () => {
-    onLinux("ubuntu:GNOME", () => {
+  test("Linux colours the marked icon for its panel, and again for the new theme, keeping the mark", () => {
+    onLinux("KDE", () => {
       tray.themeChanged.length = 0;
-      menu(null, () => ({ ...ready, accessibilityTrusted: false }));
-      expect(tray.icons.at(-1)).toEqual({ bitmap: Buffer.from([64, 64, 64, 64]) });
+      tray.dark = false;
+      try {
+        menu(null, () => ({ ...ready, accessibilityTrusted: false }));
+        // KDE's panel follows the theme: dark text on a light one.
+        expect(tray.icons.at(-1)).toEqual({ bitmap: Buffer.from([0, 0, 0, 64]) });
 
-      for (const changed of tray.themeChanged) changed();
-      expect(tray.icons.at(-1)).toEqual({ bitmap: Buffer.from([64, 64, 64, 64]) });
+        tray.dark = true;
+        expect(tray.themeChanged.length).toBeGreaterThan(0);
+        for (const changed of tray.themeChanged) changed();
+        expect(tray.icons.at(-1)).toEqual({ bitmap: Buffer.from([64, 64, 64, 64]) });
+      } finally {
+        tray.dark = false;
+      }
     });
   });
 });

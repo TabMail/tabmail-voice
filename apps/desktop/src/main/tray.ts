@@ -39,6 +39,8 @@ export class TrayMenu {
     private readonly state: () => MenuState,
     private readonly actions: TrayActions,
   ) {
+    // Template images, which macOS tints for the menu bar: set here, as the marked file's name doesn't
+    // end in "Template" for Electron to tell.
     const template = (name: string) => {
       const image = nativeImage.createFromPath(join(resources, name));
       image.setTemplateImage(true);
