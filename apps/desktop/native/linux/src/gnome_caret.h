@@ -62,9 +62,21 @@ public:
     }
     /** The input method's caret rectangle of the focused window. */
     void read(Channel::Reply reply) { rectangle("Read", nullptr, std::move(reply)); }
-    /** `caret`, in the focused window's AT-SPI coordinates, on the screen. */
-    void fromWindow(const std::array<int, 4>& caret, Channel::Reply reply) {
-        rectangle("FromWindow", g_variant_new("(dddd)", double(caret[0]), double(caret[1]), double(caret[2]), double(caret[3])), std::move(reply));
+    /** `caret`, in the focused window's AT-SPI coordinates, on the screen. Asked and answered before
+     * returning (at most `timeoutMilliseconds`): the helper's next request, a screen read that holds
+     * the main loop for as long as it takes, must not hold this answer back. */
+    nlohmann::json fromWindow(const std::array<int, 4>& caret) {
+        if (!state->bus) return nullptr;
+        Error error;
+        auto value = g_dbus_connection_call_sync(state->bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
+            "ai.tabmail.Voice.Caret", "FromWindow", g_variant_new("(dddd)", double(caret[0]), double(caret[1]), double(caret[2]), double(caret[3])),
+            G_VARIANT_TYPE("(s)"), G_DBUS_CALL_FLAGS_NO_AUTO_START, timeoutMilliseconds, state->cancel.get(), &error.value);
+        if (!value) return nullptr;
+        const char* text = nullptr;
+        g_variant_get(value, "(&s)", &text);
+        auto rect = geometry(text);
+        g_variant_unref(value);
+        return rect;
     }
 private:
     void rectangle(const char* method, GVariant* args, Channel::Reply reply) {

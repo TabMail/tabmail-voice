@@ -257,9 +257,21 @@ public:
                 return std::array<int,2>{value->start_offset, std::min(value->end_offset, count)};
             };
             const int top = offsetAt(clip.x + 1, clip.y + 1);
-            int bottom = offsetAt(clip.x + 1, clip.y + clip.height - 1);
             if (top < 0 || top > count) throw std::runtime_error("terminal visible range");
-            if (bottom < 0 || bottom > count) bottom = count; // Below the last line of output.
+            // The last line with text in the viewport: the bottom point can miss (padding, a partial
+            // row, the empty rows below the last output), so a row higher at a time, never below the
+            // viewport, where newer output of a scrolled-back terminal was never on the screen.
+            const int rowHeight = [&] {
+                check(); Error error;
+                auto rectangle = atspi_text_get_character_extents(text.get(), top, ATSPI_COORD_TYPE_WINDOW, &error.value);
+                std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rectangle, &g_free); check();
+                if (error.value || !rectangle || rectangle->height <= 0) throw std::runtime_error("terminal row height");
+                return rectangle->height;
+            }();
+            int bottom = -1;
+            for (double y = clip.y + clip.height - 1; y > clip.y + 1 && (bottom < 0 || bottom > count); y -= rowHeight)
+                bottom = offsetAt(clip.x + 1, y);
+            if (bottom < 0 || bottom > count) bottom = top;
             const auto first = line(top), last = bottom < count ? line(bottom) : std::array<int,2>{count, count};
             if (last[1] < first[0]) throw std::runtime_error("terminal visible range");
             return {{first[0], last[1]}};

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/screen.h"
 #include <iostream>
+#include <map>
 namespace {
 std::string content;
 std::vector<std::array<int, 2>> visible;
@@ -11,11 +12,13 @@ int caretScalar = 0;
 bool viewportOnly = false;
 // A GTK4 terminal answers no bounded ranges; the offsets under the viewport's top and bottom points.
 bool noBoundedRanges = false; int pointTop = 0, pointBottom = 0;
+// The offsets at the rows above the bottom point (window y, rows 16 high), -1 where none is given.
+std::map<int, int> pointRows;
 bool selectionOnly = false, mutate = false, shortRead = false, focused = true;
 void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 void reset(std::string value) {
     content = std::move(value); visible.clear(); selectedStart = selectedEnd = reads = visibilityReads = 0;
-    caretScalar = 0; viewportOnly = noBoundedRanges = false; pointTop = pointBottom = 0;
+    caretScalar = 0; viewportOnly = noBoundedRanges = false; pointTop = pointBottom = 0; pointRows.clear();
     selectionOnly = mutate = shortRead = false; focused = true;
 }
 }
@@ -63,8 +66,11 @@ extern "C" GArray* __wrap_atspi_text_get_bounded_ranges(AtspiText*, gint x, gint
 }
 // The offset under a window point: the first visible line's at the top, the last one's below.
 extern "C" gint __wrap_atspi_text_get_offset_at_point(AtspiText*, gint x, gint y, AtspiCoordType coords, GError**) {
-    expect(x == 11 && coords == ATSPI_COORD_TYPE_WINDOW && (y == 21 || y == 79), "corner points of the clipped viewport");
-    return y == 21 ? pointTop : pointBottom;
+    expect(x == 11 && coords == ATSPI_COORD_TYPE_WINDOW && (y == 21 || y == 79 || y == 63 || y == 47 || y == 31),
+        "the viewport's top point, then its bottom one and a row higher at a time, never below the viewport");
+    if (y == 21) return pointTop;
+    if (y == 79) return pointBottom;
+    const auto row = pointRows.find(y); return row == pointRows.end() ? -1 : row->second;
 }
 extern "C" AtspiTextRange* __wrap_atspi_text_get_string_at_offset(AtspiText*, gint offset, AtspiTextGranularity granularity, GError**) {
     expect(granularity == ATSPI_TEXT_GRANULARITY_LINE, "whole lines");
@@ -165,7 +171,15 @@ int main() {
     reset("hidden history\nfirst line\n> hello\nstatus\nhidden below");viewportOnly=true;noBoundedRanges=true;
     visible={{15,41}};pointTop=17;pointBottom=36;caretScalar=0;selectedStart=selectedEnd=0;
     expect(viewport()["surface"]["runs"][0]["text"]=="first line\n> hello\nstatus\n","GTK4 terminal reads the lines at the viewport's corners");
-    pointBottom=-1;visible={{15,53}};
-    expect(viewport()["surface"]["runs"][0]["text"]=="first line\n> hello\nstatus\nhidden below","below the last output line the read runs to the end");
+    // Output that ends above the viewport's bottom: the rows below it have no text, and the read ends
+    // at the last row that has.
+    reset("hidden history\nfirst line\n> hello\n");viewportOnly=true;noBoundedRanges=true;
+    visible={{15,34}};pointTop=17;pointBottom=-1;pointRows={{31,28}};caretScalar=0;selectedStart=selectedEnd=0;
+    expect(viewport()["surface"]["runs"][0]["text"]=="first line\n> hello\n","below the last output line the read ends at the last row with text");
+    // Scrolled back, the bottom point can miss (padding, a partial row) with newer output below the
+    // viewport, which was never on the screen: the read ends at the last row inside the viewport.
+    reset("hidden history\nfirst line\n> hello\nstatus\nnewer output below");viewportOnly=true;noBoundedRanges=true;
+    visible={{15,41}};pointTop=17;pointBottom=-1;pointRows={{63,36}};caretScalar=0;selectedStart=selectedEnd=0;
+    expect(viewport()["surface"]["runs"][0]["text"]=="first line\n> hello\nstatus\n","text below a scrolled-back viewport is never read as the screen");
     std::cout << "Live AT-SPI field and selection source tests passed\n";
 }

@@ -96,11 +96,12 @@ int main() {
             std::cerr << "debug accessibility: caret " << (!target ? "no target" : !matched ? "stale target" : caret ? "read" : "unavailable")
                 << " in " << elapsed() << "ms\n";
             if (!caret) reply(nullptr, true);
-            else gnomeCaret.fromWindow(*caret, [reply = std::move(reply), elapsed](const nlohmann::json& result, bool ok) {
-                std::cerr << "debug accessibility: caret placed " << (ok && !result.is_null() ? "on screen" : "nowhere")
+            else {
+                const auto placed = gnomeCaret.fromWindow(*caret);
+                std::cerr << "debug accessibility: caret placed " << (placed.is_null() ? "nowhere" : "on screen")
                     << " after " << elapsed() << "ms\n";
-                reply(result, ok);
-            });
+                reply(placed, true);
+            }
         } else if (method == "frontmostApp") {
             const auto target = foreground.target();
             const bool focused = target && foreground.matches(target->token);

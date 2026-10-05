@@ -2,7 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/gnome_caret.h"
+#include <atomic>
 #include <source_location>
+#include <thread>
 using namespace voice;
 static void require(bool value, std::source_location at = std::source_location::current()) {
     if (!value) { std::cerr << "caret check failed at " << at.line() << '\n'; std::_Exit(1); }
@@ -38,11 +40,15 @@ int main() {
         read(); while (g_main_context_iteration(nullptr, false)) {} g_usleep(1000);
     }
     require(fixture.calls > 0 && read() == JSON({{"x", -50}, {"y", 200}, {"width", 1}, {"height", 20}}));
-    // A window-relative caret goes to the Shell as it is, and comes back as a screen rectangle.
+    // A window-relative caret goes to the Shell as it is, and comes back as a screen rectangle. The
+    // answer is the call's own return value: the helper replies before handling its next request (a
+    // screen read that holds the main loop). The Shell's side is served here, on the main loop, while
+    // another thread asks.
     const auto fromWindow = [&](std::array<int, 4> rect) {
-        bool done = false; JSON value;
-        caret->fromWindow(rect, [&](auto result, bool success) { require(success); value = result; done = true; });
-        while (!done) g_main_context_iteration(nullptr, true);
+        std::atomic<bool> done = false; JSON value;
+        std::thread asker([&] { value = caret->fromWindow(rect); done = true; });
+        while (!done) g_main_context_iteration(nullptr, false);
+        asker.join();
         return value;
     };
     fixture.value = R"({"x":979,"y":312,"width":2,"height":19,"source":"accessibility"})";
@@ -50,6 +56,11 @@ int main() {
     require(fixture.method == "FromWindow" && fixture.args == std::array<double, 4>{869, 280, 2, 19});
     fixture.value = "null"; require(fromWindow({869, 280, 2, 19}).is_null());
     fixture.fail = true; require(fromWindow({869, 280, 2, 19}).is_null()); fixture.fail = false;
+    // A Shell that doesn't answer holds the helper no longer than the call's time limit.
+    fixture.delay = true;
+    const auto asked = g_get_monotonic_time(); require(fromWindow({869, 280, 2, 19}).is_null());
+    require(g_get_monotonic_time() - asked < 250000);
+    fixture.delay = false; fixture.pending.reset();
     fixture.value = "null"; require(read().is_null() && fixture.method == "Read");
     fixture.value = "malformed"; require(read().is_null());
     fixture.fail = true; require(read().is_null()); fixture.fail = false;
