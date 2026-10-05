@@ -37,8 +37,12 @@ public:
                 // Announced to every helper when the Shell enables the extension or
                 // unlocks: a held key was let go then, so ask for it again.
                 if (name == "ready") { if (self->hotkey) self->requestHotkey(); return; }
-                // Right Alt can't be had: it is AltGr on this keyboard layout.
-                if (name == "hotkeyUnavailable") { if (self->hotkey) self->output.send({{"event", "hotkeyUnavailable"}}); return; }
+                // Right Alt can't be had: it is AltGr on this keyboard layout, and the Shell
+                // holds it no longer (or never did).
+                if (name == "hotkeyUnavailable") {
+                    if (self->hotkey) { self->installed(false); self->output.send({{"event", "hotkeyUnavailable"}}); }
+                    return;
+                }
                 if (name == "hotkeyDown" || name == "hotkeyAgentDown" || name == "hotkeyUp") {
                     self->hotkeyChanged(name != "hotkeyUp", name == "hotkeyAgentDown");
                     return;

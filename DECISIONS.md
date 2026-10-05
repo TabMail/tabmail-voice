@@ -3455,9 +3455,10 @@ on a layout where Right Alt is AltGr the grab silently failed. Owner: "grab the 
 
 - On the `Alt_R` accelerator the extension takes a Shell modal grab (`Main.pushModal` on its own actor,
   `Shell.ActionMode.NONE`) for the hold. While it holds: Space sends `toggleMode`, Escape sends `cancel`,
-  every other key is swallowed, and the release of Right Alt (or of Meta_R, which it becomes with Shift
-  down) ends the hold and sends `hotkeyUp`. A revoked grab (the screen locks, another modal takes over)
-  ends it the same way. The 20 ms poll is gone.
+  every other key is swallowed, and the release of the same physical key (whatever the layout calls it
+  then: Meta_R with Shift down, another name after a layout switch) ends the hold and sends `hotkeyUp`.
+  A revoked grab (the screen locks, another modal takes over) ends it the same way. The 20 ms poll is
+  gone.
 - The grab is a stage grab, so it takes the pointer too for the hold, and the window in front loses
   keyboard focus to the Shell until the release. The caret is read once before the grab and returned
   while it holds (`Read`).
@@ -3467,9 +3468,13 @@ on a layout where Right Alt is AltGr the grab silently failed. Owner: "grab the 
   call): while the Shell holds the keyboard, focus events are ignored and the window in front stays the
   target for the caret, the screen read and the field read (`Foreground::targets`); a paste still needs
   that window's real focus (`Foreground::matches`), which it has again after the release.
-- Where Right Alt is AltGr, `SetHotkey` fails; the helper reports `hotkeyUnavailable` and Settings says
-  Right Alt types characters with this layout and to choose F8 or F9. The report clears once a key is
-  held or another key is chosen.
+- Where Right Alt is AltGr, the key can't be the dictation key. Where the layout has no `Alt_R` at all,
+  `SetHotkey` fails. Where the layout in use has none but Mutter finds one through its fallback US layout
+  (Greek, Hebrew, Arabic), the grab succeeds and the press arrives as `ISO_Level3_Shift`: the extension
+  checks the press's keysym, takes no hold, lets the key go so it types again, and sends
+  `hotkeyUnavailable`. Either way the helper reports it, no longer installed, and Settings says Right
+  Alt types characters with this layout and to choose F8 or F9. The report clears once a key is held
+  or another key is chosen.
 
 Rationale: a modal grab is the Shell's own way to own the keyboard for a moment, so no GNOME shortcut sees
 Space or Escape and the release comes from the key itself, with or without Sticky Keys. Consequence:

@@ -14,8 +14,9 @@ assert [line['action'] for line in lines if line['event'] == 'action'] == [
     'closeChat',
     'start', 'finish', 'startAgent', 'finish'
 ], result.stdout
-# Right Alt held by the Shell, let go, then held again.
-assert [line['installed'] for line in lines if line['event'] == 'hotkeyInstallationChanged'] == [True, False, True], result.stdout
+# Right Alt held by the Shell, given back as AltGr, held again once the Shell is ready, let go,
+# then held again.
+assert [line['installed'] for line in lines if line['event'] == 'hotkeyInstallationChanged'] == [True, False, True, False, True], result.stdout
 # Only while Right Alt is wanted does its refusal reach the app.
 assert len([line for line in lines if line['event'] == 'hotkeyUnavailable']) == 1, result.stdout
 print('GNOME recording ownership, ordered actions, chat Escape, Right Alt, idle rejection and teardown passed')

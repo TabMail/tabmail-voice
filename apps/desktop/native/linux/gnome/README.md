@@ -23,10 +23,12 @@ because the portal cannot bind a lone modifier: `Alt_R` starts a dictation and
 which Sticky Keys adds after a lone Right Alt). Mutter reports the press but not the
 release, so while the key is down the extension holds the whole keyboard with a Shell
 modal grab: Space switches the mode, Escape cancels, other keys are swallowed, and the
-release of Right Alt ends the hold and is reported. Meanwhile the window in front has
-no keyboard focus; `Holding` tells the helper, which keeps that window as the target.
-Only the `Alt_R` keysym is held; where Right Alt is AltGr the Shell can't hold it, and
-the helper reports `hotkeyUnavailable` so Settings can say so. Cancelling a recording
+release of the same physical key ends the hold and is reported. Meanwhile the window in
+front has no keyboard focus; `Holding` tells the helper, which keeps that window as the
+target. Only the `Alt_R` keysym is held. Where Right Alt is AltGr the Shell either can't
+grab it or (finding `Alt_R` through a fallback layout, as on Greek) sees it pressed as
+`ISO_Level3_Shift`, and then lets it go unheld; either way it sends `hotkeyUnavailable`
+so Settings can say so. Cancelling a recording
 leaves the dictation key held. A screen lock, a lost helper or disabling the extension
 lets it go, with a release if it was down; when the extension is enabled or the screen
 unlocks, it broadcasts `ready` and the helper asks for the key again.

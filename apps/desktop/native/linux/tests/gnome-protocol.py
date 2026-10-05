@@ -15,7 +15,8 @@ from gi.repository import Gio, GLib
 
 os.environ['IBUS_ADDRESS'] = os.environ['DBUS_SESSION_BUS_ADDRESS']
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-for name in ['org.gnome.Shell', 'org.freedesktop.IBus']:
+# The portal's name is held too, unanswered, so configuring F8 starts no real portal on this bus.
+for name in ['org.gnome.Shell', 'org.freedesktop.IBus', 'org.freedesktop.portal.Desktop']:
     reply = bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus',
         'org.freedesktop.DBus', 'RequestName', GLib.Variant('(su)', (name, 0)),
         None, Gio.DBusCallFlags.NONE, 1000, None)
@@ -27,9 +28,10 @@ info = Gio.DBusNodeInfo.new_for_xml('''<node><interface name="ai.tabmail.Voice.C
 <method name="Version"><arg type="u" direction="out"/></method>
 <method name="Read"><arg type="s" direction="out"/></method>
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
+<method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal></interface></node>''')
 state = {'version': 1, 'rect': {'x': 120, 'y': 140, 'width': 1, 'height': 20},
-         'recording': False, 'owner': None, 'language': 'ko', 'language_calls': 0}
+         'recording': False, 'owner': None, 'language': 'ko', 'language_calls': 0, 'hotkey': []}
 
 
 def shell_call(_bus, sender, _path, _interface, method, args, invocation):
@@ -37,6 +39,9 @@ def shell_call(_bus, sender, _path, _interface, method, args, invocation):
         invocation.return_value(GLib.Variant('(u)', (state['version'],)))
     elif method == 'Read':
         invocation.return_value(GLib.Variant('(s)', (json.dumps(state['rect']),)))
+    elif method == 'SetHotkey':
+        state['hotkey'].append(args.unpack()[0])
+        invocation.return_value(GLib.Variant('(b)', (True,)))
     else:
         assert method == 'SetRecording'
         state['recording'] = args.unpack()[0]
@@ -145,6 +150,15 @@ try:
     assert [m['action'] for m in hotkey.messages if 'action' in m] == ['toggleMode', 'cancel']
     action('cancel')
     assert [m['action'] for m in hotkey.messages if 'action' in m] == ['toggleMode', 'cancel']
+
+    # Right Alt is held by the Shell, not the portal, and asked for again there; F8 lets it go.
+    timing = {'tapMaxDuration': 0.3, 'doubleTapWindow': 0.4}
+    assert hotkey.request('configure', {'hotkey': 'rightAlt', **timing})['result'] == {'installed': True}
+    assert state['hotkey'] == [True]
+    assert hotkey.request('requestHotkey')['result'] == {'installed': True}
+    assert state['hotkey'] == [True, True]
+    hotkey.request('configure', {'hotkey': 'F8', **timing})
+    hotkey.until(lambda: state['hotkey'] == [True, True, False])
 
     system.quiet()
     assert system.request('keyboardLanguage')['result'] == {'code': 'ko'}

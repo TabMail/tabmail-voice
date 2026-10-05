@@ -11,7 +11,9 @@ class Signals {
     disconnect(id) { assert.ok(this.callbacks.delete(id)); }
     emit(name, ...args) { return [...this.callbacks.values()].filter(item => item.name === name).map(item => item.callback(this, ...args)); }
 }
-const KEY = {space: 0x20, Escape: 0xff1b, Alt_R: 0xffea, Meta_R: 0xffe8, a: 0x61};
+const KEY = {space: 0x20, Escape: 0xff1b, Alt_R: 0xffea, Meta_R: 0xffe8, a: 0x61, ISO_Level3_Shift: 0xfe03};
+// Physical keys: Right Alt's code is the same whatever the layout calls it.
+const CODE = {rightAlt: 108, space: 65, a: 38};
 const FLAG_REPEATED = 8;
 async function fixture(failExport = false) {
     const window = Object.assign(new Signals(), {get_frame_rect: () => ({x: 100, y: 100, width: 500, height: 400}),
@@ -25,7 +27,9 @@ async function fixture(failExport = false) {
     let exported = false;
     let exportXML, exportPath;
     const grabs = new Map(), allowed = new Map(), actions = [];
-    let lostOwner = null, failKey = null, nextGrab = 100, revokeAtOnce = false;
+    let lostOwner = null, failKey = null, nextGrab = 100;
+    // The key event an accelerator fires on: Right Alt, named Alt_R, unless a test says otherwise.
+    let pressed = {get_key_symbol: () => KEY.Alt_R, get_key_code: () => CODE.rightAlt};
     // The Shell's modal stack: the keyboard hold pushes one, and nothing else does here.
     const modals = [], added = [];
     class Actor extends Signals {
@@ -41,7 +45,8 @@ async function fixture(failExport = false) {
     const dependencies = {
         'gi://GLib': {default: {Variant: class {constructor(type, value) {this.type = type; this.value = value;}}}},
         'gi://Clutter': {default: {Actor, EventFlags: {FLAG_REPEATED}, EVENT_STOP: true,
-            KEY_space: KEY.space, KEY_Escape: KEY.Escape, KEY_Alt_R: KEY.Alt_R, KEY_Meta_R: KEY.Meta_R}},
+            KEY_space: KEY.space, KEY_Escape: KEY.Escape, KEY_Alt_R: KEY.Alt_R, KEY_Meta_R: KEY.Meta_R,
+            get_current_event: () => pressed}},
         'gi://Meta': {default: {KeyBindingFlags: {IGNORE_AUTOREPEAT: 1}, external_binding_name_for_action: id => String(id)}},
         'gi://Shell': {default: {ActionMode: {NORMAL: 1, NONE: 0}}},
         'gi://St': {default: {ThemeContext: {get_for_stage: () => theme}}},
@@ -55,7 +60,7 @@ async function fixture(failExport = false) {
         'resource:///org/gnome/shell/ui/main.js': {inputMethod, overview, sessionMode, wm: {allowKeybinding: (id, mode) => allowed.set(id, mode)},
             layoutManager: {uiGroup: {add_child: actor => added.push(actor)}},
             pushModal(actor, params) {
-                const grab = Object.assign(new Signals(), {revoked: revokeAtOnce, is_revoked() { return this.revoked; }});
+                const grab = new Signals();
                 modals.push({actor, params, grab});
                 return grab;
             },
@@ -91,14 +96,16 @@ async function fixture(failExport = false) {
         return result;
     };
     // A key event to the actor holding the keyboard; what its handlers returned.
-    const key = (type, symbol, repeated = false) => modals.at(-1).actor.emit(`key-${type}-event`,
-        {get_key_symbol: () => symbol, get_flags: () => (repeated ? FLAG_REPEATED : 0)});
+    const key = (type, symbol, repeated = false, code = {[KEY.Alt_R]: CODE.rightAlt, [KEY.Meta_R]: CODE.rightAlt, [KEY.space]: CODE.space}[symbol] ?? CODE.a) =>
+        modals.at(-1).actor.emit(`key-${type}-event`,
+            {get_key_symbol: () => symbol, get_key_code: () => code, get_flags: () => (repeated ? FLAG_REPEATED : 0)});
+    const pressing = (symbol, code = CODE.rightAlt) => { pressed = {get_key_symbol: () => symbol, get_key_code: () => code}; };
     const chat = (open, owner = ':1.42') => {
         let result;
         extension.SetChatOpenAsync([open], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    return {theme, recording, chat, hotkey, key, modals, added, revokeAtOnce: value => {revokeAtOnce = value;}, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    return {theme, recording, chat, hotkey, key, pressing, modals, added, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -347,21 +354,46 @@ test('Escape during the hold cancels and lets go of the recording keys; the hold
     f.extension.disable();
 });
 
-test('a keyboard the Shell cannot give leaves the press doing nothing; a grab over the hold ends it', async () => {
+test('a grab over the hold (a system dialog) ends it', async () => {
     const f = await fixture();
     f.hotkey(true);
-    f.revokeAtOnce(true);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
-    assert.deepEqual(sent(f), []);
-    assert.equal(f.modals.length, 0);
-    assert.ok(f.added[0].destroyed);
-    assert.equal(f.extension.Holding(), false);
-    f.revokeAtOnce(false);
-    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
-    // A system dialog takes the keys over the hold, Right Alt's release among them.
     f.modals[0].grab.emit('notify::revoked');
     assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 hotkeyUp']);
     assert.equal(f.modals.length, 0);
+    assert.equal(f.extension.Holding(), false);
+    f.extension.disable();
+});
+
+test('the hold ends when Right Alt comes up under another name (the layout switched while it was held)', async () => {
+    const f = await fixture();
+    f.hotkey(true);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    f.key('release', KEY.ISO_Level3_Shift, false, CODE.rightAlt);
+    assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 hotkeyUp']);
+    assert.equal(f.modals.length, 0);
+    assert.equal(f.extension.Holding(), false);
+    f.extension.disable();
+});
+
+/** Mutter finds Alt_R through a fallback layout where the one in use has none (Greek, Hebrew,
+ * Arabic), so the grab succeeds and Right Alt still arrives, as AltGr. */
+test('Right Alt pressed as AltGr starts no hold, is given back, and the helper is told why', async () => {
+    const f = await fixture();
+    f.hotkey(true);
+    f.pressing(KEY.ISO_Level3_Shift);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    assert.equal(f.modals.length, 0, 'the keyboard is not held');
+    assert.equal(f.extension.Holding(), false);
+    assert.equal(f.grabs.size, 0, 'Right Alt types again');
+    assert.deepEqual(sent(f), [':1.42 hotkeyUnavailable']);
+    // During a dictation the recording keys stay.
+    f.pressing(KEY.Alt_R);
+    f.hotkey(true); f.recording(true);
+    f.pressing(KEY.ISO_Level3_Shift);
+    f.display.emit('accelerator-activated', grabOf(f, '<Shift>Alt_R'));
+    assert.deepEqual([...f.grabs.values()], ['space', 'Escape']);
+    assert.deepEqual(sent(f).slice(1), [':1.42 hotkeyUnavailable']);
     f.extension.disable();
 });
 

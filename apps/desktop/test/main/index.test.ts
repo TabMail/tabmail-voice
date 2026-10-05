@@ -2058,6 +2058,7 @@ test("outside GNOME, Linux offers F8 and F9, with Shift for agent mode", async (
     expect(settings.hotkey).toBe("F8");
     expect(settings.keyboardPermission.agentShortcut).toBe("Shift+F8");
     expect(settings.keyboardPermission.instructions).toBe("Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.");
+    expect(settings.keyboardPermission).toMatchObject({ description: "Allows the dictation shortcut, pasting, and clipboard restoration." });
     expect(app.helpers.get("voice-hotkey")!.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "F8" }) }));
   } finally {
     vi.unstubAllEnvs();
@@ -2087,13 +2088,19 @@ test("GNOME activation, readiness hints and recording ownership are wired to the
     expect(state("settings")).toMatchObject({ hotkey: "rightAlt", availableHotkeys: ["rightAlt", "F8", "F9"] });
     const hotkey = app.helpers.get("voice-hotkey")!;
     expect(hotkey.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "rightAlt" }) }));
-    const keyboard = (state("welcome") as { keyboardPermission: { agentShortcut?: string; instructions: string } }).keyboardPermission;
-    expect(keyboard.agentShortcut).toBeUndefined();
-    expect(keyboard.instructions).toBe("This turns on GNOME integration; then allow keyboard interaction in the next system prompt.");
+    const keyboard = () => (state("welcome") as { keyboardPermission: { agentShortcut?: string; description: string; instructions: string } }).keyboardPermission;
+    expect(keyboard().agentShortcut).toBeUndefined();
+    expect(keyboard().description).toBe("Turns on GNOME integration and allows the dictation key, pasting, and clipboard restoration.");
+    expect(keyboard().instructions).toBe("This turns on GNOME integration; then allow keyboard interaction in the next system prompt.");
     // GNOME integration is part of the keyboard permission.
     hotkey.events.get("hotkeyInstallationChanged")!({ installed: true });
     app.helpers.get("voice-linux")!.events.get("insertionPermissionChanged")!({ granted: true });
     expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
+    // Turned on but not yet loaded by the Shell: only a new session finishes it.
+    hotkey.replies.set("gnomeIntegration", false);
+    await send({ type: "enableGnomeIntegration" });
+    expect(state("settings")).toMatchObject({ gnomeIntegration: "restart" });
+    expect(keyboard().instructions).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
     hotkey.replies.set("gnomeIntegration", true);
     await send({ type: "enableGnomeIntegration" });
     expect(commands).toContainEqual(["gnome-extensions", ["enable", "voice-caret@tabmail.ai"]]);

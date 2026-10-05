@@ -52,8 +52,20 @@ export default class VoiceCaret extends Extension {
         listen(global.display, 'accelerator-activated', (_display, id) => {
             const action = this._grabs.find(item => item.id === id)?.action;
             if (!action || !this._owner || Main.sessionMode.isLocked) return;
-            if ((action === 'hotkeyDown' || action === 'hotkeyAgentDown') && (this._hold || !this._holdKeyboard()))
-                return;
+            if (action === 'hotkeyDown' || action === 'hotkeyAgentDown') {
+                if (this._hold) return;
+                // Mutter finds Alt_R through a fallback layout when the one in use has none (Greek,
+                // Hebrew, Arabic): there Right Alt is AltGr and types characters. It is given back
+                // and the helper says so; it is not held.
+                const press = Clutter.get_current_event();
+                if (![Clutter.KEY_Alt_R, Clutter.KEY_Meta_R].includes(press.get_key_symbol())) {
+                    const owner = this._owner;
+                    this._want(owner, 'hotkey', false);
+                    this._send('hotkeyUnavailable', owner);
+                    return;
+                }
+                this._holdKeyboard(press.get_key_code());
+            }
             this._send(action);
             if (action === 'cancel') this._cancel();
         });
@@ -187,17 +199,12 @@ export default class VoiceCaret extends Extension {
      * would), and a lone modifier's release is no accelerator at all. The release arrives as a
      * key event, so a modifier Sticky Keys latched does not keep the hold going. The app in
      * front loses its keyboard focus meanwhile, so the caret is the one read as the key went
-     * down. Returns false, and the press does nothing, when the Shell can't give the keyboard. */
-    _holdKeyboard() {
+     * down. */
+    _holdKeyboard(keyCode) {
         const caret = this.Read();
         const actor = new Clutter.Actor({reactive: true});
         Main.layoutManager.uiGroup.add_child(actor);
         const grab = Main.pushModal(actor, {actionMode: Shell.ActionMode.NONE});
-        if (grab.is_revoked()) {
-            Main.popModal(grab);
-            actor.destroy();
-            return false;
-        }
         // A grab over this one (a system dialog) gets the keys, the release among them: the hold ends.
         grab.connect('notify::revoked', () => this._letGo());
         actor.connect('key-press-event', (_actor, event) => {
@@ -213,13 +220,13 @@ export default class VoiceCaret extends Extension {
             return Clutter.EVENT_STOP;
         });
         actor.connect('key-release-event', (_actor, event) => {
-            // With Shift down, Right Alt is Meta_R on most layouts.
-            if ([Clutter.KEY_Alt_R, Clutter.KEY_Meta_R].includes(event.get_key_symbol()))
+            // The key that went down, whatever it is called now (Meta_R with Shift down, or
+            // another name after a layout switch while it was held).
+            if (event.get_key_code() === keyCode)
                 this._letGo();
             return Clutter.EVENT_STOP;
         });
         this._hold = {actor, grab, caret};
-        return true;
     }
 
     /** Gives the keyboard back and tells the helper the key is up. */
