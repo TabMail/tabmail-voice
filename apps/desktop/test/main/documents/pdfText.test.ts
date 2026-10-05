@@ -6,7 +6,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { describe, expect, test } from "vitest";
-import { extractPDF, pdfMaxPages, pdfMaxTextBytes } from "../../../src/main/documents/pdfText.js";
+import { pdfMaxPages, pdfMaxTextBytes } from "../../../src/core/config.js";
+import { extractPDFInRealm as extractPDF } from "../../../src/main/documents/pdfRealm.js";
 
 import { extractPDF as referencePDF } from "./referencePDF.js";
 

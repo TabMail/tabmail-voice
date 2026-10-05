@@ -6,7 +6,8 @@ import { mkdtemp, mkdir, writeFile, rename, symlink, rm, truncate, realpath } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { LocalDocument, localDocumentPath, documentMaxBytes } from "../../../src/main/documents/localDocument.js";
+import { documentMaxBytes } from "../../../src/core/config.js";
+import { LocalDocument, localDocumentPath } from "../../../src/main/documents/localDocument.js";
 
 const roots: string[] = [];
 const signal = () => new AbortController().signal;

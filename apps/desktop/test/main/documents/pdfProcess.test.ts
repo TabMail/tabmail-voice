@@ -6,7 +6,8 @@ import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 const electron = vi.hoisted(() => ({ fork: vi.fn(), metrics: vi.fn() }));
 vi.mock("electron", () => ({ utilityProcess: { fork: electron.fork }, app: { getAppMetrics: electron.metrics } }));
-import { parsePDF, pdfProcessTimeoutMs, pdfProcessMemoryKiB, pdfProcessPollMs } from "../../../src/main/documents/pdfProcess.js";
+import { pdfProcessMemoryKiB, pdfProcessPollInterval, pdfProcessTimeout } from "../../../src/core/config.js";
+import { parsePDF } from "../../../src/main/documents/pdfProcess.js";
 
 let alive: boolean;
 let child: EventEmitter & { pid: number | undefined; kill: ReturnType<typeof vi.fn>; postMessage: ReturnType<typeof vi.fn> };
@@ -56,16 +57,16 @@ test("uses a disposable process with suppressed logs and bounded heap", async ()
 test.each(["timeout", "memory", "cancel", "exit", "monitor"])("terminates on %s", async (reason) => {
   const { promise, abort } = start();
   const rejected = expect(promise).rejects.toThrow();
-  if (reason === "timeout") await vi.advanceTimersByTimeAsync(pdfProcessTimeoutMs);
+  if (reason === "timeout") await vi.advanceTimersByTimeAsync(pdfProcessTimeout);
   if (reason === "memory") {
     electron.metrics.mockReturnValue([{ pid: 123, memory: { workingSetSize: pdfProcessMemoryKiB + 1 } }]);
-    await vi.advanceTimersByTimeAsync(pdfProcessPollMs);
+    await vi.advanceTimersByTimeAsync(pdfProcessPollInterval);
   }
   if (reason === "cancel") abort.abort();
   if (reason === "exit") child.emit("exit", 1);
   if (reason === "monitor") {
     electron.metrics.mockImplementationOnce(() => { throw new Error("unavailable"); });
-    await vi.advanceTimersByTimeAsync(pdfProcessPollMs);
+    await vi.advanceTimersByTimeAsync(pdfProcessPollInterval);
   }
   await rejected;
   expect(child.kill).toHaveBeenCalledOnce();
@@ -93,10 +94,10 @@ test.each(["cancel", "timeout", "monitor"])("a worker spawned after %s does not 
   const pending = parsePDF(new Uint8Array([1]), range, abort.signal);
   const rejected = expect(pending).rejects.toThrow();
   if (reason === "cancel") abort.abort();
-  if (reason === "timeout") await vi.advanceTimersByTimeAsync(pdfProcessTimeoutMs);
+  if (reason === "timeout") await vi.advanceTimersByTimeAsync(pdfProcessTimeout);
   if (reason === "monitor") {
     electron.metrics.mockImplementationOnce(() => { throw new Error("unavailable"); });
-    await vi.advanceTimersByTimeAsync(pdfProcessPollMs);
+    await vi.advanceTimersByTimeAsync(pdfProcessPollInterval);
   }
   await rejected;
   expect(child.kill.mock.results[0]?.value).toBe(false);

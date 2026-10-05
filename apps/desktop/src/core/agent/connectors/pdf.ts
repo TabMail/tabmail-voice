@@ -2,9 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { pdfMaxPages } from "../../config.js";
 import { Arguments, ToolArgumentError, type ConnectorTool } from "./contract.js";
-export const pdfMaxPages = 10;
-export const pdfMaxTextBytes = 64 * 1024;
 export interface PDFRange { startPage: number; pageCount: number }
 export interface PDFText {
   totalPages: number;

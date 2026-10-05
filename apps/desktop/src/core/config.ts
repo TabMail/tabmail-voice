@@ -765,3 +765,29 @@ export const chatActivitySpinnerLineWidth = 1.5;
  * (like the iOS app's `PendingSendToast`). */
 export const chatTimeoutBarHeight = 2;
 export const chatTimeoutBarOpacity = 0.7;
+
+// MARK: Local PDF reading (`file_read_pdf`)
+
+/** The most pages one read returns, and the most UTF-8 bytes of text across them. */
+export const pdfMaxPages = 10;
+export const pdfMaxTextBytes = 64 * 1024;
+/** The largest local file the agent may read (20 MiB), and how much of it one read call takes. */
+export const documentMaxBytes = 20 * 1024 * 1024;
+export const documentReadChunkBytes = 64 * 1024;
+/** The disposable process PDF.js runs in: its deadline, the working set (KiB) at which the parent
+ * ends it, how often the parent samples that, and its V8 heap (MiB). */
+export const pdfProcessTimeout = 15_000;
+export const pdfProcessMemoryKiB = 512 * 1024;
+export const pdfProcessPollInterval = 100;
+export const pdfProcessHeapMiB = 256;
+/** The interpreter PDF.js runs in, inside that process: its one WebAssembly memory in 64 KiB pages
+ * (256 MiB, fixed: it never grows), its stack, and the longest text-encoding label it may ask the
+ * host to decode with. */
+export const pdfRealmMemoryPages = 4_096;
+export const pdfRealmStackBytes = 1024 * 1024;
+export const pdfRealmEncodingLabelMax = 64;
+/** Explicit document text the native redactor takes (the Rust core refuses more), how long it gets,
+ * and the largest reply accepted. */
+export const redactionTextMaxBytes = 128 * 1024;
+export const textRedactionTimeout = 5_000;
+export const redactionReplyMaxBytes = 1024 * 1024;

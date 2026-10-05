@@ -3,7 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { expect, test, vi } from "vitest";
-import { NativeTextRedactor, redactionTextMaxBytes, textRedactionTimeout } from "../../../src/main/native/textRedactor.js";
+import { redactionTextMaxBytes, textRedactionTimeout } from "../../../src/core/config.js";
+import { NativeTextRedactor } from "../../../src/main/native/textRedactor.js";
 import { HelperError, type HelperClient } from "../../../src/main/native/helperClient.js";
 import { CancellationError } from "../../../src/core/util/timeout.js";
 

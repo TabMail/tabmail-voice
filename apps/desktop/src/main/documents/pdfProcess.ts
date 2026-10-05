@@ -4,13 +4,9 @@
 
 import { app, utilityProcess } from "electron";
 import { join } from "node:path";
+import type { PDFRange, PDFText } from "../../core/agent/connectors/pdf.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessHeapMiB, pdfProcessMemoryKiB, pdfProcessPollInterval, pdfProcessTimeout } from "../../core/config.js";
 import { CancellationError } from "../../core/util/timeout.js";
-import { documentMaxBytes } from "./localDocument.js";
-import { pdfMaxPages, pdfMaxTextBytes, type PDFRange, type PDFText } from "../../core/agent/connectors/pdf.js";
-
-export const pdfProcessTimeoutMs = 15_000;
-export const pdfProcessMemoryKiB = 512 * 1024;
-export const pdfProcessPollMs = 100;
 
 /** Parent-owned limits remain effective when the parser's event loop is blocked.
  * RSS is sampled, not an allocation ceiling; input and returned text are bounded too. */
@@ -22,7 +18,7 @@ export function parsePDF(bytes: Uint8Array, range: PDFRange, signal: AbortSignal
       serviceName: "TabMail PDF reader",
       stdio: "ignore",
       env: process.platform === "win32" && process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {},
-      execArgv: ["--max-old-space-size=256"],
+      execArgv: [`--max-old-space-size=${pdfProcessHeapMiB}`],
     });
     let settled = false;
     const finish = (error: Error | null, result?: PDFText) => {
@@ -36,7 +32,7 @@ export function parsePDF(bytes: Uint8Array, range: PDFRange, signal: AbortSignal
       else if (result !== undefined) resolve(result);
     };
     const cancel = () => finish(new CancellationError());
-    const timeout = setTimeout(() => finish(new Error("PDF reading exceeded the time limit.")), pdfProcessTimeoutMs);
+    const timeout = setTimeout(() => finish(new Error("PDF reading exceeded the time limit.")), pdfProcessTimeout);
     const memory = setInterval(() => {
       try {
         const metric = app.getAppMetrics().find((entry) => entry.pid === child.pid);
@@ -44,7 +40,7 @@ export function parsePDF(bytes: Uint8Array, range: PDFRange, signal: AbortSignal
       } catch {
         finish(new Error("PDF resource monitoring is unavailable."));
       }
-    }, pdfProcessPollMs);
+    }, pdfProcessPollInterval);
     signal.addEventListener("abort", cancel, { once: true });
     child.once("spawn", () => {
       // A pre-spawn kill can fail without a PID. End the late worker even when

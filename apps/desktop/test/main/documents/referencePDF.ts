@@ -4,10 +4,10 @@
 
 import { pathToFileURL } from "node:url";
 import { extractPDFDocument } from "../../../src/main/documents/pdfExtraction.js";
-import { documentMaxBytes } from "../../../src/main/documents/localDocument.js";
 
-import { pdfMaxPages, pdfMaxTextBytes, type PDFRange, type PDFText } from "../../../src/core/agent/connectors/pdf.js";
-export { pdfMaxPages, pdfMaxTextBytes, type PDFRange, type PDFText } from "../../../src/core/agent/connectors/pdf.js";
+import type { PDFRange, PDFText } from "../../../src/core/agent/connectors/pdf.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes } from "../../../src/core/config.js";
+export { pdfMaxTextBytes } from "../../../src/core/config.js";
 
 /** Test-only pre-consolidation parser for behavior comparisons and mocked stream
  * contracts. Production must use the bounded interpreter in pdfRealm.ts. */

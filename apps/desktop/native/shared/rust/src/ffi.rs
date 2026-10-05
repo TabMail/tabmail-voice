@@ -92,6 +92,10 @@ pub unsafe extern "C" fn voice_core_policy_json(
     unsafe { process(data, length, output, crate::policy::process) }
 }
 
+/// The most explicit document text one request takes, in UTF-8 bytes (the app's
+/// `redactionTextMaxBytes`).
+const DOCUMENT_TEXT_BYTES: usize = 128 * 1024;
+
 /// Explicit local-document text, independent of screen-exclusion policy. The
 /// application must authorize its file read before requesting this operation.
 #[unsafe(no_mangle)]
@@ -107,7 +111,7 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
                 .get("text")
                 .and_then(serde_json::Value::as_str)
                 .ok_or(1u32)?;
-            if text.len() > 128 * 1024 {
+            if text.len() > DOCUMENT_TEXT_BYTES {
                 return Err(1);
             }
             // Complete explicit text retains the original contract. Documents with
@@ -121,7 +125,7 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
                 text,
                 edge("startKnown")?,
                 edge("endKnown")?,
-                128 * 1024,
+                DOCUMENT_TEXT_BYTES,
             )?;
             let result = privacy::redact(&vec![vec![text[range].to_owned()]]).map_err(|_| 3u32)?;
             serde_json::to_vec(&serde_json::json!({"text": result[0][0]})).map_err(|_| 3)

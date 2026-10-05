@@ -7,8 +7,8 @@ import { dirname, join, posix } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import variant from "@jitl/quickjs-wasmfile-release-sync";
 import { newQuickJSWASMModuleFromVariant, newVariant, type QuickJSHandle } from "quickjs-emscripten-core";
-import { pdfMaxPages, pdfMaxTextBytes, type PDFRange, type PDFText } from "../../core/agent/connectors/pdf.js";
-import { documentMaxBytes } from "./localDocument.js";
+import type { PDFRange, PDFText } from "../../core/agent/connectors/pdf.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessTimeout, pdfRealmEncodingLabelMax, pdfRealmMemoryPages, pdfRealmStackBytes } from "../../core/config.js";
 import { extractPDFDocument } from "./pdfExtraction.js";
 import { pdfClonePrelude, pdfRealmPrelude } from "./pdfRealmPrelude.js";
 
@@ -19,7 +19,6 @@ declare const WebAssembly: { Memory: new (limits: { initial: number; maximum: nu
 
 const unreadable = "This PDF could not be read, or the requested page is unavailable.";
 const passwordRequired = "This PDF requires a password.";
-const memoryPages = 4096; // One fixed 256 MiB parser arena, including ArrayBuffers.
 
 /** This function belongs only in the disposable PDF utility process. */
 export async function extractPDFInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText> {
@@ -36,19 +35,20 @@ export async function extractPDFInRealm(bytes: Uint8Array, range: PDFRange): Pro
 }
 
 async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + pdfProcessTimeout;
   let refused = false;
-  const memory = new WebAssembly.Memory({ initial: memoryPages, maximum: memoryPages });
+  // One fixed parser arena, ArrayBuffers included.
+  const memory = new WebAssembly.Memory({ initial: pdfRealmMemoryPages, maximum: pdfRealmMemoryPages });
   const grow = memory.grow.bind(memory);
   memory.grow = (pages: number) => {
     // Even grow(0) would detach outstanding views in this Emscripten wrapper.
-    if (pages === 0) return memoryPages;
+    if (pages === 0) return pdfRealmMemoryPages;
     try { return grow(pages); } catch (error) { refused = true; throw error; }
   };
   const engine = await newQuickJSWASMModuleFromVariant(newVariant(variant, { wasmMemory: memory }));
   const runtime = engine.newRuntime();
   runtime.setMemoryLimit(-1); // The fixed WASM arena enforces the actual allocation bound.
-  runtime.setMaxStackSize(1024 * 1024);
+  runtime.setMaxStackSize(pdfRealmStackBytes);
   runtime.setInterruptHandler(() => {
     refused ||= Date.now() >= deadline;
     return refused;
@@ -92,7 +92,7 @@ async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText
       try { length = number(lengthResult.value); } finally { lengthResult.value.dispose(); }
       if (!Number.isSafeInteger(length) || length < 0 || length > documentMaxBytes) return fail();
       if (context.typeof(fatal) !== "boolean" || context.typeof(ignoreBOM) !== "boolean") return fail();
-      const decoder = new TextDecoder(text(encoding, 64), { fatal: context.dump(fatal), ignoreBOM: context.dump(ignoreBOM) });
+      const decoder = new TextDecoder(text(encoding, pdfRealmEncodingLabelMax), { fatal: context.dump(fatal), ignoreBOM: context.dump(ignoreBOM) });
       if (!length) return context.newString(decoder.decode());
       const view = context.getArrayBuffer(buffer);
       try { return context.newString(decoder.decode(view.value)); } finally { view.dispose(); }

@@ -5,9 +5,9 @@
 import { constants, type BigIntStats } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { posix, win32 } from "node:path";
+import { documentMaxBytes, documentReadChunkBytes } from "../../core/config.js";
 import { CancellationError } from "../../core/util/timeout.js";
 
-export const documentMaxBytes = 20 * 1024 * 1024;
 const refusal = () => new Error("Only unchanged regular local files in your home folder can be read (maximum 20 MiB).");
 
 /** Lexical validation also applies to canonical paths, so a Windows junction cannot
@@ -83,7 +83,7 @@ export class LocalDocument {
         let offset = 0;
         while (offset < bytes.length) {
           canceled(signal);
-          const result = await file.read(bytes, offset, Math.min(64 * 1024, bytes.length - offset), offset);
+          const result = await file.read(bytes, offset, Math.min(documentReadChunkBytes, bytes.length - offset), offset);
           if (result.bytesRead === 0) throw refusal();
           offset += result.bytesRead;
         }
