@@ -402,15 +402,15 @@ export const accessibilityPollInterval = 1_000;
 
 // MARK: Native helpers
 
-/** Longest a request to the macOS helper may take before it counts as failed. The screen read has
- * its own, longer budget (the helper's `HelperConfig.contextTimeBudget`) on top of this. */
+/** Longest a request to the macOS helper may take before it counts as failed. */
 export const helperRequestTimeout = 3_000;
 /** Allow IPC scheduling under load while staying inside the normal hold-reveal interval.
  * The native compositor call has its own shorter deadline; this bounds a stalled helper. */
 export const linuxCaretRequestTimeout = 200;
-/** Longest the helper's screen read may take: its own time budget for the Accessibility walk
- * (`HelperConfig.contextTimeBudget`, 1.5 s) and then some for a busy app's replies. */
-export const screenReadTimeout = 5_000;
+/** Longest a screen read may run in voice-screen-reader (`ScreenReader`) before that process is
+ * ended: past the longest dictation, nothing it reads is used. On Windows and Linux a terminal read
+ * has no time limit of its own; a dictation takes a read only if it is done in time (`contextWait`). */
+export const screenReaderTimeout = maxRecordingDuration;
 /** Longest a Calendar or Reminders request to the helper may take: the first one waits while
  * macOS asks the user for access. */
 export const eventStoreRequestTimeout = 120_000;

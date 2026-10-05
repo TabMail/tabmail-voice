@@ -481,8 +481,8 @@ export class DictationController extends Observable {
       () => this.microphoneLost(current),
     );
     // Capture must be dispatched before optional accessibility work: the caret lookup arming makes
-    // and the screen read can each block a helper's request loop (on Linux, the one the microphone
-    // starts on), and nothing said before the microphone starts is recorded.
+    // can block a helper's request loop (on Linux, the one the microphone starts on), and nothing
+    // said before the microphone starts is recorded.
     if (this.generation !== current) return;
     this.setPhase({ kind: "arming" });
     this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;

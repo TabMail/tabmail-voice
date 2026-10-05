@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { dirname, join } from "node:path";
 import { once } from "node:events";
 
 function client(executable, args = []) {
@@ -33,17 +34,20 @@ function client(executable, args = []) {
     new Promise((resolve, reject) => pending.push({ resolve, reject })), errors: () => errorText };
 }
 const helper = client(process.argv[2]);
+// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+const reader = client(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
 let id = 0;
 async function request(method, params = {}) {
-  helper.child.stdin.write(`${JSON.stringify({ id: ++id, method, params })}\n`);
-  const reply = await helper.next();
+  const target = method === "readScreen" ? reader : helper;
+  target.child.stdin.write(`${JSON.stringify({ id: ++id, method, params })}\n`);
+  const reply = await target.next();
   assert.equal(reply.id, id);
   assert.equal(reply.error, undefined, `${method} must succeed`);
   return reply.result;
 }
 const exclusions = { excludedAppIDs: [], excludedHosts: ["blocked.example"] };
 let fixture;
-const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); process.exitCode = 1; }, 40_000);
+const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 40_000);
 let checks = 0;
 try {
   for (const mode of ["row-hidden", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
@@ -59,7 +63,7 @@ try {
     const refused = mode.startsWith("page-") && mode !== "page-no-address";
     if (refused && (context === null || context.hidden !== true)) {
       fixture.child.stdin.write("stats\n");
-      process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}`);
+      process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}${reader.errors()}`);
     }
     if (refused) assert.deepEqual(context, { hidden: true }, `${mode}: entire reply refused, and reported as hidden`);
     else {
@@ -98,9 +102,9 @@ try {
     assert.deepEqual(await exit, [0, null]); fixture.lines.close(); fixture = undefined;
     ++checks;
   }
-  const exit = once(helper.child, "exit"); helper.child.stdin.end();
-  assert.deepEqual(await exit, [0, null]);
+  const exits = [once(helper.child, "exit"), once(reader.child, "exit")]; helper.child.stdin.end(); reader.child.stdin.end();
+  for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   process.stdout.write(`${checks} synthetic provider privacy cases passed through the actual helper\n`);
 } finally {
-  clearTimeout(timeout); fixture?.child.kill(); fixture?.lines.close(); helper.child.kill(); helper.lines.close();
+  clearTimeout(timeout); fixture?.child.kill(); fixture?.lines.close(); helper.child.kill(); helper.lines.close(); reader.child.kill(); reader.lines.close();
 }

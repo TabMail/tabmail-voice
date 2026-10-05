@@ -87,6 +87,7 @@
         "filter": [
           "voice-hotkey.exe",
           "voice-windows.exe",
+          "voice-screen-reader.exe",
           "voice-productivity.exe"
         ]
       },
@@ -140,6 +141,7 @@
         "filter": [
           "voice-hotkey",
           "voice-linux",
+          "voice-screen-reader",
           "voice-files",
           "voice-productivity"
         ]

@@ -4,7 +4,7 @@
 
 # Requires GTK3/VTE and a private GNOME session with the Voice caret extension.
 # Do not run against a personal desktop: the fixture intentionally changes focus.
-import sys,subprocess,tempfile,time,json,select
+import os,sys,subprocess,tempfile,time,json,select
 BASE_LINES=['first line','> hello world','visible-terminal-sentinel','status bar']
 CHANGED_LINES=['first line','界😀 e\u0301 > hello world','changed-right-sentinel']
 if '--fixture' in sys.argv:
@@ -40,7 +40,8 @@ parser.add_argument('--diagnostics',required=True)
 args=parser.parse_args()
 helper=args.helper
 with tempfile.TemporaryFile(mode='w+t') as diagnostic:
- native=subprocess.Popen([helper],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
+ # The screen is read by voice-screen-reader, a program of its own beside the helper.
+ native=subprocess.Popen([os.path.join(os.path.dirname(helper),'voice-screen-reader')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  fixture=subprocess.Popen([sys.executable,__file__,'--fixture'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  seq=0
  try:

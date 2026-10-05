@@ -4,7 +4,7 @@
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ConnectorTool } from "../../src/core/agent/connectors/contract.js";
 import { connectorIDs } from "../../src/core/agent/connectors/index.js";
@@ -28,7 +28,7 @@ const app = vi.hoisted(() => ({
   appEvents: new Map<string, (...args: unknown[]) => void>(),
   credential: null as string | null,
   refusesDelete: false,
-  helpers: new Map<string, { options: { name: string; restartExitCode?: number }; onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
+  helpers: new Map<string, { options: { name: string; executable: string; args?: string[]; restartExitCode?: number; stopEndsAtOnce?: boolean }; lifecycle: string[]; onStart: (() => void) | undefined; onExit: (() => void) | undefined; requests: { method: string; params: unknown; signal?: AbortSignal }[]; events: Map<string, (message: Record<string, unknown>) => void>; hold: boolean; unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[]; replies: Map<string, unknown> }>(),
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
@@ -286,17 +286,25 @@ vi.mock("../../src/main/native/helperClient.js", () => ({
     onExit: (() => void) | undefined;
     readonly requests: { method: string; params: unknown; signal?: AbortSignal }[] = [];
     readonly events = new Map<string, (message: Record<string, unknown>) => void>();
-    constructor(readonly options: { name: string; restartExitCode?: number }) {
+    constructor(readonly options: { name: string; executable: string; args?: string[]; restartExitCode?: number; stopEndsAtOnce?: boolean }) {
       app.helpers.set(options.name, this);
     }
+    /** "start", "stop" and "restart", as the app called them. */
+    readonly lifecycle: string[] = [];
     on(event: string, handler: (message: Record<string, unknown>) => void) {
       this.events.set(event, handler);
     }
     // As the real client: `onStart` runs as it starts, even with no executable to spawn.
     start() {
+      this.lifecycle.push("start");
       this.onStart?.();
     }
-    stop() {}
+    stop() {
+      this.lifecycle.push("stop");
+    }
+    restart() {
+      this.lifecycle.push("restart");
+    }
     /** While set, a request waits until the test answers it, as a helper still applying it. */
     hold = false;
     readonly unanswered: { method: string; params: unknown; answer: (error?: Error) => void }[] = [];
@@ -620,18 +628,17 @@ describe("main process wiring", () => {
     expect(state().hotkeyUnavailable).toBe(true);
   });
 
-  test("Linux placement prefers the focused element's caret, asked before the screen read, over compositor geometry", async () => {
+  test("Linux placement prefers the focused element's caret over compositor geometry; the screen is read elsewhere", async () => {
     await launch("linux");
-    const accessible = app.helpers.get("voice-linux")!, compositor = app.helpers.get("voice-hotkey")!;
-    accessible.replies.set("readScreen", null);
+    const accessible = app.helpers.get("voice-linux")!, compositor = app.helpers.get("voice-hotkey")!, reader = app.helpers.get("voice-screen-reader")!;
+    reader.replies.set("readScreen", null);
     const before = { accessible: accessible.requests.length, compositor: compositor.requests.length };
     const caret = app.overlay!.locate();
     const capture = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> };
     await capture.captureContext({ apps: [], sites: [] });
     const dispatched = accessible.requests.slice(before.accessible).map(request => request.method);
-    expect.soft(dispatched.indexOf("caretAnchor")).toBeGreaterThanOrEqual(0);
-    expect.soft(dispatched.indexOf("caretAnchor")).toBeLessThan(dispatched.indexOf("readScreen"));
-    expect.soft(dispatched).not.toContain("frontmostApp");
+    expect.soft(dispatched).toEqual(["caretAnchor"]);
+    expect.soft(reader.requests.map(request => request.method)).toEqual(["readScreen"]);
     expect.soft(compositor.requests.slice(before.compositor)).toEqual([{ method: "caretAnchor", params: {}, signal: undefined }]);
     expect(await caret).toBeNull();
     compositor.replies.set("caretAnchor", { x: 200, y: 300, width: 1, height: 20 });
@@ -1096,13 +1103,13 @@ describe("main process wiring", () => {
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true, lastUsed: 2 }]);
   });
 
-  /** The apps and websites a dictation excludes from screen reading reach `voice-macos` with the screen read, as
-   * the controller hands them over (ADR-DESK-045, ADR-DESK-047): dropped anywhere on the way, the helper
-   * would read a password manager in front. */
-  test("the screen read carries the dictation's excluded apps and websites to voice-macos", async () => {
+  /** The apps and websites a dictation excludes from screen reading reach `voice-screen-reader` with the screen
+   * read, as the controller hands them over (ADR-DESK-045, ADR-DESK-047): dropped anywhere on the way, the
+   * helper would read a password manager in front. */
+  test("the screen read carries the dictation's excluded apps and websites to voice-screen-reader", async () => {
     await launch("darwin");
     const controller = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null };
-    const helper = app.helpers.get("voice-macos");
+    const helper = app.helpers.get("voice-screen-reader");
     helper?.replies.set("readScreen", null);
 
     expect(await controller.captureContext({ apps: ["com.example.vault", "org.example.bank"], sites: ["example.com"] })).toBeNull();
@@ -1146,6 +1153,32 @@ describe("main process wiring", () => {
     expect(app.stored.get("excludedApps")).toEqual([]);
   });
 
+  /** A slow screen read must never hold up a paste: on every platform it runs in voice-screen-reader,
+   * a program of its own (ADR-DESK-053), started with the app and ended at once when the app quits;
+   * the main helper, which pastes, is never asked to read the screen. */
+  test.each([
+    ["darwin", "voice-macos", "voice-screen-reader"],
+    ["win32", "voice-windows", "voice-screen-reader.exe"],
+    ["linux", "voice-linux", "voice-screen-reader"],
+  ] as const)("on %s the screen is read by its own program, never the one that pastes", async (platform, mainName, executable) => {
+    await launch(platform);
+    const reader = app.helpers.get("voice-screen-reader")!;
+    const main = app.helpers.get(mainName)!;
+    expect(reader.options).toMatchObject({ stopEndsAtOnce: true });
+    expect(reader.options.args ?? []).toEqual([]);
+    expect(basename(reader.options.executable)).toBe(executable);
+    expect(dirname(reader.options.executable)).toBe(dirname(main.options.executable));
+    expect(reader.lifecycle).toEqual(["start"]);
+
+    reader.replies.set("readScreen", { hidden: true });
+    const controller = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null };
+    expect(await controller.captureContext({ apps: [], sites: [] })).toEqual({ hidden: true });
+    expect(main.requests.some((request) => request.method === "readScreen")).toBe(false);
+
+    app.appEvents.get("before-quit")?.({ preventDefault() {} });
+    await vi.waitFor(() => expect(reader.lifecycle).toEqual(["start", "stop"]));
+  });
+
   test("Windows privacy picks an executable and passes native IDs through screen and correction reads", async () => {
     await launch("win32");
     const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { canExcludeApps: boolean; builtInExcludedApps: unknown };
@@ -1160,9 +1193,11 @@ describe("main process wiring", () => {
     expect(app.stored.get("excludedApps")).toEqual([{ bundleIdentifier: "Example.exe", name: "Example" }]);
     expect(helper?.requests.filter((request) => request.method === "appInfo").map((request) => request.params)).toEqual([{ path: app.pickedPath }]);
     const controller = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> | null };
-    helper?.replies.set("readScreen", null);
+    const reader = app.helpers.get("voice-screen-reader");
+    reader?.replies.set("readScreen", null);
     await controller.captureContext({ apps: ["Example.exe"], sites: ["example.com"] });
-    expect(helper?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toEqual([{ excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }]);
+    expect(reader?.requests.filter((request) => request.method === "readScreen").map((request) => request.params)).toEqual([{ excludedAppIDs: ["Example.exe"], excludedHosts: ["example.com"] }]);
+    expect(helper?.requests.some((request) => request.method === "readScreen")).toBe(false);
     expect(await send({ type: "removeExcludedApp", bundleIdentifier: "example.EXE" })).toEqual({ error: null });
     expect(app.stored.get("excludedApps")).toEqual([]);
     expect(app.helpers.get("voice-macos")?.requests.some((request) => request.method === "appInfo")).not.toBe(true);
@@ -2012,13 +2047,14 @@ test("an old shell reply cannot revive a canceled hold or overwrite newer geomet
 });
 
 
-test("Windows queues the caret before screen context without a foreground IPC round trip", async () => {
+test("Windows asks for the caret without a foreground IPC round trip, and reads the screen elsewhere", async () => {
   await launch("win32");
   const helper = app.helpers.get("voice-windows")!;
+  const reader = app.helpers.get("voice-screen-reader")!;
   const foreground = Promise.withResolvers<null>();
   helper.replies.set("frontmostApp", foreground.promise);
   helper.replies.set("caretAnchor", { x: 500, y: 300, width: 1, height: 20 });
-  helper.replies.set("readScreen", null);
+  reader.replies.set("readScreen", null);
   const before = helper.requests.length;
   const caret = app.overlay!.locate();
   // Context capture follows arming synchronously in DictationController.start.
@@ -2027,7 +2063,8 @@ test("Windows queues the caret before screen context without a foreground IPC ro
   const dispatched = helper.requests.slice(before).map(request => request.method);
   expect.soft(dispatched).toContain("caretAnchor");
   expect.soft(dispatched).not.toContain("frontmostApp");
-  expect.soft(dispatched.indexOf("caretAnchor")).toBeLessThan(dispatched.indexOf("readScreen"));
+  expect.soft(dispatched).not.toContain("readScreen");
+  expect.soft(reader.requests.map(request => request.method)).toEqual(["readScreen"]);
   await context;
   foreground.resolve(null);
   expect(await caret).toEqual({ x: 500, y: 300, width: 1, height: 20 });

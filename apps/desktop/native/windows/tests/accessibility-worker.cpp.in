@@ -36,20 +36,20 @@ int main() {
  check("provider failure answers a bounded error",request("caretAnchor",JSON::object()).contains("error"));
  voice::providerFailure=false;
  check("provider failure does not poison next lookup",request("caretAnchor",JSON::object())["result"].is_object());
- voice::armGate(); auto blocking=enqueue("readScreen",JSON::object()); voice::waitEntered();
+ voice::armGate(); auto blocking=enqueue("caretAnchor",JSON::object()); voice::waitEntered();
  auto stale=enqueue("caretAnchor",JSON::object());
  foreground=w(84); voice::releaseGate(); output->take(blocking);
  check("queued old window refuses after foreground changes",output->take(stale)["result"].is_null());
  auto fresh=request("caretAnchor",JSON::object());
  check("new request observes new window",fresh.contains("result") && fresh["result"].value("x",0)==84);
  foreground=w(42);
- voice::armGate(); blocking=enqueue("readScreen",JSON::object()); voice::waitEntered();
+ voice::armGate(); blocking=enqueue("caretAnchor",JSON::object()); voice::waitEntered();
  auto canceled=enqueue("caretAnchor",JSON::object()); worker->cancel(canceled); before=voice::caretCalls;
  voice::releaseGate(); output->take(blocking);
  auto barrier=request("caretAnchor",JSON::object());
  check("canceled queued lookup never executes",voice::caretCalls==before+1 && barrier["result"].is_object());
  bool noReply; {std::lock_guard lock(output->mutex);noReply=!output->replies.contains(canceled);} check("canceled queued lookup has no reply",noReply);
- voice::armGate(); blocking=enqueue("readScreen",JSON::object()); voice::waitEntered();
+ voice::armGate(); blocking=enqueue("caretAnchor",JSON::object()); voice::waitEntered();
  std::vector<int64_t> queued; for(int i=0;i<4;++i)queued.push_back(enqueue("caretAnchor",JSON::object()));
  auto overflow=enqueue("caretAnchor",JSON::object());check("queue remains bounded",output->take(overflow).contains("error"));
  voice::releaseGate();output->take(blocking);for(auto pending:queued)output->take(pending);
@@ -57,14 +57,6 @@ int main() {
  bool refused=request("insert",insert).contains("error");
  check("insert still requires explicit target and does not mutate",refused && voice::inserts==0);
  check("field read still requires explicit target",request("focusedFieldValue",{{"maxLength",uint64_t{20}}}).contains("error") && voice::fieldCalls==0);
- check("screen context keeps snapshot route",request("readScreen",JSON::object())["result"].value("syntheticWindow",0)==42);
- // A terminal read can take longer than other requests (the app waits up to its own limit): it is
- // answered, and the process (and the microphone in it) is not ended.
- voice::screenDelayMs=static_cast<int>(voice::HelperConfig::accessibilityWatchdogMs+500);
- auto slow=enqueue("readScreen",JSON::object());
- check("a screen read slower than other requests is answered, not ended",
-  output->take(slow,std::chrono::milliseconds(voice::HelperConfig::screenReadWatchdogMs))["result"].value("syntheticWindow",0)==42);
- voice::screenDelayMs=0;
  worker->finish();
  int failed=0;for(const auto& c:cases)if(!c["pass"].get<bool>())++failed;
  std::cout<<JSON{{"cases",cases},{"passed",cases.size()-failed},{"failed",failed}}.dump(2)<<std::endl;

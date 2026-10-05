@@ -79,16 +79,15 @@ test("correction learning refuses invalid targets and malformed or over-limit re
   expect(await system.focusedFieldValue(101, { apps: ["Synthetic.exe"], sites: ["example.com"] })).toBe("");
 });
 
-/** The native readers receive the entire enlarged policy, including exclusions past the old cap. */
-test("screen reading and correction learning forward every saved exclusion", async () => {
+/** The native reader receives the entire enlarged policy, including exclusions past the old cap
+ * (the screen read's: `screenReader.test.ts`). */
+test("correction learning forwards every saved exclusion", async () => {
   const apps = Array.from({ length: 1000 }, (_, index) => `Synthetic${index}.exe`);
   const sites = Array.from({ length: 1000 }, (_, index) => `site${index}.example.test`);
   const policy = { apps, sites };
   mocks.request.mockResolvedValue(null);
-  await system.readScreen(policy);
   await system.focusedFieldValue(101, policy);
   expect(mocks.request.mock.calls).toEqual([
-    ["readScreen", { excludedAppIDs: apps, excludedHosts: sites }, 5000],
     ["focusedFieldValue", { window: 101, maxLength: 20_000, excludedAppIDs: apps, excludedHosts: sites }],
   ]);
 });

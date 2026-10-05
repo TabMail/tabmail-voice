@@ -40,6 +40,9 @@ export interface HelperOptions {
   restartExitCode?: number;
   /** Helper implements fire-and-forget cancel requests for queued native mutations. */
   cancelRequests?: boolean;
+  /** The helper holds nothing to clean up (the screen reader): `stop` ends it at once rather than
+   * closing its stdin, so work under way can't outlive the app. */
+  stopEndsAtOnce?: boolean;
 }
 
 interface Pending {
@@ -80,14 +83,26 @@ export class HelperClient {
     this.launch();
   }
 
-  /** Stops the helper for good: closing its stdin ends it. */
+  /** Stops the helper for good: closing its stdin ends it (`stopEndsAtOnce`: it is killed). */
   stop(): void {
     this.stopped = true;
     if (this.restartTimer !== null) clearTimeout(this.restartTimer);
     this.restartTimer = null;
-    this.child?.stdin.end();
+    if (this.options.stopEndsAtOnce) this.child?.kill("SIGKILL");
+    else this.child?.stdin.end();
     this.child = null;
     this.failPending("exited");
+  }
+
+  /** Ends the running helper at once, whatever it is doing, and starts it afresh; its requests
+   * fail as `exited`. */
+  restart(): void {
+    const child = this.child;
+    if (!child) return;
+    this.child = null;
+    this.failPending("exited");
+    child.kill("SIGKILL");
+    this.launch();
   }
 
   /** Runs `handler` for each `event` the helper sends. */

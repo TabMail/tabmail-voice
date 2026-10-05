@@ -8,38 +8,44 @@ import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { mkdtempSync, copyFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const temporary = mkdtempSync(join(tmpdir(), "voice-app-info-"));
 const picked = join(temporary, "Synthetic 앱.EXE");
 copyFileSync(process.argv[2], picked);
 const invalidApp = join(temporary, "invalid.exe");
 writeFileSync(invalidApp, "synthetic non-executable");
-const child = spawn(process.argv[2], [], { stdio: ["pipe", "pipe", "pipe"] });
 const pending = new Map();
 let id = 0;
-let stderr = "";
-child.stderr.on("data", (chunk) => { stderr += chunk; });
-child.on("error", (error) => { throw error; });
-const lines = createInterface({ input: child.stdout });
-lines.on("line", (line) => {
-  const message = JSON.parse(line);
-  if (typeof message.event === "string") return;
-  const completion = pending.get(message.id);
-  assert.ok(completion, "every reply matches its request");
-  pending.delete(message.id);
-  completion(message);
-});
+function start(executable) {
+  const started = { child: spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"] }), stderr: "" };
+  started.child.stderr.on("data", (chunk) => { started.stderr += chunk; });
+  started.child.on("error", (error) => { throw error; });
+  started.lines = createInterface({ input: started.child.stdout });
+  started.lines.on("line", (line) => {
+    const message = JSON.parse(line);
+    if (typeof message.event === "string") return;
+    const completion = pending.get(message.id);
+    assert.ok(completion, "every reply matches its request");
+    pending.delete(message.id);
+    completion(message);
+  });
+  return started;
+}
+const helper = start(process.argv[2]);
+const child = helper.child;
+// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+const reader = start(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
 function request(method, params = {}) {
   id += 1;
   const requestID = id;
   return new Promise((resolve) => {
     pending.set(requestID, resolve);
-    child.stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
+    (method === "readScreen" ? reader : helper).child.stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
   });
 }
 const timeout = setTimeout(() => {
-  child.kill();
+  child.kill(); reader.child.kill();
   process.stderr.write("system protocol timed out\n");
   process.exitCode = 1;
 }, 10_000);
@@ -82,15 +88,16 @@ try {
   assert.ok((await request("unknown")).error);
   assert.ok((await request("insert", { text: "synthetic test" })).error, "unsupported paste fails closed");
   assert.equal(typeof (await request("fullUserName")).result.name, "string", "refusal leaves helper usable");
-  const exit = once(child, "exit");
-  child.stdin.end();
-  assert.deepEqual(await exit, [0, null], "EOF ends the helper");
+  const exits = [once(child, "exit"), once(reader.child, "exit")];
+  child.stdin.end(); reader.child.stdin.end();
+  for (const exit of exits) assert.deepEqual(await exit, [0, null], "EOF ends the helper");
   assert.equal(pending.size, 0);
-  assert.equal(stderr.replaceAll("\r\n", "\n"), "debug caret lookup: foreground-changed\ndebug caret lookup: provider-call-failed\n", "invalid caret requests log only fixed categories");
+  assert.equal(reader.stderr, "", "refused screen policies log nothing");
+  assert.equal(helper.stderr.replaceAll("\r\n", "\n"), "debug caret lookup: foreground-changed\ndebug caret lookup: provider-call-failed\n", "invalid caret requests log only fixed categories");
   process.stdout.write("system identity, refusal, malformed input, recovery and EOF checks passed\n");
 } finally {
   clearTimeout(timeout);
-  child.kill();
-  lines.close();
+  child.kill(); reader.child.kill();
+  helper.lines.close(); reader.lines.close();
   rmSync(temporary, { recursive: true, force: true });
 }

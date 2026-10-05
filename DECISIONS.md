@@ -3479,3 +3479,45 @@ on a layout where Right Alt is AltGr the grab silently failed. Owner: "grab the 
 Rationale: a modal grab is the Shell's own way to own the keyboard for a moment, so no GNOME shortcut sees
 Space or Escape and the release comes from the key itself, with or without Sticky Keys. Consequence:
 during a hold no other key reaches any app, and a click goes nowhere until Right Alt is released.
+
+---
+
+## ADR-DESK-053: The screen is read by a program of its own
+
+**Context:** On Windows and Linux one helper process did the screen read and the paste. A read
+that took long (a terminal's whole viewport through UI Automation or AT-SPI) held up the paste
+behind it, so the terminal read was cut at 2.5 s, short of the helper's request timeout, and a
+long read gave a partial or no terminal context. Owner, 2026-10-05: if a dictation takes 30
+seconds and the screen read 15, that's fine; make the read a separate helper, a process of its
+own, so it can take the time it needs. Then: do it on macOS too, and make it a small program of
+its own, not a mode of the big helpers — the Unix philosophy, one program doing one thing.
+
+**Decision:**
+- **`voice-screen-reader`, one small program on each platform.** It serves `readScreen` and
+  nothing else: macOS `VoiceScreenReader` (`ScreenReaderService` in `VoiceMacOSKit`),
+  `voice-screen-reader.exe` (`native/windows/src/screen_reader.cpp`) and `voice-screen-reader`
+  (`native/linux/src/screen_reader.cpp`). It takes no arguments and needs no microphone, hotkey,
+  input session or portal. `voice-macos`, `voice-windows.exe` and `voice-linux` no longer serve
+  `readScreen`. Only the walk is per platform (Accessibility, UI Automation, AT-SPI); the
+  exclusions, the redaction and the viewport rules are the shared code (ADR-DESK-045, 046, 047).
+  On Linux the reader keeps its own record of what has focus, and the AppArmor profile lets it
+  leave the app's profile as `voice-linux` does, since AT-SPI accepts only unconfined peers.
+- **The app owns the reader's lifetime** (`ScreenReader`, `src/main/native/screenReader.ts`, over
+  a `HelperClient` named `voice-screen-reader`). It starts with the app and is killed at quit
+  (`stopEndsAtOnce`: a read stuck in a provider never reads its closed stdin). A new read while
+  the last is still going, or a read past `screenReaderTimeout` (the longest a recording runs), kills
+  the reader and starts it afresh (`HelperClient.restart`), so a stuck provider never holds a read
+  back or keeps a process alive. A read that answered, refused or ended with the process leaves it
+  running.
+- **No terminal cap on Windows and Linux.** The terminal read's time limit is gone (Windows
+  `terminalReadBudgetMs` unbounded, and the reader has no watchdog; Linux `withoutDeadline()`); an
+  ordinary window's walk keeps its 1.5 s budget, which bounds how much it collects, not a wait.
+  macOS keeps its walk budget as before.
+- **Consequences:** one more helper process on each platform. Window tokens are each process's
+  own, and `readScreen` takes none, so nothing passes between the reader and the main helper. On
+  macOS the reader is the app's child, so it reads under the app's Accessibility permission, as
+  `voice-macos` does.
+
+*Amendment (2026-10-05, with ADR-DESK-052):* while GNOME holds the keyboard for Right Alt, the window
+in front has no focus. The Linux reader asks the extension (`Holding`), as the helper does, so a read
+made during the hold still reads that window; the Shell itself is never read.

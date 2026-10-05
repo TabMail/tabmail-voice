@@ -18,6 +18,9 @@ target_compile_options(voice-hotkey PRIVATE -Wall -Wextra -Werror)
 add_executable(voice-linux src/system.cpp)
 target_link_libraries(voice-linux PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
 target_compile_options(voice-linux PRIVATE -Wall -Wextra -Werror)
+add_executable(voice-screen-reader src/screen_reader.cpp)
+target_link_libraries(voice-screen-reader PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
+target_compile_options(voice-screen-reader PRIVATE -Wall -Wextra -Werror)
 pkg_check_modules(SPARQL REQUIRED IMPORTED_TARGET tinysparql-3.0)
 add_executable(voice-files src/files.cpp)
 target_link_libraries(voice-files PRIVATE PkgConfig::SPARQL nlohmann_json::nlohmann_json)
@@ -145,10 +148,7 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_accessible_get_role -Wl,--wrap=atspi_accessible_get_document_iface
     -Wl,--wrap=atspi_document_get_document_attributes)
   add_test(NAME voice-browser-accessibility COMMAND voice-browser-accessibility-tests)
-  add_executable(voice-foreground-fixture src/system.cpp tests/foreground-provider.cpp)
-  target_link_libraries(voice-foreground-fixture PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
-  target_compile_options(voice-foreground-fixture PRIVATE -Wall -Wextra -Werror)
-  target_link_options(voice-foreground-fixture PRIVATE
+  set(FOREGROUND_FIXTURE_WRAPS
     -Wl,--wrap=atspi_init
     -Wl,--wrap=atspi_event_main
     -Wl,--wrap=atspi_event_listener_new
@@ -178,9 +178,20 @@ if(BUILD_TESTING)
     -Wl,--wrap=atspi_text_get_n_selections
     -Wl,--wrap=atspi_text_get_text
     -Wl,--wrap=g_dbus_connection_call_sync
-)
+  )
+  add_executable(voice-foreground-fixture src/system.cpp tests/foreground-provider.cpp)
+  target_link_libraries(voice-foreground-fixture PRIVATE PkgConfig::ATSPI PkgConfig::PULSE PkgConfig::IBUS nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
+  target_compile_options(voice-foreground-fixture PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-foreground-fixture PRIVATE ${FOREGROUND_FIXTURE_WRAPS})
+  # The screen reader over the same stand-in provider.
+  add_executable(voice-foreground-reader-fixture src/screen_reader.cpp tests/foreground-provider.cpp)
+  target_link_libraries(voice-foreground-reader-fixture PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json Threads::Threads ICU::uc ICU::i18n voice-core)
+  target_compile_options(voice-foreground-reader-fixture PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-foreground-reader-fixture PRIVATE ${FOREGROUND_FIXTURE_WRAPS})
   add_test(NAME voice-foreground-lifecycle COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/foreground-lifecycle.py" $<TARGET_FILE:voice-foreground-fixture>)
   set_tests_properties(voice-foreground-lifecycle PROPERTIES TIMEOUT 20)
+  add_test(NAME voice-foreground-lifecycle-screen-reader COMMAND ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/private-session.py" ${DBUS_RUN_SESSION} -- ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/foreground-lifecycle.py" $<TARGET_FILE:voice-foreground-reader-fixture> reader)
+  set_tests_properties(voice-foreground-lifecycle-screen-reader PROPERTIES TIMEOUT 20)
   add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs" $<TARGET_FILE:voice-linux> "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixture.py")
   set_tests_properties(voice-accessibility PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)
 endif()

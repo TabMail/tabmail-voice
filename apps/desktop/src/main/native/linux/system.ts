@@ -5,7 +5,6 @@
 import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
 import * as config from "../../../core/config.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
-import type { ScreenRead } from "../../../core/dictation/screenContext.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { NativeMicrophone } from "../microphone.js";
@@ -48,10 +47,6 @@ export class LinuxSystem {
     return typeof reply?.value === "string" && reply.value.length <= config.correctionMaxFieldLength ? reply.value : null;
   }
 
-  readScreen(exclusions: ScreenExclusions): Promise<ScreenRead | null> {
-    return this.helper.request("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, config.screenReadTimeout);
-  }
-
   /** The executable picked for screen-reading exclusion; never launches the app. */
   appInfo(path: string): Promise<{ bundleIdentifier: string; name: string; path: string } | null> {
     return this.helper.request("appInfo", { path });
@@ -60,8 +55,7 @@ export class LinuxSystem {
   /** The focused element's own caret, which the optional GNOME extension places on the screen
    * (logical coordinates); where the app reports none, the extension's input-method rectangle,
    * which some apps don't keep at the caret (LibreOffice gives the start of the sentence, a GTK 4
-   * terminal the caret before its last output). Both are asked at once, before a screen read can
-   * occupy the accessibility helper. */
+   * terminal the caret before its last output). Both are asked at once. */
   async caretAnchor(): Promise<Rect | null> {
     const accessible = this.helper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);
     const compositor = this.geometryHelper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);

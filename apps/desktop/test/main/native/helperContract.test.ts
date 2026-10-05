@@ -15,6 +15,7 @@ import { type HelperClient, HelperError } from "../../../src/main/native/helperC
 import { NativeTextRedactor } from "../../../src/main/native/textRedactor.js";
 import { MacSystem } from "../../../src/main/native/macos/system.js";
 import { decodeSamples, NativeMicrophone } from "../../../src/main/native/microphone.js";
+import { ScreenReader } from "../../../src/main/native/screenReader.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
 
 /** The two sides of the helpers' wire: the requests the app sends and the handlers the Swift helpers
@@ -73,7 +74,6 @@ describe("helper wire contract", () => {
     await mac.fullUserName();
     await mac.systemEmailApp();
     await mac.emailApps([app]);
-    await mac.readScreen({ apps: [app], sites: ["example.com"] });
     await mac.appInfo("/Applications/Example.app");
     await mac.appIcon("/Applications/Example.app", config.agentBubbleAppIconSize);
     await mac.caretAnchor(1);
@@ -106,6 +106,18 @@ describe("helper wire contract", () => {
       for (const param of handlers.get(method) ?? []) expect(params, `${method} without ${param}`).toHaveProperty(param);
       // And the other way: a param the helper never reads is dropped, however the user confirmed it.
       for (const param of Object.keys(params)) expect([...(handlers.get(method) ?? [])], `${method} ignores ${param}`).toContain(param);
+    }
+  });
+
+  /** The screen is read by voice-screen-reader, a program of its own (ADR-DESK-053). */
+  test("every request ScreenReader sends is one voice-screen-reader handles, with the params it reads", async () => {
+    const { helper, requests } = recordingHelper();
+    await new ScreenReader(helper).read({ apps: ["org.example.app"], sites: ["example.com"] });
+
+    const handlers = registered("native/macos/Sources/VoiceMacOSKit/ScreenReaderService.swift");
+    expect(requests.map((request) => request.method)).toEqual([...handlers.keys()]);
+    for (const { method, params } of requests) {
+      expect(Object.keys(params).sort(), method).toEqual([...(handlers.get(method) ?? [])].sort());
     }
   });
 
@@ -490,9 +502,10 @@ describe("MacSystem.focusedFieldValue", () => {
   /** The apps and websites excluded from screen reading go to the helper as given, which reads none
    * of them (ADR-DESK-045, ADR-DESK-047). */
   test("the screen read carries the excluded apps and websites, and the picked app is asked by its path", async () => {
-    const screen = replying(null);
-    expect(await screen.mac.readScreen({ apps: ["org.example.vault", "org.example.bank"], sites: ["example.com", "example.org"] })).toBeNull();
-    expect(screen.params).toStrictEqual([{ excludedAppIDs: ["org.example.vault", "org.example.bank"], excludedHosts: ["example.com", "example.org"] }]);
+    const sent: unknown[] = [];
+    const reader = new ScreenReader({ request: async (_method: string, params: unknown) => (sent.push(params), null), on() {} } as unknown as HelperClient);
+    expect(await reader.read({ apps: ["org.example.vault", "org.example.bank"], sites: ["example.com", "example.org"] })).toBeNull();
+    expect(sent).toStrictEqual([{ excludedAppIDs: ["org.example.vault", "org.example.bank"], excludedHosts: ["example.com", "example.org"] }]);
 
     const picked = replying({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
     expect(await picked.mac.appInfo("/Applications/Example Bank.app")).toEqual({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });

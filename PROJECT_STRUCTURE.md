@@ -31,7 +31,7 @@ apps/desktop/
 ├── native/shared/context/   Screen context types and cross-platform context fixtures
 ├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046; `host-exclusion-cases.json` (host matching) and `address-cases.json` (shared URL classification): ADR-DESK-047
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests (ADR-DESK-044)
-│   ├── Package.swift            Products `voice-hotkey`, `voice-macos` and `voice-microphone`, the executables the app spawns
+│   ├── Package.swift            Products `voice-hotkey`, `voice-macos`, `voice-microphone` and `voice-screen-reader`, the executables the app spawns
 │   ├── Sources/
 │   │   ├── VoiceHelperSupport/      The line protocol every helper speaks (requests, replies, events, stderr log lines)
 │   │   ├── VoiceHotkey/             `voice-hotkey`'s `main.swift`
@@ -77,6 +77,7 @@ apps/desktop/
 │   │   ├── native/                  The app's side of the OS: a new platform's helper goes here
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts (at once for a helper that exits to be started afresh)
 │   │   │   ├── microphone.ts         Shared native audio wire adapter and chunk decoder
+│   │   │   ├── screenReader.ts       The screen read, by `voice-screen-reader`, a program of its own on every platform: restarted when a read is superseded or stuck (ADR-DESK-053)
 │   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters; update.ts (Squirrel.Mac's proof)
 │   │   │   ├── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters; update.ts (the installer's Authenticode signature, through `voice-windows.exe --verify-update`)
 │   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters; update.ts (`install-update`, through `pkexec` to install)
@@ -101,7 +102,7 @@ What a new file, target or name must match (the folders' rules are ADR-DESK-044'
 | TypeScript tests | The module's name and folder under `test/`, ending `.test.ts`; shared stand-ins in `test/support/` | `test/main/audioCapture.test.ts`, `test/support/fakeHelper.mjs` |
 | Scripts | kebab-case `.mts` (Node runs them directly); a platform's in its folder | `scripts/build-native.mts`, `scripts/macos/build-native.mts` |
 | TypeScript names | Types, classes and React components PascalCase; functions, variables and every constant camelCase (no `SCREAMING_CASE`, `config.ts` included); an error class ends `Error`; a number in `config.ts` says its unit in its comment, and is milliseconds where it is a time | `SessionAudioCapture`, `MicrophoneError`, `microphoneStartTimeout` |
-| Helper executables | kebab-case, `voice-<what>` (`.exe` on Windows); the name is also the helper's name in the log | `voice-hotkey`, `voice-macos`, `voice-microphone`, `voice-windows.exe` |
+| Helper executables | kebab-case, `voice-<what>` (`.exe` on Windows); the name is also the helper's name in the log | `voice-hotkey`, `voice-macos`, `voice-microphone`, `voice-screen-reader`, `voice-windows.exe` |
 | Swift targets | PascalCase: `Voice<What>` (the executable, only its `main.swift`) over `Voice<What>Kit` (the library), tested by `Voice<What>KitTests` | `VoiceMicrophone`, `VoiceMicrophoneKit`, `VoiceMicrophoneKitTests` |
 | Swift files | PascalCase, named for the type declared; a test file is that type's name plus `Tests`, in the same folder under `Tests/`; a kit's requests are its `<What>Service` (an enum with `register(on:)`), its tunable numbers its `HelperConfig` | `MicrophoneCapture.swift`, `MicrophoneCaptureTests.swift`, `MicrophoneService`, `HelperConfig.swift` |
 | Swift names | Types PascalCase; functions, properties, constants and enum cases camelCase; a dispatch queue's label is `ai.tabmail.voice.helper.<camelCase>` | `restartExitCode`, `ai.tabmail.voice.helper.microphoneChunks` |

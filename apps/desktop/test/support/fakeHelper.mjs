@@ -5,7 +5,8 @@
 // A stand-in native helper for HelperClient's tests, speaking the helpers' JSON-lines protocol:
 // `echo` answers its params, `fail` answers an error, `silent` never answers, `exit` exits (with `params.code`
 // where given), `emit`
-// sends an event, `log` writes a debug and an error line to stderr, `ids` answers its process id.
+// sends an event, `log` writes a debug and an error line to stderr, `ids` answers its process id,
+// `hang` blocks forever without reading its stdin again (a read stuck in a provider).
 import { createInterface } from "node:readline";
 
 const deferred = new Map();
@@ -43,6 +44,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       return send({ id, result: {} });
     case "pid":
       return send({ id, result: { pid: process.pid } });
+    case "hang":
+      for (;;);
     default:
       return send({ id, error: { message: `unknown method ${method}` } });
   }

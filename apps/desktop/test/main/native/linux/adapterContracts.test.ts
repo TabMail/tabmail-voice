@@ -22,12 +22,6 @@ test('a native focused field reaches local correction learning', async () => {
   expect(await system.focusedFieldValue(42, exclusions)).toBe('Synthetic revised phrase');
   expect(request).toHaveBeenCalledExactlyOnceWith('focusedFieldValue', expect.objectContaining({ window: 42, excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }));
 });
-test('screen content and exclusions cross the Linux bridge', async () => {
-  const screen = { appName: 'Synthetic', bundleID: 'synthetic.desktop', windowTitle: 'Synthetic window', host: null, terminalProgram: null, focusedRole: '61', textBeforeCaret: 'Before ', selectedText: 'selected', textAfterCaret: ' after', selectionRedacted: false, renderedText: 'Visible synthetic content', summary: 'Synthetic', logDescription: 'Visible synthetic content' };
-  const request = vi.fn(async () => screen); const system = new LinuxSystem({ request } as unknown as HelperClient);
-  expect(await system.readScreen(exclusions)).toEqual(screen);
-  expect(request).toHaveBeenCalledExactlyOnceWith('readScreen', { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, expect.any(Number));
-});
 test('search results cross the actual child-process protocol', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tabmail-file-wire-'));
   try {

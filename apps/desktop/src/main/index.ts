@@ -55,6 +55,7 @@ import {
 import { SessionAudioCapture } from "./audioCapture.js";
 import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
+import { ScreenReader } from "./native/screenReader.js";
 import { NativeMicrophone } from "./native/microphone.js";
 import { KeychainSessionStore } from "./storage/keychainSessionStore.js";
 import { LogFile } from "./storage/logFile.js";
@@ -145,6 +146,10 @@ function launch(): void {
     : process.platform === "linux"
       ? new HelperClient({ name: "voice-linux", executable: join(helpers, "voice-linux"), cancelRequests: true })
       : macHelper;
+  // The screen is read by a program of its own, so a slow read never holds up a paste
+  // (`ScreenReader`, ADR-DESK-053).
+  const screenReaderHelper = new HelperClient({ name: "voice-screen-reader", executable: join(helpers, process.platform === "win32" ? "voice-screen-reader.exe" : "voice-screen-reader"), stopEndsAtOnce: true });
+  const screenReader = new ScreenReader(screenReaderHelper);
   const accessibilityActivator = process.platform === "win32"
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
@@ -199,7 +204,7 @@ function launch(): void {
 
   const probe = new ScreenContextProbe(
     () => permissions.accessibilityTrusted,
-    (exclusions) => system.readScreen(exclusions),
+    (exclusions) => screenReader.read(exclusions),
     () => windows.push("contextDebug"),
   );
 
@@ -251,11 +256,9 @@ function launch(): void {
 
   const shellGeometry = system instanceof WindowsSystem ? new ShellGeometry(() => system.shellExclusionBounds()) : null;
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
-    // Linux asks for the caret before the screen read can occupy the accessibility helper.
     if (system instanceof LinuxSystem) return system.caretAnchor();
     if (system instanceof WindowsSystem) {
-      // Dispatch before context capture can occupy the native UIA queue. The helper
-      // snapshots the foreground HWND when receiving this request.
+      // The helper snapshots the foreground HWND when receiving this request.
       const caret = system.caretAnchor();
       // Shell geometry updates placement independently; a slow reply must not delay the caret.
       void shellGeometry?.refresh().then((changed) => {
@@ -920,6 +923,7 @@ function launch(): void {
       .then(() => {
         hotkeyHelper.stop();
         nativeHelper.stop();
+        screenReaderHelper.stop();
         microphoneHelper?.stop();
         accessibilityActivator?.stop();
         return logFile.flush();
@@ -929,6 +933,7 @@ function launch(): void {
 
   hotkeyHelper.start();
   nativeHelper.start();
+  screenReaderHelper.start();
   void gnomeIntegration?.refresh();
   microphoneHelper?.start();
   accessibilityActivator?.start();

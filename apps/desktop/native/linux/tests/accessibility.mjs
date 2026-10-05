@@ -7,30 +7,37 @@ import { once } from "node:events";
 import { createInterface } from "node:readline";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const directory = await mkdtemp(join(tmpdir(), "voice-linux-fixture-"));
 const desktopFile = join(directory, "ai.tabmail.voice.fixture.desktop");
 await writeFile(desktopFile, "[Desktop Entry]\nType=Application\nName=Synthetic fixture\nExec=python3\n");
-const helper = spawn(process.argv[2], [], { stdio: ["pipe", "pipe", "pipe"] });
 let diagnostic = "";
-helper.stderr.on("data", (chunk) => { diagnostic += chunk; });
-const replies = createInterface({ input: helper.stdout });
 const pending = new Map();
 let id = 0;
-replies.on("line", (line) => {
-  const reply = JSON.parse(line);
-  assert.ok(pending.has(reply.id));
-  pending.get(reply.id)(reply);
-  pending.delete(reply.id);
-});
-function request(method, params = {}) {
+function start(executable) {
+  const child = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"] });
+  child.stderr.on("data", (chunk) => { diagnostic += chunk; });
+  const replies = createInterface({ input: child.stdout });
+  replies.on("line", (line) => {
+    const reply = JSON.parse(line);
+    assert.ok(pending.has(reply.id));
+    pending.get(reply.id)(reply);
+    pending.delete(reply.id);
+  });
+  return { child, replies };
+}
+const helper = start(process.argv[2]);
+// The screen is read by voice-screen-reader, a program of its own beside the helper.
+const reader = start(join(dirname(process.argv[2]), "voice-screen-reader"));
+function send(target, method, params) {
   const next = ++id;
   const reply = new Promise((resolve) => pending.set(next, resolve));
-  helper.stdin.write(`${JSON.stringify({ id: next, method, params })}\n`);
+  target.child.stdin.write(`${JSON.stringify({ id: next, method, params })}\n`);
   return reply;
 }
+const request = (method, params = {}) => send(method === "readScreen" ? reader : helper, method, params);
 const fixture = spawn("/usr/bin/python3", [process.argv[3]], {
   env: { ...process.env, GDK_BACKEND: "wayland", GIO_LAUNCHED_DESKTOP_FILE: desktopFile },
   stdio: ["pipe", "pipe", "pipe"],
@@ -38,7 +45,7 @@ const fixture = spawn("/usr/bin/python3", [process.argv[3]], {
 const fixtureOutput = createInterface({ input: fixture.stdout });
 let fixtureError = "";
 fixture.stderr.on("data", (chunk) => { fixtureError += chunk; });
-const timeout = setTimeout(() => { helper.kill(); fixture.kill(); process.exitCode = 1; }, 25_000);
+const timeout = setTimeout(() => { helper.child.kill(); reader.child.kill(); fixture.kill(); process.exitCode = 1; }, 25_000);
 const policy = { excludedAppIDs: [], excludedHosts: [] };
 async function command(value) {
   const done = once(fixtureOutput, "line");
@@ -89,12 +96,19 @@ try {
   assert.ok(!JSON.stringify(read).includes("syntheticvalue123"));
   const redactedTarget = (await request("frontmostApp")).result.window;
   assert.equal((await request("focusedFieldValue", { ...policy, window: redactedTarget, maxLength: 20000 })).result.value, "password: [redacted]");
+  // The main helper serves no screen reads, and the reader nothing else.
+  assert.equal((await send(helper, "readScreen", policy)).error?.message, "native request failed", "the main helper reads no screen");
+  for (const method of ["caretAnchor", "insert", "focusedFieldValue", "frontmostApp", "microphoneStart", "appInfo"])
+    assert.equal((await send(reader, method, {})).error?.message, "native request failed", `the screen reader does no ${method}`);
+  const exits = [once(helper.child, "exit"), once(reader.child, "exit")];
+  helper.child.stdin.end(); reader.child.stdin.end();
+  for (const exit of exits) assert.deepEqual(await exit, [0, null], "EOF ends both processes");
   process.stdout.write("native Wayland focus, selection, password exclusion and redacted screen context passed" + "\n");
 } finally {
   clearTimeout(timeout);
-  helper.stdin.end(); fixture.stdin.end();
-  helper.kill(); fixture.kill();
-  replies.close(); fixtureOutput.close();
+  helper.child.stdin.end(); reader.child.stdin.end(); fixture.stdin.end();
+  helper.child.kill(); reader.child.kill(); fixture.kill();
+  helper.replies.close(); reader.replies.close(); fixtureOutput.close();
   await rm(directory, { recursive: true, force: true });
   if (fixture.exitCode && fixtureError) process.stderr.write("synthetic fixture failed\n");
 }

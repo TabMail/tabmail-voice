@@ -101,7 +101,7 @@ public:
                     requestedWindow = queue.front().window;
                     queue.pop_front();
                     active = true;
-                    busyUntil = GetTickCount64() + (input["method"] == "readScreen" ? voice::HelperConfig::screenReadWatchdogMs : voice::HelperConfig::accessibilityWatchdogMs);
+                    busyUntil = GetTickCount64() + voice::HelperConfig::accessibilityWatchdogMs;
                     activeID = input["id"].get<int64_t>();
                     canceled = false;
                 }
@@ -111,9 +111,9 @@ public:
                     const auto method = input["method"].get<std::string>();
                     HWND window = requestedWindow;
                     // A foreground caret request captures its HWND at enqueue time, so
-                    // callers need no preliminary IPC that lets screen traversal overtake it.
+                    // callers need no preliminary IPC that another request could overtake.
                     const bool foregroundCaret = method == "caretAnchor" && params.is_object() && !params.contains("window");
-                    if (method != "readScreen" && !foregroundCaret) {
+                    if (!foregroundCaret) {
                         if (!params.is_object() || !params.contains("window") || !params["window"].is_number_unsigned()) {
                             throw std::runtime_error("invalid target");
                         }
@@ -145,11 +145,6 @@ public:
                             voice::Automation automation;
                             return automation.fieldValue(target, static_cast<unsigned>(limit), exclusions);
                         }, true);
-                    } else if (method == "readScreen") {
-                        result = voice::screenAccess(params, window, voice::executableName, [](HWND target, const voice::ScreenExclusions& exclusions) {
-                            voice::Automation automation;
-                            return automation.readScreen(target, exclusions);
-                        });
                     } else {
                         voice::Automation automation;
                         result = automation.caret(window);
@@ -184,7 +179,7 @@ public:
     }
     void request(JSON input) {
         std::lock_guard lock(mutex);
-        // Starting dictation concurrently reads context and locates the caret.
+        // Starting dictation locates the caret while other requests may still run.
         // Serialize that normal overlap instead of rejecting the overlay lookup.
         if (queue.size() >= 4) {
             this->output.send({{"id", input["id"]}, {"error", {{"message", "Windows accessibility helper busy"}}}});
@@ -247,7 +242,8 @@ int main(int argc, char** argv) {
         if (!input.is_object() || !input.contains("id") || !input["id"].is_number_integer() ||
             !input.contains("method") || !input["method"].is_string()) continue;
         const auto id = input["id"];
-        if (input["method"] == "caretAnchor" || input["method"] == "readScreen" || input["method"] == "insert" || input["method"] == "focusedFieldValue") { accessibility.request(std::move(input)); continue; }
+        // The screen is read by voice-screen-reader.exe, a program of its own.
+        if (input["method"] == "caretAnchor" || input["method"] == "insert" || input["method"] == "focusedFieldValue") { accessibility.request(std::move(input)); continue; }
         try {
             output.send({{"id", id}, {"result", handle(input["method"].get<std::string>(), input.value("params", JSON::object()), microphone)}});
         } catch (...) {
