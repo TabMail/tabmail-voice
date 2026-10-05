@@ -322,9 +322,14 @@ test('Right Alt held takes the whole keyboard: Space switches mode, Escape cance
 test('Shift with Right Alt is agent mode, and its release (Meta_R with Shift down) ends the hold', async () => {
     const f = await fixture();
     f.hotkey(true);
+    // With Shift down, a Latin layout names Right Alt Meta_R: it is still the dictation key.
+    f.pressing(KEY.Meta_R);
     f.display.emit('accelerator-activated', grabOf(f, '<Shift>Alt_R'));
+    assert.equal(f.modals.length, 1);
+    assert.equal(f.grabs.size, RIGHT_ALT.length, 'the key is kept');
     f.key('release', KEY.Meta_R);
     assert.deepEqual(sent(f), [':1.42 hotkeyAgentDown', ':1.42 hotkeyUp']);
+    f.pressing(KEY.Alt_R);
     // A latched Alt (Sticky Keys) is on the next press: it still starts a hold.
     f.display.emit('accelerator-activated', grabOf(f, '<Alt>Alt_R'));
     f.key('release', KEY.Alt_R);
@@ -358,10 +363,26 @@ test('a grab over the hold (a system dialog) ends it', async () => {
     const f = await fixture();
     f.hotkey(true);
     f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    f.modals[0].grab.revoked = true;
     f.modals[0].grab.emit('notify::revoked');
     assert.deepEqual(sent(f), [':1.42 hotkeyDown', ':1.42 hotkeyUp']);
     assert.equal(f.modals.length, 0);
     assert.equal(f.extension.Holding(), false);
+    f.extension.disable();
+});
+
+test('a grab under the hold ending (an app\'s popup closing) leaves the hold', async () => {
+    const f = await fixture();
+    f.hotkey(true);
+    f.display.emit('accelerator-activated', grabOf(f, 'Alt_R'));
+    // Mutter notifies the topmost grab when any grab is unlinked; this one is not revoked.
+    f.modals[0].grab.revoked = false;
+    f.modals[0].grab.emit('notify::revoked');
+    assert.deepEqual(sent(f), [':1.42 hotkeyDown']);
+    assert.equal(f.modals.length, 1);
+    assert.equal(f.extension.Holding(), true);
+    f.key('release', KEY.Alt_R);
+    assert.deepEqual(sent(f).slice(1), [':1.42 hotkeyUp']);
     f.extension.disable();
 });
 

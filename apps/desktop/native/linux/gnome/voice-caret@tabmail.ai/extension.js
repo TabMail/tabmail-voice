@@ -205,8 +205,11 @@ export default class VoiceCaret extends Extension {
         const actor = new Clutter.Actor({reactive: true});
         Main.layoutManager.uiGroup.add_child(actor);
         const grab = Main.pushModal(actor, {actionMode: Shell.ActionMode.NONE});
-        // A grab over this one (a system dialog) gets the keys, the release among them: the hold ends.
-        grab.connect('notify::revoked', () => this._letGo());
+        // A grab over this one (a system dialog) gets the keys, the release among them: the hold
+        // ends. Mutter notifies the top grab too when one under it ends, so only a revocation counts.
+        grab.connect('notify::revoked', () => {
+            if (grab.revoked) this._letGo();
+        });
         actor.connect('key-press-event', (_actor, event) => {
             const key = event.get_key_symbol();
             if (event.get_flags() & Clutter.EventFlags.FLAG_REPEATED) {

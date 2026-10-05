@@ -20,7 +20,7 @@ export class LinuxPermissions implements PermissionSystem {
   private shortcutGranted = false;
   private requesting = false;
   /** The Shell couldn't hold Right Alt: it is AltGr on this keyboard layout (it types characters).
-   * Cleared when a dictation key is held or another one is chosen. */
+   * Cleared when the Shell takes the key again or another one is chosen. */
   hotkeyUnavailable = false;
   onChange: (() => void) | undefined;
 
