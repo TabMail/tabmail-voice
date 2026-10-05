@@ -3383,6 +3383,9 @@ approves the exact file. `src/main/documents/`:
   is redacted up to the key's end line (`private-key-body`, owner 2026-10-05: "redact key bodies
   anywhere"); it applies to screen reads too, where a window scrolled past a key's header starts
   inside its body. A page that begins with other long base64 lines (a list of hashes) loses them too.
+  The range is first redacted from its own start, then again with the context: a context that holds
+  a key's header but ends in a page footer would otherwise hide where the requested page begins, and
+  the middle page of a key printed across three pages would go out whole.
 
 **Rationale:** The sandbox bounds what a malicious PDF can do to time, memory and a refusal; it
 needs no native addon (PDF.js's optional canvas addon is left out of the package). Redacting with

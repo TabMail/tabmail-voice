@@ -120,7 +120,16 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
             if before.len() + text.len() + after.len() > DOCUMENT_TEXT_BYTES {
                 return Err(1);
             }
-            let parts = vec![vec![before.to_owned(), text.to_owned(), after.to_owned()]];
+            // The text is redacted from its own start first: a rule that holds only at the
+            // start of a text (a key's body read without its header) must still hold when
+            // the text before does not start in the same place.
+            let text = if before.is_empty() {
+                text.to_owned()
+            } else {
+                let own = vec![vec![text.to_owned(), after.to_owned()]];
+                privacy::redact(&own).map_err(|_| 3u32)?[0][0].clone()
+            };
+            let parts = vec![vec![before.to_owned(), text, after.to_owned()]];
             let result = privacy::redact(&parts).map_err(|_| 3u32)?;
             serde_json::to_vec(&serde_json::json!({"text": result[0][1]})).map_err(|_| 3)
         })
@@ -816,6 +825,40 @@ mod tests {
         );
         unsafe {
             voice_core_buffer_free(Buffer::empty());
+        }
+    }
+    #[test]
+    fn a_text_starting_inside_a_key_body_is_redacted_whatever_the_text_before() {
+        // A key printed across three pages, each with a footer; the middle page is read with
+        // the end of the first before it.
+        let body = |from: usize, count: usize| {
+            (from..from + count)
+                .map(|i| format!("Qx7Lm2Vp9Rt4Wz8Kc3Nf6Hj1Bd5Gs0Ya+Te/Uo2Ie9Pr4Mw7Lk3Ji6Hu1Gy5Ft0Dr{i:02}"))
+                .collect::<Vec<_>>()
+        };
+        let before = format!(
+            "Key backup\n-----BEGIN PRIVATE KEY-----\n{}\nPage 1 of 3.\n\n",
+            body(0, 3).join("\n")
+        );
+        let text = format!("{}\nPage 2 of 3.", body(10, 3).join("\n"));
+        let after = format!("\n\n{}\n-----END PRIVATE KEY-----", body(20, 2).join("\n"));
+        let input = serde_json::to_vec(
+            &serde_json::json!({"before": before, "text": text, "after": after}),
+        )
+        .unwrap();
+        let mut output = Buffer::empty();
+        let status =
+            unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
+        assert_eq!(status, 0);
+        let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
+        let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let returned = reply["text"].as_str().unwrap().to_owned();
+        unsafe {
+            voice_core_buffer_free(output);
+        }
+        assert!(returned.contains("[redacted]"));
+        for line in body(10, 3) {
+            assert!(!returned.contains(&line[..40]), "a key line of the requested text was returned");
         }
     }
     #[test]
