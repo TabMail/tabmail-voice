@@ -39,6 +39,12 @@ from mail and calendar. Verified end-to-end by `SpeechTranscriptionSessionTests`
 `ConcealedType`), post ⌘V, wait `DictationConfig.clipboardRestoreDelay`, then restore every item
 and type of the prior clipboard, unless the pasteboard changed meanwhile.
 
+Across macOS, Windows and Ubuntu, send the platform paste command and let the target
+application decide whether to consume it. Do not require an editable-field accessibility
+pattern or an application allowlist for insertion. Retain target identity, cancellation
+and clipboard safeguards. A completed paste command does not prove the target changed
+its text; editable-field eligibility still governs correction learning and field reads.
+
 **Rationale:** Setting `kAXSelectedTextAttribute` silently fails in most web views and Electron
 apps; synthesizing per-character key events is slow and breaks on non-ASCII text. Pasting is what
 Wispr Flow and similar tools do.

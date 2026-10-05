@@ -56,6 +56,21 @@ permissions. Passing that fixture does not prove a live compositor permission,
 hotkey or paste interaction. The file-search fixture uses an in-memory TinySPARQL
 index on its own D-Bus session, so it neither reads nor changes the user's index.
 
+The real terminal viewport fixture additionally needs GTK3 and VTE 2.91 Python
+introspection typelibs. Run it only in a disposable GNOME session with the Voice
+caret extension enabled; it creates and focuses its own synthetic window:
+
+```sh
+python3 apps/desktop/native/linux/tests/terminal-viewport.py \
+  --helper /path/to/voice-linux --diagnostics /tmp/voice-terminal-fixture.log
+```
+
+It checks duplicate split panes, focused-pane identity, exact Unicode caret
+offsets, explicit selection with an independent caret, and exclusion of hidden
+panes and old scrollback. Each stage emits JSON evidence. It does not prove other
+terminal providers or all concurrent focus races. This test is separate from
+CTest because it needs a configured desktop compositor and changes focus.
+
 Both long-lived helpers watch the portal's D-Bus owner using GIO name notifications.
 Losing an observed owner ends the helper and uses the existing client restart path
 to clear permissions and establish fresh sessions and registration. Initial absence

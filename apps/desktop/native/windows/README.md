@@ -2,6 +2,8 @@
 
 These helpers use Win32 rather than Chromium for global key capture and microphone sessions. `voice-hotkey.exe` runs the push-to-talk gesture on a dedicated keyboard-hook thread. `voice-windows.exe` runs WASAPI microphone sessions, UI Automation context/caret queries, and target-checked clipboard insertion. Both speak the same newline JSON request/event protocol as the Mac helpers.
 
+Overlay startup sends `caretAnchor` without a `window` parameter so the helper snapshots the foreground HWND when enqueueing the request. This avoids a foreground-query round trip that lets screen traversal get ahead of caret placement. Explicit window targets remain supported; a captured window that loses foreground ownership yields no geometry. The portable `voice-accessibility-worker` test compiles the actual worker with synthetic OS/provider boundaries and checks queued focus changes, fresh-request recovery, cancellation and malformed input.
+
 Install Node.js 24 and Visual Studio Build Tools 2022 with the C++ workload, Windows 11 SDK, CMake tools, and compiler tools for the target architecture. Run from a developer shell where `node` and `cmake` are on PATH:
 
 ```powershell
@@ -16,7 +18,7 @@ The JSON dependency is fetched from its official versioned release with a pinned
 
 Windows offers Right Alt by default (the MacBook right Option key), with Right Control as the alternative. Control+Right Alt / AltGr input is passed through for ordinary typing, including its synthesized Control events; injected input never starts dictation. Space and Escape are swallowed only while the gesture owns them. Input/output queues are bounded, and EOF ends each helper and releases its native resources. The microphone opens a fresh WASAPI client for each recording and closes it when that session ends; preparation does not capture audio. UI Automation runs separately from microphone control and has a provider deadline.
 
-Current helper tests cover gesture timing and emitted action names, both Control-key chords, stale activation completions after returning to the same window, the documented zero-duration WASAPI event-driven initialization contract, protocol refusal/recovery, foreground identity shape, inactive caret queries, EOF, synthetic editable/password/read-only/non-text fields, real insertion, text and registered binary clipboard restoration, cancellation before insertion, expired deadlines, privacy flags, and preservation of a newer user copy. Correction learning reads the complete focused editable field only while its original window remains foreground, refuses password/read-only/non-text fields and fields beyond 20,000 UTF-16 units, and keeps the field text local. Tests exercise empty, Unicode, exact-limit and over-limit fields. Classic Win32 Edit controls use bounded system messages when they expose no UI Automation text range. They do not demonstrate live microphone recording, packaging, or complete app operation. Clipboard insertion captures all clonable formats before replacing anything, refuses owner-display/private-handle formats it cannot preserve, and restores only while its sequence and owner still match. The clipboard owner pumps messages during its restore delay so intervening copies can finish. UIA validates the editable field before mutation; final nonblocking window/focus, deadline, cancellation and modifier checks precede SendInput. Higher-integrity targets are refused. The app must construct the Windows helper client with `cancelRequests: true`; the fire-and-forget cancel message carries the request id. Cancellation after input has already committed cannot undo that insertion. Apple Notes, iMessage, Apple Calendar and Apple Contacts integration requires platform-specific alternatives; the Mac adapters remain in `macos` folders.
+Current helper tests cover gesture timing and emitted action names, both Control-key chords, stale activation completions after returning to the same window, the documented zero-duration WASAPI event-driven initialization contract, protocol refusal/recovery, foreground identity shape, inactive caret queries, EOF, synthetic editable/password/read-only/non-text fields, real insertion, text and registered binary clipboard restoration, cancellation before insertion, expired deadlines, privacy flags, and preservation of a newer user copy. Correction learning reads the complete focused editable field only while its original window remains foreground, refuses password/read-only/non-text fields and fields beyond 20,000 UTF-16 units, and keeps the field text local. Tests exercise empty, Unicode, exact-limit and over-limit fields. Classic Win32 Edit controls use bounded system messages when they expose no UI Automation text range. They do not demonstrate live microphone recording, packaging, or complete app operation. Clipboard insertion captures all clonable formats before replacing anything, refuses owner-display/private-handle formats it cannot preserve, and restores only while its sequence and owner still match. The clipboard owner pumps messages during its restore delay so intervening copies can finish. UIA validates the same unprotected focused control before mutation; final nonblocking window/focus, deadline, cancellation and modifier checks precede SendInput. Higher-integrity targets are refused. The app must construct the Windows helper client with `cancelRequests: true`; the fire-and-forget cancel message carries the request id. Cancellation after input has already committed cannot undo that insertion. Apple Notes, iMessage, Apple Calendar and Apple Contacts integration requires platform-specific alternatives; the Mac adapters remain in `macos` folders.
 
 The synthetic UIA provider suite crosses the real COM boundary into the shipped helper and counts protected name, value, pattern and subtree reads. It covers password fields inside windows, rows, links and web controls; excluded pages at focus, below focus, elsewhere in the window and inside frames/rows; failed page-address reads; genuinely addressless pages; and address-bar correction learning. A failed address read remains unknown even when UIA substitutes an empty default value, so host exclusions fail closed. Portable policy tests also cover malformed host lists and absent foreground windows.
 
@@ -43,11 +45,68 @@ output redirection (from `apps/desktop`):
 node native/windows/tests/terminal-caret.mjs native/windows/build/Release/voice-windows.exe
 ```
 
-Keep that tab focused until `TERMINAL_CARET_PASS`. The test writes synthetic output
-and verifies horizontal cursor movement, a new line, unchanged foreground identity
-and refusal of field learning. It does not capture terminal text, use the clipboard
-or inject input. This interactive check is separate from CTest, whose redirected
-output cannot establish the terminal cursor contract.
+Keep that tab focused until `TERMINAL_CARET_AND_VIEWPORT_PASS`. The test writes
+synthetic output and verifies horizontal cursor movement, a new line, unchanged
+foreground identity and refusal of field learning. It then fills the viewport
+with synthetic rows and reads the displayed text, checking exact UTF-16 caret
+offsets for ASCII and Unicode, exclusion of old scrollback, and retention of blank
+rows below the caret. It does not use the clipboard or inject input. This
+interactive check is separate from CTest, whose redirected output cannot establish
+the terminal cursor contract. A passing single-pane run does not establish split
+pane, explicit selection or ancestor-clipping behavior.
+
+Insertion sends the normal Ctrl+V command to the same unprotected focused control;
+it does not require an editable-value pattern or an application allowlist. The
+target decides whether to consume paste. A successful request confirms command
+delivery and clipboard restoration, not that the target changed its text. This
+matches the Mac and Ubuntu insertion contract. Correction learning remains
+restricted to editable whole-field values, so terminal output is never learned
+as a field. Focus, password, integrity, deadline and clipboard preservation checks
+remain in force. Elevated targets are refused.
+
+To check insertion without dictation, open a disposable Windows Terminal tab with
+its title fixed to `TabMail Terminal Insertion Fixture` (`--title` plus
+`--suppressApplicationTitle`), then run:
+
+```powershell
+node native/windows/tests/terminal-paste.mjs native/windows/build/Release/voice-windows.exe terminal-paste-result.json
+```
+
+Keep it focused until `TERMINAL_INSERTION_PASS`. The fixture consumes ASCII and
+Unicode paste in raw input mode and never sends Enter to a shell. It checks exact
+received text, retained focus and refusal of correction learning. The helper
+preserves the prior clipboard through its normal insertion path. Run this only
+in a disposable tab with no other activity.
+
+For split panes, use a disposable Windows Terminal tab with two vertical panes.
+From `apps/desktop`, run this in the left pane (it stays alive for two minutes):
+
+```powershell
+node native/windows/tests/terminal-splits.mjs --left
+```
+
+Then run this in the right pane, keeping that pane focused:
+
+```powershell
+node native/windows/tests/terminal-splits.mjs native/windows/build/Release/voice-windows.exe terminal-splits-result.json
+```
+
+Once the right prompt changes to `selected terminal`, press Ctrl+Shift+A. Wait
+for the evidence file's `explicit-selection` stage, then press Escape and
+Alt+Left. The fixture verifies both identical panes, exact Unicode caret offsets,
+selection confined to the right pane, truthful unavailable caret during selection,
+and the left pane's caret after focus returns. It records synthetic evidence and
+sets `passed: true` only after all assertions; each interactive wait is bounded.
+Windows Terminal's TextPattern provider has no independently available caret while
+output is selected. Run this fixture without other activity in that tab.
+
+An ancestor-clipped aggregate remains refused. UIA's
+[bounding rectangles](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtextrange-getboundingrectangles)
+can represent partially visible lines, and
+[endpoint movement](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomationtextrange-moveendpointbyunit)
+can substitute a larger supported unit. Neither proves a UTF-16 clipping boundary.
+Supporting that case requires a proven provider range mapping; it is not covered
+by the ordinary split-pane test.
 
 ## Calendar, contacts and reminders
 

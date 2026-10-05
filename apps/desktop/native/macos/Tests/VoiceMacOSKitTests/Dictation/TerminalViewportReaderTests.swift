@@ -56,6 +56,30 @@ struct TerminalViewportReaderTests {
         }, valid: { true })
         #expect(result == [NSRange(location: 6, length: 2)])
     }
+    @Test func clippedLongLineUsesRangeProofsInsteadOfPerCharacterAXCalls() {
+        var calls = 0
+        let ranges = TerminalViewportReader.visibleRanges(lines: [NSRange(location: 0, length: 4096)],
+            clip: CGRect(x: 8, y: 0, width: 32752, height: 20), bounds: { range in
+                calls += 1
+                return CGRect(x: range.location * 8, y: 0, width: range.length * 8, height: 20)
+            }, valid: { true })
+        #expect(ranges == [NSRange(location: 1, length: 4094)])
+        #expect(calls < 100)
+    }
+
+    @Test func multilineEndpointBoxesDoNotHideVisibleColumnsOrExposeHiddenColumns() {
+        let ranges = TerminalViewportReader.visibleRanges(lines: [NSRange(location: 0, length: 6)],
+            clip: CGRect(x: 10, y: 0, width: 10, height: 30), bounds: { range in
+                let first = range.location / 2
+                let last = (NSMaxRange(range) - 1) / 2
+                if first != last {
+                    return CGRect(x: 0, y: first * 10, width: 0, height: (last - first + 1) * 10)
+                }
+                return CGRect(x: (range.location % 2) * 10, y: first * 10, width: range.length * 10, height: 10)
+            }, isSingleLine: { $0.location / 2 == (NSMaxRange($0) - 1) / 2 }, valid: { true })
+        #expect(ranges == [NSRange(location: 1, length: 1), NSRange(location: 3, length: 1), NSRange(location: 5, length: 1)])
+    }
+
     @Test func wholeVisibleLinesPreserveSpacesAndBlankRows() {
         let text = "> hello world\n  \nstatus bar" as NSString
         let range = NSRange(location: 0, length: text.length)
@@ -132,6 +156,7 @@ private final class TerminalAXFixture {
     var insertionLine: Int? = 1
     var reads: [NSRange] = []
     var forbidden: [String] = []
+    var afterRead: (() -> Void)?
     var changeOnRepeat = false
     var text: NSString { lines.joined() as NSString }
     var ranges: [NSRange] {
@@ -176,11 +201,15 @@ private final class TerminalAXFixture {
                 }
                 reads.append(range)
                 let result = text.substring(with: range)
+                afterRead?()
                 return (changeOnRepeat && reads.count > 1 ? String(repeating: "x", count: range.length) : result) as NSString
             default: forbidden.append(name); return nil
             }
         }, bounds: { [self] range in
-            guard let line = line(at: range.location) else { return nil }
+            guard let line = line(at: range.location), let last = self.line(at: range.location + max(0, range.length - 1)) else { return nil }
+            if last != line {
+                return CGRect(x: 0, y: line * 10, width: ranges[line...last].map(\.length).max()! * 10, height: (last - line + 1) * 10)
+            }
             return CGRect(x: (range.location - ranges[line].location) * 10,
                           y: line * 10, width: range.length * 10, height: 10)
         })
@@ -199,6 +228,82 @@ private final class TerminalAXFixture {
 }
 
 struct TerminalAXAdapterTests {
+
+    @Test func visibleCaptureDoesNotRebuildProviderLineRanges() throws {
+        let provider = TerminalAXFixture()
+        let original = provider.source
+        var lineRangeCalls = 0
+        let source = TerminalViewportReader.Source(attribute: original.attribute, parameter: { name, argument in
+            if name == kAXRangeForLineParameterizedAttribute { lineRangeCalls += 1; return nil }
+            return original.parameter(name, argument)
+        }, bounds: original.bounds)
+        let result = try #require(TerminalViewportReader.surface(source, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, valid: { true }))
+        #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string }.joined() == "> hello world\nstatus bar\n")
+        #expect(result.caret["status"]?.string == "exact")
+        #expect(lineRangeCalls == 0)
+        #expect(provider.forbidden.isEmpty)
+    }
+
+
+    @Test func countOrSelectionMutationDuringCaptureRejectsTheResult() {
+        for changeCount in [true, false] {
+            let provider = TerminalAXFixture()
+            let source = provider.source
+            let changed = TerminalViewportReader.Source(attribute: { name in
+                if changeCount, name == kAXNumberOfCharactersAttribute, !provider.reads.isEmpty {
+                    return NSNumber(value: provider.text.length + 1)
+                }
+                if !changeCount, name == kAXSelectedTextRangeAttribute, !provider.reads.isEmpty {
+                    var range = CFRange(location: 9, length: 1)
+                    return AXValueCreate(.cfRange, &range)
+                }
+                return source.attribute(name)
+            }, parameter: source.parameter, bounds: source.bounds)
+            #expect(TerminalViewportReader.surface(changed, id: 0,
+                clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+                startKnown: false, endKnown: false, valid: { true }) == nil)
+            #expect(!provider.reads.isEmpty)
+            #expect(provider.forbidden.isEmpty)
+        }
+    }
+
+    @Test func geometryPlanningRevalidatesBeforeAnyTextRead() {
+        let provider = TerminalAXFixture()
+        let original = provider.source
+        var stillValid = true
+        let changed = TerminalViewportReader.Source(attribute: original.attribute, parameter: original.parameter,
+            bounds: { range in stillValid = false; return original.bounds(range) })
+        let result = TerminalViewportReader.surface(changed, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, geometryValid: { true }, valid: { stillValid })
+        #expect(result == nil)
+        #expect(provider.reads.isEmpty)
+        #expect(provider.forbidden.isEmpty)
+    }
+
+    @Test func geometryDeadlineRefusesWithoutTextAcquisition() {
+        let provider = TerminalAXFixture()
+        let result = TerminalViewportReader.surface(provider.source, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, geometryValid: { false }, valid: { true })
+        #expect(result == nil)
+        #expect(provider.reads.isEmpty)
+    }
+
+    @Test func geometryQueriesDoNotRepeatCrossProcessFocusValidation() throws {
+        let provider = TerminalAXFixture()
+        provider.lines[1] = String(repeating: "x", count: 4096)
+        var validations = 0
+        let result = try #require(TerminalViewportReader.surface(provider.source, id: 0,
+            clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
+            startKnown: false, endKnown: false, valid: { validations += 1; return true }))
+        #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string }.joined() == String(repeating: "x", count: 40) + "status bar\n")
+        #expect(validations < 20)
+        #expect(provider.forbidden.isEmpty)
+    }
+
     @Test func displayedLinesAndNativeCaretReachFinalWireWithoutTmux() throws {
         let provider = TerminalAXFixture()
         let wire = try provider.wire()
@@ -277,7 +382,7 @@ private final class TerminalCollectorFixture: TerminalTree {
         element.attributes["selectedChildrenKnown"] == nil ? nil : element.children.filter { $0.attributes["selected"] != nil }
     }
     func terminalSurface(_ element: FakeElement, id: Int, clip: CGRect, focused: Bool,
-                         byteBudget: Int, valid: () -> Bool) -> TerminalViewportReader.Surface? {
+                         byteBudget: Int, geometryValid: () -> Bool, valid: () -> Bool) -> TerminalViewportReader.Surface? {
         acquisitions.append(element)
         onAcquire?()
         guard let provider = providers[ObjectIdentifier(element)] else { return nil }
@@ -285,7 +390,7 @@ private final class TerminalCollectorFixture: TerminalTree {
         let translated = TerminalViewportReader.Source(attribute: source.attribute, parameter: source.parameter,
             bounds: { range in source.bounds(range)?.offsetBy(dx: element.frame?.minX ?? 0, dy: 0) })
         return TerminalViewportReader.surface(translated, id: id, clip: clip, focused: focused,
-                                              startKnown: false, endKnown: false, byteBudget: byteBudget, valid: valid)
+                                              startKnown: false, endKnown: false, byteBudget: byteBudget, geometryValid: geometryValid, valid: valid)
     }
     func read(_ window: FakeElement, focused: FakeElement, path: [FakeElement],
               currentFocus: (() -> FakeElement)? = nil, exclusions: [String] = [],
@@ -473,5 +578,143 @@ struct TerminalFocusedSelectionTests {
             #expect(tree.acquisitions.count == 4 && tree.genericReads == 0)
             #expect(a.forbidden.isEmpty && b.forbidden.isEmpty)
         }
+    }
+}
+
+
+struct TerminalAcquisitionInvariantTests {
+    private let partialClip = CGRect(x: 5, y: 15, width: 20, height: 10)
+    private func capture(_ source: TerminalViewportReader.Source, clip: CGRect) -> TerminalViewportReader.Surface? {
+        TerminalViewportReader.surface(source, id: 0, clip: clip, focused: true,
+                                       startKnown: false, endKnown: false, valid: { true })
+    }
+
+    @Test func partialGlyphsReachVisibleOutputAndOnlyVisibleReads() throws {
+        let provider = TerminalAXFixture()
+        let result = try #require(capture(provider.source, clip: partialClip))
+        #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string } == ["> h", "sta"])
+        let expected = [NSRange(location: 8, length: 3), NSRange(location: 22, length: 3)]
+        #expect(provider.reads == expected + expected)
+        #expect(provider.forbidden.isEmpty)
+    }
+
+    @Test func missingSubrangeGeometryRefusesBeforeTextAcquisition() {
+        let provider = TerminalAXFixture(), original = provider.source
+        var failedGeometry = 0
+        let source = TerminalViewportReader.Source(attribute: original.attribute, parameter: original.parameter, bounds: { range in
+            if range.location == 8 && range.length == 1 { failedGeometry += 1; return nil }
+            return original.bounds(range)
+        })
+        #expect(capture(source, clip: partialClip) == nil)
+        #expect(failedGeometry > 0)
+        #expect(provider.reads.isEmpty && provider.forbidden.isEmpty)
+    }
+
+    @Test func nonfiniteSubrangeGeometryRefusesBeforeTextAcquisition() {
+        let provider = TerminalAXFixture(), original = provider.source
+        var failedGeometry = 0
+        let source = TerminalViewportReader.Source(attribute: original.attribute, parameter: original.parameter, bounds: { range in
+            if range.location == 8 && range.length == 1 {
+                failedGeometry += 1
+                return CGRect(x: CGFloat.infinity, y: 10, width: 10, height: 10)
+            }
+            return original.bounds(range)
+        })
+        #expect(capture(source, clip: partialClip) == nil)
+        #expect(failedGeometry > 0)
+        #expect(provider.reads.isEmpty && provider.forbidden.isEmpty)
+    }
+
+    @Test func zeroWidthVisibleLineBreakIsRetained() throws {
+        let range = NSRange(location: 0, length: 1)
+        let ranges = try #require(TerminalViewportReader.visibleRanges(lines: [range],
+            clip: CGRect(x: 10, y: 5, width: 20, height: 5),
+            bounds: { _ in CGRect(x: 10, y: 0, width: 0, height: 10) }, valid: { true }))
+        var reads: [NSRange] = []
+        let result = TerminalViewportReader.capture(ranges: ranges, count: 1, unitBudget: 1,
+            read: { reads.append($0); return "\n" }, valid: { true })
+        #expect(ranges == [range])
+        #expect(result?.texts == ["\n"])
+        #expect(reads == [range, range])
+    }
+
+    @Test func countChangeAfterGeometryCannotReadNowHiddenOffsets() {
+        let provider = TerminalAXFixture(), original = provider.source
+        var counts = 0
+        let source = TerminalViewportReader.Source(attribute: { name in
+            if name == kAXNumberOfCharactersAttribute {
+                counts += 1
+                if counts == 2 { provider.lines = [provider.lines[0] + provider.lines[1] + provider.lines[2], "> new prompt\n", "new status\n", "hidden\n"] }
+            }
+            return original.attribute(name)
+        }, parameter: original.parameter, bounds: original.bounds)
+        #expect(capture(source, clip: CGRect(x: 10, y: 10, width: 20, height: 20)) == nil)
+        #expect(counts >= 2)
+        #expect(provider.reads.isEmpty && provider.forbidden.isEmpty)
+    }
+
+    @Test func countChangeBetweenFragmentsCannotReadNowHiddenOffsets() {
+        let provider = TerminalAXFixture(), original = provider.source
+        var changed = false
+        let source = TerminalViewportReader.Source(attribute: original.attribute, parameter: { name, argument in
+            let response = original.parameter(name, argument)
+            if name == kAXStringForRangeParameterizedAttribute && !changed {
+                changed = true
+                provider.lines = [provider.lines[0] + provider.lines[1] + provider.lines[2], "> new prompt\n", "new status\n", "hidden\n"]
+            }
+            return response
+        }, bounds: original.bounds)
+        #expect(capture(source, clip: CGRect(x: 10, y: 10, width: 20, height: 20)) == nil)
+        #expect(changed)
+        #expect(provider.reads == [NSRange(location: 9, length: 2)])
+        #expect(provider.forbidden.isEmpty)
+    }
+
+    @Test func finalCountChangeCannotPublishAnOldCapture() {
+        let provider = TerminalAXFixture(), original = provider.source
+        var changed = false
+        let source = TerminalViewportReader.Source(attribute: { name in
+            if name == kAXInsertionPointLineNumberAttribute { provider.lines[3] += "x"; changed = true }
+            return original.attribute(name)
+        }, parameter: original.parameter, bounds: original.bounds)
+        #expect(capture(source, clip: CGRect(x: 0, y: 10, width: 400, height: 20)) == nil)
+        #expect(changed && provider.reads.count == 2)
+        #expect(provider.forbidden.isEmpty)
+    }
+
+    @Test func finalSelectionChangeCannotPublishAnOldCaret() {
+        let provider = TerminalAXFixture(), original = provider.source
+        var changed = false
+        let source = TerminalViewportReader.Source(attribute: { name in
+            if name == kAXInsertionPointLineNumberAttribute { provider.selection = NSRange(location: 16, length: 0); changed = true }
+            return original.attribute(name)
+        }, parameter: original.parameter, bounds: original.bounds)
+        #expect(capture(source, clip: CGRect(x: 0, y: 10, width: 400, height: 20)) == nil)
+        #expect(changed && provider.reads.count == 2)
+        #expect(provider.forbidden.isEmpty)
+    }
+}
+
+
+struct TerminalCollectorAcquisitionInvariantTests {
+    @Test func outputGrowthBetweenFragmentsCannotAcquireHiddenHistory() throws {
+        let surface = FakeElement("AXTextArea", frame: CGRect(x: 10, y: 10, width: 20, height: 20))
+        let window = FakeElement("AXWindow", frame: surface.frame, children: [surface])
+        let tree = TerminalCollectorFixture(), provider = TerminalAXFixture()
+        tree.providers[ObjectIdentifier(surface)] = provider
+        var advanced = false
+        provider.afterRead = {
+            if !advanced {
+                advanced = true
+                provider.lines = [provider.lines[0] + provider.lines[1] + provider.lines[2], "> new prompt\n", "new status\n", "hidden\n"]
+            }
+        }
+        let result = try #require(tree.read(window, focused: surface, path: [window]))
+        #expect(advanced)
+        #expect(tree.acquisitions.count == 1)
+        #expect(result.terminalViewport?["complete"]?.bool == false)
+        #expect(result.terminalViewport?["surfaces"]?.array?.isEmpty == true)
+        #expect(provider.reads == [NSRange(location: 8, length: 2)])
+        #expect(provider.forbidden.isEmpty)
     }
 }

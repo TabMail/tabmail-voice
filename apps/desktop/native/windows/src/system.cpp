@@ -108,7 +108,10 @@ public:
                     const auto params = input.value("params", JSON::object());
                     const auto method = input["method"].get<std::string>();
                     HWND window = requestedWindow;
-                    if (method != "readScreen") {
+                    // A foreground caret request captures its HWND at enqueue time, so
+                    // callers need no preliminary IPC that lets screen traversal overtake it.
+                    const bool foregroundCaret = method == "caretAnchor" && params.is_object() && !params.contains("window");
+                    if (method != "readScreen" && !foregroundCaret) {
                         if (!params.is_object() || !params.contains("window") || !params["window"].is_number_unsigned()) {
                             throw std::runtime_error("invalid target");
                         }

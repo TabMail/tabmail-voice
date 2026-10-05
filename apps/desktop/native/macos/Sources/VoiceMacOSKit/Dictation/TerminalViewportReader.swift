@@ -44,12 +44,12 @@ enum TerminalViewportReader {
         return Capture(ranges: ranges, texts: texts)
     }
 
-    /// Geometry-only visibility planning. Whole line bounds are the fast path;
-    /// partially clipped lines require per-unit geometry before any text read.
+    /// Geometry-only visibility planning. A contained single-line range is the
+    /// fast path; clipped or multiline ranges are subdivided before any text read.
     /// Missing geometry refuses the plan rather than reading a bounding interval
     /// that could contain scrollback or horizontally hidden text.
     static func visibleRanges(lines: [NSRange], clip: CGRect,
-                              bounds: (NSRange) -> CGRect?, valid: () -> Bool) -> [NSRange]? {
+                              bounds: (NSRange) -> CGRect?, isSingleLine: (NSRange) -> Bool = { _ in true }, valid: () -> Bool) -> [NSRange]? {
         guard clip.width > 0, clip.height > 0 else { return nil }
         var result: [NSRange] = []
         func append(_ range: NSRange) {
@@ -57,21 +57,30 @@ enum TerminalViewportReader {
                 result[result.count - 1].length += range.length
             } else { result.append(range) }
         }
-        for line in lines {
-            guard valid(), line.location >= 0, line.length >= 0,
-                  line.location <= Int.max - line.length, let frame = bounds(line),
-                  frame.minX.isFinite, frame.minY.isFinite, frame.width.isFinite, frame.height.isFinite else { return nil }
-            if clip.contains(frame), frame.height > 0 { append(line); continue }
-            if frame.maxY <= clip.minY || frame.minY >= clip.maxY { continue }
-            for index in line.location..<NSMaxRange(line) {
-                let unit = NSRange(location: index, length: 1)
-                guard valid(), let frame = bounds(unit), frame.minX.isFinite, frame.minY.isFinite,
-                      frame.width.isFinite, frame.height.isFinite else { return nil }
-                // Include a glyph only when its reported bounds intersect the
-                // content viewport. Zero-width line breaks use their x position.
-                let horizontal = frame.width == 0 ? frame.minX >= clip.minX && frame.minX <= clip.maxX : frame.maxX > clip.minX && frame.minX < clip.maxX
-                if horizontal && frame.maxY > clip.minY && frame.minY < clip.maxY { append(unit) }
+        func visit(_ range: NSRange) -> Bool {
+            guard valid(), let frame = bounds(range), frame.minX.isFinite, frame.minY.isFinite,
+                  frame.width.isFinite, frame.height.isFinite, frame.width >= 0, frame.height >= 0 else { return false }
+            if frame.maxY <= clip.minY || frame.minY >= clip.maxY { return true }
+            // A contained range proves visibility for all its units. Subdivide only
+            // at clipping edges instead of issuing one AX request for every glyph.
+            // Multiline providers can report endpoint-only horizontal bounds.
+            // Ask for line identity only when a box can prove acceptance/pruning.
+            let horizontal = frame.width == 0 ? frame.minX >= clip.minX && frame.minX <= clip.maxX : frame.maxX > clip.minX && frame.minX < clip.maxX
+            if range.length <= 1 {
+                if horizontal { append(range) }
+                return true
             }
+            if frame.width > 0 {
+                if clip.contains(frame), frame.height > 0, isSingleLine(range) { append(range); return true }
+                if !horizontal, isSingleLine(range) { return true }
+            }
+            let left = range.length / 2
+            return visit(NSRange(location: range.location, length: left)) &&
+                visit(NSRange(location: range.location + left, length: range.length - left))
+        }
+        for line in lines {
+            guard line.location >= 0, line.length >= 0, line.location <= Int.max - line.length,
+                  visit(line) else { return nil }
         }
         return result
     }
@@ -100,16 +109,30 @@ extension TerminalViewportReader {
     /// identity. AXFocused and AXVisibleCharacterRange are deliberately unused:
     /// iTerm can report YES/all history for those attributes.
     static func surface(_ element: AXUIElement, id: Int, clip: CGRect, focused: Bool,
-                        startKnown: Bool, endKnown: Bool, byteBudget: Int = Int.max, valid: () -> Bool) -> Surface? {
+                        startKnown: Bool, endKnown: Bool, byteBudget: Int = Int.max, geometryValid: () -> Bool = { true }, valid: () -> Bool) -> Surface? {
         surface(Source(attribute: { CaretLocator.attribute(element, $0) },
                        parameter: { CaretLocator.parameterized(element, $0, $1) },
                        bounds: { CaretLocator.bounds(of: $0, in: element) }),
                 id: id, clip: clip, focused: focused, startKnown: startKnown,
-                endKnown: endKnown, byteBudget: byteBudget, valid: valid)
+                endKnown: endKnown, byteBudget: byteBudget, geometryValid: geometryValid, valid: valid)
     }
 
     static func surface(_ source: Source, id: Int, clip: CGRect, focused: Bool,
-                        startKnown: Bool, endKnown: Bool, byteBudget: Int = Int.max, valid: () -> Bool) -> Surface? {
+                        startKnown: Bool, endKnown: Bool, byteBudget: Int = Int.max, geometryValid: () -> Bool = { true }, valid: () -> Bool) -> Surface? {
+        // Geometry acquires no text. Bound its work by the deadline; repeat the
+        // complete focus/frame/privacy validation at the text acquisition and
+        // final acceptance boundaries instead of on every geometry query.
+        let diagnosticStart = Date()
+        func metadataValid() -> Bool {
+            Date().timeIntervalSince(diagnosticStart) <= HelperConfig.contextTimeBudget && geometryValid()
+        }
+        var diagnosticStage = "count"
+        var diagnosticSucceeded = false
+        defer {
+            if !diagnosticSucceeded {
+                HelperLog.debug("TerminalViewport: surface refused stage=\(diagnosticStage) focused=\(focused) elapsedMs=\(Int(Date().timeIntervalSince(diagnosticStart) * 1000))")
+            }
+        }
         func integer(_ value: CFTypeRef?) -> Int? {
             guard let value, CFGetTypeID(value) != CFBooleanGetTypeID(), let number = value as? NSNumber,
                   let result = Int(exactly: number.doubleValue), result >= 0 else { return nil }
@@ -125,12 +148,11 @@ extension TerminalViewportReader {
         }
         func selection() -> NSRange? { range(source.attribute(kAXSelectedTextRangeAttribute)) }
         func parameter(_ name: String, _ value: CFTypeRef) -> CFTypeRef? {
-            guard valid() else { return nil }
+            guard metadataValid() else { return nil }
             return source.parameter(name, value)
         }
-        func lineRange(_ line: Int) -> NSRange? { range(parameter(kAXRangeForLineParameterizedAttribute as String, line as CFNumber)) }
         func bounds(_ range: NSRange) -> CGRect? {
-            guard valid() else { return nil }
+            guard metadataValid() else { return nil }
             return source.bounds(CFRange(location: range.location, length: range.length))
         }
         guard valid(), let countSnapshot = count(),
@@ -147,35 +169,40 @@ extension TerminalViewportReader {
                 caret = ["status": "exact", "surface": .number(Double(id)), "run": 0, "offset": 0]
             }
             guard valid(), count() == 0, selection() == selectionSnapshot else { return nil }
+            diagnosticSucceeded = true
             return Surface(source: ["id": .number(Double(id)),
                 "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
                 "runs": [["id": 0, "text": "", "connected": false, "startKnown": .bool(startKnown), "endKnown": .bool(endKnown)]],
                 "selection": ["complete": .bool(selectionSnapshot == empty), "ranges": []]], caret: caret)
         }
-        guard let last = integer(parameter(kAXLineForIndexParameterizedAttribute as String, (countSnapshot - 1) as CFNumber)),
-              last < countSnapshot else { return nil }
-        func lineTop(_ line: Int) -> CGFloat? { lineRange(line).flatMap(bounds)?.minY }
-        guard let first = ScreenContext.firstVisibleLine(lineCount: last + 1, windowTop: clip.minY, lineTop: lineTop) else { return nil }
-        let below = ScreenContext.firstVisibleLine(lineCount: last + 1, windowTop: clip.maxY, lineTop: lineTop) ?? last + 1
-        let begin = max(0, first - 1) // Include an intersecting partial first row.
-        guard below >= begin, below - begin <= runLimit else { return nil }
-        var lines: [NSRange] = []
-        for line in begin..<below {
-            guard let range = lineRange(line), NSMaxRange(range) <= countSnapshot else { return nil }
-            lines.append(range)
+        diagnosticStage = "visible-geometry"
+        let lines = [NSRange(location: 0, length: countSnapshot)]
+        func plan() -> [NSRange]? {
+            var lineCache: [Int: Int] = [:]
+            func line(_ index: Int) -> Int? {
+                if let cached = lineCache[index] { return cached }
+                let result = integer(parameter(kAXLineForIndexParameterizedAttribute as String, index as CFNumber))
+                lineCache[index] = result
+                return result
+            }
+            func singleLine(_ range: NSRange) -> Bool {
+                guard let first = line(range.location), let last = line(NSMaxRange(range) - 1) else { return false }
+                return first == last
+            }
+            return visibleRanges(lines: lines, clip: clip, bounds: bounds, isSingleLine: singleLine, valid: metadataValid)
         }
-        guard let ranges = visibleRanges(lines: lines, clip: clip, bounds: bounds, valid: valid), ranges.count <= runLimit else { return nil }
+        guard let ranges = plan(), ranges.count <= runLimit else { return nil }
         let read: (NSRange) -> NSString? = { requested in
             var range = CFRange(location: requested.location, length: requested.length)
             guard let parameter = AXValueCreate(.cfRange, &range), valid() else { return nil }
             return source.parameter(kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
         }
         // Three UTF-8 bytes per UTF-16 unit is the maximum conversion expansion.
+        diagnosticStage = "bounded-text"
         guard let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
                                      read: read, valid: { valid() && count() == countSnapshot && selection() == selectionSnapshot }),
-              visibleRanges(lines: lines, clip: clip, bounds: bounds, valid: valid) == ranges else { return nil }
-        // Line metadata can change without text/count changing (resize/scroll).
-        for (line, expected) in zip(begin..<below, lines) { guard lineRange(line) == expected else { return nil } }
+              plan() == ranges else { return nil }
+        diagnosticStage = "selection-caret"
         var runs: [JSON] = []
         var selections: [JSON] = []
         var selectedUnits = 0
@@ -206,6 +233,7 @@ extension TerminalViewportReader {
             }
         }
         guard valid(), count() == countSnapshot, selection() == selectionSnapshot else { return nil }
+        diagnosticSucceeded = true
         let completeSelection = selectionSnapshot.map { NSMaxRange($0) <= countSnapshot && selectedUnits == $0.length } ?? false
         return Surface(source: ["id": .number(Double(id)), "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
                                 "runs": .array(runs), "selection": ["complete": .bool(completeSelection), "ranges": .array(selections)]], caret: caret)
@@ -253,9 +281,17 @@ extension TerminalViewportReader {
                      focusPath: [Tree.Element], in tree: Tree, current: (String) -> Tree.Element?,
                      excluding exclusions: ScreenExclusions, started: Date, from start: ScreenContext) -> ScreenContext? {
         var context = start
+        var diagnosticStage = "window"
+        var diagnosticSucceeded = false
+        defer {
+            if !diagnosticSucceeded {
+                HelperLog.debug("TerminalViewport: collector refused stage=\(diagnosticStage) elapsedMs=\(Int(Date().timeIntervalSince(started) * 1000))")
+            }
+        }
         guard let window, let windowFrame = tree.frame(of: window), windowFrame.width > 0, windowFrame.height > 0,
               let limits = try? project(["limits": true]), let byteLimit = limits["bytes"]?.integer,
               let surfaceLimit = limits["surfaces"]?.integer else { return nil }
+        diagnosticStage = "privacy-census"
         // Complete metadata-only privacy census before any terminal source read.
         guard case .none = ScreenContextReader.lookForExcludedPage(in: window, tree, excluding: exclusions,
                     within: HelperConfig.contextTimeBudget, since: started) else { return nil }
@@ -283,6 +319,7 @@ extension TerminalViewportReader {
         var caret: JSON = ["status": "unavailable"]
         var complete = true
         var remaining = byteLimit
+        diagnosticStage = "traversal"
         while let (element, inheritedClip) = stack.popLast() {
             guard valid(), seen.count < HelperConfig.contextNodeBudget else { complete = false; break }
             if seen.contains(where: { tree.isSame($0, element) }) { continue }
@@ -302,6 +339,7 @@ extension TerminalViewportReader {
                 let id = surfaces.count
                 let ownsFocus = focused.map { tree.isSame($0, element) } == true || focusPath.contains { tree.isSame($0, element) }
                 guard let captured = tree.terminalSurface(element, id: id, clip: clip, focused: ownsFocus, byteBudget: remaining,
+                                             geometryValid: { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget },
                                              valid: { valid() && checks.allSatisfy { tree.frame(of: $0.0) == $0.1 } }) else { complete = false; continue }
                 surfaces.append(captured.source)
                 verification.append((element, id, clip, ownsFocus, captured))
@@ -321,11 +359,13 @@ extension TerminalViewportReader {
             } else { children = tree.children(of: element) }
             stack.append(contentsOf: children.reversed().map { ($0, clip) })
         }
+        diagnosticStage = "final-validation"
         guard valid(), checks.allSatisfy({ tree.frame(of: $0.0) == $0.1 }),
               case .none = ScreenContextReader.lookForExcludedPage(in: window, tree, excluding: exclusions,
                     within: HelperConfig.contextTimeBudget, since: started) else { return nil }
         for (element, id, clip, ownsFocus, original) in verification {
             guard readable(element), let repeated = tree.terminalSurface(element, id: id, clip: clip, focused: ownsFocus, byteBudget: byteLimit,
+                                         geometryValid: { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget },
                                          valid: { valid() && checks.allSatisfy { tree.frame(of: $0.0) == $0.1 } }),
                   repeated.source == original.source, repeated.caret == original.caret else { return nil }
         }
@@ -337,6 +377,8 @@ extension TerminalViewportReader {
             try finish(["surfaces": .array(surfaces), "focusedSurface": focusedID, "caret": caret,
                         "complete": .bool(complete && !surfaces.isEmpty)], into: &context)
             context.seconds = Date().timeIntervalSince(started)
+            diagnosticSucceeded = true
+            HelperLog.debug("TerminalViewport: result surfaces=\(surfaces.count) complete=\(complete) nodes=\(seen.count) elapsedMs=\(Int(context.seconds * 1000))")
             return context
         } catch { return nil }
     }
@@ -349,7 +391,7 @@ protocol TerminalTree: ScreenTree {
     func visibleChildren(_ element: Element) -> [Element]?
     func selectedChildren(_ element: Element) -> [Element]?
     func terminalSurface(_ element: Element, id: Int, clip: CGRect, focused: Bool,
-                         byteBudget: Int, valid: () -> Bool) -> TerminalViewportReader.Surface?
+                         byteBudget: Int, geometryValid: () -> Bool, valid: () -> Bool) -> TerminalViewportReader.Surface?
 }
 
 extension LiveScreenTree: TerminalTree {
@@ -363,8 +405,8 @@ extension LiveScreenTree: TerminalTree {
         CaretLocator.attribute(element, kAXSelectedChildrenAttribute) as? [AXUIElement]
     }
     func terminalSurface(_ element: AXUIElement, id: Int, clip: CGRect, focused: Bool,
-                         byteBudget: Int, valid: () -> Bool) -> TerminalViewportReader.Surface? {
+                         byteBudget: Int, geometryValid: () -> Bool, valid: () -> Bool) -> TerminalViewportReader.Surface? {
         TerminalViewportReader.surface(element, id: id, clip: clip, focused: focused,
-                                       startKnown: false, endKnown: false, byteBudget: byteBudget, valid: valid)
+                                       startKnown: false, endKnown: false, byteBudget: byteBudget, geometryValid: geometryValid, valid: valid)
     }
 }

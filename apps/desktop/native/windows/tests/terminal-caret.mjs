@@ -56,7 +56,7 @@ try {
   assert.ok(first && first.height > 0, "Terminal's collapsed selection exposes a caret");
   process.stdout.write("ABCDEF");
   await settle();
-  const second = await request("caretAnchor", target);
+  const second = await request("caretAnchor");
   assert.ok(second, "caret remains available after terminal output");
   assert.ok(second.x > first.x, "caret tracks new characters independently of mouse position");
   assert.equal(second.y, first.y, "short output stays on the same line");
