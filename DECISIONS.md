@@ -1941,6 +1941,21 @@ the first engine of a fresh process always worked. So a process runs one engine.
 
 The Rust static library now owns the push-to-talk, double/triple-tap, agent-intent, cancellation and semantic key-ownership transitions. Swift and C++ use an allocation-free C value-state interface, preserving value-copy/reset behavior and caller-supplied monotonic time. Native adapters keep key codes, Globe/AltGr filtering, event taps/hooks/portal lifecycle and swallowed key-up ledgers; reconfiguration still follows each monitor's existing contract. Shared traces were run against both prior implementations before their duplicate transition bodies were removed. This avoids a second state-machine implementation without adding per-key JSON, threads, callbacks or a daemon.
 
+### Amendment 2026-10-05: a microphone that gives only digital silence is called muted
+
+Owner, 2026-10-04, after an Ubuntu VM whose input was muted at 0 % kept the warm-up swirl going
+forever: "if the volume is 0, we should just tell it instead of silently being unable to load the
+microphone forever", on every platform. A muted input still opens and delivers frames, all zero, so
+neither the start timeout nor the retry above sees it, and the waveform waits for a first real
+signal (`silenceDecibels`) that never comes. The dictation controller now starts
+`silentMicrophoneDuration` (3 s) at the microphone's first audio; if nothing above digital silence
+has come by then while the hold is arming or listening, the dictation ends with
+`silentMicrophoneMessage` ("Microphone muted or at zero volume.") and nothing is sent. The same
+check runs on every platform, with no OS volume API: a real microphone's noise floor is above
+digital silence. Silence only as a device starts (a Bluetooth headset switching profile) is waited
+out, and once the key is released the recording goes on as any does. A spoken answer to a question
+is not checked.
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it

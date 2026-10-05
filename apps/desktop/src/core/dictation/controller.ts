@@ -110,6 +110,10 @@ export interface DictationDependencies {
 /** Shown when the recording had no words in it. Kept to one line of the pill. */
 export const nothingHeardMessage = "Didn't catch that. Try again.";
 
+/** Shown when the microphone gives nothing but digital silence (`silentMicrophoneDuration`). Kept to
+ * one line of the pill. */
+export const silentMicrophoneMessage = "Microphone muted or at zero volume.";
+
 /** Shown while a transcription that failed on the server's side is tried again. */
 export const retryingMessage = "Server error, retrying…";
 
@@ -221,6 +225,8 @@ export class DictationController extends Observable {
   private isScreenReadDone = false;
   private revealTimer: Timer | null = null;
   private maxDurationTimer: Timer | null = null;
+  /** Running from the microphone's first audio until it gives more than digital silence. */
+  private silenceTimer: Timer | null = null;
   private releaseTailTimer: Timer | null = null;
   private failureResetTimer: Timer | null = null;
   /** Tips to show this dictation, in turn, once the pill listens and hears (`showDueTip`). */
@@ -459,9 +465,14 @@ export class DictationController extends Observable {
     const recorder = new AudioRecorder(config.recordingSampleRate, config.maxRecordingDuration, (chunk) => this.chunkCut(chunk, current));
     const meter = new LevelSampler();
     this.recorder = recorder;
+    let audioArrived = false;
     this.deps.capture.start(
       (samples) => {
         if (this.generation !== current) return;
+        if (!audioArrived) {
+          audioArrived = true;
+          this.silenceTimer = after(config.silentMicrophoneDuration, () => this.microphoneSilent(current));
+        }
         recorder.append(samples);
         meter.append(samples, (level) => this.updateLevel(level));
       },
@@ -1304,12 +1315,27 @@ export class DictationController extends Observable {
   private microphoneFailed(error: Error, current: number): void {
     if (this.generation !== current) return;
     log.error(`DictationController: microphone start failed: ${errorName(error)}`);
+    this.endForMicrophone("Couldn't start the microphone.");
+  }
+
+  /** The microphone gave nothing but digital silence for `silentMicrophoneDuration`: it is muted or
+   * its volume is at zero (owner, 2026-10-04: "if the volume is 0, we should just tell it"). Once the
+   * key is released, what was recorded goes on as any recording does. */
+  private microphoneSilent(current: number): void {
+    this.silenceTimer = null;
+    const kind = this.currentPhase.kind;
+    if (this.generation !== current || this.hearing || (kind !== "arming" && kind !== "listening")) return;
+    log.debug("DictationController: the microphone gives only digital silence");
+    this.endForMicrophone(silentMicrophoneMessage);
+  }
+
+  private endForMicrophone(message: string): void {
     // A tap waiting for its second press was never shown: it goes unseen, failure or not.
     if (this.secondTapTimer !== null) return this.discard();
     this.generation += 1;
     this.abort.abort();
     this.teardown();
-    this.fail("Couldn't start the microphone.");
+    this.fail(message);
   }
 
   /** The microphone stopped by itself mid-recording (its helper exited): as at the length cap, what
@@ -1559,6 +1585,8 @@ export class DictationController extends Observable {
     this.hearing = false;
     cancelTimer(this.maxDurationTimer);
     this.maxDurationTimer = null;
+    cancelTimer(this.silenceTimer);
+    this.silenceTimer = null;
     cancelTimer(this.secondTapTimer);
     this.secondTapTimer = null;
     this.endTips();

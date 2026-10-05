@@ -16,7 +16,7 @@ import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
 import { TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import * as config from "../../../src/core/config.js";
-import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage } from "../../../src/core/dictation/controller.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
@@ -4750,6 +4750,63 @@ describe("DictationController", { timeout: 20_000 }, () => {
       capture.fail();
       expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
       expect(controller.phase).toEqual(microphoneFailed);
+    });
+
+    /** A microphone that gives nothing but digital silence for `silentMicrophoneDuration` from its
+     * first audio is muted or at zero volume: the dictation ends saying so, rather than waiting for a
+     * voice that can't come, and nothing is sent. Silence for less, as a device starts, is waited out;
+     * the time counts from the first audio, not the key-down. */
+    test.each([
+      ["held", false],
+      ["hands-free", true],
+    ])("a %s dictation whose microphone gives only digital silence says it is muted", async (_, handsFree) => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture();
+      const { controller, pastes } = makeController({ capture });
+      try {
+        if (handsFree) {
+          controller.handle("start");
+          controller.handle("finish");
+          controller.handle("startHandsFree");
+        } else {
+          controller.handle("start");
+          await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        }
+        expect(controller.phase).toEqual(listening);
+        // No audio yet: the device is still opening.
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration);
+        expect(controller.phase).toEqual(listening);
+        capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration - 1);
+        expect(controller.phase).toEqual(listening);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(failed(silentMicrophoneMessage));
+        expect(capture.events.at(-1)).toBe("stop");
+        expect(transcription.requests).toHaveLength(0);
+        expect(pastes).toEqual([]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** A device silent as it starts, then giving sound, is not taken for a muted one. */
+    test("a microphone silent only as it starts is not called muted", async () => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration - 1);
+        capture.hear();
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration * 2);
+        expect(controller.phase).toEqual(listening);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
     });
 
     /** A double-tapped dictation, tapped again, is transcribed, cleaned up and pasted like a hold. */
