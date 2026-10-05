@@ -21,7 +21,7 @@ Electron 44, React 19, Vite, Vitest, electron-builder; npm (`npx -y npm@11.19.1 
 ```
 apps/desktop/
 ├── package.json, electron-builder.json, tsconfig.{base,main,renderer,test}.json, vite.config.mts, vitest.config.mts, eslint.config.mjs
-├── resources/               App icon, tray template images, DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources); linux/install-update and linux/update-keys/ (ADR-DESK-050)
+├── resources/               App icon, tray template images (plain, and marked with a dot while a permission is missing), DMG window background (1x, 2x), macOS entitlements (electron-builder's buildResources); linux/install-update and linux/update-keys/ (ADR-DESK-050)
 ├── scripts/
 │   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)

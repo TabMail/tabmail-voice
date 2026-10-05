@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { join } from "node:path";
-import { Menu, type MenuItemConstructorOptions, nativeImage, nativeTheme, Tray } from "electron";
+import { Menu, type MenuItemConstructorOptions, nativeImage, type NativeImage, nativeTheme, Tray } from "electron";
 import { linuxTrayIcon, linuxTrayUsesLightText } from "./native/linux/trayIcon.js";
 import { isReady, type MenuState, showsDictationButton, statusLine, updateItem } from "../core/ui/menuModel.js";
 
@@ -30,23 +30,43 @@ export interface TrayActions {
  * changes. */
 export class TrayMenu {
   private readonly tray: Tray;
+  private readonly icon: (marked: boolean) => NativeImage;
+  /** Whether the icon shows the mark: a dot beside the glyph while a permission is missing. */
+  private marked = false;
 
   constructor(
     resources: string,
     private readonly state: () => MenuState,
     private readonly actions: TrayActions,
   ) {
-    const template = nativeImage.createFromPath(join(resources, "trayTemplate.png"));
-    template.setTemplateImage(true);
-    const linuxIcon = () => linuxTrayIcon(template, linuxTrayUsesLightText(process.env.XDG_CURRENT_DESKTOP ?? "", nativeTheme.shouldUseDarkColors));
-    this.tray = new Tray(process.platform === "linux" ? linuxIcon() : template);
-    if (process.platform === "linux") nativeTheme.on("updated", () => this.tray.setImage(linuxIcon()));
+    // Template images, which macOS tints for the menu bar: set here, as the marked file's name doesn't
+    // end in "Template" for Electron to tell.
+    const template = (name: string) => {
+      const image = nativeImage.createFromPath(join(resources, name));
+      image.setTemplateImage(true);
+      return image;
+    };
+    const plain = template("trayTemplate.png");
+    const marked = template("trayTemplateMarked.png");
+    this.icon = (mark) => {
+      const image = mark ? marked : plain;
+      return process.platform === "linux" ? linuxTrayIcon(image, linuxTrayUsesLightText(process.env.XDG_CURRENT_DESKTOP ?? "", nativeTheme.shouldUseDarkColors)) : image;
+    };
+    this.tray = new Tray(this.icon(false));
+    if (process.platform === "linux") nativeTheme.on("updated", () => this.tray.setImage(this.icon(this.marked)));
     this.tray.setToolTip("TabMail Voice");
     this.update();
   }
 
   update(): void {
-    this.tray.setContextMenu(Menu.buildFromTemplate(this.items(this.state())));
+    const state = this.state();
+    const marked = !state.microphoneGranted || !state.accessibilityTrusted;
+    if (marked !== this.marked) {
+      this.marked = marked;
+      this.tray.setImage(this.icon(marked));
+      this.tray.setToolTip(marked ? "TabMail Voice needs a permission" : "TabMail Voice");
+    }
+    this.tray.setContextMenu(Menu.buildFromTemplate(this.items(state)));
   }
 
   private items(state: MenuState): MenuItemConstructorOptions[] {
