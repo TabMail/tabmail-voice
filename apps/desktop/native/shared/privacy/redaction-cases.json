@@ -5039,6 +5039,264 @@
     "hunter",
     "2x"
    ]
+  },
+  {
+   "name": "a text that starts inside a key's body, through its end line",
+   "text": [
+    "e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END RSA ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a text that starts inside a key's body and ends in it, across a page break",
+   "text": [
+    "k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text that starts with one long base64 line keeps it",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nThe report follows."
+   ],
+   "expected": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nThe report follows."
+   ]
+  },
+  {
+   "name": "a key's body after a page number, through its end line, goes",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n1\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END RSA ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a key's body before and after a page footer goes, through its end line",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nPage 1 of 2\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    " after"
+   ],
+   "expected": [
+    "Server notes\n",
+    "{redacted}",
+    "\nPage 1 of 2\n",
+    "{redacted}",
+    " after"
+   ]
+  },
+  {
+   "name": "a key's body without its header line, after other text, goes through its end line",
+   "text": [
+    "Appendix: server key\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "Appendix: server key\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a single last line of a key's body before its end line goes",
+   "text": [
+    "Page 2\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "Page 2\n",
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a key's body without its header line, across a page break, goes through its end line",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "Server notes\n",
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "an end line alone is no key's body",
+   "text": [
+    "The file ends with -----END ",
+    "PRIVATE KEY-----",
+    "."
+   ],
+   "expected": [
+    "The file ends with -----END ",
+    "PRIVATE KEY-----",
+    "."
+   ]
+  },
+  {
+   "name": "base64 lines before an end line in lower case are no key's body",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----end ",
+    "private key-----"
+   ],
+   "expected": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----end ",
+    "private key-----"
+   ]
+  },
+  {
+   "name": "base64 lines after the start of a text go too, as a key's body would",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "Server notes\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body at the start of a text ends before an end line in lower case",
+   "text": [
+    "k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "-----end ",
+    "private key-----"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n-----end ",
+    "private key-----"
+   ]
+  },
+  {
+   "name": "a page in the middle of a printed key, between a running header and a footer, goes",
+   "text": [
+    "Confidential.\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nPage 2 of 3.\n\nConfidential.\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "Confidential.\n",
+    "{redacted}",
+    "\nPage 2 of 3.\n\nConfidential.\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a list of long hashes goes, as a key's body would",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend of list"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}",
+    "\nend of list"
+   ]
+  },
+  {
+   "name": "one long line of base64 alone stays",
+   "text": [
+    "Checksum:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
+   ],
+   "expected": [
+    "Checksum:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
+   ]
   }
  ],
  "lineCases": [

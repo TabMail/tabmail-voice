@@ -92,6 +92,41 @@ pub unsafe extern "C" fn voice_core_policy_json(
     unsafe { process(data, length, output, crate::policy::process) }
 }
 
+/// The most explicit document text one request takes, with its context, in UTF-8
+/// bytes (the app's `redactionTextMaxBytes`).
+const DOCUMENT_TEXT_BYTES: usize = 128 * 1024;
+
+/// Explicit local-document text, independent of screen-exclusion policy. The
+/// application must authorize its file read before requesting this operation.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_redact_text_json(
+    data: *const u8,
+    length: usize,
+    output: *mut Buffer,
+) -> u32 {
+    unsafe {
+        process(data, length, output, |input| {
+            let value: serde_json::Value = serde_json::from_slice(input).map_err(|_| 1u32)?;
+            let field = |name: &str, required: bool| match value.get(name) {
+                None if !required => Ok(""),
+                value => value.and_then(serde_json::Value::as_str).ok_or(1u32),
+            };
+            let text = field("text", true)?;
+            // Part of a document comes with the text around it, so that a secret
+            // continuing past an edge is recognized whole. The three are redacted as one
+            // text and only the middle is returned; a match crossing an edge is replaced
+            // whole, so none of its characters is left on either side.
+            let (before, after) = (field("before", false)?, field("after", false)?);
+            if before.len() + text.len() + after.len() > DOCUMENT_TEXT_BYTES {
+                return Err(1);
+            }
+            let parts = vec![vec![before.to_owned(), text.to_owned(), after.to_owned()]];
+            let result = privacy::redact(&parts).map_err(|_| 3u32)?;
+            serde_json::to_vec(&serde_json::json!({"text": result[0][1]})).map_err(|_| 3)
+        })
+    }
+}
+
 unsafe fn process(
     data: *const u8,
     length: usize,
@@ -781,6 +816,125 @@ mod tests {
         );
         unsafe {
             voice_core_buffer_free(Buffer::empty());
+        }
+    }
+    #[test]
+    fn no_key_line_is_returned_whatever_the_pages_read_and_their_layout() {
+        // A key printed across three pages, read as the PDF reader does: the pages asked for,
+        // joined by a blank line, with the end of the page before and the page after as context.
+        let line = |page: usize, row: usize| {
+            format!("Qx7Lm2Vp9Rt4Wz8Kc3Nf6Hj1Bd5Gs0Ya+Te/Uo2Ie9Pr4Mw7Lk3Ji6Hu1Gy5Ft0Dr{page}{row}")
+        };
+        for layout in ["footer", "header", "none"] {
+            let pages = (1..=3)
+                .map(|number| {
+                    let mut lines = (0..3).map(|row| line(number, row)).collect::<Vec<_>>();
+                    if number == 1 {
+                        lines.splice(0..0, ["Key backup".into(), "-----BEGIN PRIVATE KEY-----".into()]);
+                    }
+                    if number == 3 {
+                        lines.push("-----END PRIVATE KEY-----".into());
+                    }
+                    match layout {
+                        "footer" => lines.push(format!("Page {number} of 3")),
+                        "header" => lines.insert(0, format!("Key backup, page {number} of 3")),
+                        _ => {}
+                    }
+                    lines.join("\n")
+                })
+                .collect::<Vec<_>>();
+            for (first, last) in [(1, 3), (1, 2), (2, 2), (2, 3), (3, 3)] {
+                let before = if first > 1 { format!("{}\n\n", pages[first - 2]) } else { String::new() };
+                let text = pages[first - 1..last].join("\n\n");
+                let after = if last < 3 { format!("\n\n{}", pages[last]) } else { String::new() };
+                let input = serde_json::to_vec(
+                    &serde_json::json!({"before": before, "text": text, "after": after}),
+                )
+                .unwrap();
+                let mut output = Buffer::empty();
+                let status =
+                    unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
+                assert_eq!(status, 0);
+                let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
+                let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                let returned = reply["text"].as_str().unwrap().to_owned();
+                unsafe {
+                    voice_core_buffer_free(output);
+                }
+                for number in 1..=3 {
+                    for row in 0..3 {
+                        assert!(
+                            !returned.contains(&line(number, row)[..40]),
+                            "{layout} layout, pages {first}-{last}: a key line was returned"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn explicit_text_redaction_is_bounded_and_refuses_bad_shapes() {
+        let limit = "a".repeat(DOCUMENT_TEXT_BYTES / 2);
+        for (input, expected) in [
+            (
+                serde_json::json!({"text": "token=syntheticPrivate123"}),
+                Some("token=[redacted]"),
+            ),
+            (serde_json::json!({"text": ""}), Some("")),
+            (
+                // A secret continuing from the text before is recognized and left out.
+                serde_json::json!({"before": "token=", "text": "syntheticPrivate123. Public."}),
+                Some("[redacted] Public."),
+            ),
+            (
+                serde_json::json!({"before": "Earlier. token=synthetic", "text": "Private123. Public."}),
+                Some(" Public."),
+            ),
+            (
+                // A secret continuing into the text after leaves only its replacement.
+                serde_json::json!({"text": "Public. token=synthetic", "after": "Private123 later."}),
+                Some("Public. token=[redacted]"),
+            ),
+            (
+                // Text with no sentence delimiter is returned whole.
+                serde_json::json!({"before": "前のページ", "text": "会議は金曜日です。資料を確認してください。", "after": "次のページ"}),
+                Some("会議は金曜日です。資料を確認してください。"),
+            ),
+            (
+                serde_json::json!({"before": "", "text": "Public.", "after": ""}),
+                Some("Public."),
+            ),
+            (
+                serde_json::json!({"before": limit, "text": "", "after": limit}),
+                Some(""),
+            ),
+            (
+                serde_json::json!({"before": limit, "text": "a", "after": limit}),
+                None,
+            ),
+            (serde_json::json!({"text": "Public.", "before": null}), None),
+            (serde_json::json!({"text": "Public.", "after": true}), None),
+            (serde_json::json!({}), None),
+            (serde_json::json!({"text": null}), None),
+            (serde_json::json!({"text": "😀".repeat(32769)}), None),
+        ] {
+            let input = serde_json::to_vec(&input).unwrap();
+            let mut output = Buffer::empty();
+            let status =
+                unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
+            if let Some(text) = expected {
+                assert_eq!(status, 0);
+                let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
+                let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                assert_eq!(reply, serde_json::json!({"text": text}));
+            } else {
+                assert_eq!(status, 1);
+                assert!(output.data.is_null());
+                assert_eq!(output.length, 0);
+            }
+            unsafe {
+                voice_core_buffer_free(output);
+            }
         }
     }
 

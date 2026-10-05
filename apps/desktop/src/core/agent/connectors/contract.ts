@@ -9,6 +9,7 @@ import type { EventStore } from "./calendar.js";
 import type { ContactStore } from "./contacts.js";
 import type { EmailOpener } from "./email.js";
 import type { NoteStore } from "./notes.js";
+import type { PDFReader } from "./pdf.js";
 import type { FileStore } from "./files.js";
 import type { ConnectorID } from "./registry.js";
 import type { WebFetch, WebOpener } from "./web.js";
@@ -27,9 +28,9 @@ export interface ConnectorTool {
   /** What the chat window says while it runs ("Checking your calendar"). */
   readonly progressLabel: string;
   /** What the chat window asks before the tool sends or creates anything ("Add “Launch review” to
-   * your calendar on Friday at 10:00?"); null for a tool that only reads. The tool runs only if the
+   * your calendar on Friday at 10:00?"); null for ordinary reads. Explicit document reads also ask before sharing text. The tool runs only if the
    * user confirms (owner, 2026-09-26: send or create = confirm first, always). */
-  confirmation(args: Record<string, unknown>): string | null;
+  confirmation(args: Record<string, unknown>, signal: AbortSignal): string | null | Promise<string | null>;
   /** Runs the tool; the result is what the model reads next. Throws when it can't: the model is told
    * why. `signal` aborts when the request is canceled or its chat window closed: a tool that can
    * stop what it started (a script) stops it. */
@@ -92,6 +93,7 @@ export interface ConnectorServices {
   contactStore: ContactStore;
   noteStore: NoteStore;
   fileStore: FileStore;
+  pdfReader: PDFReader;
   /** The user's home folder, which the model reads as `~`. */
   home: string;
   emailOpener: EmailOpener;

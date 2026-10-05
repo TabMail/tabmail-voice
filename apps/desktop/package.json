@@ -29,11 +29,16 @@
     "preview": "npm run build:renderer && electron scripts/preview/index.mts"
   },
   "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@napi-rs/keyring": "2.0.0",
+    "abort-controller": "3.0.0",
     "electron-updater": "6.8.9",
     "jsonc-parser": "3.3.1",
+    "pdfjs-dist": "6.3.289",
+    "quickjs-emscripten-core": "0.32.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "web-streams-polyfill": "4.3.0"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

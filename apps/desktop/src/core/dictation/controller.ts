@@ -1028,7 +1028,17 @@ export class DictationController extends Observable {
       return "Error: the arguments were not a JSON object.";
     }
     this.setChat({ ...(this.currentChat ?? this.newChat()), pendingRequest: request });
-    const question = tool.confirmation(args);
+    let question: string | null;
+    try {
+      question = await tool.confirmation(args, signal);
+    } catch (error) {
+      if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
+      log.error(`DictationController: ${tool.name} preparation failed: ${errorName(error)}`);
+      return `Error: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    // Preparing a confirmation may resolve a local file path asynchronously. A canceled or
+    // superseded request must never reopen its question or run the tool after that lookup.
+    if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
     // Closing the window or ending the request declines the question (`teardown`).
     if (question !== null) {
       const answer = await this.confirm(question);

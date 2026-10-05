@@ -61,6 +61,17 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         return request('focusedFieldValue', {**policy, 'window': target['window'], 'maxLength': 20000})
 
     try:
+        assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
+        assert request('redactText', {'text': ''}) == {'text': ''}
+        for before, text, after, expected in [
+            ('token=', 'syntheticPrivate123. Public.', '', '[redacted] Public.'),
+            ('', 'Public. token=synthetic', 'Private123 later.', 'Public. token=[redacted]'),
+            ('Earlier.', '会議は金曜日です。', '次のページ', '会議は金曜日です。'),
+        ]:
+            assert request('redactText', {'before': before, 'text': text, 'after': after}) == {'text': expected}
+        request('redactText', {'text': 'Public.', 'before': None}, refused=True)
+        request('redactText', {'text': None}, refused=True)
+        request('redactText', {'text': '😀' * 32769}, refused=True)
         request('frontmostApp')
         wait_calls((1, 0))
         assert 'First synthetic app' in request('readScreen')['renderedText'], 'startup activates the already-foreground app'

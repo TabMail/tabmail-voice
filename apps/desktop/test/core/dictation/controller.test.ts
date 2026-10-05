@@ -2922,6 +2922,88 @@ describe("DictationController", { timeout: 20_000 }, () => {
           return { controller: made, done, chatChanges };
         }
 
+        test("a newer conversation survives late preparation from the previous chat", async () => {
+          const ready = deferred<string | null>();
+          let preparing = false;
+          const tool = Object.assign(new FakeLoopTool(), { confirmation: () => { preparing = true; return ready.promise; } });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"])]);
+          expect(await eventually(() => preparing)).toBe(true);
+          controller.closeChat();
+          transcription.enqueue(200, { text: "new conversation" });
+          completions.enqueue(200, reply("new reply"));
+          await holdAndRelease(controller, "agent");
+          expect(await eventually(() => controller.chat?.turns[0]?.reply === "new reply")).toBe(true);
+          controller.keepChatOpen();
+          expect(controller.chat?.confirmation).toBeNull();
+          ready.resolve("obsolete confirmation");
+          await sleep(100);
+          try {
+            expect(controller.chat?.turns.map(turn => [turn.request, turn.reply])).toEqual([["new conversation", "new reply"]]);
+            expect(controller.chat?.confirmation).toBeNull();
+            expect(tool.runs).toEqual([]);
+          } finally { controller.closeChat(); await done; }
+        });
+
+        test("asynchronous preparation asks before running a tool", async () => {
+          const ready = deferred<string | null>();
+          const tool = Object.assign(new FakeLoopTool(), { confirmation: () => ready.promise });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          ready.resolve(confirmationQuestion);
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+          expect(tool.runs).toEqual([]);
+          controller.answerConfirmation(true);
+          await done;
+          expect(tool.runs).toEqual([{}]);
+        });
+
+        test.each([null, confirmationQuestion])("closing during preparation discards the late result (%s)", async (question) => {
+          const ready = deferred<string | null>();
+          let preparing = false;
+          let preparationSignal: AbortSignal | undefined;
+          const tool = Object.assign(new FakeLoopTool(), { confirmation: (_args: Record<string, unknown>, signal: AbortSignal) => {
+            preparing = true;
+            preparationSignal = signal;
+            return ready.promise;
+          } });
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          expect(await eventually(() => preparing)).toBe(true);
+          controller.closeChat();
+          expect(preparationSignal?.aborted).toBe(true);
+          ready.resolve(question);
+          await done;
+          expect(tool.runs).toEqual([]);
+          expect(controller.chat).toBeNull();
+        });
+
+        /** A preparation that fails because its request ended is that request's end, not a failure. */
+        test("preparation failing after its request was closed reports no failure", async () => {
+          let fail!: (error: Error) => void;
+          const pending = new Promise<string | null>((_resolve, reject) => { fail = reject; });
+          let preparing = false;
+          const errors: string[] = [];
+          configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
+          try {
+            const tool = Object.assign(new FakeLoopTool(), { confirmation: () => { preparing = true; return pending; } });
+            const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+            expect(await eventually(() => preparing)).toBe(true);
+            controller.closeChat();
+            fail(new Error("PDF reading was canceled."));
+            await done;
+            expect(tool.runs).toEqual([]);
+            expect(errors.filter((text) => text.includes("preparation failed"))).toEqual([]);
+          } finally {
+            configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+          }
+        });
+
+        test("failed preparation is reported without running the tool", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { confirmation: async () => { throw new Error("The file is unavailable."); } });
+          const { done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          await done;
+          expect(tool.runs).toEqual([]);
+          expect(told(1)).toEqual(["Error: The file is unavailable."]);
+        });
+
         /** A tool the answer's model calls runs, with the chat window open on the request and saying
          * what the tool is doing; its result goes back to the model, and the answer joins the chat,
          * which then times out unless touched. The Answer prompt is offered the date tools and this

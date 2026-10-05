@@ -35,6 +35,7 @@ int session(const JSON& params) {
     return value;
 }
 JSON handle(const std::string& method, const JSON& params, voice::Microphone& microphone) {
+    if (method == "redactText") return voice::core::request(params, voice_core_redact_text_json);
     if (method == "appInfo") return voice::privacy::appInfo(params);
     if (method == "shellExclusionBounds") return voice::shellExclusionBounds();
     if (method == "frontmostApp") {

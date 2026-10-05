@@ -163,7 +163,7 @@ describe("connectors", () => {
       ["contacts", "contacts_add"],
     ]);
     const valid = { query: "Sam", first_name: "Sam" };
-    expect(tools.map((tool) => tool.confirmation(valid) !== null)).toEqual([false, true]);
+    expect(tools.map((tool) => tool.confirmation(valid, new AbortController().signal) !== null)).toEqual([false, true]);
   });
 });
 
