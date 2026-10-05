@@ -16,7 +16,7 @@ export interface TrayActions {
   toggleDictation(): void;
   quit(): void;
   checkForUpdates(): void;
-  restartToUpdate(): void;
+  installUpdate(): void;
   /** Debug builds with debug mode on only; null otherwise. */
   debug: {
     hasLastRecording(): boolean;
@@ -82,7 +82,10 @@ export class TrayMenu {
       { label: "Settings…", accelerator: "CommandOrControl+,", click: () => actions.showSettings() },
     );
     const update = state.update;
-    if (update) items.push({ ...updateItem(update), click: () => (update.kind === "ready" ? actions.restartToUpdate() : actions.checkForUpdates()) });
+    if (update) {
+      const { label, enabled, install } = updateItem(update);
+      items.push({ label, enabled, click: () => (install ? actions.installUpdate() : actions.checkForUpdates()) });
+    }
     items.push(
       { label: "Quit TabMail Voice", accelerator: "CommandOrControl+Q", click: () => actions.quit() },
     );

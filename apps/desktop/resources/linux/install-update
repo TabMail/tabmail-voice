@@ -1,0 +1,77 @@
+#!/bin/sh
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# install-update verify|install <deb> <version> <sha512> <signature>
+#
+# Proves a downloaded TabMail Voice update ours and newer (ADR-DESK-050), and in `install` mode, run
+# as root through pkexec, installs it. The signature is Ed25519, base64, over the lines below, by a
+# key in update-keys/ beside this script (root-owned, installed with the package); <sha512> is the
+# package's SHA-512, base64, as the feed gives it. Everything is checked on a copy of the package
+# this script made itself, so what is checked is what is installed: in `install` mode the copy is
+# root's, out of reach of whoever downloaded the update, and no one else can read it until it is
+# proven (root copies whatever regular file it is given). apt-get then installs it, with whatever
+# packages it needs from the system's own sources, and never an older version.
+#
+# Exit codes: 0 done; 2 misused; 3 not signed by a key here; 4 the package isn't the signed one;
+# 5 not newer than the installed version; 6 the package manager couldn't install it.
+set -eu
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+LC_ALL=C
+export PATH LC_ALL
+
+[ "$#" -eq 5 ] || exit 2
+mode=$1
+deb=$2
+version=$3
+sha512=$4
+signature=$5
+case $mode in
+  verify) ;;
+  install) [ "$(id -u)" -eq 0 ] || exit 2 ;;
+  *) exit 2 ;;
+esac
+printf '%s\n' "$version" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+' || exit 4
+
+package=tabmail-voice
+# How long apt-get waits for another installation to finish (seconds).
+lockWait=120
+architecture=$(dpkg --print-architecture)
+keys=$(dirname -- "$(readlink -f -- "$0")")/update-keys
+
+# A downloaded file, not a link to one or anything else.
+[ -f "$deb" ] && [ ! -L "$deb" ] || exit 4
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+cp -- "$deb" "$work/update.deb" 2>/dev/null || exit 4
+
+printf 'TabMail Voice update\npackage: %s\narchitecture: %s\nversion: %s\nsha512: %s\n' \
+  "$package" "$architecture" "$version" "$sha512" > "$work/message"
+printf '%s' "$signature" | base64 -d > "$work/signature" 2>/dev/null || exit 3
+trusted=no
+for key in "$keys"/*.pem; do
+  [ -f "$key" ] || continue
+  if openssl pkeyutl -verify -pubin -inkey "$key" -rawin -in "$work/message" -sigfile "$work/signature" > /dev/null 2>&1; then
+    trusted=yes
+    break
+  fi
+done
+[ "$trusted" = yes ] || exit 3
+
+[ "$(openssl dgst -sha512 -binary "$work/update.deb" | base64 -w0)" = "$sha512" ] || exit 4
+[ "$(dpkg-deb -f "$work/update.deb" Package 2>/dev/null)" = "$package" ] || exit 4
+[ "$(dpkg-deb -f "$work/update.deb" Version 2>/dev/null)" = "$version" ] || exit 4
+[ "$(dpkg-deb -f "$work/update.deb" Architecture 2>/dev/null)" = "$architecture" ] || exit 4
+installed=$(dpkg-query -W -f '${Version}' "$package" 2>/dev/null || true)
+if [ -n "$installed" ] && ! dpkg --compare-versions "$version" gt "$installed"; then
+  exit 5
+fi
+[ "$mode" = install ] || exit 0
+
+# Proven: apt-get reads the package as its own unprivileged user.
+chmod 0755 "$work"
+chmod 0644 "$work/update.deb"
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  -o DPkg::Lock::Timeout="$lockWait" "$work/update.deb" > /dev/null 2>&1 || exit 6
+[ "$(dpkg-query -W -f '${Version}' "$package" 2>/dev/null)" = "$version" ] || exit 6

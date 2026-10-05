@@ -203,7 +203,7 @@ export type Command =
   | { type: "requestAccessibility" }
   | { type: "enableGnomeIntegration" }
   | { type: "checkForUpdates" }
-  | { type: "restartToUpdate" }
+  | { type: "installUpdate" }
   | { type: "welcomeNext" }
   | { type: "welcomeBack" }
   | { type: "welcomeGoTo"; index: number }
@@ -272,7 +272,7 @@ export function isCommand(value: unknown): value is Command {
     case "requestAccessibility":
     case "enableGnomeIntegration":
     case "checkForUpdates":
-    case "restartToUpdate":
+    case "installUpdate":
     case "welcomeNext":
     case "welcomeBack":
     case "fixVSCodeSettings":

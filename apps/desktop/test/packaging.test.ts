@@ -2,9 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import * as config from "../src/core/config.js";
 
 const root = join(__dirname, "..");
 
@@ -68,6 +69,55 @@ describe("the Mac app's packaging", () => {
     expect(builder.mac.target.map(({ target }) => target)).toContain("zip");
     // The name the release script uploads and the feed names.
     expect(builder.mac.artifactName).toBe("TabMail-Voice-${version}-${arch}.${ext}");
+  });
+
+  /** Windows and Linux read their own architecture's feed on the same CDN (ADR-DESK-050):
+   * electron-builder writes each build's `app-update.yml` with `${arch}` filled in, and the release
+   * uploads each architecture's installer and feed to its own folder. electron-updater checks a
+   * downloaded Windows installer's signature only when `app-update.yml` names a publisher, and
+   * installs anything the feed offers otherwise, so every Windows build names it. */
+  test("Windows and Linux update from their architecture's folder on cdn.tabmail.ai", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { publish: unknown; artifactName: string }; linux: { publish: unknown; artifactName: string } };
+
+    expect(builder.win.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/windows-${arch}", useMultipleRangeRequest: false, publisherName: [config.windowsUpdatePublisher] }]);
+    expect(builder.linux.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
+    expect(builder.win.artifactName).toBe("TabMail-Voice-${version}-windows-${arch}.${ext}");
+    expect(builder.linux.artifactName).toBe("TabMail-Voice-${version}-linux-${arch}.${ext}");
+  });
+
+  /** A Linux update is proven and installed by `install-update`, packaged executable, root-owned
+   * under /opt with the keys it checks against, and it needs `openssl` and `pkexec` (ADR-DESK-050). */
+  test("Linux ships install-update, its keys, and what it runs", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; to?: string; filter?: string[] }[] }; deb: { depends: string[] } };
+
+    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/install-update", to: "linux/install-update" });
+    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/update-keys", to: "linux/update-keys", filter: ["*.pem"] });
+    expect(statSync(join(root, "resources/linux/install-update")).mode & 0o111).toBe(0o111);
+    expect(builder.deb.depends).toEqual(expect.arrayContaining(["openssl", "pkexec"]));
+  });
+
+  /** The app's AppArmor profile is inherited by what it runs: the root install leaves it at the
+   * pkexec the app runs, or dpkg can't replace the files the profile names (found in the Ubuntu VM). */
+  test("Linux installs an update outside the app's AppArmor profile", () => {
+    const profile = readFileSync(join(root, "scripts/linux/apparmor-profile.tpl"), "utf8");
+    const adapter = readFileSync(join(root, "src/main/native/linux/update.ts"), "utf8");
+
+    expect(profile).toMatch(/^\s*\/usr\/bin\/pkexec Ux,$/m);
+    expect(adapter).toContain('"/usr/bin/pkexec"');
+  });
+
+  /** The administrator's authentication dialog says what it is for, not install-update's command line
+   * with its signature: a polkit action for the packaged script, installed where polkit reads them,
+   * asking for an administrator every time (ADR-DESK-050). */
+  test("Linux asks for an administrator to install an update, in words", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { productName: string; deb: { fpm: string[] } };
+    const policy = readFileSync(join(root, "resources/linux/ai.tabmail.voice.install-update.policy"), "utf8");
+
+    expect(builder.deb.fpm).toContain("resources/linux/ai.tabmail.voice.install-update.policy=/usr/share/polkit-1/actions/ai.tabmail.voice.install-update.policy");
+    // The path pkexec runs: the package installs the app under /opt/<productName>.
+    expect(policy).toContain(`<annotate key="org.freedesktop.policykit.exec.path">/opt/${builder.productName}/resources/linux/install-update</annotate>`);
+    expect(policy).toContain("<message>Authentication is required to install a TabMail Voice update.</message>");
+    expect([...policy.matchAll(/<allow_(?:any|inactive|active)>([^<]*)</g)].map(([, value]) => value)).toEqual(["auth_admin", "auth_admin", "auth_admin"]);
   });
 
   /** Squirrel.Mac installs an update only if its own version is not lower than the running app's, so

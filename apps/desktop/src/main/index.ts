@@ -2,12 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { app, autoUpdater as squirrel, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell } from "electron";
-import { autoUpdater } from "electron-updater";
+import { autoUpdater, DebUpdater, NsisUpdater } from "electron-updater";
 import { AccountModel, AuthClient, DebugAccess } from "../core/backend/account.js";
 import { opensLink } from "../core/agent/chat.js";
 import { connectorsForPlatform } from "../core/agent/connectors/index.js";
@@ -73,7 +73,10 @@ import { MacNoteStore } from "../core/agent/connectors/macos/notes.js";
 import { osascript } from "./native/macos/osascript.js";
 import { nodeProfileFiles } from "./storage/profileFiles.js";
 import { TrayMenu } from "./tray.js";
-import { Updater } from "./updater.js";
+import { runFile, type UpdatePlatform, Updater } from "./updater.js";
+import { macUpdatePlatform } from "./native/macos/update.js";
+import { windowsUpdatePlatform } from "./native/windows/update.js";
+import { linuxUpdatePlatform, relaunchAfterExit } from "./native/linux/update.js";
 import { GnomeIntegration } from "./native/linux/gnomeIntegration.js";
 import { Windows } from "./windows.js";
 
@@ -282,9 +285,9 @@ function launch(): void {
     });
   }
 
-  // The existing signed update feed and installer are macOS-only (ADR-DESK-041).
-  // Other platforms need their own signed artifacts/feed before enabling updates.
-  const updater = isDebugBuild || process.platform !== "darwin" ? null : makeUpdater();
+  // Packaged builds update from their platform's feed (ADR-DESK-041, ADR-DESK-050).
+  const updatePlatform = isDebugBuild ? null : makeUpdatePlatform();
+  const updater = updatePlatform === null ? null : makeUpdater(updatePlatform);
 
   const tray = new TrayMenu(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources"), menuState, {
     showWelcome,
@@ -294,7 +297,7 @@ function launch(): void {
     toggleDictation: () => controller.toggle(),
     quit: () => app.quit(),
     checkForUpdates: () => updater?.checkNow(),
-    restartToUpdate: () => updater?.restart(),
+    installUpdate: () => updater?.install(),
     debug: isDebugBuild
       ? {
           hasLastRecording: () => existsSync(lastRecordingPath),
@@ -433,20 +436,53 @@ function launch(): void {
     };
   }
 
-  function makeUpdater(): Updater {
-    // Its own log goes to the console; ours says what failed.
-    autoUpdater.logger = null;
+  /** The platform's update adapter, its library's own log off (it writes to the console; ours says
+   * what failed). Linux updates only once the package carries a key to check them with. */
+  function makeUpdatePlatform(): UpdatePlatform | null {
+    switch (process.platform) {
+      case "darwin":
+        autoUpdater.logger = null;
+        return macUpdatePlatform({ source: autoUpdater, installer: squirrel });
+      case "win32": {
+        const source = new NsisUpdater();
+        source.logger = null;
+        return windowsUpdatePlatform({ source, helper: join(helpers, "voice-windows.exe"), run: runFile });
+      }
+      case "linux": {
+        const resources = join(process.resourcesPath, "linux");
+        if (!hasUpdateKey(join(resources, "update-keys"))) {
+          log.debug("main: no update key; Linux updates are off");
+          return null;
+        }
+        const source = new DebUpdater();
+        source.logger = null;
+        return linuxUpdatePlatform({
+          source,
+          script: join(resources, "install-update"),
+          run: runFile,
+          relaunch: () => {
+            relaunchAfterExit({ pid: process.pid, executable: process.execPath, args: process.argv.slice(1) });
+            app.exit(0);
+          },
+        });
+      }
+      default:
+        return null;
+    }
+  }
+
+  function makeUpdater(platform: UpdatePlatform): Updater {
     return new Updater({
-      source: autoUpdater,
-      installer: squirrel,
+      platform,
+      store,
       currentVersion: app.getVersion(),
-      ask: async (version) => {
+      ask: async (version, installsOnQuit) => {
         app.focus({ steal: true });
         const { response } = await dialog.showMessageBox({
           type: "info",
-          message: `TabMail Voice ${version} is ready.`,
-          detail: "It installs when TabMail Voice quits. Restart now to update?",
-          buttons: ["Restart Now", "Later"],
+          ...(installsOnQuit
+            ? { message: `TabMail Voice ${version} is ready.`, detail: "It installs when TabMail Voice quits. Restart now to update?", buttons: ["Restart Now", "Later"] }
+            : { message: `TabMail Voice ${version} is ready to install.`, detail: "Installing it needs an administrator's authorization. Install now?", buttons: ["Install Now", "Later"] }),
           // Later is both: Return, typed as the question appears, does nothing; Escape picks Later.
           defaultId: 1,
           cancelId: 1,
@@ -798,8 +834,8 @@ function launch(): void {
         return permissions.requestAccessibility();
       case "checkForUpdates":
         return updater?.checkNow();
-      case "restartToUpdate":
-        return updater?.restart();
+      case "installUpdate":
+        return updater?.install();
       case "welcomeNext":
         return wizard?.next();
       case "welcomeBack":
@@ -862,6 +898,8 @@ function launch(): void {
 
   let quitting = false;
   app.on("before-quit", (event) => {
+    // Every time, the last just before the library's quit-time install.
+    updater?.quitting();
     if (quitting) return;
     event.preventDefault();
     quitting = true;
@@ -891,5 +929,14 @@ function launch(): void {
   if (!settings.hasFinishedWelcome) {
     tips.markLearned("longDictations");
     showWelcome();
+  }
+}
+
+/** Whether `folder` holds a public key to check Linux updates with (ADR-DESK-050). */
+function hasUpdateKey(folder: string): boolean {
+  try {
+    return readdirSync(folder).some((name) => name.endsWith(".pem"));
+  } catch {
+    return false;
   }
 }

@@ -432,6 +432,14 @@ export const microphoneHelperRestartExitCode = 75;
  * wizard are up, and then this often (ADR-DESK-041). "Check for Updates…" in the menu looks at once. */
 export const updateFirstCheckDelay = 10_000;
 export const updateCheckInterval = 4 * 60 * 60 * 1_000;
+/** The longest proving a downloaded update ours may take (ms): Windows checks its signature's
+ * certificate chain, revocation included, and Linux its signature and package (ADR-DESK-050). */
+export const updateVerifyTimeout = 120_000;
+/** Who a Windows update must be signed by: the common name and the organization of its Authenticode
+ * certificate, as the release's signing names them (ADR-DESK-050). */
+export const windowsUpdatePublisher = "Lisem AI LTD";
+/** How often the shell that opens the updated Linux app looks whether the old one has quit (s). */
+export const linuxRelaunchPollSeconds = 0.2;
 
 // MARK: Welcome wizard
 

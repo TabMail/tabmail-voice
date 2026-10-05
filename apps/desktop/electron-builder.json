@@ -88,7 +88,14 @@
         "to": "helpers/IAccessible2-LICENSE.txt"
       }
     ],
-    "publish": null
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://cdn.tabmail.ai/releases/voice/windows-${arch}",
+        "useMultipleRangeRequest": false,
+        "publisherName": ["Lisem AI LTD"]
+      }
+    ]
   },
   "linux": {
     "target": "deb",
@@ -110,6 +117,17 @@
         "to": "linux/gnome/voice-caret@tabmail.ai"
       },
       {
+        "from": "resources/linux/install-update",
+        "to": "linux/install-update"
+      },
+      {
+        "from": "resources/linux/update-keys",
+        "to": "linux/update-keys",
+        "filter": [
+          "*.pem"
+        ]
+      },
+      {
         "from": "dist/helpers",
         "to": "helpers",
         "filter": [
@@ -120,7 +138,13 @@
         ]
       }
     ],
-    "publish": null,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://cdn.tabmail.ai/releases/voice/linux-${arch}",
+        "useMultipleRangeRequest": false
+      }
+    ],
     "desktop": {
       "entry": {
         "Name": "TabMail Voice",
@@ -149,10 +173,13 @@
       "localsearch",
       "libicu78",
       "xdg-desktop-portal",
-      "xdg-desktop-portal-gnome"
+      "xdg-desktop-portal-gnome",
+      "openssl",
+      "pkexec"
     ],
     "fpm": [
-      "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai"
+      "native/linux/gnome/voice-caret@tabmail.ai/=/usr/share/gnome-shell/extensions/voice-caret@tabmail.ai",
+      "resources/linux/ai.tabmail.voice.install-update.policy=/usr/share/polkit-1/actions/ai.tabmail.voice.install-update.policy"
     ]
   },
   "nsis": {

@@ -51,7 +51,7 @@ describe("IPC", () => {
       { type: "requestMicrophone" },
       { type: "requestAccessibility" },
       { type: "checkForUpdates" },
-      { type: "restartToUpdate" },
+      { type: "installUpdate" },
       { type: "welcomeNext" },
       { type: "welcomeBack" },
       { type: "welcomeGoTo", index: 0 },

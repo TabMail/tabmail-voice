@@ -443,8 +443,9 @@ function PermissionsPane({ state }: { state: SettingsState }) {
 }
 
 function GeneralPane({ state }: { state: SettingsState }) {
+  // Why the update failed, under the card; the button retries.
   return (
-    <Group>
+    <Group captions={[state.update?.kind === "failed" && state.update.message]}>
       <Toggle label="Open at login" checked={state.openAtLogin} onChange={(value) => send({ type: "setOpenAtLogin", value })} />
       {state.debugAllowed && (
         <Toggle label="Debug mode" checked={state.debugMode} onChange={(value) => send({ type: "setDebugMode", value })}>
@@ -460,13 +461,14 @@ function GeneralPane({ state }: { state: SettingsState }) {
   );
 }
 
-/** The menu's update item as a button: Check for Updates, what a check is doing, or Restart to Update. */
+/** The menu's update item as a button: Check for Updates, what a check is doing, Restart to Update or
+ * Install Update, or Retry. */
 function UpdateRow({ update }: { update: UpdateState }) {
-  const { label, enabled } = updateItem(update);
+  const { label, enabled, install } = updateItem(update);
   return (
     <div className="row">
       <span>Updates</span>
-      <button disabled={!enabled} onClick={() => void send({ type: update.kind === "ready" ? "restartToUpdate" : "checkForUpdates" })}>
+      <button disabled={!enabled} onClick={() => void send({ type: install ? "installUpdate" : "checkForUpdates" })}>
         {label}
       </button>
     </div>

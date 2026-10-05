@@ -37,24 +37,35 @@ export function statusLine(state: MenuState): string {
   return `Hold ${hotkeyNames[state.hotkey].displayName} to dictate`;
 }
 
-/** Where an update is (ADR-DESK-041). `ready`: downloaded, installed when the app quits. */
+/** Where an update is (ADR-DESK-041, ADR-DESK-050). `ready`: downloaded and proven ours; it installs
+ * when the app quits (`installsOnQuit`, macOS and Windows) or when the user installs it with an
+ * administrator's authorization (Linux), `installing` meanwhile. `failed`: a download, its proof or
+ * its install failed; the next check tries again. */
 export type UpdateState =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "downloading"; version: string }
-  | { kind: "ready"; version: string };
+  | { kind: "ready"; version: string; installsOnQuit: boolean }
+  | { kind: "installing"; version: string }
+  | { kind: "failed"; version: string; message: string };
 
-/** The menu's update item: Check for Updates, what a check is doing, or Restart to Update once one is
- * ready. */
-export function updateItem(update: UpdateState): { label: string; enabled: boolean } {
+/** The menu's update item: Check for Updates, what a check is doing, Restart to Update or Install
+ * Update once one is ready, or Retry after a failure; `install` says which command it sends. */
+export function updateItem(update: UpdateState): { label: string; enabled: boolean; install: boolean } {
   switch (update.kind) {
     case "idle":
-      return { label: "Check for Updates…", enabled: true };
+      return { label: "Check for Updates…", enabled: true, install: false };
     case "checking":
-      return { label: "Checking for Updates…", enabled: false };
+      return { label: "Checking for Updates…", enabled: false, install: false };
     case "downloading":
-      return { label: `Downloading Version ${update.version}…`, enabled: false };
+      return { label: `Downloading Version ${update.version}…`, enabled: false, install: false };
     case "ready":
-      return { label: `Restart to Update to Version ${update.version}`, enabled: true };
+      return update.installsOnQuit
+        ? { label: `Restart to Update to Version ${update.version}`, enabled: true, install: true }
+        : { label: `Install Version ${update.version}…`, enabled: true, install: true };
+    case "installing":
+      return { label: `Installing Version ${update.version}…`, enabled: false, install: false };
+    case "failed":
+      return { label: `Retry Update to Version ${update.version}`, enabled: true, install: false };
   }
 }

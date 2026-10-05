@@ -121,7 +121,9 @@ loader environment cleanup). Otherwise the helper inherits the Electron label,
 which Snap's AT-SPI peer rules reject even though the parent profile itself is
 unconfined. The explicit allow-all form honors this transition on the target kernel; its
 `unconfined` and `default_allow` modes retained the inherited label in guest testing.
-The profile does not change Firefox's confinement or disable AppArmor.
+The profile does not change Firefox's confinement or disable AppArmor. It also lets `/usr/bin/pkexec` leave it (`Ux`): an update installs as root
+through `pkexec`, and dpkg under the inherited profile couldn't make its backup links to the files it
+replaces (found in the Ubuntu VM's installed upgrade).
 See [electron-builder's profile rationale](https://github.com/electron-userland/electron-builder/issues/8635),
 [Ubuntu's execution-mode documentation](https://manpages.ubuntu.com/manpages/resolute/man5/apparmor.d.5.html),
 and [Snap's accessibility peer rules](https://github.com/canonical/snapd/blob/master/interfaces/builtin/desktop_legacy.go).
@@ -134,8 +136,22 @@ existing text glyph with light lettering on GNOME's dark panel. This is not a KD
 runtime compatibility claim.
 
 The development Debian package includes only the Linux helpers, declares the
-Ubuntu runtime dependencies, and has no automatic update feed. Mac-only native
+Ubuntu runtime dependencies (`openssl` and `pkexec` among them, for updates). Mac-only native
 connectors remain unavailable. Thunderbird connectivity is outside this work.
+
+## Updates
+
+Packaged builds look for updates at `https://cdn.tabmail.ai/releases/voice/linux-${arch}/` (`latest-linux.yml` on x64, `latest-linux-arm64.yml` on ARM)
+(ADR-DESK-050) once the package carries a public key in `resources/linux/update-keys/`; without
+one, updates are off. The feed's `signature` is Ed25519 over the package's name, architecture,
+version and SHA-512. `install-update` (packaged under `linux/`, root-owned) checks it as the user
+once the `.deb` is downloaded, and again as root, on its own copy, when the user installs it from
+the menu or the question through `pkexec` (its polkit action,
+`resources/linux/ai.tabmail.voice.install-update.policy`, gives the dialog its message and asks for an
+administrator every time); then `apt-get install` installs it, with any missing
+dependency from the system's own sources, and the app opens the new version. Nothing installs
+by itself, and an older or equal version is refused. `test/main/native/linux/installUpdate.test.ts`
+runs the real script on Linux.
 
 ## Upstream implementation references
 
