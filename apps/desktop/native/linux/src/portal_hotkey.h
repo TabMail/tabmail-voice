@@ -175,6 +175,12 @@ public:
         if (state->choice != choice) { state->close(); state->choice = choice; state->shortcut = "dictation-" + choice; }
         state->setup(""); return state->installed;
     }
+    /** Unbinds the portal's keys while the Shell holds the dictation key. */
+    void disable() {
+        const bool was = state->installed;
+        state->close(); state->choice.clear(); state->shortcut.clear();
+        if (was) state->output.send({{"event", "hotkeyInstallationChanged"}, {"installed", false}});
+    }
     bool ready() const { return state->installed; }
     bool busy() const { return state->busy; }
     void authorize(std::string parent, Channel::Reply reply) {

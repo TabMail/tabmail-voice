@@ -847,6 +847,22 @@ describe("GNOME integration", () => {
     expect(visibleText()).not.toContain("Shift");
   });
 
+  test.each(["available", "restart", "ready", undefined] as const)("Right Alt asks for the integration only while it is not enabled (%s)", async (state) => {
+    const shown: SettingsState = { ...signedIn, hotkey: "rightAlt", availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: state };
+    await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Dictation").click());
+    const asked = visibleText().includes("Right Alt works once GNOME integration is enabled in Permissions.");
+    expect(asked).toBe(state === "available" || state === "restart");
+  });
+
+  test("F8 never asks for the integration", async () => {
+    const shown: SettingsState = { ...signedIn, hotkey: "F8", availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: "available" };
+    await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Dictation").click());
+    expect(visibleText()).toContain("Hold F8 to dictate");
+    expect(visibleText()).not.toContain("Right Alt works once");
+  });
+
   test.each(["restart", "unavailable", "unsupported", "checking"] as const)("%s does not report the integration enabled", async (state) => {
     const initial: SettingsState = { ...signedIn, gnomeIntegration: state };
     await settingsPage({ error: null }, initial, initial);

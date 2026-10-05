@@ -3402,3 +3402,39 @@ text without spaces included.
   neighbouring page, so it does not retry the same pages.
 - The package keeps only PDF.js's `legacy/build/pdf.mjs`, `pdf.worker.mjs` and `cmaps/`
   (`electron-builder.json`); the release check asserts it (`verify-pdf.cjs` in the helpers repo).
+
+---
+
+## ADR-DESK-052: Right Alt as an Ubuntu dictation key, held by the GNOME extension
+
+**Context:** On Ubuntu the dictation key is F8 or F9, bound through the GlobalShortcuts portal, which
+cannot bind a lone modifier, so Right Alt (the Windows default) was not offered there. The GNOME
+extension (`voice-caret@tabmail.ai`) already grabs Space and Escape during a recording with Mutter
+accelerators. Owner: Ubuntu's key back to Right Alt, once that is feasible. Probed on GNOME 50.1
+Wayland (2026-10-05): `grab_accelerator('Alt_R')` fires once, about 2 ms after the press, with no
+autorepeat; Mutter never reports the release of a modifier-only accelerator.
+
+**Decision:** Right Alt is a third Ubuntu choice (`["F8", "F9", "rightAlt"]`), held by the extension:
+
+- The helper's `configure` with `rightAlt` unbinds the portal's keys and asks the extension
+  (`SetHotkey`) for `Alt_R` (dictation) and `<Shift>Alt_R` (agent mode), both without autorepeat.
+  Its reply, and `hotkeyInstallationChanged`, say whether the Shell holds the key; the app's
+  keyboard permission is that, as it is the portal's binding for F8 and F9.
+- The release is read from the modifier state every 20 ms while the key is down, and only then.
+  The press and release drive the shared gesture (ADR-DESK-032) as any other key does.
+- Only the `Alt_R` keysym: where Right Alt is AltGr, it keeps typing characters, as on Windows.
+- The key outlives each recording, its Escape and its chat. A screen lock, the helper leaving or the
+  extension being disabled lets it go (with a release if it was down); the extension broadcasts
+  `ready` when it is enabled or the screen unlocks, and the helper asks for the key again.
+- A recording key that cannot be grabbed is refused alone; the dictation key stays held.
+
+**Rationale:** The extension is already the one place that holds keys for the helper; a second
+mechanism (a keyboard device reader, an X11 grab) would need privileges or would not work on
+Wayland. The 20 ms read runs only while the key is held, so an idle desktop pays nothing.
+
+**Consequences:**
+- Right Alt needs GNOME integration enabled (and, after a fresh install, a log-out and in);
+  Settings says so under the key while it is not. F8 stays the default and works at once.
+- Right Alt is taken by TabMail Voice while it is the dictation key, so it no longer acts as Alt in
+  other shortcuts.
+- A release is noticed up to 20 ms late.

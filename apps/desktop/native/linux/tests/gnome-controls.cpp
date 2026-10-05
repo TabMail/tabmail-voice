@@ -12,14 +12,15 @@ int main() {
     auto bus = own(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.value)); require(bus && !error.value);
     auto name = g_dbus_connection_call_sync(bus.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", g_variant_new("(su)", "org.gnome.Shell", 0u), nullptr, G_DBUS_CALL_FLAGS_NONE, 1000, nullptr, &error.value);
     require(name && !error.value); g_variant_unref(name);
-    auto info = g_dbus_node_info_new_for_xml(R"(<node><interface name="ai.tabmail.Voice.Caret"><method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method><method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method><signal name="Action"><arg type="s"/></signal></interface></node>)", &error.value); require(info);
-    // SetRecording's states; SetChatOpen's, separately.
-    struct Calls { std::vector<bool> recording, chat; } calls;
+    auto info = g_dbus_node_info_new_for_xml(R"(<node><interface name="ai.tabmail.Voice.Caret"><method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method><method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method><method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method><signal name="Action"><arg type="s"/></signal></interface></node>)", &error.value); require(info);
+    // SetRecording's states; SetChatOpen's and SetHotkey's, separately.
+    struct Calls { std::vector<bool> recording, chat, hotkey; } calls;
     auto& states = calls.recording;
     const GDBusInterfaceVTable table{[](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* method, GVariant* args, GDBusMethodInvocation* call, gpointer data) {
         gboolean active; g_variant_get(args, "(b)", &active);
         auto calls = static_cast<Calls*>(data);
-        (std::string(method) == "SetChatOpen" ? calls->chat : calls->recording).push_back(active);
+        const std::string name = method;
+        (name == "SetChatOpen" ? calls->chat : name == "SetHotkey" ? calls->hotkey : calls->recording).push_back(active);
         g_dbus_method_invocation_return_value(call, g_variant_new("(b)", true));
     }, nullptr, nullptr, {nullptr}};
     const auto registration = g_dbus_connection_register_object(bus.get(), "/ai/tabmail/Voice/Caret", info->interfaces[0], &table, &calls, nullptr, &error.value); require(registration);
@@ -94,5 +95,31 @@ int main() {
         action("cancel");
         require(calls.chat == std::vector<bool>({true, false}));
     }
+    {
+        // Right Alt, held by the Shell: its press drives the gesture once, an unmatched release
+        // is ignored, the Shell's "ready" asks for it again, and letting it go while it is down
+        // ends the hold.
+        Output output; Gesture gesture; GnomeControls controls(output, gesture);
+        std::optional<nlohmann::json> replied;
+        controls.setHotkey(true, [&](nlohmann::json value, bool success) { require(success); replied = value; }); drain();
+        require(calls.hotkey == std::vector<bool>{true} && replied && (*replied)["installed"] == true);
+        action("hotkeyUp");
+        action("hotkeyDown"); action("hotkeyDown");
+        action("ready");
+        require(calls.hotkey == std::vector<bool>({true, true}));
+        replied.reset();
+        controls.setHotkey(false, [&](nlohmann::json value, bool) { replied = value; }); drain();
+        require(calls.hotkey == std::vector<bool>({true, true, false}) && replied && (*replied)["installed"] == false);
+        action("hotkeyDown"); action("ready");
+        require(calls.hotkey == std::vector<bool>({true, true, false}));
+    }
+    {
+        // Shift with Right Alt is agent mode; the controls let the Shell's key go when they end.
+        Output output; Gesture gesture; GnomeControls controls(output, gesture);
+        controls.setHotkey(true); drain();
+        action("hotkeyAgentDown"); action("hotkeyUp");
+    }
+    drain();
+    require(calls.hotkey == std::vector<bool>({true, true, false, true, false}));
     g_dbus_connection_unregister_object(bus.get(), registration);
 }

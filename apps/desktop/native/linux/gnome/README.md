@@ -16,6 +16,16 @@ signals are sent only to that helper. No periodic polling, accessibility-tree
 traversal, or custom renderer is involved.
 The helper allows 25 ms for the bus call; the app bounds the entire request to 200 ms.
 
+When Right Alt is the dictation key, the extension also holds it for the helper,
+because the portal cannot bind a lone modifier: `Alt_R` starts a dictation and
+`<Shift>Alt_R` starts agent mode, both without autorepeat. Mutter reports the press
+but not the release, so while the key is down, and only then, the extension reads
+the modifier state every 20 ms and reports the release. Only the `Alt_R` keysym is
+held; where Right Alt is AltGr, it keeps typing characters. Cancelling a recording
+leaves the dictation key held. A screen lock, a lost helper or disabling the extension
+lets it go, with a release if it was down; when the extension is enabled or the screen
+unlocks, it broadcasts `ready` and the helper asks for the key again.
+
 ## Installation and activation
 
 The `.deb` installs the extension in GNOME's standard system directory:

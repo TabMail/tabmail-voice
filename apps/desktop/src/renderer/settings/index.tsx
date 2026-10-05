@@ -126,6 +126,8 @@ function DictationPane({ state }: { state: SettingsState }) {
           state.hotkey === "function" && "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
           (state.hotkey === "F8" || state.hotkey === "F9") && `Hold ${state.hotkey} to dictate, or double-tap for hands-free. Shift+${state.hotkey} starts agent mode; Ctrl+Shift+${state.hotkey} cancels.`,
           state.hotkey !== "F8" && state.hotkey !== "F9" && "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.",
+          // Ubuntu: the portal cannot bind a lone modifier, so GNOME integration holds Right Alt.
+          state.hotkey === "rightAlt" && state.gnomeIntegration !== undefined && state.gnomeIntegration !== "ready" && "Right Alt works once GNOME integration is enabled in Permissions.",
           "Your recording is sent to TabMail for transcription and isn’t stored.",
         ]}
       >

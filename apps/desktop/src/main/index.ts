@@ -130,7 +130,7 @@ function launch(): void {
   let suggestedName = "";
 
   const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
-  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : process.platform === "linux" ? ["F8", "F9"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
+  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : process.platform === "linux" ? ["F8", "F9", "rightAlt"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
