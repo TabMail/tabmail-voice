@@ -27,7 +27,8 @@ int main() {
         if (method != "readScreen") throw std::runtime_error("unknown method");
         reply(voice::focusedRead(method, params, foreground), true);
     };
-    // Requests are served only once Foreground's start-up idle has found what has focus. The app
+    // Requests are served only after Foreground's start-up idle has looked for what has focus (if
+    // it found nothing, a read answers null; the caller bounds its own wait). The app
     // restarts this program for every read that supersedes another and writes that read at once;
     // stdin outranks an idle, so served from the start the read would find no target and come back
     // empty. Idles of one priority run in the order they were added.

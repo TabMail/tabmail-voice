@@ -3508,8 +3508,9 @@ its own, not a mode of the big helpers — the Unix philosophy, one program doin
   the last is still going, or a read past `screenReaderTimeout` (the longest a recording runs), kills
   the reader and starts it afresh (`HelperClient.restart`), so a stuck provider never holds a read
   back or keeps a process alive. A read that answered, refused or ended with the process leaves it
-  running. A reader started afresh takes requests only once it knows what has focus (on Linux,
-  after its start-up focus lookup), so the read that replaced another finds the window in front.
+  running. A reader started afresh takes requests only after its start-up focus lookup has run
+  (on Linux), so the read that replaced another finds the window in front; if that lookup found
+  nothing, the read answers null at once rather than waiting.
 - **What waits for a read is bounded by the caller, not the reader.** A dictation takes the read
   only if it is done `contextWait` after the release; agent mode, which needs the whole read (its
   selection decides between Edit and Compose), waits `agentScreenWait` (5 s) and then goes on
