@@ -12,9 +12,7 @@
 #include <utility>
 
 namespace voice {
-inline std::wstring executableName(HWND window) {
-    DWORD pid = 0;
-    GetWindowThreadProcessId(window, &pid);
+inline std::wstring processName(DWORD pid) {
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!process) return {};
     wchar_t path[32768]{};
@@ -25,6 +23,11 @@ inline std::wstring executableName(HWND window) {
     std::wstring name(path, length);
     const auto slash = name.find_last_of(L"\\/");
     return slash == std::wstring::npos ? name : name.substr(slash + 1);
+}
+inline std::wstring executableName(HWND window) {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    return processName(pid);
 }
 
 // The screen-read reply for a screen not read for the user's privacy (an excluded

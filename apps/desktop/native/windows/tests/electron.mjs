@@ -129,10 +129,11 @@ async function main() {
     assert.ok(concurrentContext?.renderedText.includes("Before"), "concurrent context read completes");
     assert.ok(concurrentCaret?.height > 0, "concurrent caret lookup completes");
     assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Before selected after. 🙂" });
-    assert.deepEqual(await request("readScreen", { excludedHosts: ["data"] }), { hidden: true }, "page address excludes the whole screen before text is returned, and says only that it is hidden");
-    assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000, excludedHosts: ["data"] }), { value: null }, "excluded page refuses correction learning");
+    // An Electron app is no browser: its documents are no web pages, so a site exclusion
+    // doesn't apply to it (the app exclusion does) and no host is reported.
+    assert.ok((await request("readScreen", { excludedHosts: ["data"] }))?.renderedText.includes("Before"), "an app that isn't a browser is read whatever its document's address");
     const context = await request("readScreen");
-    assert.equal(context.host, "data", "nearest page host follows the Mac contract");
+    assert.equal(context.host, null, "an app that isn't a browser reports no page host");
     assert.equal(context.textBeforeCaret, "Before ", "moving context backward does not escape into the page heading");
     assert.equal(context.selectedText, "selected");
     assert.equal(context.textAfterCaret, " after. 🙂", "context excludes adjacent fields and footer");
@@ -199,7 +200,7 @@ async function main() {
     await delay(150);
     const selectedPage = await request("readScreen");
     assert.equal(selectedPage.focusedRole, "control", "a page in focus is no field");
-    assert.equal(selectedPage.host, "data", "a page in focus reports its host");
+    assert.equal(selectedPage.host, null, "a document in focus in an app that isn't a browser has no host");
     assert.deepEqual([selectedPage.textBeforeCaret, selectedPage.selectedText, selectedPage.textAfterCaret],
       ["", "Unrelated heading outside focused field", ""], "a page in focus keeps its selection and no text around a caret");
     assert.ok(selectedPage.renderedText.includes("‸Unrelated heading outside focused field‸"), "the selection is marked in the read");
@@ -291,7 +292,7 @@ async function main() {
     const exited = once(helper, "exit"); helper.stdin.end();
     assert.deepEqual(await exited, [0, null]);
     assert.equal(pending.size, 0);
-    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug screen access: excluded or unknown page not read\ndebug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
+    assert.equal(stderr.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete)\n/gmu, ""), "debug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");
     if (activator) {
       const stopped = once(activator, "exit"); activator.stdin.end();

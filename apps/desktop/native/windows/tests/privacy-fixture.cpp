@@ -190,6 +190,13 @@ void configure(const std::string& mode) {
         if (mode == "open-page-focus") nodes.at(page)->readOnly = true;
         if (mode == "page-focus-child" || mode == "page-no-address" || mode == "page-unknown") focus = child;
         if (mode == "page-address-bar") nodes.at(1)->type = UIA_EditControlTypeId;
+        // Notepad's text area is a document whose value is its text, not an address. Run
+        // by a process that isn't a browser, it is no page and is read.
+        if (mode == "text-document") {
+            nodes.at(page)->address = L"Synthetic note line\nSynthetic second line";
+            nodes.at(page)->forbidden = nodes.at(child)->forbidden = false;
+            nodes.at(child)->text = L"Synthetic page text"; focus = page;
+        }
     }
 }
 LRESULT CALLBACK procedure(HWND handle, UINT message, WPARAM value, LPARAM data) {

@@ -273,6 +273,10 @@ private:
         CONTROLTYPEID type = 0;
         require(element->get_CurrentControlType(&type));
         if (type != UIA_DocumentControlTypeId) return std::nullopt;
+        // Only a browser's document is a web page with an address.
+        int pid = 0;
+        require(element->get_CurrentProcessId(&pid));
+        if (!browserProcess(static_cast<DWORD>(pid))) return std::nullopt;
         // Chromium's native UIA ValueValue property is often unsupported for a
         // document, while its standard LegacyIAccessible value is the page URL.
         // Ask the document itself, never the editable browser address field.
@@ -314,6 +318,11 @@ private:
         } else if (result == UIA_E_NOTSUPPORTED && !addressPattern) page = {PageHost::Kind::noHost, {}};
         VariantClear(&value);
         return page;
+    }
+    static bool browserProcess(DWORD pid) {
+        const auto name = processName(pid);
+        return std::any_of(std::begin(HelperConfig::browserApps), std::end(HelperConfig::browserApps),
+            [&](const wchar_t* browser) { return _wcsicmp(name.c_str(), browser) == 0; });
     }
     struct PageTree {
         using Node = ComPtr<IUIAutomationElement>;

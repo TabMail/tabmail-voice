@@ -48,8 +48,10 @@ let checks = 0;
 try {
   for (const mode of ["row-hidden", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
-    "open-page", "open-page-focus"]) {
-    fixture = client(process.argv[3], [mode]);
+    "open-page", "open-page-focus", "text-document"]) {
+    // Page cases run as a browser (the fixture built as msedge.exe); only a browser's
+    // documents are pages. A text document runs as an ordinary app.
+    fixture = client(mode === "text-document" ? process.argv[3] : process.argv[4], [mode]);
     const initial = await fixture.next();
     assert.deepEqual(await request("frontmostApp"), { window: initial.window }, `${mode}: fixture owns foreground`);
     fixture.child.stdin.write("reset\n"); await fixture.next();
@@ -74,6 +76,7 @@ try {
         assert.equal(context.host, "open.example", `${mode}: the page's host is reported, in focus or reached by the walk`);
         assert.ok(context.renderedText.includes("Synthetic page text"), `${mode}: the page is walked into`);
       }
+      if (mode === "text-document") assert.ok(context.renderedText.includes("Synthetic page text"), "a text document is no web page: it is read");
       if (mode === "open-page-focus") {
         assert.equal(context.focusedRole, "control", "a page that can't be edited is no field");
         assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);
