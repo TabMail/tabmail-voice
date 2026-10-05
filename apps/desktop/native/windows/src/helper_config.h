@@ -13,10 +13,11 @@ inline constexpr unsigned accessibilityMaxAttempts = 5;
 // Longest text gathered for one heading, link or table row (bytes of UTF-8).
 // Longest the look through what holds a selection, before its text is asked for (ms).
 inline constexpr unsigned long long contextSelectionScanMs = 200;
-// A terminal read has no deadline of its own: the app decides how long to wait for it (owner,
-// 2026-10-05), and past the app's wait (`screenReadTimeout` in src/core/config.ts) no one is
-// waiting, so the read stops there (ms).
-inline constexpr unsigned long long terminalReadBudgetMs = 5000;
+// How long a terminal read may take (ms). It runs while the user speaks, as long as a paste can't
+// be kept waiting past its deadline behind it in the one accessibility queue: the app gives a
+// paste `helperRequestTimeout` (3 s in src/core/config.ts) from its send, which comes after the
+// key-down the read starts at.
+inline constexpr unsigned long long terminalReadBudgetMs = 2500;
 // Longest one accessibility request may run before the helper ends itself, so a provider that
 // stops answering can't hold the queue (ms). A screen read gets its budget and this on top.
 inline constexpr unsigned long long accessibilityWatchdogMs = 2500;

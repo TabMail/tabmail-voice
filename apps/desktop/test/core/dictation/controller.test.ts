@@ -4815,8 +4815,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
         // No audio yet: the device is still opening.
         await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration);
         expect(controller.phase).toEqual(listening);
-        capture.feed(new Float32Array(config.audioChunkFrames * 4));
-        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration - 1);
+        // A muted microphone goes on sending silence the whole time.
+        const silence = new Float32Array(config.audioChunkFrames * 4);
+        let elapsed = 0;
+        capture.feed(silence);
+        for (; elapsed + 100 < config.silentMicrophoneDuration; elapsed += 100) {
+          await vi.advanceTimersByTimeAsync(100);
+          capture.feed(silence);
+        }
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration - elapsed - 1);
         expect(controller.phase).toEqual(listening);
         await vi.advanceTimersByTimeAsync(1);
         expect(controller.phase).toEqual(failed(silentMicrophoneMessage));
@@ -4849,8 +4856,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
     });
 
     /** Once the key is released, a silent recording goes on as any recording does: a transcription
-     * still running when `silentMicrophoneDuration` passes is not ended as a muted microphone. */
-    test("a silent recording released before the muted check is transcribed, not called muted", async () => {
+     * still running when `silentMicrophoneDuration` passes is not ended as a muted microphone, even
+     * when its first audio arrived in the release tail and started the check then. */
+    test.each([
+      ["before", false],
+      ["during the release tail, after", true],
+    ])("a silent recording whose first audio came %s the release is transcribed, not called muted", async (_, late) => {
       vi.useFakeTimers();
       const capture = new CountingCapture();
       const { controller } = makeController({ capture });
@@ -4861,8 +4872,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
       try {
         controller.handle("start");
         await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
-        capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        if (!late) capture.feed(new Float32Array(config.audioChunkFrames * 4));
         controller.handle("finish");
+        if (late) capture.feed(new Float32Array(config.audioChunkFrames * 4));
         await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
         expect(controller.phase).toEqual(transcribing);
         expect(transcription.requests).toHaveLength(1);

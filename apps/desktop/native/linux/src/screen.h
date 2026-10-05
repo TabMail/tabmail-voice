@@ -33,10 +33,13 @@ public:
         atspi_accessible_clear_cache(root.get());
     }
     bool same(const Node& first, const Node& second) { return voice::same(first, second); }
+    // How long a read may take (ms). A terminal's runs while the user speaks, as long as a paste
+    // can't be kept waiting past its deadline behind it: the read holds the helper's only loop,
+    // and the app gives a paste `helperRequestTimeout` (3 s in src/core/config.ts) from its send,
+    // which comes after the key-down the read starts at.
+    static constexpr unsigned readMilliseconds = 1500, terminalReadMilliseconds = 2500;
     bool withinBudget() const { return std::chrono::steady_clock::now() < deadline; }
-    // A terminal read has no deadline: it runs while the user speaks, and the app decides how long
-    // to wait for it when it sends (owner, 2026-10-05).
-    void withoutDeadline() { deadline = std::chrono::steady_clock::time_point::max(); }
+    void terminalDeadline() { deadline = started + std::chrono::milliseconds(terminalReadMilliseconds); }
     AtspiRole role(const Node& node) { check(); return voice::role(node); }
     bool isPassword(const Node& node) { return role(node) == ATSPI_ROLE_PASSWORD_TEXT; }
     std::vector<Node> children(const Node& node, size_t limit) { check(); return voice::children(node, limit); }
@@ -419,7 +422,8 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point deadline = started + std::chrono::milliseconds(readMilliseconds);
     void check() const { if (!withinBudget()) throw ScreenBudgetExceeded(); }
     std::string range(const Object<AtspiText>& text, int from, int to) {
         check(); Error error;
@@ -540,7 +544,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
     if constexpr (!requires { tree.viewportSurface(focus, size_t{}, ContextFrame{}, true, size_t{}); }) {
         return nullptr;
     } else {
-        if constexpr (requires { tree.withoutDeadline(); }) tree.withoutDeadline();
+        if constexpr (requires { tree.terminalDeadline(); }) tree.terminalDeadline();
         if (!safeSubtree(tree,window,exclusions,false)) return nullptr;
         const auto windowFrame=tree.frame(window);
         if(!windowFrame || windowFrame->width<=0 || windowFrame->height<=0) return nullptr;
