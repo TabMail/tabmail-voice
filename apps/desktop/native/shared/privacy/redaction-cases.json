@@ -5087,6 +5087,140 @@
    ]
   },
   {
+   "name": "a key's body after a page number, through its end line, goes",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n1\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END RSA ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a key's body after a page footer, through its end line, goes",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nPage 1 of 2\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    " after"
+   ],
+   "expected": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nPage 1 of 2\n",
+    "{redacted}",
+    " after"
+   ]
+  },
+  {
+   "name": "a key's body without its header line, after other text, goes through its end line",
+   "text": [
+    "Appendix: server key\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "Appendix: server key\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a single last line of a key's body before its end line goes",
+   "text": [
+    "Page 2\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "Page 2\n",
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "a key's body without its header line, across a page break, goes through its end line",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "-----END ",
+    "PRIVATE KEY-----",
+    "\nafter"
+   ],
+   "expected": [
+    "Server notes\n",
+    "{redacted}",
+    "\nafter"
+   ]
+  },
+  {
+   "name": "an end line alone is no key's body",
+   "text": [
+    "The file ends with -----END ",
+    "PRIVATE KEY-----",
+    "."
+   ],
+   "expected": [
+    "The file ends with -----END ",
+    "PRIVATE KEY-----",
+    "."
+   ]
+  },
+  {
+   "name": "base64 lines before an end line in lower case are no key's body",
+   "text": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "-----end ",
+    "private key-----"
+   ],
+   "expected": [
+    "Server notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "-----end ",
+    "private key-----"
+   ]
+  },
+  {
    "name": "base64 lines after the start of a text are not a key's body",
    "text": [
     "Server notes\n",

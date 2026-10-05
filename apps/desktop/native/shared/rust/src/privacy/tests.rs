@@ -83,7 +83,7 @@ fn every_rule_and_case_flag_has_an_observable_fixture() {
         );
         flips += 1;
     }
-    assert_eq!(flips, 16);
+    assert_eq!(flips, 17);
 }
 
 #[test]

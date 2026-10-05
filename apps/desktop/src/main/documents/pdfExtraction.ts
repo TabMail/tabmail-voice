@@ -31,8 +31,12 @@ export async function extractPDFDocument(
     useWorkerFetch: false,
     useWasm: false,
     enableXfa: false,
-    // A damaged part refuses the read rather than being skipped: text with pieces silently
-    // missing would be returned as the whole page. (Thunderbird's reader recovers instead.)
+    // A damaged part (a stream that doesn't decode, an object that isn't there) refuses the read
+    // rather than being skipped: text with pieces silently missing would be returned as the
+    // whole page. (Thunderbird's reader recovers instead.) A font that is missing or can't be
+    // read is the exception: PDF.js draws nothing for its text and the page reads without it,
+    // so a private key's header in such a font goes missing; the shared redaction still finds
+    // the key by its body and end line (`private-key-end`).
     stopAtErrors: true,
     verbosity: 0,
   });

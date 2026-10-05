@@ -6,7 +6,7 @@
     "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
     "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
-    "private-key-block comes after the others, and private-key-body last (it starts only at the start of the text): private-key-block's cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
+    "private-key-block comes after the others, then private-key-end, and private-key-body last (it starts only at the start of the text): private-key-block's cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
   ],
   "placeholder": "[redacted]",
   "redactors": [
@@ -121,6 +121,13 @@
       "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s\\\\]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s\\\\]*)",
       "ignoreCase": false,
       "replacement": "{placeholder}"
+    },
+    {
+      "name": "private-key-end",
+      "description": "A private key's body whose header is not in the text, wherever it is (a page read from the middle of a printed key, after a page number or a running header; a header in a font the reader could not draw): the lines of base64 just before its end line, and the end line.",
+      "pattern": "(^|\\n)\\s*(?:[A-Za-z0-9+/=]+[ \\t]*\\r?\\n\\s*)+-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
+      "ignoreCase": false,
+      "replacement": "$1{placeholder}"
     },
     {
       "name": "private-key-body",

@@ -144,11 +144,22 @@ test.each([
   ["a page past the PDF's end", { startPage: 1, pageCount: 2 }, { totalPages: 1, pages: [{ number: 1, text: "a" }, { number: 2, text: "b" }], nextPage: null, truncated: false, before: "", after: "" }],
   ["no pages within the PDF", { startPage: 1, pageCount: 1 }, { totalPages: 3, pages: [], nextPage: null, truncated: false, before: "", after: "" }],
   ["no pages past the end, but a next page", { startPage: 5, pageCount: 1 }, { totalPages: 3, pages: [], nextPage: 6, truncated: false, before: "", after: "" }],
+  ["no next page with pages left", { startPage: 1, pageCount: 1 }, { totalPages: 3, pages: [{ number: 1, text: "a" }], nextPage: null, truncated: false, before: "", after: "" }],
+  ["a next page off by one", { startPage: 1, pageCount: 1 }, { totalPages: 3, pages: [{ number: 1, text: "a" }], nextPage: 3, truncated: false, before: "", after: "" }],
 ])("refuses a worker reply with %s", async (_name, asked, reply) => {
   const pending = parsePDF(new Uint8Array([1]), asked, new AbortController().signal);
   spawn();
   child.emit("message", { ok: true, result: reply });
   await expect(pending).rejects.toThrow(/^This PDF could not be read\.$/u);
+});
+
+/** A range with pages left after it names the one that follows, so the agent can read on. */
+test("accepts a range with pages left, naming the next", async () => {
+  const pending = parsePDF(new Uint8Array([1]), { startPage: 1, pageCount: 2 }, new AbortController().signal);
+  spawn();
+  const reply = { totalPages: 5, pages: [{ number: 1, text: "a" }, { number: 2, text: "b" }], nextPage: 3, truncated: false, before: "", after: "" };
+  child.emit("message", { ok: true, result: reply });
+  expect(await pending).toEqual(reply);
 });
 
 test("accepts no pages for a start past the PDF's end", async () => {

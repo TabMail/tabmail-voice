@@ -123,6 +123,13 @@ test("malformed input returns a sanitized error", async () => {
   await expect(readPDF(new TextEncoder().encode("private-malformed-payload"), { startPage: 1, pageCount: 1 })).rejects.toThrow("This PDF could not be read");
 });
 
+/** A damaged part refuses the read rather than being skipped: the page's text with a piece
+ * missing would be returned as the whole page. */
+test("a page drawing an object that isn't there refuses the read", async () => {
+  const page = "BT /F1 12 Tf 30 700 Td (Before) Tj ET /Im9 Do BT /F1 12 Tf 30 680 Td (After) Tj ET";
+  await expect(readPDF(pdf([page], "", false, true), { startPage: 1, pageCount: 1 })).rejects.toThrow("This PDF could not be read");
+});
+
 
 test("extracts Unicode through a PDF ToUnicode map", async () => {
   const text = "RésuméStraße한글日本語😀";
