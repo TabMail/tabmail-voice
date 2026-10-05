@@ -12,15 +12,21 @@ import type { ChatPlacement } from "../shared/ipc.js";
 /** Presentation operations used by the shared placement controller. A platform may present the
  * same renderer through a native window without duplicating caret or chat placement logic. */
 export type OverlaySurface = Pick<BrowserWindow,
-  "hide" | "isVisible" | "setBounds" | "getBounds" | "setOpacity" | "setIgnoreMouseEvents" | "showInactive"
+  "hide" | "isVisible" | "setBounds" | "getBounds" | "setOpacity" | "setIgnoreMouseEvents" | "setShape" | "showInactive"
 >;
+
+/** How the overlay, at the chat window's tallest size while it shows, takes clicks only on the chat:
+ * by the page saying when the pointer is over it (`chatPointer`), where the window can let clicks
+ * through while still passing the pointer's moves to the page (macOS, Windows); or cut to the chat's
+ * shape (`setShape`), where it can't (Linux). */
+export type ChatHitTest = "pointer" | "shape";
 
 /**
  * Shows the overlay window, anchored at the text cursor, as the dictation goes: hidden while the
  * hold is arming (the caret is looked up then), shown from listening on using the caret if ready
  * or the fallback position otherwise, and hidden once the exit animation has played. While the chat
  * window is open the overlay grows to show it over the pill, which stays where it was, and takes the
- * mouse. The window never takes focus, so the target field keeps it and receives the paste.
+ * mouse over it. The window never takes focus, so the target field keeps it and receives the paste.
  */
 export class OverlayWindowController {
   private anchor: Rect | null = null;
@@ -46,6 +52,8 @@ export class OverlayWindowController {
    * show for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
    * blinks"). Meanwhile the page draws it closed. */
   private chatClosing = false;
+  /** The overlay takes clicks: the pointer is over the chat window (`ChatHitTest` "pointer"). */
+  private chatTakesClicks = false;
   private measuredChatHeight: number | null = null;
   /** The overlay was placed afresh: its view's state changed. */
   onPlace: (() => void) | undefined;
@@ -58,6 +66,7 @@ export class OverlayWindowController {
     private readonly placementArea?: (workArea: Rect) => Rect | null,
     /** A platform's safe position when global caret coordinates are unavailable. */
     private readonly fallbackAnchor?: (workArea: Rect) => Rect,
+    private readonly chatHitTest: ChatHitTest = "pointer",
   ) {}
 
   get opensUpward(): boolean {
@@ -150,15 +159,29 @@ export class OverlayWindowController {
     }
   }
 
-  /** The chat window measured itself: the overlay takes its height, so no empty part of the window
-   * catches clicks. */
+  /** The chat window measured itself: only that much of the overlay catches clicks. The overlay stays
+   * at the chat's tallest size meanwhile, the page growing the chat in it: resized as the chat grew,
+   * it showed each frame a moment out of place, before the page drew the next (owner, 2026-10-04:
+   * "the animation is super clunky"). */
   fitChat(height: number): void {
     if (this.chat === null) return;
     this.measuredChatHeight = height;
-    this.window.setBounds(rounded(this.chatFrame(height)));
+    if (this.chatHitTest === "shape") this.window.setShape([this.chatShape(height)]);
     if (!this.chatUnmeasured) return;
     this.chatUnmeasured = false;
     this.window.setOpacity(1);
+    // Placed under a pointer that has not moved since: it takes clicks there already.
+    const pointer = screen.getCursorScreenPoint();
+    const frame = this.chatFrame(height);
+    if (pointer.x >= frame.x && pointer.x < frame.x + frame.width && pointer.y >= frame.y && pointer.y < frame.y + frame.height) this.chatPointer(true);
+  }
+
+  /** The pointer went over the chat window, or off it (`ChatHitTest`): the overlay takes clicks only
+   * over it, letting the rest through to the app under it. */
+  chatPointer(over: boolean): void {
+    if (this.chat === null || this.chatHitTest !== "pointer" || over === this.chatTakesClicks) return;
+    this.chatTakesClicks = over;
+    this.window.setIgnoreMouseEvents(!over, { forward: true });
   }
 
   /** Opens the chat window over the pill, which stays where it is, at the caret the request was
@@ -179,7 +202,14 @@ export class OverlayWindowController {
     this.chatClosing = false;
     this.chatUnmeasured = true;
     this.window.setOpacity(0);
-    this.window.setIgnoreMouseEvents(false);
+    if (this.chatHitTest === "shape") {
+      this.window.setShape([this.chatShape(0)]);
+      this.window.setIgnoreMouseEvents(false);
+    } else {
+      // Clicks only once the pointer is over the chat, which the page says as it moves.
+      this.chatTakesClicks = false;
+      this.window.setIgnoreMouseEvents(true, { forward: true });
+    }
     this.window.setBounds(rounded(this.chatFrame(this.chat.side.maxHeight)));
     this.window.showInactive();
     this.onPlace?.();
@@ -191,12 +221,24 @@ export class OverlayWindowController {
     return chatWindowFrame(chat.pill, height, chat.workArea, chat.side, chat.bubblesUnder);
   }
 
+  /** The chat window `height` tall, with its shadow and the pill's strip, in the overlay at the chat's
+   * tallest size. */
+  private chatShape(height: number): Rect {
+    const side = this.chat?.side;
+    if (side === undefined) throw new Error("no chat window");
+    const tallest = rounded(this.chatFrame(side.maxHeight));
+    const frame = rounded(this.chatFrame(height));
+    return { x: frame.x - tallest.x, y: frame.y - tallest.y, width: frame.width, height: frame.height };
+  }
+
   private hideChat(): void {
     this.chat = null;
     this.chatUnmeasured = false;
     this.chatClosing = true;
     this.window.setOpacity(0);
-    // Click-through again, the pointer's moves still reaching the page (a bubble's hover).
+    // The whole window again (an empty list), click-through, the pointer's moves still reaching the
+    // page (a bubble's hover).
+    if (this.chatHitTest === "shape") this.window.setShape([]);
     this.window.setIgnoreMouseEvents(true, { forward: true });
   }
 

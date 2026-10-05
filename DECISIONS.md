@@ -2161,6 +2161,22 @@ the chat scrolls. The `overlay-chat-confirmation-long` preview fails when the bu
 (`whole` now also looks at every clipping box above them); the one preview of a question had no
 earlier turn, so it never scrolled.
 
+**Amendment 2026-10-05: the chat grows in a window that stays at its tallest.** Owner, 2026-10-04:
+as an answer showed, the window "clicks and clacks" as it grows, "immediately changing height and
+then moving there"; "the animation is super clunky". The overlay window was resized to every height
+the chat measured (`fitChat`), and a window resized while it shows keeps its last frame, drawn from
+its new top-left corner, until the page draws one at the new size: the chat, held at the edge by
+the pill, showed a frame out of place on every new line. The overlay now stays at the chat's
+tallest size (`chatMaxHeight`) while the chat is open, and the page grows the chat in it to what it
+shows, over `chatGrowDurationSeconds`, its edge by the pill staying put. Only the chat as measured,
+with its shadow and the pill's strip, takes clicks, as the window that size did: on macOS and
+Windows the window lets clicks through but still passes the pointer's moves to the page, which says
+on each move whether the pointer is over the chat or the pill's bubbles (`chatPointer`), and the
+overlay takes clicks only then; Linux windows get no moves while letting clicks through, so there
+the overlay is cut to the chat's shape (`setShape`) instead (`ChatHitTest`). Placed afresh
+(`refreshPlacement`), it lets clicks through until the page's next move, unless the resting pointer
+is already over the chat as first measured (`fitChat`), so a click with no move since still reaches it.
+
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
 **Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test

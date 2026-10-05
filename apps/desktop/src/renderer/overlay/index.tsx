@@ -316,23 +316,27 @@ function PillLayout({
  * revealed as TabMail's chat in Thunderbird reveals one (`RevealedReply`), what is being worked on, a
  * close button, and, while untouched, a bar along the bottom edge that shrinks from right to left as
  * its time runs out (like the iOS app's `PendingSendToast`). The pointer entering or moving in it, a
- * click or a scroll keeps it open (`keepChatOpen`); Escape or the close button closes it. It reports
- * its height, which the overlay window takes, keeping the pill where it is. Under the pill's bubbles
- * instead when there is no room over it (`below`). Light in light and dark mode alike, as the pill. */
+ * click or a scroll keeps it open (`keepChatOpen`); Escape or the close button closes it. It grows to
+ * what it shows over `chatGrowDurationSeconds`, its edge by the pill staying put, in the overlay
+ * window at its tallest; it reports that height, the part of the window that takes clicks, and the
+ * pointer moving over it or off it (`ChatHitTest`). Under the pill's bubbles instead when there is no
+ * room over it (`below`). Light in light and dark mode alike, as the pill. */
 function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: boolean; maxHeight: number; width: number }) {
-  const [sizeRef, boxSize] = useSize<HTMLDivElement>();
+  const [sizeRef, contentSize] = useSize<HTMLDivElement>();
   const appearRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Whether the newest line is in view: a line revealed then keeps it there, but not once the user
   // has scrolled up to read an earlier answer.
   const atBottom = useRef(true);
-  const boxRef = useCallback(
+  const contentRef = useCallback(
     (element: HTMLDivElement | null) => {
-      appearRef.current = element;
+      scrollRef.current = element;
       return sizeRef(element);
     },
     [sizeRef],
   );
+  // Its scrolling column's height, and its border: until measured, as tall as that lays out.
+  const height = contentSize.height > 0 ? contentSize.height + 2 * config.pillBorderWidth : undefined;
   useLayoutEffect(() => {
     // Once, as it opens: rising from the pill a little as it fades in.
     const rise = below ? -config.chatAppearRise : config.chatAppearRise;
@@ -345,8 +349,20 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
     );
   }, []);
   useEffect(() => {
-    if (boxSize.height > 0) void send({ type: "chatHeight", height: boxSize.height });
-  }, [boxSize.height]);
+    if (height !== undefined) void send({ type: "chatHeight", height });
+  }, [height]);
+  useEffect(() => {
+    // Over the chat or the pill's bubbles, or not. Each move says so: the window may have been placed
+    // afresh meanwhile, letting clicks through until told.
+    const moved = (event: PointerEvent) => void send({ type: "chatPointer", over: event.target instanceof Element && event.target.closest(".chat, .bubble") !== null });
+    const left = () => void send({ type: "chatPointer", over: false });
+    document.addEventListener("pointermove", moved);
+    document.documentElement.addEventListener("pointerleave", left);
+    return () => {
+      document.removeEventListener("pointermove", moved);
+      document.documentElement.removeEventListener("pointerleave", left);
+    };
+  }, []);
   const status = chat.activity ?? (chat.pendingRequest !== null && chat.confirmation === null ? config.chatThinkingLabel : null);
   const toBottom = useCallback(() => {
     const scroll = scrollRef.current;
@@ -367,7 +383,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
   const offset = margin + config.chatStripHeight + config.chatPillGap;
   return (
     <div
-      ref={boxRef}
+      ref={appearRef}
       className="chat"
       onPointerEnter={touch}
       onPointerMove={touch}
@@ -378,6 +394,8 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
         ...(below ? { top: offset } : { bottom: offset }),
         transformOrigin: below ? "top center" : "bottom center",
         width,
+        height,
+        transition: `height ${config.chatGrowDurationSeconds}s ease-out`,
         borderRadius: config.chatCornerRadius,
         borderWidth: config.pillBorderWidth,
         background: `linear-gradient(${palette.pillFill}, ${palette.pillFill}) padding-box, ${brandGradient} border-box`,
@@ -385,7 +403,7 @@ function ChatBox({ chat, below, maxHeight, width }: { chat: AgentChat; below: bo
       }}
     >
       <div
-        ref={scrollRef}
+        ref={contentRef}
         className="chat-scroll"
         onScroll={(event) => {
           const scroll = event.currentTarget;

@@ -719,6 +719,8 @@ export const chatBubbleTooltipRoom = 80;
 export const chatAppearDurationSeconds = 0.25;
 export const chatAppearRise = 8;
 export const chatAppearScale = 0.98;
+/** The chat window grows to its new height over this long as a line or turn joins it. */
+export const chatGrowDurationSeconds = 0.2;
 export const chatCornerRadius = 14;
 export const chatPadding = 12;
 export const chatTurnSpacing = 10;

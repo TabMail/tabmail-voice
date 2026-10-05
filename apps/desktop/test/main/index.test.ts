@@ -47,7 +47,7 @@ const app = vi.hoisted(() => ({
   historyBlur: null as (() => void) | null,
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
-  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[] } | null,
+  overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; hitTest?: string } | null,
   controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
@@ -334,7 +334,8 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     onPlace: (() => void) | undefined;
     readonly updates: [string, boolean][] = [];
     readonly heights: number[] = [];
-    constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null) {
+    readonly pointers: boolean[] = [];
+    constructor(_window: unknown, readonly locate: () => Promise<Rect | null>, readonly place?: (area: Rect) => Rect | null, _fallback?: unknown, readonly hitTest?: string) {
       app.overlay = this;
     }
     refreshPlacement() {
@@ -345,6 +346,9 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
     }
     fitChat(height: number) {
       this.heights.push(height);
+    }
+    chatPointer(over: boolean) {
+      this.pointers.push(over);
     }
   },
 }));
@@ -562,6 +566,13 @@ describe("main process wiring", () => {
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.signal).toBe(signal);
     expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
+  });
+
+  /** The chat window takes clicks only where it is: by the pointer's moves where a click-through
+   * window still gets them (macOS, Windows), cut to its shape on Linux, where it doesn't. */
+  test.each([["darwin", "pointer"], ["win32", "pointer"], ["linux", "shape"]] as const)("on %s the chat window takes clicks by its %s", async (platform, hitTest) => {
+    await launch(platform);
+    expect(app.overlay?.hitTest).toBe(hitTest);
   });
 
   test("Linux placement prefers the focused element's caret, asked before the screen read, over compositor geometry", async () => {
@@ -884,6 +895,9 @@ describe("main process wiring", () => {
     await send({ type: "answerConfirmation", confirmed: false });
     await send({ type: "chatHeight", height: 180 });
     expect(await send({ type: "chatHeight", height: -1 })).toEqual({ error: expect.any(String) });
+    await send({ type: "chatPointer", over: true });
+    await send({ type: "chatPointer", over: false });
+    expect(await send({ type: "chatPointer", over: "yes" } as never)).toEqual({ error: expect.any(String) });
     await send({ type: "openChatLink", url: "https://example.com/closed" });
     if (controller) controller.chat = {};
     await send({ type: "openChatLink", url: "https://example.com/docs" });
@@ -891,6 +905,9 @@ describe("main process wiring", () => {
 
     expect(controller?.calls).toEqual(["keepChatOpen", "closeChat", "answerConfirmation true", "answerConfirmation false"]);
     expect(app.overlay?.heights).toEqual([180]);
+    expect(app.overlay?.pointers).toEqual([true, false]);
+    // macOS forwards the pointer's moves through a click-through window; Linux can't (`ChatHitTest`).
+    expect(app.overlay?.hitTest).toBe("pointer");
     expect(app.opened).toEqual(["https://example.com/docs"]);
   });
 
@@ -1577,7 +1594,7 @@ test.each(["blocks", "recovers"] as const)("shell event %s revealed placement wh
   let bounds = { x: 0, y: 0, width: 1, height: 1 };
   const surface = {
     isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; },
-    setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {},
+    setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {}, setShape() {},
   };
   const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
   const real = new RealOverlay(surface, captured.locate, captured.place);
@@ -1608,7 +1625,7 @@ test.each(["initial shell state", "failed close refresh", "helper restart"])("pl
   const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
   let visible = false;
   let bounds = { x: 0, y: 0, width: 1, height: 1 };
-  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {} };
+  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {}, setShape() {} };
   const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
   const real = new RealOverlay(surface, captured.locate, captured.place);
   captured.refreshPlacement = () => real.refreshPlacement();
@@ -1666,7 +1683,7 @@ test.each(["darwin", "win32"] as const)("ready %s caret keeps its foreground tar
   }
   const captured=app.overlay as unknown as {locate:()=>Promise<Rect|null>;place?:(area:Rect)=>Rect|null};
   let visible=false;let bounds={x:0,y:0,width:1,height:1};
-  const surface={isVisible:()=>visible,showInactive:()=>{visible=true;},hide:()=>{visible=false;},setBounds:(next:Rect)=>{bounds=next;},getBounds:()=>bounds,setOpacity(){},setIgnoreMouseEvents(){}};
+  const surface={isVisible:()=>visible,showInactive:()=>{visible=true;},hide:()=>{visible=false;},setBounds:(next:Rect)=>{bounds=next;},getBounds:()=>bounds,setOpacity(){},setIgnoreMouseEvents(){},setShape(){}};
   const {OverlayWindowController:RealOverlay}=await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
   const real=new RealOverlay(surface,captured.locate,captured.place);
   shellReply.resolve([]);
@@ -1690,7 +1707,7 @@ test("overlapping shell close must finish with recovered placement", async()=>{
   helper.replies.set("caretAnchor",caret.promise);
   const captured=app.overlay as unknown as {locate:()=>Promise<Rect|null>;place:(area:Rect)=>Rect|null;refreshPlacement:()=>void};
   let visible=false;let bounds={x:0,y:0,width:1,height:1};const states:boolean[]=[];
-  const surface={isVisible:()=>visible,showInactive:()=>{visible=true;states.push(true);},hide:()=>{visible=false;states.push(false);},setBounds:(next:Rect)=>{bounds=next;},getBounds:()=>bounds,setOpacity(){},setIgnoreMouseEvents(){}};
+  const surface={isVisible:()=>visible,showInactive:()=>{visible=true;states.push(true);},hide:()=>{visible=false;states.push(false);},setBounds:(next:Rect)=>{bounds=next;},getBounds:()=>bounds,setOpacity(){},setIgnoreMouseEvents(){},setShape(){}};
   const {OverlayWindowController:RealOverlay}=await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
   const real=new RealOverlay(surface,captured.locate,captured.place);
   captured.refreshPlacement=()=>real.refreshPlacement();
@@ -1744,7 +1761,7 @@ test("slow shell geometry must not withhold an immediately available caret", asy
   const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
   let visible = false;
   let bounds = { x: 0, y: 0, width: 1, height: 1 };
-  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {} };
+  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {}, setShape() {} };
   const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
   const real = new RealOverlay(surface, captured.locate, captured.place);
   captured.refreshPlacement = () => real.refreshPlacement();
@@ -1798,7 +1815,7 @@ test("an old shell reply cannot revive a canceled hold or overwrite newer geomet
   helper.replies.set("caretAnchor", { x: 800, y: 300, width: 1, height: 20 });
   const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
   let visible = false; let bounds = { x: 0, y: 0, width: 1, height: 1 };
-  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {} };
+  const surface = { isVisible: () => visible, showInactive: () => { visible = true; }, hide: () => { visible = false; }, setBounds: (next: Rect) => { bounds = next; }, getBounds: () => bounds, setOpacity() {}, setIgnoreMouseEvents() {}, setShape() {} };
   const { OverlayWindowController: RealOverlay } = await vi.importActual<typeof import("../../src/main/overlayWindow.js")>("../../src/main/overlayWindow.js");
   const real = new RealOverlay(surface, captured.locate, captured.place);
   captured.refreshPlacement = () => real.refreshPlacement();
