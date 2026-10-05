@@ -274,15 +274,15 @@ private:
         CONTROLTYPEID type = 0;
         require(element->get_CurrentControlType(&type));
         if (type != UIA_DocumentControlTypeId) return std::nullopt;
-        // Only web content's document is a page with an address: a browser engine's, whichever
-        // browser or app runs it. Notepad's or Word's text is a document too, and no page. A
-        // document that can't say is taken for a page of an unknown address.
+        // Notepad's or Word's text is a document too, and no page: a document of a native framework
+        // is read. Any other is a page with an address, whichever browser or app runs it; one that
+        // gives no framework, or one not known as native, is taken for a page (fail closed).
         BSTR framework = nullptr;
         if (FAILED(element->get_CurrentFrameworkId(&framework))) return PageHost{};
         const std::wstring frameworkName(framework ? framework : L"", framework ? SysStringLen(framework) : 0);
         SysFreeString(framework);
-        if (std::none_of(std::begin(HelperConfig::webFrameworks), std::end(HelperConfig::webFrameworks),
-            [&](const wchar_t* web) { return frameworkName == web; })) return std::nullopt;
+        if (std::any_of(std::begin(HelperConfig::nativeDocumentFrameworks), std::end(HelperConfig::nativeDocumentFrameworks),
+            [&](const wchar_t* native) { return frameworkName == native; })) return std::nullopt;
         // Chromium's native UIA ValueValue property is often unsupported for a
         // document, while its standard LegacyIAccessible value is the page URL.
         // Ask the document itself, never the editable browser address field.

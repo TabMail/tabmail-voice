@@ -3045,11 +3045,15 @@ app; platform parser differences are recorded in the consolidation plan.
 **ADR-DESK-047 amendment — which Windows documents are pages (2026-10-05):**
 UI Automation gives Notepad's and Word's text as a Document too, and the Windows helper took
 every document for a web page: one without an address hid the whole screen as of an unknown
-address (Notepad read as hidden in the Windows smoke test). A document is now a web page only when
-its UI framework (`UIA_FrameworkIdPropertyId`) is a browser engine's, `Chrome` (every Chromium
-browser and Electron app) or `Gecko` (Firefox and its forks), `HelperConfig::webFrameworks`; any
-other document is read like the rest of the screen, and the app exclusion still applies to it. A
-document whose framework can't be read is a page of an unknown address (fail closed). This keeps
+address (Notepad read as hidden in the Windows smoke test). A document is now no web page only when
+its UI framework (`UIA_FrameworkIdPropertyId`) is one of an app's native controls, `Win32` (Notepad's
+and Word's text), `WinForm`, `WPF`, `XAML` or `DirectUI` (`HelperConfig::nativeDocumentFrameworks`):
+it is read like the rest of the screen, and the app exclusion still applies to it. Every other
+document is a page whose address is checked, a browser engine's (`Chrome` in every Chromium browser
+and Electron app, `Gecko` in Firefox and its forks, `InternetExplorer`) and equally one whose
+framework is empty (UI Automation's default, which a provider or proxy that doesn't supply it
+gives), unknown or can't be read (fail closed). A list of web engines instead read an excluded site
+whenever the engine gave no framework. This keeps
 the Mac's rule (a web area is a page, in an app or a browser alike) instead of a list of browser
 names, which would read an excluded site in any browser not on the list.
 

@@ -24,11 +24,12 @@ inline constexpr unsigned long long screenReadWatchdogMs = terminalReadBudgetMs 
 // Longest a paste waits to save the clipboard before typing the text instead (ms). An owner that
 // renders late (a VM's clipboard agent) can hold the clipboard open for up to 30 s.
 inline constexpr unsigned clipboardSnapshotWaitMs = 500;
-// The UI Automation frameworks of web content (UIA_FrameworkIdPropertyId): Chromium's, in every
-// Chromium browser and Electron app, and Gecko's (Firefox and its forks). Only their documents are
-// web pages with an address to check against the excluded sites; any other document (Notepad's,
-// Word's) is read like the rest of the screen.
-inline constexpr const wchar_t* webFrameworks[] = {L"Chrome", L"Gecko"};
+// The UI Automation frameworks (UIA_FrameworkIdPropertyId) of an app's own native controls, never
+// web content: a document of one of these (Notepad's and Word's text are Win32) is no web page and
+// is read like the rest of the screen. Every other document is a web page whose address is checked
+// against the excluded sites: a browser engine's (Chrome, Gecko, InternetExplorer), an unknown
+// framework's, and one with no framework or none that can be read.
+inline constexpr const wchar_t* nativeDocumentFrameworks[] = {L"Win32", L"WinForm", L"WPF", L"XAML", L"DirectUI"};
 // Terminal apps use visible-range acquisition and shared viewport projection. A console
 // window belongs to the program running in it, so the shells are listed too.
 inline constexpr const wchar_t* terminalApps[] = {

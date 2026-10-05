@@ -309,6 +309,23 @@ describe("OverlayWindowController", () => {
     expect(overlay.ignoresMouse()).toBe(true);
   });
 
+  /** The page says the pointer is over `.chat, .bubble` on every move: over a pill bubble once the
+   * chat has closed, the overlay must still let clicks through to the app under it. */
+  test("a closed chat window never takes clicks, even over a bubble", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "running", tool: "answer" }, true);
+    // The pointer never went over the open chat window.
+    expect(overlay.ignoresMouse()).toBe(true);
+    controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "listening" });
+    controller.chatPointer(true);
+    expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
+  });
+
   /** A chat window placed under a pointer that has not moved since takes its click: the page says
    * where the pointer is only as it moves. */
   test("a chat window opened under the resting pointer takes its click", () => {

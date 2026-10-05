@@ -48,7 +48,7 @@ let checks = 0;
 try {
   for (const mode of ["row-hidden", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
-    "page-gecko", "open-page", "open-page-focus", "text-document"]) {
+    "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document"]) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever
     // app runs it.
     fixture = client(process.argv[3], [mode]);
