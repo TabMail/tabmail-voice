@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 /** The real `install-update`, run in `verify` mode as this user against packages built here: it needs
  * Debian's tools, so it runs on Linux (the packaged tests run it in the Ubuntu VM). `install` mode,
- * as root, is exercised by the installed-upgrade test (ADR-DESK-050). */
+ * as root, runs in CI below and in the installed-upgrade test (ADR-DESK-050). */
 const hasDebianTools = process.platform === "linux" && spawnSync("dpkg", ["--version"]).status === 0;
 
 /** Run as root, the script copies whatever regular file it is named: nothing it copies is readable
@@ -141,6 +141,27 @@ describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
     const same = deb({ version: current });
     const hash = sha512(same);
     expect(run("verify", same, current, hash, signature({ version: current, sha512: hash }))).toBe(5);
+  });
+
+  /** As root, the way pkexec runs it: only in CI, where sudo needs no password and the installed
+   * package is the stand-in, so a developer's own install is never touched. Installs a version just
+   * above the stand-in, so the real package built later still upgrades over it. */
+  const asRoot = process.env.CI !== undefined && spawnSync("sudo", ["-n", "true"]).status === 0;
+  test.skipIf(!asRoot)("as root, a tampered package is refused and a proven one is installed", () => {
+    const installed = () => spawnSync("dpkg-query", ["-W", "-f", "${Version}", "tabmail-voice"], { encoding: "utf8" }).stdout.trim();
+    const before = installed();
+    expect(before, "CI installs a stand-in below 0.0.1").toBe("0.0.0");
+    const next = "0.0.1";
+    const update = deb({ version: next });
+    const hash = sha512(update);
+    const install = (...args: string[]) => spawnSync("sudo", ["-n", script, "install", ...args]).status;
+
+    const tampered = deb({ version: next, description: "another build" });
+    expect(install(tampered, next, hash, signature({ version: next, sha512: hash }))).toBe(4);
+    expect(installed()).toBe(before);
+
+    expect(install(update, next, hash, signature({ version: next, sha512: hash }))).toBe(0);
+    expect(installed()).toBe(next);
   });
 
   test("with no key installed, nothing passes", () => {
