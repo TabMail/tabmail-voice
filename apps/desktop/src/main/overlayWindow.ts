@@ -45,12 +45,13 @@ export class OverlayWindowController {
    * (`chatSide`). */
   private chat: { pill: Point; workArea: Rect; side: { below: boolean; maxHeight: number }; bubblesUnder: boolean } | null = null;
   /** The chat window opened and its page hasn't measured it yet: the overlay is transparent meanwhile,
-   * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is). */
+   * so the page's last layout never shows in the chat's frame (the pill a frame away from where it is).
+   * Linux has no window opacity (Electron: `setOpacity` "does nothing"); the page's own redraw does it. */
   private chatUnmeasured = false;
   /** The chat window closed and the overlay stays up, transparent and click-through, until it is
    * hidden or shown again: hidden at once, its last frame would still be the chat, which would then
    * show for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
-   * blinks"). Meanwhile the page draws it closed. */
+   * blinks"). Meanwhile the page draws it closed (on Linux, with no window opacity, only that). */
   private chatClosing = false;
   /** The overlay takes clicks: the pointer is over the chat window (`ChatHitTest` "pointer"). */
   private chatTakesClicks = false;

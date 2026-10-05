@@ -240,7 +240,7 @@ function launch(): void {
 
   const shellGeometry = system instanceof WindowsSystem ? new ShellGeometry(() => system.shellExclusionBounds()) : null;
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
-    // Ask only the compositor on Linux: AT-SPI traversal would delay the pill.
+    // Linux asks for the caret before the screen read can occupy the accessibility helper.
     if (system instanceof LinuxSystem) return system.caretAnchor();
     if (system instanceof WindowsSystem) {
       // Dispatch before context capture can occupy the native UIA queue. The helper

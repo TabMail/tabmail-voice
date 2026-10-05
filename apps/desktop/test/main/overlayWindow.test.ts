@@ -366,8 +366,14 @@ describe("OverlayWindowController", () => {
     const height = tallest.height - config.chatMaxHeight + 120;
     expect(overlay.shape()).toEqual([{ x: 0, y: below ? 0 : tallest.height - height, width: tallest.width, height }]);
     expect(overlay.bounds()).toEqual(tallest);
-    controller.chatPointer(false);
-    expect(overlay.ignoresMouse()).toBe(false);
+    // The page says where the pointer is on every platform; cut to shape, the window keeps taking
+    // clicks whatever it says (ignoring them here would leave no move to undo it).
+    const shaped = overlay.shape();
+    for (const over of [true, false, true, false]) {
+      controller.chatPointer(over);
+      expect(overlay.ignoresMouse()).toBe(false);
+      expect(overlay.shape()).toEqual(shaped);
+    }
 
     controller.update({ kind: "idle" }, false);
     expect(overlay.shape()).toEqual([]);

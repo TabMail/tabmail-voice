@@ -4809,6 +4809,40 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
+    /** Once the key is released, a silent recording goes on as any recording does: a transcription
+     * still running when `silentMicrophoneDuration` passes is not ended as a muted microphone. */
+    test("a silent recording released before the muted check is transcribed, not called muted", async () => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      const reply = deferred<void>();
+      transcription.gate = () => reply.promise;
+      transcription.enqueue(200, { text: "", cleaned_text: null });
+      const phases: Phase[] = [];
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        expect(controller.phase).toEqual(transcribing);
+        expect(transcription.requests).toHaveLength(1);
+        for (let waited = 0; waited <= config.silentMicrophoneDuration; waited += 100) {
+          await vi.advanceTimersByTimeAsync(100);
+          phases.push(controller.phase);
+        }
+        expect(phases.every((phase) => phase.kind === "transcribing")).toBe(true);
+        reply.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+        // The transcription's own answer, not the muted microphone's.
+        expect(controller.phase).toEqual(failed(nothingHeardMessage));
+      } finally {
+        transcription.gate = undefined;
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
     /** A double-tapped dictation, tapped again, is transcribed, cleaned up and pasted like a hold. */
     test("a double-tapped dictation is pasted when tapped again", async () => {
       transcription.enqueue(200, cleanedReply);
