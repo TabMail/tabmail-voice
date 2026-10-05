@@ -219,6 +219,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(controller.phase).toEqual(idle);
   });
 
+  /** Arming is announced only once the microphone was asked to start: the caret lookup it sets off
+   * (on Linux, in the helper the microphone starts in, ahead of it) and the screen read never hold
+   * up the recording's start. */
+  test("the microphone starts before arming sets off any accessibility read", async () => {
+    const events: string[] = [];
+    const capture = new CountingCapture(true);
+    const start = capture.start.bind(capture);
+    capture.start = (...args) => { events.push("microphone"); start(...args); };
+    const { controller } = makeController({ capture });
+    controller.captureContext = async () => { events.push("screen"); return null; };
+    controller.onPhaseChange = (phase) => { if (phase.kind === "arming") events.push("arming"); };
+    controller.handle("start");
+    try {
+      expect(await eventually(() => events.includes("screen"))).toBe(true);
+      expect(events).toEqual(["microphone", "arming", "screen"]);
+    } finally {
+      controller.handle("cancel");
+    }
+  });
+
   test("pastes the cleaned-up transcript", async () => {
     transcription.enqueue(200, cleanedReply);
 
@@ -3770,6 +3790,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
             controller.handle("start");
             expect(controller.phase).toEqual({ kind: "listening" });
             expect(controller.hasVoice).toBe(false);
+            controller.handle("cancel");
+            controller.answerConfirmation(false);
+            await done;
+          });
+
+          /** The muted check covers the dictation's own hold: an answer spoken soon after it, on a
+           * microphone that gives no sound yet, is not ended as muted (ADR-DESK-032 amendment: "A
+           * spoken answer to a question is not checked"). */
+          test("an answer spoken soon after the dictation is not ended as a muted microphone", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+            (capture as unknown as { hears: boolean }).hears = false;
+
+            controller.handle("start");
+            await sleep(config.silentMicrophoneDuration + 200);
+            expect(controller.phase).toEqual({ kind: "listening" });
+            expect(controller.chat?.confirmation).toBe(confirmationQuestion);
             controller.handle("cancel");
             controller.answerConfirmation(false);
             await done;

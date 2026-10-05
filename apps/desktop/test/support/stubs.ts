@@ -217,7 +217,8 @@ export class CountingCapture implements AudioCapture {
     this.completion = completion;
     this.onLosts.push(onLost);
     this.onChunk = onChunk;
-    if (this.hears) onChunk(tone(0.1));
+    // A helper's audio arrives over IPC, never within the call that starts it.
+    if (this.hears) queueMicrotask(() => onChunk(tone(0.1)));
   }
 
   /** The last start's microphone hears a tone. */

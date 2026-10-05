@@ -76,3 +76,24 @@ test("both are asked at once, so a screen read occupying the accessibility helpe
   expect(request).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
   expect(geometry).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
 });
+
+/** With the focused element's caret found, a compositor that then times out is no concern of the
+ * pill's, and leaves no unhandled rejection in the main process. */
+test("a compositor failing after the caret was found is ignored", async () => {
+  let fail!: (error: Error) => void;
+  // A plain function: a mock would watch the promise it returns, and so handle the rejection itself.
+  const pending = new Promise((_resolve, reject) => { fail = reject; });
+  const geometry = () => pending;
+  const unhandled: unknown[] = [];
+  const listener = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", listener);
+  try {
+    const system = new LinuxSystem({ request: helperWith(caret) } as unknown as HelperClient, { request: geometry } as unknown as HelperClient);
+    expect(await system.caretAnchor()).toEqual(caret);
+    fail(new HelperError("timeout", "caretAnchor"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
+});

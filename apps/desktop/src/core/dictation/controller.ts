@@ -457,7 +457,6 @@ export class DictationController extends Observable {
     // What's new goes first, once (`longDictations`).
     this.dueTips = ["longDictations", "agentAndHistory"];
     if (this.currentMode === "agent") void this.lookUpEmailApp();
-    this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
     // time most of the start-up is done.
@@ -481,9 +480,11 @@ export class DictationController extends Observable {
       },
       () => this.microphoneLost(current),
     );
-    // Capture must be dispatched before optional accessibility work: a native
-    // screen read can block its request loop while the audio worker is ready.
+    // Capture must be dispatched before optional accessibility work: the caret lookup arming makes
+    // and the screen read can each block a helper's request loop (on Linux, the one the microphone
+    // starts on), and nothing said before the microphone starts is recorded.
     if (this.generation !== current) return;
+    this.setPhase({ kind: "arming" });
     this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
     const read = this.contextRead;
     if (read) {
@@ -568,6 +569,9 @@ export class DictationController extends Observable {
     if (this.recorder === null) return;
     cancelTimer(this.maxDurationTimer);
     this.maxDurationTimer = null;
+    // The muted check covers the hold only; it must not outlive it into a spoken answer.
+    cancelTimer(this.silenceTimer);
+    this.silenceTimer = null;
     this.endTips();
 
     // Keep the microphone open briefly after release so the last word isn't clipped.
