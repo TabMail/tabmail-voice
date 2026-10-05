@@ -80,6 +80,15 @@ test("pages with no text say OCR is not available", async () => {
   expect(result.notice).toBe("No extractable text. This may be an image-only PDF; OCR is not available.");
 });
 
+test("a page cut at the text budget says the rest of it was omitted", async () => {
+  const request = vi.fn().mockResolvedValue({ text: "Public." });
+  const { path, parse, reader } = await setup(request);
+  parse.mockResolvedValue({ totalPages: 3, pages: [{ number: 1, text: "Public." }], nextPage: 2, truncated: true, before: "", after: "rest" });
+  const signal = new AbortController().signal;
+  const result = JSON.parse(await (await reader.prepare(path, signal)).read({ startPage: 1, pageCount: 3 }, signal));
+  expect(result).toMatchObject({ truncated: true, next_page: 2, notice: "Remaining text on the last returned page was omitted." });
+});
+
 /** A read canceled as parsing finishes returns nothing, and sends nothing to redact. */
 test("a read canceled as parsing finishes returns no text", async () => {
   const controller = new AbortController();

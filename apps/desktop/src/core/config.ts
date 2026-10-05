@@ -773,7 +773,8 @@ export const pdfMaxPages = 10;
 export const pdfMaxTextBytes = 64 * 1024;
 /** How much of the text around the pages returned (UTF-16 units each side: the previous page's end,
  * the next page's start or a cut page's rest) the redactor reads with them, so a secret continuing
- * past an edge is recognized whole. Far longer than any secret the redactor matches. */
+ * past an edge is recognized whole. Longer than any one-line secret the redactor matches; a private key
+ * can be longer, and its body is found from the text's start (`private-key-body`, ADR-DESK-051). */
 export const pdfRedactionContext = 4 * 1024;
 /** The largest local file the agent may read (20 MiB), and how much of it one read call takes. */
 export const documentMaxBytes = 20 * 1024 * 1024;

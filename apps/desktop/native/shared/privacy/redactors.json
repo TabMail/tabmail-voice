@@ -6,7 +6,7 @@
     "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
     "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
-    "private-key-block is last: its cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
+    "private-key-block comes after the others, and private-key-body last (it starts only at the start of the text): private-key-block's cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it."
   ],
   "placeholder": "[redacted]",
   "redactors": [
@@ -119,6 +119,13 @@
       "name": "private-key-block",
       "description": "A private-key block, whole or cut off where the window ends.",
       "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s\\\\]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s\\\\]*)",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "private-key-body",
+      "description": "A text that starts inside a private key's body, its header cut off before the text (a page read from the middle of a printed key, a window scrolled past the header): two or more full lines of base64 at the very start, up to the end line if there is one.",
+      "pattern": "^[A-Za-z0-9+/=]*(?:\\s*\\n\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*\\n\\s*[A-Za-z0-9+/=]+)?(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?",
       "ignoreCase": false,
       "replacement": "{placeholder}"
     }

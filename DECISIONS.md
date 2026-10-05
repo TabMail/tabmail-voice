@@ -3378,7 +3378,11 @@ approves the exact file. `src/main/documents/`:
   (`redactText`, ADR-DESK-046) together with up to `pdfRedactionContext` of the text just outside
   the range on each side (the previous page's end, the next page's start or a cut page's rest), so a
   secret crossing an edge is recognized whole; only the range comes back. A redaction failure
-  returns no text.
+  returns no text. A private key longer than that context, whose header is outside it, is still
+  found: a text that starts inside a key's body (two or more full lines of base64 at its very start)
+  is redacted up to the key's end line (`private-key-body`, owner 2026-10-05: "redact key bodies
+  anywhere"); it applies to screen reads too, where a window scrolled past a key's header starts
+  inside its body. A page that begins with other long base64 lines (a list of hashes) loses them too.
 
 **Rationale:** The sandbox bounds what a malicious PDF can do to time, memory and a refusal; it
 needs no native addon (PDF.js's optional canvas addon is left out of the package). Redacting with
@@ -3388,5 +3392,9 @@ text without spaces included.
 **Consequences:**
 - No OCR: an image-only page reads as no text, and says so.
 - A font that names a CMap PDF.js does not ship reads as no text.
+- The context is part of the read (owner, 2026-10-05: accepted and documented): a neighbouring page
+  that cannot be parsed, or that is so large reading it runs past the parse deadline, refuses the
+  pages next to it as well. The tool's description tells the agent a refusal may come from a
+  neighbouring page, so it does not retry the same pages.
 - The package keeps only PDF.js's `legacy/build/pdf.mjs`, `pdf.worker.mjs` and `cmaps/`
   (`electron-builder.json`); the release check asserts it (`verify-pdf.cjs` in the helpers repo).
