@@ -15,6 +15,9 @@ profile "${executable}" "/opt/${sanitizedProductName}/${executable}" flags=(enfo
   # peers, not children inheriting this named, otherwise unconfined profile.
   # Ux also requests the loader's secure-execution environment cleanup.
   "/opt/${sanitizedProductName}/resources/helpers/voice-linux" Ux,
+  # An update installs as root through pkexec (ADR-DESK-050): it and the package manager under it
+  # leave this profile, which would otherwise refuse dpkg's links to the files it replaces.
+  /usr/bin/pkexec Ux,
 
   include if exists <local/${executable}>
 }

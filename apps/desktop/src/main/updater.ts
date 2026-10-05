@@ -207,7 +207,7 @@ export class Updater {
     try {
       await this.options.platform.verify(info);
     } catch (error) {
-      log.error(`Updater: ${version} refused: ${describe(error)}`);
+      log.error(`Updater: ${version} refused: ${reason(error)}`);
       if (error instanceof UpdateError && error.options.quiet) this.set({ kind: "idle" });
       else this.fail(version, error instanceof UpdateError ? error.message : `Version ${version} couldn't be checked.`);
       return;
@@ -233,7 +233,7 @@ export class Updater {
     try {
       await this.options.platform.install(update);
     } catch (error) {
-      log.error(`Updater: ${version} not installed: ${describe(error)}`);
+      log.error(`Updater: ${version} not installed: ${reason(error)}`);
       if (!current.installsOnQuit) this.options.store.remove(installingKey);
       if (error instanceof UpdateError && error.options.canceled) {
         // Nothing failed: it stays ready, to install when the user is.
@@ -295,6 +295,12 @@ function code(error: unknown): string | null {
 function describe(error: unknown): string {
   const errorCode = code(error);
   return `${errorName(error)}${errorCode === null ? "" : ` ${errorCode}`}`;
+}
+
+/** Why a platform refused or didn't install an update: its own words (fixed sentences, never user
+ * content), or else the error's type. */
+function reason(error: unknown): string {
+  return error instanceof UpdateError ? error.message : describe(error);
 }
 
 /** How an adapter runs a program: its exit code and output, whatever the code; it rejects only when

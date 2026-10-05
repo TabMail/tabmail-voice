@@ -93,6 +93,16 @@ describe("the Mac app's packaging", () => {
     expect(builder.deb.depends).toEqual(expect.arrayContaining(["openssl", "pkexec"]));
   });
 
+  /** The app's AppArmor profile is inherited by what it runs: the root install leaves it at the
+   * pkexec the app runs, or dpkg can't replace the files the profile names (found in the Ubuntu VM). */
+  test("Linux installs an update outside the app's AppArmor profile", () => {
+    const profile = readFileSync(join(root, "scripts/linux/apparmor-profile.tpl"), "utf8");
+    const adapter = readFileSync(join(root, "src/main/native/linux/update.ts"), "utf8");
+
+    expect(profile).toMatch(/^\s*\/usr\/bin\/pkexec Ux,$/m);
+    expect(adapter).toContain('"/usr/bin/pkexec"');
+  });
+
   /** Squirrel.Mac installs an update only if its own version is not lower than the running app's, so
    * whoever can write to the CDN can't roll the app back to an older signed build (ADR-DESK-041). It
    * then refuses any version but x.y.z, the running app's included. */

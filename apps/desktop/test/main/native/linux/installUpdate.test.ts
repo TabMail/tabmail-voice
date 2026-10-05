@@ -40,7 +40,7 @@ describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
 
   let packages = 0;
   /** A package as the release builds it, as small as dpkg allows. */
-  function deb(fields: { package?: string; version: string; architecture?: string }): string {
+  function deb(fields: { package?: string; version: string; architecture?: string; description?: string }): string {
     const directory = join(root, `package-${++packages}`);
     mkdirSync(join(directory, "DEBIAN"), { recursive: true });
     writeFileSync(join(directory, "DEBIAN", "control"), [
@@ -48,7 +48,7 @@ describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
       `Version: ${fields.version}`,
       `Architecture: ${fields.architecture ?? architecture}`,
       "Maintainer: Example <test@example.com>",
-      "Description: test package",
+      `Description: ${fields.description ?? "test package"}`,
       "",
     ].join("\n"));
     const file = `${directory}.deb`;
@@ -79,7 +79,8 @@ describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
     ["signed for another architecture", () => ["verify", good, version, goodHash, signature({ version, sha512: goodHash, architecture: "s390x" })], 3],
     ["signed for another package", () => ["verify", good, version, goodHash, signature({ version, sha512: goodHash, package: "other" })], 3],
     ["whose bytes aren't the signed ones", () => {
-      const other = deb({ version, package: "tabmail-voice" });
+      // Another build of the same version: other bytes.
+      const other = deb({ version, description: "another build" });
       const otherHash = sha512(other);
       return ["verify", good, version, otherHash, signature({ version, sha512: otherHash })];
     }, 4],

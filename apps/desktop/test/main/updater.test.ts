@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { EventEmitter } from "node:events";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import * as config from "../../src/core/config.js";
 import { log } from "../../src/core/log.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
@@ -487,28 +487,40 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
     expect(platform.installed).toEqual([]);
   });
 
-  test("an update the platform refuses is shown as failed, never offered, and can't be installed", async () => {
-    const { platform, updater, asked } = setUpOn(true);
-    platform.proof = () => Promise.reject(new UpdateError("It isn't signed by TabMail, so it wasn't installed."));
+  test("an update the platform refuses is shown as failed, never offered, and can't be installed; the log says why", async () => {
+    const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+    try {
+      const { platform, updater, asked } = setUpOn(true);
+      platform.proof = () => Promise.reject(new UpdateError("It isn't signed by TabMail, so it wasn't installed."));
 
-    platform.downloads("1.1.0");
-    await settle();
-    updater.install();
-    await settle();
+      platform.downloads("1.1.0");
+      await settle();
+      updater.install();
+      await settle();
 
-    expect(updater.state).toEqual({ kind: "failed", version: "1.1.0", message: "It isn't signed by TabMail, so it wasn't installed." });
-    expect(asked).toEqual([]);
-    expect(platform.installed).toEqual([]);
+      expect(updater.state).toEqual({ kind: "failed", version: "1.1.0", message: "It isn't signed by TabMail, so it wasn't installed." });
+      expect(asked).toEqual([]);
+      expect(platform.installed).toEqual([]);
+      expect(logged.mock.calls).toEqual([["Updater: 1.1.0 refused: It isn't signed by TabMail, so it wasn't installed."]]);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
-  test("a proof that fails unexpectedly is a failure too, in words", async () => {
-    const { platform, updater } = setUpOn(true);
-    platform.proof = () => Promise.reject(new TypeError("boom"));
+  test("a proof that fails unexpectedly is a failure too, in words, and logged by its type only", async () => {
+    const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+    try {
+      const { platform, updater } = setUpOn(true);
+      platform.proof = () => Promise.reject(new TypeError("boom"));
 
-    platform.downloads("1.1.0");
-    await settle();
+      platform.downloads("1.1.0");
+      await settle();
 
-    expect(updater.state).toEqual({ kind: "failed", version: "1.1.0", message: "Version 1.1.0 couldn't be checked." });
+      expect(updater.state).toEqual({ kind: "failed", version: "1.1.0", message: "Version 1.1.0 couldn't be checked." });
+      expect(logged.mock.calls).toEqual([["Updater: 1.1.0 refused: TypeError"]]);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   test("a quiet refusal (macOS, an app off its disk image) shows nothing", async () => {
@@ -637,9 +649,11 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
     });
 
     test.each([
-      [new UpdateError("The package manager couldn't install it."), "The package manager couldn't install it."],
-      [new TypeError("boom"), "Version 1.1.0 couldn't be installed."],
-    ])("an install that fails (%s) is shown as failed and said, never as installed", async (error, message) => {
+      [new UpdateError("The package manager couldn't install it."), "The package manager couldn't install it.", "The package manager couldn't install it."],
+      [new TypeError("boom"), "Version 1.1.0 couldn't be installed.", "TypeError"],
+    ])("an install that fails (%s) is shown as failed and said, never as installed", async (error, message, logLine) => {
+      const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+      onTestFinished(() => logged.mockRestore());
       const store = new MemoryStore();
       const { platform, updater, told } = setUpOn(false, { store });
       platform.outcome = () => Promise.reject(error);
@@ -652,6 +666,7 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
       expect(updater.state).toEqual({ kind: "failed", version: "1.1.0", message });
       expect(store.get(installingKey)).toBeUndefined();
       expect(told).toEqual([["TabMail Voice 1.1.0 wasn't installed.", message]]);
+      expect(logged.mock.calls).toEqual([[`Updater: 1.1.0 not installed: ${logLine}`]]);
       updater.install();
       expect(platform.installed).toHaveLength(1);
     });
