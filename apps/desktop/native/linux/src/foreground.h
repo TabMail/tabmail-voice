@@ -107,8 +107,20 @@ private:
                 if (same(source, active) || same(source, tokenWindow)) { current.reset(); active.reset(); cancelRetry(); }
             }
             else if (type == "window:activate") {
+                // An app can announce its focused element before its window (LibreOffice).
+                if (current && same(source, tokenWindow) && state(current->focus, ATSPI_STATE_FOCUSED)) {
+                    cancelRetry(); active = source; return;
+                }
                 current.reset(); cancelRetry(); active = source; tried = 0; warm();
-            } else if (event->detail1) { cancelRetry(); remember(source); }
+            } else if (event->detail1) {
+                // A container announced after the element inside it that keeps focus (LibreOffice's
+                // root pane, which then loses focus silently) doesn't take its place.
+                if (current && state(current->focus, ATSPI_STATE_FOCUSED)) {
+                    const auto path = ancestors(current->focus);
+                    if (std::any_of(path.begin(), path.end(), [&](const Node& node) { return same(node, source); })) return;
+                }
+                cancelRetry(); remember(source);
+            }
             else if (current && same(source, current->focus)) current.reset();
         } catch (...) { current.reset(); cancelRetry(); }
     }

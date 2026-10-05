@@ -135,6 +135,9 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert command('s') == (9, 1) and request('readScreen') is None
         assert command('a') == (10, 1)
         assert field() == {'value': 'Synthetic field content'}
+        # An app that announces its field before its window, then a container around the field.
+        assert command('o') == (10, 1), 'a field announced before its window needs no lookup'
+        assert request('frontmostApp'), 'the field, not its container, stays the target'
         assert command('e') == (11, 1)
         command('d')
         time.sleep(1.1)
