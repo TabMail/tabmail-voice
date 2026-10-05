@@ -48,19 +48,28 @@ describe("Windows updates (ADR-DESK-050)", () => {
   });
 
   test("a downloaded installer is kept only when the helper proves it signed by TabMail and the offered version", async () => {
+    const logged = vi.spyOn(log, "error");
     const { source, calls } = setUp({ code: 0, stdout: JSON.stringify(signed) });
     source.emit("update-available", { version: "1.2.3" });
 
     expect(await source.verifyUpdateCodeSignature(["ignored"], "C:\\cache\\installer.exe")).toBeNull();
     expect(calls).toEqual([["C:\\helpers\\voice-windows.exe", ["--verify-update", "C:\\cache\\installer.exe"], config.updateVerifyTimeout]]);
+    expect(logged).not.toHaveBeenCalled();
+    logged.mockRestore();
   });
 
   /** The feed names the version; only the installer's signed resources can be trusted to say it. */
-  test("an older signed installer offered as newer is refused", async () => {
-    const { source } = setUp({ code: 0, stdout: JSON.stringify({ ...signed, productVersion: "1.0.0.0" }) });
-    source.emit("update-available", { version: "1.2.3" });
+  test("an older signed installer offered as newer is refused, and the log says why", async () => {
+    const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+    try {
+      const { source } = setUp({ code: 0, stdout: JSON.stringify({ ...signed, productVersion: "1.0.0.0" }) });
+      source.emit("update-available", { version: "1.2.3" });
 
-    expect(await source.verifyUpdateCodeSignature([], "installer.exe")).toBe("its signed version isn't the one offered");
+      expect(await source.verifyUpdateCodeSignature([], "installer.exe")).toBe("its signed version isn't the one offered");
+      expect(logged.mock.calls).toEqual([["Updater: 1.2.3 refused: its signed version isn't the one offered"]]);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   test.each<[string, Awaited<ReturnType<RunFile>> | Error, string]>([

@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+#include "text.h"
 
 namespace voice {
 
@@ -24,14 +25,6 @@ struct UpdateSignature {
     std::wstring organization;
     std::string productVersion;
 };
-
-inline std::string utf8(const std::wstring& value) {
-    if (value.empty()) return {};
-    const int size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
-    std::string result(static_cast<size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size, nullptr, nullptr);
-    return result;
-}
 
 inline std::wstring subjectAttribute(PCCERT_CONTEXT certificate, const char* oid) {
     void* type = const_cast<char*>(oid);
@@ -98,13 +91,17 @@ inline int runVerifyUpdate() {
     LocalFree(arguments);
     if (path.empty()) return 1;
     const UpdateSignature signature = verifyUpdate(path);
-    const nlohmann::json reply = {
-        {"signatureValid", signature.signatureValid},
-        {"commonName", utf8(signature.commonName)},
-        {"organization", utf8(signature.organization)},
-        {"productVersion", signature.productVersion},
-    };
-    const std::string text = reply.dump();
+    std::string text;
+    try {
+        text = nlohmann::json{
+            {"signatureValid", signature.signatureValid},
+            {"commonName", utf8(signature.commonName)},
+            {"organization", utf8(signature.organization)},
+            {"productVersion", signature.productVersion},
+        }.dump();
+    } catch (const std::exception&) {
+        return 1;
+    }
     DWORD written = 0;
     return WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text.data(), static_cast<DWORD>(text.size()), &written, nullptr) && written == text.size() ? 0 : 1;
 }

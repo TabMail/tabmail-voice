@@ -43,7 +43,10 @@ export function windowsUpdatePlatform(options: { source: WindowsUpdateSource; he
   source.verifyUpdateCodeSignature = async (_publisherNames, path) => {
     if (offered === null) return "no update was offered";
     try {
-      return refusal(await readSignature(run, helper, path), offered);
+      const reason = refusal(await readSignature(run, helper, path), offered);
+      // The library's own log is off; the reason is said here.
+      if (reason !== null) log.error(`Updater: ${offered} refused: ${reason}`);
+      return reason;
     } catch (error) {
       log.error(`Updater: the installer's signature couldn't be read: ${errorName(error)}`);
       return "the signature couldn't be read";
