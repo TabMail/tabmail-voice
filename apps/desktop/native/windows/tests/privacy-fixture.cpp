@@ -14,12 +14,17 @@
 #include <thread>
 #include <vector>
 #include <memory>
+#include <cstring>
+#include "../src/clipboard.h"
 #include <algorithm>
 
 namespace {
 using JSON = nlohmann::json;
 HWND window = nullptr;
 int focus = 1;
+bool pasteMode = false, clipboardHeld = false;
+std::wstring pasted[2];
+std::unique_ptr<voice::Clipboard> savedClipboard;
 std::atomic<unsigned> forbiddenReads{0}, textReads{0};
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
@@ -137,7 +142,9 @@ int add(int parent, CONTROLTYPEID type, bool password = false) {
 void configure(const std::string& mode) {
     add(-1, UIA_WindowControlTypeId); nodes.front()->text = L"Synthetic provider root";
     add(0, UIA_TextControlTypeId); // A non-editable focus keeps unrelated text paths out of the test.
-    if (mode == "password-focus") {
+    if (mode == "paste-focus") {
+        pasteMode = true; add(0, UIA_TextControlTypeId);
+    } else if (mode == "password-focus") {
         nodes.at(1)->password = true; nodes.at(1)->type = UIA_EditControlTypeId;
         nodes.at(1)->text = L"DO_NOT_READ_SYNTHETIC_PASSWORD";
         add(1, UIA_TextControlTypeId); nodes.back()->forbidden = true;
@@ -197,8 +204,48 @@ LRESULT CALLBACK procedure(HWND handle, UINT message, WPARAM value, LPARAM data)
         std::cout << JSON({{"window", reinterpret_cast<uintptr_t>(handle)}, {"forbiddenReads", forbiddenReads.load()}, {"textReads", textReads.load()}}).dump() << '\n' << std::flush;
         return 0;
     }
-    if (message == WM_CLOSE) { UiaDisconnectAllProviders(); DestroyWindow(handle); return 0; }
-    if (message == WM_DESTROY) { PostQuitMessage(0); return 0; }
+    if (pasteMode && message == WM_KEYDOWN && value == 'V' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+        if (!OpenClipboard(handle)) ExitProcess(6);
+        const auto content = GetClipboardData(CF_UNICODETEXT);
+        const auto text = content ? static_cast<const wchar_t*>(GlobalLock(content)) : nullptr;
+        if (text) { pasted[focus - 1] += text; GlobalUnlock(content); }
+        CloseClipboard(); return 0;
+    }
+    if (pasteMode && message == WM_APP + 2) {
+        if (value == 1) {
+            if (!OpenClipboard(handle) || !EmptyClipboard()) ExitProcess(6);
+            const wchar_t text[] = L"Synthetic focus clipboard";
+            const auto content = GlobalAlloc(GMEM_MOVEABLE, sizeof(text));
+            const auto bytes = content ? GlobalLock(content) : nullptr;
+            if (!bytes) ExitProcess(6);
+            memcpy(bytes, text, sizeof(text)); GlobalUnlock(content);
+            if (!SetClipboardData(CF_UNICODETEXT, content)) ExitProcess(6);
+            CloseClipboard();
+        } else if (value == 2) {
+            if (!OpenClipboard(handle)) ExitProcess(6);
+            clipboardHeld = true;
+        } else if (value == 3) {
+            CloseClipboard(); clipboardHeld = false;
+        } else if (value == 4) {
+            focus = 2;
+            UiaRaiseAutomationEvent(nodes.at(focus).get(), UIA_AutomationFocusChangedEventId);
+        }
+        JSON reply = {{"focus", focus}, {"nativeFocus", reinterpret_cast<uintptr_t>(::GetFocus())},
+            {"firstEmpty", pasted[0].empty()}, {"secondEmpty", pasted[1].empty()},
+            {"firstExact", pasted[0] == L"Synthetic focus paste"}, {"secondExact", pasted[1] == L"Synthetic focus paste"}};
+        if (value == 5) {
+            if (!OpenClipboard(handle)) ExitProcess(6);
+            const auto content = GetClipboardData(CF_UNICODETEXT);
+            const auto text = content ? static_cast<const wchar_t*>(GlobalLock(content)) : nullptr;
+            reply["clipboardOriginal"] = text && std::wstring(text) == L"Synthetic focus clipboard";
+            if (text) GlobalUnlock(content);
+            CloseClipboard();
+        }
+        std::cout << reply.dump() << '\n' << std::flush;
+        return 0;
+    }
+    if (message == WM_CLOSE) { if (clipboardHeld) CloseClipboard(); UiaDisconnectAllProviders(); DestroyWindow(handle); return 0; }
+    if (message == WM_DESTROY) { if (savedClipboard) savedClipboard->restoreSnapshot(); PostQuitMessage(0); return 0; }
     return DefWindowProcW(handle, message, value, data);
 }
 }
@@ -211,10 +258,18 @@ int main(int argc, char** argv) {
     window = CreateWindowExW(0, type.lpszClassName, L"Synthetic privacy test", WS_OVERLAPPEDWINDOW,
         100, 100, 640, 480, nullptr, nullptr, type.hInstance, nullptr);
     if (!window) return 5;
+    if (pasteMode) {
+        savedClipboard = std::make_unique<voice::Clipboard>();
+        savedClipboard->open(); savedClipboard->snapshot(); savedClipboard->close();
+    }
     ShowWindow(window, SW_SHOW); SendMessageW(window, WM_APP + 1, 1, 0);
     std::thread([] {
         std::string command;
-        while (std::getline(std::cin, command)) PostMessageW(window, WM_APP + 1, command == "reset" ? 1 : 0, 0);
+        while (std::getline(std::cin, command)) {
+            if (pasteMode) PostMessageW(window, WM_APP + 2,
+                command == "seed" ? 1 : command == "lock" ? 2 : command == "unlock" ? 3 : command == "switch" ? 4 : 5, 0);
+            else PostMessageW(window, WM_APP + 1, command == "reset" ? 1 : 0, 0);
+        }
         PostMessageW(window, WM_CLOSE, 0, 0);
     }).detach();
     MSG message{};
