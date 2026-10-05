@@ -400,7 +400,7 @@ function launch(): void {
       title: "Shortcut and keyboard control",
       // Without GNOME integration, Space does not switch modes while dictating.
       ...(gnomeIntegration ? {} : { agentShortcut: `Shift+${hotkeyNames[settings.hotkey].keycap}` }),
-      description: gnomeIntegration ? "Turns on GNOME integration and allows the dictation key, pasting, and clipboard restoration." : "Allows the dictation shortcut, pasting, and clipboard restoration.",
+      description: gnomeIntegration ? "Turns on GNOME integration and allows the dictation key and pasting." : "Allows the dictation shortcut and pasting.",
       button: "Allow Keyboard Control",
       instructions: gnomeIntegration?.state === "restart" ? "Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here."
         : gnomeIntegration ? `This turns on GNOME integration; then ${steps}.`

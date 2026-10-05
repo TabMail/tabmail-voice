@@ -31,7 +31,7 @@ from mail and calendar. Verified end-to-end by `SpeechTranscriptionSessionTests`
   sends audio off-device, so it's the owner's call.
 - First use of a language downloads its model (`AssetInventory`); the app does this at launch.
 
-## ADR-DESK-002: Insert by pasting, then restore the clipboard
+## ADR-DESK-002: Insert by pasting, then restore the clipboard (amended: the clipboard is written, never read)
 
 **Context:** Dictated text must land in any focused field: native, Electron, browser, terminal.
 
@@ -52,6 +52,26 @@ Wispr Flow and similar tools do.
 **Consequences:** A clipboard manager that ignores the transient markers may record the text.
 Apps that read the pasteboard lazily after the restore delay would paste the old clipboard; the
 delay is a config value to tune if that's seen.
+
+**Amendment (owner, 2026-10-05) — the clipboard is written, never read, and not put back.** Owner:
+*"we don't need to ever read the clipboard, and we should never read the clipboard. We should just
+paste it into it"*; *"we won't restore the clipboard after paste."* Saving the clipboard to put it
+back afterwards was the only reason any helper read it, and the read was what failed: it asks the
+app that owns the clipboard for every item's data, which a busy app (or a VM's clipboard agent)
+hands over late, so on the Mac a paste sometimes timed out ("Something went wrong") and worked when
+tried again, and Windows and Ubuntu bounded the wait and typed the text or pasted without restoring.
+Now every helper writes the text (still marked transient, concealed and out of clipboard history and
+the cloud), sends the paste keys, and is done: `TextInserter` on the Mac, `Clipboard::putText` and
+`paste` on Windows, `Inserter` on Ubuntu. There is no restore delay on the wire (`insert {text}` on
+the Mac; `{text, window, deadline}` on Windows and Ubuntu, waited for `insertionReplyGrace` past the
+deadline), no save on a thread of its own, no typed fallback, and Ubuntu no longer refuses a paste
+while the clipboard's state is unannounced or holds a file transfer. Ubuntu still pastes only once
+this session owns the selection, and a copy landing between the publish and the paste vetoes it.
+Consequences: after a dictation the clipboard holds the dictated text, and what the user had copied
+before is gone, as it already was for an unpasted dictation (ADR-DESK-042). The lazy-reader hazard
+above is gone with the restore. On Windows a clipboard another program holds open for longer than
+the helper's 500 ms open wait still cannot be written, and that paste fails. The tests keep the test
+machine's clipboard as they found it (`SavedClipboard` in the Windows fixtures); the helpers never do.
 
 ## ADR-DESK-003: Not sandboxed; Developer ID distribution
 

@@ -14,7 +14,7 @@ struct TextInserterTests {
     private let customType = NSPasteboard.PasteboardType("ai.tabmail.test.custom")
 
     private func inserter(onPaste: @escaping @MainActor () -> Void = {}) -> TextInserter {
-        TextInserter(pasteboard: pasteboard, restoreDelay: .zero, pasteKeystroke: { onPaste() })
+        TextInserter(pasteboard: pasteboard, pasteKeystroke: { onPaste() })
     }
 
     @Test func pastesTheTextMarkedTransient() async {
@@ -30,40 +30,35 @@ struct TextInserterTests {
         #expect(typesAtPaste.contains(TextInserter.concealedType))
     }
 
-    @Test func restoresEveryItemAndTypeOfTheUsersClipboard() async {
+    /// The user's clipboard is replaced, never read: an app that hands its clipboard over late
+    /// can't hold the paste up, and nothing of the user's is copied.
+    @Test func neverReadsTheUsersClipboard() async {
+        let provider = LateProvider()
+        let item = NSPasteboardItem()
+        item.setDataProvider(provider, forTypes: [.string, customType])
         pasteboard.clearContents()
-        let first = NSPasteboardItem()
-        first.setString("user text", forType: .string)
-        first.setData(Data([1, 2, 3]), forType: customType)
-        let second = NSPasteboardItem()
-        second.setString("second item", forType: .string)
-        pasteboard.writeObjects([first, second])
+        pasteboard.writeObjects([item])
 
         await inserter().insert("Dictated text")
 
-        let items = pasteboard.pasteboardItems ?? []
-        #expect(items.count == 2)
-        guard items.count == 2 else { return }
-        #expect(items[0].string(forType: .string) == "user text")
-        #expect(items[0].data(forType: customType) == Data([1, 2, 3]))
-        #expect(items[1].string(forType: .string) == "second item")
+        #expect(provider.asked == 0)
     }
 
-    @Test func emptyClipboardStaysEmpty() async {
+    @Test func theTextStaysOnTheClipboard() async {
         pasteboard.clearContents()
+        pasteboard.setString("user text", forType: .string)
         await inserter().insert("Dictated text")
-        #expect(pasteboard.pasteboardItems?.isEmpty ?? true)
+        #expect(pasteboard.pasteboardItems?.count == 1)
+        #expect(pasteboard.string(forType: .string) == "Dictated text")
     }
+}
 
-    /// If the user copies something while the paste is in flight, their new copy wins.
-    @Test func doesNotClobberAClipboardChangedDuringInsertion() async {
-        pasteboard.clearContents()
-        pasteboard.setString("old clipboard", forType: .string)
-        let pasteboard = self.pasteboard
-        await inserter {
-            pasteboard.clearContents()
-            pasteboard.setString("copied meanwhile", forType: .string)
-        }.insert("Dictated text")
-        #expect(pasteboard.string(forType: .string) == "copied meanwhile")
+/// Clipboard data an app hands over only when asked, counting the asks.
+private final class LateProvider: NSObject, NSPasteboardItemDataProvider {
+    var asked = 0
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        asked += 1
+        item.setString("user text", forType: type)
     }
 }

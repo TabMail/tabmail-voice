@@ -15,7 +15,7 @@
 #include <vector>
 #include <memory>
 #include <cstring>
-#include "../src/clipboard.h"
+#include "saved-clipboard.h"
 #include <algorithm>
 
 namespace {
@@ -24,7 +24,7 @@ HWND window = nullptr;
 int focus = 1;
 bool pasteMode = false, clipboardHeld = false;
 std::wstring pasted[2];
-std::unique_ptr<voice::Clipboard> savedClipboard;
+std::unique_ptr<voice::SavedClipboard> savedClipboard;
 std::atomic<unsigned> forbiddenReads{0}, textReads{0};
 // The UI framework every element reports: a browser engine's, unless the mode says otherwise.
 std::wstring framework = L"Chrome";
@@ -260,6 +260,7 @@ LRESULT CALLBACK procedure(HWND handle, UINT message, WPARAM value, LPARAM data)
             const auto content = GetClipboardData(CF_UNICODETEXT);
             const auto text = content ? static_cast<const wchar_t*>(GlobalLock(content)) : nullptr;
             reply["clipboardOriginal"] = text && std::wstring(text) == L"Synthetic focus clipboard";
+            reply["clipboardPasted"] = text && std::wstring(text) == L"Synthetic focus paste";
             if (text) GlobalUnlock(content);
             CloseClipboard();
         }
@@ -267,7 +268,7 @@ LRESULT CALLBACK procedure(HWND handle, UINT message, WPARAM value, LPARAM data)
         return 0;
     }
     if (message == WM_CLOSE) { if (clipboardHeld) CloseClipboard(); UiaDisconnectAllProviders(); DestroyWindow(handle); return 0; }
-    if (message == WM_DESTROY) { if (savedClipboard) savedClipboard->restoreSnapshot(); PostQuitMessage(0); return 0; }
+    if (message == WM_DESTROY) { if (savedClipboard) savedClipboard->restore(); PostQuitMessage(0); return 0; }
     return DefWindowProcW(handle, message, value, data);
 }
 }
@@ -281,8 +282,7 @@ int main(int argc, char** argv) {
         100, 100, 640, 480, nullptr, nullptr, type.hInstance, nullptr);
     if (!window) return 5;
     if (pasteMode) {
-        savedClipboard = std::make_unique<voice::Clipboard>();
-        savedClipboard->open(); savedClipboard->snapshot(); savedClipboard->close();
+        savedClipboard = std::make_unique<voice::SavedClipboard>();
     }
     ShowWindow(window, SW_SHOW); SendMessageW(window, WM_APP + 1, 1, 0);
     std::thread([] {

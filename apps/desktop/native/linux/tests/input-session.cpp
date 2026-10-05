@@ -16,13 +16,12 @@ struct Fixture {
     std::map<unsigned, int> readers;
     std::vector<std::pair<int, unsigned>> keys;
     std::function<void()> onTransfer;
-    std::function<void()> onRead;
     std::function<void(int, unsigned)> onKey;
     std::optional<std::pair<int, unsigned>> failKey;
-    unsigned publications = 0, ownReadAttempts = 0;
-    bool sessionOwnsSelection = false;
-    // A clipboard owner that accepts the read and then never writes, or refuses it.
-    bool stallRead = false, failRead = false; std::vector<int> stalled;
+    // Reads of the clipboard: the helper never makes one.
+    unsigned publications = 0, reads = 0;
+    // Another app copies just after the helper publishes, before it pastes.
+    bool copyAfterPublish = false;
     std::vector<unsigned char> expected = original;
     unsigned completed = 0, grants = 0;
     bool clipboardGranted = true;
@@ -59,7 +58,6 @@ struct Fixture {
         g_dbus_node_info_unref(info);
     }
     void owner(bool ours) {
-        sessionOwnsSelection = ours;
         GVariantBuilder dictionary; g_variant_builder_init(&dictionary, G_VARIANT_TYPE_VARDICT);
         const char* formats[]{"text/plain;charset=utf-8"};
         g_variant_builder_add(&dictionary, "{sv}", "mime_types", g_variant_new_strv(formats, 1));
@@ -92,29 +90,25 @@ struct Fixture {
             g_dbus_method_invocation_return_value(invocation, g_variant_new("(o)", path.c_str()));
             require(g_dbus_connection_emit_signal(bus.get(), sender, path.c_str(), "org.freedesktop.portal.Request", "Response", g_variant_new("(u@a{sv})", 0u, g_variant_builder_end(&result)), nullptr));
             // Deliberately no initial owner signal: matches ownerless GNOME startup.
-        } else if (method == "SelectionRead" || method == "SelectionWrite") {
-            if (method == "SelectionRead" && failRead) {
-                g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Synthetic read failure");
-                return;
-            }
-            if (method == "SelectionRead" && sessionOwnsSelection) {
-                ++ownReadAttempts;
-                g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Tried to read own selection");
-                return;
-            }
+        } else if (method == "SelectionRead") {
+            ++reads;
+            g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Synthetic read refused");
+        } else if (method == "SelectionWrite") {
             int pipes[2]; require(pipe2(pipes, O_CLOEXEC | O_NONBLOCK) == 0);
             auto fds = own(g_unix_fd_list_new()); Error error;
-            const int handle = g_unix_fd_list_append(fds.get(), method == "SelectionRead" ? pipes[0] : pipes[1], &error.value); require(handle >= 0 && !error.value);
-            if (method == "SelectionRead" && stallRead) { close(pipes[0]); stalled.push_back(pipes[1]); }
-            else if (method == "SelectionRead") { if (onRead) onRead(); require(write(pipes[1], original.data(), original.size()) == ssize_t(original.size())); close(pipes[0]); close(pipes[1]); }
-            else { guint serial = 0; auto value = variant(g_variant_get_child_value(args, 1)); serial = g_variant_get_uint32(value.get()); readers[serial] = pipes[0]; close(pipes[1]); }
+            const int handle = g_unix_fd_list_append(fds.get(), pipes[1], &error.value); require(handle >= 0 && !error.value);
+            guint serial = 0; auto value = variant(g_variant_get_child_value(args, 1)); serial = g_variant_get_uint32(value.get()); readers[serial] = pipes[0]; close(pipes[1]);
             g_dbus_method_invocation_return_value_with_unix_fd_list(invocation, g_variant_new("(h)", handle), fds.get());
         } else if (method == "SelectionWriteDone") {
             const gchar* path = nullptr; guint serial = 0; gboolean success = false; g_variant_get(args, "(&oub)", &path, &serial, &success);
             require(success && readers.contains(serial)); unsigned char bytes[100]; const auto size = read(readers[serial], bytes, sizeof(bytes)); close(readers[serial]); readers.erase(serial);
             require(size == ssize_t(expected.size()) && std::equal(expected.begin(), expected.end(), bytes)); ++completed;
             g_dbus_method_invocation_return_value(invocation, nullptr); if (onTransfer) onTransfer();
-        } else if (method == "SetSelection") { ++publications; owner(true); g_dbus_method_invocation_return_value(invocation, nullptr); }
+        } else if (method == "SetSelection") {
+            ++publications; owner(true);
+            if (copyAfterPublish) { copyAfterPublish = false; owner(false); }
+            g_dbus_method_invocation_return_value(invocation, nullptr);
+        }
         else if (method == "NotifyKeyboardKeysym") {
             auto key = variant(g_variant_get_child_value(args, 2)), down = variant(g_variant_get_child_value(args, 3));
             keys.emplace_back(g_variant_get_int32(key.get()), g_variant_get_uint32(down.get()));
@@ -138,46 +132,43 @@ int main() {
     bool restoredWithoutGrant = true;
     input.restore([&](bool granted) { restoredWithoutGrant = granted; });
     require(!restoredWithoutGrant && fixture.grants == 0);
+    unsigned changes = 0;
+    input.state->onOwnerChange = [&] { ++changes; };
     input.request([&](bool granted) {
-        require(granted && input.ready() && !input.state->selection.known);
-        input.state->read("text/plain;charset=utf-8", nullptr, [&](InputSession::Bytes bytes) {
-            require(bytes && *bytes == fixture.original);
-            input.state->publish({{"text/plain;charset=utf-8", bytes}}, nullptr, [&](bool success) {
-                require(success);
-                fixture.onTransfer = [&] { g_main_loop_quit(loop); };
-                require(g_dbus_connection_emit_signal(fixture.bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionTransfer",
-                    g_variant_new("(osu)", fixture.session.c_str(), "text/plain;charset=utf-8", 42u), nullptr));
-            });
+        require(granted && input.ready() && !input.state->selection.ours);
+        input.state->publish({{"text/plain;charset=utf-8", std::make_shared<const std::vector<unsigned char>>(fixture.original)}}, nullptr, [&](bool success) {
+            require(success);
+            fixture.onTransfer = [&] { g_main_loop_quit(loop); };
+            require(g_dbus_connection_emit_signal(fixture.bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionTransfer",
+                g_variant_new("(osu)", fixture.session.c_str(), "text/plain;charset=utf-8", 42u), nullptr));
         });
     });
-    g_main_loop_run(loop); require(fixture.completed == 1 && input.state->selection.known && input.state->selection.ours);
+    g_main_loop_run(loop); require(fixture.completed == 1 && input.state->selection.ours);
     fixture.onTransfer = {};
-    // A silent backend startup must not be guessed empty, even after Start.
-    // The initial read/publish above was explicit fixture work, not insertion.
     const auto emitOwner = [&](GVariant* dictionary) {
-        const auto epoch = input.state->selection.epoch;
+        const auto seen = changes;
         require(g_dbus_connection_emit_signal(fixture.bus.get(), nullptr, InputSession::State::desktop,
             InputSession::State::clipboard, "SelectionOwnerChanged",
             g_variant_new("(o@a{sv})", fixture.session.c_str(), dictionary), nullptr));
-        while (input.state->selection.epoch == epoch) g_main_context_iteration(nullptr, true);
+        while (changes == seen) g_main_context_iteration(nullptr, true);
     };
     emitOwner(options());
-    require(input.state->selection.known && !input.state->selection.ours &&
-        input.state->selection.formats.empty() && input.state->offer.empty());
+    require(!input.state->selection.ours && input.state->offer.empty());
     GVariantBuilder malformed; g_variant_builder_init(&malformed, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&malformed, "{sv}", "session_is_owner", g_variant_new_boolean(true));
     emitOwner(g_variant_builder_end(&malformed));
-    require(!input.state->selection.known && !input.state->selection.ours && input.state->selection.formats.empty());
+    require(!input.state->selection.ours);
     bool focused = true, terminal = false;
     Inserter inserter(input, [&](uint64_t token) { return focused && token == 42; }, [&] { return terminal; });
+    { auto inner = input.state->onOwnerChange; input.state->onOwnerChange = [&changes, inner] { ++changes; inner(); }; }
     const auto parameters = [] {
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        return nlohmann::json{{"text", "Synthetic Unicode café 日本語"}, {"window", 42u}, {"deadline", now + 2000}, {"restoreDelay", 10u}};
+        return nlohmann::json{{"text", "Synthetic Unicode café 日本語"}, {"window", 42u}, {"deadline", now + 2000}};
     };
     const auto reset = [&] {
-        const auto epoch = input.state->selection.epoch;
+        const auto seen = changes;
         fixture.owner(false);
-        while (input.state->selection.epoch == epoch) g_main_context_iteration(nullptr, true);
+        while (changes == seen) g_main_context_iteration(nullptr, true);
         fixture.keys.clear(); fixture.onKey = {}; fixture.publications = 0;
     };
     const auto run = [&](int64_t id, bool expectedSuccess) {
@@ -186,69 +177,50 @@ int main() {
         if (!replied) g_main_loop_run(loop);
         require(replied);
     };
-    const auto beforeUnknown = fixture.publications;
-    bool rejectedUnknown = false;
-    inserter.insert(90, parameters(), [&](auto result, bool success) {
-        require(success && result == nlohmann::json{{"status", "clipboard-unavailable"}});
-        rejectedUnknown = true;
-    });
-    require(rejectedUnknown && fixture.publications == beforeUnknown && fixture.keys.empty());
-    emitOwner(options());
-    fixture.publications = 0;
-    run(91, true);
-    require(fixture.publications == 2 && input.state->offer.empty());
-    reset();
-    {
-        GVariantBuilder dictionary; g_variant_builder_init(&dictionary, G_VARIANT_TYPE_VARDICT);
-        const char* formats[]{"application/vnd.portal.filetransfer"};
-        g_variant_builder_add(&dictionary, "{sv}", "mime_types", g_variant_new_strv(formats, 1));
-        g_variant_builder_add(&dictionary, "{sv}", "session_is_owner", g_variant_new_boolean(false));
-        emitOwner(g_variant_builder_end(&dictionary));
-        require(input.ready() && input.state->selection.known && input.state->selection.formats == std::vector<std::string>{formats[0]});
-        bool refused = false;
-        try { inserter.insert(100, parameters(), [](auto, bool){}); } catch (...) { refused = true; }
-        require(refused && fixture.publications == 0 && fixture.keys.empty());
-    }
-    reset();
     // Keep the immutable text alive while constructing the byte vector.
     const auto text = parameters()["text"].get<std::string>();
     fixture.expected.assign(text.begin(), text.end());
+    const auto offered = [&] { return *input.state->offer.at("text/plain;charset=utf-8") == fixture.expected; };
+    // A clipboard whose state was never announced (GNOME's silent startup) is written all the same.
+    fixture.publications = 0;
+    run(91, true);
+    require(fixture.publications == 1 && offered() && fixture.keys.size() == 4);
+    reset();
     fixture.onKey = [&](int key, unsigned down) {
         if (key == 'v' && down) require(g_dbus_connection_emit_signal(fixture.bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionTransfer",
             g_variant_new("(osu)", fixture.session.c_str(), "text/plain;charset=utf-8", 43u), nullptr));
     };
     run(1, true);
-    require(fixture.completed == 2 && fixture.publications == 2);
+    require(fixture.completed == 2 && fixture.publications == 1);
     require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {'v', 1}, {'v', 0}, {0xffe3, 0}});
-    require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.original);
-    // A second dictation follows our restoration without an intervening copy.
-    // Mutter refuses SelectionRead on this session's own offer.
+    // The text stays on the clipboard; the next dictation replaces it.
+    require(offered());
     run(92, true);
-    require(fixture.publications == 4 && fixture.ownReadAttempts == 0 && fixture.keys.size() == 8);
-    require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.original);
+    require(fixture.publications == 2 && fixture.keys.size() == 8 && offered());
     reset();
-    fixture.onRead = [&] { fixture.owner(false); fixture.onRead = {}; };
+    // Another app copying between the publish and the paste vetoes the paste.
+    fixture.copyAfterPublish = true;
     run(77, false);
-    require(fixture.publications == 0 && fixture.keys.empty() && !input.state->selection.ours);
+    require(fixture.publications == 1 && fixture.keys.empty() && !input.state->selection.ours);
     reset();
     fixture.onKey = [&](int key, unsigned down) { if (key == 0xffe3 && down) inserter.cancel(78); };
     run(78, false);
-    require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {0xffe3, 0}} && fixture.publications == 2);
-    require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.original);
+    require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {0xffe3, 0}} && fixture.publications == 1);
+    require(offered());
     reset(); focused = false; run(2, false); require(fixture.publications == 0 && fixture.keys.empty()); focused = true;
     reset();
     bool canceledReply = false;
     inserter.insert(3, parameters(), [&](auto, bool success) { require(!success); canceledReply = true; g_main_loop_quit(loop); });
     inserter.cancel(3);
     if (!canceledReply) g_main_loop_run(loop);
-    require(canceledReply && fixture.publications == 0 && fixture.keys.empty());
+    require(canceledReply && fixture.publications == 1 && fixture.keys.empty());
     reset();
     fixture.onKey = [&](int key, unsigned down) { if (key == 'v' && down) fixture.owner(false); };
     run(4, true); require(fixture.publications == 1 && !input.state->selection.ours); // Intervening copy wins.
     reset();
     fixture.onKey = [&](int key, unsigned down) { if (key == 0xffe3 && down) focused = false; };
     run(5, false);
-    require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {0xffe3, 0}} && fixture.publications == 2);
+    require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {0xffe3, 0}} && fixture.publications == 1);
     focused = true; terminal = true; reset();
     run(6, true);
     require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {0xffe1, 1}, {'v', 1}, {'v', 0}, {0xffe1, 0}, {0xffe3, 0}});
@@ -271,23 +243,11 @@ int main() {
     for (const auto& [failure, expectedKeys] : failures) {
         reset(); fixture.failKey = failure;
         run(failedID++, false);
-        require(!fixture.failKey && fixture.keys == expectedKeys && fixture.publications == 2);
-        require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.original);
+        require(!fixture.failKey && fixture.keys == expectedKeys && fixture.publications == 1);
+        require(offered());
     }
-    // An owner that never hands the clipboard over, or refuses to, doesn't stop the
-    // paste: it goes ahead promptly, and the dictation stays on the clipboard.
-    int64_t unsavedID = 60;
-    for (const bool stall : {true, false}) {
-        reset(); fixture.stallRead = stall; fixture.failRead = !stall;
-        const auto started = std::chrono::steady_clock::now();
-        run(unsavedID++, true);
-        require(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1500));
-        require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {'v', 1}, {'v', 0}, {0xffe3, 0}});
-        require(fixture.publications == 1 && input.state->selection.ours);
-        require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.expected);
-        fixture.stallRead = fixture.failRead = false;
-    }
-    for (const int fd : fixture.stalled) close(fd);
+    // No insertion read the clipboard.
+    require(fixture.reads == 0);
     std::weak_ptr<const std::vector<unsigned char>> retained = input.state->offer.at("text/plain;charset=utf-8");
     require(!retained.expired());
     input.state->close();
@@ -307,7 +267,7 @@ int main() {
         bool replied = false;
         input.request([&](bool granted) { require(!granted && !input.ready()); replied = true; g_main_loop_quit(loop); });
         g_main_loop_run(loop);
-        require(replied && !input.state->selection.known && input.state->offer.empty() && input.state->session.empty());
+        require(replied && !input.state->selection.ours && input.state->offer.empty() && input.state->session.empty());
         fixture.clipboardGranted = true; fixture.deviceTypes = 1;
         require(tokens.save("synthetic-restore-token"));
         replied = false;
@@ -315,5 +275,5 @@ int main() {
         g_main_loop_run(loop); require(replied);
     }
     input.state->close(); rmdir(tokenPath.substr(0, tokenPath.find_last_of('/')).c_str());
-    g_main_loop_unref(loop); std::cout << "portal FD transfers, Unicode paste, target changes, cancellation, key cleanup and intervening copy passed\n";
+    g_main_loop_unref(loop); std::cout << "portal FD transfers, write-only Unicode paste, target changes, cancellation, key cleanup and intervening copy passed\n";
 }

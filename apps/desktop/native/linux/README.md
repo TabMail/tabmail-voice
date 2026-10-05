@@ -88,23 +88,17 @@ state directory, consuming it on restoration and saving its replacement after a
 successful grant. Startup attempts restoration only when a saved token exists;
 first-time authorization remains an explicit permission-button action. Revoked grants or a compositor that refuses restoration can
 still require consent again. Tokens are never logged. The
-helper snapshots advertised clipboard formats before publishing text, validates
-the original app/window before sending the paste chord, releases its injected
-keys, and restores the snapshot only if no newer clipboard owner was observed.
-Unsupported clipboard file-transfer capabilities are refused. Clipboard portal
-version 1 has no atomic owner-check-and-restore operation, so the final check and
-restoration have a compositor race. An uncertain paste is never retried. The terminal paste chord uses the provider's terminal role (Ctrl+Shift+V); ordinary
+helper never reads the clipboard: it publishes the text, validates the original
+app/window and waits for this session to own the selection before sending the
+paste chord, releases its injected keys, and leaves the text on the clipboard
+(ADR-DESK-002). Clipboard portal version 1 has no atomic owner check, so a copy
+made between the final check and the chord has a compositor race. An uncertain
+paste is never retried. The terminal paste chord uses the provider's terminal role (Ctrl+Shift+V); ordinary
 fields use Ctrl+V. Live GNOME clipboard behavior still requires runtime testing.
-
-Clipboard state starts unknown. GNOME's explicit empty `SelectionOwnerChanged`
-dictionary clears the snapshot, but its ownerless startup can emit no event at
-all. The public Clipboard v1 API has no initial-state query or synchronization
-barrier: neither a timeout nor a failed read proves emptiness. Automatic insertion
-therefore refuses an unknown snapshot instead of overwriting it. A later valid
-owner event establishes state. See the [portal contract](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Clipboard.html)
+See the [portal contract](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Clipboard.html)
 and [Mutter clipboard implementation](https://gitlab.gnome.org/GNOME/mutter/-/blob/main/src/backends/meta-clipboard-session.c).
 The private-bus fixture covers silent startup, explicit clears, malformed owner
-events, insertion with a known empty snapshot, and ordinary snapshot restoration.
+events and a paste that never reads the clipboard.
 
 Foreground and focus events drive accessibility lookup. Failed window lookups
 retry at most five times, a second apart, and stop when the window is left. There
@@ -168,8 +162,8 @@ portal is the preferred direction here; the owner accepted standard keys, and F8
 modifier-only parity from portal setup.
 
 [OpenWhispr's paste helper](https://github.com/OpenWhispr/openwhispr/blob/main/resources/linux-fast-paste.c)
-uses the RemoteDesktop portal and restore tokens on GNOME Wayland. Our clipboard
-snapshot and target-validation contract remains shared with the other platforms.
+uses the RemoteDesktop portal and restore tokens on GNOME Wayland. Our write-only
+clipboard and target-validation contract remains shared with the other platforms.
 
 OpenWhispr's [Linux clipboard path](https://github.com/OpenWhispr/openwhispr/blob/196937c489bf700688f0cadc48211ba2570bb775/src/helpers/clipboard.js)
 also permits a Wayland paste with no identified window. TabMail retains its

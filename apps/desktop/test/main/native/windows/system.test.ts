@@ -48,7 +48,7 @@ test("paste carries the original target, deadline, restore delay and cancellatio
   await system.paste("Synthetic text", operation.signal, 101);
   const [method, params, timeout, signal] = mocks.request.mock.calls[0] ?? [];
   expect(method).toBe("insert");
-  expect(params).toMatchObject({ text: "Synthetic text", window: 101, restoreDelay: 500 });
+  expect(params).toEqual({ text: "Synthetic text", window: 101, deadline: expect.any(Number) });
   expect(params.deadline).toBeGreaterThanOrEqual(before + 3000);
   expect(params.deadline).toBeLessThanOrEqual(Date.now() + 3000);
   expect(timeout).toBe(3500);

@@ -139,8 +139,9 @@ export const microphoneStartRetryDelay = 250;
 
 // MARK: Insertion
 
-/** How long the target app gets to read the pasteboard before the user's clipboard is restored. */
-export const clipboardRestoreDelay = 500;
+/** How long past a Windows or Ubuntu paste's deadline its reply is still waited for: the helper
+ * checks the deadline before each step, and sends the paste keys after its last check. */
+export const insertionReplyGrace = 500;
 /** The paste history a triple tap shows (ADR-DESK-043): the texts dictation and agent mode pasted, or
  * copied when they could not paste, the newest first, at most this many. In memory only, for the
  * app's life: no user content is saved. */

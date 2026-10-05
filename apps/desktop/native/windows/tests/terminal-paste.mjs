@@ -62,7 +62,7 @@ try {
     stage = name;
     received = "";
     assert.deepEqual(await request("frontmostApp"), target, "focus must not move");
-    await request("insert", { ...target, text, restoreDelay: 300, deadline: Date.now() + 3000 });
+    await request("insert", { ...target, text, deadline: Date.now() + 3000 });
     const until = Date.now() + 1000;
     while (received.length < text.length && Date.now() < until) await pause(10);
     assert.ok(received === text, "terminal receives exactly the synthetic payload");

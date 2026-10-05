@@ -3,7 +3,6 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
 #include <gio/gio.h>
-#include <gio/gunixinputstream.h>
 #include <gio/gunixoutputstream.h>
 #include "accessibility.h"
 #include "output.h"
@@ -25,7 +24,7 @@ public:
     using Completion = std::function<void(bool)>;
     using Bytes = std::shared_ptr<const std::vector<unsigned char>>;
     using Offer = std::map<std::string, Bytes>;
-    struct Selection { uint64_t epoch = 0; bool known = false, ours = false; std::vector<std::string> formats; };
+    struct Selection { bool ours = false; };
     struct State : std::enable_shared_from_this<State> {
         static constexpr const char* service = "org.freedesktop.portal.Desktop";
         static constexpr const char* desktop = "/org/freedesktop/portal/desktop";
@@ -122,27 +121,8 @@ public:
                         if (self->session != path) return;
                         auto formats = variant(g_variant_lookup_value(dictionary, "mime_types", G_VARIANT_TYPE_STRING_ARRAY));
                         gboolean ours = false;
-                        // GNOME emits an empty dictionary when the owner clears
-                        // the selection. This explicit event proves emptiness;
-                        // silence at session startup does not. Malformed events
-                        // invalidate stale ownership rather than preserving it.
-                        const bool cleared = g_variant_n_children(dictionary) == 0;
-                        const bool valid = formats && g_variant_lookup(dictionary, "session_is_owner", "b", &ours);
-                        self->selection.known = cleared || valid;
-                        self->selection.ours = valid && ours;
-                        ++self->selection.epoch;
-                        self->selection.formats.clear();
-                        if (valid) {
-                            GVariantIter iterator; const gchar* format = nullptr;
-                            g_variant_iter_init(&iterator, formats.get());
-                            while (g_variant_iter_next(&iterator, "&s", &format)) {
-                                if (self->selection.formats.size() >= 64 || strlen(format) > 256) {
-                                    self->selection.known = false; self->selection.ours = false;
-                                    self->selection.formats.clear(); break;
-                                }
-                                self->selection.formats.emplace_back(format);
-                            }
-                        }
+                        // Malformed events invalidate stale ownership rather than preserving it.
+                        self->selection.ours = formats && g_variant_lookup(dictionary, "session_is_owner", "b", &ours) && ours;
                         if (!self->selection.ours) self->offer.clear();
                         if (self->onOwnerChange) self->onOwnerChange();
                     } else if (std::string(signal) == "SelectionTransfer") {
@@ -218,46 +198,7 @@ public:
                 });
         }
         // Asynchronous stream lifetime owns its FD. Never block the GLib event loop
-        // while another clipboard owner produces data or an app requests our offer.
-        void read(const std::string& mime, GCancellable* cancel, std::function<void(Bytes)> done) {
-            // Mutter refuses SelectionRead when this session owns the selection.
-            // Restoration makes us the owner; its immutable bytes are already here.
-            if (selection.known && selection.ours) {
-                const auto found = offer.find(mime);
-                done((cancel && g_cancellable_is_cancelled(cancel)) || found == offer.end() ? Bytes{} : found->second);
-                return;
-            }
-            auto self = shared_from_this();
-            auto cancellation = own(cancel ? G_CANCELLABLE(g_object_ref(cancel)) : g_cancellable_new());
-            call(desktop, clipboard, "SelectionRead", g_variant_new("(os)", session.c_str(), mime.c_str()), cancellation.get(),
-                [self, cancellation, done = std::move(done)](Variant result, Object<GUnixFDList> fds) mutable {
-                    gint handle = -1; Error error;
-                    if (!result || !fds || !g_variant_is_of_type(result.get(), G_VARIANT_TYPE("(h)"))) { done({}); return; }
-                    g_variant_get(result.get(), "(h)", &handle);
-                    const int fd = g_unix_fd_list_get(fds.get(), handle, &error.value);
-                    if (fd < 0 || error.value) { done({}); return; }
-                    struct Read : std::enable_shared_from_this<Read> {
-                        Object<GInputStream> stream; Object<GCancellable> cancel;
-                        std::vector<unsigned char> bytes; std::function<void(Bytes)> done;
-                        void next() {
-                            g_input_stream_read_bytes_async(stream.get(), 65536, G_PRIORITY_DEFAULT, cancel.get(),
-                                [](GObject* stream, GAsyncResult* result, gpointer data) {
-                                    std::unique_ptr<std::shared_ptr<Read>> holder(static_cast<std::shared_ptr<Read>*>(data));
-                                    auto self = *holder; Error error;
-                                    GBytes* chunk = g_input_stream_read_bytes_finish(G_INPUT_STREAM(stream), result, &error.value);
-                                    if (!chunk) { self->done({}); return; }
-                                    gsize size = 0; const auto bytes = static_cast<const unsigned char*>(g_bytes_get_data(chunk, &size));
-                                    if (size > 64 * 1024 * 1024 - self->bytes.size()) { g_bytes_unref(chunk); self->done({}); return; }
-                                    if (size) self->bytes.insert(self->bytes.end(), bytes, bytes + size);
-                                    g_bytes_unref(chunk);
-                                    if (size) self->next(); else self->done(std::make_shared<const std::vector<unsigned char>>(std::move(self->bytes)));
-                                }, new std::shared_ptr<Read>(shared_from_this()));
-                        }
-                    };
-                    auto reader = std::make_shared<Read>();
-                    reader->stream = own(g_unix_input_stream_new(fd, true)); reader->cancel = cancellation; reader->done = std::move(done); reader->next();
-                });
-        }
+        // while an app requests our offer.
         void publish(Offer bytes, GCancellable* cancel, Completion done) {
             GVariantBuilder dictionary; g_variant_builder_init(&dictionary, G_VARIANT_TYPE_VARDICT);
             std::vector<const char*> formats;

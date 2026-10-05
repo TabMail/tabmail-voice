@@ -137,7 +137,7 @@ describe("helper wire contract", () => {
     expect(await mac.frontmostApp()).toBe(321);
 
     expect(calls).toEqual([
-      { method: "insert", params: { text: "some text", restoreDelay: config.clipboardRestoreDelay / 1000 }, timeout: config.helperRequestTimeout + config.clipboardRestoreDelay },
+      { method: "insert", params: { text: "some text" }, timeout: config.helperRequestTimeout },
       { method: "frontmostApp", params: undefined, timeout: undefined },
     ]);
   });

@@ -654,7 +654,7 @@ describe("main process wiring", () => {
     expect(app.prewarms).toBe(2);
     await app.paste?.("Synthetic text", signal, 101);
     expect(helper?.requests.find((request) => request.method === "insert")).toMatchObject({
-      params: { text: "Synthetic text", window: 101, restoreDelay: config.clipboardRestoreDelay }, signal,
+      params: { text: "Synthetic text", window: 101, deadline: expect.any(Number) }, signal,
     });
     expect(helper?.requests.map((request) => request.method)).not.toContain("startActivator");
     expect(app.helpers.get("voice-macos")?.requests).toEqual([]);
@@ -2095,7 +2095,7 @@ test("outside GNOME, Linux offers F8 and F9, with Shift for agent mode", async (
     expect(settings.hotkey).toBe("F8");
     expect(settings.keyboardPermission.agentShortcut).toBe("Shift+F8");
     expect(settings.keyboardPermission.instructions).toBe("Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.");
-    expect(settings.keyboardPermission).toMatchObject({ description: "Allows the dictation shortcut, pasting, and clipboard restoration." });
+    expect(settings.keyboardPermission).toMatchObject({ description: "Allows the dictation shortcut and pasting." });
     expect(app.helpers.get("voice-hotkey")!.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "F8" }) }));
   } finally {
     vi.unstubAllEnvs();
@@ -2127,7 +2127,7 @@ test("GNOME activation, readiness hints and recording ownership are wired to the
     expect(hotkey.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "rightAlt" }) }));
     const keyboard = () => (state("welcome") as { keyboardPermission: { agentShortcut?: string; description: string; instructions: string } }).keyboardPermission;
     expect(keyboard().agentShortcut).toBeUndefined();
-    expect(keyboard().description).toBe("Turns on GNOME integration and allows the dictation key, pasting, and clipboard restoration.");
+    expect(keyboard().description).toBe("Turns on GNOME integration and allows the dictation key and pasting.");
     expect(keyboard().instructions).toBe("This turns on GNOME integration; then allow keyboard interaction in the next system prompt.");
     // F8 or F9 on GNOME is the portal's shortcut, which has its own approval.
     await send({ type: "setHotkey", hotkey: "F8" });
