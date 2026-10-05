@@ -121,9 +121,9 @@ describe("helper wire contract", () => {
     }
   });
 
-  /** Values, not only names: the paste's text and its restore delay in the seconds the helper reads,
-   * and the frontmost app's process as the helper answers it. */
-  test("a paste carries its text and a restore delay in seconds, and the frontmost app's reply keeps its process", async () => {
+  /** Values, not only names: the paste carries its text and nothing else (no restore delay), and the
+   * frontmost app's reply keeps its process as the helper answers it. */
+  test("a paste carries only its text, and the frontmost app's reply keeps its process", async () => {
     const calls: { method: string; params: unknown; timeout: unknown }[] = [];
     const helper = {
       request: async (method: string, params?: unknown, timeout?: unknown) => {

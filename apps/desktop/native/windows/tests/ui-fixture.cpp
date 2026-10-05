@@ -31,6 +31,15 @@ bool helperReading() {
     const std::wstring name(path, size), helper = L"\\voice-windows.exe";
     return named && name.size() > helper.size() && _wcsicmp(name.c_str() + name.size() - helper.size(), helper.c_str()) == 0;
 }
+// Another program (clipboard history, a VM's clipboard agent) may hold the clipboard open for a moment
+// after it changes: try for up to a second before failing the fixture.
+bool openClipboard(HWND window) {
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        if (OpenClipboard(window)) return true;
+        Sleep(10);
+    }
+    return false;
+}
 void ready(HWND window, const char* mode) {
     std::cout << nlohmann::json({{"window", reinterpret_cast<uintptr_t>(window)}, {"mode", mode}}).dump() << '\n' << std::flush;
 }
@@ -48,7 +57,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
         if (!original) ExitProcess(2); // Read-only accessibility fixtures never use the clipboard.
         if (value == 7) {
             delayedFormat = RegisterClipboardFormatW(L"TabMailVoiceSyntheticDelayed");
-            if (!delayedFormat || !OpenClipboard(window) || !EmptyClipboard()) ExitProcess(1);
+            if (!delayedFormat || !openClipboard(window) || !EmptyClipboard()) ExitProcess(1);
             const std::wstring text = L"Synthetic delayed clipboard";
             voice::ClipboardItem content(CF_UNICODETEXT, voice::memoryCopy(text.c_str(), (text.size() + 1) * sizeof(wchar_t)));
             content.publish();
@@ -59,7 +68,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
         } else if (value == 9) {
             std::cout << nlohmann::json({{"command", "asked"}, {"helper", helperAsked}}).dump() << '\n' << std::flush;
         } else if (value == 1 || value == 2) {
-            if (!OpenClipboard(window)) ExitProcess(1);
+            if (!openClipboard(window)) ExitProcess(1);
             if (!EmptyClipboard()) ExitProcess(1);
             const std::wstring text = value == 1 ? L"Synthetic clipboard original" : L"Synthetic newer copy";
             voice::ClipboardItem content(CF_UNICODETEXT, voice::memoryCopy(text.c_str(), (text.size() + 1) * sizeof(wchar_t)));
@@ -73,7 +82,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
             wchar_t text[2048]{}; GetWindowTextW(edit, text, 2048);
             std::cout << nlohmann::json({{"command", "value"}, {"text", voice::utf8(text)}}).dump() << '\n' << std::flush;
         } else if (value == 5 || value == 6) {
-            if (value == 5 && !OpenClipboard(window)) ExitProcess(1);
+            if (value == 5 && !openClipboard(window)) ExitProcess(1);
             if (value == 6) CloseClipboard();
             std::cout << nlohmann::json({{"command", value == 5 ? "lock" : "unlock"}}).dump() << '\n' << std::flush;
         } else if (value == 4) {

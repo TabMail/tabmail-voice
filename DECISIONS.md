@@ -60,8 +60,9 @@ back afterwards was the only reason any helper read it, and the read was what fa
 app that owns the clipboard for every item's data, which a busy app (or a VM's clipboard agent)
 hands over late, so on the Mac a paste sometimes timed out ("Something went wrong") and worked when
 tried again, and Windows and Ubuntu bounded the wait and typed the text or pasted without restoring.
-Now every helper writes the text (still marked transient, concealed and out of clipboard history and
-the cloud), sends the paste keys, and is done: `TextInserter` on the Mac, `Clipboard::putText` and
+Now every helper writes the text, marked as before (transient and concealed on the Mac, which does not
+keep it off Universal Clipboard; out of clipboard history and the cloud on Windows; plain text on
+Ubuntu), sends the paste keys, and is done: `TextInserter` on the Mac, `Clipboard::putText` and
 `paste` on Windows, `Inserter` on Ubuntu. There is no restore delay on the wire (`insert {text}` on
 the Mac; `{text, window, deadline}` on Windows and Ubuntu, waited for `insertionReplyGrace` past the
 deadline), no save on a thread of its own, no typed fallback, and Ubuntu no longer refuses a paste
@@ -70,8 +71,10 @@ this session owns the selection, and a copy landing between the publish and the 
 Consequences: after a dictation the clipboard holds the dictated text, and what the user had copied
 before is gone, as it already was for an unpasted dictation (ADR-DESK-042). The lazy-reader hazard
 above is gone with the restore. On Windows a clipboard another program holds open for longer than
-the helper's 500 ms open wait still cannot be written, and that paste fails. The tests keep the test
-machine's clipboard as they found it (`SavedClipboard` in the Windows fixtures); the helpers never do.
+the helper's 500 ms open wait still cannot be written, and that paste fails. The Windows paste and
+privacy fixtures keep the test machine's clipboard as they found it (`SavedClipboard`); `electron.mjs`
+and `terminal-paste.mjs` leave their synthetic text on the test VM's clipboard. The helpers never put
+anything back.
 
 ## ADR-DESK-003: Not sandboxed; Developer ID distribution
 

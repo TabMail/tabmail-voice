@@ -67,7 +67,8 @@ try {
   }, "seeded clipboard contains both formats before insertion");
   const pasted = await request("insert", params()).result;
   assert.equal(pasted.error, undefined, "native insertion succeeds");
-  assert.equal((await command("value")).text, "Before Synthetic inserted text after.");
+  // The helper answers once the paste keys are sent; the field takes the paste when it handles them.
+  await until("the text is pasted", "Before Synthetic inserted text after.");
   // The clipboard is written, never put back: the text stays, kept out of history and the cloud.
   assert.deepEqual(await command("clipboard"), pastedClipboard, "the text stays on the clipboard, marked private");
   for (const mode of ["password"]) {

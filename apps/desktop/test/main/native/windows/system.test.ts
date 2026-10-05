@@ -41,7 +41,7 @@ test("missing or malformed caret geometry does not reach Electron", async () => 
   expect(mocks.convert).not.toHaveBeenCalled();
 });
 
-test("paste carries the original target, deadline, restore delay and cancellation", async () => {
+test("paste carries the original target, deadline and cancellation, and no restore delay", async () => {
   const operation = new AbortController();
   mocks.request.mockResolvedValue({});
   const before = Date.now();
