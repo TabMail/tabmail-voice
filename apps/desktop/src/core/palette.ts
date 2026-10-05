@@ -91,6 +91,11 @@ export const palette = {
    * from eight colors tried). */
   agentPillGlowInner: "#FF2D55",
   agentPillGlowOuter: "#FF006E",
+  /** The user's words in the chat window: one flat pale blue from the brand's hue, with a hairline
+   * border a shade deeper (owner, 2026-10-04: one flat color, not a gradient; gray "looks bad",
+   * 2026-09-28). */
+  chatRequestFill: "#E8F0FE",
+  chatRequestBorder: "#C6DAFC",
   /** The overlay's tips and a bubble's tooltip: dark glass with white text, its keycaps a lighter
    * glass. */
   tip: {

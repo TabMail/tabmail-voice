@@ -480,8 +480,8 @@ function ConfirmationCard({ question, expiresAt }: { question: string; expiresAt
   );
 }
 
-/** The user's words on the right, laid out as Thunderbird's chat shows them, in a light tint of the
- * brand's gradient with a hairline border (owner, 2026-09-28: a gray one "looks bad"). */
+/** The user's words on the right, laid out as Thunderbird's chat shows them, in one flat pale blue
+ * with a hairline border (`palette.chatRequestFill`). */
 function RequestBubble({ text }: { text: string }) {
   return (
     <div
@@ -492,8 +492,8 @@ function RequestBubble({ text }: { text: string }) {
         padding: `${config.chatBubblePadding}px ${config.chatBubblePadding + 2}px`,
         borderRadius: config.chatBubbleCornerRadius,
         maxWidth: config.chatWidth * config.chatRequestMaxWidthFraction,
-        background: `linear-gradient(to right, ${brandColor(0, config.chatRequestFillOpacity)}, ${brandColor(1, config.chatRequestFillOpacity)})`,
-        border: `${config.pillBorderWidth}px solid ${brandColor(0.5, config.chatRequestBorderOpacity)}`,
+        background: palette.chatRequestFill,
+        border: `${config.pillBorderWidth}px solid ${palette.chatRequestBorder}`,
       }}
     >
       {text}

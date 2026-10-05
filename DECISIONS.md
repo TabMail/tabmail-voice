@@ -2165,7 +2165,9 @@ the stream was read whole and named its tools only in development builds.
   `chatRevealRise`, the newest kept in view unless the user scrolled up. Line height and paragraph
   spacing are Thunderbird's (`chatLineHeight`, `chatParagraphSpacing`). The request sits on the right
   at most `chatRequestMaxWidthFraction` of the width, as there, but in a light tint of the brand's
-  gradient with a hairline brand border rather than gray. While a request waits with nothing else
+  gradient with a hairline brand border rather than gray. (Amendment 2026-10-05: one flat pale blue,
+  `palette.chatRequestFill`, with a hairline `chatRequestBorder`, not a gradient; owner: a single flat
+  color, chosen professionally.) While a request waits with nothing else
   to show, the window says `chatThinkingLabel`.
 - **Settings** lists the tools and apps together alphabetically (`alphabetical`). The welcome
   wizard keeps its own order.
