@@ -73,7 +73,7 @@ struct TerminalEndpointBoundsTests {
         #expect(provider.forbidden.isEmpty)
         let captured = try #require(result)
         #expect(captured.source["runs"]?.array?.compactMap { $0["text"]?.string } == ["ab", "cd", "ef"])
-        #expect(provider.reads == allowed + allowed)
+        #expect(provider.reads == allowed)
         var context = ScreenContext(appName: "Synthetic Terminal", bundleID: "example.terminal")
         try TerminalViewportReader.finish(["complete": true, "focusedSurface": 0,
             "caret": captured.caret, "surfaces": .array([captured.source])], into: &context)
@@ -88,7 +88,7 @@ struct TerminalEndpointBoundsTests {
             clip: CGRect(x: 20, y: 0, width: 10, height: 30), focused: true,
             startKnown: false, endKnown: false, valid: { true }))
         #expect(captured.source["runs"]?.array?.compactMap { $0["text"]?.string } == ["C", "D"])
-        #expect(provider.reads == allowed + allowed)
+        #expect(provider.reads == allowed)
         #expect(provider.forbidden.isEmpty)
     }
 }

@@ -26,16 +26,17 @@ struct TerminalViewportReaderTests {
             return text.substring(with: $0) as NSString
         }, valid: { true })
         #expect(result?.texts == ["Visible", "Other"])
-        #expect(reads == ranges + ranges)
+        #expect(reads == ranges)
     }
-    @Test func rejectsSameLengthMutationAndPrivacyInvalidation() {
+    @Test func keepsTheFirstReadAndRefusesOnPrivacyInvalidation() {
         var reads = 0
         let range = NSRange(location: 40, length: 3)
-        let changed = TerminalViewportReader.capture(ranges: [range], count: 100, unitBudget: 3, read: { _ in
+        let changing = TerminalViewportReader.capture(ranges: [range], count: 100, unitBudget: 3, read: { _ in
             reads += 1
             return reads == 1 ? "old" : "new"
         }, valid: { true })
-        #expect(changed == nil)
+        #expect(changing?.texts == ["old"])
+        #expect(reads == 1)
         reads = 0
         let hidden = TerminalViewportReader.capture(ranges: [range], count: 100, unitBudget: 3, read: { _ in reads += 1; return "old" }, valid: { false })
         #expect(hidden == nil)
@@ -157,7 +158,6 @@ private final class TerminalAXFixture {
     var reads: [NSRange] = []
     var forbidden: [String] = []
     var afterRead: (() -> Void)?
-    var changeOnRepeat = false
     var text: NSString { lines.joined() as NSString }
     var ranges: [NSRange] {
         var start = 0
@@ -202,7 +202,7 @@ private final class TerminalAXFixture {
                 reads.append(range)
                 let result = text.substring(with: range)
                 afterRead?()
-                return (changeOnRepeat && reads.count > 1 ? String(repeating: "x", count: range.length) : result) as NSString
+                return result as NSString
             default: forbidden.append(name); return nil
             }
         }, bounds: { [self] range in
@@ -247,7 +247,7 @@ struct TerminalAXAdapterTests {
     }
 
 
-    @Test func countOrSelectionMutationDuringCaptureRejectsTheResult() {
+    @Test func countOrSelectionMutationDuringCaptureKeepsTheKeyDownText() {
         for changeCount in [true, false] {
             let provider = TerminalAXFixture()
             let source = provider.source
@@ -261,10 +261,10 @@ struct TerminalAXAdapterTests {
                 }
                 return source.attribute(name)
             }, parameter: source.parameter, bounds: source.bounds)
-            #expect(TerminalViewportReader.surface(changed, id: 0,
+            let result = TerminalViewportReader.surface(changed, id: 0,
                 clip: CGRect(x: 0, y: 10, width: 400, height: 20), focused: true,
-                startKnown: false, endKnown: false, valid: { true }) == nil)
-            #expect(!provider.reads.isEmpty)
+                startKnown: false, endKnown: false, valid: { true })
+            #expect(result?.source["runs"]?.array?.compactMap { $0["text"]?.string }.joined() == "> hello world\nstatus bar\n")
             #expect(provider.forbidden.isEmpty)
         }
     }
@@ -310,7 +310,7 @@ struct TerminalAXAdapterTests {
         #expect(wire["renderedText"]?.string == "[Terminal surface 0]\n> hello world\nstatus bar\n")
         #expect(wire["terminalViewport"]?["caret"]?["status"]?.string == "exact")
         #expect(wire["terminalViewport"]?["caret"]?["offset"]?.integer == 7)
-        #expect(provider.reads == [NSRange(location: 8, length: 25), NSRange(location: 8, length: 25)])
+        #expect(provider.reads == [NSRange(location: 8, length: 25)])
         #expect(provider.forbidden.isEmpty)
     }
 
@@ -351,13 +351,10 @@ struct TerminalAXAdapterTests {
         #expect(provider.forbidden.isEmpty)
     }
 
-    @Test func sourceMutationRefusesAndUnfocusedSurfaceCannotClaimCaret() throws {
+    @Test func unfocusedSurfaceCannotClaimCaret() throws {
         let provider = TerminalAXFixture()
         let unfocused = try #require(provider.capture(focused: false))
         #expect(unfocused.caret["status"]?.string == "unavailable")
-        provider.reads = []
-        provider.changeOnRepeat = true
-        #expect(provider.capture() == nil)
         #expect(provider.forbidden.isEmpty)
     }
 }
@@ -413,7 +410,7 @@ struct TerminalCollectorTests {
             if let bundleID, HelperConfig.terminalBundleIDs.contains(bundleID) {
                 #expect(context.terminalViewport?["caret"]?["offset"]?.integer == 7)
                 #expect(context.json["renderedText"]?.string == "[Terminal surface 0]\n> hello world\nstatus bar\n")
-                #expect(tree.acquisitions.count == 2 && tree.genericReads == 0)
+                #expect(tree.acquisitions.count == 1 && tree.genericReads == 0)
             } else {
                 #expect(context.terminalViewport == nil)
                 #expect(tree.acquisitions.isEmpty && tree.genericReads > 0)
@@ -437,7 +434,7 @@ struct TerminalCollectorTests {
         #expect(wire["terminalViewport"]?["caret"]?["offset"]?.integer == 7)
         #expect(wire["renderedText"]?.string == "[Terminal surface 0]\n> hello world\nstatus bar\n\n[Terminal surface 1]\n> hello world\nstatus bar\n")
         #expect(!tree.acquisitions.contains { $0 === hidden })
-        #expect(tree.acquisitions.count == 4) // Capture and final revalidation of both surfaces.
+        #expect(tree.acquisitions.count == 2) // One capture of each surface.
         #expect(tree.genericReads == 0 && a.forbidden.isEmpty && b.forbidden.isEmpty)
     }
 
@@ -479,7 +476,7 @@ struct TerminalCollectorTests {
         tree.providers[ObjectIdentifier(selected)] = TerminalAXFixture()
         let context = try #require(tree.read(window, focused: selected, path: [tab, window]))
         #expect(context.terminalViewport?["complete"]?.bool == true)
-        #expect(tree.acquisitions.count == 2 && tree.acquisitions.allSatisfy { $0 === selected })
+        #expect(tree.acquisitions.count == 1 && tree.acquisitions.allSatisfy { $0 === selected })
         #expect(hidden.textReads == 0 && tree.genericReads == 0)
     }
 
@@ -493,7 +490,7 @@ struct TerminalCollectorTests {
         let context = try #require(tree.read(window, focused: surface, path: [clipped, window]))
         #expect(context.json["renderedText"]?.string == "[Terminal surface 0]\nstatus bar\n")
         #expect(context.terminalViewport?["caret"]?["status"]?.string == "outsideViewport")
-        #expect(provider.reads.count == 4 && provider.reads.allSatisfy { $0 == NSRange(location: 22, length: 11) })
+        #expect(provider.reads == [NSRange(location: 22, length: 11)])
         #expect(provider.forbidden.isEmpty && tree.genericReads == 0)
     }
 
@@ -511,17 +508,18 @@ struct TerminalSnapshotInvariantTests {
         #expect(context.terminalViewport?["surfaces"]?.array?.count == 2)
         #expect(context.terminalViewport?["caret"]?["surface"]?.integer == 0)
         #expect(context.terminalViewport?["caret"]?["offset"]?.integer == 7)
-        #expect(tree.acquisitions.count == 4)
+        #expect(tree.acquisitions.count == 2)
         #expect(a.forbidden.isEmpty && b.forbidden.isEmpty)
     }
-    @Test func finalSourceMutationCannotPublishOldCapture() {
+    @Test func aChangeAfterTheReadKeepsTheKeyDownText() throws {
         let surface=FakeElement("AXTextArea",frame:CGRect(x:0,y:10,width:400,height:20))
         let window=FakeElement("AXWindow",frame:surface.frame,children:[surface])
         let tree=TerminalCollectorFixture(), provider=TerminalAXFixture()
         tree.providers[ObjectIdentifier(surface)]=provider
-        tree.onAcquire={ if tree.acquisitions.count == 2 { provider.lines[1]="> jello world\n" } }
-        #expect(tree.read(window,focused:surface,path:[window]) == nil)
-        #expect(tree.acquisitions.count == 2 && provider.reads.count == 4)
+        provider.afterRead={ provider.lines[1]="> jello world\n" }
+        let context=try #require(tree.read(window,focused:surface,path:[window]))
+        #expect(context.json["renderedText"]?.string == "[Terminal surface 0]\n> hello world\nstatus bar\n")
+        #expect(tree.acquisitions.count == 1 && provider.reads.count == 1)
         #expect(provider.forbidden.isEmpty)
     }
     @Test func contradictoryInsertionLineCannotPublishExactCaret() throws {
@@ -575,7 +573,7 @@ struct TerminalFocusedSelectionTests {
             #expect(context.terminalViewport?["surfaces"]?.array?.count == 2)
             #expect(context.selectedText == (focusedFirst ? "hello" : "world"))
             #expect(context.terminalViewport?["selectionComplete"]?.bool == true)
-            #expect(tree.acquisitions.count == 4 && tree.genericReads == 0)
+            #expect(tree.acquisitions.count == 2 && tree.genericReads == 0)
             #expect(a.forbidden.isEmpty && b.forbidden.isEmpty)
         }
     }
@@ -594,7 +592,7 @@ struct TerminalAcquisitionInvariantTests {
         let result = try #require(capture(provider.source, clip: partialClip))
         #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string } == ["> h", "sta"])
         let expected = [NSRange(location: 8, length: 3), NSRange(location: 22, length: 3)]
-        #expect(provider.reads == expected + expected)
+        #expect(provider.reads == expected)
         #expect(provider.forbidden.isEmpty)
     }
 
@@ -635,86 +633,34 @@ struct TerminalAcquisitionInvariantTests {
             read: { reads.append($0); return "\n" }, valid: { true })
         #expect(ranges == [range])
         #expect(result?.texts == ["\n"])
-        #expect(reads == [range, range])
+        #expect(reads == [range])
     }
 
-    @Test func countChangeAfterGeometryCannotReadNowHiddenOffsets() {
-        let provider = TerminalAXFixture(), original = provider.source
-        var counts = 0
-        let source = TerminalViewportReader.Source(attribute: { name in
-            if name == kAXNumberOfCharactersAttribute {
-                counts += 1
-                if counts == 2 { provider.lines = [provider.lines[0] + provider.lines[1] + provider.lines[2], "> new prompt\n", "new status\n", "hidden\n"] }
-            }
-            return original.attribute(name)
-        }, parameter: original.parameter, bounds: original.bounds)
-        #expect(capture(source, clip: CGRect(x: 10, y: 10, width: 20, height: 20)) == nil)
-        #expect(counts >= 2)
-        #expect(provider.reads.isEmpty && provider.forbidden.isEmpty)
-    }
-
-    @Test func countChangeBetweenFragmentsCannotReadNowHiddenOffsets() {
-        let provider = TerminalAXFixture(), original = provider.source
-        var changed = false
-        let source = TerminalViewportReader.Source(attribute: original.attribute, parameter: { name, argument in
-            let response = original.parameter(name, argument)
-            if name == kAXStringForRangeParameterizedAttribute && !changed {
-                changed = true
-                provider.lines = [provider.lines[0] + provider.lines[1] + provider.lines[2], "> new prompt\n", "new status\n", "hidden\n"]
-            }
-            return response
-        }, bounds: original.bounds)
-        #expect(capture(source, clip: CGRect(x: 10, y: 10, width: 20, height: 20)) == nil)
-        #expect(changed)
-        #expect(provider.reads == [NSRange(location: 9, length: 2)])
-        #expect(provider.forbidden.isEmpty)
-    }
-
-    @Test func finalCountChangeCannotPublishAnOldCapture() {
+    // Output or a selection change during the read leaves the text and caret as at key-down
+    // (owner, 2026-10-05): a stale screen is kept, rather than none.
+    @Test func outputDuringTheReadKeepsTheKeyDownText() throws {
         let provider = TerminalAXFixture(), original = provider.source
         var changed = false
         let source = TerminalViewportReader.Source(attribute: { name in
             if name == kAXInsertionPointLineNumberAttribute { provider.lines[3] += "x"; changed = true }
             return original.attribute(name)
         }, parameter: original.parameter, bounds: original.bounds)
-        #expect(capture(source, clip: CGRect(x: 0, y: 10, width: 400, height: 20)) == nil)
-        #expect(changed && provider.reads.count == 2)
+        let result = try #require(capture(source, clip: CGRect(x: 0, y: 10, width: 400, height: 20)))
+        #expect(result.source["runs"]?.array?.compactMap { $0["text"]?.string }.joined() == "> hello world\nstatus bar\n")
+        #expect(changed && provider.reads.count == 1)
         #expect(provider.forbidden.isEmpty)
     }
 
-    @Test func finalSelectionChangeCannotPublishAnOldCaret() {
+    @Test func aSelectionChangeDuringTheReadKeepsTheKeyDownCaret() throws {
         let provider = TerminalAXFixture(), original = provider.source
         var changed = false
         let source = TerminalViewportReader.Source(attribute: { name in
             if name == kAXInsertionPointLineNumberAttribute { provider.selection = NSRange(location: 16, length: 0); changed = true }
             return original.attribute(name)
         }, parameter: original.parameter, bounds: original.bounds)
-        #expect(capture(source, clip: CGRect(x: 0, y: 10, width: 400, height: 20)) == nil)
-        #expect(changed && provider.reads.count == 2)
-        #expect(provider.forbidden.isEmpty)
-    }
-}
-
-
-struct TerminalCollectorAcquisitionInvariantTests {
-    @Test func outputGrowthBetweenFragmentsCannotAcquireHiddenHistory() throws {
-        let surface = FakeElement("AXTextArea", frame: CGRect(x: 10, y: 10, width: 20, height: 20))
-        let window = FakeElement("AXWindow", frame: surface.frame, children: [surface])
-        let tree = TerminalCollectorFixture(), provider = TerminalAXFixture()
-        tree.providers[ObjectIdentifier(surface)] = provider
-        var advanced = false
-        provider.afterRead = {
-            if !advanced {
-                advanced = true
-                provider.lines = [provider.lines[0] + provider.lines[1] + provider.lines[2], "> new prompt\n", "new status\n", "hidden\n"]
-            }
-        }
-        let result = try #require(tree.read(window, focused: surface, path: [window]))
-        #expect(advanced)
-        #expect(tree.acquisitions.count == 1)
-        #expect(result.terminalViewport?["complete"]?.bool == false)
-        #expect(result.terminalViewport?["surfaces"]?.array?.isEmpty == true)
-        #expect(provider.reads == [NSRange(location: 8, length: 2)])
+        let result = try #require(capture(source, clip: CGRect(x: 0, y: 10, width: 400, height: 20)))
+        #expect(result.caret["offset"]?.integer == 7)
+        #expect(changed && provider.reads.count == 1)
         #expect(provider.forbidden.isEmpty)
     }
 }
