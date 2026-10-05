@@ -30,14 +30,18 @@ describe("menu", () => {
     expect(statusLine({ ...ready, accessibilityTrusted: false })).toBe("Setup needed");
   });
 
-  /** Check for Updates can be clicked only while nothing is under way; Restart to Update once an
-   * update is downloaded (ADR-DESK-041). */
-  test.each<[UpdateState, string, boolean]>([
-    [{ kind: "idle" }, "Check for Updates…", true],
-    [{ kind: "checking" }, "Checking for Updates…", false],
-    [{ kind: "downloading", version: "1.2.3" }, "Downloading Version 1.2.3…", false],
-    [{ kind: "ready", version: "1.2.3" }, "Restart to Update to Version 1.2.3", true],
-  ])("update %j: the menu item says %s, enabled %s", (update, label, enabled) => {
-    expect(updateItem(update)).toEqual({ label, enabled });
+  /** Check for Updates can be clicked only while nothing is under way; Restart to Update (or, where
+   * an administrator installs it, Install) once an update is ready; Retry after a failure, which
+   * checks again (ADR-DESK-041, ADR-DESK-050). */
+  test.each<[UpdateState, string, boolean, boolean]>([
+    [{ kind: "idle" }, "Check for Updates…", true, false],
+    [{ kind: "checking" }, "Checking for Updates…", false, false],
+    [{ kind: "downloading", version: "1.2.3" }, "Downloading Version 1.2.3…", false, false],
+    [{ kind: "ready", version: "1.2.3", installsOnQuit: true }, "Restart to Update to Version 1.2.3", true, true],
+    [{ kind: "ready", version: "1.2.3", installsOnQuit: false }, "Install Version 1.2.3…", true, true],
+    [{ kind: "installing", version: "1.2.3" }, "Installing Version 1.2.3…", false, false],
+    [{ kind: "failed", version: "1.2.3", message: "x" }, "Retry Update to Version 1.2.3", true, false],
+  ])("update %j: the menu item says %s, enabled %s, installs %s", (update, label, enabled, install) => {
+    expect(updateItem(update)).toEqual({ label, enabled, install });
   });
 });

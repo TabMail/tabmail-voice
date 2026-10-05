@@ -17,6 +17,7 @@
 #include "shell_watch.h"
 #include "paste.h"
 #include "accessibility_activator.h"
+#include "update_signature.h"
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -217,6 +218,7 @@ private:
 }
 int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--accessibility-activator") return voice::runAccessibilityActivator();
+    if (argc >= 2 && std::string(argv[1]) == "--verify-update") return voice::runVerifyUpdate();
     if (argc != 1) return 1;
     // Native geometry is in physical pixels; Electron converts it to display-independent points.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

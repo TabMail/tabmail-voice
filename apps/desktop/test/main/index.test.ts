@@ -62,14 +62,14 @@ const app = vi.hoisted(() => ({
   /** The full name `voice-macos` gives for the account; null for a reply without one. */
   fullName: null as string | null,
   /** The tray menu's actions and state, as the app gives them. */
-  trayActions: null as { showWelcome: () => void; checkForUpdates: () => void; restartToUpdate: () => void } | null,
+  trayActions: null as { showWelcome: () => void; checkForUpdates: () => void; installUpdate: () => void } | null,
   trayState: null as (() => { update: unknown }) | null,
   /** A packaged build, which updates itself (ADR-DESK-041); a debug build otherwise. */
   packaged: false,
   /** `app.getVersion()`. */
   version: "0.0.0",
   /** `electron-updater`'s `autoUpdater` as the app last got it. */
-  autoUpdater: null as (import("node:events").EventEmitter & { autoDownload: boolean; autoInstallOnAppQuit: boolean; logger: unknown; requestHeaders: Record<string, string> | null; checks: number; installs: number }) | null,
+  autoUpdater: null as (import("node:events").EventEmitter & { kind: string; autoDownload: boolean; autoInstallOnAppQuit: boolean; allowDowngrade: boolean; disableWebInstaller: boolean; verifyUpdateCodeSignature: unknown; logger: unknown; requestHeaders: Record<string, string> | null; checks: number; installs: number; installedWith: unknown[] }) | null,
   /** Electron's own `autoUpdater` (Squirrel.Mac) as the app last got it. */
   squirrel: null as import("node:events").EventEmitter | null,
   /** How often the app refreshed its tray menu. */
@@ -145,22 +145,45 @@ vi.mock("electron", async () => {
 vi.mock("electron-updater", async () => {
   const { EventEmitter } = await import("node:events");
   class FakeAutoUpdater extends EventEmitter {
+    kind = "mac";
     autoDownload = false;
     autoInstallOnAppQuit = false;
+    allowDowngrade = true;
+    disableWebInstaller = false;
+    verifyUpdateCodeSignature: unknown = "the library's";
     logger: unknown = "the console";
     requestHeaders: Record<string, string> | null = null;
     checks = 0;
     installs = 0;
+    installedWith: unknown[] = [];
     checkForUpdates() {
       this.checks += 1;
       return new Promise(() => {});
     }
-    quitAndInstall() {
+    quitAndInstall(...args: unknown[]) {
       this.installs += 1;
+      this.installedWith = args;
+    }
+  }
+  /** Windows' and Linux's updaters, which the app makes itself: the test reaches the last one made. */
+  class NsisUpdater extends FakeAutoUpdater {
+    constructor() {
+      super();
+      this.kind = "nsis";
+      app.autoUpdater = this;
+    }
+  }
+  class DebUpdater extends FakeAutoUpdater {
+    constructor() {
+      super();
+      this.kind = "deb";
+      app.autoUpdater = this;
     }
   }
   // A fresh one for each test's launch: the mocked module outlives `vi.resetModules`.
   return {
+    NsisUpdater,
+    DebUpdater,
     get autoUpdater() {
       app.autoUpdater ??= new FakeAutoUpdater();
       return app.autoUpdater;
@@ -354,7 +377,7 @@ vi.mock("../../src/main/overlayWindow.js", () => ({
 }));
 vi.mock("../../src/main/tray.js", () => ({
   TrayMenu: class {
-    constructor(_resources: string, state: () => { update: unknown }, actions: { showWelcome: () => void; checkForUpdates: () => void; restartToUpdate: () => void }) {
+    constructor(_resources: string, state: () => { update: unknown }, actions: { showWelcome: () => void; checkForUpdates: () => void; installUpdate: () => void }) {
       app.trayActions = actions;
       app.trayState = state;
     }
@@ -1394,29 +1417,71 @@ describe("main process wiring", () => {
     expect(app.stored.get("tip.longDictations.learned") === true).toBe(!tipShows);
   });
 
-  describe("updates (ADR-DESK-041)", () => {
+  describe("updates (ADR-DESK-041, ADR-DESK-050)", () => {
     /** A packaged build, launched with its resources where Electron puts them. */
-    async function launchPackaged(): Promise<void> {
+    async function launchPackaged(platform: NodeJS.Platform = "darwin", resources = "/nonexistent"): Promise<void> {
       app.packaged = true;
-      Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
-      await launch("darwin");
+      Object.defineProperty(process, "resourcesPath", { value: resources, configurable: true });
+      await launch(platform);
     }
-    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    /** Lets the update's proof finish, and the question it schedules be asked. */
+    const settle = async () => {
+      for (let turn = 0; turn < 3; turn++) await new Promise((resolve) => setImmediate(resolve));
+    };
     /** `electron-updater` has downloaded `version`, and macOS has accepted it. */
     function downloaded(version: string): void {
       app.autoUpdater?.emit("update-downloaded", { version });
       app.squirrel?.emit("update-downloaded");
     }
 
-    test.each(["win32", "linux"] as const)("a packaged %s build cannot use the Mac update feed or installer", async (platform) => {
-      app.packaged = true;
-      Object.defineProperty(process, "resourcesPath", { value: "/nonexistent", configurable: true });
-      await launch(platform);
+    /** Windows: the NSIS updater, its library's signature check replaced by the app's own, the
+     * installer quiet and the new version opened after it. */
+    test("a packaged Windows build updates through its own installer, proven by the app", async () => {
+      await launchPackaged("win32");
+      const updater = app.autoUpdater;
+
+      expect(updater?.kind).toBe("nsis");
+      expect(updater?.logger).toBeNull();
+      expect(updater?.disableWebInstaller).toBe(true);
+      expect(updater?.allowDowngrade).toBe(false);
+      expect(updater?.autoInstallOnAppQuit).toBe(true);
+      expect(updater?.requestHeaders).toEqual({ "x-user-staging-id": "none" });
+      expect(typeof updater?.verifyUpdateCodeSignature).toBe("function");
+      expect(app.trayState?.().update).toEqual({ kind: "idle" });
+
+      updater?.emit("update-available", { version: "9.9.9" });
+      updater?.emit("update-downloaded", { version: "9.9.9" });
+      await settle();
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+      expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready.", buttons: ["Restart Now", "Later"] })]);
+      app.trayActions?.installUpdate();
+      expect(updater?.installedWith).toEqual([true, true]);
+    });
+
+    /** Linux updates only once the package carries a key to check them with. */
+    test("a packaged Linux build without an update key doesn't update", async () => {
+      await launchPackaged("linux");
+
+      expect(app.autoUpdater).toBeNull();
       expect(app.trayState?.().update).toBeNull();
-      await send({ type: "checkForUpdates" });
-      expect(app.autoUpdater?.checks ?? 0).toBe(0);
-      await send({ type: "restartToUpdate" });
-      expect(app.autoUpdater?.installs ?? 0).toBe(0);
+    });
+
+    test("a packaged Linux build with an update key installs with an administrator, never at the quit", async () => {
+      const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
+      try {
+        mkdirSync(join(resources, "linux", "update-keys"), { recursive: true });
+        writeFileSync(join(resources, "linux", "update-keys", "release.pem"), "a public key");
+        await launchPackaged("linux", resources);
+        const updater = app.autoUpdater;
+
+        expect(updater?.kind).toBe("deb");
+        expect(updater?.logger).toBeNull();
+        expect(updater?.autoInstallOnAppQuit).toBe(false);
+        expect(updater?.allowDowngrade).toBe(false);
+        expect(app.trayState?.().update).toEqual({ kind: "idle" });
+      } finally {
+        rmSync(resources, { recursive: true, force: true });
+      }
     });
 
     test("a debug build has no updater and no update item", async () => {
@@ -1424,7 +1489,7 @@ describe("main process wiring", () => {
 
       expect(app.trayState?.().update).toBeNull();
       app.trayActions?.checkForUpdates();
-      app.trayActions?.restartToUpdate();
+      app.trayActions?.installUpdate();
     });
 
     test("a packaged build updates by itself, silently to the console, and shows it in the menu", async () => {
@@ -1466,7 +1531,7 @@ describe("main process wiring", () => {
 
       app.squirrel?.emit("update-downloaded");
       await settle();
-      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
       expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready." })]);
     });
 
@@ -1499,10 +1564,10 @@ describe("main process wiring", () => {
 
       downloaded("9.9.9");
       await settle();
-      expect(settingsUpdate()).toEqual({ kind: "ready", version: "9.9.9" });
-      expect(pushed).toContainEqual({ kind: "ready", version: "9.9.9" });
+      expect(settingsUpdate()).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
+      expect(pushed).toContainEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
       expect(app.autoUpdater?.installs).toBe(0);
-      await send({ type: "restartToUpdate" });
+      await send({ type: "installUpdate" });
       expect(app.autoUpdater?.installs).toBe(1);
     });
 
@@ -1527,7 +1592,7 @@ describe("main process wiring", () => {
       downloaded("9.9.9");
       await settle();
       expect(app.dialogs).toEqual([]);
-      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9" });
+      expect(app.trayState?.().update).toEqual({ kind: "ready", version: "9.9.9", installsOnQuit: true });
 
       // The dictation ends into the chat window: still not.
       controller.phase = { kind: "idle" };
@@ -1545,7 +1610,7 @@ describe("main process wiring", () => {
       expect(dialog.buttons[dialog.cancelId]).toBe("Later");
       // Answered Later: nothing installs until the quit, or the menu's Restart to Update.
       expect(updater?.installs).toBe(0);
-      app.trayActions?.restartToUpdate();
+      app.trayActions?.installUpdate();
       expect(updater?.installs).toBe(1);
     });
 

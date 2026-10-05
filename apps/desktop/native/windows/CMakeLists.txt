@@ -67,7 +67,7 @@ if(WIN32)
   add_executable(voice-hotkey src/hotkey.cpp)
   add_executable(voice-windows src/system.cpp)
   target_compile_definitions(voice-windows PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX SECURITY_WIN32)
-  target_link_libraries(voice-windows PRIVATE nlohmann_json::nlohmann_json user32 ole32 oleacc uuid crypt32 secur32 oleaut32 gdi32 advapi32 dwmapi icu voice-core)
+  target_link_libraries(voice-windows PRIVATE nlohmann_json::nlohmann_json user32 ole32 oleacc uuid crypt32 secur32 oleaut32 gdi32 advapi32 dwmapi wintrust version shell32 icu voice-core)
   target_compile_definitions(voice-hotkey PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
   target_link_libraries(voice-hotkey PRIVATE nlohmann_json::nlohmann_json user32 voice-core)
   if(BUILD_TESTING)
@@ -154,6 +154,10 @@ if(WIN32)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/system-protocol.mjs $<TARGET_FILE:voice-windows>)
     add_test(NAME voice-hotkey-protocol COMMAND ${NODE_EXECUTABLE}
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/protocol.mjs $<TARGET_FILE:voice-hotkey>)
+    # Node's own executable is a signed file every test machine has.
+    add_test(NAME voice-update-signature COMMAND ${NODE_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/update-signature.mjs $<TARGET_FILE:voice-windows>)
+    set_tests_properties(voice-update-signature PROPERTIES TIMEOUT 120)
     set(ELECTRON_EXECUTABLE "${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/electron/dist/electron.exe" CACHE FILEPATH "Electron executable for Windows integration tests")
     if(EXISTS "${ELECTRON_EXECUTABLE}")
       add_test(NAME voice-electron COMMAND "${ELECTRON_EXECUTABLE}"

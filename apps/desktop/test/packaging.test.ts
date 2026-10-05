@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
@@ -68,6 +68,29 @@ describe("the Mac app's packaging", () => {
     expect(builder.mac.target.map(({ target }) => target)).toContain("zip");
     // The name the release script uploads and the feed names.
     expect(builder.mac.artifactName).toBe("TabMail-Voice-${version}-${arch}.${ext}");
+  });
+
+  /** Windows and Linux read their own architecture's feed on the same CDN (ADR-DESK-050):
+   * electron-builder writes each build's `app-update.yml` with `${arch}` filled in, and the release
+   * uploads each architecture's installer and feed to its own folder. */
+  test("Windows and Linux update from their architecture's folder on cdn.tabmail.ai", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { publish: unknown; artifactName: string }; linux: { publish: unknown; artifactName: string } };
+
+    expect(builder.win.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/windows-${arch}", useMultipleRangeRequest: false }]);
+    expect(builder.linux.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
+    expect(builder.win.artifactName).toBe("TabMail-Voice-${version}-windows-${arch}.${ext}");
+    expect(builder.linux.artifactName).toBe("TabMail-Voice-${version}-linux-${arch}.${ext}");
+  });
+
+  /** A Linux update is proven and installed by `install-update`, packaged executable, root-owned
+   * under /opt with the keys it checks against, and it needs `openssl` and `pkexec` (ADR-DESK-050). */
+  test("Linux ships install-update, its keys, and what it runs", () => {
+    const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; to?: string; filter?: string[] }[] }; deb: { depends: string[] } };
+
+    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/install-update", to: "linux/install-update" });
+    expect(builder.linux.extraResources).toContainEqual({ from: "resources/linux/update-keys", to: "linux/update-keys", filter: ["*.pem"] });
+    expect(statSync(join(root, "resources/linux/install-update")).mode & 0o111).toBe(0o111);
+    expect(builder.deb.depends).toEqual(expect.arrayContaining(["openssl", "pkexec"]));
   });
 
   /** Squirrel.Mac installs an update only if its own version is not lower than the running app's, so

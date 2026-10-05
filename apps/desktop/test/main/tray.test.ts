@@ -38,7 +38,7 @@ function menu(update: UpdateState | null) {
     toggleDictation: action("toggleDictation"),
     quit: action("quit"),
     checkForUpdates: action("checkForUpdates"),
-    restartToUpdate: action("restartToUpdate"),
+    installUpdate: action("installUpdate"),
     debug: null,
   };
   new TrayMenu("/nonexistent", () => ({ ...ready, update }), actions);
@@ -65,10 +65,20 @@ describe("TrayMenu's update item", () => {
   });
 
   test("Restart to Update restarts into the downloaded version", () => {
-    const { item, clicked } = menu({ kind: "ready", version: "1.2.3" });
+    const { item, clicked } = menu({ kind: "ready", version: "1.2.3", installsOnQuit: true });
 
     item("Restart to Update to Version 1.2.3")?.click?.();
-    expect(clicked).toEqual(["restartToUpdate"]);
+    expect(clicked).toEqual(["installUpdate"]);
+  });
+
+  test("Install installs it where an administrator does; Retry checks again", () => {
+    const ready = menu({ kind: "ready", version: "1.2.3", installsOnQuit: false });
+    ready.item("Install Version 1.2.3…")?.click?.();
+    expect(ready.clicked).toEqual(["installUpdate"]);
+
+    const failed = menu({ kind: "failed", version: "1.2.3", message: "x" });
+    failed.item("Retry Update to Version 1.2.3")?.click?.();
+    expect(failed.clicked).toEqual(["checkForUpdates"]);
   });
 
   test("a download under way can't be clicked", () => {
