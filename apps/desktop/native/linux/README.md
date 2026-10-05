@@ -5,7 +5,8 @@ that target architecture: the helpers link to its system AT-SPI, GLib, PulseAudi
 and ICU libraries. KDE support is deferred to [issue #100](https://github.com/TabMail/tabmail-voice/issues/100).
 
 `voice-hotkey` uses the GlobalShortcuts portal and the shared gesture state machine.
-F8 is the default, with F9 available as an alternative. Hold to dictate, double-tap
+On GNOME, Right Alt is the default, held through the GNOME extension (see `gnome/README.md`); elsewhere
+F8 is, with F9 available as an alternative. Hold to dictate, double-tap
 for hands-free, or triple-tap for history. Shift plus the selected key starts agent
 mode or switches mode during hands-free listening; Ctrl+Shift plus the key cancels
 or closes chat. Startup binds the selected shortcuts; GNOME restores previously
@@ -162,7 +163,7 @@ regular-key fallback such as F8. Its
 receives activation and deactivation events, while the older GNOME custom-shortcut
 path only toggles recording. Its separate evdev listener reads keyboard devices;
 that requires device access and is not the GNOME shortcut backend. The supported
-portal is the preferred direction here; the owner accepted standard keys, and F8 is the default here. Do not claim
+portal is the preferred direction here; the owner accepted standard keys, and F8 is the portal's default here. Do not claim
 modifier-only parity from portal setup.
 
 [OpenWhispr's paste helper](https://github.com/OpenWhispr/openwhispr/blob/main/resources/linux-fast-paste.c)
