@@ -1,0 +1,65 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+#include "accessibility-worker-fixture.h"
+
+// Extracted at configure time; the test exercises the production queue unchanged.
+@ACCESSIBILITY_WORKER_SOURCE@
+
+int main() {
+ auto* output = new voice::Output;
+ auto* worker = new AccessibilityWorker(*output);
+ int64_t id = 0;
+ JSON cases = JSON::array();
+ auto check = [&](const char* name, bool ok) { cases.push_back({{"name", name}, {"pass", ok}}); };
+ auto enqueue = [&](std::string method, JSON params) { auto next = ++id; worker->request({{"id", next},{"method", method},{"params",params}}); return next; };
+ auto request = [&](std::string method, JSON params) { return output->take(enqueue(method, params)); };
+ auto w = [](uintptr_t x){return reinterpret_cast<HWND>(x);};
+ auto valid = request("caretAnchor", JSON::object());
+ check("foreground caret returns geometry for queued window", valid.contains("result") && valid["result"].value("x",0)==42);
+ auto omittedID=++id; worker->request({{"id",omittedID},{"method","caretAnchor"}});
+ auto omitted=output->take(omittedID);
+ check("omitted params defaults to object", omitted.contains("result") && omitted["result"].value("x",0)==42);
+ auto explicitReply=request("caretAnchor",{{"window",uint64_t{42}}});
+ check("explicit target stays supported",explicitReply.contains("result") && explicitReply["result"].value("x",0)==42);
+ auto foreign=request("caretAnchor",{{"window",uint64_t{84}}});
+ check("explicit foreign target is not overwritten",foreign.contains("result") && foreign["result"].is_null());
+ foreground=nullptr;
+ check("missing foreground has no geometry",request("caretAnchor",JSON::object())["result"].is_null());
+ foreground=w(42);
+ int before=voice::caretCalls;
+ bool malformed=true;
+ for(auto params:std::vector<JSON>{nullptr,JSON::array(),"invalid",12,{{"window",nullptr}},{{"window","42"}},{{"window",-1}},{{"window",1.5}}}) malformed &= request("caretAnchor",params).contains("error");
+ check("malformed caret refuses before provider access", malformed && voice::caretCalls==before);
+ voice::providerFailure=true;
+ check("provider failure answers a bounded error",request("caretAnchor",JSON::object()).contains("error"));
+ voice::providerFailure=false;
+ check("provider failure does not poison next lookup",request("caretAnchor",JSON::object())["result"].is_object());
+ voice::armGate(); auto blocking=enqueue("readScreen",JSON::object()); voice::waitEntered();
+ auto stale=enqueue("caretAnchor",JSON::object());
+ foreground=w(84); voice::releaseGate(); output->take(blocking);
+ check("queued old window refuses after foreground changes",output->take(stale)["result"].is_null());
+ auto fresh=request("caretAnchor",JSON::object());
+ check("new request observes new window",fresh.contains("result") && fresh["result"].value("x",0)==84);
+ foreground=w(42);
+ voice::armGate(); blocking=enqueue("readScreen",JSON::object()); voice::waitEntered();
+ auto canceled=enqueue("caretAnchor",JSON::object()); worker->cancel(canceled); before=voice::caretCalls;
+ voice::releaseGate(); output->take(blocking);
+ auto barrier=request("caretAnchor",JSON::object());
+ check("canceled queued lookup never executes",voice::caretCalls==before+1 && barrier["result"].is_object());
+ bool noReply; {std::lock_guard lock(output->mutex);noReply=!output->replies.contains(canceled);} check("canceled queued lookup has no reply",noReply);
+ voice::armGate(); blocking=enqueue("readScreen",JSON::object()); voice::waitEntered();
+ std::vector<int64_t> queued; for(int i=0;i<4;++i)queued.push_back(enqueue("caretAnchor",JSON::object()));
+ auto overflow=enqueue("caretAnchor",JSON::object());check("queue remains bounded",output->take(overflow).contains("error"));
+ voice::releaseGate();output->take(blocking);for(auto pending:queued)output->take(pending);
+ JSON insert={{"text","synthetic"},{"restoreDelay",uint64_t{1}},{"deadline",uint64_t{2000}}};
+ bool refused=request("insert",insert).contains("error");
+ check("insert still requires explicit target and does not mutate",refused && voice::inserts==0);
+ check("field read still requires explicit target",request("focusedFieldValue",{{"maxLength",uint64_t{20}}}).contains("error") && voice::fieldCalls==0);
+ check("screen context keeps snapshot route",request("readScreen",JSON::object())["result"].value("syntheticWindow",0)==42);
+ worker->finish();
+ int failed=0;for(const auto& c:cases)if(!c["pass"].get<bool>())++failed;
+ std::cout<<JSON{{"cases",cases},{"passed",cases.size()-failed},{"failed",failed}}.dump(2)<<std::endl;
+ return failed ? 1 : 0;
+}
