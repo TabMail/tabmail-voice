@@ -6,32 +6,30 @@ import { redactionReplyMaxBytes, redactionTextMaxBytes, textRedactionTimeout } f
 import { CancellationError } from "../../core/util/timeout.js";
 import type { HelperClient } from "./helperClient.js";
 
-export interface TextSourceEdges { startKnown: boolean; endKnown: boolean }
-/** The redacted text, and whether text at an incomplete edge was left out unread. */
-export interface RedactedText { text: string; withheld: boolean }
+/** The text around part of a document, read with it so a secret continuing past an edge is
+ * recognized whole; only the part itself comes back. */
+export interface TextContext { before: string; after: string }
 
 /** Explicitly authorized document text uses the same Rust engine as screen text.
  * A failure never returns the input, nor queues private text during a restart. */
 export class NativeTextRedactor {
   constructor(private readonly helper: Pick<HelperClient, "request">) {}
 
-  async redact(text: string, signal: AbortSignal, edges?: TextSourceEdges): Promise<RedactedText> {
+  async redact(text: string, signal: AbortSignal, context?: TextContext): Promise<string> {
     if (signal.aborted) throw new CancellationError();
-    if (Buffer.byteLength(text, "utf8") > redactionTextMaxBytes) throw new Error("Document text exceeds the redaction limit.");
-    return new Promise<RedactedText>((resolve, reject) => {
+    if (Buffer.byteLength(text + (context?.before ?? "") + (context?.after ?? ""), "utf8") > redactionTextMaxBytes) throw new Error("Document text exceeds the redaction limit.");
+    return new Promise<string>((resolve, reject) => {
       const canceled = () => reject(new CancellationError());
       signal.addEventListener("abort", canceled, { once: true });
       // Deliberately omit the helper signal: signal-bearing requests may wait
       // across restarts. This read-only operation must refuse immediately there.
       // The caller still cancels promptly; the bounded native result is discarded.
-      void this.helper.request<unknown>("redactText", { text, ...edges }, textRedactionTimeout).then((reply) => {
-        if (signal.aborted) throw new CancellationError();
+      void this.helper.request<unknown>("redactText", { text, ...context }, textRedactionTimeout).then((reply) => {
         if (typeof reply !== "object" || reply === null || !("text" in reply) || typeof reply.text !== "string"
-          || Buffer.byteLength(reply.text, "utf8") > redactionReplyMaxBytes || !("withheld" in reply)
-          || typeof reply.withheld !== "boolean") throw new Error("Invalid redaction reply.");
-        resolve({ text: reply.text, withheld: reply.withheld });
-      }).catch((error: unknown) => {
-        reject(error instanceof CancellationError ? error : new Error("Document text could not be safely redacted."));
+          || Buffer.byteLength(reply.text, "utf8") > redactionReplyMaxBytes) throw new Error("Invalid redaction reply.");
+        resolve(reply.text);
+      }).catch(() => {
+        reject(new Error("Document text could not be safely redacted."));
       }).finally(() => signal.removeEventListener("abort", canceled));
     });
   }

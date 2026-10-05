@@ -41,7 +41,7 @@ function registered(source: string): Map<string, Set<string>> {
       const ffi = readFileSync(join(root, "native/shared/rust/src/ffi.rs"), "utf8");
       const body = ffi.split("pub unsafe extern \"C\" fn voice_core_redact_text_json(")[1]?.split("unsafe fn process(")[0] ?? "";
       expect(body).not.toBe("");
-      for (const match of body.matchAll(/\.get\("(\w+)"\)/g)) params.add(match[1] ?? "");
+      for (const match of body.matchAll(/field\("(\w+)"/g)) params.add(match[1] ?? "");
     }
     handlers.set(method, params);
   }
@@ -54,7 +54,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { text: "", withheld: false, value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
+      return { text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
     },
     on() {},
   } as unknown as HelperClient;
@@ -65,7 +65,7 @@ describe("helper wire contract", () => {
   test("every app request matches a voice-macos handler and the params it reads", async () => {
     const { helper, requests } = recordingHelper();
     const mac = new MacSystem(helper);
-    await new NativeTextRedactor(helper).redact("Example", new AbortController().signal);
+    await new NativeTextRedactor(helper).redact("Example", new AbortController().signal, { before: "Earlier", after: "Later" });
     const app = "org.example.app";
     await mac.paste("text");
     await mac.frontmostApp();

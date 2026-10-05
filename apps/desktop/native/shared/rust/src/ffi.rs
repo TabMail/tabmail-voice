@@ -92,8 +92,8 @@ pub unsafe extern "C" fn voice_core_policy_json(
     unsafe { process(data, length, output, crate::policy::process) }
 }
 
-/// The most explicit document text one request takes, in UTF-8 bytes (the app's
-/// `redactionTextMaxBytes`).
+/// The most explicit document text one request takes, with its context, in UTF-8
+/// bytes (the app's `redactionTextMaxBytes`).
 const DOCUMENT_TEXT_BYTES: usize = 128 * 1024;
 
 /// Explicit local-document text, independent of screen-exclusion policy. The
@@ -107,33 +107,22 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
     unsafe {
         process(data, length, output, |input| {
             let value: serde_json::Value = serde_json::from_slice(input).map_err(|_| 1u32)?;
-            let text = value
-                .get("text")
-                .and_then(serde_json::Value::as_str)
-                .ok_or(1u32)?;
-            if text.len() > DOCUMENT_TEXT_BYTES {
+            let field = |name: &str, required: bool| match value.get(name) {
+                None if !required => Ok(""),
+                value => value.and_then(serde_json::Value::as_str).ok_or(1u32),
+            };
+            let text = field("text", true)?;
+            // Part of a document comes with the text around it, so that a secret
+            // continuing past an edge is recognized whole. The three are redacted as one
+            // text and only the middle is returned; a match crossing an edge is replaced
+            // whole, so none of its characters is left on either side.
+            let (before, after) = (field("before", false)?, field("after", false)?);
+            if before.len() + text.len() + after.len() > DOCUMENT_TEXT_BYTES {
                 return Err(1);
             }
-            // Complete explicit text retains the original contract. Documents with
-            // omitted pages/chunks supply edge facts, using the same recognition
-            // policy as bounded screen sources before canonical redaction.
-            let edge = |name| match value.get(name) {
-                None => Ok(true),
-                Some(value) => value.as_bool().ok_or(1u32),
-            };
-            let range = crate::source_window::recognition_range_with_limit(
-                text,
-                edge("startKnown")?,
-                edge("endKnown")?,
-                DOCUMENT_TEXT_BYTES,
-            )?;
-            // Text outside the range is withheld unread; say so, so the caller can tell
-            // the reader that some of the document was left out.
-            let withheld =
-                !text[..range.start].trim().is_empty() || !text[range.end..].trim().is_empty();
-            let result = privacy::redact(&vec![vec![text[range].to_owned()]]).map_err(|_| 3u32)?;
-            serde_json::to_vec(&serde_json::json!({"text": result[0][0], "withheld": withheld}))
-                .map_err(|_| 3)
+            let parts = vec![vec![before.to_owned(), text.to_owned(), after.to_owned()]];
+            let result = privacy::redact(&parts).map_err(|_| 3u32)?;
+            serde_json::to_vec(&serde_json::json!({"text": result[0][1]})).map_err(|_| 3)
         })
     }
 }
@@ -831,42 +820,46 @@ mod tests {
     }
     #[test]
     fn explicit_text_redaction_is_bounded_and_refuses_bad_shapes() {
+        let limit = "a".repeat(DOCUMENT_TEXT_BYTES / 2);
         for (input, expected) in [
             (
                 serde_json::json!({"text": "token=syntheticPrivate123"}),
-                Some(("token=[redacted]", false)),
+                Some("token=[redacted]"),
             ),
-            (serde_json::json!({"text": ""}), Some(("", false))),
+            (serde_json::json!({"text": ""}), Some("")),
             (
-                serde_json::json!({"text":"syntheticPrivate123. Public.","startKnown":false,"endKnown":true}),
-                Some((". Public.", true)),
-            ),
-            (
-                serde_json::json!({"text":"Public. syntheticPrivate123","startKnown":true,"endKnown":false}),
-                Some(("Public. ", true)),
+                // A secret continuing from the text before is recognized and left out.
+                serde_json::json!({"before": "token=", "text": "syntheticPrivate123. Public."}),
+                Some("[redacted] Public."),
             ),
             (
-                serde_json::json!({"text":"syntheticPrivate123","startKnown":false,"endKnown":false}),
-                Some(("", true)),
+                serde_json::json!({"before": "Earlier. token=synthetic", "text": "Private123. Public."}),
+                Some(" Public."),
             ),
             (
-                // Text with no sentence delimiter at an unknown edge is withheld whole.
-                serde_json::json!({"text":"会議は金曜日です。資料を確認してください。","startKnown":true,"endKnown":false}),
-                Some(("", true)),
+                // A secret continuing into the text after leaves only its replacement.
+                serde_json::json!({"text": "Public. token=synthetic", "after": "Private123 later."}),
+                Some("Public. token=[redacted]"),
             ),
             (
-                // Only whitespace outside the range: nothing was withheld.
-                serde_json::json!({"text":"  . Public.","startKnown":false,"endKnown":true}),
-                Some((". Public.", false)),
+                // Text with no sentence delimiter is returned whole.
+                serde_json::json!({"before": "前のページ", "text": "会議は金曜日です。資料を確認してください。", "after": "次のページ"}),
+                Some("会議は金曜日です。資料を確認してください。"),
             ),
             (
-                serde_json::json!({"text":"Public.","startKnown":null}),
+                serde_json::json!({"before": "", "text": "Public.", "after": ""}),
+                Some("Public."),
+            ),
+            (
+                serde_json::json!({"before": limit, "text": "", "after": limit}),
+                Some(""),
+            ),
+            (
+                serde_json::json!({"before": limit, "text": "a", "after": limit}),
                 None,
             ),
-            (
-                serde_json::json!({"text":"Public.","endKnown":"true"}),
-                None,
-            ),
+            (serde_json::json!({"text": "Public.", "before": null}), None),
+            (serde_json::json!({"text": "Public.", "after": true}), None),
             (serde_json::json!({}), None),
             (serde_json::json!({"text": null}), None),
             (serde_json::json!({"text": "😀".repeat(32769)}), None),
@@ -875,14 +868,11 @@ mod tests {
             let mut output = Buffer::empty();
             let status =
                 unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
-            if let Some((text, withheld)) = expected {
+            if let Some(text) = expected {
                 assert_eq!(status, 0);
                 let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
                 let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-                assert_eq!(
-                    reply,
-                    serde_json::json!({"text": text, "withheld": withheld})
-                );
+                assert_eq!(reply, serde_json::json!({"text": text}));
             } else {
                 assert_eq!(status, 1);
                 assert!(output.data.is_null());
@@ -893,6 +883,7 @@ mod tests {
             }
         }
     }
+
     #[test]
     fn panic_child() {
         if std::env::var_os("VOICE_CORE_PANIC_CHILD").is_none() {

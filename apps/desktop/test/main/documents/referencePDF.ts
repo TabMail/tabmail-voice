@@ -2,11 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { extractPDFDocument } from "../../../src/main/documents/pdfExtraction.js";
 
 import type { PDFRange, PDFText } from "../../../src/core/agent/connectors/pdf.js";
-import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes } from "../../../src/core/config.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfRedactionContext } from "../../../src/core/config.js";
 export { pdfMaxTextBytes } from "../../../src/core/config.js";
 
 /** Test-only pre-consolidation parser for behavior comparisons and mocked stream
@@ -19,5 +21,7 @@ export async function extractPDF(bytes: Uint8Array, range: PDFRange): Promise<PD
   // Electron utility processes are not classified as Node by PDF.js. Supply
   // the bundled worker explicitly; its fallback runs within this disposable process.
   GlobalWorkerOptions.workerSrc = pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href;
-  return extractPDFDocument(getDocument, bytes, range, pdfMaxTextBytes);
+  const cMaps = join(dirname(require.resolve("pdfjs-dist/package.json")), "cmaps");
+  const readCMap = (name: string) => /^[A-Za-z0-9-]+\.bcmap$/u.test(name) ? new Uint8Array(readFileSync(join(cMaps, name))) : null;
+  return extractPDFDocument(getDocument, bytes, range, pdfMaxTextBytes, pdfRedactionContext, readCMap);
 }

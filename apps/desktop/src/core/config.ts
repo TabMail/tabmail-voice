@@ -771,6 +771,10 @@ export const chatTimeoutBarOpacity = 0.7;
 /** The most pages one read returns, and the most UTF-8 bytes of text across them. */
 export const pdfMaxPages = 10;
 export const pdfMaxTextBytes = 64 * 1024;
+/** How much of the text around the pages returned (UTF-16 units each side: the previous page's end,
+ * the next page's start or a cut page's rest) the redactor reads with them, so a secret continuing
+ * past an edge is recognized whole. Far longer than any secret the redactor matches. */
+export const pdfRedactionContext = 4 * 1024;
 /** The largest local file the agent may read (20 MiB), and how much of it one read call takes. */
 export const documentMaxBytes = 20 * 1024 * 1024;
 export const documentReadChunkBytes = 64 * 1024;
@@ -788,6 +792,10 @@ export const pdfRealmStackBytes = 1024 * 1024;
 export const pdfRealmEncodingLabelMax = 64;
 /** Timers the parser may have pending at once; more is refused as a runaway document. */
 export const pdfRealmTimerMax = 256;
+/** The largest predefined CMap (the bundled Adobe CJK encodings PDF.js reads fonts with) the parser
+ * may load, and the longest file name it may ask for; the largest PDF.js ships is about 53 KB. */
+export const pdfCMapMaxBytes = 128 * 1024;
+export const pdfCMapNameMax = 64;
 /** Explicit document text the native redactor takes (the Rust core refuses more), how long it gets,
  * and the largest reply accepted. */
 export const redactionTextMaxBytes = 128 * 1024;

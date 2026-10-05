@@ -5,7 +5,7 @@
 import { app, utilityProcess } from "electron";
 import { join } from "node:path";
 import type { PDFRange, PDFText } from "../../core/agent/connectors/pdf.js";
-import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessHeapMiB, pdfProcessMemoryKiB, pdfProcessPollInterval, pdfProcessTimeout } from "../../core/config.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessHeapMiB, pdfProcessMemoryKiB, pdfProcessPollInterval, pdfProcessTimeout, pdfRedactionContext } from "../../core/config.js";
 import { CancellationError } from "../../core/util/timeout.js";
 
 /** Parent-owned limits remain effective when the parser's event loop is blocked.
@@ -49,11 +49,8 @@ export function parsePDF(bytes: Uint8Array, range: PDFRange, signal: AbortSignal
         child.kill();
         return;
       }
-      if (signal.aborted) cancel();
-      else if (!settled) {
-        try { child.postMessage({ bytes, range }); }
-        catch { finish(new Error("PDF reader could not start.")); }
-      }
+      try { child.postMessage({ bytes, range }); }
+      catch { finish(new Error("PDF reader could not start.")); }
     });
     child.once("exit", () => finish(new Error("PDF reader stopped before returning text.")));
     child.once("message", (message: unknown) => {
@@ -76,6 +73,9 @@ function validPDFText(value: unknown, range: PDFRange): value is PDFText {
     !("totalPages" in value) || !Number.isSafeInteger(value.totalPages) || Number(value.totalPages) < 1 ||
     !("truncated" in value) || typeof value.truncated !== "boolean" || !("nextPage" in value) ||
     value.pages.length > pdfMaxPages || value.pages.length > range.pageCount) return false;
+  // The redactor's context: the page before's end and a blank line, the rest after.
+  for (const context of ["before" in value ? value.before : null, "after" in value ? value.after : null])
+    if (typeof context !== "string" || context.length > pdfRedactionContext + 2) return false;
   // No pages only for a start past the last page.
   if (value.pages.length === 0) return range.startPage > Number(value.totalPages) && value.nextPage === null && value.truncated === false;
   let size = 0;

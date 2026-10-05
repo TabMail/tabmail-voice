@@ -13,59 +13,92 @@ export async function extractPDFDocument(
   bytes: Uint8Array,
   range: PDFRange,
   textLimit: number,
+  contextLimit: number,
+  readCMap: (name: string) => Uint8Array | null,
 ): Promise<PDFText> {
   const task = getDocument({
     data: bytes,
+    // Fonts that name a predefined CJK encoding instead of embedding one read it from the bundled
+    // CMaps (packed, `<name>.bcmap`), through `readCMap` only; nothing is fetched.
+    BinaryDataFactory: class {
+      fetch({ kind, filename }: { kind: string; filename: string }): Promise<Uint8Array> {
+        const data = kind === "cMapUrl" ? readCMap(filename) : null;
+        return data ? Promise.resolve(data) : Promise.reject(new Error("Unavailable."));
+      }
+    },
     useSystemFonts: false,
     disableFontFace: true,
     useWorkerFetch: false,
     useWasm: false,
     enableXfa: false,
+    // A damaged part refuses the read rather than being skipped: text with pieces silently
+    // missing would be returned as the whole page. (Thunderbird's reader recovers instead.)
     stopAtErrors: true,
     verbosity: 0,
   });
   try {
     const document = await task.promise;
-    const result: PDFText = { totalPages: document.numPages, pages: [], nextPage: null, truncated: false };
+    const result: PDFText = { totalPages: document.numPages, pages: [], nextPage: null, truncated: false, before: "", after: "" };
     // Past the last page: no pages, and the page count so the caller can say where the PDF ends.
     if (range.startPage > document.numPages) return result;
-    let remaining = textLimit;
-    const end = Math.min(document.numPages, range.startPage + range.pageCount - 1);
-    for (let number = range.startPage; number <= end; number += 1) {
+    // Streams one page's text to `take` until it returns false. Consume chunks instead of
+    // aggregating the whole page: this bounds retained output. Production decoding allocations
+    // are separately bounded by the fixed interpreter arena and the disposable process watchdog.
+    const read = async (number: number, take: (part: string) => boolean): Promise<void> => {
       const page = await document.getPage(number);
-      let text = "";
       try {
-        // Consume chunks instead of aggregating the whole page. This bounds
-        // retained output. Production decoding allocations are separately bounded
-        // by the fixed interpreter arena and the disposable process watchdog.
         const reader = (page.streamTextContent() as ReadableStream<TextContent>).getReader();
         try {
-          while (!result.truncated) {
+          for (let more = true; more;) {
             const chunk = await reader.read();
-            if (chunk.done) break;
+            if (chunk.done) return;
             for (const item of chunk.value.items) {
               if (!("str" in item)) continue;
-              const part = item.str + (item.hasEOL ? "\n" : "");
-              const size = new TextEncoder().encode(part).byteLength;
-              if (size > remaining) {
-                result.truncated = true;
-                break;
-              }
-              text += part;
-              remaining -= size;
+              more = take(item.str + (item.hasEOL ? "\n" : ""));
+              if (!more) break;
             }
           }
-          if (result.truncated) await reader.cancel(new Error("PDF text budget reached."));
+          await reader.cancel(new Error("PDF text budget reached."));
         } finally {
           reader.releaseLock();
         }
       } finally {
         page.cleanup();
       }
+    };
+    // The redactor's context is cut on UTF-16 units; never leave half a surrogate pair at a cut.
+    const whole = (text: string) => text.replace(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/gu, "");
+    if (range.startPage > 1) {
+      let tail = "";
+      await read(range.startPage - 1, (part) => { tail = (tail + part).slice(-contextLimit); return true; });
+      tail = whole(tail.trimEnd());
+      // Pages are joined with a blank line, as the text returned is.
+      if (tail !== "") result.before = `${tail}\n\n`;
+    }
+    let remaining = textLimit, after = "";
+    const end = Math.min(document.numPages, range.startPage + range.pageCount - 1);
+    for (let number = range.startPage; number <= end; number += 1) {
+      let text = "";
+      await read(number, (part) => {
+        // Past the budget, the rest of this page is only the redactor's context.
+        if (result.truncated) { after += part; return after.length < contextLimit; }
+        const size = new TextEncoder().encode(part).byteLength;
+        if (size > remaining) { result.truncated = true; after = part; return after.length < contextLimit; }
+        text += part;
+        remaining -= size;
+        return true;
+      });
       result.pages.push({ number, text: text.trim() });
       result.nextPage = number < document.numPages ? number + 1 : null;
-      if (result.truncated) break;
+      // The whitespace trimmed off the cut keeps the context from joining onto the last word.
+      if (result.truncated) { after = text.slice(text.trimEnd().length) + after; break; }
     }
+    if (!result.truncated && result.nextPage !== null) {
+      await read(result.nextPage, (part) => { after += part; return after.length < contextLimit; });
+      after = after.trimStart();
+      if (after !== "") after = `\n\n${after}`;
+    }
+    result.after = whole(after.slice(0, contextLimit));
     return result;
   } catch (error) {
     // Parser errors may contain document contents. Only known classifications

@@ -5,6 +5,7 @@
 import { beforeEach, expect, test, vi } from "vitest";
 const parser = vi.hoisted(() => ({ getDocument: vi.fn() }));
 vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({ getDocument: parser.getDocument, GlobalWorkerOptions: {} }));
+import { pdfRedactionContext } from "../../../src/core/config.js";
 import { extractPDF, pdfMaxTextBytes } from "./referencePDF.js";
 
 const read = vi.fn();
@@ -30,6 +31,7 @@ test("stops consuming chunks and pages when the UTF-8 output budget is exceeded"
     .mockRejectedValue(new Error("Must not request remaining page text"));
   expect(await extractPDF(new Uint8Array([1]), { startPage: 1, pageCount: 2 })).toEqual({
     totalPages: 2, pages: [{ number: 1, text: "visible" }], nextPage: 2, truncated: true,
+    before: "", after: `\n${"é".repeat(pdfRedactionContext - 1)}`,
   });
   expect(read).toHaveBeenCalledTimes(2);
   expect(getPage).toHaveBeenCalledTimes(1);

@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { describe, expect, test } from "vitest";
-import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes } from "../../../src/core/config.js";
+import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfRedactionContext } from "../../../src/core/config.js";
 import { extractPDFInRealm as extractPDF } from "../../../src/main/documents/pdfRealm.js";
 
 import { extractPDF as referencePDF } from "./referencePDF.js";
@@ -35,11 +35,46 @@ function pdf(pages: string[], catalog = "", unicode = false, rawStreams = false)
   return new Uint8Array(Buffer.from(result));
 }
 
+/** One line in a font that names a predefined CJK encoding and embeds neither glyphs nor a
+ * ToUnicode map, as many Japanese, Chinese and Korean PDFs do. */
+function predefinedCMapPDF(encoding: string, codes: string, ordering = "Japan1"): Uint8Array {
+  const stream = `BT /F1 12 Tf 30 700 Td <${codes}> Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Count 1 /Kids [4 0 R] >>",
+    `<< /Type /Font /Subtype /Type0 /BaseFont /SyntheticMincho /Encoding /${encoding} /DescendantFonts [6 0 R] >>`,
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 800] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    `<< /Type /Font /Subtype /CIDFontType0 /BaseFont /SyntheticMincho /CIDSystemInfo << /Registry (Adobe) /Ordering (${ordering}) /Supplement 2 >> /FontDescriptor 7 0 R >>`,
+    "<< /Type /FontDescriptor /FontName /SyntheticMincho /Flags 6 /FontBBox [0 -141 1000 859] /ItalicAngle 0 /Ascent 859 /Descent -141 /CapHeight 709 /StemV 69 >>",
+  ];
+  let result = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, i) => { offsets.push(result.length); result += `${i + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = result.length;
+  result += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(result, "latin1"));
+}
+
 describe.each([["reference", referencePDF], ["bounded", extractPDF]] as const)("%s parser", (_name, readPDF) => {
+
+/** The bundled CMaps decode it; without them the page reads as empty, as if it were an image. */
+test.each([
+  ["UniJIS-UCS2-H", Buffer.from("会議は金曜日です", "utf16le").swap16().toString("hex")],
+  ["90ms-RKSJ-H", "89ef8b6382cd8be0976a93fa82c582b7"],
+])("reads a font with the predefined %s encoding", async (encoding, codes) => {
+  const result = await readPDF(predefinedCMapPDF(encoding, codes), { startPage: 1, pageCount: 1 });
+  expect(result.pages).toEqual([{ number: 1, text: "会議は金曜日です" }]);
+});
+
+test("a predefined encoding that is not bundled reads as no text", async () => {
+  const result = await readPDF(predefinedCMapPDF("Synthetic-Missing-H", "0041"), { startPage: 1, pageCount: 1 });
+  expect(result.pages).toEqual([{ number: 1, text: "" }]);
+});
 
 test("extracts selected pages and reports continuation", async () => {
   const result = await readPDF(pdf(["one", "two", "three"]), { startPage: 2, pageCount: 1 });
-  expect(result).toEqual({ totalPages: 3, pages: [{ number: 2, text: "two" }], nextPage: 3, truncated: false });
+  expect(result).toEqual({ totalPages: 3, pages: [{ number: 2, text: "two" }], nextPage: 3, truncated: false, before: "one\n\n", after: "\n\nthree" });
 });
 
 test.each([['in', 'voice', 'invoice'], ['Public. sk-', 'SyntheticFixture1234', 'Public. sk-SyntheticFixture1234']])("preserves contiguous text across a font change: %s", async (left, right, expected) => {
@@ -49,17 +84,35 @@ test.each([['in', 'voice', 'invoice'], ['Public. sk-', 'SyntheticFixture1234', '
 });
 
 test("a start past the last page returns no pages and the page count", async () => {
-  expect(await readPDF(pdf(["one", "two", "three"]), { startPage: 5, pageCount: 1 })).toEqual({ totalPages: 3, pages: [], nextPage: null, truncated: false });
+  expect(await readPDF(pdf(["one", "two", "three"]), { startPage: 5, pageCount: 1 })).toEqual({ totalPages: 3, pages: [], nextPage: null, truncated: false, before: "", after: "" });
 });
 
 test("empty page has no invented OCR text", async () => {
   expect((await readPDF(pdf([""]), { startPage: 1, pageCount: 1 })).pages).toEqual([{ number: 1, text: "" }]);
 });
 
-test("bounds extracted text", async () => {
-  const result = await readPDF(pdf(["a".repeat(pdfMaxTextBytes + 100)]), { startPage: 1, pageCount: 1 });
+test("bounds extracted text, and the rest of the cut page is only context", async () => {
+  const result = await readPDF(pdf(["a".repeat(pdfMaxTextBytes + 100), "next"]), { startPage: 1, pageCount: 2 });
   expect(result.truncated).toBe(true);
   expect(Buffer.byteLength(result.pages[0]?.text ?? "")).toBeLessThanOrEqual(pdfMaxTextBytes);
+  expect(result.pages.map((page) => page.number)).toEqual([1]);
+  expect(result.after).toMatch(/^a+$/u);
+  expect(result.after.length).toBeLessThanOrEqual(pdfRedactionContext);
+});
+
+/** The redactor sees the end of the page before the range and the start of the page after it,
+ * bounded, so a secret crossing either edge is recognized whole. */
+test("context is the bounded neighbouring text on each side", async () => {
+  const long = `${"b".repeat(pdfRedactionContext)}tail`;
+  const result = await readPDF(pdf([long, "middle", `head${"c".repeat(pdfRedactionContext)}`]), { startPage: 2, pageCount: 1 });
+  expect(result.pages).toEqual([{ number: 2, text: "middle" }]);
+  expect(result.before).toBe(`${long.slice(-pdfRedactionContext)}\n\n`);
+  expect(result.after).toBe(`\n\nhead${"c".repeat(pdfRedactionContext - 6)}`);
+});
+
+test("a range from the first page through the last has no context", async () => {
+  const result = await readPDF(pdf(["one", "two"]), { startPage: 1, pageCount: 2 });
+  expect(result).toMatchObject({ before: "", after: "", nextPage: null });
 });
 
 test.each([{ startPage: 0, pageCount: 1 }, { startPage: 1, pageCount: pdfMaxPages + 1 }, { startPage: 1.5, pageCount: 1 }])("rejects invalid range %j", async (range) => {

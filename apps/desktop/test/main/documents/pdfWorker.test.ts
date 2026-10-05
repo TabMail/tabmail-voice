@@ -29,7 +29,7 @@ async function reply(outcome: () => Promise<unknown>): Promise<unknown> {
 }
 
 test("returns the realm's text", async () => {
-  const result = { totalPages: 1, pages: [{ number: 1, text: "synthetic" }], nextPage: null, truncated: false };
+  const result = { totalPages: 1, pages: [{ number: 1, text: "synthetic" }], nextPage: null, truncated: false, before: "", after: "" };
   expect(await reply(async () => result)).toEqual({ ok: true, result });
   expect(realm.extract).toHaveBeenCalledWith(new Uint8Array([1]), { startPage: 1, pageCount: 1 });
 });
@@ -45,6 +45,6 @@ test("any other failure is unreadable, without its message", async () => {
 });
 
 test("the network is off in the worker", async () => {
-  await reply(async () => ({ totalPages: 1, pages: [], nextPage: null, truncated: false }));
+  await reply(async () => ({ totalPages: 1, pages: [], nextPage: null, truncated: false, before: "", after: "" }));
   await expect(globalThis.fetch("https://example.com/")).rejects.toThrow("disabled");
 });

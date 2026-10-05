@@ -11,6 +11,10 @@ export interface PDFText {
   nextPage: number | null;
   /** Remaining text in the last returned page was omitted. */
   truncated: boolean;
+  /** The text just before and after the pages returned, read only for the redactor and never
+   * returned: empty at the document's start and end. */
+  before: string;
+  after: string;
 }
 export interface PreparedPDF {
   readonly path: string;

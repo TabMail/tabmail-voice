@@ -2,12 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import variant from "@jitl/quickjs-wasmfile-release-sync";
 import { newQuickJSWASMModuleFromVariant, newVariant, type QuickJSHandle } from "quickjs-emscripten-core";
 import type { PDFRange, PDFText } from "../../core/agent/connectors/pdf.js";
-import { documentMaxBytes, pdfMaxPages, pdfMaxTextBytes, pdfProcessTimeout, pdfRealmEncodingLabelMax, pdfRealmMemoryPages, pdfRealmStackBytes } from "../../core/config.js";
+import { documentMaxBytes, pdfCMapMaxBytes, pdfCMapNameMax, pdfMaxPages, pdfMaxTextBytes, pdfProcessTimeout, pdfRealmEncodingLabelMax, pdfRealmMemoryPages, pdfRealmStackBytes, pdfRedactionContext } from "../../core/config.js";
 import { extractPDFDocument } from "./pdfExtraction.js";
 import { pdfRealmPrelude } from "./pdfRealmPrelude.js";
 
@@ -16,6 +17,20 @@ declare const WebAssembly: { Memory: new (limits: { initial: number; maximum: nu
   readonly buffer: ArrayBuffer; grow(pages: number): number;
 } };
 
+/** The predefined CMaps PDF.js ships, kept in the package for its CJK fonts. */
+const cMapDirectory = join(dirname(require.resolve("pdfjs-dist/package.json")), "cmaps");
+let cMaps: Set<string> | undefined;
+
+/** A bundled CMap by its file name, for the parser; nothing for a name that isn't one of them
+ * (a font may name anything) or for one past the size bound. */
+export function bundledCMap(name: string): Uint8Array | null {
+  cMaps ??= new Set(readdirSync(cMapDirectory));
+  if (!/^[A-Za-z0-9-]+\.bcmap$/u.test(name) || !cMaps.has(name)) return null;
+  const path = join(cMapDirectory, name);
+  if (statSync(path).size > pdfCMapMaxBytes) return null;
+  const data = readFileSync(path);
+  return data.byteLength > pdfCMapMaxBytes ? null : Uint8Array.from(data);
+}
 const unreadable = "This PDF could not be read, or the requested page is unavailable.";
 const passwordRequired = "This PDF requires a password.";
 
@@ -97,7 +112,11 @@ async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText
       return context.newArrayBuffer(encoded.buffer);
     });
     const refuse = context.newFunction("refuse", () => { refused = true; });
-    for (const [name, handle] of [["hostDecode", decode], ["hostEncode", encode], ["hostRefuse", refuse]] as const) {
+    const cMap = context.newFunction("cMap", value => {
+      const data = bundledCMap(text(value, pdfCMapNameMax));
+      return data ? context.newArrayBuffer(data.buffer) : context.undefined;
+    });
+    for (const [name, handle] of [["hostDecode", decode], ["hostEncode", encode], ["hostRefuse", refuse], ["hostCMap", cMap]] as const) {
       context.setProp(context.global, name, handle); handle.dispose();
     }
     evaluate(pdfRealmPrelude);
@@ -112,13 +131,14 @@ async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText
       globalThis.pdfjsWorker = { WorkerMessageHandler };
       const extract = ${extractPDFDocument.toString()};
       globalThis.pdfDone = false;
-      extract(getDocument, new Uint8Array(pdfInput), ${JSON.stringify({ startPage: range.startPage, pageCount: range.pageCount })}, ${pdfMaxTextBytes})
+      extract(getDocument, new Uint8Array(pdfInput), ${JSON.stringify({ startPage: range.startPage, pageCount: range.pageCount })}, ${pdfMaxTextBytes}, ${pdfRedactionContext},
+        name => { const data = hostCMap(name); return data === undefined ? null : new Uint8Array(data); })
         .then(value => { globalThis.pdfReply = JSON.stringify({ ok: true, value }); })
         .catch(error => { globalThis.pdfReply = JSON.stringify({ ok: false, password: error instanceof Error && error.message === ${JSON.stringify(passwordRequired)} }); })
         .finally(() => { globalThis.pdfDone = true; });
     `, "extract.mjs", true);
+    // The interrupt handler ends a run past its deadline, between jobs too: the tick below runs code.
     while (!refused) {
-      if (Date.now() >= deadline) fail();
       if (runtime.hasPendingJob()) {
         const result = runtime.executePendingJobs(1);
         if (result.error) { result.error.dispose(); return fail(); }
@@ -133,13 +153,11 @@ async function parseInRealm(bytes: Uint8Array, range: PDFRange): Promise<PDFText
     if (refused) fail();
     const reply = context.getProp(context.global, "pdfReply");
     let serialized: string;
-    try { serialized = text(reply, pdfMaxTextBytes * 6 + 4096); } finally { reply.dispose(); }
+    // JSON escapes a UTF-16 unit in at most 6 bytes.
+    try { serialized = text(reply, pdfMaxTextBytes * 6 + pdfRedactionContext * 2 * 6 + 4096); } finally { reply.dispose(); }
     const result = JSON.parse(serialized) as { ok: boolean; password?: boolean; value: PDFText };
     if (!result.ok) throw new Error(result.password ? passwordRequired : unreadable);
     return result.value;
-  } catch (error) {
-    // eslint-disable-next-line preserve-caught-error -- Parser contents never leave this boundary.
-    throw new Error(!refused && error instanceof Error && error.message === passwordRequired ? passwordRequired : unreadable);
   } finally {
     runtime.removeInterruptHandler();
     bufferLength?.dispose();

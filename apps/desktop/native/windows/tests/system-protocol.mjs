@@ -51,15 +51,14 @@ try {
     assert.equal((await request("appInfo", { path })).result, null, "non-app selection is refused without running it");
   }
   assert.ok((await request("appInfo", { path: 42 })).error);
-  assert.deepEqual((await request("redactText", { text: "token=syntheticPrivate123" })).result, { text: "token=[redacted]", withheld: false });
-  assert.deepEqual((await request("redactText", { text: "" })).result, { text: "", withheld: false });
-  for (const [text, startKnown, endKnown, expected, withheld] of [
-    ["syntheticPrivate123. Public.", false, true, ". Public.", true],
-    ["Public. syntheticPrivate123", true, false, "Public. ", true],
-    ["syntheticPrivate123", false, false, "", true],
-    ["Public. Visible.", true, true, "Public. Visible.", false],
-  ]) assert.deepEqual((await request("redactText", { text, startKnown, endKnown })).result, { text: expected, withheld });
-  for (const params of [{}, { text: null }, { text: "😀".repeat(32769) }, { text: "Public.", startKnown: null }]) {
+  assert.deepEqual((await request("redactText", { text: "token=syntheticPrivate123" })).result, { text: "token=[redacted]" });
+  assert.deepEqual((await request("redactText", { text: "" })).result, { text: "" });
+  for (const [before, text, after, expected] of [
+    ["token=", "syntheticPrivate123. Public.", "", "[redacted] Public."],
+    ["", "Public. token=synthetic", "Private123 later.", "Public. token=[redacted]"],
+    ["Earlier.", "会議は金曜日です。", "次のページ", "会議は金曜日です。"],
+  ]) assert.deepEqual((await request("redactText", { before, text, after })).result, { text: expected });
+  for (const params of [{}, { text: null }, { text: "😀".repeat(32769) }, { text: "Public.", before: null }]) {
     assert.ok((await request("redactText", params)).error, "invalid explicit text redaction refuses");
   }
   const front = (await request("frontmostApp")).result;
