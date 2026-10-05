@@ -160,6 +160,28 @@ describe("the Mac app's packaging", () => {
 });
 
 
+test("every platform ships the tray icon and its marked form at each scale, the mark beside the glyph", () => {
+  const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { extraResources: { from: string; filter?: string[] }[] };
+  const tray = readFileSync(join(root, "src/main/tray.ts"), "utf8");
+  const shipped = builder.extraResources.find(({ from }) => from === "resources")?.filter ?? [];
+  const size = (file: string) => {
+    const png = readFileSync(join(root, "resources", file));
+    return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+  };
+
+  for (const name of ["trayTemplate", "trayTemplateMarked"]) {
+    expect(tray).toContain(`"${name}.png"`);
+    for (const scale of ["", "@2x", "@3x"]) expect(shipped.some((pattern) => new RegExp(`^${pattern.replaceAll(".", "\\.").replaceAll("*", ".*")}$`).test(`${name}${scale}.png`))).toBe(true);
+  }
+  for (const [scale, factor] of [["", 1], ["@2x", 2], ["@3x", 3]] as const) {
+    const plain = size(`trayTemplate${scale}.png`);
+    const marked = size(`trayTemplateMarked${scale}.png`);
+    expect(marked.height).toBe(plain.height);
+    expect(marked.width - plain.width).toBe(6 * factor);
+  }
+});
+
+
 test("Linux ships the PNG consumed by native Settings windows", () => {
   const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; to?: string }[] } };
   expect(builder.linux.extraResources).toContainEqual({ from: "resources/icon.png", to: "icon.png" });
