@@ -242,15 +242,19 @@ function launch(): void {
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
     // Ask only the compositor on Linux: AT-SPI traversal would delay the pill.
     if (system instanceof LinuxSystem) return system.caretAnchor();
-    const pid = await system.frontmostApp();
     if (system instanceof WindowsSystem) {
+      // Dispatch before context capture can occupy the native UIA queue. The helper
+      // snapshots the foreground HWND when receiving this request.
+      const caret = system.caretAnchor();
       // Shell geometry updates placement independently; a slow reply must not delay the caret.
       void shellGeometry?.refresh().then((changed) => {
         if (changed) overlay.refreshPlacement();
       }).catch((error: unknown) => {
         log.debug(`main: shell geometry lookup failed: ${errorName(error)}`);
       });
+      return caret;
     }
+    const pid = await system.frontmostApp();
     return pid === null ? null : system.caretAnchor(pid);
   }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined);
 

@@ -92,3 +92,13 @@ test("screen reading and correction learning forward every saved exclusion", asy
     ["focusedFieldValue", { window: 101, maxLength: 20_000, excludedAppIDs: apps, excludedHosts: sites }],
   ]);
 });
+
+test("foreground caret is one native request and retains physical-to-DIP conversion", async () => {
+  const physical = { x: 150, y: 300, width: 1, height: 30 };
+  const points = { x: 100, y: 200, width: 1, height: 20 };
+  mocks.request.mockResolvedValue(physical);
+  mocks.convert.mockReturnValue(points);
+  expect(await system.caretAnchor()).toEqual(points);
+  expect(mocks.request.mock.calls).toEqual([["caretAnchor", {}]]);
+  expect(mocks.convert).toHaveBeenCalledWith(null, physical);
+});

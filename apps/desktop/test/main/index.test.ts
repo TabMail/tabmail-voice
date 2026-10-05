@@ -1646,7 +1646,7 @@ test.each(["initial shell state", "failed close refresh", "helper restart"])("pl
 test.each(["darwin", "win32"] as const)("ready %s caret keeps its foreground target and placement", async (platform) => {
   await launch(platform);
   const helper=app.helpers.get(platform === "win32" ? "voice-windows" : "voice-macos")!;
-  helper.replies.set("frontmostApp", platform === "win32" ? {window:42} : {pid:42});
+  helper.replies.set("frontmostApp", platform === "win32" ? {} : {pid:42});
   const caret={x:500,y:300,width:1,height:20};
   helper.replies.set("caretAnchor",caret);
   const shellReply=Promise.withResolvers<Rect[]>();
@@ -1665,7 +1665,7 @@ test.each(["darwin", "win32"] as const)("ready %s caret keeps its foreground tar
   real.update({kind:"listening"});
   expect.soft(visible).toBe(true);
   expect.soft(real.pillPlace.pill.x).toBe(500.5);
-  expect.soft(helper.requests.filter(r=>r.method==="caretAnchor").map(r=>r.params)).toEqual([platform === "win32" ? {window:42} : {pid:42}]);
+  expect.soft(helper.requests.filter(r=>r.method==="caretAnchor").map(r=>r.params)).toEqual([platform === "win32" ? {} : {pid:42}]);
   expect.soft(app.clipboard).toEqual([]);
   expect.soft(helper.requests.some(r=>r.method==="insert")).toBe(false);
   shellReply.resolve([]);
@@ -1747,7 +1747,7 @@ test("slow shell geometry must not withhold an immediately available caret", asy
   shellReply.resolve([]);
   for (let i = 0; i < 24; i++) await new Promise<void>(queueMicrotask);
   expect.soft(bounds).toEqual(atReveal);
-  expect.soft(helper.requests.filter(r => r.method === "caretAnchor").map(r => r.params)).toEqual([{ window: 42 }]);
+  expect.soft(helper.requests.filter(r => r.method === "caretAnchor").map(r => r.params)).toEqual([{}]);
   expect.soft(app.clipboard).toEqual([]);
   expect.soft(helper.requests.some(r => r.method === "insert")).toBe(false);
 });
@@ -1758,7 +1758,7 @@ test.each(["rejected", "malformed", "no foreground"])("arming refresh %s preserv
   const helper = app.helpers.get("voice-windows")!;
   helper.replies.set("frontmostApp", scenario === "no foreground" ? null : { window: 42 });
   const caret = { x: 800, y: 300, width: 1, height: 20 };
-  helper.replies.set("caretAnchor", caret);
+  helper.replies.set("caretAnchor", scenario === "no foreground" ? null : caret);
   const captured = app.overlay as unknown as { locate: () => Promise<Rect | null>; place: (area: Rect) => Rect | null; refreshPlacement: () => void };
   const area = { x: 0, y: 0, width: 1440, height: 900 };
   helper.replies.set("shellExclusionBounds", [{ x: 0, y: 0, width: 400, height: 900 }]);
@@ -1812,6 +1812,28 @@ test("an old shell reply cannot revive a canceled hold or overwrite newer geomet
   expect(real.pillPlace.pill.x).toBe(800.5);
   expect(app.clipboard).toEqual([]);
   expect(helper.requests.some(r => r.method === "insert")).toBe(false);
+});
+
+
+test("Windows queues the caret before screen context without a foreground IPC round trip", async () => {
+  await launch("win32");
+  const helper = app.helpers.get("voice-windows")!;
+  const foreground = Promise.withResolvers<null>();
+  helper.replies.set("frontmostApp", foreground.promise);
+  helper.replies.set("caretAnchor", { x: 500, y: 300, width: 1, height: 20 });
+  helper.replies.set("readScreen", null);
+  const before = helper.requests.length;
+  const caret = app.overlay!.locate();
+  // Context capture follows arming synchronously in DictationController.start.
+  const capture = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> };
+  const context = capture.captureContext({ apps: [], sites: [] });
+  const dispatched = helper.requests.slice(before).map(request => request.method);
+  expect.soft(dispatched).toContain("caretAnchor");
+  expect.soft(dispatched).not.toContain("frontmostApp");
+  expect.soft(dispatched.indexOf("caretAnchor")).toBeLessThan(dispatched.indexOf("readScreen"));
+  await context;
+  foreground.resolve(null);
+  expect(await caret).toEqual({ x: 500, y: 300, width: 1, height: 20 });
 });
 
 

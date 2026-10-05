@@ -69,9 +69,9 @@ export class WindowsSystem {
     });
   }
 
-  async caretAnchor(window: number): Promise<Rect | null> {
-    if (!Number.isSafeInteger(window) || window <= 0) return null;
-    const rect = await this.helper.request<Rect | null>("caretAnchor", { window });
+  async caretAnchor(window?: number): Promise<Rect | null> {
+    if (window !== undefined && (!Number.isSafeInteger(window) || window <= 0)) return null;
+    const rect = await this.helper.request<Rect | null>("caretAnchor", window === undefined ? {} : { window });
     if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width < 0 || rect.height <= 0) return null;
     return screen.screenToDipRect(null, rect);
   }
