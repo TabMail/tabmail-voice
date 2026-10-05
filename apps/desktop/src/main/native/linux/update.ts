@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { spawn } from "node:child_process";
 import * as config from "../../../core/config.js";
 import { errorName, log } from "../../../core/log.js";
 import { type RunFile, type UpdateInfo, type UpdatePlatform, type UpdateSource, UpdateError } from "../../updater.js";
@@ -61,4 +62,16 @@ async function exitCode(run: RunFile, program: string, args: string[], timeout?:
     log.error(`Updater: install-update didn't run: ${errorName(error)}`);
     return -1;
   }
+}
+
+/**
+ * Opens the updated app once this one has quit (its single-instance lock goes with it), from a shell
+ * of its own. Not `app.relaunch()`: Chromium starts the relaunched app with no_new_privs, under which
+ * the app's AppArmor profile can't run `voice-linux` unconfined and `pkexec` can't raise privileges,
+ * so the updated app would have no screen reading or paste, and couldn't install the next update.
+ */
+export function relaunchAfterExit(options: { pid: number; executable: string; args: string[]; spawnFile?: typeof spawn }): void {
+  const { pid, executable, args, spawnFile = spawn } = options;
+  const wait = `pid=$1; shift; while kill -0 "$pid" 2>/dev/null; do sleep ${config.linuxRelaunchPollSeconds}; done; exec "$@"`;
+  spawnFile("/bin/sh", ["-c", wait, "sh", String(pid), executable, ...args], { detached: true, stdio: "ignore" }).unref();
 }

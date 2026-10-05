@@ -3304,7 +3304,9 @@ the feed's own SHA-512.
   package manager failed), as do `pkexec`'s (126 dismissed: the update stays ready, nothing failed;
   127 not authorized). The authentication dialog says "Authentication is required to install a
   TabMail Voice update." (a polkit action for the packaged script, `auth_admin` every time), not the
-  script's command line with its signature. The package depends on `openssl` and `pkexec`. The app's AppArmor profile lets
+  script's command line with its signature. The updated app is opened by a shell of the app's own once the old one has quit, never
+  `app.relaunch()`: Chromium starts a relaunched app with no_new_privs, under which the AppArmor
+  profile can't run `voice-linux` and `pkexec` can't raise privileges (found in the Ubuntu VM). The package depends on `openssl` and `pkexec`. The app's AppArmor profile lets
   `pkexec` leave it (`Ux`): dpkg, under the inherited profile, couldn't replace the files it names.
 - **Linux updates stay off until a key ships.** The app turns them on only when `update-keys/` holds a
   `.pem`. The private key never enters the repository; the release signs each feed with it. A key is

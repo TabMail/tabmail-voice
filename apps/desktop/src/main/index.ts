@@ -76,7 +76,7 @@ import { TrayMenu } from "./tray.js";
 import { runFile, type UpdatePlatform, Updater } from "./updater.js";
 import { macUpdatePlatform } from "./native/macos/update.js";
 import { windowsUpdatePlatform } from "./native/windows/update.js";
-import { linuxUpdatePlatform } from "./native/linux/update.js";
+import { linuxUpdatePlatform, relaunchAfterExit } from "./native/linux/update.js";
 import { GnomeIntegration } from "./native/linux/gnomeIntegration.js";
 import { Windows } from "./windows.js";
 
@@ -461,7 +461,7 @@ function launch(): void {
           script: join(resources, "install-update"),
           run: runFile,
           relaunch: () => {
-            app.relaunch();
+            relaunchAfterExit({ pid: process.pid, executable: process.execPath, args: process.argv.slice(1) });
             app.exit(0);
           },
         });

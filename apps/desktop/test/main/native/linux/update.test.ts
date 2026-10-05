@@ -2,11 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { EventEmitter } from "node:events";
+import { spawn } from "node:child_process";
+import { EventEmitter, once } from "node:events";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import * as config from "../../../../src/core/config.js";
 import { log } from "../../../../src/core/log.js";
-import { installUpdateFailures, linuxUpdatePlatform } from "../../../../src/main/native/linux/update.js";
+import { installUpdateFailures, linuxUpdatePlatform, relaunchAfterExit } from "../../../../src/main/native/linux/update.js";
 import { type RunFile, type UpdateInfo, type UpdateSource, UpdateError } from "../../../../src/main/updater.js";
 
 const update: UpdateInfo = {
@@ -103,5 +107,41 @@ describe("Linux updates (ADR-DESK-050)", () => {
     expect(error.message).toBe(installUpdateFailures[code]);
     expect(error.options.canceled).toBeUndefined();
     expect(relaunch).not.toHaveBeenCalled();
+  });
+});
+
+/** The updated app opens from a shell of the app's own, never Electron's relauncher (which leaves it
+ * unable to run its helper or pkexec), and only once the old app is gone: before, its single-instance
+ * lock would close the new one at once. Run for real, with Node standing in for both apps. */
+describe("opening the updated app", () => {
+  test("it starts after the old app has quit, with its arguments as given", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "voice-relaunch-"));
+    try {
+      const marker = join(folder, "opened");
+      const old = spawn(process.execPath, ["-e", "setTimeout(() => {}, 600)"], { stdio: "ignore" });
+      relaunchAfterExit({
+        pid: old.pid ?? 0,
+        executable: process.execPath,
+        args: ["-e", "require('fs').writeFileSync(process.argv[1], process.argv[2])", marker, "an argument with spaces"],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(existsSync(marker)).toBe(false);
+      await once(old, "exit");
+      for (let tries = 0; tries < 50 && !existsSync(marker); tries++) await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(readFileSync(marker, "utf8")).toBe("an argument with spaces");
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  test("the app never relaunches itself through Electron", () => {
+    expect(readFileSync(join(__dirname, "../../../../src/main/index.ts"), "utf8")).not.toMatch(/\bapp\.relaunch\(/);
+  });
+
+  test("the shell is detached from the old app, so it outlives it", () => {
+    const spawnFile = vi.fn(() => ({ unref: vi.fn() }));
+    relaunchAfterExit({ pid: 42, executable: "/opt/TabMail Voice/tabmail-voice", args: ["--ozone-platform=x11"], spawnFile: spawnFile as never });
+
+    expect(spawnFile).toHaveBeenCalledWith("/bin/sh", ["-c", expect.stringContaining('exec "$@"'), "sh", "42", "/opt/TabMail Voice/tabmail-voice", "--ozone-platform=x11"], { detached: true, stdio: "ignore" });
   });
 });

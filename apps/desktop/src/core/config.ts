@@ -438,6 +438,8 @@ export const updateVerifyTimeout = 120_000;
 /** Who a Windows update must be signed by: the common name and the organization of its Authenticode
  * certificate, as the release's signing names them (ADR-DESK-050). */
 export const windowsUpdatePublisher = "Lisem AI LTD";
+/** How often the shell that opens the updated Linux app looks whether the old one has quit (s). */
+export const linuxRelaunchPollSeconds = 0.2;
 
 // MARK: Welcome wizard
 
