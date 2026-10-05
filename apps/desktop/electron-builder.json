@@ -92,7 +92,8 @@
       {
         "provider": "generic",
         "url": "https://cdn.tabmail.ai/releases/voice/windows-${arch}",
-        "useMultipleRangeRequest": false
+        "useMultipleRangeRequest": false,
+        "publisherName": ["Lisem AI LTD"]
       }
     ]
   },

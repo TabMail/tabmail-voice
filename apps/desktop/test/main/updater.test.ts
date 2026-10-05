@@ -8,7 +8,7 @@ import * as config from "../../src/core/config.js";
 import { log } from "../../src/core/log.js";
 import { MemoryStore } from "../../src/core/util/keyValueStore.js";
 import { type MacUpdateSource, macUpdatePlatform } from "../../src/main/native/macos/update.js";
-import { installingKey, isNewer, type UpdateInfo, type UpdatePlatform, type UpdateSource, Updater, UpdateError, updateRequestHeaders } from "../../src/main/updater.js";
+import { installingKey, isNewer, runFile, type UpdateInfo, type UpdatePlatform, type UpdateSource, Updater, UpdateError, updateRequestHeaders } from "../../src/main/updater.js";
 
 type CheckResult = Awaited<ReturnType<UpdateSource["checkForUpdates"]>>;
 
@@ -693,5 +693,29 @@ describe("Updater, on every platform (ADR-DESK-050)", () => {
     ["v1.0.1", "1.0.0", false],
   ])("%s is newer than %s: %s", (version, than, newer) => {
     expect(isNewer(version, than)).toBe(newer);
+  });
+});
+
+/** The installers' answers are exit codes (Linux `install-update` 3–6, pkexec 126/127): a code the
+ * program chose comes back as its code, never as success or as a failure to run. Node stands in for
+ * the programs, so this runs on every platform. */
+describe("runFile", () => {
+  const node = (script: string) => ["-e", script];
+
+  test("returns the code the program exited with, and its output", async () => {
+    await expect(runFile(process.execPath, node("process.stdout.write('ok')"))).resolves.toEqual({ code: 0, stdout: "ok" });
+    await expect(runFile(process.execPath, node("process.stdout.write('refused'); process.exit(3)"))).resolves.toEqual({ code: 3, stdout: "refused" });
+    await expect(runFile(process.execPath, node("process.exit(126)"))).resolves.toEqual({ code: 126, stdout: "" });
+  });
+
+  test("a program that runs past its time is stopped and fails", async () => {
+    const started = Date.now();
+
+    await expect(runFile(process.execPath, node("setTimeout(() => {}, 60000)"), 300)).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(30_000);
+  });
+
+  test("a program that can't run fails", async () => {
+    await expect(runFile("/nonexistent/install-update", [])).rejects.toThrow();
   });
 });

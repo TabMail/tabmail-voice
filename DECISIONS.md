@@ -3288,7 +3288,11 @@ the feed's own SHA-512.
   product version is the offered version's four-part form (x.y.z.0). Otherwise the library deletes the
   download, and the user sees "Version x.y.z isn't signed by TabMail, so it wasn't installed." It
   installs when the app quits, or at once with Restart Now, quietly and for this user (no
-  administrator), and the new version opens. The web installer is off.
+  administrator), and the new version opens. The web installer is off. The library calls that check
+  only when the installed `app-update.yml` names a publisher, so the feed configuration names
+  `windowsUpdatePublisher` itself (`publisherName` in `electron-builder.json`): every Windows build
+  checks, signed or not, and none relies on release signing to add it. The release's verification
+  refuses an installed app whose `app-update.yml` doesn't name it.
 - **Linux** (`DebUpdater` for the download only, feed `https://cdn.tabmail.ai/releases/voice/linux-${arch}`,
   `latest-linux.yml` on x64, `latest-linux-arm64.yml` on ARM): the feed also carries `signature`, Ed25519, base64, over
   `TabMail Voice update\npackage: tabmail-voice\narchitecture: <arch>\nversion: <x.y.z>\nsha512: <base64>\n`.

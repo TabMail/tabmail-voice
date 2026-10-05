@@ -5,6 +5,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import * as config from "../src/core/config.js";
 
 const root = join(__dirname, "..");
 
@@ -72,11 +73,13 @@ describe("the Mac app's packaging", () => {
 
   /** Windows and Linux read their own architecture's feed on the same CDN (ADR-DESK-050):
    * electron-builder writes each build's `app-update.yml` with `${arch}` filled in, and the release
-   * uploads each architecture's installer and feed to its own folder. */
+   * uploads each architecture's installer and feed to its own folder. electron-updater checks a
+   * downloaded Windows installer's signature only when `app-update.yml` names a publisher, and
+   * installs anything the feed offers otherwise, so every Windows build names it. */
   test("Windows and Linux update from their architecture's folder on cdn.tabmail.ai", () => {
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { publish: unknown; artifactName: string }; linux: { publish: unknown; artifactName: string } };
 
-    expect(builder.win.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/windows-${arch}", useMultipleRangeRequest: false }]);
+    expect(builder.win.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/windows-${arch}", useMultipleRangeRequest: false, publisherName: [config.windowsUpdatePublisher] }]);
     expect(builder.linux.publish).toEqual([{ provider: "generic", url: "https://cdn.tabmail.ai/releases/voice/linux-${arch}", useMultipleRangeRequest: false }]);
     expect(builder.win.artifactName).toBe("TabMail-Voice-${version}-windows-${arch}.${ext}");
     expect(builder.linux.artifactName).toBe("TabMail-Voice-${version}-linux-${arch}.${ext}");

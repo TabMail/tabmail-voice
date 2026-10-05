@@ -41,6 +41,8 @@ const app = vi.hoisted(() => ({
   clipboardFails: false,
   historyWindow: [] as string[],
   hides: 0,
+  /** The codes `app.exit` was called with. */
+  exits: [] as number[],
   /** The windows other than the overlay that are open. */
   openWindows: [] as string[],
   /** What the history window does when it loses the focus. */
@@ -105,6 +107,9 @@ vi.mock("electron", async () => {
       dock: { hide() {} },
       on() {},
       quit() {},
+      exit: (code: number) => {
+        app.exits.push(code);
+      },
       getLoginItemSettings: () => ({ openAtLogin: false }),
       hide: () => {
         app.hides += 1;
@@ -466,6 +471,7 @@ afterEach(() => {
   app.trayUpdates = 0;
   app.dialogs = [];
   app.dialogResponse = 1;
+  app.exits = [];
   app.openDialogs = [];
   app.pickedPath = null;
 });
@@ -1484,6 +1490,45 @@ describe("main process wiring", () => {
       }
     });
 
+    /** The packaged `install-update` proves the download and, through pkexec, installs it; then the
+     * app opens the new version in its own place, with the arguments it was started with, and ends. */
+    test("a Linux update is proven and installed by the packaged script, then the app reopens", async () => {
+      const resources = mkdtempSync(join(tmpdir(), "voice-resources-"));
+      const runs: [string, string[]][] = [];
+      const relaunches: unknown[] = [];
+      vi.doMock("../../src/main/native/linux/update.js", async (original) => {
+        const real = await original<typeof import("../../src/main/native/linux/update.js")>();
+        return {
+          ...real,
+          linuxUpdatePlatform: (options: Parameters<typeof real.linuxUpdatePlatform>[0]) =>
+            real.linuxUpdatePlatform({ ...options, run: async (file, args) => { runs.push([file, args]); return { code: 0, stdout: "" }; } }),
+          relaunchAfterExit: (options: unknown) => relaunches.push(options),
+        };
+      });
+      try {
+        mkdirSync(join(resources, "linux", "update-keys"), { recursive: true });
+        writeFileSync(join(resources, "linux", "update-keys", "release.pem"), "a public key");
+        await launchPackaged("linux", resources);
+        const script = join(resources, "linux", "install-update");
+
+        app.autoUpdater?.emit("update-available", { version: "9.9.9" });
+        app.autoUpdater?.emit("update-downloaded", { version: "9.9.9", downloadedFile: "/tmp/voice.deb" });
+        await settle();
+        expect(runs.map(([file, args]) => [file, args[0]])).toEqual([[script, "verify"]]);
+        expect(app.dialogs).toEqual([expect.objectContaining({ message: "TabMail Voice 9.9.9 is ready to install.", buttons: ["Install Now", "Later"] })]);
+        expect(relaunches).toEqual([]);
+
+        app.trayActions?.installUpdate();
+        await settle();
+        expect(runs.slice(1).map(([file, args]) => [file, args[0], args[1]])).toEqual([["/usr/bin/pkexec", script, "install"]]);
+        expect(relaunches).toEqual([{ pid: process.pid, executable: process.execPath, args: process.argv.slice(1) }]);
+        expect(app.exits).toEqual([0]);
+      } finally {
+        vi.doUnmock("../../src/main/native/linux/update.js");
+        rmSync(resources, { recursive: true, force: true });
+      }
+    });
+
     test("a debug build has no updater and no update item", async () => {
       await launch("darwin");
 
@@ -1509,9 +1554,11 @@ describe("main process wiring", () => {
     test("a packaged build looks for an update by itself after launching", async () => {
       vi.useFakeTimers();
       try {
-        const launched = launchPackaged();
-        await vi.advanceTimersByTimeAsync(0);
-        await launched;
+        // The import can take several turns of the event loop (more after a test mocks a module), and
+        // the launch's own zero-delay timer runs only once the clock is advanced after it.
+        let launched = false;
+        void launchPackaged().then(() => (launched = true));
+        while (!launched) await vi.advanceTimersByTimeAsync(0);
         expect(app.autoUpdater?.checks).toBe(0);
 
         await vi.advanceTimersByTimeAsync(config.updateFirstCheckDelay);

@@ -109,9 +109,13 @@ describe.skipIf(!hasDebianTools)("install-update (ADR-DESK-050)", () => {
   });
 
   /** Never an older version, or the same again: the signature can't make a downgrade an update. */
-  test("a signed package no newer than the installed version is refused", () => {
-    if (installedVersion === null) return; // Nothing installed to be older than.
+  test("a signed package no newer than the installed version is refused", (context) => {
     const current = installedVersion;
+    if (current === null) {
+      // CI installs a stand-in tabmail-voice so this always runs there.
+      expect(process.env.CI, "nothing installed to be older than").toBeUndefined();
+      return context.skip();
+    }
     const same = deb({ version: current });
     const hash = sha512(same);
     expect(run("verify", same, current, hash, signature({ version: current, sha512: hash }))).toBe(5);
