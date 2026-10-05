@@ -349,7 +349,7 @@ describe("connectors", () => {
       ["reminders", "reminder_create"],
     ]);
     const valid = { title: "Example", start_iso: iso(at(10)) };
-    expect(tools.map((tool) => tool.confirmation(valid) !== null)).toEqual([false, true, false, true]);
+    expect(tools.map((tool) => tool.confirmation(valid, new AbortController().signal) !== null)).toEqual([false, true, false, true]);
   });
 });
 

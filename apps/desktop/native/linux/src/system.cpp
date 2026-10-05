@@ -45,7 +45,9 @@ int main() {
         const auto target = foreground.target(); return target && target->terminal;
     });
     voice::Channel channel(output, [&](const std::string& method, const JSON& params, voice::Channel::Reply reply, int64_t id) {
-        if (method == "cancel") {
+        if (method == "redactText") {
+            reply(voice::core::request(params, voice_core_redact_text_json), true);
+        } else if (method == "cancel") {
             if (params.is_object() && params.contains("id") && params["id"].is_number_integer()) inserter.cancel(params["id"].get<int64_t>());
         } else if (method == "insert") {
             inserter.insert(id, params, reply);

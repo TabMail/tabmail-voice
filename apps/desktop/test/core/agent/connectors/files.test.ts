@@ -175,13 +175,14 @@ describe("file_open", () => {
 describe("connector", () => {
   /** The Files switch covers both tools, and neither asks first. */
   test("the Files switch covers its tools", () => {
-    const tools = filesConnector.tools({ fileStore: store, home });
+    const tools = filesConnector.tools({ fileStore: store, home, pdfReader: { prepare: async () => { throw new Error("not used"); } } });
 
     expect(tools.map((tool) => [tool.connector, tool.name])).toEqual([
       ["files", "files_search"],
       ["files", "file_open"],
+      ["files", "file_read_pdf"],
     ]);
-    expect(tools.map((tool) => tool.confirmation({ query: "tax", path: "/tmp/example.pdf" }))).toEqual([null, null]);
+    expect(tools.slice(0, 2).map((tool) => tool.confirmation({ query: "tax", path: "/tmp/example.pdf" }, new AbortController().signal))).toEqual([null, null]);
   });
 });
 

@@ -53,7 +53,7 @@ describe("the connector", () => {
       ["web_read", "web"],
       ["web_open", "web"],
     ]);
-    expect(tools.map((tool) => tool.confirmation({ url: "https://example.com/" }))).toEqual([null, null]);
+    expect(tools.map((tool) => tool.confirmation({ url: "https://example.com/" }, new AbortController().signal))).toEqual([null, null]);
   });
 });
 

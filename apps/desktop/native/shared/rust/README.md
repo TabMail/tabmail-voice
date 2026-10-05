@@ -68,6 +68,12 @@ Comparison uses [Unicode canonical caseless matching](https://www.unicode.org/ve
 
 `voice_core_gesture_modifier`, `voice_core_gesture_key`, `voice_core_gesture_owns` and `voice_core_gesture_ended` operate on a caller-owned fixed-size state value. They allocate nothing, retain no pointers and return scalar actions. Native monitors normalize key identity and timestamps, maintain physical key-up ownership, and own event/portal lifecycles. Swift/C++ traces use `../hotkey/gesture-cases.json`.
 
+## Explicit document text
+
+`voice_core_redact_text_json` accepts `{text: string, startKnown?: boolean, endKnown?: boolean}` with at most 128 KiB of UTF-8 text and returns `{text: string}` after the canonical Rust engine. Omitted edge facts mean complete explicit text; bounded document readers supply both facts. Unknown edges first use the same source-window recognition policy as screen acquisition, withholding ambiguous continuations before redaction. Invalid edge types refuse the request. All three native services expose it as `redactText`. Invalid input and core errors refuse the operation; it never returns the unfiltered input on failure. File authorization is the caller's responsibility and is independent of screen exclusions.
+
+`src/main/native/textRedactor.ts` supplies the app-side boundary for the PDF reader. It refuses unavailable/restarting helpers instead of queuing private text, bounds replies, sanitizes error details and discards results after cancellation. This boundary alone does not implement or authorize PDF reads.
+
 ## Timing validation
 
 Run the macOS release suite with `swift test -c release --no-parallel` from `native/macos` when evaluating wall-clock redaction limits. Swift Testing otherwise runs unrelated corpus, large-input and provider tests concurrently; their CPU contention can obscure the engine's timing. Keep the release hostile-text limit at two seconds. An isolated timing pass does not replace the full functional suite. This does not disable concurrency exercised inside an individual test.

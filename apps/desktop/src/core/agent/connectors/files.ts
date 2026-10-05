@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { PDFReadTool } from "./pdf.js";
 import * as config from "../../config.js";
 import { LocalDateTime } from "../../util/localDateTime.js";
 import { Arguments, type ConnectorServices, type ConnectorTool, defineConnector, ToolArgumentError } from "./contract.js";
@@ -67,8 +68,8 @@ export const filesConnector = defineConnector({
   order: 40,
   platforms: ["darwin", "win32", "linux"],
   displayName: "Files",
-  settingsDescription: "Finds indexed files and email messages in your home folder, and opens the ones you ask for.",
-  tools: ({ fileStore, home }: Pick<ConnectorServices, "fileStore" | "home">): ConnectorTool[] => [new FilesSearchTool(fileStore, home), new FileOpenTool(fileStore, home)],
+  settingsDescription: "Finds indexed files and email messages in your home folder, opens the ones you ask for, and reads PDF text with your confirmation.",
+  tools: ({ fileStore, home, pdfReader }: Pick<ConnectorServices, "fileStore" | "home" | "pdfReader">): ConnectorTool[] => [new FilesSearchTool(fileStore, home), new FileOpenTool(fileStore, home), new PDFReadTool(pdfReader)],
 });
 
 /** Finds files, and Apple Mail messages Spotlight has indexed, in the user's home folder

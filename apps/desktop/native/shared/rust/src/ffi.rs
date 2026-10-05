@@ -92,6 +92,43 @@ pub unsafe extern "C" fn voice_core_policy_json(
     unsafe { process(data, length, output, crate::policy::process) }
 }
 
+/// Explicit local-document text, independent of screen-exclusion policy. The
+/// application must authorize its file read before requesting this operation.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_redact_text_json(
+    data: *const u8,
+    length: usize,
+    output: *mut Buffer,
+) -> u32 {
+    unsafe {
+        process(data, length, output, |input| {
+            let value: serde_json::Value = serde_json::from_slice(input).map_err(|_| 1u32)?;
+            let text = value
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(1u32)?;
+            if text.len() > 128 * 1024 {
+                return Err(1);
+            }
+            // Complete explicit text retains the original contract. Documents with
+            // omitted pages/chunks supply edge facts, using the same recognition
+            // policy as bounded screen sources before canonical redaction.
+            let edge = |name| match value.get(name) {
+                None => Ok(true),
+                Some(value) => value.as_bool().ok_or(1u32),
+            };
+            let range = crate::source_window::recognition_range_with_limit(
+                text,
+                edge("startKnown")?,
+                edge("endKnown")?,
+                128 * 1024,
+            )?;
+            let result = privacy::redact(&vec![vec![text[range].to_owned()]]).map_err(|_| 3u32)?;
+            serde_json::to_vec(&serde_json::json!({"text": result[0][0]})).map_err(|_| 3)
+        })
+    }
+}
+
 unsafe fn process(
     data: *const u8,
     length: usize,
@@ -783,7 +820,57 @@ mod tests {
             voice_core_buffer_free(Buffer::empty());
         }
     }
-
+    #[test]
+    fn explicit_text_redaction_is_bounded_and_refuses_bad_shapes() {
+        for (input, expected) in [
+            (
+                serde_json::json!({"text": "token=syntheticPrivate123"}),
+                Some("token=[redacted]"),
+            ),
+            (serde_json::json!({"text": ""}), Some("")),
+            (
+                serde_json::json!({"text":"syntheticPrivate123. Public.","startKnown":false,"endKnown":true}),
+                Some(". Public."),
+            ),
+            (
+                serde_json::json!({"text":"Public. syntheticPrivate123","startKnown":true,"endKnown":false}),
+                Some("Public. "),
+            ),
+            (
+                serde_json::json!({"text":"syntheticPrivate123","startKnown":false,"endKnown":false}),
+                Some(""),
+            ),
+            (
+                serde_json::json!({"text":"Public.","startKnown":null}),
+                None,
+            ),
+            (
+                serde_json::json!({"text":"Public.","endKnown":"true"}),
+                None,
+            ),
+            (serde_json::json!({}), None),
+            (serde_json::json!({"text": null}), None),
+            (serde_json::json!({"text": "😀".repeat(32769)}), None),
+        ] {
+            let input = serde_json::to_vec(&input).unwrap();
+            let mut output = Buffer::empty();
+            let status =
+                unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
+            if let Some(text) = expected {
+                assert_eq!(status, 0);
+                let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
+                let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                assert_eq!(reply, serde_json::json!({"text": text}));
+            } else {
+                assert_eq!(status, 1);
+                assert!(output.data.is_null());
+                assert_eq!(output.length, 0);
+            }
+            unsafe {
+                voice_core_buffer_free(output);
+            }
+        }
+    }
     #[test]
     fn panic_child() {
         if std::env::var_os("VOICE_CORE_PANIC_CHILD").is_none() {

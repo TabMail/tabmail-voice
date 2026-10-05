@@ -16,12 +16,12 @@ enum Redactor {
         guard result.count == lines.count, zip(result, lines).allSatisfy({ $0.count == $1.count }) else { throw Failure.refused }
         return result
     }
-    enum Operation { case redact, context, policy, address, viewport }
+    enum Operation { case redact, context, policy, text, address, viewport }
     static func request(_ input: Data, operation: Operation = .redact) throws -> Data {
         guard voice_core_abi_version() == 1 else { throw Failure.refused }
         var output = VoiceCoreBuffer(data: nil, length: 0)
         let status = input.withUnsafeBytes { bytes in
-            (operation == .viewport ? voice_core_viewport_json : operation == .address ? voice_core_address_json : operation == .context ? voice_core_context_json : operation == .policy ? voice_core_policy_json : voice_core_redact_json)(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &output)
+            (operation == .viewport ? voice_core_viewport_json : operation == .address ? voice_core_address_json : operation == .context ? voice_core_context_json : operation == .policy ? voice_core_policy_json : operation == .text ? voice_core_redact_text_json : voice_core_redact_json)(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &output)
         }
         defer { voice_core_buffer_free(output) }
         guard status == 0, let data = output.data else { throw Failure.refused }

@@ -51,6 +51,16 @@ try {
     assert.equal((await request("appInfo", { path })).result, null, "non-app selection is refused without running it");
   }
   assert.ok((await request("appInfo", { path: 42 })).error);
+  assert.deepEqual((await request("redactText", { text: "token=syntheticPrivate123" })).result, { text: "token=[redacted]" });
+  assert.deepEqual((await request("redactText", { text: "" })).result, { text: "" });
+  for (const [text, startKnown, endKnown, expected] of [
+    ["syntheticPrivate123. Public.", false, true, ". Public."],
+    ["Public. syntheticPrivate123", true, false, "Public. "],
+    ["syntheticPrivate123", false, false, ""],
+  ]) assert.deepEqual((await request("redactText", { text, startKnown, endKnown })).result, { text: expected });
+  for (const params of [{}, { text: null }, { text: "😀".repeat(32769) }, { text: "Public.", startKnown: null }]) {
+    assert.ok((await request("redactText", params)).error, "invalid explicit text redaction refuses");
+  }
   const front = (await request("frontmostApp")).result;
   assert.ok(front === null || (Number.isSafeInteger(front.window) && front.window > 0));
   assert.deepEqual((await request("caretAnchor", { window: 0 })).result, null);

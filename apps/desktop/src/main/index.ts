@@ -2,6 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import { LocalPDFReader } from "./documents/pdfReader.js";
+import { parsePDF } from "./documents/pdfProcess.js";
+import { NativeTextRedactor } from "./native/textRedactor.js";
 import { existsSync, readdirSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir, tmpdir, userInfo } from "node:os";
@@ -221,6 +224,7 @@ function launch(): void {
         contactStore: process.platform === "win32" ? new NativeContactStore(productivityRunner(join(helpers, "voice-productivity.exe")), "TabMail Voice contacts (local to this PC)") : process.platform === "linux" ? new NativeContactStore(productivityRunner(join(helpers, "voice-productivity"))) : mac.contactStore,
         fileStore: process.platform === "win32" ? new WindowsFileStore(homedir()) : process.platform === "linux" ? new LinuxFileStore(homedir(), linuxSearchRunner(join(helpers, "voice-files"))) : mac.fileStore,
         home: homedir(),
+        pdfReader: new LocalPDFReader(homedir(), parsePDF, new NativeTextRedactor(nativeHelper)),
         emailOpener,
         scriptRunner: osascript,
         noteStore: process.platform === "linux" ? new NativeNoteStore(productivityRunner(join(helpers, "voice-productivity"))) : new MacNoteStore(osascript),

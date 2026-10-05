@@ -12,6 +12,7 @@ import { EventStoreError } from "../../../src/core/agent/connectors/calendar.js"
 import { ContactStoreError } from "../../../src/core/agent/connectors/contacts.js";
 import { FileStoreError } from "../../../src/core/agent/connectors/files.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
+import { NativeTextRedactor } from "../../../src/main/native/textRedactor.js";
 import { MacSystem } from "../../../src/main/native/macos/system.js";
 import { decodeSamples, NativeMicrophone } from "../../../src/main/native/microphone.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
@@ -35,6 +36,13 @@ function registered(source: string): Map<string, Set<string>> {
     if (/bundleIdentifier\(params\)/.test(section)) params.add("bundleIdentifier");
     // `ScreenExclusions(params:method:)` reads both lists, and refuses a request without either.
     if (/ScreenExclusions\(params: params,/.test(section)) for (const name of ["excludedAppIDs", "excludedHosts"]) params.add(name);
+    // This handler forwards the JSON unchanged to the shared Rust text operation.
+    if (/Redactor\.request\(JSONEncoder\(\)\.encode\(params\), operation: \.text\)/.test(section)) {
+      const ffi = readFileSync(join(root, "native/shared/rust/src/ffi.rs"), "utf8");
+      const body = ffi.split("pub unsafe extern \"C\" fn voice_core_redact_text_json(")[1]?.split("unsafe fn process(")[0] ?? "";
+      expect(body).not.toBe("");
+      for (const match of body.matchAll(/\.get\("(\w+)"\)/g)) params.add(match[1] ?? "");
+    }
     handlers.set(method, params);
   }
   return handlers;
@@ -46,7 +54,7 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
   const helper = {
     request: async (method: string, params: Record<string, unknown> = {}) => {
       requests.push({ method, params });
-      return { value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
+      return { text: "", value: false, path: null, code: null, name: "", systemDefault: null, installed: [], png: null, events: [], reminders: [], contacts: [], items: [], opened: false };
     },
     on() {},
   } as unknown as HelperClient;
@@ -54,9 +62,10 @@ function recordingHelper(): { helper: HelperClient; requests: { method: string; 
 }
 
 describe("helper wire contract", () => {
-  test("every request MacSystem sends is one voice-macos handles, with the params it reads", async () => {
+  test("every app request matches a voice-macos handler and the params it reads", async () => {
     const { helper, requests } = recordingHelper();
     const mac = new MacSystem(helper);
+    await new NativeTextRedactor(helper).redact("Example", new AbortController().signal);
     const app = "org.example.app";
     await mac.paste("text");
     await mac.frontmostApp();

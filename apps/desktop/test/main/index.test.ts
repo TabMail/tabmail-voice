@@ -973,7 +973,7 @@ describe("main process wiring", () => {
     await launch("darwin");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[]; enabledConnectors: string[] };
 
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", "reminders_read", "reminder_create", "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", "notes_search", "notes_create", "messages_send", "web_read", "web_open"]);
     // Every app with a switch has its tools, and every tool's app a switch.
     expect(new Set(app.connectorTools.map((tool) => tool.connector))).toEqual(new Set(connectorIDs));
     await app.connectorTools.find((tool) => tool.name === "calendar_read")?.run({}, signal);
@@ -1311,10 +1311,10 @@ describe("main process wiring", () => {
   test.each(["win32", "linux"] as const)("shared Answer tools and switches work on %s", async (platform) => {
     await launch(platform);
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name) as { connectors: string[] };
-    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open"]);
+    expect(app.connectorTools.map((tool) => tool.name)).toEqual(["calendar_read", "calendar_event_create", ...(platform === "linux" ? ["reminders_read", "reminder_create"] : []), "contacts_search", "contacts_add", "files_search", "file_open", "file_read_pdf", "email_compose", ...(platform === "linux" ? ["notes_search", "notes_create"] : []), "web_read", "web_open"]);
     if (platform === "win32") {
       const create = app.connectorTools.find((tool) => tool.name === "calendar_event_create");
-      const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" });
+      const confirmation = await create?.confirmation({ title: "Synthetic event", start_iso: "2027-05-12" }, signal);
       expect(confirmation).toContain("Destination: TabMail Voice calendar (local to this PC)");
     }
     const expectedConnectors = ["calendar", ...(platform === "linux" ? ["reminders"] : []), "contacts", "files", "email", ...(platform === "linux" ? ["notes"] : []), "web"];

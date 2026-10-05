@@ -66,6 +66,10 @@ public enum MacService {
     ) -> AnyObject {
         let activator = AccessibilityActivator()
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
+        channel.on("redactText") { params in
+            let result = try Redactor.request(JSONEncoder().encode(params), operation: .text)
+            return try JSONDecoder().decode(JSON.self, from: result)
+        }
         channel.on("readScreen") { params in
             let exclusions = try ScreenExclusions(params: params, method: "readScreen")
             guard let (pid, name, bundleID) = await MainActor.run(body: screen.frontmost) else { return .null }
