@@ -11,6 +11,9 @@ namespace voice {
 // observed foreign owner vetoes restoration, but the final owner check and the
 // compositor mutation cannot be atomic. Never retry an uncertain paste.
 class Inserter {
+    // How long the app holding the clipboard gets to hand over its contents
+    // before the paste goes ahead without putting them back (owner, 2026-10-04).
+    static constexpr unsigned snapshotMilliseconds = 500;
     struct Transaction {
         int64_t id;
         uint64_t target, snapshotEpoch;
@@ -18,14 +21,14 @@ class Inserter {
         std::chrono::steady_clock::time_point deadline;
         std::string text;
         Channel::Reply reply;
-        Object<GCancellable> cancel = own(g_cancellable_new());
+        Object<GCancellable> cancel = own(g_cancellable_new()), reading = own(g_cancellable_new());
         InputSession::Offer saved;
         std::vector<std::string> formats;
         std::vector<int> chordKeys, pressedKeys;
         bool terminal = false;
         size_t next = 0, bytes = 0;
-        guint timer = 0;
-        bool canceled = false, published = false, publishComplete = false, sawOwner = false,
+        guint timer = 0, snapshotTimer = 0;
+        bool restorable = true, canceled = false, published = false, publishComplete = false, sawOwner = false,
             foreignOwner = false, injectionStarted = false,
             successful = false, cleaning = false;
     };
@@ -44,12 +47,14 @@ class Inserter {
         if (!active(item)) return;
         if (item->timer && g_main_context_find_source_by_id(nullptr, item->timer)) g_source_remove(item->timer);
         item->timer = 0;
-        g_cancellable_cancel(item->cancel.get());
+        if (item->snapshotTimer && g_main_context_find_source_by_id(nullptr, item->snapshotTimer)) g_source_remove(item->snapshotTimer);
+        item->snapshotTimer = 0;
+        g_cancellable_cancel(item->cancel.get()); g_cancellable_cancel(item->reading.get());
         current.reset(); item->reply(nlohmann::json::object(), item->successful && !item->canceled);
     }
     void restore(const std::shared_ptr<Transaction>& item) {
         if (!active(item)) return;
-        if (!item->published || item->foreignOwner || !input.ready() || !input.state->selection.ours) { complete(item); return; }
+        if (!item->published || !item->restorable || item->foreignOwner || !input.ready() || !input.state->selection.ours) { complete(item); return; }
         // Cleanup has its own bounded lifetime; cancellation of the insertion
         // must not cancel restoration or leave an injected modifier pressed.
         input.state->publish(item->saved, nullptr, [this, item](bool success) {
@@ -118,9 +123,14 @@ class Inserter {
             return;
         }
         const auto mime = item->formats[item->next++];
-        input.state->read(mime, item->cancel.get(), [this, item, mime](InputSession::Bytes bytes) {
+        input.state->read(mime, item->reading.get(), [this, item, mime](InputSession::Bytes bytes) {
             if (!active(item)) return;
-            if (!bytes || bytes->size() > 64 * 1024 * 1024 - item->bytes) { complete(item); return; }
+            if (!bytes || bytes->size() > 64 * 1024 * 1024 - item->bytes) {
+                // A clipboard that can't be saved isn't put back; the paste still happens.
+                std::cerr << "debug insertion: clipboard not saved, pasting without restoring it\n";
+                item->restorable = false; item->saved.clear(); item->next = item->formats.size();
+                snapshot(item); return;
+            }
             item->bytes += bytes->size(); item->saved[mime] = bytes; snapshot(item);
         });
     }
@@ -138,7 +148,7 @@ public:
     ~Inserter() { input.state->onOwnerChange = {}; }
     void cancel(int64_t id) {
         if (!current || current->id != id) return;
-        current->canceled = true; g_cancellable_cancel(current->cancel.get());
+        current->canceled = true; g_cancellable_cancel(current->cancel.get()); g_cancellable_cancel(current->reading.get());
         // In-flight key calls perform their own release chain on completion.
         if (!current->injectionStarted && (!current->published || current->publishComplete)) clean(current);
     }
@@ -177,6 +187,12 @@ public:
                 if (deadline->self->current) deadline->self->current->timer = 0;
                 deadline->self->cancel(deadline->id); return G_SOURCE_REMOVE;
             }, new Deadline{this, id}, [](gpointer data) { delete static_cast<Deadline*>(data); });
+        struct Snapshot { std::shared_ptr<Transaction> item; };
+        item->snapshotTimer = g_timeout_add_full(G_PRIORITY_DEFAULT, snapshotMilliseconds,
+            [](gpointer data) -> gboolean {
+                const auto& item = static_cast<Snapshot*>(data)->item;
+                item->snapshotTimer = 0; g_cancellable_cancel(item->reading.get()); return G_SOURCE_REMOVE;
+            }, new Snapshot{item}, [](gpointer data) { delete static_cast<Snapshot*>(data); });
         snapshot(item);
     }
 };

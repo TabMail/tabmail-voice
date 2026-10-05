@@ -564,14 +564,24 @@ describe("main process wiring", () => {
     expect(inserts[0]?.params).toMatchObject({ text: "Hello." });
   });
 
-  test("Linux placement queries compositor geometry without an accessibility target lookup", async () => {
+  test("Linux placement prefers the focused element's caret, asked before the screen read, over compositor geometry", async () => {
     await launch("linux");
-    const helper = app.helpers.get("voice-hotkey");
-    const before = helper?.requests.length;
-    expect(await app.overlay?.locate()).toBeNull();
-    expect(helper?.requests.slice(before)).toEqual([{ method: "caretAnchor", params: {}, signal: undefined }]);
-    helper?.replies.set("caretAnchor", { x: 200, y: 300, width: 1, height: 20 });
+    const accessible = app.helpers.get("voice-linux")!, compositor = app.helpers.get("voice-hotkey")!;
+    accessible.replies.set("readScreen", null);
+    const before = { accessible: accessible.requests.length, compositor: compositor.requests.length };
+    const caret = app.overlay!.locate();
+    const capture = app.controller as unknown as { captureContext: (exclusions: { apps: string[]; sites: string[] }) => Promise<unknown> };
+    await capture.captureContext({ apps: [], sites: [] });
+    const dispatched = accessible.requests.slice(before.accessible).map(request => request.method);
+    expect.soft(dispatched.indexOf("caretAnchor")).toBeGreaterThanOrEqual(0);
+    expect.soft(dispatched.indexOf("caretAnchor")).toBeLessThan(dispatched.indexOf("readScreen"));
+    expect.soft(dispatched).not.toContain("frontmostApp");
+    expect.soft(compositor.requests.slice(before.compositor)).toEqual([{ method: "caretAnchor", params: {}, signal: undefined }]);
+    expect(await caret).toBeNull();
+    compositor.replies.set("caretAnchor", { x: 200, y: 300, width: 1, height: 20 });
     expect(await app.overlay?.locate()).toEqual({ x: 200, y: 300, width: 1, height: 20 });
+    accessible.replies.set("caretAnchor", { x: 640, y: 300, width: 2, height: 19 });
+    expect(await app.overlay?.locate()).toEqual({ x: 640, y: 300, width: 2, height: 19 });
   });
 
   test("Windows paste keeps its original window and uses the cancellable Windows helper", async () => {

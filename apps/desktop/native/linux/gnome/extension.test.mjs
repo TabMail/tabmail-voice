@@ -12,7 +12,9 @@ class Signals {
     emit(name, ...args) { for (const item of this.callbacks.values()) if (item.name === name) item.callback(this, ...args); }
 }
 async function fixture(failExport = false) {
-    const window = Object.assign(new Signals(), {get_frame_rect: () => ({x: 100, y: 100, width: 500, height: 400})});
+    const window = Object.assign(new Signals(), {get_frame_rect: () => ({x: 100, y: 100, width: 500, height: 400}),
+        get_client_content_rect: () => ({x: 110, y: 140, width: 480, height: 350})});
+    const theme = {scale_factor: 1};
     const display = Object.assign(new Signals(), {focus_window: window});
     const inputMethod = Object.assign(new Signals(), {currentFocus: {}});
     const overview = Object.assign(new Signals(), {visible: false});
@@ -27,11 +29,12 @@ async function fixture(failExport = false) {
         const id = ++nextGrab; grabs.set(id, key); return id;
     };
     display.ungrab_accelerator = id => assert.ok(grabs.delete(id));
-    const context = vm.createContext({global: {display}});
+    const context = vm.createContext({global: {display, stage: {}}});
     const dependencies = {
         'gi://GLib': {default: {Variant: class {constructor(type, value) {this.type = type; this.value = value;}}}},
         'gi://Meta': {default: {KeyBindingFlags: {IGNORE_AUTOREPEAT: 1}, external_binding_name_for_action: id => String(id)}},
         'gi://Shell': {default: {ActionMode: {NORMAL: 1, NONE: 0}}},
+        'gi://St': {default: {ThemeContext: {get_for_stage: () => theme}}},
         'gi://Gio': {default: {BusNameWatcherFlags: {NONE: 0},
             bus_watch_name_on_connection(_bus, _name, _flags, _appeared, vanished) {lostOwner = vanished; return 1;},
             bus_unwatch_name() {lostOwner = null;},
@@ -65,7 +68,7 @@ async function fixture(failExport = false) {
         extension.SetChatOpenAsync([open], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    return {recording, chat, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    return {theme, recording, chat, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -205,6 +208,22 @@ test('an open chat window keeps Escape alone, through a dictation, until it clos
     f.extension.disable();
 });
 
+test('a window-relative caret is placed in the focused window\'s content, scaled, and refused outside it', async () => {
+    const f = await fixture();
+    assert.deepEqual(JSON.parse(f.extension.FromWindow(30, 40, 0, 18)), {x: 140, y: 180, width: 1, height: 18, source: 'accessibility'});
+    f.theme.scale_factor = 2;
+    assert.deepEqual(JSON.parse(f.extension.FromWindow(30, 40, 2, 18)), {x: 170, y: 220, width: 4, height: 36, source: 'accessibility'});
+    f.theme.scale_factor = 1;
+    for (const outside of [[-1, 40, 1, 18], [30, -1, 1, 18], [480, 40, 1, 18], [30, 340, 1, 18]])
+        assert.equal(f.extension.FromWindow(...outside), 'null', String(outside));
+    for (const invalid of [[NaN, 40, 1, 18], [30, 40, -1, 18], [30, 40, 1, 0], [30, Infinity, 1, 18]])
+        assert.equal(f.extension.FromWindow(...invalid), 'null', String(invalid));
+    f.overview.visible = true; assert.equal(f.extension.FromWindow(30, 40, 1, 18), 'null'); f.overview.visible = false;
+    f.sessionMode.isLocked = true; assert.equal(f.extension.FromWindow(30, 40, 1, 18), 'null'); f.sessionMode.isLocked = false;
+    f.display.focus_window = null; assert.equal(f.extension.FromWindow(30, 40, 1, 18), 'null');
+    f.extension.disable();
+});
+
 test('exported protocol matches the native GNOME peer and unicast Action envelope', async () => {
     const f = await fixture();
     const {xml, path} = f.protocol();
@@ -214,6 +233,7 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<method name="Read"><arg type="s" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="SetRecording"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="SetChatOpen"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
+    assert.match(xml, /<method name="FromWindow"><arg type="d" direction="in"\/><arg type="d" direction="in"\/><arg type="d" direction="in"\/><arg type="d" direction="in"\/><arg type="s" direction="out"\/><\/method>/);
     assert.match(xml, /<signal name="Action"><arg type="s"\/><\/signal>/);
     assert.equal(f.extension.Version(), 1);
     assert.equal(f.recording(true), true);

@@ -5,12 +5,14 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
+import St from 'gi://St';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as IBusManager from 'resource:///org/gnome/shell/misc/ibusManager.js';
 
 const IFACE = `<node><interface name="ai.tabmail.Voice.Caret">
 <method name="Read"><arg type="s" direction="out"/></method>
+<method name="FromWindow"><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="s" direction="out"/></method>
 <method name="Version"><arg type="u" direction="out"/></method>
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
@@ -108,6 +110,25 @@ export default class VoiceCaret extends Extension {
             (this._rect.source === 'x11' && Main.inputMethod.currentFocus))
             return 'null';
         return JSON.stringify(this._rect);
+    }
+
+    /** A caret the focused window's accessible reports in window coordinates, on the screen,
+     * converted as GNOME Shell's magnifier converts it (js/ui/magnifier.js). Wayland gives
+     * accessibility no screen coordinates, and some apps' input-method rectangle isn't
+     * their caret (LibreOffice reports the start of the sentence). */
+    FromWindow(x, y, width, height) {
+        const window = global.display.focus_window;
+        if (!window || Main.overview.visible || Main.sessionMode.isLocked ||
+            ![x, y, width, height].every(Number.isFinite) || width < 0 || height <= 0)
+            return 'null';
+        const content = window.get_client_content_rect();
+        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        const rect = {x: content.x + scale * x, y: content.y + scale * y,
+            width: scale * Math.max(1, width), height: scale * height};
+        if (rect.x < content.x || rect.y < content.y ||
+            rect.x + rect.width > content.x + content.width || rect.y + rect.height > content.y + content.height)
+            return 'null';
+        return JSON.stringify({...rect, source: 'accessibility'});
     }
 
     Version() { return 1; }

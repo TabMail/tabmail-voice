@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
+#include <array>
 #include <cmath>
 #include <cstring>
 #include "accessibility.h"
@@ -59,10 +60,17 @@ public:
         if (rect["width"].get<double>() <= 0 || rect["height"].get<double>() <= 0) return nullptr;
         return rect;
     }
-    void read(Channel::Reply reply) {
-        if (!state->bus) { reply(nullptr, true); return; }
+    /** The input method's caret rectangle of the focused window. */
+    void read(Channel::Reply reply) { rectangle("Read", nullptr, std::move(reply)); }
+    /** `caret`, in the focused window's AT-SPI coordinates, on the screen. */
+    void fromWindow(const std::array<int, 4>& caret, Channel::Reply reply) {
+        rectangle("FromWindow", g_variant_new("(dddd)", double(caret[0]), double(caret[1]), double(caret[2]), double(caret[3])), std::move(reply));
+    }
+private:
+    void rectangle(const char* method, GVariant* args, Channel::Reply reply) {
+        if (!state->bus) { if (args) g_variant_unref(g_variant_ref_sink(args)); reply(nullptr, true); return; }
         g_dbus_connection_call(state->bus.get(), "org.gnome.Shell", "/ai/tabmail/Voice/Caret",
-            "ai.tabmail.Voice.Caret", "Read", nullptr, G_VARIANT_TYPE("(s)"),
+            "ai.tabmail.Voice.Caret", method, args, G_VARIANT_TYPE("(s)"),
             G_DBUS_CALL_FLAGS_NO_AUTO_START, timeoutMilliseconds, state->cancel.get(),
             [](GObject* source, GAsyncResult* result, gpointer data) {
                 std::unique_ptr<Channel::Reply> reply(static_cast<Channel::Reply*>(data));

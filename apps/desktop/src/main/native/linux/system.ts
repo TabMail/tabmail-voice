@@ -57,13 +57,27 @@ export class LinuxSystem {
     return this.helper.request("appInfo", { path });
   }
 
-  /** The optional GNOME extension owns focused-surface geometry in logical screen coordinates. */
+  /** The focused element's own caret, which the optional GNOME extension places on the screen
+   * (logical coordinates); where the app reports none, the extension's input-method rectangle,
+   * which some apps don't keep at the caret (LibreOffice gives the start of the sentence, a GTK 4
+   * terminal the caret before its last output). Both are asked at once, before a screen read can
+   * occupy the accessibility helper. */
   async caretAnchor(): Promise<Rect | null> {
-    const rect = await this.geometryHelper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);
-    if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return null;
-    return rect;
+    const accessible = this.helper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);
+    const compositor = this.geometryHelper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);
+    const caret = usable(await accessible.catch(() => null));
+    if (caret) {
+      void compositor.catch(() => undefined);
+      return caret;
+    }
+    return usable(await compositor);
   }
 
   readonly microphone = (report: (report: AudioReport) => void): (command: AudioCommand) => void =>
     new NativeMicrophone(this.helper, "LinuxSystem").microphone(report);
+}
+
+function usable(rect: Rect | null): Rect | null {
+  if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return null;
+  return rect;
 }
