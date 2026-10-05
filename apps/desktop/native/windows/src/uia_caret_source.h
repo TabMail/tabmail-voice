@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <ole2.h>
 #include <UIAutomation.h>
+#include "helper_config.h"
 #include "microphone.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
@@ -45,7 +46,7 @@ public:
     // last text, while GetVisibleRanges also includes the remaining blank rows.
     static nlohmann::json viewportSurface(IUIAutomationTextPattern* pattern, size_t id,
         ContextFrame frame, bool focused, size_t byteBudget, ULONGLONG started) {
-        UiaCaretSource reader(started);
+        UiaCaretSource reader(started, HelperConfig::terminalReadBudgetMs);
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
         const auto limits = core::request({{"limits", true}}, voice_core_viewport_json);
         const size_t limit = std::min(byteBudget, limits.at("bytes").get<size_t>());
@@ -110,8 +111,9 @@ public:
             if (!value) throw std::runtime_error("terminal viewport budget");
             remaining -= value->size(); captured.push_back(*value);
             // Split only by exact native endpoints, never by Character moved
-            // counts. Recomposition detects trimmed/normalized provider text.
-            const auto offset = [&](IUIAutomationTextRange* point, TextPatternRangeEndpoint endpoint) -> size_t {
+            // counts. Recomposition detects trimmed/normalized provider text, or output that
+            // arrived since the run was read: the offset is then unknown, and the run is kept.
+            const auto offset = [&](IUIAutomationTextRange* point, TextPatternRangeEndpoint endpoint) -> std::optional<size_t> {
                 ComPtr<IUIAutomationTextRange> before, after;
                 require(visible->Clone(&before)); require(visible->Clone(&after));
                 reader.move(before.Get(), end, point, endpoint);
@@ -119,7 +121,7 @@ public:
                 if (reader.compare(before.Get(), start, visible, start) != 0 || reader.compare(after.Get(), end, visible, end) != 0)
                     throw std::runtime_error("terminal endpoint escaped viewport");
                 const auto a = reader.text(before.Get(), limit), b = reader.text(after.Get(), limit);
-                if (!a || !b || *a + *b != *value) throw std::runtime_error("terminal range changed");
+                if (!a || !b || *a + *b != *value) return std::nullopt;
                 return units(*a);
             };
             runs.push_back({{"id", i}, {"text", *value}, {"connected", i > 0 && reader.compare(ranges[i-1].Get(), end, visible, start) == 0},
@@ -127,8 +129,11 @@ public:
             // GetVisibleRanges returns a degenerate range both for an empty
             // control and when all text is scrolled out. It is not caret geometry.
             if (caret && reader.compare(visible, start, visible, end) < 0 &&
-                reader.compare(caret.Get(), start, visible, start) >= 0 && reader.compare(caret.Get(), end, visible, end) <= 0)
-                anchor = {{"status", "exact"}, {"surface", id}, {"run", i}, {"offset", offset(caret.Get(), start)}};
+                reader.compare(caret.Get(), start, visible, start) >= 0 && reader.compare(caret.Get(), end, visible, end) <= 0) {
+                const auto place = offset(caret.Get(), start);
+                anchor = place ? nlohmann::json{{"status", "exact"}, {"surface", id}, {"run", i}, {"offset", *place}}
+                               : nlohmann::json{{"status", "unavailable"}};
+            }
             for (size_t j = 0; j < selected.size(); ++j) {
                 auto* selection = selected[j].Get();
                 if (reader.compare(selection, start, selection, end) == 0) continue;
@@ -138,25 +143,15 @@ public:
                 if (reader.compare(intersection.Get(), end, visible, end) > 0) reader.move(intersection.Get(), end, visible, end);
                 completeSelection = completeSelection && reader.compare(covered[j].Get(), end, intersection.Get(), start) == 0;
                 reader.move(covered[j].Get(), end, intersection.Get(), end);
-                selections.push_back({{"run", i}, {"start", offset(intersection.Get(), start)}, {"end", offset(intersection.Get(), end)}});
+                const auto from = offset(intersection.Get(), start), to = offset(intersection.Get(), end);
+                if (from && to) selections.push_back({{"run", i}, {"start", *from}, {"end", *to}});
+                else completeSelection = false;
             }
         }
         for (size_t i = 0; i < selected.size(); ++i)
             completeSelection = completeSelection && reader.compare(covered[i].Get(), end, selected[i].Get(), end) == 0;
-        const auto current = reader.visibleRanges(pattern, nullptr, rangeLimit);
-        const auto currentSelected = selectedRanges();
-        if (current.size() != ranges.size() || currentSelected.size() != selected.size()) throw std::runtime_error("terminal snapshot changed");
-        for (size_t i = 0; i < ranges.size(); ++i) {
-            BOOL same = FALSE; require(ranges[i]->Compare(current[i].Get(), &same));
-            if (!same || reader.text(current[i].Get(), limit) != std::optional<std::string>(captured[i])) throw std::runtime_error("terminal visible text changed");
-        }
-        for (size_t i = 0; i < selected.size(); ++i) {
-            BOOL same = FALSE; require(selected[i]->Compare(currentSelected[i].Get(), &same));
-            if (!same) throw std::runtime_error("terminal selection changed");
-        }
-        const auto currentCaret = caretRange();
-        if (static_cast<bool>(caret) != static_cast<bool>(currentCaret)) throw std::runtime_error("terminal caret changed");
-        if (caret) { BOOL same = FALSE; require(caret->Compare(currentCaret.Get(), &same)); if (!same) throw std::runtime_error("terminal caret changed"); }
+        // The text is read once and kept, even if output arrives meanwhile (owner, 2026-10-05:
+        // the screen as at key-down, rather than no screen at all).
         reader.check();
         return {{"surface", {{"id", id}, {"frame", {frame.x, frame.y, frame.width, frame.height}}, {"runs", runs},
             {"selection", {{"complete", completeSelection}, {"ranges", selections}}}}}, {"caret", anchor}};
@@ -239,9 +234,9 @@ public:
         return value;
     }
 private:
-    ULONGLONG started;
-    explicit UiaCaretSource(ULONGLONG time) : started(time) {}
-    void check() const { if (GetTickCount64() - started > 1500) throw std::runtime_error("screen context time budget"); }
+    ULONGLONG started, budget;
+    explicit UiaCaretSource(ULONGLONG time, ULONGLONG limit = 1500) : started(time), budget(limit) {}
+    void check() const { if (GetTickCount64() - started > budget) throw std::runtime_error("screen context time budget"); }
     int compare(IUIAutomationTextRange* a, TextPatternRangeEndpoint ae, IUIAutomationTextRange* b, TextPatternRangeEndpoint be) const {
         check(); int result = 0; require(a->CompareEndpoints(ae, b, be, &result)); check(); return result;
     }

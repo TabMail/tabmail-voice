@@ -5,6 +5,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 namespace voice::HelperConfig {
 inline constexpr uint32_t accessibilityRequestTimeoutMs = 1000;
 inline constexpr uint32_t accessibilityRetryIntervalMs = 1000;
@@ -13,6 +14,9 @@ inline constexpr unsigned accessibilityMaxAttempts = 5;
 // Longest text gathered for one heading, link or table row (bytes of UTF-8).
 // Longest the look through what holds a selection, before its text is asked for (ms).
 inline constexpr unsigned long long contextSelectionScanMs = 200;
+// A terminal read has no deadline: it runs while the user speaks, and the app decides how long to
+// wait for it when it sends (owner, 2026-10-05).
+inline constexpr unsigned long long terminalReadBudgetMs = (std::numeric_limits<unsigned long long>::max)();
 // Longest a paste waits to save the clipboard before typing the text instead (ms). An owner that
 // renders late (a VM's clipboard agent) can hold the clipboard open for up to 30 s.
 inline constexpr unsigned clipboardSnapshotWaitMs = 500;

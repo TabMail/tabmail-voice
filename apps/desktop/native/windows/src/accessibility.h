@@ -195,8 +195,12 @@ public:
             require(element->get_CurrentIsPassword(&protectedFocus));
         }
         const auto started = GetTickCount64();
+        const std::wstring app = executableName(window);
+        const bool terminal = std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
+            [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
         std::optional<PageHost> focusedPage;
-        if (element && refusedPages(window, element.Get(), exclusions, 1500, false, &focusedPage)) return hiddenScreen();
+        if (element && refusedPages(window, element.Get(), exclusions, terminal ? HelperConfig::terminalReadBudgetMs : 1500, false, &focusedPage))
+            return hiddenScreen();
         // A protected focus contributes only the caret marker. Never ask it for
         // value/text patterns, including the editable capability probe.
         const bool isEditable = element && !protectedFocus && editable(element.Get());
@@ -204,9 +208,6 @@ public:
         // it as it is laid out, and only what is selected in it is kept, as on the Mac.
         // Terminals use visible native ranges and an independent caret anchor, before the
         // generic field reader can request scrollback or whole-field context.
-        const std::wstring app = executableName(window);
-        const bool terminal = std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
-            [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
         if (terminal) return readTerminalScreen(window, element.Get(), app, exclusions, started);
         const bool pageInFocus = element && !protectedFocus && !isEditable && !terminal && isDocument(element.Get());
         std::optional<std::array<std::string, 3>> parts;
@@ -649,14 +650,14 @@ private:
         require(automation->get_RawViewWalker(&walker));
         RECT windowFrame{};
         if (!root || !GetWindowRect(window, &windowFrame)) return nullptr;
+        // The same window and focus throughout; the text itself is read once and kept, even if
+        // output arrives or the window moves meanwhile (owner, 2026-10-05: the screen as at key-down).
         const auto valid = [&] {
-            RECT currentFrame{};
             auto current = ownedFocus(window);
-            return GetTickCount64()-started<=1500 && GetForegroundWindow()==window &&
-                GetWindowRect(window,&currentFrame) && EqualRect(&windowFrame,&currentFrame) &&
+            return GetForegroundWindow()==window &&
                 ((focus && current && same(focus,current.Get())) || (!focus && !current));
         };
-        PageTree privacyTree{this,walker,started,1500};
+        PageTree privacyTree{this,walker,started,HelperConfig::terminalReadBudgetMs};
         if (privacy::holdsExcludedPage(privacyTree,root,exclusions,true)) return hiddenScreen();
         std::vector<ComPtr<IUIAutomationElement>> focusPath;
         ComPtr<IUIAutomationElement> ancestor=focus;
@@ -670,20 +671,12 @@ private:
         size_t remaining=limits.at("bytes").get<size_t>(),visited=0;
         const size_t maxSurfaces=limits.at("surfaces").get<size_t>();
         struct Entry { ComPtr<IUIAutomationElement> node; RECT clip; };
-        struct Capture { ComPtr<IUIAutomationElement> node; ComPtr<IUIAutomationTextPattern> pattern; ContextFrame frame; bool focused; JSON value; };
-        std::vector<Entry> stack{{root,windowFrame}},geometry;
+        struct Capture { ComPtr<IUIAutomationElement> node; };
+        std::vector<Entry> stack{{root,windowFrame}};
         std::vector<ComPtr<IUIAutomationElement>> seen;
         std::vector<Capture> captures;
         JSON surfaces=JSON::array(),focusedID=nullptr,caret={{"status","unavailable"}};
         bool complete=true;
-        const auto geometryStable=[&] {
-            for (const auto& item:geometry) {
-                RECT now{}; BOOL offscreen=TRUE;
-                if (FAILED(item.node->get_CurrentBoundingRectangle(&now)) || !EqualRect(&now,&item.clip) ||
-                    FAILED(item.node->get_CurrentIsOffscreen(&offscreen)) || offscreen) return false;
-            }
-            return valid();
-        };
         while (!stack.empty()) {
             if (!valid() || visited>=5000) { complete=false;break; }
             auto entry=std::move(stack.back()); stack.pop_back();
@@ -693,7 +686,6 @@ private:
             if (password) {complete=false;continue;}
             const auto place=placement(entry.node.Get(),entry.clip,GetDpiForWindow(window)/96.0);
             if (!place || !place->shown || !place->geometry) continue;
-            geometry.push_back({entry.node,place->frame});
             RECT clip{};
             if (!IntersectRect(&clip,&entry.clip,&place->frame)) continue;
             if (const auto page=pageHost(entry.node.Get());page && exclusions.excludes(*page)) return hiddenScreen();
@@ -701,9 +693,9 @@ private:
             if (SUCCEEDED(entry.node->GetCurrentPatternAs(UIA_TextPatternId,IID_PPV_ARGS(&pattern))) && pattern) {
                 // A clipped ancestor cannot be trusted solely from GetVisibleRanges.
                 // Refuse this aggregate until a provider-specific range clip is proven.
-                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get(),started,1500)) {complete=false;continue;}
+                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get(),started,HelperConfig::terminalReadBudgetMs)) {complete=false;continue;}
                 if (surfaces.size()>=maxSurfaces || remaining==0) {complete=false;break;}
-                if (!geometryStable()) return nullptr;
+                if (!valid()) return nullptr;
                 const bool ownsFocus=std::any_of(focusPath.begin(),focusPath.end(),[&](const auto& node){return same(node.Get(),entry.node.Get());});
                 JSON value;
                 try { value=UiaCaretSource::viewportSurface(pattern.Get(),surfaces.size(),*place->geometry,ownsFocus,remaining,started); }
@@ -715,23 +707,16 @@ private:
                 }
                 if(ownsFocus) {focusedID=surfaces.size();caret=value.at("caret");}
                 surfaces.push_back(value.at("surface"));
-                captures.push_back({entry.node,pattern,*place->geometry,ownsFocus,value});
+                captures.push_back({entry.node});
                 continue;
             }
             if(stack.size()>=5000-visited) {complete=false;break;}
             auto children=privacyTree.children(entry.node,5000-visited-stack.size());
             for(auto child=children.rbegin();child!=children.rend();++child) stack.push_back({*child,clip});
         }
-        for(size_t i=0;i<captures.size();++i) {
-            const auto& capture=captures[i];
-            if(!geometryStable() || !safeTextSubtree(capture.node.Get(),started,1500)) return nullptr;
-            try {
-                if(UiaCaretSource::viewportSurface(capture.pattern.Get(),i,capture.frame,capture.focused,limits.at("bytes").get<size_t>(),started)!=capture.value) return nullptr;
-            } catch(const std::exception&) {return nullptr;}
-        }
-        if(!geometryStable()) return nullptr;
+        if(!valid()) return nullptr;
         if(privacy::holdsExcludedPage(privacyTree,root,exclusions,true)) return hiddenScreen();
-        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),started,1500)) return nullptr;
+        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),started,HelperConfig::terminalReadBudgetMs)) return nullptr;
         wchar_t title[513]{};GetWindowTextW(window,title,513);
         if(!valid()) return nullptr;
         const auto projected=core::request({{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},
