@@ -24,7 +24,7 @@ import * as config from "../core/config.js";
 import { CorrectionWatch } from "../core/dictionary/correctionWatch.js";
 import { DictationController, isResting } from "../core/dictation/controller.js";
 import { GlobeKeyAction } from "../core/hotkey/macos/globeKeyAction.js";
-import { type DictationHotkey, isHotkeyAction } from "../core/hotkey/bindings.js";
+import { type DictationHotkey, hotkeyNames, isHotkeyAction } from "../core/hotkey/bindings.js";
 import { liveTransport } from "../core/backend/http.js";
 import { configureLog, errorName, log, setDebugMode } from "../core/log.js";
 import type { MenuState } from "../core/ui/menuModel.js";
@@ -130,7 +130,10 @@ function launch(): void {
   let suggestedName = "";
 
   const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
-  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : process.platform === "linux" ? ["F8", "F9", "rightAlt"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
+  // GNOME integration holds Right Alt (the portal cannot bind a lone modifier), so other Linux
+  // desktops have F8 and F9 only.
+  const isGnome = process.platform === "linux" && process.env.XDG_CURRENT_DESKTOP?.toLowerCase().split(":").includes("gnome") === true;
+  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? ["rightAlt", "F8", "F9"] : process.platform === "linux" ? ["F8", "F9"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
@@ -145,10 +148,11 @@ function launch(): void {
   const accessibilityActivator = process.platform === "win32"
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
+  const gnomeIntegration = isGnome ? new GnomeIntegration(hotkeyHelper) : null;
   const linuxPermissions = process.platform === "linux" ? new LinuxPermissions(nativeHelper, hotkeyHelper, () => {
     const handle = BrowserWindow.getFocusedWindow()?.getNativeWindowHandle();
     return handle && handle.length >= 4 ? `x11:${handle.readUInt32LE(0).toString(16)}` : "";
-  }) : null;
+  }, gnomeIntegration) : null;
   const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : linuxPermissions ?? macPermissions);
   if (linuxPermissions) linuxPermissions.onChange = () => permissions.refresh();
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
@@ -166,8 +170,8 @@ function launch(): void {
   let emailAppIcon: { path: string | null; dataURL: string | null } = { path: null, dataURL: null };
 
   const windows = new Windows(stateOf);
-  const gnomeIntegration = process.platform === "linux" && process.env.XDG_CURRENT_DESKTOP?.toLowerCase().split(":").includes("gnome") ? new GnomeIntegration(hotkeyHelper) : null;
-  if (gnomeIntegration) gnomeIntegration.onChange = () => windows.push("settings");
+  // GNOME integration is part of the keyboard permission.
+  if (gnomeIntegration) gnomeIntegration.onChange = () => { permissions.refresh(); pushSettingsWindows(); };
 
   function sendAudio(command: AudioCommand): void {
     const contents = windows.audio().webContents;
@@ -374,19 +378,29 @@ function launch(): void {
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
-      ...(process.platform === "linux" ? { keyboardPermission: {
-        title: "Shortcut and keyboard control",
-        agentShortcut: `Shift+${settings.hotkey}`,
-        description: "Allows the dictation shortcut, pasting, and clipboard restoration.",
-        button: "Allow Keyboard Control",
-        instructions: "Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.",
-      } } : {}),
+      ...(process.platform === "linux" ? { keyboardPermission: linuxKeyboardPermission() } : {}),
       ...(gnomeIntegration ? { gnomeIntegration: gnomeIntegration.state } : {}),
       openAtLogin: linuxAutostart?.enabled ?? app.getLoginItemSettings().openAtLogin,
       debugAllowed: DebugAccess.allows(account.email),
       debugMode: settings.debugMode,
       version: app.getVersion(),
       update: updater?.state ?? null,
+    };
+  }
+
+  /** Ubuntu's keyboard permission: GNOME integration where it is GNOME, the dictation shortcut, and
+   * keyboard interaction. */
+  function linuxKeyboardPermission(): NonNullable<WelcomeState["keyboardPermission"]> {
+    const steps = settings.hotkey === "rightAlt" ? "allow keyboard interaction in the next system prompt" : "approve the dictation shortcut, then allow keyboard interaction in the next system prompt";
+    return {
+      title: "Shortcut and keyboard control",
+      // Without GNOME integration, Space does not switch modes while dictating.
+      ...(gnomeIntegration ? {} : { agentShortcut: `Shift+${hotkeyNames[settings.hotkey].keycap}` }),
+      description: gnomeIntegration ? "Turns on GNOME integration and allows the dictation key, pasting, and clipboard restoration." : "Allows the dictation shortcut, pasting, and clipboard restoration.",
+      button: "Allow Keyboard Control",
+      instructions: gnomeIntegration?.state === "restart" ? "Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here."
+        : gnomeIntegration ? `This turns on GNOME integration; then ${steps}.`
+          : `${steps.charAt(0).toUpperCase()}${steps.slice(1)}.`,
     };
   }
 
@@ -410,13 +424,7 @@ function launch(): void {
       microphoneGranted: permissions.microphone === "granted",
       accessibilityTrusted: permissions.accessibilityTrusted,
       vscodeFix: vscodeFix(),
-      ...(process.platform === "linux" ? { keyboardPermission: {
-        title: "Shortcut and keyboard control",
-        agentShortcut: `Shift+${settings.hotkey}`,
-        description: "Allows the dictation shortcut, pasting, and clipboard restoration.",
-        button: "Allow Keyboard Control",
-        instructions: "Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.",
-      } } : {}),
+      ...(process.platform === "linux" ? { keyboardPermission: linuxKeyboardPermission() } : {}),
     };
   }
 

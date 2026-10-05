@@ -3414,7 +3414,10 @@ accelerators. Owner: Ubuntu's key back to Right Alt, once that is feasible. Prob
 Wayland (2026-10-05): `grab_accelerator('Alt_R')` fires once, about 2 ms after the press, with no
 autorepeat; Mutter never reports the release of a modifier-only accelerator.
 
-**Decision:** Right Alt is a third Ubuntu choice (`["F8", "F9", "rightAlt"]`), held by the extension:
+**Decision:** Right Alt is the dictation key by default on Ubuntu's GNOME (`["rightAlt", "F8", "F9"]`;
+owner, 2026-10-05), held by the extension; other Linux desktops keep F8 and F9 only. GNOME integration is
+required on GNOME: it is part of the keyboard permission, so dictation says "Setup needed" until it is
+on, and Allow Keyboard Control turns it on first (owner's choice over keeping F8 until it is live):
 
 - The helper's `configure` with `rightAlt` unbinds the portal's keys and asks the extension
   (`SetHotkey`) for `Alt_R` (dictation) and `<Shift>Alt_R` (agent mode), both without autorepeat.
@@ -3433,8 +3436,11 @@ mechanism (a keyboard device reader, an X11 grab) would need privileges or would
 Wayland. The 20 ms read runs only while the key is held, so an idle desktop pays nothing.
 
 **Consequences:**
-- Right Alt needs GNOME integration enabled (and, after a fresh install, a log-out and in);
-  Settings says so under the key while it is not. F8 stays the default and works at once.
+- After a fresh install, GNOME loads the extension only after a log-out and in; until then the
+  keyboard permission is not granted, and the welcome guide and Settings say to log out and back in.
+  GNOME releases the extension does not support (`unsupported`) go without it, as before.
+- On GNOME, Space switches to agent mode while dictating, so the welcome guide no longer names a
+  Shift shortcut there; Shift with the dictation key still starts agent mode on every platform.
 - Right Alt is taken by TabMail Voice while it is the dictation key, so it no longer acts as Alt in
   other shortcuts.
 - A release is noticed up to 20 ms late.

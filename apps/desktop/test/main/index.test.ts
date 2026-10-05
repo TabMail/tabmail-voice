@@ -2025,6 +2025,8 @@ test("Windows queues the caret before screen context without a foreground IPC ro
 
 test("Linux helper exit invalidates established permission readiness", async () => {
   vi.doUnmock("../../src/core/onboarding/permissions.js");
+  // Outside GNOME: GNOME integration is not part of the permission there.
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
   await launch("linux");
   const insertion = app.helpers.get("voice-linux")!;
   const shortcut = app.helpers.get("voice-hotkey")!;
@@ -2033,6 +2035,22 @@ test("Linux helper exit invalidates established permission readiness", async () 
   expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(true);
   insertion.onExit!();
   expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
+  vi.unstubAllEnvs();
+});
+
+test("outside GNOME, Linux offers F8 and F9, with Shift for agent mode", async () => {
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
+  try {
+    await launch("linux");
+    const settings = app.handlers.get(channels.getState)?.({}, "settings") as { hotkey: string; availableHotkeys: string[]; keyboardPermission: { agentShortcut?: string; instructions: string } };
+    expect(settings.availableHotkeys).toEqual(["F8", "F9"]);
+    expect(settings.hotkey).toBe("F8");
+    expect(settings.keyboardPermission.agentShortcut).toBe("Shift+F8");
+    expect(settings.keyboardPermission.instructions).toBe("Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.");
+    expect(app.helpers.get("voice-hotkey")!.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "F8" }) }));
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 /** Exercise the real GNOME adapter through its main-process consumer; only the
@@ -2049,16 +2067,28 @@ test("GNOME activation, readiness hints and recording ownership are wired to the
     } };
   });
   try {
+    vi.doUnmock("../../src/core/onboarding/permissions.js");
     await launch("linux");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name);
     await vi.waitFor(() => expect(state("settings")).toMatchObject({ gnomeIntegration: "available" }));
     expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: false });
+    // Right Alt is GNOME's default, held by the integration; Space switches modes, so no Shift shortcut.
+    expect(state("settings")).toMatchObject({ hotkey: "rightAlt", availableHotkeys: ["rightAlt", "F8", "F9"] });
     const hotkey = app.helpers.get("voice-hotkey")!;
+    expect(hotkey.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "rightAlt" }) }));
+    const keyboard = (state("welcome") as { keyboardPermission: { agentShortcut?: string; instructions: string } }).keyboardPermission;
+    expect(keyboard.agentShortcut).toBeUndefined();
+    expect(keyboard.instructions).toBe("This turns on GNOME integration; then allow keyboard interaction in the next system prompt.");
+    // GNOME integration is part of the keyboard permission.
+    hotkey.events.get("hotkeyInstallationChanged")!({ installed: true });
+    app.helpers.get("voice-linux")!.events.get("insertionPermissionChanged")!({ granted: true });
+    expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
     hotkey.replies.set("gnomeIntegration", true);
     await send({ type: "enableGnomeIntegration" });
     expect(commands).toContainEqual(["gnome-extensions", ["enable", "voice-caret@tabmail.ai"]]);
     expect(state("settings")).toMatchObject({ gnomeIntegration: "ready" });
     expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: true });
+    expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(true);
     hotkey.requests.length = 0;
     app.controller!.onPhaseChange!({ kind: "arming" });
     app.controller!.onPhaseChange!({ kind: "listening" });

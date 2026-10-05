@@ -16,7 +16,8 @@ signals are sent only to that helper. No periodic polling, accessibility-tree
 traversal, or custom renderer is involved.
 The helper allows 25 ms for the bus call; the app bounds the entire request to 200 ms.
 
-When Right Alt is the dictation key, the extension also holds it for the helper,
+Right Alt is the dictation key by default on GNOME, and GNOME integration is part of
+the app's keyboard permission there. While Right Alt is the dictation key, the extension also holds it for the helper,
 because the portal cannot bind a lone modifier: `Alt_R` starts a dictation and
 `<Shift>Alt_R` starts agent mode, both without autorepeat. Mutter reports the press
 but not the release, so while the key is down, and only then, the extension reads
@@ -37,8 +38,9 @@ Open TabMail Voice Settings → Permissions → GNOME integration → Enable to 
 it for the current user. This leaves other extensions unchanged. Newly installed or
 updated extensions may require logging out and back in. Settings checks the live
 extension protocol before reporting Enabled; files on disk alone are insufficient.
-GNOME version validation remains enabled. The portal shortcuts remain available
-when the extension is disabled or unavailable.
+GNOME version validation remains enabled. Allow Keyboard Control in the welcome guide
+or Settings enables it first. F8 and F9, through the portal, remain available as
+dictation keys, but the keyboard permission on GNOME needs the extension either way.
 
 For development only, copy the extension directory into
 `${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/`, log out and back in,
