@@ -13,6 +13,7 @@ const IFACE = `<node><interface name="ai.tabmail.Voice.Caret">
 <method name="Read"><arg type="s" direction="out"/></method>
 <method name="Version"><arg type="u" direction="out"/></method>
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
+<method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal>
 </interface></node>`;
 
@@ -31,6 +32,7 @@ export default class VoiceCaret extends Extension {
         this._rect = null;
         this._window = null;
         this._grabs = [];
+        this._wanted = {recording: false, chat: false};
         const listen = (object, signal, callback) => {
             this._signals.push([object, object.connect(signal, callback)]);
         };
@@ -110,47 +112,63 @@ export default class VoiceCaret extends Extension {
 
     Version() { return 1; }
 
+    /** Space and Escape while dictating. */
     SetRecordingAsync([active], invocation) {
-        const owner = invocation.get_sender();
-        // Only the client that acquired the session may release it. A second
+        invocation.return_value(new GLib.Variant('(b)', [this._want(invocation.get_sender(), 'recording', active)]));
+    }
+
+    /** Escape while the chat window is open: the app shows it without taking the keyboard. */
+    SetChatOpenAsync([open], invocation) {
+        invocation.return_value(new GLib.Variant('(b)', [this._want(invocation.get_sender(), 'chat', open)]));
+    }
+
+    _want(owner, kind, active) {
+        // Only the client that acquired the session may change it. A second
         // helper cannot replace a live owner's shortcuts.
-        if (this._owner && this._owner !== owner) {
-            invocation.return_value(new GLib.Variant('(b)', [false]));
-            return;
-        }
-        if (!active) {
+        if (this._owner && this._owner !== owner)
+            return false;
+        if (active && Main.sessionMode.isLocked)
+            return false;
+        this._wanted = {...this._wanted, [kind]: active};
+        const keys = [];
+        if (this._wanted.recording) keys.push(['space', 'toggleMode']);
+        if (this._wanted.recording || this._wanted.chat) keys.push(['Escape', 'cancel']);
+        if (!keys.length) {
             this._releaseRecording();
-            invocation.return_value(new GLib.Variant('(b)', [true]));
-            return;
+            return true;
         }
-        if (Main.sessionMode.isLocked) {
-            invocation.return_value(new GLib.Variant('(b)', [false]));
-            return;
-        }
-        if (!this._owner) {
-            try {
+        try {
+            if (!this._owner) {
                 this._owner = owner;
                 this._ownerWatch = Gio.bus_watch_name_on_connection(Gio.DBus.session,
                     owner, Gio.BusNameWatcherFlags.NONE, null, () => this._releaseRecording());
-                for (const [key, action] of [['space', 'toggleMode'], ['Escape', 'cancel']]) {
-                    const id = global.display.grab_accelerator(key, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT);
-                    if (!id) throw new Error(`Cannot acquire ${key}`);
-                    this._grabs.push({id, action});
-                    Main.wm.allowKeybinding(Meta.external_binding_name_for_action(id), Shell.ActionMode.NORMAL);
-                }
-            } catch {
-                this._releaseRecording();
             }
+            for (const grab of this._grabs.filter(item => !keys.some(([key]) => key === item.key)))
+                this._ungrab(grab);
+            this._grabs = this._grabs.filter(item => keys.some(([key]) => key === item.key));
+            for (const [key, action] of keys) {
+                if (this._grabs.some(item => item.key === key)) continue;
+                const id = global.display.grab_accelerator(key, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT);
+                if (!id) throw new Error(`Cannot acquire ${key}`);
+                this._grabs.push({id, key, action});
+                Main.wm.allowKeybinding(Meta.external_binding_name_for_action(id), Shell.ActionMode.NORMAL);
+            }
+        } catch {
+            this._releaseRecording();
         }
-        invocation.return_value(new GLib.Variant('(b)', [Boolean(this._owner)]));
+        return Boolean(this._owner) && (this._wanted[kind] || !active);
+    }
+
+    _ungrab({id}) {
+        Main.wm.allowKeybinding(Meta.external_binding_name_for_action(id), Shell.ActionMode.NONE);
+        global.display.ungrab_accelerator(id);
     }
 
     _releaseRecording() {
-        for (const {id} of this._grabs ?? []) {
-            Main.wm.allowKeybinding(Meta.external_binding_name_for_action(id), Shell.ActionMode.NONE);
-            global.display.ungrab_accelerator(id);
-        }
+        for (const grab of this._grabs ?? [])
+            this._ungrab(grab);
         this._grabs = [];
+        this._wanted = {recording: false, chat: false};
         if (this._ownerWatch) Gio.bus_unwatch_name(this._ownerWatch);
         this._ownerWatch = 0;
         this._owner = null;

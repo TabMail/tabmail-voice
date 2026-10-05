@@ -43,7 +43,7 @@ int main() {
             gesture.dictationEnded(); controls.setRecording(false); reply(JSON::object(), true);
         } else if (method == "setChatOpen") {
             if (!params.is_object() || !params.contains("isOpen") || !params["isOpen"].is_boolean()) throw std::runtime_error("invalid chat state");
-            gesture.chatOpen = params["isOpen"].get<bool>(); reply(JSON::object(), true);
+            gesture.chatOpen = params["isOpen"].get<bool>(); controls.setChatOpen(gesture.chatOpen); reply(JSON::object(), true);
         } else throw std::runtime_error("unknown method");
     });
     auto loop = g_main_loop_new(nullptr, false);

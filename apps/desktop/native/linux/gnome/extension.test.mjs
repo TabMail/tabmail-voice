@@ -60,7 +60,12 @@ async function fixture(failExport = false) {
         extension.SetRecordingAsync([active], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
         return result;
     };
-    return {recording, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
+    const chat = (open, owner = ':1.42') => {
+        let result;
+        extension.SetChatOpenAsync([open], {get_sender: () => owner, return_value: value => {result = value.value[0];}});
+        return result;
+    };
+    return {recording, chat, grabs, allowed, actions, disconnectOwner: () => lostOwner(), failGrab: key => {failKey = key;}, extension, display, window, inputMethod, overview, sessionMode, ibus, caret, exported: () => exported, protocol: () => ({xml: exportXML, path: exportPath})};
 }
 
 test('Wayland caret survives delayed IBus focus-out and follows the new field', async () => {
@@ -178,6 +183,27 @@ test('Escape releases grabs immediately and a partial grab failure rolls back', 
     f.extension.disable();
 });
 
+test('an open chat window keeps Escape alone, through a dictation, until it closes', async () => {
+    const f = await fixture();
+    assert.equal(f.chat(true), true);
+    assert.deepEqual([...f.grabs.values()], ['Escape'], 'Space reaches the app in front');
+    assert.equal(f.chat(false, ':1.99'), false, 'another client cannot release it');
+    assert.equal(f.recording(true), true);
+    assert.deepEqual([...f.grabs.values()].sort(), ['Escape', 'space']);
+    assert.equal(f.recording(false), true);
+    assert.deepEqual([...f.grabs.values()], ['Escape'], 'the dictation ending leaves the chat its Escape');
+    f.display.emit('accelerator-activated', [...f.grabs.keys()][0]);
+    assert.equal(f.actions[0][4].value[0], 'cancel');
+    assert.equal(f.grabs.size, 0);
+    assert.equal(f.chat(true), true);
+    assert.equal(f.chat(false), true);
+    assert.equal(f.grabs.size, 0);
+    assert.equal(f.chat(true, ':1.99'), true, 'released, it is anyone\'s again');
+    f.sessionMode.isLocked = true; f.sessionMode.emit('updated');
+    assert.equal(f.grabs.size, 0);
+    assert.equal(f.chat(true), false);
+    f.extension.disable();
+});
 
 test('exported protocol matches the native GNOME peer and unicast Action envelope', async () => {
     const f = await fixture();
@@ -187,6 +213,7 @@ test('exported protocol matches the native GNOME peer and unicast Action envelop
     assert.match(xml, /<method name="Version"><arg type="u" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="Read"><arg type="s" direction="out"\/><\/method>/);
     assert.match(xml, /<method name="SetRecording"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
+    assert.match(xml, /<method name="SetChatOpen"><arg type="b" direction="in"\/><arg type="b" direction="out"\/><\/method>/);
     assert.match(xml, /<signal name="Action"><arg type="s"\/><\/signal>/);
     assert.equal(f.extension.Version(), 1);
     assert.equal(f.recording(true), true);

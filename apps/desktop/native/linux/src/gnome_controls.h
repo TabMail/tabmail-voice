@@ -13,7 +13,7 @@ class GnomeControls {
     Output& output;
     Gesture& gesture;
     guint signal = 0;
-    bool recording = false;
+    bool recording = false, chat = false;
     static constexpr const char* path = "/ai/tabmail/Voice/Caret";
     static constexpr const char* interface = "ai.tabmail.Voice.Caret";
 public:
@@ -25,15 +25,17 @@ public:
             "Action", path, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
             [](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar*, GVariant* value, gpointer data) {
                 auto self = static_cast<GnomeControls*>(data);
-                if (!self->recording || !g_variant_is_of_type(value, G_VARIANT_TYPE("(s)"))) return;
+                if (!g_variant_is_of_type(value, G_VARIANT_TYPE("(s)"))) return;
                 const char* action; g_variant_get(value, "(&s)", &action);
                 // Gesture's shared internal mode key remains platform-neutral;
                 // the extension maps the physical Space key to that action.
                 const unsigned key = std::string(action) == "toggleMode" ? 32 : std::string(action) == "cancel" ? 27 : 0;
+                // An open chat window owns Escape alone.
+                if (!self->recording && !(self->chat && key == 27)) return;
                 // A menu-started recording has no native key gesture. Do not synthesize
                 // handsFree from an asynchronous phase notification: that can arrive
                 // after the first tap's release and turn the second tap into finish.
-                const auto result = !key ? std::optional<Action>{} : self->gesture.active()
+                const auto result = !key ? std::optional<Action>{} : self->gesture.active() || (key == 27 && self->gesture.chatOpen)
                     ? self->gesture.keyPressed(key, false)
                     : std::optional<Action>{key == 32 ? Action::toggleMode : Action::cancel};
                 if (result) {
@@ -43,14 +45,23 @@ public:
             }, this, nullptr);
     }
     ~GnomeControls() {
-        setRecording(false);
+        setRecording(false); setChatOpen(false);
         if (signal) g_dbus_connection_signal_unsubscribe(bus.get(), signal);
     }
     void setRecording(bool active) {
         if (recording == active) return;
         recording = active;
+        call("SetRecording", active);
+    }
+    // The chat window never takes the keyboard, so Escape reaches it only through the Shell.
+    void setChatOpen(bool open) {
+        if (chat == open) return;
+        chat = open;
+        call("SetChatOpen", open);
+    }
+    void call(const char* method, bool active) {
         if (!bus) return;
-        g_dbus_connection_call(bus.get(), "org.gnome.Shell", path, interface, "SetRecording",
+        g_dbus_connection_call(bus.get(), "org.gnome.Shell", path, interface, method,
             g_variant_new("(b)", active), G_VARIANT_TYPE("(b)"), G_DBUS_CALL_FLAGS_NO_AUTO_START,
             250, nullptr, [](GObject* source, GAsyncResult* result, gpointer) {
                 Error error;
