@@ -45,11 +45,12 @@ const tooltipSize = { width: config.bubbleTooltipMaxWidth, height: 64 };
 let tooltipLaidOut = true;
 /** Whether the page has laid the tip by the pill out yet. */
 let tipLaidOut = true;
+/** The chat's scrolling column, as tall as what it shows (a test may grow it). */
 const chatSize = { width: 380, height: 146 };
 
 function laidOut(element: HTMLElement): { width: number; height: number } {
   if (element.classList.contains("pill-anchor")) return pillSize;
-  if (element.classList.contains("chat")) return chatSize;
+  if (element.classList.contains("chat-scroll")) return chatSize;
   if (element.classList.contains("bubble-tooltip")) return tooltipLaidOut ? tooltipSize : { width: 0, height: 0 };
   if (element.querySelector(".tip") || element.classList.contains("tip")) return tipLaidOut ? tipSize : { width: 0, height: 0 };
   return { width: 0, height: 0 };
@@ -1061,11 +1062,54 @@ describe("the chat window", () => {
     expect(page.commands).toContainEqual({ type: "openChatLink", url: "https://example.com/plan" });
   });
 
-  /** The window reports its laid-out height, for the overlay to fit it. */
-  test("it reports its height", async () => {
+  /** The window is as tall as what it shows, with its border, and says so: only that much of the
+   * overlay takes clicks. As a reply's next line shows, it grows to it smoothly, in the overlay at
+   * its tallest, rather than the overlay resizing (owner, 2026-10-04: "super clunky"). */
+  test("it grows smoothly to what it shows, and reports its height", async () => {
     const page = await overlayPage();
     await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
+    const box = document.querySelector<HTMLElement>(".chat");
+    const height = chatSize.height + 2 * config.pillBorderWidth;
+    expect(box?.style.height).toBe(`${height}px`);
+    expect(box?.style.transition).toBe(`height ${config.chatGrowDurationSeconds}s ease-out`);
+    expect(page.commands).toContainEqual({ type: "chatHeight", height });
 
-    expect(page.commands).toContainEqual({ type: "chatHeight", height: chatSize.height });
+    const grown = chatSize.height + 40;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("chat-scroll") ? grown : laidOut(this).height;
+    });
+    await act(async () => {
+      for (const observer of observers) observer.changed();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(box?.style.height).toBe(`${grown + 2 * config.pillBorderWidth}px`);
+    expect(page.commands.filter((command) => command.type === "chatHeight")).toEqual([
+      { type: "chatHeight", height },
+      { type: "chatHeight", height: grown + 2 * config.pillBorderWidth },
+    ]);
+  });
+
+  /** Each move of the pointer says whether it is over the chat or the pill's bubbles, for the overlay
+   * to take clicks only there (`ChatHitTest`); leaving the window, it is over neither. */
+  test("it says where the pointer is", async () => {
+    const page = await overlayPage();
+    await page.show({ ...running, chatPlacement: above, chat: chat(null), tools: ["compose", "answer"] });
+    const pointers = () => page.commands.filter((command) => command.type === "chatPointer");
+    const move = (target: Element | null) => target?.dispatchEvent(new Event("pointermove", { bubbles: true }));
+
+    move(document.querySelector(".chat-text"));
+    move(document.querySelector(".chat-canvas"));
+    move(document.querySelector(".chat-canvas .bubble"));
+    document.documentElement.dispatchEvent(new Event("pointerleave"));
+    expect(pointers()).toEqual([
+      { type: "chatPointer", over: true },
+      { type: "chatPointer", over: false },
+      { type: "chatPointer", over: true },
+      { type: "chatPointer", over: false },
+    ]);
+
+    await page.show({ ...idle, chatPlacement: null, chat: null });
+    move(document.querySelector(".canvas"));
+    expect(pointers()).toHaveLength(4);
   });
 });

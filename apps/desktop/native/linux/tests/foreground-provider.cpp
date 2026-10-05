@@ -16,7 +16,7 @@ std::map<AtspiAccessible*, Item> items;
 AtspiAccessible *desktop, *apps[2], *windows[2], *documents[2], *fields[2], *secret;
 int active = 0, failures = 0;
 bool exposed = false, loseFocusOnText = false, focusLost = false;
-bool mutateSelectionOnText = false;
+bool mutateSelectionOnText = false, containerFocused = false;
 int selectionStart = -1, selectionEnd = -1;
 unsigned calls[2] = {};
 AtspiEventListenerCB callback;
@@ -35,9 +35,9 @@ const std::vector<AtspiAccessible*>& children(AtspiAccessible* root) {
     if (!item.cache) item.cache = ((root == windows[0] || root == windows[1]) && !exposed) ? std::vector<AtspiAccessible*>{} : item.live;
     return *item.cache;
 }
-void event(const char* type, AtspiAccessible* source) {
+void event(const char* type, AtspiAccessible* source, int detail1 = 0) {
     auto value = g_new0(AtspiEvent, 1);
-    value->type = g_strdup(type); value->source = ref(source);
+    value->type = g_strdup(type); value->source = ref(source); value->detail1 = detail1;
     callback(value, callbackData);
 }
 void activate(int index, int failCount) {
@@ -72,6 +72,16 @@ gboolean command(gint fd, GIOCondition, gpointer) {
     if (value == 'b') activate(1, 0);
     if (value == 'r') activate(0, 1);
     if (value == 'e') activate(0, 99);
+    if (value == 'o') {
+        // LibreOffice's order: the field, then its container (focused only for a moment), then
+        // the window; a lookup of the window would fail.
+        if (active >= 0) event("window:deactivate", windows[active]);
+        active = 0; failures = 99; exposed = true;
+        event("object:state-changed:focused", fields[0], 1);
+        containerFocused = true; event("object:state-changed:focused", documents[0], 1);
+        event("window:activate", windows[0]);
+        event("object:state-changed:focused", documents[0], 1); containerFocused = false;
+    }
     if (value == 'd' && active >= 0) { event("window:deactivate", windows[active]); active = -1; }
     if (value == 'p') { items.at(fields[active]).live = {secret}; }
     if (value == 'u') items.at(fields[active]).live.clear();
@@ -116,6 +126,7 @@ extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*
     auto states = atspi_state_set_new(nullptr);
     atspi_state_set_add(states, ATSPI_STATE_SHOWING);
     if (active >= 0 && value == windows[active]) atspi_state_set_add(states, ATSPI_STATE_ACTIVE);
+    if (active >= 0 && containerFocused && value == documents[active]) atspi_state_set_add(states, ATSPI_STATE_FOCUSED);
     if (active >= 0 && exposed && !focusLost && value == fields[active]) { atspi_state_set_add(states, ATSPI_STATE_FOCUSED); atspi_state_set_add(states, ATSPI_STATE_EDITABLE); }
     return states;
 }

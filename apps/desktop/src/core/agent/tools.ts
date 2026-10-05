@@ -104,6 +104,22 @@ export function selection(context: ScreenContext | null): string {
   return trimWhitespace(selected) === "" ? "" : selected;
 }
 
+/** What the helpers put in place of text they don't give (`placeholder` in
+ * `native/shared/privacy/redactors.json`). */
+export const redactionPlaceholder = "[redacted]";
+
+/** What a prompt gets as the selected text when the helper gave none of the selection, only the
+ * placeholder (it could not read it, or all of it looked like a secret): that in words, so the model
+ * doesn't take the placeholder for text the user selected. */
+export const selectionUnreadNote = "[Not read: the user may have selected text here, but it is hidden for privacy or could not be read.]";
+
+/** The selection as the prompts get it: `selection`, or `selectionUnreadNote` when only the
+ * placeholder came. */
+export function selectedTextVariable(context: ScreenContext | null): string {
+  const selected = selection(context);
+  return context?.selectionRedacted === true && trimWhitespace(selected) === redactionPlaceholder ? selectionUnreadNote : selected;
+}
+
 /** What a tool's prompt gets as the screen's text when the screen was not read for the user's
  * privacy (`ScreenHidden`): that it is hidden, so the model does not take the screen for empty, or
  * for the one an earlier request in the conversation was about. */
@@ -119,7 +135,7 @@ export function screenVariables(request: string, context: ScreenContext | null, 
     web_host: context?.host ?? "",
     window_title: context?.windowTitle ?? "",
     screen_text: screenHidden ? screenHiddenNote : (context?.renderedText ?? ""),
-    selected_text: selection(context),
+    selected_text: selectedTextVariable(context),
     user_request: request,
   };
 }

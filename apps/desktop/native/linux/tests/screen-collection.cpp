@@ -7,6 +7,7 @@
 #include <iostream>
 #include <functional>
 #include <set>
+#include <thread>
 
 struct Item {
     AtspiRole role = ATSPI_ROLE_PANEL;
@@ -122,5 +123,14 @@ int main() {
     check(liveArrays.empty(), "every returned collection allocation is released");
     for (const auto& n : {window, field, group, password, allowed, web, frame})
         check(G_OBJECT(n.get())->ref_count == 1, "provider object references return to their starting lifetime");
-    std::cout << "adapter invariants passed: positive content, both page roles, nested password, root password, ordering, complete census, failed/unsupported query\n";
+    {
+        // A terminal read outlasts an ordinary one, and still ends before a paste behind it is due.
+        using Tree = voice::LiveScreenTree;
+        Tree tree({}); tree.terminalDeadline();
+        std::this_thread::sleep_for(std::chrono::milliseconds(Tree::readMilliseconds + 200));
+        check(tree.withinBudget(), "a terminal read runs past an ordinary read's time");
+        std::this_thread::sleep_for(std::chrono::milliseconds(Tree::terminalReadMilliseconds - Tree::readMilliseconds));
+        check(!tree.withinBudget(), "a terminal read ends at its own limit");
+    }
+    std::cout << "adapter invariants passed: positive content, both page roles, nested password, root password, ordering, complete census, failed/unsupported query, terminal read limit\n";
 }

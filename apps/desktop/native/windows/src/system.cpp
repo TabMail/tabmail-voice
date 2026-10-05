@@ -99,7 +99,7 @@ public:
                     requestedWindow = queue.front().window;
                     queue.pop_front();
                     active = true;
-                    busyUntil = GetTickCount64() + 2500;
+                    busyUntil = GetTickCount64() + (input["method"] == "readScreen" ? voice::HelperConfig::screenReadWatchdogMs : voice::HelperConfig::accessibilityWatchdogMs);
                     activeID = input["id"].get<int64_t>();
                     canceled = false;
                 }

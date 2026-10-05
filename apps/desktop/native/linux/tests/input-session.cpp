@@ -21,6 +21,8 @@ struct Fixture {
     std::optional<std::pair<int, unsigned>> failKey;
     unsigned publications = 0, ownReadAttempts = 0;
     bool sessionOwnsSelection = false;
+    // A clipboard owner that accepts the read and then never writes, or refuses it.
+    bool stallRead = false, failRead = false; std::vector<int> stalled;
     std::vector<unsigned char> expected = original;
     unsigned completed = 0, grants = 0;
     bool clipboardGranted = true;
@@ -91,6 +93,10 @@ struct Fixture {
             require(g_dbus_connection_emit_signal(bus.get(), sender, path.c_str(), "org.freedesktop.portal.Request", "Response", g_variant_new("(u@a{sv})", 0u, g_variant_builder_end(&result)), nullptr));
             // Deliberately no initial owner signal: matches ownerless GNOME startup.
         } else if (method == "SelectionRead" || method == "SelectionWrite") {
+            if (method == "SelectionRead" && failRead) {
+                g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Synthetic read failure");
+                return;
+            }
             if (method == "SelectionRead" && sessionOwnsSelection) {
                 ++ownReadAttempts;
                 g_dbus_method_invocation_return_dbus_error(invocation, "org.freedesktop.portal.Error.Failed", "Tried to read own selection");
@@ -99,7 +105,8 @@ struct Fixture {
             int pipes[2]; require(pipe2(pipes, O_CLOEXEC | O_NONBLOCK) == 0);
             auto fds = own(g_unix_fd_list_new()); Error error;
             const int handle = g_unix_fd_list_append(fds.get(), method == "SelectionRead" ? pipes[0] : pipes[1], &error.value); require(handle >= 0 && !error.value);
-            if (method == "SelectionRead") { if (onRead) onRead(); require(write(pipes[1], original.data(), original.size()) == ssize_t(original.size())); close(pipes[0]); close(pipes[1]); }
+            if (method == "SelectionRead" && stallRead) { close(pipes[0]); stalled.push_back(pipes[1]); }
+            else if (method == "SelectionRead") { if (onRead) onRead(); require(write(pipes[1], original.data(), original.size()) == ssize_t(original.size())); close(pipes[0]); close(pipes[1]); }
             else { guint serial = 0; auto value = variant(g_variant_get_child_value(args, 1)); serial = g_variant_get_uint32(value.get()); readers[serial] = pipes[0]; close(pipes[1]); }
             g_dbus_method_invocation_return_value_with_unix_fd_list(invocation, g_variant_new("(h)", handle), fds.get());
         } else if (method == "SelectionWriteDone") {
@@ -267,6 +274,20 @@ int main() {
         require(!fixture.failKey && fixture.keys == expectedKeys && fixture.publications == 2);
         require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.original);
     }
+    // An owner that never hands the clipboard over, or refuses to, doesn't stop the
+    // paste: it goes ahead promptly, and the dictation stays on the clipboard.
+    int64_t unsavedID = 60;
+    for (const bool stall : {true, false}) {
+        reset(); fixture.stallRead = stall; fixture.failRead = !stall;
+        const auto started = std::chrono::steady_clock::now();
+        run(unsavedID++, true);
+        require(std::chrono::steady_clock::now() - started < std::chrono::milliseconds(1500));
+        require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {'v', 1}, {'v', 0}, {0xffe3, 0}});
+        require(fixture.publications == 1 && input.state->selection.ours);
+        require(*input.state->offer.at("text/plain;charset=utf-8") == fixture.expected);
+        fixture.stallRead = fixture.failRead = false;
+    }
+    for (const int fd : fixture.stalled) close(fd);
     std::weak_ptr<const std::vector<unsigned char>> retained = input.state->offer.at("text/plain;charset=utf-8");
     require(!retained.expired());
     input.state->close();

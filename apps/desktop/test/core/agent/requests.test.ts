@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DesktopAgent } from "../../../src/core/agent/requests.js";
 import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
-import { AgentError, type AgentToolID, agentToolIDs, agentTools, EditTool, screenHiddenNote } from "../../../src/core/agent/tools.js";
+import { AgentError, type AgentToolID, agentToolIDs, agentTools, EditTool, redactionPlaceholder, screenHiddenNote, selectionUnreadNote } from "../../../src/core/agent/tools.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient, type ServerToolEvent, type ToolCall } from "../../../src/core/backend/completions.js";
 import { screen } from "../../support/screens.js";
@@ -110,6 +110,28 @@ describe("DesktopAgent", () => {
   test("a blank selection counts as none", () => {
     expect(DesktopAgent.chooseMessage(request, selectionScreen(" \n"), "").vars.selected_text).toBe("");
     expect(DesktopAgent.chooseMessage(request, selectionScreen("\n"), "").vars.selected_text).toBe("");
+  });
+
+  /** A selection the helper could not give at all arrives as only its placeholder: the agent is
+   * told so in words, never handed the placeholder as if the user had selected it. */
+  test("an unread selection reaches the agent as a note, not as selected text", () => {
+    const unread = { ...selectionScreen(redactionPlaceholder), selectionRedacted: true };
+    expect(DesktopAgent.chooseMessage(request, unread, "").vars.selected_text).toBe(selectionUnreadNote);
+    for (const tool of ["answer", "compose", "thunderbird"] as const) {
+      expect(DesktopAgent.toolMessage(tool, request, unread, false, "", "").vars.selected_text).toBe(selectionUnreadNote);
+    }
+  });
+
+  test("a selection with a secret taken out still reaches the agent as selected", () => {
+    const partly = { ...selectionScreen(`token ${redactionPlaceholder} for the demo`), selectionRedacted: true };
+    expect(DesktopAgent.chooseMessage(request, partly, "").vars.selected_text).toBe(`token ${redactionPlaceholder} for the demo`);
+    // Not redacted: the same text is the user's own, placeholder-looking or not.
+    expect(DesktopAgent.chooseMessage(request, selectionScreen(redactionPlaceholder), "").vars.selected_text).toBe(redactionPlaceholder);
+  });
+
+  test("the placeholder is the helpers' own", () => {
+    const redactors = JSON.parse(readFileSync(join(__dirname, "../../../native/shared/privacy/redactors.json"), "utf8")) as { placeholder: string };
+    expect(redactionPlaceholder).toBe(redactors.placeholder);
   });
 
   test.each([

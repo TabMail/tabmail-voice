@@ -14,33 +14,37 @@ enum TerminalViewportReader {
     }
 
     /// No whole-value or selected-text callback exists: every text-bearing call
-    /// must stay inside a proven visible interval. Repeat reads catch same-length
-    /// mutations which count/selection equality cannot detect.
+    /// must stay inside a planned visible interval. The text is read once: output
+    /// arriving meanwhile leaves a slightly stale capture, which is kept (owner,
+    /// 2026-10-05: the screen as at key-down, rather than no screen at all).
     static func capture(ranges: [NSRange], count: Int, unitBudget: Int,
                         read: (NSRange) -> NSString?, valid: () -> Bool) -> Capture? {
-        guard count >= 0, unitBudget >= 0 else { return nil }
+        // Counts and lengths only, never text.
+        func refused(_ reason: String) -> Capture? {
+            HelperLog.debug("TerminalViewport: capture refused \(reason) ranges=\(ranges.count) count=\(count) budget=\(unitBudget)")
+            return nil
+        }
+        guard count >= 0, unitBudget >= 0 else { return refused("negative") }
         var previous = 0
         var units = 0
         for range in ranges {
             guard range.location >= previous, range.length >= 0, range.location <= count,
-                  range.length <= count - range.location, range.length <= unitBudget - units else { return nil }
+                  range.length <= count - range.location else { return refused("range \(range.location)+\(range.length)") }
+            guard range.length <= unitBudget - units else { return refused("over budget units=\(units) next=\(range.length)") }
             units += range.length
             previous = range.location + range.length
         }
         var texts: [String] = []
-        for range in ranges {
-            guard valid(), let text = read(range), text.length == range.length else { return nil }
+        for (index, range) in ranges.enumerated() {
+            guard valid() else { return refused("invalid before run \(index)") }
+            guard let text = read(range) else { return refused("no text for run \(index) length=\(range.length)") }
+            guard text.length == range.length else { return refused("run \(index) asked=\(range.length) got=\(text.length)") }
             let converted = text as String
             let units = Array(converted.utf16)
-            guard units.count == text.length, units.enumerated().allSatisfy({ text.character(at: $0.offset) == $0.element }) else { return nil }
+            guard units.count == text.length, units.enumerated().allSatisfy({ text.character(at: $0.offset) == $0.element }) else { return refused("run \(index) conversion") }
             texts.append(converted)
         }
-        for (range, text) in zip(ranges, texts) {
-            let units = Array(text.utf16)
-            guard valid(), let repeated = read(range), repeated.length == units.count,
-                  units.enumerated().allSatisfy({ repeated.character(at: $0.offset) == $0.element }) else { return nil }
-        }
-        guard valid() else { return nil }
+        guard valid() else { return refused("invalid after read") }
         return Capture(ranges: ranges, texts: texts)
     }
 
@@ -119,13 +123,10 @@ extension TerminalViewportReader {
 
     static func surface(_ source: Source, id: Int, clip: CGRect, focused: Bool,
                         startKnown: Bool, endKnown: Bool, byteBudget: Int = Int.max, geometryValid: () -> Bool = { true }, valid: () -> Bool) -> Surface? {
-        // Geometry acquires no text. Bound its work by the deadline; repeat the
-        // complete focus/frame/privacy validation at the text acquisition and
-        // final acceptance boundaries instead of on every geometry query.
+        // Geometry acquires no text. Repeat the complete focus/privacy validation at the
+        // text acquisition and final acceptance boundaries instead of on every geometry query.
         let diagnosticStart = Date()
-        func metadataValid() -> Bool {
-            Date().timeIntervalSince(diagnosticStart) <= HelperConfig.contextTimeBudget && geometryValid()
-        }
+        func metadataValid() -> Bool { geometryValid() }
         var diagnosticStage = "count"
         var diagnosticSucceeded = false
         defer {
@@ -168,7 +169,7 @@ extension TerminalViewportReader {
                frame.maxY > clip.minY, frame.minY < clip.maxY {
                 caret = ["status": "exact", "surface": .number(Double(id)), "run": 0, "offset": 0]
             }
-            guard valid(), count() == 0, selection() == selectionSnapshot else { return nil }
+            guard valid() else { return nil }
             diagnosticSucceeded = true
             return Surface(source: ["id": .number(Double(id)),
                 "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
@@ -200,8 +201,7 @@ extension TerminalViewportReader {
         // Three UTF-8 bytes per UTF-16 unit is the maximum conversion expansion.
         diagnosticStage = "bounded-text"
         guard let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
-                                     read: read, valid: { valid() && count() == countSnapshot && selection() == selectionSnapshot }),
-              plan() == ranges else { return nil }
+                                     read: read, valid: valid) else { return nil }
         diagnosticStage = "selection-caret"
         var runs: [JSON] = []
         var selections: [JSON] = []
@@ -232,7 +232,7 @@ extension TerminalViewportReader {
                          "offset": .number(Double(selected.location - interval.location))]
             }
         }
-        guard valid(), count() == countSnapshot, selection() == selectionSnapshot else { return nil }
+        guard valid() else { return nil }
         diagnosticSucceeded = true
         let completeSelection = selectionSnapshot.map { NSMaxRange($0) <= countSnapshot && selectedUnits == $0.length } ?? false
         return Surface(source: ["id": .number(Double(id)), "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
@@ -294,11 +294,11 @@ extension TerminalViewportReader {
         diagnosticStage = "privacy-census"
         // Complete metadata-only privacy census before any terminal source read.
         guard case .none = ScreenContextReader.lookForExcludedPage(in: window, tree, excluding: exclusions,
-                    within: HelperConfig.contextTimeBudget, since: started) else { return nil }
+                    within: .infinity, since: started) else { return nil }
+        // No deadline: the read runs while the user speaks, and the app decides how long to wait
+        // for it when it sends (owner, 2026-10-05). Only the window and focus must stay the same.
         func valid() -> Bool {
-            guard Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget,
-                  let currentWindow = current(kAXFocusedWindowAttribute as String), tree.isSame(currentWindow, window),
-                  tree.frame(of: window) == windowFrame else { return false }
+            guard let currentWindow = current(kAXFocusedWindowAttribute as String), tree.isSame(currentWindow, window) else { return false }
             let currentFocus = current(kAXFocusedUIElementAttribute as String)
             if let focused, let currentFocus { return tree.isSame(focused, currentFocus) }
             return focused == nil && currentFocus == nil
@@ -313,8 +313,7 @@ extension TerminalViewportReader {
         var stack: [(Tree.Element, CGRect)] = [(window, windowFrame)]
         var seen: [Tree.Element] = []
         var surfaces: [JSON] = []
-        var checks: [(Tree.Element, CGRect)] = []
-        var verification: [(Tree.Element, Int, CGRect, Bool, Surface)] = []
+        var surfaceElements: [Tree.Element] = []
         var focusedID: JSON = .null
         var caret: JSON = ["status": "unavailable"]
         var complete = true
@@ -330,7 +329,6 @@ extension TerminalViewportReader {
             var clip = inheritedClip
             if let frame = tree.frame(of: element), frame.width > 0, frame.height > 0 {
                 clip = clip.intersection(frame)
-                checks.append((element, frame))
                 if clip.isNull || clip.isEmpty { continue }
             }
             if role == "AXTextArea" || role == "AXTextField" {
@@ -339,10 +337,9 @@ extension TerminalViewportReader {
                 let id = surfaces.count
                 let ownsFocus = focused.map { tree.isSame($0, element) } == true || focusPath.contains { tree.isSame($0, element) }
                 guard let captured = tree.terminalSurface(element, id: id, clip: clip, focused: ownsFocus, byteBudget: remaining,
-                                             geometryValid: { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget },
-                                             valid: { valid() && checks.allSatisfy { tree.frame(of: $0.0) == $0.1 } }) else { complete = false; continue }
+                                             geometryValid: { true }, valid: valid) else { complete = false; continue }
                 surfaces.append(captured.source)
-                verification.append((element, id, clip, ownsFocus, captured))
+                surfaceElements.append(element)
                 let bytes = captured.source["runs"]?.array?.reduce(0) { $0 + ($1["text"]?.string?.utf8.count ?? 0) } ?? 0
                 guard bytes <= remaining else { return nil }
                 remaining -= bytes
@@ -360,19 +357,12 @@ extension TerminalViewportReader {
             stack.append(contentsOf: children.reversed().map { ($0, clip) })
         }
         diagnosticStage = "final-validation"
-        guard valid(), checks.allSatisfy({ tree.frame(of: $0.0) == $0.1 }),
-              case .none = ScreenContextReader.lookForExcludedPage(in: window, tree, excluding: exclusions,
-                    within: HelperConfig.contextTimeBudget, since: started) else { return nil }
-        for (element, id, clip, ownsFocus, original) in verification {
-            guard readable(element), let repeated = tree.terminalSurface(element, id: id, clip: clip, focused: ownsFocus, byteBudget: byteLimit,
-                                         geometryValid: { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget },
-                                         valid: { valid() && checks.allSatisfy { tree.frame(of: $0.0) == $0.1 } }),
-                  repeated.source == original.source, repeated.caret == original.caret else { return nil }
-        }
+        // Privacy is checked again at the end; the text is not read again (see `capture`).
+        guard valid(), case .none = ScreenContextReader.lookForExcludedPage(in: window, tree, excluding: exclusions,
+                    within: .infinity, since: started) else { return nil }
         context.nodesVisited = seen.count
         context.windowTitle = tree.sourceString(window, kAXTitleAttribute)
-        guard valid(), checks.allSatisfy({ tree.frame(of: $0.0) == $0.1 }),
-              verification.allSatisfy({ readable($0.0) }) else { return nil }
+        guard valid(), surfaceElements.allSatisfy({ readable($0) }) else { return nil }
         do {
             try finish(["surfaces": .array(surfaces), "focusedSurface": focusedID, "caret": caret,
                         "complete": .bool(complete && !surfaces.isEmpty)], into: &context)

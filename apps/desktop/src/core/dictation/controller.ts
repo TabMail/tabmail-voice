@@ -110,6 +110,10 @@ export interface DictationDependencies {
 /** Shown when the recording had no words in it. Kept to one line of the pill. */
 export const nothingHeardMessage = "Didn't catch that. Try again.";
 
+/** Shown when the microphone gives nothing but digital silence (`silentMicrophoneDuration`). Kept to
+ * one line of the pill. */
+export const silentMicrophoneMessage = "Microphone muted or at zero volume.";
+
 /** Shown while a transcription that failed on the server's side is tried again. */
 export const retryingMessage = "Server error, retrying…";
 
@@ -221,6 +225,8 @@ export class DictationController extends Observable {
   private isScreenReadDone = false;
   private revealTimer: Timer | null = null;
   private maxDurationTimer: Timer | null = null;
+  /** Running from the microphone's first audio until it gives more than digital silence. */
+  private silenceTimer: Timer | null = null;
   private releaseTailTimer: Timer | null = null;
   private failureResetTimer: Timer | null = null;
   /** Tips to show this dictation, in turn, once the pill listens and hears (`showDueTip`). */
@@ -451,7 +457,6 @@ export class DictationController extends Observable {
     // What's new goes first, once (`longDictations`).
     this.dueTips = ["longDictations", "agentAndHistory"];
     if (this.currentMode === "agent") void this.lookUpEmailApp();
-    this.setPhase({ kind: "arming" });
     void this.warmUp(settings.backendURL);
     // Boot the microphone now; the overlay appears only once the hold is long enough, by which
     // time most of the start-up is done.
@@ -459,9 +464,14 @@ export class DictationController extends Observable {
     const recorder = new AudioRecorder(config.recordingSampleRate, config.maxRecordingDuration, (chunk) => this.chunkCut(chunk, current));
     const meter = new LevelSampler();
     this.recorder = recorder;
+    let audioArrived = false;
     this.deps.capture.start(
       (samples) => {
         if (this.generation !== current) return;
+        if (!audioArrived) {
+          audioArrived = true;
+          this.silenceTimer = after(config.silentMicrophoneDuration, () => this.microphoneSilent(current));
+        }
         recorder.append(samples);
         meter.append(samples, (level) => this.updateLevel(level));
       },
@@ -470,9 +480,11 @@ export class DictationController extends Observable {
       },
       () => this.microphoneLost(current),
     );
-    // Capture must be dispatched before optional accessibility work: a native
-    // screen read can block its request loop while the audio worker is ready.
+    // Capture must be dispatched before optional accessibility work: the caret lookup arming makes
+    // and the screen read can each block a helper's request loop (on Linux, the one the microphone
+    // starts on), and nothing said before the microphone starts is recorded.
     if (this.generation !== current) return;
+    this.setPhase({ kind: "arming" });
     this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
     const read = this.contextRead;
     if (read) {
@@ -557,6 +569,9 @@ export class DictationController extends Observable {
     if (this.recorder === null) return;
     cancelTimer(this.maxDurationTimer);
     this.maxDurationTimer = null;
+    // The muted check covers the hold only; it must not outlive it into a spoken answer.
+    cancelTimer(this.silenceTimer);
+    this.silenceTimer = null;
     this.endTips();
 
     // Keep the microphone open briefly after release so the last word isn't clipped.
@@ -1304,12 +1319,27 @@ export class DictationController extends Observable {
   private microphoneFailed(error: Error, current: number): void {
     if (this.generation !== current) return;
     log.error(`DictationController: microphone start failed: ${errorName(error)}`);
+    this.endForMicrophone("Couldn't start the microphone.");
+  }
+
+  /** The microphone gave nothing but digital silence for `silentMicrophoneDuration`: it is muted or
+   * its volume is at zero (owner, 2026-10-04: "if the volume is 0, we should just tell it"). Once the
+   * key is released, what was recorded goes on as any recording does. */
+  private microphoneSilent(current: number): void {
+    this.silenceTimer = null;
+    const kind = this.currentPhase.kind;
+    if (this.generation !== current || this.hearing || (kind !== "arming" && kind !== "listening")) return;
+    log.debug("DictationController: the microphone gives only digital silence");
+    this.endForMicrophone(silentMicrophoneMessage);
+  }
+
+  private endForMicrophone(message: string): void {
     // A tap waiting for its second press was never shown: it goes unseen, failure or not.
     if (this.secondTapTimer !== null) return this.discard();
     this.generation += 1;
     this.abort.abort();
     this.teardown();
-    this.fail("Couldn't start the microphone.");
+    this.fail(message);
   }
 
   /** The microphone stopped by itself mid-recording (its helper exited): as at the length cap, what
@@ -1559,6 +1589,8 @@ export class DictationController extends Observable {
     this.hearing = false;
     cancelTimer(this.maxDurationTimer);
     this.maxDurationTimer = null;
+    cancelTimer(this.silenceTimer);
+    this.silenceTimer = null;
     cancelTimer(this.secondTapTimer);
     this.secondTapTimer = null;
     this.endTips();

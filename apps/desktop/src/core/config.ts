@@ -126,6 +126,10 @@ export const chunkOverlapMinimumRun = 3;
 export const chunkPolishTimeout = 5_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
+/** Nothing but digital silence (`silenceDecibels`) this long after the microphone's first audio: it
+ * is muted or its volume is at zero, and the dictation ends saying so rather than waiting for a voice
+ * that can't come (owner, 2026-10-04). Longer than a device's own silence as it starts. */
+export const silentMicrophoneDuration = 3_000;
 /** A microphone start that fails is tried again for this long after the dictation's key-down, then
  * the dictation fails: the input can be briefly unavailable while it changes (headphones
  * connecting or switched off, the microphone helper starting afresh). */
@@ -719,6 +723,8 @@ export const chatBubbleTooltipRoom = 80;
 export const chatAppearDurationSeconds = 0.25;
 export const chatAppearRise = 8;
 export const chatAppearScale = 0.98;
+/** The chat window grows to its new height over this long as a line or turn joins it. */
+export const chatGrowDurationSeconds = 0.2;
 export const chatCornerRadius = 14;
 export const chatPadding = 12;
 export const chatTurnSpacing = 10;

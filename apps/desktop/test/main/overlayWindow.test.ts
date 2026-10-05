@@ -41,8 +41,10 @@ function overlayWindow(): BrowserWindow {
 }
 
 /** An overlay window that keeps its bounds and whether it lets the mouse through. */
-function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[] } {
+function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignoresMouse: () => boolean; forwardsMouse: () => boolean; visible: () => boolean; opacity: () => number; opaqueFrames: () => Rect[]; shape: () => Rect[] } {
   let visible = false;
+  /** The window's shape (`setShape`): the whole window when empty. */
+  let shape: Rect[] = [];
   let opacity = 1;
   /** Every frame the window took while it showed at full opacity. */
   const opaqueFrames: Rect[] = [];
@@ -66,12 +68,15 @@ function recordingWindow(): { window: BrowserWindow; bounds: () => Rect; ignores
       opacity = value;
     },
     getBounds: () => bounds,
+    setShape: (rects: Rect[]) => {
+      shape = rects;
+    },
     setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
       ignoresMouse = ignore;
       forwardsMouse = options?.forward === true;
     },
   } as unknown as BrowserWindow;
-  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames };
+  return { window, bounds: () => bounds, ignoresMouse: () => ignoresMouse, forwardsMouse: () => forwardsMouse, visible: () => visible, opacity: () => opacity, opaqueFrames: () => opaqueFrames, shape: () => shape };
 }
 
 describe("OverlayWindowController", () => {
@@ -194,9 +199,9 @@ describe("OverlayWindowController", () => {
     expect(overlay.opaqueFrames().filter((frame) => frame.width !== canvas.width)).toEqual([]);
     controller.fitChat(120);
     expect(overlay.opacity()).toBe(1);
-    const fitted = overlay.bounds();
     controller.fitChat(160);
-    expect(overlay.opaqueFrames().filter((frame) => frame.width !== canvas.width)).toEqual([fitted, overlay.bounds()]);
+    // At the chat's tallest throughout: the page grows the chat in it.
+    expect(overlay.opaqueFrames().filter((frame) => frame.width !== canvas.width)).toEqual([overlay.bounds()]);
 
     controller.update({ kind: "idle" }, false);
     controller.update({ kind: "arming" });
@@ -205,6 +210,10 @@ describe("OverlayWindowController", () => {
     controller.update({ kind: "running", tool: "answer" }, true);
     expect(overlay.opacity()).toBe(0);
     controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    expect(overlay.visible()).toBe(true);
     expect(overlay.opacity()).toBe(1);
   });
 
@@ -247,7 +256,8 @@ describe("OverlayWindowController", () => {
   /** The overlay takes the mouse, as the chat window, opened over the pill at the caret the request
    * was spoken over, only while the chat is open; the pill stays where it was as it opens and as it
    * fits the height the chat window measures, and closed it lets every click through again (the
-   * pointer's moves still reaching the page, for a bubble's hover), at the pill's size, hidden. */
+   * pointer's moves still reaching the page, for a bubble's hover), and a chat's height measured
+   * after it closed doesn't resize it. */
   test("the chat window takes the mouse only while it is open, and the pill stays put", async () => {
     const caret: Rect = { x: 400, y: 500, width: 1, height: 16 };
     const overlay = recordingWindow();
@@ -262,7 +272,14 @@ describe("OverlayWindowController", () => {
     const pill = pillOnScreen(overlay.bounds());
 
     controller.update({ kind: "running", tool: "answer" }, true);
+    // Over the chat only, as the page says the pointer is.
+    expect(overlay.ignoresMouse()).toBe(true);
+    controller.chatPointer(true);
     expect(overlay.ignoresMouse()).toBe(false);
+    controller.chatPointer(false);
+    expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
+    controller.chatPointer(true);
     expect(overlay.visible()).toBe(true);
     expect(overlay.bounds().width).toBe(config.chatWidth + 2 * config.chatShadowMargin);
     expect(placed).toEqual([null, { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: expect.any(Number) as number }]);
@@ -271,7 +288,7 @@ describe("OverlayWindowController", () => {
     expect(overlay.bounds().y).toBeLessThan(pill.y - config.chatMaxHeight);
     const opened = overlay.bounds();
     controller.fitChat(120);
-    expect(overlay.bounds().height).toBe(opened.height - config.chatMaxHeight + 120);
+    expect(overlay.bounds()).toEqual(opened);
     expect(pillOnScreen(overlay.bounds(), controller)).toEqual(pill);
 
     // The request's end, and a follow-up, leave it open where it is.
@@ -285,9 +302,150 @@ describe("OverlayWindowController", () => {
     expect(controller.chatPlacement).toBeNull();
     expect(overlay.ignoresMouse()).toBe(true);
     expect(overlay.forwardsMouse()).toBe(true);
-    expect(overlay.visible()).toBe(false);
-    expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
+    const closed = overlay.bounds();
     controller.fitChat(200);
+    controller.chatPointer(true);
+    expect(overlay.bounds()).toEqual(closed);
+    expect(overlay.ignoresMouse()).toBe(true);
+  });
+
+  /** The page says the pointer is over `.chat, .bubble` on every move: over a pill bubble once the
+   * chat has closed, the overlay must still let clicks through to the app under it. */
+  test("a closed chat window never takes clicks, even over a bubble", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    controller.update({ kind: "arming" });
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "running", tool: "answer" }, true);
+    // The pointer never went over the open chat window.
+    expect(overlay.ignoresMouse()).toBe(true);
+    controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "listening" });
+    controller.chatPointer(true);
+    expect(overlay.ignoresMouse()).toBe(true);
+    expect(overlay.forwardsMouse()).toBe(true);
+  });
+
+  /** A chat window placed under a pointer that has not moved since takes its click: the page says
+   * where the pointer is only as it moves. */
+  test("a chat window opened under the resting pointer takes its click", () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null);
+    controller.update({ kind: "running", tool: "answer" }, true);
+    expect(overlay.ignoresMouse()).toBe(true);
+    const tallest = overlay.bounds();
+    // The pointer the chat opened at: the pill's, under the chat.
+    screenNow.pointer = { x: pointerAtRest.x, y: tallest.y + tallest.height - config.chatShadowMargin - 1 };
+    try {
+      controller.fitChat(120);
+      expect(overlay.ignoresMouse()).toBe(false);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+
+    // Elsewhere, clicks go through until the pointer moves over it.
+    controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "running", tool: "answer" }, true);
+    screenNow.pointer = { x: pointerAtRest.x, y: tallest.y + 1 };
+    try {
+      controller.fitChat(120);
+      expect(overlay.ignoresMouse()).toBe(true);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+  });
+
+  /** Where a click-through window gets no pointer moves (Linux), the overlay at the chat's tallest is
+   * cut to the chat as measured, with its shadow and the pill's strip, the edge by the pill staying
+   * put: only that takes clicks, as a window that size did. Closed, it is whole and click-through. */
+  test.each([
+    ["over", 500],
+    ["under", 40],
+  ])("cut to its shape, the chat window %s the pill takes clicks only where it is", (_, y) => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => null, undefined, undefined, "shape");
+    screenNow.pointer = { x: 400, y };
+    try {
+      controller.update({ kind: "running", tool: "answer" }, true);
+    } finally {
+      screenNow.pointer = pointerAtRest;
+    }
+    expect(overlay.ignoresMouse()).toBe(false);
+    const tallest = overlay.bounds();
+    expect(tallest.height).toBe(2 * config.chatShadowMargin + config.chatMaxHeight + config.chatPillGap + config.chatStripHeight);
+    const below = controller.chatPlacement?.below === true;
+    expect(below).toBe(y < 100);
+    const unmeasured = overlay.shape();
+    expect(unmeasured).toHaveLength(1);
+    expect(unmeasured[0]?.height).toBe(tallest.height - config.chatMaxHeight);
+
+    controller.fitChat(120);
+    const height = tallest.height - config.chatMaxHeight + 120;
+    expect(overlay.shape()).toEqual([{ x: 0, y: below ? 0 : tallest.height - height, width: tallest.width, height }]);
+    expect(overlay.bounds()).toEqual(tallest);
+    // The page says where the pointer is on every platform; cut to shape, the window keeps taking
+    // clicks whatever it says (ignoring them here would leave no move to undo it).
+    const shaped = overlay.shape();
+    for (const over of [true, false, true, false]) {
+      controller.chatPointer(over);
+      expect(overlay.ignoresMouse()).toBe(false);
+      expect(overlay.shape()).toEqual(shaped);
+    }
+
+    controller.update({ kind: "idle" }, false);
+    expect(overlay.shape()).toEqual([]);
+    expect(overlay.ignoresMouse()).toBe(true);
+  });
+
+  /** Hidden as the chat window closes, the overlay's last frame would still be the chat, which then
+   * showed for a moment as the overlay next did (owner, 2026-10-04: "the previous answer briefly
+   * blinks"). It stays up, transparent and click-through, while its page draws the chat away, and is
+   * hidden after that; the next hold's pill shows opaque, at the pill's size. */
+  test("a closed chat window is drawn away before the overlay hides", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const overlay = recordingWindow();
+      const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+      controller.update({ kind: "running", tool: "answer" }, true);
+      controller.fitChat(120);
+
+      controller.update({ kind: "idle" }, false);
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(0);
+      expect(overlay.ignoresMouse()).toBe(true);
+      vi.advanceTimersByTime(config.overlayDismissDuration - 1);
+      expect(overlay.visible()).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(overlay.visible()).toBe(false);
+
+      controller.update({ kind: "arming" });
+      await new Promise<void>(queueMicrotask);
+      controller.update({ kind: "listening" });
+      expect(overlay.visible()).toBe(true);
+      expect(overlay.opacity()).toBe(1);
+      expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A hold started just as the chat window closes doesn't hide the overlay before its page has drawn
+   * the chat away either: it stays transparent until the pill shows. */
+  test("a hold started as the chat window closes shows its pill without the chat", async () => {
+    const overlay = recordingWindow();
+    const controller = new OverlayWindowController(overlay.window, async () => ({ x: 400, y: 500, width: 1, height: 16 }));
+    controller.update({ kind: "running", tool: "answer" }, true);
+    controller.fitChat(120);
+    const opaque = overlay.opaqueFrames().length;
+
+    controller.update({ kind: "idle" }, false);
+    controller.update({ kind: "arming" });
+    expect(overlay.visible()).toBe(true);
+    expect(overlay.opacity()).toBe(0);
+    await new Promise<void>(queueMicrotask);
+    controller.update({ kind: "listening" });
+    expect(overlay.opacity()).toBe(1);
+    expect(overlay.opaqueFrames().slice(opaque)).toEqual([overlay.bounds()]);
     expect(overlay.bounds()).toMatchObject(config.overlayCanvasSize);
   });
 
@@ -469,6 +627,7 @@ test("a shell exclusion region constrains the shared pill and interactive chat",
   expect(controller.pillPlace.pill.x).toBe(162.5);
   controller.update({ kind: "running", tool: "answer" }, true);
   controller.fitChat(320);
+  controller.chatPointer(true);
   expect(controller.chatPlacement?.width).toBe(325);
   expect(overlay.ignoresMouse()).toBe(false);
   const bounds = overlay.bounds();
@@ -500,9 +659,13 @@ test("placement refresh recovers chat after Search leaves no usable area", () =>
   expect(overlay.visible()).toBe(true);
   expect(controller.chatPlacement?.width).toBe(325);
   area = { x: 900, y: 0, width: 300, height: 900 };
+  controller.chatPointer(true);
   controller.refreshPlacement();
   controller.fitChat(200);
   expect(overlay.bounds().x + config.chatShadowMargin).toBeGreaterThanOrEqual(900);
+  // Placed afresh, it lets clicks through until the page's next move says the pointer is over it.
+  expect(overlay.ignoresMouse()).toBe(true);
+  controller.chatPointer(true);
   expect(overlay.ignoresMouse()).toBe(false);
   area = null;
   controller.refreshPlacement();
@@ -625,6 +788,7 @@ test("late caret cannot change saved placement or the chat opened from it", asyn
   expect(controller.pillPlace).toEqual(place);
   controller.update({ kind: "running", tool: "answer" }, true);
   controller.fitChat(180);
+  controller.chatPointer(true);
   expect(window.bounds().x + (controller.chatPlacement?.pillX ?? -10000)).toBe(onScreenX);
   expect(window.visible()).toBe(true);
   expect(window.ignoresMouse()).toBe(false);

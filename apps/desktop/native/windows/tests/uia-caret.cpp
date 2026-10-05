@@ -289,9 +289,10 @@ static void viewportContracts() {
     independent.caretPosition=7+17; independent.caretReads=0;
     expect(capture(independent,false).at("caret").at("status")=="unavailable" && independent.caretReads==0, "unfocused split never queries Pattern2 caret");
     independent.changeCaret=true; independent.caretReads=0;
-    bool movedCaretRefused=false;
-    try { capture(independent); } catch(const std::exception&) { movedCaretRefused=true; }
-    expect(movedCaretRefused && visibleOnly(independent), "Pattern2 cursor mutation invalidates capture");
+    // The screen as at key-down (owner, 2026-10-05): a cursor that moves after the read keeps the one read.
+    const auto movedCaret=capture(independent);
+    expect(movedCaret.at("caret").at("status")=="exact" && movedCaret.at("caret").at("offset")==17 && visibleOnly(independent),
+        "Pattern2 cursor moving after the read keeps the key-down cursor");
     Provider away(L"HIDDEN!shownHIDDEN!", 0, 0); away.visibleSpans={{away.docStart+7,away.docEnd-7}};
     expect(capture(away).at("caret").at("status") == "outsideViewport" && visibleOnly(away), "offscreen cursor never read or guessed");
     Provider gap(L"leftHIDDENright", 0, 15); gap.visibleSpans={{gap.docStart,gap.docStart+4},{gap.docStart+10,gap.docEnd}};
@@ -302,8 +303,10 @@ static void viewportContracts() {
     const auto unicodeResult=capture(unicode);
     expect(unicodeResult.at("caret").at("offset")==9 && visibleOnly(unicode), "native UTF16 offset survives wide and surrogate text");
     Provider changed(L"HIDDEN!hello worldHIDDEN!", 9, 9); changed.visibleSpans={{changed.docStart+7,changed.docEnd-7}}; changed.changeText=true;
-    bool refused=false;try{capture(changed);}catch(const std::exception&){refused=true;}
-    expect(refused && visibleOnly(changed), "same-length viewport mutation refuses mixed snapshot");
+    const auto changedResult=capture(changed);
+    expect(changedResult.at("surface").at("runs")[0].at("text")=="hello world" && changedResult.at("caret").at("status")=="unavailable" && visibleOnly(changed),
+        "output arriving during the read keeps the text read first; the cursor's place in it is then unknown");
+    bool refused=false;
     Provider bounded(L"HIDDEN!visibleHIDDEN!", 9,9);bounded.visibleSpans={{bounded.docStart+7,bounded.docEnd-7}};
     refused=false;try{capture(bounded,true,1);}catch(const std::exception&){refused=true;}
     expect(refused && visibleOnly(bounded), "budget refusal never falls back to whole document");

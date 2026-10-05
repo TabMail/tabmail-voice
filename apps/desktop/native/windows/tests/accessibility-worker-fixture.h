@@ -19,6 +19,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "../src/helper_config.h"
 using JSON = nlohmann::json;
 using HWND = void*;
 using ULONGLONG = uint64_t;
@@ -35,12 +36,13 @@ struct Output {
  mutable std::condition_variable changed;
  mutable std::map<int64_t, JSON> replies;
  void send(JSON reply) const { std::lock_guard lock(mutex); replies.emplace(reply["id"].get<int64_t>(), std::move(reply)); changed.notify_all(); }
- JSON take(int64_t id) const { std::unique_lock lock(mutex); if (!changed.wait_for(lock, std::chrono::seconds(2), [&]{return replies.contains(id);})) throw std::runtime_error("missing reply"); return replies.at(id); }
+ JSON take(int64_t id, std::chrono::milliseconds wait = std::chrono::seconds(2)) const { std::unique_lock lock(mutex); if (!changed.wait_for(lock, wait, [&]{return replies.contains(id);})) throw std::runtime_error("missing reply"); return replies.at(id); }
 };
 std::mutex gateMutex;
 std::condition_variable gateChanged;
 bool blockNext = false, entered = false, released = false, providerFailure = false;
 std::atomic<int> caretCalls{0}, inserts{0}, fieldCalls{0}, screenCalls{0};
+std::atomic<int> screenDelayMs{0}; // How long a screen read's provider takes to answer.
 void gate() {
  std::unique_lock lock(gateMutex);
  if (!blockNext) return;
@@ -57,7 +59,7 @@ void paste(HWND, std::wstring, unsigned, uint64_t, std::function<bool()> cancele
 template<class Name, class Read> JSON screenAccess(const JSON&, HWND w, Name, Read read, bool = false) { return read(w, ScreenExclusions{}); }
 struct Automation {
  JSON caret(HWND w) { ++caretCalls; gate(); if (providerFailure) throw std::runtime_error("synthetic provider failure"); if (!w || w != GetForegroundWindow()) return nullptr; return {{"x", reinterpret_cast<uintptr_t>(w)}, {"y", 20}, {"width", 1}, {"height", 20}}; }
- JSON readScreen(HWND w, const ScreenExclusions&) { ++screenCalls; gate(); return w ? JSON{{"syntheticWindow",reinterpret_cast<uintptr_t>(w)}} : JSON(nullptr); }
+ JSON readScreen(HWND w, const ScreenExclusions&) { ++screenCalls; gate(); Sleep(screenDelayMs.load()); return w ? JSON{{"syntheticWindow",reinterpret_cast<uintptr_t>(w)}} : JSON(nullptr); }
  JSON fieldValue(HWND w, unsigned, const ScreenExclusions&) { ++fieldCalls; return w ? JSON{{"value","synthetic"}} : JSON(nullptr); }
 };
 }

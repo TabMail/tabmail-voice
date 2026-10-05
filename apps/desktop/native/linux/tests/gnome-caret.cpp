@@ -2,7 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../src/gnome_caret.h"
+#include <atomic>
 #include <source_location>
+#include <thread>
 using namespace voice;
 static void require(bool value, std::source_location at = std::source_location::current()) {
     if (!value) { std::cerr << "caret check failed at " << at.line() << '\n'; std::_Exit(1); }
@@ -15,10 +17,11 @@ int main() {
     Error error;
     auto bus = own(g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error.value)); require(bus && !error.value);
     auto named = g_dbus_connection_call_sync(bus.get(), "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName", g_variant_new("(su)", "org.gnome.Shell", 0u), nullptr, G_DBUS_CALL_FLAGS_NONE, 1000, nullptr, &error.value); require(named && !error.value); g_variant_unref(named);
-    auto info = g_dbus_node_info_new_for_xml(R"xml(<node><interface name="ai.tabmail.Voice.Caret"><method name="Read"><arg type="s" direction="out"/></method></interface></node>)xml", &error.value); require(info && !error.value);
-    struct Fixture { std::string value = R"({"x":-50,"y":200,"width":1,"height":20,"source":"wayland"})"; bool fail = false, delay = false; unsigned calls = 0; Object<GDBusMethodInvocation> pending; } fixture;
-    const GDBusInterfaceVTable table{[](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* method, GVariant*, GDBusMethodInvocation* call, gpointer data) {
-        auto f = static_cast<Fixture*>(data); ++f->calls; require(std::string(method) == "Read");
+    auto info = g_dbus_node_info_new_for_xml(R"xml(<node><interface name="ai.tabmail.Voice.Caret"><method name="Read"><arg type="s" direction="out"/></method><method name="FromWindow"><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="d" direction="in"/><arg type="s" direction="out"/></method></interface></node>)xml", &error.value); require(info && !error.value);
+    struct Fixture { std::string value = R"({"x":-50,"y":200,"width":1,"height":20,"source":"wayland"})"; bool fail = false, delay = false; unsigned calls = 0; Object<GDBusMethodInvocation> pending; std::string method; std::array<double, 4> args{}; } fixture;
+    const GDBusInterfaceVTable table{[](GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* method, GVariant* args, GDBusMethodInvocation* call, gpointer data) {
+        auto f = static_cast<Fixture*>(data); ++f->calls; f->method = method;
+        if (f->method == "FromWindow") g_variant_get(args, "(dddd)", &f->args[0], &f->args[1], &f->args[2], &f->args[3]);
         if (f->delay) { f->pending = own(static_cast<GDBusMethodInvocation*>(g_object_ref(call))); return; }
         if (f->fail) { g_dbus_method_invocation_return_dbus_error(call, "ai.tabmail.Voice.Caret.Unavailable", "Unavailable"); return; }
         g_dbus_method_invocation_return_value(call, g_variant_new("(s)", f->value.c_str()));
@@ -37,7 +40,28 @@ int main() {
         read(); while (g_main_context_iteration(nullptr, false)) {} g_usleep(1000);
     }
     require(fixture.calls > 0 && read() == JSON({{"x", -50}, {"y", 200}, {"width", 1}, {"height", 20}}));
-    fixture.value = "null"; require(read().is_null());
+    // A window-relative caret goes to the Shell as it is, and comes back as a screen rectangle. The
+    // answer is the call's own return value: the helper replies before handling its next request (a
+    // screen read that holds the main loop). The Shell's side is served here, on the main loop, while
+    // another thread asks.
+    const auto fromWindow = [&](std::array<int, 4> rect) {
+        std::atomic<bool> done = false; JSON value;
+        std::thread asker([&] { value = caret->fromWindow(rect); done = true; });
+        while (!done) g_main_context_iteration(nullptr, false);
+        asker.join();
+        return value;
+    };
+    fixture.value = R"({"x":979,"y":312,"width":2,"height":19,"source":"accessibility"})";
+    require(fromWindow({869, 280, 2, 19}) == JSON({{"x", 979}, {"y", 312}, {"width", 2}, {"height", 19}}));
+    require(fixture.method == "FromWindow" && fixture.args == std::array<double, 4>{869, 280, 2, 19});
+    fixture.value = "null"; require(fromWindow({869, 280, 2, 19}).is_null());
+    fixture.fail = true; require(fromWindow({869, 280, 2, 19}).is_null()); fixture.fail = false;
+    // A Shell that doesn't answer holds the helper no longer than the call's time limit.
+    fixture.delay = true;
+    const auto asked = g_get_monotonic_time(); require(fromWindow({869, 280, 2, 19}).is_null());
+    require(g_get_monotonic_time() - asked < 250000);
+    fixture.delay = false; fixture.pending.reset();
+    fixture.value = "null"; require(read().is_null() && fixture.method == "Read");
     fixture.value = "malformed"; require(read().is_null());
     fixture.fail = true; require(read().is_null()); fixture.fail = false;
     fixture.delay = true;

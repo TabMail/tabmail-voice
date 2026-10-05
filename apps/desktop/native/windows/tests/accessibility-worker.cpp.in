@@ -58,6 +58,13 @@ int main() {
  check("insert still requires explicit target and does not mutate",refused && voice::inserts==0);
  check("field read still requires explicit target",request("focusedFieldValue",{{"maxLength",uint64_t{20}}}).contains("error") && voice::fieldCalls==0);
  check("screen context keeps snapshot route",request("readScreen",JSON::object())["result"].value("syntheticWindow",0)==42);
+ // A terminal read can take longer than other requests (the app waits up to its own limit): it is
+ // answered, and the process (and the microphone in it) is not ended.
+ voice::screenDelayMs=static_cast<int>(voice::HelperConfig::accessibilityWatchdogMs+500);
+ auto slow=enqueue("readScreen",JSON::object());
+ check("a screen read slower than other requests is answered, not ended",
+  output->take(slow,std::chrono::milliseconds(voice::HelperConfig::screenReadWatchdogMs))["result"].value("syntheticWindow",0)==42);
+ voice::screenDelayMs=0;
  worker->finish();
  int failed=0;for(const auto& c:cases)if(!c["pass"].get<bool>())++failed;
  std::cout<<JSON{{"cases",cases},{"passed",cases.size()-failed},{"failed",failed}}.dump(2)<<std::endl;

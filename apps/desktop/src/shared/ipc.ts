@@ -210,12 +210,14 @@ export type Command =
   | { type: "fixVSCodeSettings" }
   | { type: "openURL"; url: string }
   /** The chat window: the user touched it (a hover, click or scroll), closed it, opened a reply's
-   * link, confirmed or declined its question, or it measured its height. */
+   * link, confirmed or declined its question, it measured its height, or the pointer moved over it or
+   * off it (`ChatHitTest`). */
   | { type: "keepChatOpen" }
   | { type: "closeChat" }
   | { type: "openChatLink"; url: string }
   | { type: "answerConfirmation"; confirmed: boolean }
   | { type: "chatHeight"; height: number }
+  | { type: "chatPointer"; over: boolean }
   /** The paste history: an entry clicked, to copy; closed (Escape); its list measured. */
   | { type: "copyHistoryEntry"; id: number }
   | { type: "closeHistory" }
@@ -317,6 +319,8 @@ export function isCommand(value: unknown): value is Command {
       return isAgentToolID(command.tool) && typeof command.value === "boolean";
     case "setConnectorEnabled":
       return isConnectorID(command.connector) && typeof command.value === "boolean";
+    case "chatPointer":
+      return typeof command.over === "boolean";
     case "chatHeight":
     case "historyHeight":
       return typeof command.height === "number" && Number.isFinite(command.height) && command.height > 0;

@@ -16,7 +16,7 @@ import { BackendError } from "../../../src/core/backend/errors.js";
 import { CompletionsClient } from "../../../src/core/backend/completions.js";
 import { TranscriptionClient } from "../../../src/core/backend/transcription.js";
 import * as config from "../../../src/core/config.js";
-import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage } from "../../../src/core/dictation/controller.js";
+import { DictationController, type DictationDependencies, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
@@ -217,6 +217,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(inserts.map(({ text, window }) => ({ text, window }))).toEqual([{ text: cleaned, window: 101 }]);
     expect(copies).toEqual([]);
     expect(controller.phase).toEqual(idle);
+  });
+
+  /** Arming is announced only once the microphone was asked to start: the caret lookup it sets off
+   * (on Linux, in the helper the microphone starts in, ahead of it) and the screen read never hold
+   * up the recording's start. */
+  test("the microphone starts before arming sets off any accessibility read", async () => {
+    const events: string[] = [];
+    const capture = new CountingCapture(true);
+    const start = capture.start.bind(capture);
+    capture.start = (...args) => { events.push("microphone"); start(...args); };
+    const { controller } = makeController({ capture });
+    controller.captureContext = async () => { events.push("screen"); return null; };
+    controller.onPhaseChange = (phase) => { if (phase.kind === "arming") events.push("arming"); };
+    controller.handle("start");
+    try {
+      expect(await eventually(() => events.includes("screen"))).toBe(true);
+      expect(events).toEqual(["microphone", "arming", "screen"]);
+    } finally {
+      controller.handle("cancel");
+    }
   });
 
   test("pastes the cleaned-up transcript", async () => {
@@ -3775,6 +3795,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await done;
           });
 
+          /** The muted check covers the dictation's own hold: an answer spoken soon after it, on a
+           * microphone that gives no sound yet, is not ended as muted (ADR-DESK-032 amendment: "A
+           * spoken answer to a question is not checked"). */
+          test("an answer spoken soon after the dictation is not ended as a muted microphone", async () => {
+            const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+            const { controller, done } = await ask([tool], [calling(sameCall), reply("Nothing was added.")]);
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            const capture = (controller as unknown as { deps: { capture: CountingCapture } }).deps.capture;
+            (capture as unknown as { hears: boolean }).hears = false;
+
+            controller.handle("start");
+            await sleep(config.silentMicrophoneDuration + 200);
+            expect(controller.phase).toEqual({ kind: "listening" });
+            expect(controller.chat?.confirmation).toBe(confirmationQuestion);
+            controller.handle("cancel");
+            controller.answerConfirmation(false);
+            await done;
+          });
+
           /** The circle is purple only while this answer is being tried again: dropped, its retry still
            * in flight, it is not (owner, 2026-10-02: purple only for a server error of its own). */
           test("a dropped answer's retry still in flight stops saying it is retrying", async () => {
@@ -4750,6 +4789,109 @@ describe("DictationController", { timeout: 20_000 }, () => {
       capture.fail();
       expect(await eventually(() => controller.phase.kind === "failed")).toBe(true);
       expect(controller.phase).toEqual(microphoneFailed);
+    });
+
+    /** A microphone that gives nothing but digital silence for `silentMicrophoneDuration` from its
+     * first audio is muted or at zero volume: the dictation ends saying so, rather than waiting for a
+     * voice that can't come, and nothing is sent. Silence for less, as a device starts, is waited out;
+     * the time counts from the first audio, not the key-down. */
+    test.each([
+      ["held", false],
+      ["hands-free", true],
+    ])("a %s dictation whose microphone gives only digital silence says it is muted", async (_, handsFree) => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture();
+      const { controller, pastes } = makeController({ capture });
+      try {
+        if (handsFree) {
+          controller.handle("start");
+          controller.handle("finish");
+          controller.handle("startHandsFree");
+        } else {
+          controller.handle("start");
+          await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        }
+        expect(controller.phase).toEqual(listening);
+        // No audio yet: the device is still opening.
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration);
+        expect(controller.phase).toEqual(listening);
+        // A muted microphone goes on sending silence the whole time.
+        const silence = new Float32Array(config.audioChunkFrames * 4);
+        let elapsed = 0;
+        capture.feed(silence);
+        for (; elapsed + 100 < config.silentMicrophoneDuration; elapsed += 100) {
+          await vi.advanceTimersByTimeAsync(100);
+          capture.feed(silence);
+        }
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration - elapsed - 1);
+        expect(controller.phase).toEqual(listening);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(controller.phase).toEqual(failed(silentMicrophoneMessage));
+        expect(capture.events.at(-1)).toBe("stop");
+        expect(transcription.requests).toHaveLength(0);
+        expect(pastes).toEqual([]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** A device silent as it starts, then giving sound, is not taken for a muted one. */
+    test("a microphone silent only as it starts is not called muted", async () => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration - 1);
+        capture.hear();
+        await vi.advanceTimersByTimeAsync(config.silentMicrophoneDuration * 2);
+        expect(controller.phase).toEqual(listening);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
+    /** Once the key is released, a silent recording goes on as any recording does: a transcription
+     * still running when `silentMicrophoneDuration` passes is not ended as a muted microphone, even
+     * when its first audio arrived in the release tail and started the check then. */
+    test.each([
+      ["before", false],
+      ["during the release tail, after", true],
+    ])("a silent recording whose first audio came %s the release is transcribed, not called muted", async (_, late) => {
+      vi.useFakeTimers();
+      const capture = new CountingCapture();
+      const { controller } = makeController({ capture });
+      const reply = deferred<void>();
+      transcription.gate = () => reply.promise;
+      transcription.enqueue(200, { text: "", cleaned_text: null });
+      const phases: Phase[] = [];
+      try {
+        controller.handle("start");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        if (!late) capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        controller.handle("finish");
+        if (late) capture.feed(new Float32Array(config.audioChunkFrames * 4));
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        expect(controller.phase).toEqual(transcribing);
+        expect(transcription.requests).toHaveLength(1);
+        for (let waited = 0; waited <= config.silentMicrophoneDuration; waited += 100) {
+          await vi.advanceTimersByTimeAsync(100);
+          phases.push(controller.phase);
+        }
+        expect(phases.every((phase) => phase.kind === "transcribing")).toBe(true);
+        reply.resolve();
+        await vi.advanceTimersByTimeAsync(100);
+        // The transcription's own answer, not the muted microphone's.
+        expect(controller.phase).toEqual(failed(nothingHeardMessage));
+      } finally {
+        transcription.gate = undefined;
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
     });
 
     /** A double-tapped dictation, tapped again, is transcribed, cleaned up and pasted like a hold. */

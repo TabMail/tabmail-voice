@@ -26,6 +26,9 @@ bool pasteMode = false, clipboardHeld = false;
 std::wstring pasted[2];
 std::unique_ptr<voice::Clipboard> savedClipboard;
 std::atomic<unsigned> forbiddenReads{0}, textReads{0};
+// The UI framework every element reports: a browser engine's, unless the mode says otherwise.
+std::wstring framework = L"Chrome";
+bool frameworkFails = false;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
@@ -72,6 +75,10 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
         else if (property == UIA_HasKeyboardFocusPropertyId) boolean(id == focus);
         else if (property == UIA_ControlTypePropertyId) number(type);
         else if (property == UIA_ProcessIdPropertyId) number(static_cast<LONG>(GetCurrentProcessId()));
+        else if (property == UIA_FrameworkIdPropertyId) {
+            if (frameworkFails && type == UIA_DocumentControlTypeId) return E_FAIL;
+            result->vt = VT_BSTR; result->bstrVal = SysAllocString(framework.c_str());
+        }
         else if (property == UIA_NativeWindowHandlePropertyId && id == 0) number(static_cast<LONG>(reinterpret_cast<LONG_PTR>(window)));
         else if (property == UIA_NamePropertyId) { read(); result->vt = VT_BSTR; result->bstrVal = SysAllocString(text.c_str()); }
         else if (property == UIA_ValueValuePropertyId && type == UIA_DocumentControlTypeId) {
@@ -190,6 +197,21 @@ void configure(const std::string& mode) {
         if (mode == "open-page-focus") nodes.at(page)->readOnly = true;
         if (mode == "page-focus-child" || mode == "page-no-address" || mode == "page-unknown") focus = child;
         if (mode == "page-address-bar") nodes.at(1)->type = UIA_EditControlTypeId;
+        // Firefox and its forks: Gecko's documents are pages too; so are those of an engine not
+        // known (Internet Explorer mode), of a provider that gives no framework (UI Automation's
+        // default is empty) and of one whose framework can't be read.
+        if (mode == "page-gecko") framework = L"Gecko";
+        if (mode == "page-ie") framework = L"InternetExplorer";
+        if (mode == "page-no-framework") framework.clear();
+        if (mode == "page-framework-fails") frameworkFails = true;
+        // Notepad's text area is a document whose value is its text, not an address. Not web
+        // content, it is no page and is read.
+        if (mode == "text-document") {
+            framework = L"Win32";
+            nodes.at(page)->address = L"Synthetic note line\nSynthetic second line";
+            nodes.at(page)->forbidden = nodes.at(child)->forbidden = false;
+            nodes.at(child)->text = L"Synthetic page text"; focus = page;
+        }
     }
 }
 LRESULT CALLBACK procedure(HWND handle, UINT message, WPARAM value, LPARAM data) {

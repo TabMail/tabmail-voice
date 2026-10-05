@@ -48,7 +48,9 @@ let checks = 0;
 try {
   for (const mode of ["row-hidden", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
-    "open-page", "open-page-focus"]) {
+    "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document"]) {
+    // The fixture's process is no known browser: a page is told by its web framework, whichever
+    // app runs it.
     fixture = client(process.argv[3], [mode]);
     const initial = await fixture.next();
     assert.deepEqual(await request("frontmostApp"), { window: initial.window }, `${mode}: fixture owns foreground`);
@@ -74,6 +76,7 @@ try {
         assert.equal(context.host, "open.example", `${mode}: the page's host is reported, in focus or reached by the walk`);
         assert.ok(context.renderedText.includes("Synthetic page text"), `${mode}: the page is walked into`);
       }
+      if (mode === "text-document") assert.ok(context.renderedText.includes("Synthetic page text"), "a text document is no web page: it is read");
       if (mode === "open-page-focus") {
         assert.equal(context.focusedRole, "control", "a page that can't be edited is no field");
         assert.deepEqual([context.textBeforeCaret, context.selectedText, context.textAfterCaret], ["", "", ""]);

@@ -11,6 +11,7 @@
 #include "input_session.h"
 #include "portal_owner.h"
 #include "insertion.h"
+#include "gnome_caret.h"
 #include "keyboard_language.h"
 
 namespace {
@@ -38,6 +39,7 @@ int main() {
     voice::Microphone microphone(output);
     voice::KeyboardLanguage keyboardLanguage;
     voice::Foreground foreground;
+    voice::GnomeCaret gnomeCaret;
     voice::InputSession input(output);
     voice::Inserter inserter(input, [&](uint64_t token) { return foreground.matches(token); }, [&] {
         const auto target = foreground.target(); return target && target->terminal;
@@ -81,6 +83,25 @@ int main() {
         } else if (method == "keyboardLanguage") {
             keyboardLanguage.read(std::move(reply));
 
+        } else if (method == "caretAnchor") {
+            // The focused element's own caret, placed on the screen by the Shell.
+            const auto target = foreground.target();
+            const auto started = std::chrono::steady_clock::now();
+            const auto elapsed = [started] {
+                return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+            };
+            const bool matched = target && foreground.matches(target->token);
+            const auto caret = matched ? voice::caretInWindow(target->focus) : std::nullopt;
+            // Geometry and timing only, never field text.
+            std::cerr << "debug accessibility: caret " << (!target ? "no target" : !matched ? "stale target" : caret ? "read" : "unavailable")
+                << " in " << elapsed() << "ms\n";
+            if (!caret) reply(nullptr, true);
+            else {
+                const auto placed = gnomeCaret.fromWindow(*caret);
+                std::cerr << "debug accessibility: caret placed " << (placed.is_null() ? "nowhere" : "on screen")
+                    << " after " << elapsed() << "ms\n";
+                reply(placed, true);
+            }
         } else if (method == "frontmostApp") {
             const auto target = foreground.target();
             const bool focused = target && foreground.matches(target->token);

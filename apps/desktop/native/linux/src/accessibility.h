@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #pragma once
+#include <array>
+#include <optional>
 #include <atspi/atspi.h>
 #include <gio/gio.h>
 #include <memory>
@@ -87,4 +89,17 @@ inline std::vector<Node> ancestors(const Node& focus) {
     return path;
 }
 inline bool password(const Node& node) { return role(node) == ATSPI_ROLE_PASSWORD_TEXT; }
+// The focused element's caret in its window's coordinates: geometry only, one
+// element, no traversal. Wayland gives AT-SPI no screen coordinates.
+inline std::optional<std::array<int, 4>> caretInWindow(const Node& focus) {
+    auto text = own(atspi_accessible_get_text_iface(focus.get()));
+    if (!text) return {};
+    Error error;
+    const auto caret = atspi_text_get_caret_offset(text.get(), &error.value);
+    if (error.value || caret < 0) return {};
+    auto rect = atspi_text_get_character_extents(text.get(), caret, ATSPI_COORD_TYPE_WINDOW, &error.value);
+    std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rect, &g_free);
+    if (error.value || !rect || rect->width < 0 || rect->height <= 0) return {};
+    return std::array<int, 4>{rect->x, rect->y, rect->width, rect->height};
+}
 }

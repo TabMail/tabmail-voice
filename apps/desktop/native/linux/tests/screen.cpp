@@ -153,7 +153,7 @@ int main() {
         Element other{ATSPI_ROLE_TERMINAL,terminal.label,{}, {}};other.bounds=terminal.bounds;
         other.visible=false;terminalWindow.children.push_back(&other);terminalTree=Tree{};
         screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
-        expect(screen["terminalViewport"]["surfaces"].size()==1 && terminalTree.counts==2,"hidden terminal is never acquired; visible one is revalidated");
+        expect(screen["terminalViewport"]["surfaces"].size()==1 && terminalTree.counts==1,"hidden terminal is never acquired; visible one is read once");
         other.visible=true;terminalTree=Tree{};
         screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
         expect(screen["terminalViewport"]["surfaces"].size()==2,"identical visible terminal surfaces are not text-deduplicated");

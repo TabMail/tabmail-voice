@@ -240,7 +240,7 @@ function launch(): void {
 
   const shellGeometry = system instanceof WindowsSystem ? new ShellGeometry(() => system.shellExclusionBounds()) : null;
   const overlay = new OverlayWindowController(windows.overlay(), async () => {
-    // Ask only the compositor on Linux: AT-SPI traversal would delay the pill.
+    // Linux asks for the caret before the screen read can occupy the accessibility helper.
     if (system instanceof LinuxSystem) return system.caretAnchor();
     if (system instanceof WindowsSystem) {
       // Dispatch before context capture can occupy the native UIA queue. The helper
@@ -256,7 +256,7 @@ function launch(): void {
     }
     const pid = await system.frontmostApp();
     return pid === null ? null : system.caretAnchor(pid);
-  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined);
+  }, system instanceof WindowsSystem ? (area) => shellPlacementArea(area, shellGeometry?.bounds ?? []) : undefined, process.platform === "linux" ? linuxFallbackAnchor : undefined, process.platform === "linux" ? "shape" : "pointer");
 
   if (system instanceof WindowsSystem) {
     let refreshing = false;
@@ -835,6 +835,9 @@ function launch(): void {
         return;
       case "chatHeight":
         overlay.fitChat(command.height);
+        return;
+      case "chatPointer":
+        overlay.chatPointer(command.over);
         return;
       case "copyHistoryEntry": {
         const text = history.text(command.id);

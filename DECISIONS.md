@@ -1941,6 +1941,21 @@ the first engine of a fresh process always worked. So a process runs one engine.
 
 The Rust static library now owns the push-to-talk, double/triple-tap, agent-intent, cancellation and semantic key-ownership transitions. Swift and C++ use an allocation-free C value-state interface, preserving value-copy/reset behavior and caller-supplied monotonic time. Native adapters keep key codes, Globe/AltGr filtering, event taps/hooks/portal lifecycle and swallowed key-up ledgers; reconfiguration still follows each monitor's existing contract. Shared traces were run against both prior implementations before their duplicate transition bodies were removed. This avoids a second state-machine implementation without adding per-key JSON, threads, callbacks or a daemon.
 
+### Amendment 2026-10-05: a microphone that gives only digital silence is called muted
+
+Owner, 2026-10-04, after an Ubuntu VM whose input was muted at 0 % kept the warm-up swirl going
+forever: "if the volume is 0, we should just tell it instead of silently being unable to load the
+microphone forever", on every platform. A muted input still opens and delivers frames, all zero, so
+neither the start timeout nor the retry above sees it, and the waveform waits for a first real
+signal (`silenceDecibels`) that never comes. The dictation controller now starts
+`silentMicrophoneDuration` (3 s) at the microphone's first audio; if nothing above digital silence
+has come by then while the hold is arming or listening, the dictation ends with
+`silentMicrophoneMessage` ("Microphone muted or at zero volume.") and nothing is sent. The same
+check runs on every platform, with no OS volume API: a real microphone's noise floor is above
+digital silence. Silence only as a device starts (a Bluetooth headset switching profile) is waited
+out, and once the key is released the recording goes on as any does. A spoken answer to a question
+is not checked.
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it
@@ -2160,6 +2175,22 @@ off where no scroll reached them. The column's items now keep their height (`.ch
 the chat scrolls. The `overlay-chat-confirmation-long` preview fails when the buttons are cut off
 (`whole` now also looks at every clipping box above them); the one preview of a question had no
 earlier turn, so it never scrolled.
+
+**Amendment 2026-10-05: the chat grows in a window that stays at its tallest.** Owner, 2026-10-04:
+as an answer showed, the window "clicks and clacks" as it grows, "immediately changing height and
+then moving there"; "the animation is super clunky". The overlay window was resized to every height
+the chat measured (`fitChat`), and a window resized while it shows keeps its last frame, drawn from
+its new top-left corner, until the page draws one at the new size: the chat, held at the edge by
+the pill, showed a frame out of place on every new line. The overlay now stays at the chat's
+tallest size (`chatMaxHeight`) while the chat is open, and the page grows the chat in it to what it
+shows, over `chatGrowDurationSeconds`, its edge by the pill staying put. Only the chat as measured,
+with its shadow and the pill's strip, takes clicks, as the window that size did: on macOS and
+Windows the window lets clicks through but still passes the pointer's moves to the page, which says
+on each move whether the pointer is over the chat or the pill's bubbles (`chatPointer`), and the
+overlay takes clicks only then; Linux windows get no moves while letting clicks through, so there
+the overlay is cut to the chat's shape (`setShape`) instead (`ChatHitTest`). Placed afresh
+(`refreshPlacement`), it lets clicks through until the page's next move, unless the resting pointer
+is already over the chat as first measured (`fitChat`), so a click with no move since still reaches it.
 
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
@@ -3010,6 +3041,21 @@ Unicode-folded comparison and recognizes IDNA/numeric aliases, so canonicalizati
 cannot discard a stored exclusion. IDNA conversion precedes full case folding.
 The shared address/host fixtures pin this policy across all native adapters and the
 app; platform parser differences are recorded in the consolidation plan.
+
+**ADR-DESK-047 amendment — which Windows documents are pages (2026-10-05):**
+UI Automation gives Notepad's and Word's text as a Document too, and the Windows helper took
+every document for a web page: one without an address hid the whole screen as of an unknown
+address (Notepad read as hidden in the Windows smoke test). A document is now no web page only when
+its UI framework (`UIA_FrameworkIdPropertyId`) is one of an app's native controls, `Win32` (Notepad's
+and Word's text), `WinForm`, `WPF`, `XAML` or `DirectUI` (`HelperConfig::nativeDocumentFrameworks`):
+it is read like the rest of the screen, and the app exclusion still applies to it. Every other
+document is a page whose address is checked, a browser engine's (`Chrome` in every Chromium browser
+and Electron app, `Gecko` in Firefox and its forks, `InternetExplorer`) and equally one whose
+framework is empty (UI Automation's default, which a provider or proxy that doesn't supply it
+gives), unknown or can't be read (fail closed). A list of web engines instead read an excluded site
+whenever the engine gave no framework. This keeps
+the Mac's rule (a web area is a page, in an app or a browser alike) instead of a list of browser
+names, which would read an excluded site in any browser not on the list.
 
 ## ADR-DESK-048: Every color in one palette file; one time for every color change
 

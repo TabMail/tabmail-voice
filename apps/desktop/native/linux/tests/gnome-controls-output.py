@@ -9,6 +9,7 @@ assert result.returncode == 0, result.stderr
 assert [json.loads(line)['action'] for line in result.stdout.splitlines()] == [
     'start', 'toggleMode', 'cancel', 'start', 'finish', 'start',
     'start', 'finish', 'startHandsFree', 'listenHandsFree', 'cancel', 'toggleMode', 'cancel',
-    'startAgent', 'toggleMode', 'cancel', 'startAgentHandsFree', 'toggleMode', 'cancel'
+    'startAgent', 'toggleMode', 'cancel', 'startAgentHandsFree', 'toggleMode', 'cancel',
+    'closeChat'
 ], result.stdout
-print('GNOME recording ownership, ordered actions, idle rejection and teardown passed')
+print('GNOME recording ownership, ordered actions, chat Escape, idle rejection and teardown passed')

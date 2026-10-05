@@ -33,30 +33,67 @@ test("successful insertion retains target and cancellation contract", async () =
 });
 
 
-test.each([null, {}, { x: NaN, y: 1, width: 1, height: 20 }, { x: 1, y: 1, width: 0, height: 20 }, { x: 1, y: 1, width: 1, height: -1 }])("unusable compositor geometry falls back: %j", async (rect) => {
-  const request = vi.fn().mockResolvedValue(rect);
-  const system = new LinuxSystem({ request } as unknown as HelperClient);
+const caret = { x: 979, y: 312, width: 2, height: 19 };
+const imRect = { x: 721, y: 312, width: 1, height: 18 };
+
+/** A helper answering `caretAnchor` with `reply`, or failing with it. */
+function helperWith(reply: unknown) {
+  return vi.fn().mockImplementation((method: string) => {
+    expect(method).toBe("caretAnchor");
+    return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
+  });
+}
+
+test.each([null, {}, { x: NaN, y: 1, width: 1, height: 20 }, { x: 1, y: 1, width: 0, height: 20 }, { x: 1, y: 1, width: 1, height: -1 }])("unusable geometry from both falls back: %j", async (rect) => {
+  const request = helperWith(rect), geometry = helperWith(rect);
+  const system = new LinuxSystem({ request } as unknown as HelperClient, { request: geometry } as unknown as HelperClient);
   expect(await system.caretAnchor()).toBeNull();
   expect(request).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
-});
-
-test("compositor coordinates stay logical and transport timeout reaches the overlay fallback", async () => {
-  const rect = { x: -100, y: 200, width: 1, height: 20 };
-  const failure = new HelperError("timeout", "caretAnchor");
-  const request = vi.fn().mockResolvedValueOnce(rect).mockRejectedValueOnce(failure);
-  const system = new LinuxSystem({ request } as unknown as HelperClient);
-  expect(await system.caretAnchor()).toEqual(rect);
-  await expect(system.caretAnchor()).rejects.toBe(failure);
-  expect(request).toHaveBeenCalledTimes(2);
-});
-
-
-test("caret lookup uses the hotkey transport independently of blocked screen reads", async () => {
-  const request = vi.fn().mockImplementation(() => new Promise(() => {}));
-  const rect = { x: 100, y: 200, width: 1, height: 20 };
-  const geometry = vi.fn().mockResolvedValue(rect);
-  const system = new LinuxSystem({ request } as unknown as HelperClient, { request: geometry } as unknown as HelperClient);
-  expect(await system.caretAnchor()).toEqual(rect);
-  expect(request).not.toHaveBeenCalled();
   expect(geometry).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
+});
+
+test("the focused element's own caret wins over the input-method rectangle", async () => {
+  const system = new LinuxSystem({ request: helperWith(caret) } as unknown as HelperClient, { request: helperWith(imRect) } as unknown as HelperClient);
+  expect(await system.caretAnchor()).toEqual(caret);
+});
+
+test.each([null, { x: 1, y: 1, width: 0, height: 20 }, new HelperError("timeout", "caretAnchor")])("without an accessible caret (%j) the input-method rectangle places the pill", async (reply) => {
+  const system = new LinuxSystem({ request: helperWith(reply) } as unknown as HelperClient, { request: helperWith(imRect) } as unknown as HelperClient);
+  expect(await system.caretAnchor()).toEqual(imRect);
+});
+
+test("compositor coordinates stay logical and its transport timeout reaches the overlay fallback", async () => {
+  const failure = new HelperError("timeout", "caretAnchor");
+  const system = new LinuxSystem({ request: helperWith(null) } as unknown as HelperClient, { request: helperWith(failure) } as unknown as HelperClient);
+  await expect(system.caretAnchor()).rejects.toBe(failure);
+});
+
+test("both are asked at once, so a screen read occupying the accessibility helper delays neither request", () => {
+  const request = vi.fn().mockImplementation(() => new Promise(() => {}));
+  const geometry = vi.fn().mockImplementation(() => new Promise(() => {}));
+  const system = new LinuxSystem({ request } as unknown as HelperClient, { request: geometry } as unknown as HelperClient);
+  void system.caretAnchor();
+  expect(request).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
+  expect(geometry).toHaveBeenCalledExactlyOnceWith("caretAnchor", {}, 200);
+});
+
+/** With the focused element's caret found, a compositor that then times out is no concern of the
+ * pill's, and leaves no unhandled rejection in the main process. */
+test("a compositor failing after the caret was found is ignored", async () => {
+  let fail!: (error: Error) => void;
+  // A plain function: a mock would watch the promise it returns, and so handle the rejection itself.
+  const pending = new Promise((_resolve, reject) => { fail = reject; });
+  const geometry = () => pending;
+  const unhandled: unknown[] = [];
+  const listener = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", listener);
+  try {
+    const system = new LinuxSystem({ request: helperWith(caret) } as unknown as HelperClient, { request: geometry } as unknown as HelperClient);
+    expect(await system.caretAnchor()).toEqual(caret);
+    fail(new HelperError("timeout", "caretAnchor"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
 });
