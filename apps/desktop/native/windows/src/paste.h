@@ -102,6 +102,15 @@ inline void paste(HWND window, const std::wstring& text, unsigned restoreDelay, 
     }
     std::cerr << "debug paste stage: clipboard-open\n";
     clipboard.open();
+    if (GetClipboardSequenceNumber() != save.sequence) {
+        // Copied to since it was saved: that copy is kept, and the text typed.
+        clipboard.close();
+        std::cerr << "debug paste stage: clipboard changed since it was saved, typing the text\n";
+        guard();
+        typeText(text);
+        std::cerr << "debug paste stage: complete (typed)\n";
+        return;
+    }
     std::cerr << "debug paste stage: final-focus-check\n";
     guard();
     try {

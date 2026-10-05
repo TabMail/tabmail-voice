@@ -64,8 +64,9 @@ private:
     UINT format;
     HANDLE value;
 };
-// Refuse an uncopyable clipboard before changing it. Every format is captured, not just text.
-// Owner-display and application-private handles have no general cloning/ownership contract.
+// The clipboard a paste uses, and what it held before, put back afterwards. Every format is saved,
+// not just text. Owner-display and application-private handles have no general cloning/ownership
+// contract, so a clipboard holding them can't be saved, and the paste doesn't put it back.
 class Clipboard {
 public:
     Clipboard() {
@@ -163,10 +164,13 @@ private:
 // The clipboard as it was, saved on a thread of its own: a clipboard owner that renders late
 // keeps GetClipboardData (and the clipboard, held open by the reader) waiting for up to 30 s.
 // `read` waits `milliseconds`; past that the reader goes on alone and its result is dropped.
+// `sequence` is the clipboard's as it was read: one that differs when the clipboard is opened again
+// was changed in between, and that newer copy is not overwritten.
 struct ClipboardSave {
     enum class Outcome { saved, unpreservable, unavailable };
     Outcome outcome;
     std::vector<ClipboardItem> items;
+    DWORD sequence = 0;
     static ClipboardSave read(unsigned milliseconds) {
         struct Shared {
             std::mutex lock;
@@ -174,25 +178,30 @@ struct ClipboardSave {
             bool finished = false;
             Outcome outcome = Outcome::unavailable;
             std::vector<ClipboardItem> items;
+            DWORD sequence = 0;
         };
         auto shared = std::make_shared<Shared>();
         std::thread([shared] {
             auto outcome = Outcome::unavailable;
             std::vector<ClipboardItem> items;
+            DWORD sequence = 0;
             try {
                 Clipboard clipboard;
                 clipboard.open();
                 try { clipboard.snapshot(); items = clipboard.take(); outcome = Outcome::saved; }
                 catch (const std::exception&) { outcome = Outcome::unpreservable; }
+                // Still open: an owner rendering late during the snapshot changed it before this.
+                sequence = GetClipboardSequenceNumber();
+                if (!sequence) { items.clear(); outcome = Outcome::unavailable; }
             } catch (const std::exception&) {}
             std::lock_guard<std::mutex> guard(shared->lock);
-            shared->finished = true; shared->outcome = outcome; shared->items = std::move(items);
+            shared->finished = true; shared->outcome = outcome; shared->items = std::move(items); shared->sequence = sequence;
             shared->done.notify_all();
         }).detach();
         std::unique_lock<std::mutex> guard(shared->lock);
         if (!shared->done.wait_for(guard, std::chrono::milliseconds(milliseconds), [&] { return shared->finished; }))
             return {Outcome::unavailable, {}};
-        return {shared->outcome, std::move(shared->items)};
+        return {shared->outcome, std::move(shared->items), shared->sequence};
     }
 };
 }

@@ -109,9 +109,6 @@ try {
   assert.equal((await changing.result).error, undefined);
   assert.equal((await command("clipboard")).text, "Synthetic newer copy", "newer copy preserved");
   assert.equal((await command("value")).text, "Before Synthetic inserted text after.");
-  // A clipboard that can't be saved in time (an owner rendering late, as a VM's clipboard agent
-  // does, or another program holding it open) is left alone: the text is typed instead, as one
-  // line, since a typed line break or tab could submit a form or move focus.
   const until = async (label, expected) => {
     const by = Date.now() + 4000;
     let value;
@@ -120,6 +117,23 @@ try {
       await pause(20);
     }
   };
+  // A copy made after the clipboard was saved and before the paste writes it is the newer one: it
+  // stays, and the text is typed. The race is real, so it is run until the copy lands in that gap.
+  let raced = false;
+  for (let attempt = 0; attempt < 10 && !raced; ++attempt) {
+    await command("editable");
+    await command("racing");
+    const racing = await request("insert", params({ deadline: Date.now() + 3000 })).result;
+    assert.equal(racing.error, undefined, "a copy made since the save does not block insertion");
+    raced = (await command("race")).won;
+    if (!raced) continue;
+    await until("copied since the save: the text arrives", "Before Synthetic inserted text after.");
+    assert.equal((await command("clipboard")).text, "Synthetic newer copy", "a copy made since the save is not overwritten");
+  }
+  assert.ok(raced, "a copy lands between the save and the write");
+  // A clipboard that can't be saved in time (an owner rendering late, as a VM's clipboard agent
+  // does, or another program holding it open) is left alone: the text is typed instead, as one
+  // line, since a typed line break or tab could submit a form or move focus.
   // A late owner: whether the save waits it out or gives up and types, the text arrives and the
   // owner's clipboard survives. (Another reader in a VM may make it render first.)
   await command("editable");
@@ -148,7 +162,7 @@ try {
   const exits = [once(fixture, "exit"), once(helper, "exit")];
   fixture.stdin.end(); helper.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
-  assert.equal(pending.size, 0); assert.equal(errors.replaceAll("\r\n", "\n").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete|clipboard unavailable, typing the text|complete \(typed\))\n/gmu, ""), "", "only categorical insertion diagnostics are emitted");
+  assert.equal(pending.size, 0); assert.equal(errors.replaceAll("\r\n", "\n").replace(/^debug paste stage: (focus-check|clipboard-open|clipboard-snapshot|final-focus-check|clipboard-write|send-input|clipboard-restore|complete|clipboard unavailable, typing the text|clipboard changed since it was saved, typing the text|complete \(typed\))\n/gmu, ""), "", "only categorical insertion diagnostics are emitted");
   process.stdout.write("Windows insertion, clipboard formats, cancellation, privacy, refusal and newer-copy checks passed\n");
 } finally {
   clearTimeout(timeout); helper.kill(); fixture.kill(); helperLines.close(); fixtureLines.close();
