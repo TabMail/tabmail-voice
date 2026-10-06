@@ -68,7 +68,7 @@ describe("the palette", () => {
     for (const [path, text] of components) {
       // brand.ts turns the palette's colors into CSS; a ring's mask is opaque, not a color shown.
       if (path === join("shared", "brand.ts")) continue;
-      const shown = code(text).replace("transparent calc(100% - ${width}px), #000 calc(100% - ${width}px)", "");
+      const shown = code(text).replace("transparent calc(100% - ${width + soft}px), #000 calc(100% - ${width - soft}px)", "");
       expect(shown.match(literalColor)?.[0], path).toBeUndefined();
     }
   });

@@ -108,6 +108,7 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-retrying", { phase: { kind: "retrying", message: "Server error, retrying…" } }],
     ["overlay-failed", { phase: { kind: "failed", message: "Didn't catch that. Try again." } }],
     ["overlay-copied", { phase: { kind: "copied", message: "Switched apps: copied to clipboard and history" } }],
+    ["overlay-agent-failed-long", { phase: { kind: "failed", message: "The selection holds what looks like a password or key, so it wasn't rewritten." }, mode: "agent" }],
     ["overlay-failed-long", { phase: { kind: "failed", message: "Mail and calendar requests need Thunderbird with TabMail. Choose it in Settings, or make it your default email app." } }],
   ].map(([name, change]) => ({ name: name as string, page: "overlay/index.html", size: overlayCanvasSize, state: { ...overlay, ...(change as object) }, transparent: true })),
   ...(
@@ -117,6 +118,8 @@ const shots: { name: string; page: string; size: { width: number; height: number
     ["overlay-chat-below", { phase: { kind: "idle" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: under }],
     // The backend searching the web for a follow-up: the web's bubble circles, the chat says so.
     ["overlay-chat-searching", { phase: { kind: "running", tool: "answer" }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], runningBubble: "web", chat: { ...conversation, pendingRequest: "Look up the usual place", activity: "Searching the web: usual lunch place" }, chatPlacement: over }],
+    // A follow-up that failed under the chat window: the widest message, its neon glow inside the window.
+    ["overlay-chat-failed", { phase: { kind: "failed", message: "The selection holds what looks like a password or key, so it wasn't rewritten." }, mode: "agent", tools: ["answer"], connectors: allConnectors, recentBubbles: ["web", "answer"], chat: conversation, chatPlacement: over }],
     // A tool's question in the chat window, a third of its 30 seconds gone.
     ["overlay-chat-confirmation", { phase: { kind: "running", tool: "answer" }, mode: "agent", runningBubble: "answer", tools: ["answer"], connectors: allConnectors, recentBubbles: ["calendar", "answer"], chat: { turns: [], pendingRequest: "Add the launch review on Friday at ten", closesAt: null, touched: false, activity: null, confirmation: "Add “Launch review” to your calendar on Friday at 10:00?", confirmationExpiresAt: Date.now() + 20_000 }, chatPlacement: over }],
     // A chat long enough to scroll: the question keeps its height and its buttons show.
