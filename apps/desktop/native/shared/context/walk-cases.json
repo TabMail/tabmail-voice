@@ -1534,7 +1534,7 @@
       "refused": true
     },
     {
-      "name": "a walk goes on within its budget, however long it has run",
+      "name": "a walk goes on within its node budget",
       "request": {
         "stop": {
           "nodes": 4999

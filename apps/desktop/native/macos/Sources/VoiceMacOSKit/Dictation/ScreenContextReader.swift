@@ -202,7 +202,9 @@ enum ScreenContextReader {
             (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
         }, paragraphStarts: { snapshot in
             let looked = Date()
-            guard snapshot.markers, let state = markers(), let limits = try? SharedContext.sourceLimits() else { return nil }
+            guard snapshot.markers, let state = markers(), CFGetTypeID(state.whole) == AXTextMarkerRangeGetTypeID(),
+                  CFGetTypeID(state.selection) == AXTextMarkerRangeGetTypeID(),
+                  let limits = try? SharedContext.sourceLimits() else { return nil }
             let fieldStart = AXTextMarkerRangeCopyStartMarker(state.whole as! AXTextMarkerRange)
             func length(_ range: CFTypeRef?) -> Int? {
                 guard let range, let value = CaretLocator.parameterized(element, "AXLengthForTextMarkerRange", range) as? NSNumber,

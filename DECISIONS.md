@@ -481,7 +481,9 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   side at its limit gives up its far end, and its edge is then unknown). An open edge is cut where
   the provider's own text closes a token, found before any break goes back, and the breaks (the
   caret's own too) go back only inside the text kept: a break first would read as the whitespace
-  after a `.` and cut a token's head off, showing the rest. The render shows U+2029 as
+  after a `.` and cut a token's head off, showing the rest. A caret source sends the starts near
+  the caret or `caretStarts`, never both (the core refuses the pair): the render checks each kind of
+  break apart, and one of each could split a key both checks miss. The render shows U+2029 as
   a line break, and redacts the caret's text without the put-back breaks too, with each one
   anchored: one inside a match there withholds the caret's text, and a block that reads differently
   either way refuses the read, as for the caret's own break. Tested in real Chromium by
@@ -3738,7 +3740,11 @@ cap cut Chrome reads short (it fell back to slow paths and left most of a long p
 reads finish in 300–1,500 ms. On Windows a read takes longer where the provider is slow: in the
 test VM each look through 5,000 elements took about 3 s, and a focused element that size about 12 s,
 past the dictation's wait (`contextWait`, 500 ms) and agent mode's (`agentScreenWait`, 5 s), so that
-dictation gets no screen context where the cap used to give it part of one. This replaces the terminal-only exception above: Windows drops
+dictation gets no screen context where the cap used to give it part of one. Nothing bounds a read's
+time but its counts and the provider's speed: a page built to be slow to read can keep the reader
+busy until the next read restarts it or `screenReaderTimeout` (600 s) ends it, and a node's
+children come in one call whatever their number. The reader is its own program, so a dictation
+never waits on it longer than its own wait. This replaces the terminal-only exception above: Windows drops
 `terminalReadBudgetMs` and every time check in the walk and its caret sources, and Linux drops
 `withoutDeadline()`. What is not a screen read keeps its own bound: on macOS the look for an
 excluded page before a field read for corrections (`focusedFieldPageScanBudget`, 0.2 s), on Windows

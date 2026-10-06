@@ -121,9 +121,13 @@ impl Source {
     }
     /// What starts at the caret, as the provider lays the text out (the caret window's
     /// `caretStarts`, ADR-DESK-007), which the caret window checks: only a caret source takes it,
-    /// once.
+    /// once, and never with paragraph starts.
     pub fn set_caret_starts(&mut self, starts: serde_json::Value) -> Result<(), u32> {
-        if self.field_edges.is_some() || self.caret_starts.is_some() || !starts.is_object() {
+        if self.field_edges.is_some()
+            || self.caret_starts.is_some()
+            || self.paragraph_starts.is_some()
+            || !starts.is_object()
+        {
             return Err(1);
         }
         self.caret_starts = Some(starts);
@@ -133,7 +137,7 @@ impl Source {
     /// (ADR-DESK-007, 2026-10-06): the caret window puts back the break before each that its text
     /// leaves out. `caret_ends_line`: the selection starts at the end of the line above a
     /// paragraph that starts at its offset, so that break follows it. Only a caret source takes
-    /// them, once.
+    /// them, once, and never with what starts at the caret.
     pub fn set_paragraph_starts(
         &mut self,
         starts: &[usize],
@@ -141,6 +145,7 @@ impl Source {
     ) -> Result<(), u32> {
         if self.field_edges.is_some()
             || self.paragraph_starts.is_some()
+            || self.caret_starts.is_some()
             || starts.len() > PARAGRAPH_STARTS
             || starts.windows(2).any(|pair| pair[0] >= pair[1])
         {
@@ -424,6 +429,10 @@ mod tests {
         assert_eq!(source.set_paragraph_starts(&[1, 1], false), Err(1));
         assert_eq!(source.set_paragraph_starts(&[1, 2], false), Ok(()));
         assert_eq!(source.set_paragraph_starts(&[1, 2], false), Err(1));
+        assert_eq!(source.set_caret_starts(json!({"paragraph":true})), Err(1));
+        let mut caret = Source::new(4, 2, 2).unwrap();
+        assert_eq!(caret.set_caret_starts(json!({"paragraph":true})), Ok(()));
+        assert_eq!(caret.set_paragraph_starts(&[1], false), Err(1));
         let mut field = Source::field(4, 0, 4).unwrap();
         assert_eq!(field.set_paragraph_starts(&[1], false), Err(1));
         let mut many = Source::new(4, 2, 2).unwrap();

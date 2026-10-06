@@ -450,6 +450,12 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         // break is put back, so the text reads in the lines it is laid out in (ADR-DESK-007,
         // 2026-10-06). Absent: nothing told, nothing added. `caretEndsLine`: the caret is at the end
         // of a line, not the start of a paragraph at the same offset (absent: it starts it).
+        // A caret source sends the paragraph starts near the caret, or what starts at the caret,
+        // never both: the render checks each kind of break apart, and one of each could split a
+        // secret both checks miss.
+        if window.get("paragraphStarts").is_some() && window.get("caretStarts").is_some() {
+            return Err(1);
+        }
         let mut breaks: [Vec<usize>; 3] = Default::default();
         if let Some(starts) = window.get("paragraphStarts") {
             let starts: Vec<usize> = serde_json::from_value(starts.clone()).map_err(|_| 1u32)?;
@@ -488,7 +494,6 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             }
         };
         let caret_break = starts_paragraph
-            && breaks[0].last() != Some(&parts[0].len())
             && parts[0]
                 .chars()
                 .last()
@@ -1341,6 +1346,20 @@ mod budget_tests {
             reply["parts"],
             json!([". First line\u{2029}", "", "Second"])
         );
+    }
+    /// A paragraph start's break and the caret's own, together, split a key in three the render's
+    /// two checks each see whole once: the caret window takes one kind or the other, never both.
+    #[test]
+    fn both_kinds_of_break_never_split_a_secret_past_the_render() {
+        let request = json!({"caretWindow":{"parts":["s","","k-a1B2c3D4e5F6g7H8i9J0k1L2"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":false,"lineText":null},"paragraphStarts":[3]}});
+        if let Ok(window) = process(&serde_json::to_vec(&request).unwrap()) {
+            let window: Value = serde_json::from_slice(&window).unwrap();
+            let reply = call(
+                json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+            );
+            let text = reply.to_string();
+            assert!(!text.contains("a1B2c3D4e5F6g7H8i9J0k1L2"), "{text}");
+        }
     }
     #[test]
     fn caret_window_never_returns_a_partial_selection_at_an_open_edge() {
