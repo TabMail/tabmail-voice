@@ -57,7 +57,7 @@ let fixture;
 const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 40_000);
 let checks = 0;
 try {
-  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-focus", "large-window-field", "outside-window", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
+  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
     "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document", "terminal-wide"]) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever
@@ -87,6 +87,11 @@ try {
       if (mode === "large-row" || mode === "large-link") {
         assert.ok(context.renderedText.includes("[hidden for privacy]"), `${mode}: a part too large to look through whole is withheld behind the marker`);
         assert.ok(!context.renderedText.includes("Synthetic large name") && !context.renderedText.includes("Synthetic cell text"), `${mode}: nothing of it is read`);
+      }
+      if (mode === "large-field" || mode === "large-web-control") {
+        const marker = mode === "large-field" ? "> [hidden for privacy]" : "[hidden for privacy]";
+        assert.ok(context.renderedText.includes(marker) && !context.renderedText.includes("Synthetic large name"),
+          `${mode}: a part too large to look through whole is withheld behind the marker`);
       }
       if (mode === "large-focus") assert.ok(context.hidden !== true && !context.renderedText.includes("Synthetic large text"),
         "a focus too large to look through whole lets the read go on, and is not read");

@@ -186,6 +186,17 @@ void configure(const std::string& mode) {
         nodes.at(large)->text = L"Synthetic large name";
         nodes.at(add(large, UIA_TextControlTypeId))->text = L"Synthetic cell text";
         for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+    } else if (mode == "large-field" || mode == "large-web-control") {
+        // A field, and a page's control, that hold more than the look takes in: withheld behind
+        // the marker, the field's as a field.
+        int parent = 0;
+        if (mode == "large-web-control") {
+            parent = add(0, UIA_DocumentControlTypeId);
+            nodes.at(parent)->address = L"https://open.example/synthetic";
+        }
+        const int large = add(parent, mode == "large-field" ? UIA_EditControlTypeId : UIA_ButtonControlTypeId);
+        nodes.at(large)->text = L"Synthetic large name";
+        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-focus") {
         // A focus that holds more than the look takes in: the window is still read, not hidden,
         // and the focus itself is not (its look uses up the read's time here).
