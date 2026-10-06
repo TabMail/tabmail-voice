@@ -392,8 +392,8 @@ private:
             require(tree.walker->GetParentElement(node.Get(), &parent));
             node = parent;
         }
-        // A look that ran out of budget lets the read go on (ADR-DESK-047); what is read whole
-        // is looked through again by the walk.
+        // A look that ran out of budget lets the read go on (ADR-DESK-047): each part the walk
+        // reads whole is looked through again first, and the focused field by `safeTextSubtree`.
         if (privacy::lookForExcludedPage(tree, ComPtr<IUIAutomationElement>(focus), exclusions, true) == privacy::PageLook::excluded) {
             std::cerr << "debug screen access: excluded or unknown page not read\n";
             return true;
@@ -533,7 +533,7 @@ private:
     // A box at most a pixel thin shows nothing (screen-reader-only text, a list item
     // scrolled out of view); one that reports no size says nothing and counts as shown.
     struct Placement {
-        bool shown;
+        bool shown, inWindow;
         std::optional<ContextFrame> geometry;
         RECT frame;
     };
@@ -550,7 +550,7 @@ private:
             ((width == 0 && height == 0) || std::min(width, height) > hiddenThickness);
         const std::optional<ContextFrame> geometry = sized ?
             std::optional<ContextFrame>{{static_cast<double>(frame.left), static_cast<double>(frame.top), width, height}} : std::nullopt;
-        return Placement{shown, geometry, frame};
+        return Placement{shown, inWindow, geometry, frame};
     }
     // An element's children in the provider's order: no more than the walk could still
     // visit, and none past its time.
@@ -747,7 +747,7 @@ private:
     // the window are skipped, each piece of text keeps its frame, and the focused element
     // field becomes the caret block at its place (a page in focus is walked into, after its
     // selection). The focused element's ancestors are always walked into and never read.
-    // A box that shows nothing is walked into, as on every platform (owner, 2026-10-05; Slack
+    // A box that shows nothing in the window is walked into, as on every platform (owner, 2026-10-05; Slack
     // keeps its message list in one), though Chromium reports its children's frames unclipped
     // here, so a screen-reader-only label's text can be read (ADR-DESK-054). A focused element
     // that is no field is read like any other, where the Mac leaves it out.
@@ -808,6 +808,8 @@ private:
             }
             const auto place = placement(node, within.window, within.hiddenThickness);
             if (!place) continue;
+            // A box wholly outside the window is skipped with what it holds, as on the Mac and Linux.
+            if (!place->inWindow && !onPath) continue;
             const auto& geometry = place->geometry;
             if (isFocus && target.field) {
                 context.append(ContextKind::caret, caretText, geometry);

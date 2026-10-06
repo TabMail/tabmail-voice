@@ -99,7 +99,7 @@ int main() {
         expect(rowText() == "same" && tree.counts == 2, "clipped semantic descendants are not read");
         last.bounds = voice::ContextFrame{0, 0, 0, 0}; tree = Tree{};
         expect(rowText() == "same | must not be read after refusal", "a 0x0 cell in a row counts as shown");
-        last.bounds.reset();
+        last.bounds = voice::ContextFrame{0, 0, 20, 1};
         row.label = "Root label"; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
         tree = Tree{}; visited = 0;
@@ -284,6 +284,19 @@ int main() {
         "budget stop retains collected text without a final provider query");
     expect(result["summary"].get<std::string>().find("stopped: time budget") != std::string::npos,
         "a read out of time says so in the words every platform uses");
+    {
+        // A provider call that runs out of time inside an element stops the read the same way.
+        struct Expiring : Tree {
+            Node expireAt = nullptr;
+            AtspiRole role(Node node) { if (node == expireAt) throw voice::ScreenBudgetExceeded(); return Tree::role(node); }
+        };
+        Expiring expiring; expiring.expireAt = &checkbox;
+        window.children = {&heading, &checkbox, &field};
+        result = voice::gatherScreen(expiring, &window, &field, {&window}, app, policy);
+        expect(result.is_object() && result["renderedText"].get<std::string>().find("Conversation") != std::string::npos &&
+            result["summary"].get<std::string>().find("stopped: time budget") != std::string::npos,
+            "a provider call out of time says so too, keeping what was read");
+    }
     // Provider-side metadata search must enforce the same policy without
     // visiting every ordinary descendant (large focused browser documents).
     CollectionTree bulk;
