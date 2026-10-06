@@ -5,18 +5,30 @@
 #include <windows.h>
 #include <ole2.h>
 #include <UIAutomation.h>
+#include <algorithm>
+#include <functional>
 #include <iostream>
+#include "helper_config.h"
 #include "microphone.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
 #include "../../shared/context/screen_context.h"
 
 namespace voice {
+static_assert(HelperConfig::blockControlTypes[0] == UIA_GroupControlTypeId && HelperConfig::blockControlTypes[1] == UIA_ListControlTypeId &&
+              HelperConfig::blockControlTypes[2] == UIA_ListItemControlTypeId && HelperConfig::blockControlTypes[3] == UIA_TableControlTypeId);
 // UIA endpoints are opaque; Character may fall back to a larger supported unit.
 // Validate actual returned text and endpoint relationships, never a moved count.
 class UiaCaretSource {
 public:
-    static CaretSource read(IUIAutomationTextPattern* pattern) {
+    // Where the field's blocks start near the selection (a range starting at each) and whether the
+    // selection ends the line before one starting there: Chromium's text leaves out the break before
+    // a block that follows text, and the core puts it back (ADR-DESK-007, 2026-10-06). None: not told.
+    struct Layout { std::vector<ComPtr<IUIAutomationTextRange>> starts; bool caretEndsLine; };
+    // Asked with the selection and the stretch around it to look in: from `low`'s start to `high`'s
+    // end, the core's `paragraphStartUnits` on each side, as on the Mac.
+    using LayoutRead = std::function<std::optional<Layout>(IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)>;
+    static CaretSource read(IUIAutomationTextPattern* pattern, const LayoutRead& layout = {}) {
         UiaCaretSource reader;
         auto selected = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> document;
@@ -29,7 +41,19 @@ public:
         if (!selectionText) return CaretSource::unavailable();
         const auto before = reader.side(selected.Get(), document.Get(), true, sourceLimit);
         const auto after = reader.side(selected.Get(), document.Get(), false, sourceLimit);
-        const auto caretStarts = reader.starts(selected.Get());
+        std::optional<CaretSource::ParagraphStarts> paragraphs;
+        if (layout) {
+            const auto units = limits.at("paragraphStartUnits").get<int>();
+            const auto low = reader.stretch(selected.Get(), document.Get(), true, units), high = reader.stretch(selected.Get(), document.Get(), false, units);
+            if (const auto found = layout(selected.Get(), low.Get(), high.Get())) {
+                if (const auto offsets = reader.offsets(found->starts, selected.Get(), low.Get(), {before.first, *selectionText, after.first}))
+                    paragraphs = CaretSource::ParagraphStarts{*offsets, found->caretEndsLine};
+            }
+            std::cerr << "debug caret start: " << (paragraphs ? std::to_string(paragraphs->starts.size()) : std::string("no"))
+                      << " block starts near the caret; the caret " << (paragraphs && paragraphs->caretEndsLine ? "ends a line" : "starts its text") << '\n';
+        }
+        // A provider that places its blocks says where paragraphs start, the caret's among them.
+        const auto caretStarts = paragraphs ? std::nullopt : reader.starts(selected.Get());
         auto finalSelection = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> finalDocument;
         require(pattern->get_DocumentRange(&finalDocument));
@@ -38,7 +62,112 @@ public:
         require(selected->Compare(finalSelection.Get(), &sameSelection));
         require(document->Compare(finalDocument.Get(), &sameDocument));
         if (!sameSelection || !sameDocument || reader.text(finalSelection.Get(), selectionLimit) != selectionText) return CaretSource::unavailable();
-        return CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second, caretStarts);
+        return CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second, caretStarts, paragraphs);
+    }
+    // The field's blocks, from its own tree: which children are blocks, and where each child's text
+    // is (`RangeFromChild`). Chromium's paragraphs are groups only the raw view holds, so a node's
+    // children come in one call with a raw-view tree filter (a search's own view is the control view).
+    static LayoutRead layout(IUIAutomation* automation, IUIAutomationElement* field, IUIAutomationTextPattern* pattern) {
+        return [automation, field, pattern](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high) -> std::optional<Layout> {
+            using Node = ComPtr<IUIAutomationElement>;
+            ComPtr<IUIAutomationCondition> raw;
+            require(automation->get_RawViewCondition(&raw));
+            ComPtr<IUIAutomationCacheRequest> cache;
+            require(automation->CreateCacheRequest(&cache));
+            require(cache->put_TreeFilter(raw.Get()));
+            require(cache->AddProperty(UIA_ControlTypePropertyId));
+            require(cache->AddProperty(UIA_HeadingLevelPropertyId));
+            const auto children = [&](const Node& node) {
+                std::vector<Node> result;
+                ComPtr<IUIAutomationElementArray> found;
+                if (FAILED(node->FindAllBuildCache(TreeScope_Children, raw.Get(), cache.Get(), &found)) || !found) return result;
+                int count = 0; require(found->get_Length(&count));
+                for (int i = 0; i < count; ++i) {
+                    Node child; require(found->GetElement(i, &child));
+                    if (child) result.push_back(std::move(child));
+                }
+                return result;
+            };
+            const auto isBlock = [](const Node& node) {
+                CONTROLTYPEID type = 0;
+                require(node->get_CachedControlType(&type));
+                if (std::find(std::begin(HelperConfig::blockControlTypes), std::end(HelperConfig::blockControlTypes), type) != std::end(HelperConfig::blockControlTypes)) return true;
+                if (type != UIA_TextControlTypeId) return false;
+                VARIANT level; VariantInit(&level);
+                const bool heading = SUCCEEDED(node->GetCachedPropertyValue(UIA_HeadingLevelPropertyId, &level)) && level.vt == VT_I4 && level.lVal != HeadingLevel_None;
+                VariantClear(&level);
+                return heading;
+            };
+            const auto place = [&](const Node& node) {
+                ComPtr<IUIAutomationTextRange> range;
+                if (FAILED(pattern->RangeFromChild(node.Get(), &range))) range.Reset();
+                return range;
+            };
+            const auto elements = core::request({{"limits", true}}, voice_core_context_json).at("caretSourceElements").get<size_t>();
+            auto starts = blockStarts(Node(field), low, high, elements, children, isBlock, place);
+            if (!starts) return std::nullopt;
+            // The element the selection's start is in tells the end of a line from the start of
+            // the block after it.
+            ComPtr<IUIAutomationTextRange> caret;
+            require(selected->Clone(&caret));
+            if (!caret) throw std::runtime_error("provider range unavailable");
+            require(caret->MoveEndpointByRange(TextPatternRangeEndpoint_End, selected, TextPatternRangeEndpoint_Start));
+            Node enclosing;
+            BOOL isField = TRUE;
+            if (SUCCEEDED(caret->GetEnclosingElement(&enclosing)) && enclosing) require(automation->CompareElements(enclosing.Get(), field, &isField));
+            ComPtr<IUIAutomationTextRange> span;
+            if (!isField) span = place(enclosing);
+            return Layout{std::move(*starts), endsLine(span.Get(), selected)};
+        };
+    }
+    // The ranges of the blocks near the selection, and of the nodes right after a block, as the Mac
+    // finds them (`MarkerCaretSource.blockStarts`): in each node's children, the first that ends at or
+    // after `low`'s start (by halving), then each in turn until one starts past `high`'s end, into
+    // each block. Only starts at or after `low`'s start count. None when more than `elements` nodes
+    // would be placed, or one can't be.
+    template <class Node, class Children, class IsBlock, class Place>
+    static std::optional<std::vector<ComPtr<IUIAutomationTextRange>>> blockStarts(const Node& field, IUIAutomationTextRange* low, IUIAutomationTextRange* high,
+        size_t elements, const Children& children, const IsBlock& isBlock, const Place& place) {
+        const UiaCaretSource reader;
+        const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
+        std::vector<ComPtr<IUIAutomationTextRange>> starts;
+        size_t looks = 0;
+        const auto at = [&](const Node& node) -> ComPtr<IUIAutomationTextRange> {
+            if (++looks > elements) return nullptr;
+            return place(node);
+        };
+        std::function<bool(const Node&)> walk = [&](const Node& node) {
+            const auto nodes = children(node);
+            size_t lower = 0, upper = nodes.size();
+            while (lower < upper) {
+                const auto middle = (lower + upper) / 2;
+                const auto span = at(nodes[middle]);
+                if (!span) return false;
+                if (reader.compare(span.Get(), end, low, start) < 0) lower = middle + 1; else upper = middle;
+            }
+            bool afterBlock = lower > 0 && isBlock(nodes[lower - 1]);
+            for (auto index = lower; index < nodes.size(); ++index) {
+                const auto span = at(nodes[index]);
+                if (!span) return false;
+                if (reader.compare(span.Get(), start, high, end) > 0) break;
+                const bool block = isBlock(nodes[index]);
+                if ((block || afterBlock) && reader.compare(span.Get(), start, low, start) >= 0) starts.push_back(span);
+                if (block && !walk(nodes[index])) return false;
+                afterBlock = block;
+            }
+            return true;
+        };
+        if (!walk(field)) return std::nullopt;
+        return starts;
+    }
+    // Whether a selection is at the end of the line its start's element (`span`) ends, not at the
+    // start of the block after it: the text gives both places one offset (measured in Chromium,
+    // 2026-10-06, as on the Mac). No element: it starts its text.
+    static bool endsLine(IUIAutomationTextRange* span, IUIAutomationTextRange* selected) {
+        if (!span) return false;
+        const UiaCaretSource reader;
+        const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
+        return reader.compare(span, start, selected, start) < 0 && reader.compare(span, end, selected, start) >= 0;
     }
     // Caller proves privacy, visible provider identity and focus. Every GetText
     // stays inside an approved visible range. Do not constrain terminal ranges
@@ -340,6 +469,51 @@ private:
         CaretSource::CaretStarts starts{startsHere(paragraph.Get()), startsHere(line.Get()), text(line.Get(), lineBytes)};
         std::cerr << "debug caret start: paragraph " << starts.paragraph << ", line " << starts.line << '\n';
         return starts;
+    }
+    // Each block start's byte offset into the parts joined, measured along the text: from where
+    // `low` starts (placed by its text up to the selection, which ends the text before it), then from
+    // each start to the next. No range measured starts at the selection: a caret at the end of a
+    // paragraph is a place Chromium reads the paragraph's break from, even up to the start of the
+    // block after it, though the text around the caret shows none (measured 2026-10-06). Each text
+    // measured must be what the parts hold there; starts past the parts, and at their start, are
+    // left out. None when the provider's text disagrees.
+    std::optional<std::vector<size_t>> offsets(const std::vector<ComPtr<IUIAutomationTextRange>>& starts, IUIAutomationTextRange* selected,
+        IUIAutomationTextRange* low, const std::array<std::string, 3>& parts) const {
+        const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
+        const auto joined = parts[0] + parts[1] + parts[2];
+        ComPtr<IUIAutomationTextRange> between;
+        require(low->Clone(&between));
+        if (!between) throw std::runtime_error("provider range unavailable");
+        move(between.Get(), end, selected, start);
+        const auto lead = text(between.Get(), parts[0].size());
+        if (!lead || !parts[0].ends_with(*lead)) return std::nullopt;
+        size_t at = parts[0].size() - lead->size();
+        std::vector<size_t> result;
+        for (const auto& span : starts) {
+            move(between.Get(), end, span.Get(), start);
+            const auto value = text(between.Get(), joined.size() - at);
+            if (!value) break;
+            if (joined.compare(at, value->size(), *value) != 0) return std::nullopt;
+            at += value->size();
+            if (at) result.push_back(at);
+            move(between.Get(), start, span.Get(), start);
+        }
+        std::sort(result.begin(), result.end());
+        result.erase(std::unique(result.begin(), result.end()), result.end());
+        return result;
+    }
+    // A range from the selection's start back `units` characters (`before`), or from its end on,
+    // inside the document.
+    ComPtr<IUIAutomationTextRange> stretch(IUIAutomationTextRange* selected, IUIAutomationTextRange* document, bool before, int units) const {
+        const auto outer = before ? TextPatternRangeEndpoint_Start : TextPatternRangeEndpoint_End;
+        const auto inner = before ? TextPatternRangeEndpoint_End : TextPatternRangeEndpoint_Start;
+        ComPtr<IUIAutomationTextRange> range; require(selected->Clone(&range));
+        if (!range) throw std::runtime_error("provider range unavailable");
+        move(range.Get(), inner, selected, outer);
+        int moved = 0; require(range->MoveEndpointByUnit(outer, TextUnit_Character, before ? -units : units, &moved));
+        const int edge = compare(range.Get(), outer, document, outer);
+        if ((before && edge < 0) || (!before && edge > 0)) move(range.Get(), outer, document, outer);
+        return range;
     }
     std::pair<std::string, bool> side(IUIAutomationTextRange* selected, IUIAutomationTextRange* document, bool before, size_t limit) const {
         const auto outer = before ? TextPatternRangeEndpoint_Start : TextPatternRangeEndpoint_End;

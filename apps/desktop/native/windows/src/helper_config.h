@@ -17,6 +17,11 @@ inline constexpr unsigned long long accessibilityWatchdogMs = 2500;
 // Longest a paste waits for another program to close the clipboard (ms), never past the paste's
 // deadline. A paste's watchdog gets this on top of its deadline, so the wait is never what ends the helper.
 inline constexpr unsigned long long clipboardOpenWaitMs = 500;
+// The control types that lay their text out as a block of its own (a rich editor's paragraph is a
+// group), as the Mac's block roles; Chromium gives a heading the text type and a level. The UI
+// Automation ids of group, list, list item and table (this header stays free of Windows headers;
+// uia_caret_source.h checks them against UIAutomation.h).
+inline constexpr int blockControlTypes[] = {50026, 50008, 50007, 50036};
 // The UI Automation frameworks (UIA_FrameworkIdPropertyId) of an app's own native controls, never
 // web content: a document of one of these (Notepad's and Word's text are Win32) is no web page and
 // is read like the rest of the screen. Every other document is a web page whose address is checked

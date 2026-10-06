@@ -1195,10 +1195,10 @@ private:
         selectionUnavailable = result->selectionUnavailable;
         return result->parts;
     }
-    static std::optional<std::array<std::string, 3>> textParts(IUIAutomationElement* element, bool& selectionUnavailable) {
+    std::optional<std::array<std::string, 3>> textParts(IUIAutomationElement* element, bool& selectionUnavailable) {
         ComPtr<IUIAutomationTextPattern> pattern;
         if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) || !pattern) return editText(element, selectionUnavailable);
-        auto result = UiaCaretSource::read(pattern.Get());
+        auto result = UiaCaretSource::read(pattern.Get(), UiaCaretSource::layout(automation.Get(), element, pattern.Get()));
         selectionUnavailable = result.selectionUnavailable;
         if (!result.selectionUnavailable && result.parts[0] + result.parts[1] + result.parts[2] == "\xEF\xBF\xBC" && emptyValue(element))
             return std::array<std::string, 3>{};

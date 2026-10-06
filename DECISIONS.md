@@ -481,8 +481,25 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   side at its limit gives up its far end, and its edge is then unknown). The render shows U+2029 as
   a line break, and redacts the caret's text without the put-back breaks too, with each one
   anchored: one inside a match there withholds the caret's text, and a block that reads differently
-  either way refuses the read, as for the caret's own break. Windows and Linux send their block
-  starts the same way. Tested in real Chromium by `native/macos/Tests/electron.mjs`.)*
+  either way refuses the read, as for the caret's own break. Tested in real Chromium by
+  `native/macos/Tests/electron.mjs`.)*
+- *(Amended 2026-10-06: Windows and Linux. Windows finds its block starts as the Mac does, in the
+  field's own tree: Chromium's paragraphs are groups only UI Automation's raw view holds (a search's
+  own view is the control view, so a node's children come in one call with a raw-view tree filter),
+  `HelperConfig::blockControlTypes` (group, list, list item, table, and text with a heading level)
+  are blocks, and `RangeFromChild` places each. The core takes byte offsets into the caret window's
+  parts (`CaretSource::window` sends `paragraphStarts` and `caretEndsLine` to `caretWindow`); each
+  start's offset is the length of the text measured to it along the window, from the stretch's start
+  and then from one start to the next, and must be what the parts hold there, or no starts are sent.
+  No range measured starts at the caret: Chromium orders a caret at the end of a line before the
+  block starting at its offset and reads the text between them as that line's break, though the text
+  around the caret shows none (measured in Electron), so a start measured from the caret lands one
+  past it. The caret ends a line when the element `GetEnclosingElement` gives for the selection's
+  start starts before it and reaches it, as on the Mac. UI Automation's paragraph units miss these
+  starts, so they are not used. Linux needs no adapter: it reads a rich editor through its elements
+  (the hypertext walk), whose block marks put every break back already. Both run the Mac's seven
+  cases in real Chromium (`windows/tests/electron.mjs`; `linux/tests/electron.mjs`, which runs on
+  Wayland, as GNOME reads only the active window and does not activate a new X11 one).)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

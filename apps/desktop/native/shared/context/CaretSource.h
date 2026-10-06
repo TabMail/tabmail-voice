@@ -20,8 +20,17 @@ struct CaretSource {
     // caret starts a paragraph or an empty line, whose break the text before it may not show.
     // `lineText`: the line's first bytes, none when it holds more than the core's `caretLineBytes`.
     struct CaretStarts { bool paragraph; bool line; std::optional<std::string> lineText; };
-    static CaretSource window(const std::array<std::string, 3>& parts, bool startKnown, bool endKnown, const std::optional<CaretStarts>& starts) {
+    // Where the provider starts each paragraph near the caret (byte offsets into the parts joined,
+    // ascending), whose break the text may leave out, and whether the caret ends the line before
+    // one starting at its offset rather than starting it.
+    struct ParagraphStarts { std::vector<size_t> starts; bool caretEndsLine; };
+    static CaretSource window(const std::array<std::string, 3>& parts, bool startKnown, bool endKnown, const std::optional<CaretStarts>& starts,
+                              const std::optional<ParagraphStarts>& paragraphs = std::nullopt) {
         nlohmann::json request{{"parts", parts}, {"startKnown", startKnown}, {"endKnown", endKnown}};
+        if (paragraphs) {
+            request["paragraphStarts"] = paragraphs->starts;
+            request["caretEndsLine"] = paragraphs->caretEndsLine;
+        }
         if (starts) request["caretStarts"] = {{"paragraph", starts->paragraph}, {"line", starts->line}, {"lineText", starts->lineText ? nlohmann::json(*starts->lineText) : nlohmann::json(nullptr)}};
         return fromJSON(core::request({{"caretWindow", request}}, voice_core_context_json));
     }
