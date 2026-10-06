@@ -187,7 +187,7 @@ int main() {
     visible={{7,static_cast<int>(content.size())-7}};caretScalar=7+18;selectedStart=selectedEnd=0;
     expect(viewport(38)["surface"]["runs"][0]["text"]=="first line\n> hello world\nstatus bar\n  ","ASCII text at the byte budget is read whole");
     reset("HIDDEN!界界界界界HIDDEN!");viewportOnly=true;visible={{7,12}};caretScalar=9;selectedStart=selectedEnd=0;
-    bool refused=false;
+    refused=false;
     try { viewport(10); } catch (const std::exception&) { refused=true; }
     expect(refused,"text whose scalars fit the budget but whose bytes don't is refused");
     // A malformed selection is withheld, and the surface kept.
