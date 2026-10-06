@@ -81,6 +81,8 @@ struct MacServiceRequestTests {
             #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
             #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
             #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
+            #"{"id":9,"method":"insert","params":{"text":""}}"#,
+            #"{"id":10,"method":"insert","params":{"text":"a\u0000b"}}"#,
         ]
         for request in requests { await channel.handle(line: Data(request.utf8)) }
 
@@ -106,7 +108,7 @@ struct MacServiceRequestTests {
         #expect((main.first?["error"] as? [String: Any])?["message"] as? String == "unknown method readScreen")
         withExtendedLifetime(service) {}
 
-        let nothing = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, read: { _, _, _, _ in nil }, focusedField: { _, _, _ in nil })
+        let nothing = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, read: { _, _, _, _ in nil }, focusedField: { _, _ in nil })
         let others = ["frontmostApp", "caretAnchor", "focusedFieldValue", "insert", "keyboardLanguage", "startActivator"]
         let reader = try await replies({ ScreenReaderService.register(on: $0, screen: nothing) },
                                        [read] + others.enumerated().map { #"{"id":\#($0.offset + 2),"method":"\#($0.element)","params":{}}"# })

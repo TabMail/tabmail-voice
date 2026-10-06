@@ -1,0 +1,282 @@
+{
+  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "cases": [
+    {
+      "name": "a field bound at the most a request may ask",
+      "request": {
+        "field": {
+          "maxLength": 20000
+        }
+      },
+      "expected": {
+        "maxLength": 20000
+      }
+    },
+    {
+      "name": "a field bound of one unit",
+      "request": {
+        "field": {
+          "maxLength": 1
+        }
+      },
+      "expected": {
+        "maxLength": 1
+      }
+    },
+    {
+      "name": "no text read from the field",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": null
+        }
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "name": "a field's text, its secret-looking part taken out",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Draft reply. password: hunter2x"
+        }
+      },
+      "expected": {
+        "value": "Draft reply. password: [redacted]"
+      }
+    },
+    {
+      "name": "a field exactly as long as the bound in UTF-16 units",
+      "request": {
+        "field": {
+          "maxLength": 4,
+          "text": "😀😀"
+        }
+      },
+      "expected": {
+        "value": "😀😀"
+      }
+    },
+    {
+      "name": "a field longer than the bound in UTF-16 units, not in characters",
+      "request": {
+        "field": {
+          "maxLength": 3,
+          "text": "😀😀"
+        }
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "name": "a paste's text with no deadline (macOS)",
+      "request": {
+        "insert": {
+          "text": "Thanks, see you then."
+        }
+      },
+      "expected": {}
+    },
+    {
+      "name": "a paste's deadline three seconds ahead",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": 1760000003000,
+          "now": 1760000000000
+        }
+      },
+      "expected": {
+        "wait": 3000
+      }
+    },
+    {
+      "name": "a paste's deadline at the most it may be ahead",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": 1760000005000,
+          "now": 1760000000000
+        }
+      },
+      "expected": {
+        "wait": 5000
+      }
+    },
+    {
+      "name": "a field bound of zero",
+      "request": {
+        "field": {
+          "maxLength": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a field bound past the most",
+      "request": {
+        "field": {
+          "maxLength": 20001
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a negative field bound",
+      "request": {
+        "field": {
+          "maxLength": -1
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a fractional field bound",
+      "request": {
+        "field": {
+          "maxLength": 1.5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a field bound as a string",
+      "request": {
+        "field": {
+          "maxLength": "10"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "no field bound",
+      "request": {
+        "field": {
+          "text": "x"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a field's text that is no string",
+      "request": {
+        "field": {
+          "maxLength": 10,
+          "text": 5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an empty paste",
+      "request": {
+        "insert": {
+          "text": ""
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste holding a NUL",
+      "request": {
+        "insert": {
+          "text": "a\u0000b"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste with no text",
+      "request": {
+        "insert": {
+          "deadline": 1760000001000,
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's deadline already reached",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": 1760000000000,
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's deadline past",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": 1759999999999,
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's deadline too far ahead",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": 1760000005001,
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's deadline with no clock",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": 1760000001000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's deadline as a string",
+      "request": {
+        "insert": {
+          "text": "Thanks",
+          "deadline": "1760000001000",
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "two requests at once",
+      "request": {
+        "field": {
+          "maxLength": 10
+        },
+        "insert": {
+          "text": "x"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an unknown request",
+      "request": {
+        "focus": {}
+      },
+      "refused": true
+    },
+    {
+      "name": "a request that is no object",
+      "request": [
+        "field"
+      ],
+      "refused": true
+    }
+  ]
+}

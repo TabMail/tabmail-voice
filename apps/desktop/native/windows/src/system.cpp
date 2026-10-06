@@ -121,23 +121,23 @@ public:
                     }
                     JSON result;
                     if (method == "insert") {
-                        if (!params.contains("text") || !params["text"].is_string() ||
-                            !params.contains("deadline") || !params["deadline"].is_number_unsigned()) throw std::runtime_error("invalid paste");
+                        if (!params.contains("deadline") || !params["deadline"].is_number_unsigned()) throw std::runtime_error("invalid paste");
                         const auto deadline = params["deadline"].get<uint64_t>();
                         const auto now = voice::unixMilliseconds();
-                        if (deadline <= now || deadline - now > 5000) throw std::runtime_error("invalid paste deadline");
+                        // The shared core decides what may be pasted and how far ahead its deadline may be.
+                        const auto wait = voice::core::request({{"insert", {{"text", params.value("text", JSON())}, {"deadline", deadline}, {"now", now}}}},
+                                                               voice_core_request_json).at("wait").get<uint64_t>();
                         {
                             std::lock_guard lock(mutex);
                             // Paste checks its insertion deadline before mutation and input; its clipboard
                             // wait ends at the deadline, and this margin keeps the watchdog clear of it.
-                            busyUntil = GetTickCount64() + (deadline - now) + voice::HelperConfig::clipboardOpenWaitMs;
+                            busyUntil = GetTickCount64() + wait + voice::HelperConfig::clipboardOpenWaitMs;
                         }
                         voice::paste(window, voice::utf16(params["text"].get<std::string>()), deadline, [this] { return canceled.load(); });
                         result = JSON::object();
                     } else if (method == "focusedFieldValue") {
-                        if (!params.contains("maxLength") || !params["maxLength"].is_number_unsigned()) throw std::runtime_error("invalid field bound");
-                        const auto limit = params["maxLength"].get<uint64_t>();
-                        if (!limit || limit > 20000) throw std::runtime_error("invalid field bound");
+                        const auto limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json)
+                                               .at("maxLength").get<uint64_t>();
                         result = voice::screenAccess(params, window, voice::executableName, [&](HWND target, const voice::ScreenExclusions& exclusions) {
                             voice::Automation automation;
                             return automation.fieldValue(target, static_cast<unsigned>(limit), exclusions);

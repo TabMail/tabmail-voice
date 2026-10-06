@@ -180,7 +180,7 @@ public:
         if (*value == L"\uFFFC" && emptyValue(element.Get())) value = std::wstring{};
         auto current = focused(window);
         if (!current || !editable(current.Get()) || !same(element.Get(), current.Get()) || GetForegroundWindow() != window) return nullptr;
-        return {{"value", privacy::ScreenPrivacy::redact(utf8(*value))}};
+        return core::request({{"field", {{"maxLength", maxLength}, {"text", utf8(*value)}}}}, voice_core_request_json);
     }
 
     JSON readScreen(HWND window, const ScreenExclusions& exclusions) {

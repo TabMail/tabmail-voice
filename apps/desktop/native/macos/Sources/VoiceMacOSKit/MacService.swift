@@ -75,19 +75,20 @@ public enum MacService {
             }.value
         }
         channel.on("focusedFieldValue") { params in
-            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }),
-                  let maxLength = params["maxLength"]?.integer, maxLength >= 0 else {
+            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else {
                 throw HelperError("focusedFieldValue needs pid and maxLength")
             }
+            let maxLength = try SharedRequest.fieldBound(params["maxLength"])
             let exclusions = try ScreenExclusions(params: params, method: "focusedFieldValue")
             if exclusions.excludesApp(screen.bundleIdentifier(pid)) {
                 HelperLog.debug("FocusedField: the app is excluded from screen reading; not read")
                 return ["value": .null]
             }
-            return await Task.detached { ["value": screen.focusedField(pid, maxLength, exclusions).flatMap { try? Redactor.redact($0) }.map(JSON.string) ?? .null] }.value
+            return await Task.detached { (try? SharedRequest.fieldValue(screen.focusedField(pid, exclusions), maxLength: maxLength)) ?? ["value": .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string else { throw HelperError("insert needs text") }
+            try SharedRequest.insert(text)
             await TextInserter().insert(text)
             return [:]
         }
@@ -234,14 +235,14 @@ struct ScreenAccess: Sendable {
     var bundleIdentifier: @Sendable (pid_t) -> String?
     /// The screen context of the app, as read; none when an excluded website is showing.
     var read: @Sendable (pid_t, String, String?, ScreenExclusions) -> ScreenContext?
-    /// The text of the app's focused field, up to a length (`FocusedField`); none in an excluded website.
-    var focusedField: @Sendable (pid_t, Int, ScreenExclusions) -> String?
+    /// The text of the app's focused field (`FocusedField`); none in an excluded website.
+    var focusedField: @Sendable (pid_t, ScreenExclusions) -> String?
 
     static let accessibility = ScreenAccess(
         frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
         bundleIdentifier: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
         read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2, excluding: $3) },
-        focusedField: { FocusedField.value(inApp: $0, maxLength: $1, excluding: $2) }
+        focusedField: { FocusedField.value(inApp: $0, excluding: $1) }
     )
 }
 

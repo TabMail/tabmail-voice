@@ -65,6 +65,15 @@ pub unsafe extern "C" fn voice_core_context_json(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_request_json(
+    data: *const u8,
+    length: usize,
+    output: *mut Buffer,
+) -> u32 {
+    unsafe { process(data, length, output, crate::request::process) }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn voice_core_screen_json(
     data: *const u8,
     length: usize,

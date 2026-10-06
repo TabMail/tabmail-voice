@@ -42,7 +42,7 @@ struct ScreenExclusionTests {
                 context.append(.text, shown)
                 return context
             },
-            focusedField: { pid, _, exclusions in
+            focusedField: { pid, exclusions in
                 reads.fields.withLock { $0.append(pid) }
                 reads.exclusions.withLock { $0.append(exclusions) }
                 return shown
@@ -806,7 +806,7 @@ struct ScreenExclusionTests {
         func value(_ attributes: [String: String]) -> (value: String?, asked: Int) {
             let field = FakeElement("AXTextField", attributes.merging([kAXValueAttribute: "hunter2x"]) { $1 })
             let tree = RecordingTree()
-            let value = FocusedField.value(of: field, above: [FakeElement("AXWindow", children: [field])], in: tree, maxLength: 100,
+            let value = FocusedField.value(of: field, above: [FakeElement("AXWindow", children: [field])], in: tree,
                                            excluding: ScreenExclusions())
             return (value, tree.asked.texts)
         }
@@ -890,9 +890,9 @@ struct ScreenExclusionTests {
         let holding = FakeElement("AXWindow", children: [group])
         #expect(!gather(holding, focused: group, focusPath: [holding], excluding: []).read)
         // The focused field read for correction learning.
-        #expect(FocusedField.value(of: unknown.field, above: [unknown.area, unknown.window], in: FakeScreenTree(), maxLength: 100,
+        #expect(FocusedField.value(of: unknown.field, above: [unknown.area, unknown.window], in: FakeScreenTree(),
                                    excluding: ScreenExclusions()) == nil)
-        #expect(FocusedField.value(of: plain.field, above: [plain.area, plain.window], in: FakeScreenTree(), maxLength: 100,
+        #expect(FocusedField.value(of: plain.field, above: [plain.area, plain.window], in: FakeScreenTree(),
                                    excluding: ScreenExclusions()) == "typed")
 
         let exclusions = ScreenExclusions(hosts: ["example.com"])
@@ -960,7 +960,7 @@ struct ScreenExclusionTests {
             let toolbar = FakeElement("AXToolbar", children: [address])
             let window = FakeElement("AXWindow", children: [toolbar, FakeElement("AXGroup", children: [page])])
             let tree = RecordingTree()
-            let value = FocusedField.value(of: address, above: [toolbar, window], in: tree, maxLength: 100, excluding: ScreenExclusions(hosts: hosts))
+            let value = FocusedField.value(of: address, above: [toolbar, window], in: tree, excluding: ScreenExclusions(hosts: hosts))
             return (value, tree.asked.texts)
         }
         let vault = FakeElement("AXWebArea", ["host": "vault.example.com"])
@@ -973,10 +973,10 @@ struct ScreenExclusionTests {
         // A field that itself holds an excluded page is not read, however deep the page.
         let holder = FakeElement("AXTextArea", [kAXValueAttribute: "text"], children: [FakeElement("AXWebArea", ["host": "example.org"], children: [vault])])
         let window = FakeElement("AXWindow", children: [holder])
-        #expect(FocusedField.value(of: holder, above: [window], in: FakeScreenTree(), maxLength: 100, excluding: ScreenExclusions(hosts: ["example.com"])) == nil)
-        #expect(FocusedField.value(of: holder, above: [window], in: FakeScreenTree(), maxLength: 100, excluding: ScreenExclusions(hosts: ["example.net"])) == "text")
+        #expect(FocusedField.value(of: holder, above: [window], in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"])) == nil)
+        #expect(FocusedField.value(of: holder, above: [window], in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.net"])) == "text")
         // A field with no window above it is read by its own pages alone.
-        #expect(FocusedField.value(of: holder, above: [], in: FakeScreenTree(), maxLength: 100, excluding: ScreenExclusions(hosts: ["example.net"])) == "text")
+        #expect(FocusedField.value(of: holder, above: [], in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.net"])) == "text")
     }
 
     /// The focused field read for correction learning: in a page of an excluded website, or that
@@ -987,7 +987,7 @@ struct ScreenExclusionTests {
         let window = FakeElement("AXWindow", children: [area])
         func value(of element: FakeElement, above path: [FakeElement], excluding hosts: [String]) -> (value: String?, asked: Int) {
             let tree = RecordingTree()
-            let value = FocusedField.value(of: element, above: path, in: tree, maxLength: 100, excluding: ScreenExclusions(hosts: hosts))
+            let value = FocusedField.value(of: element, above: path, in: tree, excluding: ScreenExclusions(hosts: hosts))
             return (value, tree.asked.texts)
         }
         #expect(value(of: field, above: [area, window], excluding: ["example.com"]) == (nil, 0))
@@ -997,10 +997,9 @@ struct ScreenExclusionTests {
         #expect(value(of: field, above: [area], excluding: ["example.org"]).value == "account 1234")
         #expect(value(of: field, above: [area, window], excluding: ["example.org"]).value == "account 1234")
         #expect(value(of: area, above: [window], excluding: ["example.org"]).value == "page text")
-        // A password field is still never read, and nothing past the limit.
+        // A password field is still never read.
         let password = FakeElement("AXTextField", [kAXSubroleAttribute: kAXSecureTextFieldSubrole, kAXValueAttribute: "hunter2"])
         #expect(value(of: password, above: [window], excluding: []).value == nil)
-        #expect(FocusedField.value(of: field, above: [area, window], in: FakeScreenTree(), maxLength: 5, excluding: ScreenExclusions(hosts: [])) == nil)
     }
 
     /// The helper replies that the screen is hidden, and with nothing of it, when the reader refuses,
@@ -1030,6 +1029,19 @@ struct ScreenExclusionTests {
         ])
         #expect((replies.first?["result"] as? [String: Any])?["value"] as? String == "field text")
         #expect(reads.exclusions.withLock { $0 } == [ScreenExclusions(appIDs: ["org.example.vault"], hosts: ["example.com"])])
+    }
+
+    /// A field longer than the request's bound, counted in UTF-16 code units as the app counts (an emoji
+    /// is two), is not sent; a bound the shared core refuses is an error (`request-cases.json`).
+    @Test func aFieldLongerThanTheBoundIsNotSent() async throws {
+        func reply(_ maxLength: String, shown: String) async throws -> [String: Any]? {
+            try await replies(to: [#"{"id":1,"method":"focusedFieldValue","params":{"pid":8,"maxLength":\#(maxLength),"excludedAppIDs":[],"excludedHosts":[]}}"#],
+                              shown: shown).replies.first
+        }
+        #expect((try await reply("3", shown: "a😀")?["result"] as? [String: Any])?["value"] as? String == "a😀")
+        #expect((try await reply("3", shown: "ab😀")?["result"] as? [String: Any])?["value"] is NSNull)
+        #expect(try await reply("0", shown: "a")?["error"] != nil)
+        #expect(try await reply("20001", shown: "a")?["error"] != nil)
     }
 
     /// The app the user picks in Settings: its identifier and name, or none for what isn't an app.

@@ -24,6 +24,10 @@ uint32_t voice_core_redact_text_json(const uint8_t *data, size_t length, VoiceCo
 /* The screen read's whole reply (ADR-DESK-054): what the walk found, with the read's exclusions,
  * in; the reply the app receives, or {"hidden":true} for an excluded page, out. */
 uint32_t voice_core_screen_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
+/* Request rules every helper shares (ADR-DESK-054): {"field":{maxLength[,text]}} validates a focused
+ * field read's bound, and with the text as read gives its {value} (null when too long, else redacted);
+ * {"insert":{text[,deadline,now]}} validates a paste's text and deadline, giving {wait}. */
+uint32_t voice_core_request_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 void voice_core_buffer_free(VoiceCoreBuffer buffer);
 /* Semantic text ABI. One policy for all platforms; no platform-selected limits.
  * Kinds: 1 row, 2 heading, 3 link. Decisions: 1 read approved root, 2 read
