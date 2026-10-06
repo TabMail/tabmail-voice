@@ -26,6 +26,7 @@ const Key = {
   userName: "userName",
   dictionary: "dictionary",
   learnsWords: "learnsWords",
+  smartDictation: "smartDictation",
   excludedApps: "excludedApps",
   excludedSites: "excludedSites",
 } as const;
@@ -62,6 +63,9 @@ export interface DictationSettings {
   dictionary: string[];
   /** Whether the dictation's paste is watched to learn the user's corrections. */
   learnsWords: boolean;
+  /** Whether the dictation asks for the backend's cleanup (and a long dictation for its final polish);
+   * off, the transcript is pasted as heard. */
+  smartDictation: boolean;
 }
 
 /** What adding a word to the dictionary did: `invalid` for a word the backend refuses, `full` at
@@ -283,6 +287,16 @@ export class AppSettings extends Observable {
     this.write(Key.learnsWords, value);
   }
 
+  /** Smart dictation: the AI cleanup of each dictation, which adds a second or more. Off unless the
+   * user switches it on (owner, 2026-10-05). */
+  get smartDictation(): boolean {
+    return storedBool(this.store, Key.smartDictation) ?? false;
+  }
+
+  set smartDictation(value: boolean) {
+    this.write(Key.smartDictation, value);
+  }
+
   /** The apps the user excludes from screen reading, in the order they were added; the built-in ones
    * (`config.builtInExcludedApps`) are not among them. */
   get excludedApps(): ExcludedApp[] {
@@ -419,6 +433,7 @@ export class AppSettings extends Observable {
       userName: this.sentUserName,
       dictionary: this.dictionary.map((entry) => entry.word),
       learnsWords: this.learnsWords,
+      smartDictation: this.smartDictation,
     };
   }
 

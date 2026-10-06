@@ -58,7 +58,7 @@ const microphoneFailed = failed("Couldn't start the microphone.");
 const toolsWithoutAnswer: AgentToolID[] = agentToolIDs.filter((tool) => tool !== "answer");
 
 function defaultSettings(): DictationSettings {
-  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [] };
+  return { hasConsented: true, hotkey: "rightOption", backendURL: "https://api.example.com", readsScreen: true, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: FakeThunderbird.app, hasTabMail: true, userName: "Alex Example", dictionary: [], learnsWords: true, excludedApps: [], excludedSites: [], smartDictation: true };
 }
 
 /** A screen with `sentinel` in its app name and in the focused field, before the caret. */
@@ -250,6 +250,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(cleanupVars(0)).toEqual({ app_name: "", web_host: "", terminal_program: "", window_title: "", screen_text: "", dictionary: "" });
     expect(completions.requests).toHaveLength(0);
     expect(transcription.authorizations).toEqual(["Bearer access-1"]);
+  });
+
+  /** Smart dictation off (Settings, the default): the recording goes with no cleanup, and the
+   * transcript is pasted as heard, whatever the backend answers as `cleaned_text`. */
+  test("pastes the transcript as heard, with no cleanup sent, when smart dictation is off", async () => {
+    prefs.value = { ...defaultSettings(), smartDictation: false };
+    transcription.enqueue(200, cleanedReply);
+
+    const { pasted, controller } = await dictate();
+
+    expect(pasted).toEqual([transcript]);
+    expect(controller.phase).toEqual(idle);
+    expect(transcription.requests).toHaveLength(1);
+    expect(cleanupVars(0)).toBeUndefined();
+    expect(completions.requests).toHaveLength(0);
   });
 
   /** The backend answers an empty cleanup when it failed or ran past its deadline; a backend from
@@ -2005,7 +2020,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
-          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [] };
+          prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true };
         };
         const read = controller.captureContext;
         controller.captureContext = (exclusions) => {
@@ -5583,6 +5598,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(variables).toEqual(backend.sent[0]?.body.cleanup);
       expect(variables.dictionary).toBe("Xyvora");
       expect(completions.body(0).disable_tools).toBe(true);
+    });
+
+    /** Smart dictation off: no chunk goes with a cleanup, nothing is polished, and the chunks'
+     * transcripts are pasted joined, as heard. */
+    test("with smart dictation off, is pasted as heard and not polished", async () => {
+      prefs.value = { ...defaultSettings(), smartDictation: false };
+      const backend = new ChunkBackend(part);
+      const { controller, capture, pastes } = makeLong(backend);
+
+      await startHearing(controller, capture, pausedSpeech(1, 12, 12, 5));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["raw 0 raw 1 raw 2"]);
+      expect(backend.sent).toHaveLength(3);
+      expect(backend.sent.map((sent) => sent.body.cleanup)).toEqual([undefined, undefined, undefined]);
+      expect(completions.requests).toHaveLength(0);
     });
 
     /** The polish is only if time permits: one that fails, comes back empty or takes longer than

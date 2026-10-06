@@ -101,6 +101,8 @@ export interface SettingsState {
   dictionary: DictionaryEntry[];
   learnsWords: boolean;
   canLearnWords: boolean;
+  /** Smart dictation: the AI cleanup of each dictation. */
+  smartDictation: boolean;
   /** The apps the user excludes from screen reading, besides the built-in ones
    * (`config.builtInExcludedApps`); shown only where the screen is read (`canExcludeApps`, macOS). */
   excludedApps: ExcludedApp[];
@@ -189,6 +191,7 @@ export type Command =
   | { type: "addDictionaryWord"; word: string }
   | { type: "removeDictionaryWord"; word: string }
   | { type: "setLearnsWords"; value: boolean }
+  | { type: "setSmartDictation"; value: boolean }
   /** Asks the user to pick an app, and excludes it from screen reading. */
   | { type: "excludeApp" }
   | { type: "removeExcludedApp"; bundleIdentifier: string }
@@ -299,6 +302,7 @@ export function isCommand(value: unknown): value is Command {
       return isDictationHotkey(command.hotkey);
     case "setReadsScreen":
     case "setLearnsWords":
+    case "setSmartDictation":
     case "setOpenAtLogin":
     case "setDebugMode":
     case "setConsent":

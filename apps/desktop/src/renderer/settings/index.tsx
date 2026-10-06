@@ -149,6 +149,11 @@ function DictationPane({ state }: { state: SettingsState }) {
         </div>
       </Group>
       <Group>
+        <Toggle label="Smart dictation" checked={state.smartDictation} onChange={(value) => send({ type: "setSmartDictation", value })}>
+          Lets AI clean up your dictation: names and terms spelled as on screen, filler words removed, grammar fixed. Adds a delay of a second or more to each dictation.
+        </Toggle>
+      </Group>
+      <Group>
         <Toggle label="Read the screen while dictating" checked={state.readsScreen} onChange={(value) => send({ type: "setReadsScreen", value })}>
           Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.
         </Toggle>
