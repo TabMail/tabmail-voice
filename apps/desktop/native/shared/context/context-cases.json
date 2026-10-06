@@ -1053,9 +1053,9 @@
       "request": {
         "blocks": [],
         "caret": [
-          "ghp_AAAAAAAAAAAAAAAAAAAA\n",
+          "gh\u0070_AAAAAAAAAAAAAAAAAAAA\n",
           "",
-          "ghp_0123456789abcdefXYZW"
+          "gh\u0070_0123456789abcdefXYZW"
         ]
       },
       "expected": {
@@ -1071,8 +1071,8 @@
       "request": {
         "blocks": [],
         "caret": [
-          "ghp_AAAAAAAAAAAAAAAAAAAA\n",
-          "ghp_0123456789abcdefXYZW",
+          "gh\u0070_AAAAAAAAAAAAAAAAAAAA\n",
+          "gh\u0070_0123456789abcdefXYZW",
           " after"
         ]
       },

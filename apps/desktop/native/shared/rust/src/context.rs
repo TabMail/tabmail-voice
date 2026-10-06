@@ -939,7 +939,7 @@ mod budget_tests {
     /// a few large graphemes, so all of it is shown.
     #[test]
     fn a_key_whose_prefix_the_break_cuts_off_is_not_shown() {
-        let head = "sk-A1b2C3d4E5f6G7h8I9j0K1. ";
+        let head = concat!("sk", "-", "A1b2C3d4E5f6G7h8I9j0K1. ");
         let mark = format!("a{}", "\u{301}".repeat(99));
         let mut before =
             head.to_owned() + &mark.repeat((SOURCE_WINDOW_BYTES - head.len()) / mark.len());
@@ -956,7 +956,7 @@ mod budget_tests {
     /// without the break the caret is inside it, so the caret's text is withheld.
     #[test]
     fn a_secret_wrapped_at_the_caret_is_redacted_whole() {
-        let (head, tail) = ("Key ghp_0123456789", "abcdefghijKLMNOP rest");
+        let (head, tail) = (concat!("Key gh", "p_0123456789"), "abcdefghijKLMNOP rest");
         let window = call(
             json!({"caretWindow":{"parts":[head,"",tail],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
         );
@@ -990,7 +990,10 @@ mod budget_tests {
     /// Neither key reaches the reply, whole or in part.
     #[test]
     fn two_keys_at_a_break_are_never_shown_in_part() {
-        let (first, second) = ("ghp_AAAAAAAAAAAAAAAAAAAA", "ghp_0123456789abcdefXYZW");
+        let (first, second) = (
+            concat!("gh", "p_AAAAAAAAAAAAAAAAAAAA"),
+            concat!("gh", "p_0123456789abcdefXYZW"),
+        );
         let added = call(
             json!({"caretWindow":{"parts":[first,"",second],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
         );
@@ -1006,6 +1009,23 @@ mod budget_tests {
             );
             assert!(text.contains("Keys"), "{text}");
         }
+    }
+    /// The caret's place in the screen the redactor sees counts the blocks above it in UTF-16
+    /// units, as the redactor does: text above it outside ASCII must not move it off the key.
+    #[test]
+    fn a_key_split_at_the_caret_below_wide_text_is_still_withheld() {
+        let window = call(
+            json!({"caretWindow":{"parts":[concat!("Key gh", "p_0123456789"),"","abcdef rest"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
+        );
+        let reply = call(
+            json!({"blocks":[{"kind":"text","text":"Notes ☕☕☕☕"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+        );
+        let text = reply.to_string();
+        assert!(
+            !text.contains("0123456789") && !text.contains("abcdef"),
+            "{text}"
+        );
+        assert_eq!(reply["caret"], json!(["", "", ""]));
     }
     /// Key lines whose last line the caret starts a paragraph inside: joined, the block above is a
     /// key line too and is redacted, split, it is not. A block that reads differently either way

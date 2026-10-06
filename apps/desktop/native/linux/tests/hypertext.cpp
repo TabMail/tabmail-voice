@@ -77,6 +77,17 @@ int main() {
         bothCarets.elements[3].caret = 4;
         auto inner = flattenHypertext(bothCarets, 0, 100, 1000);
         expect(inner.caret && before(inner) == "Hi All,\n\nWhy ", "a caret inside a paragraph is placed by the paragraph, not its object");
+        // A caret just before an element its text holds is the text's, at the element's object, when
+        // the element reports none: before a link's text, and at the start of a paragraph's line.
+        Fake beforeLink;
+        beforeLink.elements[0] = Element{"ab" + object + "cd", 2, std::nullopt, {{2, 1}}, true};
+        beforeLink.elements[1] = Element{"link", -1, std::nullopt, {}, false};
+        auto atLink = flattenHypertext(beforeLink, 0, 100, 1000);
+        expect(atLink.text == "ablinkcd" && atLink.caret && before(atLink) == "ab", "a caret before a link its paragraph reports is kept");
+        auto beforeParagraph = paragraphs(false);
+        beforeParagraph.elements[0].caret = 2;
+        atLink = flattenHypertext(beforeParagraph, 0, 100, 1000);
+        expect(atLink.caret && before(atLink) == "Hi All,\n\n", "a caret before a paragraph that reports none starts its line");
         auto selected = paragraphs(false);
         selected.elements[0].selection = std::pair{0, 3};
         selected.elements[1].selection = std::pair{3, 7};

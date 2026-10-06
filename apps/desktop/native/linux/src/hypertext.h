@@ -65,6 +65,9 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
                 const auto& child = links[next++].second;
                 const bool block = source.block(child);
                 if (block) mark("blockStart");
+                // A caret before the element: Chromium gives the caret at the end of the text before
+                // a link to the text holding it, at the link's object, and none to the link itself.
+                if (caret == index && source.caret(child) < 0) mark("caret");
                 self(self, child);
                 if (!fits) return;
                 if (block) mark("blockEnd");
