@@ -54,7 +54,7 @@ async function request(method, params = {}) {
 }
 const exclusions = { excludedAppIDs: [], excludedHosts: ["blocked.example"] };
 let fixture;
-const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 40_000);
+const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 80_000);
 let checks = 0;
 try {
   for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row", "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",

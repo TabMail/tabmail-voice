@@ -11,17 +11,14 @@
 namespace voice {
 class EditCaretSource {
 public:
-    static std::optional<CaretSource> read(HWND edit, ULONGLONG started) {
+    static std::optional<CaretSource> read(HWND edit) {
         wchar_t name[16]{};
         if (!edit || !GetClassNameW(edit, name, 16) || _wcsicmp(name, L"Edit") != 0 || !permitted(edit)) return std::nullopt;
-        const auto check = [started]() {
-            if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) throw std::runtime_error("screen context time budget");
-        };
         const auto send = [&](UINT message, WPARAM value, LPARAM data) {
-            check(); DWORD_PTR result = 0;
+            DWORD_PTR result = 0;
             if (!SendMessageTimeoutW(edit, message, value, data, SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT, 200, &result))
                 throw std::runtime_error("edit control did not answer");
-            check(); return result;
+            return result;
         };
         const auto selection = [&]() {
             DWORD start = MAXDWORD, end = MAXDWORD;
@@ -48,9 +45,9 @@ public:
         if (!original || send(WM_GETTEXTLENGTH, 0, 0) != length || selection() != selected || text() != original ||
             send(WM_GETTEXTLENGTH, 0, 0) != length || selection() != selected || !permitted(edit)) return CaretSource::unavailable();
         const auto result = readUtf16Caret(original->size(), selected.first, selected.second, [&](size_t start, size_t end) {
-            check(); return std::wstring_view(*original).substr(start, end - start);
+            return std::wstring_view(*original).substr(start, end - start);
         });
-        check(); return result;
+        return result;
     }
 private:
     static bool permitted(HWND edit) {

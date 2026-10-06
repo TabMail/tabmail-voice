@@ -38,7 +38,7 @@ enum ScreenContextReader {
                 in: tree, current: current, excluding: exclusions, started: started, from: start)
         }
         guard var context = gather(window: window, focused: focused, focusPath: focusPath, in: tree, excluding: exclusions,
-                                   started: started, from: start) else {
+                                   from: start) else {
             HelperLog.debug("ScreenContext: the window shows a page of an excluded website, or one whose address is unknown; not read")
             return nil
         }
@@ -51,10 +51,10 @@ enum ScreenContextReader {
     /// is read (the caret's text, the window's title), and any other page as the walk reaches it;
     /// nothing gathered is given back then.
     static func gather<Tree: ScreenTree>(window: Tree.Element?, focused: Tree.Element?, focusPath: [Tree.Element], in tree: Tree,
-                                         excluding exclusions: ScreenExclusions, started: Date, from start: ScreenContext) -> ScreenContext? {
+                                         excluding exclusions: ScreenExclusions, from start: ScreenContext) -> ScreenContext? {
         let hosts = focused.map { pageHosts(of: $0, above: focusPath, in: tree) } ?? []
         if hosts.contains(where: exclusions.excludes) { return nil }
-        if let focused, holdsExcludedPage(focused, in: tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
+        if let focused, holdsExcludedPage(focused, in: tree, excluding: exclusions) {
             return nil
         }
         var context = start
@@ -75,7 +75,7 @@ enum ScreenContextReader {
         guard let window else { return context }
         context.windowTitle = tree.sourceString(window, kAXTitleAttribute)
         let read = walk(window, in: tree, frame: tree.frame(of: window), focused: focused,
-                        focusPath: focusPath, excluding: exclusions, started: started, into: &context)
+                        focusPath: focusPath, excluding: exclusions, into: &context)
         return read ? context : nil
     }
 
@@ -98,10 +98,10 @@ enum ScreenContextReader {
     /// goes into any other focused element only after the text around its caret was asked for, so
     /// it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
-    /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
-    /// element is taken to hold none.
+    /// in it. Bounded by the walk's node budget and by `seconds` since `started` (the screen read
+    /// gives it no time limit); past them the element is taken to hold none.
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
-                                                    intoPages: Bool = true, within seconds: Double, since started: Date) -> Bool {
+                                                    intoPages: Bool = true, within seconds: Double = .infinity, since started: Date = Date()) -> Bool {
         lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) == .excluded
     }
 
@@ -111,7 +111,7 @@ enum ScreenContextReader {
     /// The look behind `holdsExcludedPage`, which also says when it gave up at a budget before
     /// the element was seen whole.
     static func lookForExcludedPage<Tree: ScreenTree>(in element: Tree.Element, _ tree: Tree, excluding exclusions: ScreenExclusions,
-                                                      intoPages: Bool = true, within seconds: Double, since started: Date) -> PageLook {
+                                                      intoPages: Bool = true, within seconds: Double = .infinity, since started: Date = Date()) -> PageLook {
         // Each step is the shared core's (ADR-DESK-054); one it refuses has not seen the element whole.
         func late() -> Bool { Date().timeIntervalSince(started) > seconds }
         // AX gives an element's children all at once, so each is taken whole: the core's budget
@@ -158,42 +158,32 @@ enum ScreenContextReader {
     }
 
     private static func markerCaretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? {
-        let started = Date()
-        func withinBudget() -> Bool { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget }
-        return MarkerCaretSource.read(snapshot: {
-            guard withinBudget(),
-                  let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
-                  let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element),
-                  withinBudget() else { return nil }
+        MarkerCaretSource.read(snapshot: {
+            guard let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
+                  let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element) else { return nil }
             return (selection, whole)
         }, parameterized: { name, value in
-            guard withinBudget() else { return nil }
-            let result = CaretLocator.parameterized(element, name, value)
-            return withinBudget() ? result : nil
+            CaretLocator.parameterized(element, name, value)
         }, focused: {
-            withinBudget() && (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+            (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
         })
     }
 
     private static func valueCaretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? {
         let started = Date()
-        func withinBudget() -> Bool { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget }
         func text(_ requested: NSRange) -> NSString? {
             var range = CFRange(location: requested.location, length: requested.length)
-            guard withinBudget(), let parameter = AXValueCreate(.cfRange, &range),
-                  let value = CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString,
-                  withinBudget() else { return nil }
-            return value
+            guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+            return CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
+        }
+        func markers() -> (selection: CFTypeRef, whole: CFTypeRef)? {
+            guard let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
+                  let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element) else { return nil }
+            return (selection, whole)
         }
         return valueCaretWindow(snapshot: {
-            valueSnapshot(markers: {
-                guard withinBudget(), let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
-                      let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element) else { return nil }
-                return (selection, whole)
-            }, parameterized: { name, value in
-                guard withinBudget() else { return nil }
-                let result = CaretLocator.parameterized(element, name, value)
-                return withinBudget() ? result : nil
+            valueSnapshot(markers: markers, parameterized: { name, value in
+                CaretLocator.parameterized(element, name, value)
             }, characters: {
                 guard let count = int(CaretLocator.attribute(element, kAXNumberOfCharactersAttribute)),
                       let value = CaretLocator.attribute(element, kAXSelectedTextRangeAttribute),
@@ -210,6 +200,44 @@ enum ScreenContextReader {
             return value
         }, focused: {
             (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+        }, paragraphStarts: { snapshot in
+            let looked = Date()
+            guard snapshot.markers, let state = markers(), CFGetTypeID(state.whole) == AXTextMarkerRangeGetTypeID(),
+                  CFGetTypeID(state.selection) == AXTextMarkerRangeGetTypeID(),
+                  let limits = try? SharedContext.sourceLimits() else { return nil }
+            let fieldStart = AXTextMarkerRangeCopyStartMarker(state.whole as! AXTextMarkerRange)
+            func length(_ range: CFTypeRef?) -> Int? {
+                guard let range, let value = CaretLocator.parameterized(element, "AXLengthForTextMarkerRange", range) as? NSNumber,
+                      value.intValue >= 0 else { return nil }
+                return value.intValue
+            }
+            func span(_ node: AXUIElement) -> NSRange? {
+                guard let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", node),
+                      CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID(),
+                      let start = length(CaretLocator.parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers",
+                                                                    [fieldStart, AXTextMarkerRangeCopyStartMarker(whole as! AXTextMarkerRange)] as CFArray)),
+                      let count = length(whole) else { return nil }
+                return NSRange(location: start, length: count)
+            }
+            let starts = MarkerCaretSource.blockStarts(in: element, around: snapshot.range, within: limits.paragraphStartUnits,
+                                                       elements: limits.caretSourceElements, children: { node in
+                (CaretLocator.attribute(node, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+            }, isBlock: { node in
+                (CaretLocator.attribute(node, kAXRoleAttribute) as? String).map(HelperConfig.blockRoles.contains) ?? false
+            }, span: span)
+            // The element the selection's start is in, to tell the end of a line from the start of
+            // the block after it.
+            let caret = [AXTextMarkerRangeCopyStartMarker(state.selection as! AXTextMarkerRange),
+                         AXTextMarkerRangeCopyEndMarker(state.selection as! AXTextMarkerRange)].first { marker in
+                length(CaretLocator.parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers", [fieldStart, marker] as CFArray))
+                    == snapshot.range.location
+            }
+            let caretElement = caret.flatMap { CaretLocator.parameterized(element, "AXUIElementForTextMarker", $0) }
+                .flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
+                .flatMap { CFEqual($0, element) ? nil : span($0) }
+            let endsLine = MarkerCaretSource.endsLine(caretElement: caretElement, at: snapshot.range.location)
+            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms; the caret \(endsLine ? "ends a line" : "starts its text")")
+            return starts.map { (starts: $0, caretEndsLine: endsLine) }
         })
     }
 
@@ -244,12 +272,23 @@ enum ScreenContextReader {
 
     /// The text around a field's selection, read by its string ranges; unavailable when the field
     /// changed or lost the focus while it was read, or a range gave no text of its length.
-    static func valueCaretWindow(snapshot: () -> ValueSnapshot?, string: (NSRange) -> NSString?, focused: () -> Bool) -> SharedContext.CaretWindow? {
+    /// `paragraphStarts`: where the provider starts paragraphs near the selection, and whether the
+    /// selection starts at the end of the line above one at its offset, asked once, so the shared
+    /// core puts back the breaks its text leaves out.
+    static func valueCaretWindow(snapshot: () -> ValueSnapshot?, string: (NSRange) -> NSString?, focused: () -> Bool,
+                                 paragraphStarts: (ValueSnapshot) -> (starts: [Int], caretEndsLine: Bool)? = { _ in nil })
+        -> SharedContext.CaretWindow? {
         guard let initial = snapshot() else { return nil }
+        let starts = paragraphStarts(initial)
         HelperLog.debug("ScreenContext: caret \(initial.range.location)+\(initial.range.length) of \(initial.count) chars, from the \(initial.markers ? "text markers" : "character range")")
         let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
         do {
-            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range, startsParagraph: initial.startsParagraph) { requested in
+            // With the field's block starts, Chromium's own answer to whether a paragraph starts at
+            // the caret is not asked: every break its text leaves out is at a block start, and that
+            // answer also says yes at a run of formatted text inside a line (measured 2026-10-06).
+            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range,
+                                                     startsParagraph: starts == nil ? initial.startsParagraph : nil,
+                                                     paragraphStarts: starts?.starts, caretEndsLine: starts?.caretEndsLine ?? false) { requested in
                 let value = string(requested)
                 if let value, value.length != requested.length {
                     HelperLog.debug("ScreenContext: \(value.length) characters for \(requested.location)+\(requested.length)")
@@ -293,7 +332,7 @@ enum ScreenContextReader {
     /// (`lookForExcludedPage`): its label can be made of what it holds. One that holds such a page
     /// refuses the window; one too large to look through is not read, and the marker stands in its place.
     static func walk<Tree: ScreenTree>(_ window: Tree.Element, in tree: Tree, frame windowFrame: CGRect?, focused: Tree.Element?,
-                                       focusPath: [Tree.Element], excluding exclusions: ScreenExclusions, started: Date,
+                                       focusPath: [Tree.Element], excluding exclusions: ScreenExclusions,
                                        into context: inout ScreenContext) -> Bool {
         // Each element with whether it is inside a web area.
         context.prepareTextBudget()
@@ -301,7 +340,7 @@ enum ScreenContextReader {
         while let (element, inWeb) = stack.popLast() {
             if context.coreFailed { return true }
             do {
-                if let stopped = try SharedWalk.stop(nodes: context.nodesVisited, since: started, textFull: context.textBudgetFull) {
+                if let stopped = try SharedWalk.stop(nodes: context.nodesVisited, textFull: context.textBudgetFull) {
                     context.stoppedEarly = stopped
                     return true
                 }
@@ -321,8 +360,7 @@ enum ScreenContextReader {
                 if step.caretFirst == true { context.appendCaret(frame: frame) }
                 // A part read in one piece is looked through first: its label can be made of what it holds.
                 func look(_ read: SharedWalk.Step.Action) throws -> SharedWalk.Outcome {
-                    try SharedWalk.look(read, found: lookForExcludedPage(in: element, tree, excluding: exclusions,
-                                                                         within: HelperConfig.contextTimeBudget, since: started))
+                    try SharedWalk.look(read, found: lookForExcludedPage(in: element, tree, excluding: exclusions))
                 }
                 switch step.action {
                 case .refuse:
@@ -358,7 +396,7 @@ enum ScreenContextReader {
                     }
                     if try reducer.decision == .descendants {
                         guard try subtreeText(of: element, in: tree, reducer: reducer, inWeb: inWeb, windowFrame: windowFrame,
-                                              excluding: exclusions, started: started, context: &context) else { return false }
+                                              excluding: exclusions, context: &context) else { return false }
                     }
                     if try reducer.decision == .root {
                         guard let root = try rootLabel() else { return false }
@@ -420,10 +458,10 @@ enum ScreenContextReader {
     /// and its fields' and text views' (a native chat app's message is a text area in its table
     /// row). Nil when a page of an excluded website is among them.
     private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, reducer: SharedSemanticText, inWeb: Bool, windowFrame: CGRect?,
-                                                      excluding exclusions: ScreenExclusions, started: Date,
+                                                      excluding exclusions: ScreenExclusions,
                                                       context: inout ScreenContext) throws -> Bool {
         func stopped() throws -> Bool {
-            guard let reason = try SharedWalk.stop(nodes: context.nodesVisited, since: started, textFull: false) else { return false }
+            guard let reason = try SharedWalk.stop(nodes: context.nodesVisited, textFull: false) else { return false }
             context.stoppedEarly = reason
             return true
         }
@@ -443,7 +481,7 @@ enum ScreenContextReader {
             facts.pageExcluded = role == "AXWebArea" && exclusions.excludes(tree.page(of: element))
             let step = try SharedWalk.node(facts)
             func found() -> PageLook {
-                lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+                lookForExcludedPage(in: element, tree, excluding: exclusions)
             }
             switch step.action {
             case .refuse:
@@ -490,8 +528,6 @@ enum ScreenContextReader {
 
     /// OS capability/visibility adapter; no native text clipping or byte policy.
     fileprivate static func visibleSource(of element: AXUIElement, windowFrame: CGRect?) -> [String]? {
-        let started = Date()
-        func withinBudget() -> Bool { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget }
         func attribute(_ name: String) throws -> CFTypeRef? {
             var value: CFTypeRef?
             switch AXUIElementCopyAttributeValue(element, name as CFString, &value) {
@@ -518,7 +554,6 @@ enum ScreenContextReader {
                 return CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
             } : nil
             func visible(_ count: Int) -> NSRange? {
-                guard withinBudget() else { return nil }
                 guard let windowFrame else { return NSRange(location: 0, length: count) }
                 guard windowFrame.minY.isFinite, windowFrame.maxY.isFinite else { return nil }
                 do {
@@ -532,7 +567,7 @@ enum ScreenContextReader {
                 guard count > 0, let lastLine = int(CaretLocator.parameterized(element, kAXLineForIndexParameterizedAttribute as String, (count - 1) as CFNumber)),
                       lastLine >= 0, lastLine < count else { return nil }
                 func lineRange(_ line: Int) -> CFRange? {
-                    guard withinBudget(), let value = CaretLocator.parameterized(element, kAXRangeForLineParameterizedAttribute as String, line as CFNumber),
+                    guard let value = CaretLocator.parameterized(element, kAXRangeForLineParameterizedAttribute as String, line as CFNumber),
                           CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
                     var range = CFRange()
                     return AXValueGetValue(value as! AXValue, .cfRange, &range) ? range : nil
@@ -568,7 +603,6 @@ enum ScreenContextReader {
                 visibleSnapshot = (actualCount, interval)
                 return interval
             }, valid: {
-                guard withinBudget() else { return false }
                 guard let count else { return true }
                 return (try? characterCount()) == count
             })

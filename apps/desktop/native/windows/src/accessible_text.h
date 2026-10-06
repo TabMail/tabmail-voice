@@ -78,17 +78,12 @@ public:
         return result;
     }
 
-    std::optional<std::array<std::string, 3>> parts(bool& selectionUnavailable, ULONGLONG started) const {
+    std::optional<std::array<std::string, 3>> parts(bool& selectionUnavailable) const {
         const auto before = selection();
         if (!before) { selectionUnavailable = true; return CaretSource::unavailable().parts; }
         const auto [length, start, end] = *before;
         auto result = readUtf16Caret(static_cast<size_t>(length), static_cast<size_t>(start), static_cast<size_t>(end),
-            [&](size_t from, size_t to) {
-                if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) throw std::runtime_error("screen context time budget");
-                auto value = range(static_cast<long>(from), static_cast<long>(to));
-                if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) throw std::runtime_error("screen context time budget");
-                return value;
-            });
+            [&](size_t from, size_t to) { return range(static_cast<long>(from), static_cast<long>(to)); });
         if (selection() != before || !valid()) result = CaretSource::unavailable();
         selectionUnavailable = result.selectionUnavailable;
         return result.parts;

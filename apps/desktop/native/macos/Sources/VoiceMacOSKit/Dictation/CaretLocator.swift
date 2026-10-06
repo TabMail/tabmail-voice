@@ -44,9 +44,11 @@ enum CaretLocator {
         }
         if let frame = frame(of: element) {
             let rect = cocoaRect(fromAccessibility: frame, primaryScreenHeight: primaryHeight)
+            // At its leading edge, where the caret of an empty field is (Chromium gives an empty
+            // search, To or Subject field no caret box), not mid-field.
             if rect.height <= HelperConfig.focusedElementMaxAnchorHeight, isPlausible(rect, screens: screens) {
-                HelperLog.debug("CaretLocator: no caret; anchoring to the focused field \(frame)")
-                return rect
+                HelperLog.debug("CaretLocator: no caret; anchoring to the focused field's leading edge \(frame)")
+                return caretEdge(of: rect)
             }
         }
         HelperLog.debug("CaretLocator: no caret or field-sized focused element")
@@ -137,11 +139,102 @@ enum CaretLocator {
     /// The caret via the text-marker API (WebKit, Chromium/Electron): bounds of the selected
     /// text-marker range, which is the caret itself when the selection is collapsed.
     private static func markerCaretRect(in element: AXUIElement) -> CGRect? {
-        guard let markerRange = attribute(element, "AXSelectedTextMarkerRange") else { return nil }
-        var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
-            element, "AXBoundsForTextMarkerRange" as CFString, markerRange, &value
-        ) == .success, let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        guard let markerRange = attribute(element, "AXSelectedTextMarkerRange"),
+              CFGetTypeID(markerRange) == AXTextMarkerRangeGetTypeID(),
+              let box = markerBounds(markerRange, in: element) else { return nil }
+        guard box.width > HelperConfig.caretMaxWidth,
+              (parameterized(element, "AXLengthForTextMarkerRange", markerRange) as? NSNumber)?.intValue == 0 else { return box }
+        let caret = AXTextMarkerRangeCopyStartMarker(markerRange as! AXTextMarkerRange)
+        if let block = blockText(of: caret, in: element),
+           let rect = caretLine(in: box, before: block.before, text: block.text, textHeights: block.textHeights) {
+            return rect
+        }
+        guard let line = (parameterized(element, "AXLineForTextMarker", caret) as? NSNumber)?.intValue,
+              let text = textLines(in: element) else { return box }
+        return caretLine(in: box, line: line, text: text)
+    }
+
+    /// The text of the block a caret is in, when that block is not the whole field (a rich-text
+    /// paragraph, Gmail's signature): its text before the caret and all of it, and its pieces'
+    /// heights. Chromium numbers a rich editor's lines without the break each paragraph starts
+    /// with, so a caret at a block's start is given the line of the text above it; the block
+    /// itself, which is what Chromium gives the caret's box of, is right.
+    private static func blockText(of caret: AXTextMarker, in element: AXUIElement) -> (before: String, text: String, textHeights: [CGFloat])? {
+        guard let value = parameterized(element, "AXUIElementForTextMarker", caret), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        let block = value as! AXUIElement
+        guard !CFEqual(block, element),
+              let whole = parameterized(element, "AXTextMarkerRangeForUIElement", block), CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID(),
+              let text = parameterized(element, "AXStringForTextMarkerRange", whole) as? String,
+              let start = parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers",
+                                        [AXTextMarkerRangeCopyStartMarker(whole as! AXTextMarkerRange), caret] as CFArray),
+              let before = parameterized(element, "AXStringForTextMarkerRange", start) as? String else { return nil }
+        let heights = ((attribute(block, kAXChildrenAttribute) as? [AXUIElement]) ?? []).compactMap(frame(of:)).map(\.height).filter { $0 > 0 }
+        return (before, text, heights)
+    }
+
+    /// A caret on an empty line of a block that holds several lines (Chromium gives a line break
+    /// no box of its own, only its block's): the line is the one after as many breaks as the
+    /// block's text has before the caret, and the block's lines share its height (a last break
+    /// adds no line). A block whose text wraps (a piece taller than the others' one line) has
+    /// more lines than breaks, so it is not measured this way.
+    static func caretLine(in box: CGRect, before: String, text: String, textHeights: [CGFloat]) -> CGRect? {
+        let breaks = text.filter(\.isNewline).count
+        let lines = breaks + (text.last?.isNewline == true ? 0 : 1)
+        if let lowest = textHeights.min(), textHeights.contains(where: { $0 > lowest * 1.5 }) { return nil }
+        guard !text.isEmpty, before.count <= text.count else { return nil }
+        let height = box.height / CGFloat(lines)
+        let line = before.filter(\.isNewline).count
+        let caret = CGRect(x: box.minX, y: box.minY + CGFloat(line) * height, width: 0, height: height)
+        HelperLog.debug("CaretLocator: caret box \(box) is a block of \(lines) lines; the caret is on its line \(line), \(caret)")
+        return caret
+    }
+
+    /// Where the field's text is: the frames of its pieces (Chromium gives each run of text one,
+    /// even where it gives no character a box), and the first and last lines that hold more than
+    /// a line break.
+    private static func textLines(in element: AXUIElement) -> TextLines? {
+        let frames = ((attribute(element, kAXChildrenAttribute) as? [AXUIElement]) ?? []).compactMap(frame(of:)).filter { $0.height > 0 }
+        guard let top = frames.min(by: { $0.minY < $1.minY }), let bottom = frames.map(\.maxY).max(),
+              let count = (attribute(element, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue, count > 0,
+              let last = (parameterized(element, kAXLineForIndexParameterizedAttribute, (count - 1) as CFNumber) as? NSNumber)?.intValue,
+              last >= 0 else { return nil }
+        func holdsText(_ line: Int) -> Bool {
+            guard let value = parameterized(element, kAXRangeForLineParameterizedAttribute, line as CFNumber),
+                  CFGetTypeID(value) == AXValueGetTypeID() else { return false }
+            var range = CFRange()
+            return AXValueGetValue(value as! AXValue, .cfRange, &range) && range.length > 1
+        }
+        guard let firstLine = (0 ... last).first(where: holdsText),
+              let lastLine = (firstLine ... last).reversed().first(where: holdsText) else { return nil }
+        return TextLines(top: top.minY, bottom: bottom, lineHeight: top.height, firstLine: firstLine, lastLine: lastLine)
+    }
+
+    struct TextLines: Equatable {
+        /// The top of the first line's text and the bottom of the last's.
+        let top, bottom: CGFloat
+        /// One line's text height.
+        let lineHeight: CGFloat
+        let firstLine, lastLine: Int
+    }
+
+    /// An empty line holds only a line break, which Chromium draws no text box for: a caret there
+    /// gets the box of the block that holds the line (in a plain-text Gmail message the whole
+    /// field, in a rich-text one sometimes several paragraphs), and nothing gives its own place
+    /// but its line number. The caret is put on that line, measured from the field's text: its
+    /// lines are as far apart as its first and last lines of text say. A box no taller than one
+    /// such line is the caret's line; a field with one line of text says nothing of the spacing.
+    static func caretLine(in box: CGRect, line: Int, text: TextLines) -> CGRect {
+        guard line >= 0, text.lastLine > text.firstLine, text.lineHeight > 0 else { return box }
+        let spacing = (text.bottom - text.top - text.lineHeight) / CGFloat(text.lastLine - text.firstLine)
+        guard spacing > 0, box.height > spacing else { return box }
+        let caret = CGRect(x: box.minX, y: text.top + CGFloat(line - text.firstLine) * spacing, width: 0, height: text.lineHeight)
+        HelperLog.debug("CaretLocator: caret box \(box) spans lines; line \(line) with text on lines \(text.firstLine)-\(text.lastLine) at \(text.top)-\(text.bottom) is \(caret)")
+        return caret
+    }
+
+    private static func markerBounds(_ markerRange: CFTypeRef, in element: AXUIElement) -> CGRect? {
+        guard let value = parameterized(element, "AXBoundsForTextMarkerRange", markerRange),
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         var rect = CGRect.zero
         guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
         return rect

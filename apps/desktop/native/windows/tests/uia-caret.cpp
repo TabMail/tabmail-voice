@@ -19,6 +19,8 @@ static void expect(bool value, const char* message) { if (!value) throw std::run
 struct Provider;
 struct Range final : IUIAutomationTextRange {
     Provider& owner; int start, end;
+    // A block's range, and a range that ends where a block's starts.
+    bool block = false, endsAtBlock = false;
     Range(Provider& p, int a, int b) : owner(p), start(a), end(b) {}
     UNKNOWN_INTERFACE(IUIAutomationTextRange)
     int endpoint(TextPatternRangeEndpoint e) const { return e == TextPatternRangeEndpoint_Start ? start : end; }
@@ -30,10 +32,9 @@ struct Range final : IUIAutomationTextRange {
     HRESULT STDMETHODCALLTYPE Compare(IUIAutomationTextRange* other, BOOL* same) override {
         const auto* r = static_cast<Range*>(other); *same = start == r->start && end == r->end; return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE CompareEndpoints(TextPatternRangeEndpoint a, IUIAutomationTextRange* other, TextPatternRangeEndpoint b, int* result) override {
-        const int x = endpoint(a), y = static_cast<Range*>(other)->endpoint(b); *result = (x > y) - (x < y); return S_OK;
-    }
+    HRESULT STDMETHODCALLTYPE CompareEndpoints(TextPatternRangeEndpoint a, IUIAutomationTextRange* other, TextPatternRangeEndpoint b, int* result) override;
     HRESULT STDMETHODCALLTYPE MoveEndpointByRange(TextPatternRangeEndpoint a, IUIAutomationTextRange* other, TextPatternRangeEndpoint b) override {
+        if (a == TextPatternRangeEndpoint_End) endsAtBlock = b == TextPatternRangeEndpoint_Start && static_cast<Range*>(other)->block;
         set(a, static_cast<Range*>(other)->endpoint(b)); return S_OK;
     }
     HRESULT STDMETHODCALLTYPE MoveEndpointByUnit(TextPatternRangeEndpoint e, TextUnit unit, int count, int* moved) override;
@@ -78,6 +79,11 @@ struct Provider final : IUIAutomationTextPattern2 {
     // Where the provider's paragraphs and lines start, from the field's start; none: it has none.
     std::vector<int> paragraphs, lines;
     std::vector<std::array<int,2>> readSpans;
+    // A span whose text the provider gives differently from the rest of its text.
+    std::optional<std::array<int,2>> misread;
+    // Chromium reads from a caret ending a paragraph up to the start of the block after it as that
+    // paragraph's break: both are at one offset in its text, the caret first (measured in Electron).
+    bool breakAtCaret = false;
     std::vector<std::unique_ptr<Range>> ranges;
     Selection selected{*this};
     Visible visible{*this};
@@ -86,7 +92,7 @@ struct Provider final : IUIAutomationTextPattern2 {
     bool changeVisibility = false;
     std::string field() {
         VisibleContext context;
-        UiaCaretSource::appendField(this, context, {}, GetTickCount64());
+        UiaCaretSource::appendField(this, context, {});
         return context.render();
     }
     Provider(std::wstring field, int start, int end)
@@ -123,15 +129,24 @@ struct Provider final : IUIAutomationTextPattern2 {
         *result = &visible; return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_SupportedTextSelection(SupportedTextSelection* value) override { *value = SupportedTextSelection_Single; return S_OK; }
-    CaretSource read() { return UiaCaretSource::read(this, GetTickCount64()); }
+    CaretSource read() { return UiaCaretSource::read(this); }
+    CaretSource read(const UiaCaretSource::LayoutRead& layout) { return UiaCaretSource::read(this, layout); }
     std::optional<std::string> readPage() {
-        return UiaCaretSource::selectedText(this, range(selectedStart, selectedEnd), range(docStart, docEnd), GetTickCount64());
+        return UiaCaretSource::selectedText(this, range(selectedStart, selectedEnd), range(docStart, docEnd));
     }
 };
 HRESULT Visible::get_Length(int* count) { *count = static_cast<int>(owner.visibleSpans.size()); return S_OK; }
 HRESULT Visible::GetElement(int index, IUIAutomationTextRange** result) {
     if (index < 0 || static_cast<size_t>(index) >= owner.visibleSpans.size()) return E_INVALIDARG;
     const auto span = owner.visibleSpans[index]; *result = owner.range(span[0], span[1]); return S_OK;
+}
+HRESULT Range::CompareEndpoints(TextPatternRangeEndpoint a, IUIAutomationTextRange* other, TextPatternRangeEndpoint b, int* result) {
+    const auto* r = static_cast<Range*>(other);
+    const int x = endpoint(a), y = r->endpoint(b); *result = (x > y) - (x < y);
+    // Where Chromium reads a break (`breakAtCaret`), a block starts after a caret at its offset.
+    if (!*result && owner.breakAtCaret && block != r->block)
+        *result = (block ? a : b) == TextPatternRangeEndpoint_Start ? (block ? 1 : -1) : 0;
+    return S_OK;
 }
 HRESULT Range::Clone(IUIAutomationTextRange** result) { *result = owner.range(start, end); return S_OK; }
 HRESULT Selection::GetElement(int index, IUIAutomationTextRange** result) {
@@ -158,8 +173,13 @@ HRESULT Range::GetText(int maximum, BSTR* result) {
     ++owner.reads; owner.caps.push_back(maximum); owner.readSpans.push_back({start,end});
     if (start < owner.docStart || end > owner.docEnd) ++owner.outsideReads;
     if (maximum < 0 || start < 0 || end < start || static_cast<size_t>(end) > owner.text.size()) return E_INVALIDARG;
+    if (owner.breakAtCaret && endsAtBlock && start == owner.selectedEnd && end == start && maximum > 0) {
+        *result = SysAllocString(L"\n");
+        return S_OK;
+    }
     const auto count = static_cast<UINT>(std::min(end - start, maximum));
     *result = SysAllocStringLen(owner.text.data() + start, count);
+    if (owner.misread == std::array<int,2>{start, end} && count) (*result)[0] = L'Z';
     if (owner.changeSelection) { ++owner.selectedStart; ++owner.selectedEnd; owner.changeSelection = false; }
     if (owner.changeText) { owner.text.at(static_cast<size_t>(owner.selectedStart)) = L'Z'; owner.changeText = false; }
     return *result || count == 0 ? S_OK : E_OUTOFMEMORY;
@@ -199,7 +219,7 @@ struct EditFixture {
         }
         return result;
     }
-    std::optional<CaretSource> read() { return EditCaretSource::read(window, GetTickCount64()); }
+    std::optional<CaretSource> read() { return EditCaretSource::read(window); }
 };
 static void editContracts() {
     const HWND foreground = GetForegroundWindow();
@@ -224,14 +244,11 @@ static void editContracts() {
     EditFixture changed(L"before chosen after", 7, 13); changed.replaceText = true;
     result = changed.read();
     expect(result && result->selectionUnavailable, "Edit same-length content change refused");
-    EditFixture expired(L"plain", 0, 5); bool timedOut = false;
-    try { EditCaretSource::read(expired.window, GetTickCount64() - 1501); } catch (const std::exception&) { timedOut = true; }
-    expect(timedOut && expired.reads == 0, "Edit expired deadline prevents text acquisition");
     expect(GetForegroundWindow() == foreground, "hidden Edit tests preserve foreground");
 }
 static void viewportContracts() {
     const auto capture = [](Provider& p, bool focused = true, size_t budget = 262144) {
-        return UiaCaretSource::viewportSurface(&p, 1, {0,0,400,200}, focused, budget, GetTickCount64());
+        return UiaCaretSource::viewportSurface(&p, 1, {0,0,400,200}, focused, budget);
     };
     const auto visibleOnly = [](const Provider& p) {
         return std::all_of(p.readSpans.begin(), p.readSpans.end(), [&](const auto& read) {
@@ -327,7 +344,7 @@ int main() {
     {
         const auto caption = std::wstring(990, L'x') + L" AKIA" + std::wstring(16, L'A') + L". Long caption. ";
         Provider p(caption, 0, 0);
-        const auto source = UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64());
+        const auto source = UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd));
         expect(source == utf8(caption), "caption acquisition preserves complete text beyond historical 1000-unit cut");
         std::array<std::string,3> caret{};
         // Render-only ordinary blocks do not finalize; explicitly exercise the
@@ -339,18 +356,18 @@ int main() {
     {
         Provider p(L"private prefix Caption private suffix", 0, 0);
         p.docStart += 15; p.docEnd = p.docStart + 7;
-        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64()) == "Caption" && p.outsideReads == 0,
+        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)) == "Caption" && p.outsideReads == 0,
             "approved child caption never reads surrounding document source");
     }
     {
         Provider p(L"Visible. password: " + std::wstring(600000, L'x'), 0, 0); p.unitSize = 7;
-        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64()) == "Visible. ",
+        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)) == "Visible. ",
             "oversize caption keeps closed prefix but withholds incomplete credential");
     }
     {
         Provider p(L"Caption", 0, 0); p.changeText = true;
         bool refused = false;
-        try { (void)UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64()); }
+        try { (void)UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)); }
         catch (const std::exception&) { refused = true; }
         expect(refused, "changed caption cannot become accepted source");
     }
@@ -423,9 +440,6 @@ int main() {
         expect(moved.read().selectionUnavailable, "changed selection refused");
         Provider changed(L"before chosen after", 7, 13); changed.changeText = true;
         expect(changed.read().selectionUnavailable, "same-length selected text change refused");
-        Provider expired(L"plain", 0, 5); bool timedOut = false;
-        try { UiaCaretSource::read(&expired, GetTickCount64() - 1501); } catch (const std::exception&) { timedOut = true; }
-        expect(timedOut && expired.reads == 0, "expired deadline prevents acquisition");
         Provider page(L"outside " + selection + L" outside", 8, 8 + static_cast<int>(selection.size()));
         expect(page.readPage() == std::optional<std::string>(std::string(20001, 's')), "page selection remains complete beyond old limit");
         expect(page.reads == 2 && std::all_of(page.ranges.begin(), page.ranges.end(), [&](const auto& range) {
@@ -477,6 +491,72 @@ int main() {
         Provider noLines(rich, 25, 25); noLines.paragraphs = {0, 8, 26};
         result = noLines.read();
         expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?", "a provider without lines gets no break");
+        // A rich editor's blocks, as Chromium lays them out, give back the breaks its text leaves
+        // out: the field's tree (node 0), where each node's text is, and the element the caret is in.
+        struct Node { int start, end; bool block; std::vector<int> children; };
+        const auto layout = [](Provider& provider, const std::vector<Node>& nodes, std::optional<int> caretNode, size_t elements = 300) {
+            return UiaCaretSource::LayoutRead([&provider, nodes, caretNode, elements](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high)
+                -> std::optional<UiaCaretSource::Layout> {
+                const auto place = [&](int node) {
+                    auto* range = provider.range(provider.docStart + nodes[node].start, provider.docStart + nodes[node].end);
+                    range->block = true;
+                    return ComPtr<IUIAutomationTextRange>(range);
+                };
+                auto starts = UiaCaretSource::blockStarts(0, low, high, elements, [&](int node) { return nodes[node].children; },
+                    [&](int node) { return nodes[node].block; }, place);
+                if (!starts) return std::nullopt;
+                return UiaCaretSource::Layout{std::move(*starts), UiaCaretSource::endsLine(caretNode ? place(*caretNode).Get() : nullptr, selected)};
+            });
+        };
+        const std::string added = "\xE2\x80\xA9";
+        // Measured in Electron: a line, an empty paragraph, the line dictated under in runs of text,
+        // then the signature block, which starts with two empty lines.
+        const std::wstring gmail = L"Synthetic opening line\nSynthetic line to dictate under.\n\n--\nSynthetic signature";
+        const std::vector<Node> gmailTree{{0, 79, false, {1, 2, 3, 4}}, {0, 22, false, {}}, {22, 23, true, {}},
+                                          {23, 55, true, {5, 6}}, {55, 79, true, {}}, {23, 33, false, {}}, {33, 55, false, {}}};
+        Provider signatureStart(gmail, 55, 55);
+        result = signatureStart.read(layout(signatureStart, gmailTree, 4));
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + added + "\nSynthetic line to dictate under." + added &&
+            result.parts[2] == "\n\n--\nSynthetic signature", "each block start after text gets its break back, the caret's before it");
+        Provider lineEnd(gmail, 55, 55); lineEnd.breakAtCaret = true;
+        result = lineEnd.read(layout(lineEnd, gmailTree, 3));
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + added + "\nSynthetic line to dictate under." &&
+            result.parts[2] == added + "\n\n--\nSynthetic signature", "a caret ending the line above a block gets that block's break after it");
+        Provider tooMany(gmail, 55, 55);
+        result = tooMany.read(layout(tooMany, gmailTree, 4, 3));
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
+            "blocks past the element budget give no starts, and no break");
+        Provider misread(gmail, 55, 55); misread.misread = std::array<int,2>{misread.docStart + 23, misread.docStart + 55};
+        result = misread.read(layout(misread, gmailTree, 4));
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
+            "a provider whose text between a block and the caret disagrees gives no starts");
+        // A block start in a selection gets its break there; one after it, in the text after it.
+        Provider inSelection(L"First paragraphSecondThird", 10, 18);
+        result = inSelection.read(layout(inSelection, {{0, 26, false, {1, 2, 3}}, {0, 15, true, {}}, {15, 21, true, {}}, {21, 26, true, {}}}, 1));
+        expect(!result.selectionUnavailable && result.parts[0] == "First para" && result.parts[1] == "graph" + added + "Sec" &&
+            result.parts[2] == "ond" + added + "Third", "block starts in and after a selection get their breaks");
+        // Only blocks within the core's paragraph-start stretch of the caret are looked at: halving
+        // past the many before it, stopping at the first past it.
+        const int units = core::request({{"limits", true}}, voice_core_context_json).at("paragraphStartUnits").get<int>();
+        std::vector<Node> farTree{{0, 0, false, {}}};
+        std::wstring longText;
+        const auto block = [&](std::wstring text) {
+            farTree[0].children.push_back(static_cast<int>(farTree.size()));
+            farTree.push_back({static_cast<int>(longText.size()), static_cast<int>(longText.size() + text.size()), true, {}});
+            longText += text;
+        };
+        for (int index = 0; index < 400; ++index) block(L"a");
+        block(std::wstring(static_cast<size_t>(units) + 1000, L'b'));
+        const int caret = static_cast<int>(longText.size()) + 2;
+        block(L"ccccc");
+        block(std::wstring(static_cast<size_t>(units) + 100, L'd'));
+        for (int index = 0; index < 400; ++index) block(L"e");
+        farTree[0].end = static_cast<int>(longText.size());
+        Provider distant(longText, caret, caret);
+        result = distant.read(layout(distant, farTree, 402));
+        expect(!result.selectionUnavailable && result.parts[0] == std::string(400, 'a') + std::string(static_cast<size_t>(units) + 1000, 'b') + added + "cc" &&
+            result.parts[2] == "ccc" + added + std::string(static_cast<size_t>(units) + 100, 'd') + std::string(400, 'e'),
+            "only the block starts near the caret are looked at");
         viewportContracts();
         editContracts();
         std::cout << "UIA and Edit caret acquisition contracts passed\n";

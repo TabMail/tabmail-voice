@@ -133,13 +133,14 @@ struct MarkerCaretSourceTests {
 
     private func read(_ field: MarkerField = MarkerField(), anchor: Int, focus: Int, markerCount: Int = 140,
                       characters: (count: Int, range: NSRange) = (141, NSRange(location: 9, length: 0)),
-                      changes: Bool = false, focused: Bool = true) -> SharedContext.CaretWindow? {
+                      changes: Bool = false, focused: Bool = true,
+                      paragraphStarts: (starts: [Int], caretEndsLine: Bool)? = nil) -> SharedContext.CaretWindow? {
         var snapshots = 0
         return ScreenContextReader.valueCaretWindow(snapshot: {
             snapshots += 1
             return ScreenContextReader.valueSnapshot(markers: { (field.range(anchor, changes && snapshots > 1 ? focus + 1 : focus), field.range(0, markerCount)) },
                                                      parameterized: field.answer, characters: { characters }, string: Self.string)
-        }, string: Self.string, focused: { focused })
+        }, string: Self.string, focused: { focused }, paragraphStarts: { _ in paragraphStarts })
     }
 
     @Test func aChromiumFieldIsReadNearItsEndThoughItsValueCountsMore() throws {
@@ -252,6 +253,20 @@ struct MarkerCaretSourceTests {
         #expect(read(field, anchor: 96, focus: 110)?.parts[0] == Self.text.substring(to: 96) + "\n")
     }
 
+    /// With the field's block starts, Chromium's answer that a paragraph starts at the caret (which
+    /// it also gives at a run of formatted text inside a line) adds no break; the block starts
+    /// decide, and a caret ending the line above a block gets that block's break after it.
+    @Test func blockStartsDecideTheBreaksAtTheCaret() throws {
+        let field = MarkerField(paragraphs: [0, 96])
+        #expect(read(field, anchor: 96, focus: 96)?.parts[0] == Self.text.substring(to: 96) + "\n")
+        #expect(read(field, anchor: 96, focus: 96, paragraphStarts: ([], false))?.parts == [
+            Self.text.substring(to: 96), "", Self.text.substring(from: 96)])
+        #expect(read(field, anchor: 96, focus: 96, paragraphStarts: ([96], false))?.parts == [
+            Self.text.substring(to: 96) + "\u{2029}", "", Self.text.substring(from: 96)])
+        #expect(read(field, anchor: 96, focus: 96, paragraphStarts: ([96], true))?.parts == [
+            Self.text.substring(to: 96), "", "\u{2029}" + Self.text.substring(from: 96)])
+    }
+
     /// A field whose paragraph changes while it is read is unavailable, like one whose text does.
     @Test func aFieldWhoseParagraphChangesWhileReadIsUnavailable() throws {
         var snapshots = 0
@@ -299,6 +314,52 @@ struct MarkerCaretSourceTests {
     /// Real text-marker objects holding an offset, answering as Chromium does: lengths and unordered
     /// ranges, no index conversion. A range keeps its markers in the order given, as a selection made
     /// backward does.
+    /// A caret at the end of a line and one at the start of the block after it share an offset;
+    /// the element the caret is in tells them apart (Chromium, measured 2026-10-06).
+    @Test func aCaretEndsALineWhenItsElementStartedBeforeIt() {
+        #expect(MarkerCaretSource.endsLine(caretElement: NSRange(location: 23, length: 32), at: 55))
+        #expect(MarkerCaretSource.endsLine(caretElement: NSRange(location: 48, length: 7), at: 55))
+        #expect(!MarkerCaretSource.endsLine(caretElement: NSRange(location: 55, length: 24), at: 55))
+        #expect(!MarkerCaretSource.endsLine(caretElement: NSRange(location: 23, length: 10), at: 55), "an element ending before the caret")
+        #expect(!MarkerCaretSource.endsLine(caretElement: nil, at: 55))
+    }
+
+    /// A Gmail compose field as Chromium's tree gives it (measured 2026-10-06): a line of text, an
+    /// empty <div>, a <div> holding a sentence edited into runs, and the signature's <div>. Each
+    /// block, and text after one, starts where the text may leave out its break.
+    @Test func blockStartsAreTheBlocksNearTheSelection() throws {
+        let field = Node("field", children: [
+            Node("text", 0, 16),
+            Node("block", 16, 1),
+            Node("block", 17, 30, children: [Node("text", 17, 25), Node("text", 42, 4), Node("text", 46, 1)]),
+            Node("block", 47, 124, children: [Node("text", 49, 2), Node("text", 52, 13)]),
+            Node("text", 171, 5),
+        ])
+        func starts(_ range: NSRange, within units: Int, elements: Int = 500) -> [Int]? {
+            MarkerCaretSource.blockStarts(in: field, around: range, within: units, elements: elements,
+                                          children: \.children, isBlock: { $0.kind == "block" }, span: \.span)
+        }
+        #expect(starts(NSRange(location: 47, length: 0), within: 4000) == [16, 17, 47, 171])
+        // Only those within the window, found without looking at every sibling before it.
+        #expect(starts(NSRange(location: 47, length: 0), within: 10) == [47])
+        #expect(starts(NSRange(location: 20, length: 0), within: 3) == [17])
+        // Too many looks, or an element with no place, gives none.
+        #expect(starts(NSRange(location: 47, length: 0), within: 4000, elements: 3) == nil)
+        #expect(MarkerCaretSource.blockStarts(in: field, around: NSRange(location: 47, length: 0), within: 4000, elements: 500,
+                                              children: \.children, isBlock: { $0.kind == "block" }, span: { _ in nil }) == nil)
+    }
+
+    private struct Node {
+        let kind: String
+        let span: NSRange?
+        let children: [Node]
+        init(_ kind: String, _ start: Int = 0, _ length: Int = 0, children: [Node] = []) {
+            self.kind = kind
+            span = NSRange(location: start, length: length)
+            self.children = children
+        }
+    }
+
     private struct MarkerField {
         /// Where its paragraphs start; none: it answers no paragraph.
         var paragraphs: [Int] = []

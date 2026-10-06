@@ -20,10 +20,10 @@ struct Tree {
     unsigned terminalSelections = 0;
     std::optional<voice::CaretText> caretOverride;
     bool budget = true;
-    Node expireAfterLabel = nullptr, expireAfterPage = nullptr;
+    Node expireAfterPage = nullptr;
     bool withinBudget() { return budget; }
     bool same(Node first, Node second) { return first == second; }
-    AtspiRole role(Node node) { if (!budget) throw voice::ScreenBudgetExceeded(); return node->role; }
+    AtspiRole role(Node node) { return node->role; }
     bool isPassword(Node node) { return node->role == ATSPI_ROLE_PASSWORD_TEXT; }
     std::optional<voice::PageHost> page(Node node) { if (node == expireAfterPage) budget = false; return node->page; }
     std::vector<Node> children(Node node, size_t limit) {
@@ -33,7 +33,7 @@ struct Tree {
     bool editable(Node node) { return node->editable; }
     bool shown(Node node) { return node->visible; }
     std::optional<voice::ContextFrame> frame(Node node) { return node->bounds; }
-    std::string label(Node node) { if (node == expireAfterLabel) budget = false; if (node->role == ATSPI_ROLE_FRAME) ++titles; else ++values; return node->label; }
+    std::string label(Node node) { if (node->role == ATSPI_ROLE_FRAME) ++titles; else ++values; return node->label; }
     std::optional<std::string> field(Node node, int) { ++counts; if (!node->fieldAvailable) return {}; ++values; return node->label; }
     JSON viewportSurface(Node node,size_t id,voice::ContextFrame frame,bool focused,size_t budget) {
         ++counts;
@@ -279,25 +279,6 @@ int main() {
     result = voice::gatherScreen(tree, &window, &field, {&page, &window}, app, policy);
     expect(result["renderedText"].get<std::string>().find("Include replies") != std::string::npos, "web checkbox text is content");
     window.children = {&heading, &field};
-    tree = Tree{}; tree.expireAfterLabel = &heading;
-    result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
-    expect(result.is_object() && result["renderedText"].get<std::string>().find("Conversation") != std::string::npos,
-        "budget stop retains collected text without a final provider query");
-    expect(result["summary"].get<std::string>().find("stopped: time budget") != std::string::npos,
-        "a read out of time says so in the words every platform uses");
-    {
-        // A provider call that runs out of time inside an element stops the read the same way.
-        struct Expiring : Tree {
-            Node expireAt = nullptr;
-            AtspiRole role(Node node) { if (node == expireAt) throw voice::ScreenBudgetExceeded(); return Tree::role(node); }
-        };
-        Expiring expiring; expiring.expireAt = &checkbox;
-        window.children = {&heading, &checkbox, &field};
-        result = voice::gatherScreen(expiring, &window, &field, {&window}, app, policy);
-        expect(result.is_object() && result["renderedText"].get<std::string>().find("Conversation") != std::string::npos &&
-            result["summary"].get<std::string>().find("stopped: time budget") != std::string::npos,
-            "a provider call out of time says so too, keeping what was read");
-    }
     // Provider-side metadata search must enforce the same policy without
     // visiting every ordinary descendant (large focused browser documents).
     CollectionTree bulk;

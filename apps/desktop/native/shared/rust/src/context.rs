@@ -189,6 +189,54 @@ const CARET_LINE_BYTES: usize = 3;
 /// paragraphs read in about 0.5 s, 300 in 0.6–0.7 s, 499 in 0.9–1.5 s.
 const CARET_SOURCE_ELEMENTS: usize = 300;
 const CARET_SIDE_GRAPHEMES: usize = 2_000;
+/// How far either side of the selection an adapter reports where paragraphs start (in the
+/// provider's offsets): twice the graphemes a side shows, so the breaks of all the text shown are
+/// put back.
+pub(crate) const PARAGRAPH_START_UNITS: usize = 2 * CARET_SIDE_GRAPHEMES;
+/// A break the caret window put back where its provider's text leaves one out. It travels to the
+/// render in the caret's parts, which checks it against the redaction and shows it as a line
+/// break; U+2029 is a paragraph break itself, so one in the text is checked the same way.
+const ADDED_BREAK: char = '\u{2029}';
+fn line_break(character: char) -> bool {
+    matches!(character, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+/// Where the break goes back before each paragraph start (byte offsets into the parts joined,
+/// ascending) whose text has none: offsets into each part, ascending. A start at the selection's
+/// start goes before the caret, unless `caret_ends_line`: the caret is then at the end of the line
+/// above that paragraph (the text gives both places one offset), and the break follows it. One at
+/// the selection's end goes after the selection. One in a selection that would not fit its budget
+/// is left out.
+fn left_out_breaks(
+    parts: &[String],
+    starts: &[usize],
+    caret_ends_line: bool,
+) -> Result<[Vec<usize>; 3], u32> {
+    let text = parts.concat();
+    if starts.windows(2).any(|pair| pair[0] >= pair[1])
+        || starts
+            .iter()
+            .any(|start| *start == 0 || !text.is_char_boundary(*start))
+    {
+        return Err(1);
+    }
+    let (before, selected) = (parts[0].len(), parts[1].len());
+    let mut breaks: [Vec<usize>; 3] = Default::default();
+    for &start in starts {
+        if text[..start].chars().next_back().is_some_and(line_break) {
+            continue;
+        }
+        let (part, at) = if start < before || (start == before && !caret_ends_line) {
+            (0, start)
+        } else if start < before + selected {
+            (1, start - before)
+        } else {
+            (2, start - before - selected)
+        };
+        breaks[part].push(at);
+    }
+    breaks[1].truncate((SELECTION_SOURCE_BYTES - selected) / ADDED_BREAK.len_utf8());
+    Ok(breaks)
+}
 
 fn caret_text(parts: &[String]) -> String {
     format!(
@@ -396,7 +444,27 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     if let Some(window) = request.get("caretWindow") {
         let mut parts = read_caret(&window["parts"])?;
         let mut start_known = window["startKnown"].as_bool().ok_or(1u32)?;
-        let end_known = window["endKnown"].as_bool().ok_or(1u32)?;
+        let mut end_known = window["endKnown"].as_bool().ok_or(1u32)?;
+        // Chromium's text leaves out the break before a paragraph that starts right after text
+        // (each <div> of a rich editor): the adapter says where its paragraphs start, and each such
+        // break is put back, so the text reads in the lines it is laid out in (ADR-DESK-007,
+        // 2026-10-06). Absent: nothing told, nothing added. `caretEndsLine`: the caret is at the end
+        // of a line, not the start of a paragraph at the same offset (absent: it starts it).
+        // A caret source sends the paragraph starts near the caret, or what starts at the caret,
+        // never both: the render checks each kind of break apart, and one of each could split a
+        // secret both checks miss.
+        if window.get("paragraphStarts").is_some() && window.get("caretStarts").is_some() {
+            return Err(1);
+        }
+        let mut breaks: [Vec<usize>; 3] = Default::default();
+        if let Some(starts) = window.get("paragraphStarts") {
+            let starts: Vec<usize> = serde_json::from_value(starts.clone()).map_err(|_| 1u32)?;
+            let caret_ends_line = match window.get("caretEndsLine") {
+                None => false,
+                Some(value) => value.as_bool().ok_or(1u32)?,
+            };
+            breaks = left_out_breaks(&parts, &starts, caret_ends_line)?;
+        }
         // A caret that starts a paragraph or an empty line, whose break the text before it doesn't
         // show, gets the break: Chromium gives an empty line no character and leaves out some
         // paragraph breaks, so without it the text reads as if the caret followed the last word
@@ -425,20 +493,31 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 paragraph || (line && only_break)
             }
         };
-        let unbroken = parts[0]
-            .chars()
-            .last()
-            .is_some_and(|last| !matches!(last, '\n' | '\r' | '\u{2028}' | '\u{2029}'));
-        // The render, which redacts the whole screen, withholds the caret where the break may split a
-        // secret.
-        if starts_paragraph && unbroken {
-            parts[0].push('\n');
-            if parts[0].len() > SOURCE_WINDOW_BYTES {
-                let first = parts[0].chars().next().map_or(0, char::len_utf8);
-                parts[0].drain(..first);
-                start_known = false;
-            }
+        let caret_break = starts_paragraph
+            && parts[0]
+                .chars()
+                .last()
+                .is_some_and(|last| !line_break(last));
+        // Every break counts in its part's budget: a side that would grow past it gives up
+        // characters at its far end first, and that edge is no longer known.
+        let grow = breaks[0].len() * ADDED_BREAK.len_utf8() + usize::from(caret_break);
+        let mut cut = 0;
+        while parts[0].len() + grow > SOURCE_WINDOW_BYTES && !parts[0].is_empty() {
+            let first = parts[0].chars().next().map_or(0, char::len_utf8);
+            parts[0].drain(..first);
+            cut += first;
+            start_known = false;
         }
+        while parts[2].len() + breaks[2].len() * ADDED_BREAK.len_utf8() > SOURCE_WINDOW_BYTES
+            && parts[2].pop().is_some()
+        {
+            end_known = false;
+        }
+        // An open edge is cut where the provider's text closes a token, so the range is found in
+        // that text alone: a break put back first could look like the whitespace after a `.` that
+        // closes one, and the cut would take a secret's head off (MIS-075). The breaks go back
+        // only inside the text kept, and the render, which redacts the whole screen, withholds
+        // the caret where one may split a secret.
         let text = parts.concat();
         let range = crate::source_window::recognition_range_with_limit(
             &text,
@@ -460,7 +539,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .map_err(|_| 3);
         }
         let mut offset = 0;
-        let retained: Vec<String> = parts
+        let mut retained: Vec<String> = parts
             .iter()
             .map(|part| {
                 let end = offset + part.len();
@@ -474,6 +553,19 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 }
             })
             .collect();
+        for &at in breaks[0].iter().rev().filter(|at| **at > cut + range.start) {
+            retained[0].insert(at - cut - range.start, ADDED_BREAK);
+        }
+        for &at in breaks[1].iter().rev() {
+            retained[1].insert(at, ADDED_BREAK);
+        }
+        let after = retained[2].len();
+        for &at in breaks[2].iter().rev().filter(|at| **at <= after) {
+            retained[2].insert(at, ADDED_BREAK);
+        }
+        if caret_break {
+            retained[0].push('\n');
+        }
         return serde_json::to_vec(&json!({"parts":retained,"selectionUnavailable":unavailable}))
             .map_err(|_| 3);
     }
@@ -493,7 +585,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.
@@ -679,6 +771,17 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     }
     if let Some(caret_value) = request.get("caret").or(projected.then_some(&empty_caret)) {
         let caret = read_caret(caret_value)?;
+        // The breaks the caret window put back (`ADDED_BREAK`): line breaks in what is shown and
+        // redacted, and checked below against the text without them.
+        let added = caret.iter().any(|part| part.contains(ADDED_BREAK));
+        let without_added: Vec<String> = caret
+            .iter()
+            .map(|part| part.replace(ADDED_BREAK, ""))
+            .collect();
+        let caret: Vec<String> = caret
+            .iter()
+            .map(|part| part.replace(ADDED_BREAK, "\n"))
+            .collect();
         let block_source_bytes = blocks
             .iter()
             .filter(|b| b.kind != "caret")
@@ -720,7 +823,47 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         // (ADR-DESK-007, 2026-10-06).
         let redacted = privacy::redact(&lines).map_err(|_| 3u32)?;
         let mut withheld = false;
-        if caret[0].ends_with('\n') {
+        // A put-back break can split a secret the redactor has to see whole (a paragraph start
+        // inside a key, if a provider says so): where the text without the put-back breaks has
+        // one inside a match, the caret's text is withheld, and the rest must read the same
+        // either way, or nothing is read.
+        if added {
+            let mut joined = lines.clone();
+            joined[caret_index] = without_added.clone();
+            let mut anchor = joined[..caret_index]
+                .iter()
+                .map(|line| {
+                    line.iter()
+                        .map(|part| part.encode_utf16().count())
+                        .sum::<usize>()
+                        + 1
+                })
+                .sum::<usize>();
+            let mut anchors = Vec::new();
+            for character in caret_value
+                .as_array()
+                .ok_or(1u32)?
+                .iter()
+                .filter_map(Value::as_str)
+                .flat_map(str::chars)
+            {
+                if character == ADDED_BREAK {
+                    anchors.push(anchor);
+                } else {
+                    anchor += character.len_utf16();
+                }
+            }
+            let (without, kept) = privacy::redact_anchored(&joined, &anchors).map_err(|_| 3u32)?;
+            if kept.iter().any(Option::is_none) {
+                let differs = (0..redacted.len())
+                    .any(|index| index != caret_index && redacted[index] != without[index]);
+                if differs {
+                    return Err(3);
+                }
+                withheld = true;
+            }
+        }
+        if !withheld && caret[0].ends_with('\n') {
             let mut joined = lines.clone();
             joined[caret_index][0].pop();
             let anchor = joined[..caret_index]
@@ -854,6 +997,7 @@ mod tests {
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true}}}),
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":"abcd"}}}),
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":7}}}),
+            json!({"caretWindow":{"parts":["a","",""],"startKnown":true,"endKnown":true,"paragraphStarts":[1],"caretEndsLine":1}}),
             json!({"hypertext":{"parts":[{"text":1}]}}),
             json!({"hypertext":{"parts":[{"mark":"elsewhere"}]}}),
             json!({"hypertext":{"parts":[{}]}}),
@@ -1070,6 +1214,152 @@ mod budget_tests {
         let caret = json!([format!("{}\n", &line[..30]), "", &line[30..60]]);
         let request = json!({"blocks":[{"kind":"text","text":line},{"kind":"caret","text":"ignored"}],"caret":caret});
         assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(3));
+    }
+    /// A paragraph start a provider gives inside a key would split it into halves the redactor
+    /// misses: the caret's text is withheld, and the rest of the screen still reads.
+    #[test]
+    fn a_put_back_break_inside_a_secret_withholds_the_caret() {
+        let before = concat!("Notes\nKey gh", "p_0123456789abcdefghijKLMNOP and more");
+        let split = before.find("abcdef").unwrap();
+        let window = call(
+            json!({"caretWindow":{"parts":[before,"",""],"startKnown":true,"endKnown":true,"paragraphStarts":[split]}}),
+        );
+        assert!(window["parts"][0].as_str().unwrap().contains('\u{2029}'));
+        let reply = call(
+            json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+        );
+        let text = reply.to_string();
+        assert!(
+            !text.contains("0123456789") && !text.contains("abcdefghij"),
+            "{text}"
+        );
+        assert_eq!(reply["caret"], json!(["", "", ""]));
+        assert!(text.contains("Inbox"), "{text}");
+    }
+    /// Key lines whose last line a put-back break splits: joined, the block above is a key line
+    /// too and is redacted, split, it is not. A block that reads differently either way can't be
+    /// shown, so nothing is.
+    #[test]
+    fn a_block_a_put_back_break_decides_the_redaction_of_refuses_the_read() {
+        let line = "QUJD".repeat(16);
+        let caret = json!([format!("{}\u{2029}{}", &line[..30], &line[30..60]), "", ""]);
+        let request = json!({"blocks":[{"kind":"text","text":line},{"kind":"caret","text":"ignored"}],"caret":caret});
+        assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(3));
+    }
+    /// Put-back breaks count in a part's budget: a before part at its limit gives up its first
+    /// characters and its start, an after part its last and its end. One in a selection at its
+    /// limit is not added; one in a selection below it is.
+    #[test]
+    fn put_back_breaks_keep_every_part_in_its_budget() {
+        let words = |bytes: usize| {
+            "Why does it move. ".repeat(bytes / 18 + 1)[..bytes - 1].to_owned() + "x"
+        };
+        let parts = [
+            words(SOURCE_WINDOW_BYTES),
+            words(SELECTION_SOURCE_BYTES),
+            words(SOURCE_WINDOW_BYTES),
+        ];
+        let (before, selected) = (parts[0].len(), parts[1].len());
+        let starts = [18, before, before + 18, before + selected + 18];
+        let reply = call(
+            json!({"caretWindow":{"parts":parts,"startKnown":true,"endKnown":true,"paragraphStarts":starts}}),
+        );
+        let reply: Vec<String> = serde_json::from_value(reply["parts"].clone()).unwrap();
+        assert!(
+            reply
+                .iter()
+                .map(String::len)
+                .zip([
+                    SOURCE_WINDOW_BYTES,
+                    SELECTION_SOURCE_BYTES,
+                    SOURCE_WINDOW_BYTES
+                ])
+                .all(|(length, limit)| length <= limit)
+        );
+        assert_eq!(reply[0].matches(ADDED_BREAK).count(), 2);
+        assert!(reply[0].ends_with("x\u{2029}"));
+        assert_eq!(reply[1], parts[1]);
+        assert_eq!(reply[2].matches(ADDED_BREAK).count(), 1);
+        // The edges given up are open: each side is cut where the text closes a sentence.
+        assert!(reply[0].starts_with(". ") && reply[2].ends_with(". "));
+        let short = words(SELECTION_SOURCE_BYTES - ADDED_BREAK.len_utf8());
+        let reply = call(
+            json!({"caretWindow":{"parts":["",short,""],"startKnown":true,"endKnown":true,"paragraphStarts":[18]}}),
+        );
+        assert_eq!(
+            reply["parts"][1],
+            json!(format!("{}\u{2029}{}", &short[..18], &short[18..]))
+        );
+        for bad in [&[0][..], &[5, 5], &[9, 4], &[usize::MAX]] {
+            assert_eq!(
+                left_out_breaks(
+                    &[
+                        String::from("Why does it move"),
+                        String::new(),
+                        String::new()
+                    ],
+                    bad,
+                    false
+                ),
+                Err(1)
+            );
+        }
+        assert_eq!(
+            left_out_breaks(
+                &[String::from("é"), String::new(), String::new()],
+                &[1],
+                false
+            ),
+            Err(1)
+        );
+    }
+    /// An open edge is cut where the text closes a sentence. A break put back after a `.` inside
+    /// a token must not make one: cut there, a JWT loses its header, and its payload and signature
+    /// no longer read as one and are shown (MIS-075). The same for the caret's own break.
+    #[test]
+    fn a_put_back_break_never_cuts_an_open_edge_into_a_secret() {
+        let header = "eyJhbGciOiJzeW50aGV0aWMifQ";
+        let (payload, signature) = ("eyJzdWIiOiJzeW50aGV0aWMifQ", "c3ludGhldGljU2lnbmF0dXJl");
+        let cut = &header[6..];
+        let shown = |window: Value| {
+            let reply = call(
+                json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+            );
+            let text = reply.to_string();
+            assert!(
+                !text.contains(&payload[3..]) && !text.contains(signature),
+                "{text}"
+            );
+        };
+        let before = format!("{cut}.{payload}.{signature}");
+        shown(call(
+            json!({"caretWindow":{"parts":[before,""," and more"],"startKnown":false,"endKnown":true,"paragraphStarts":[cut.len() + 1]}}),
+        ));
+        shown(call(
+            json!({"caretWindow":{"parts":[format!("{cut}."),"",format!("{payload}.{signature} and more")],"startKnown":false,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
+        ));
+        // A break inside the text kept still goes back, where the provider put the start.
+        let reply = call(
+            json!({"caretWindow":{"parts":["Cut words. First line","","Second"],"startKnown":false,"endKnown":true,"paragraphStarts":[4, 21]}}),
+        );
+        assert_eq!(
+            reply["parts"],
+            json!([". First line\u{2029}", "", "Second"])
+        );
+    }
+    /// A paragraph start's break and the caret's own, together, split a key in three the render's
+    /// two checks each see whole once: the caret window takes one kind or the other, never both.
+    #[test]
+    fn both_kinds_of_break_never_split_a_secret_past_the_render() {
+        let request = json!({"caretWindow":{"parts":["s","","k-a1B2c3D4e5F6g7H8i9J0k1L2"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":false,"lineText":null},"paragraphStarts":[3]}});
+        if let Ok(window) = process(&serde_json::to_vec(&request).unwrap()) {
+            let window: Value = serde_json::from_slice(&window).unwrap();
+            let reply = call(
+                json!({"blocks":[{"kind":"text","text":"Inbox"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+            );
+            let text = reply.to_string();
+            assert!(!text.contains("a1B2c3D4e5F6g7H8i9J0k1L2"), "{text}");
+        }
     }
     #[test]
     fn caret_window_never_returns_a_partial_selection_at_an_open_edge() {

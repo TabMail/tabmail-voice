@@ -460,6 +460,51 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   `caretStarts` (`voice_core_source_caret_starts`). The Mac measures no line, so only a paragraph
   start adds the break, and a field that answers no paragraph, or one read by its value or a
   marker-index conversion, gets none, as before.)*
+- *(Amended 2026-10-06, owner: the breaks further back are put back too. In Gmail the caret on the
+  first of two empty lines under a sentence read one empty line short, and every paragraph that
+  starts right after text (each `<div>` of a rich editor) ran into the one above. The adapter now
+  says where each paragraph starts within the core's `paragraphStartUnits` (twice the graphemes a
+  side shows) of the selection, in its own offsets (`voice_core_source_paragraph_starts`). The Mac reports where each block
+  of the field's tree starts (`HelperConfig.blockRoles`: a `<div>` is an `AXGroup`, inline
+  formatting and links are not), and text after a block, finding the first sibling that reaches
+  the window by halves. Chromium's own paragraph answers were tried first and dropped: walked back
+  from a paragraph's start they give each run of text (a word edited apart) as a paragraph, and
+  the owner's smoke test read "plan" / "ning" on two lines. A caret at the end of a line and one
+  at the start of the block after it have one offset in the text, so the adapter also says which
+  (`caretEndsLine`; the Mac: the element Chromium gives the caret's marker started before it and
+  reaches it), and the break at that offset then follows the caret; without it the owner's caret
+  after a line's last word read as if on the next line. With the block starts, the Mac no longer
+  sends Chromium's answer to whether a paragraph starts at the caret (`caretStarts.paragraph`):
+  every left-out break is at a block start, and that answer also says yes at a bold word or link
+  inside a line. The core's `caretWindow`
+  puts back the break before each start that has none, as U+2029, within each part's budget (a
+  side at its limit gives up its far end, and its edge is then unknown). An open edge is cut where
+  the provider's own text closes a token, found before any break goes back, and the breaks (the
+  caret's own too) go back only inside the text kept: a break first would read as the whitespace
+  after a `.` and cut a token's head off, showing the rest. A caret source sends the starts near
+  the caret or `caretStarts`, never both (the core refuses the pair): the render checks each kind of
+  break apart, and one of each could split a key both checks miss. The render shows U+2029 as
+  a line break, and redacts the caret's text without the put-back breaks too, with each one
+  anchored: one inside a match there withholds the caret's text, and a block that reads differently
+  either way refuses the read, as for the caret's own break. Tested in real Chromium by
+  `native/macos/Tests/electron.mjs`.)*
+- *(Amended 2026-10-06: Windows and Linux. Windows finds its block starts as the Mac does, in the
+  field's own tree: Chromium's paragraphs are groups only UI Automation's raw view holds (a search's
+  own view is the control view, so a node's children come in one call with a raw-view tree filter),
+  `HelperConfig::blockControlTypes` (group, list, list item, table, and text with a heading level)
+  are blocks, and `RangeFromChild` places each. The core takes byte offsets into the caret window's
+  parts (`CaretSource::window` sends `paragraphStarts` and `caretEndsLine` to `caretWindow`); each
+  start's offset is the length of the text measured to it along the window, from the stretch's start
+  and then from one start to the next, and must be what the parts hold there, or no starts are sent.
+  No range measured starts at the caret: Chromium orders a caret at the end of a line before the
+  block starting at its offset and reads the text between them as that line's break, though the text
+  around the caret shows none (measured in Electron), so a start measured from the caret lands one
+  past it. The caret ends a line when the element `GetEnclosingElement` gives for the selection's
+  start starts before it and reaches it, as on the Mac. UI Automation's paragraph units miss these
+  starts, so they are not used. Linux needs no adapter: it reads a rich editor through its elements
+  (the hypertext walk), whose block marks put every break back already. Both run the Mac's seven
+  cases in real Chromium (`windows/tests/electron.mjs`; `linux/tests/electron.mjs`, which runs on
+  Wayland, as GNOME reads only the active window and does not activate a new X11 one).)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
@@ -3686,6 +3731,26 @@ Known limitation, accepted by the owner (2026-10-05): a reader *started* during 
 the app restarted it for a read that superseded a still-running one, finds no focused window to
 start from, so that one dictation gets no screen context (and agent mode offers Compose rather than
 Edit). The next dictation reads normally.
+
+*Amendment (2026-10-06, owner direction): no screen read has a time limit.* The shared walk's 1.5 s cap
+(`timeBudgetMilliseconds`, and the `elapsed` the helpers sent with each `stop`) is gone from the
+core and every helper; only the node budget (5,000) and the text budget stop a walk. A read runs
+in the reader while the user speaks, the caller decides how long to wait for it (above), and the
+cap cut Chrome reads short (it fell back to slow paths and left most of a long page unread); on the Mac, whole
+reads finish in 300–1,500 ms. On Windows a read takes longer where the provider is slow: in the
+test VM each look through 5,000 elements took about 3 s, and a focused element that size about 12 s,
+past the dictation's wait (`contextWait`, 500 ms) and agent mode's (`agentScreenWait`, 5 s), so that
+dictation gets no screen context where the cap used to give it part of one. Nothing bounds a read's
+time but its counts and the provider's speed: a page built to be slow to read can keep the reader
+busy until the next read restarts it or `screenReaderTimeout` (600 s) ends it, and a node's
+children come in one call whatever their number. The reader is its own program, so a dictation
+never waits on it longer than its own wait. This replaces the terminal-only exception above: Windows drops
+`terminalReadBudgetMs` and every time check in the walk and its caret sources, and Linux drops
+`withoutDeadline()`. What is not a screen read keeps its own bound: on macOS the look for an
+excluded page before a field read for corrections (`focusedFieldPageScanBudget`, 0.2 s), on Windows
+that read's looks (200 ms) and the look through what holds a page's selection
+(`contextSelectionScanMs`), and on Linux the whole field read (`fieldReadMilliseconds`, 1.5 s, the
+time it had before).
 
 ## ADR-DESK-054: Shared logic lives in Rust only; native code is thin OS adapters
 

@@ -18,15 +18,13 @@ inline JSON ask(const JSON& request) { return core::request(request, voice_core_
 
 struct Limits {
     size_t nodeBudget;
-    unsigned long long timeBudgetMilliseconds;
     size_t focusDepth;
 };
 // The walk's budgets. A constant request the core always answers.
 inline const Limits& limits() {
     static const Limits value = [] {
         const auto reply = ask({{"limits", true}});
-        return Limits{reply.at("nodeBudget").get<size_t>(), reply.at("timeBudgetMilliseconds").get<unsigned long long>(),
-                      reply.at("focusDepth").get<size_t>()};
+        return Limits{reply.at("nodeBudget").get<size_t>(), reply.at("focusDepth").get<size_t>()};
     }();
     return value;
 }
@@ -74,9 +72,10 @@ inline std::string look(const std::string& read, PageLook found) {
     return ask({{"look", {{"read", read}, {"found", names[static_cast<int>(found)]}}}}).at("outcome").get<std::string>();
 }
 
-// Why the walk stops before its next element, or none to go on.
-inline std::optional<std::string> stop(size_t nodes, unsigned long long elapsedMilliseconds, bool textFull) {
-    const auto reply = ask({{"stop", {{"nodes", nodes}, {"elapsed", elapsedMilliseconds}, {"textFull", textFull}}}});
+// Why the walk stops before its next element, or none to go on. A walk has no time limit: it runs
+// while the user speaks, and the app takes a read only if it is done in time.
+inline std::optional<std::string> stop(size_t nodes, bool textFull) {
+    const auto reply = ask({{"stop", {{"nodes", nodes}, {"textFull", textFull}}}});
     return reply.at("stopped").is_null() ? std::nullopt : std::optional<std::string>(reply.at("stopped").get<std::string>());
 }
 

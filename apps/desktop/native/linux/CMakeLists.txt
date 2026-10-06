@@ -225,4 +225,13 @@ if(BUILD_TESTING)
   set_tests_properties(voice-foreground-lifecycle-screen-reader PROPERTIES TIMEOUT 20)
   add_test(NAME voice-accessibility COMMAND ${NODE_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/tests/accessibility.mjs" $<TARGET_FILE:voice-linux> "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixture.py")
   set_tests_properties(voice-accessibility PROPERTIES RUN_SERIAL TRUE TIMEOUT 30)
+  # What the reader gives around a caret in real Chromium editors (the macOS cases), when the
+  # app's Electron is installed beside the helpers' source.
+  set(ELECTRON_EXECUTABLE "${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/electron/dist/electron" CACHE FILEPATH "Electron executable for Linux integration tests")
+  if(EXISTS "${ELECTRON_EXECUTABLE}")
+    add_test(NAME voice-electron COMMAND "${ELECTRON_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/electron.mjs" $<TARGET_FILE:voice-linux>)
+    set_tests_properties(voice-electron PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
+  else()
+    message(WARNING "Electron integration test unavailable: install desktop dependencies before configuring native tests")
+  endif()
 endif()

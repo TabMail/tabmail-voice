@@ -124,13 +124,13 @@ int main() {
     for (const auto& n : {window, field, group, password, allowed, web, frame})
         check(G_OBJECT(n.get())->ref_count == 1, "provider object references return to their starting lifetime");
     {
-        // An ordinary read ends at its limit; a terminal read has none (it runs in the screen
-        // reader's own process, which the app ends when the read is no longer wanted).
+        // A field read for corrections ends at its limit; a screen read has none (it runs in the
+        // screen reader's own process, which the app ends when the read is no longer wanted).
         using Tree = voice::LiveScreenTree;
-        Tree ordinary({}), terminal({}); terminal.withoutDeadline();
-        std::this_thread::sleep_for(std::chrono::milliseconds(Tree::readMilliseconds() + 200));
-        check(!ordinary.withinBudget(), "an ordinary read ends at its limit");
-        check(terminal.withinBudget(), "a terminal read runs past an ordinary read's time");
+        Tree screen({}), field({}, Tree::fieldReadMilliseconds);
+        std::this_thread::sleep_for(std::chrono::milliseconds(Tree::fieldReadMilliseconds + 200));
+        check(!field.withinBudget(), "a field read ends at its limit");
+        check(screen.withinBudget(), "a screen read runs past a field read's time");
     }
-    std::cout << "adapter invariants passed: positive content, both page roles, nested password, root password, ordering, complete census, failed/unsupported query, terminal read without a deadline\n";
+    std::cout << "adapter invariants passed: positive content, both page roles, nested password, root password, ordering, complete census, failed/unsupported query, screen read without a deadline\n";
 }

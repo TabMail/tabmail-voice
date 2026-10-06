@@ -115,6 +115,10 @@ async function main() {
       <div style="position:fixed;top:-5000px">offscreen-secret</div>
       <div style="position:absolute;width:1px;height:1px;overflow:hidden">Screen-reader-only label</div>
       <a href="https://example.com">Visible link</a>
+      <!-- Below the window's height, so the checks of what the window shows above are not moved. -->
+      <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
+      <div id="richParagraphs" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
+      <div id="gmail" contenteditable="true">Synthetic opening line<div><br></div><div>Synthetic <b>line</b> to <i>dictate</i> under.</div><div><br><br>--<br>Synthetic signature</div></div>
     `)}`);
     window.show(); window.focus();
     const fixtureHandle = window.getNativeWindowHandle().readBigUInt64LE();
@@ -247,9 +251,9 @@ async function main() {
     assert.ok(!rich.textBeforeCaret.includes("Unrelated") && !rich.textAfterCaret.includes("Unrelated"), "rich caret text remains scoped to its field");
     await anchor(target, "rich");
     // A rich editor's paragraphs: IA2 gives each as an embedded object, not its text, so the field is
-    // read through UI Automation. Chromium gives an empty line no character, so the text before a
-    // caret starting an empty line or a paragraph ends in a break, as on the Mac.
-    for (const [line, end, before] of [[3, false, "Hi All,\nWhy does it move?\n"], [1, false, "Hi All,\n"], [2, true, "Hi All,\nWhy does it move?"]]) {
+    // read through UI Automation. Its text leaves out the break before each paragraph that follows
+    // text; the paragraphs say where they start, so each is a line of its own, as on the Mac.
+    for (const [line, end, before] of [[3, false, "Hi All,\n\nWhy does it move?\n"], [1, false, "Hi All,\n"], [2, true, "Hi All,\n\nWhy does it move?"]]) {
       await window.webContents.executeJavaScript(`(() => {
         const field = document.getElementById("paragraphs"), line = field.children[${line}], range = document.createRange();
         field.focus();
@@ -276,6 +280,38 @@ async function main() {
     assert.ok(wrap.at > 1 && wrap.at < wrap.text.length, "the fixture's word wraps");
     await delay(150);
     assert.equal((await request("readScreen"))?.textBeforeCaret, `Hi,\n${wrap.text.slice(0, wrap.at)}`, "a caret starting a soft-wrapped line gets no break");
+    // The editors macos/Tests/electron.mjs reads around a caret: a plain-text body with empty lines,
+    // a rich one with empty paragraphs and a Gmail-shaped draft (a line in several runs of text, then
+    // a signature block that starts with two empty lines). Each paragraph is a line of its own.
+    stage = "the Mac's caret reads";
+    const lineFailures = [];
+    for (const [name, field, script, before, after] of [
+      ["plain text, second empty line", "plain", "getSelection().collapse(field, 5);",
+        "Synthetic first line\nSynthetic second line\n\n", "\nSynthetic fifth line\nSynthetic sixth line"],
+      ["rich text, second of two empty paragraphs", "richParagraphs", "getSelection().collapse(field.children[5], 0);",
+        "Synthetic first paragraph\n\nSynthetic third paragraph\nSynthetic fourth paragraph\n\n", "\nSynthetic seventh paragraph"],
+      ["rich text, start of a paragraph after another", "richParagraphs", "getSelection().collapse(field.children[3], 0);",
+        "Synthetic first paragraph\n\nSynthetic third paragraph\n", "Synthetic fourth paragraph\n\n\nSynthetic seventh paragraph"],
+      ["Gmail-shaped, empty line starting the signature block", "gmail", "getSelection().collapse(field.children[2], 0);",
+        "Synthetic opening line\n\nSynthetic line to dictate under.\n", "\n\n--\nSynthetic signature"],
+      ["Gmail-shaped, second empty line of the signature block", "gmail", "getSelection().collapse(field.children[2], 1);",
+        "Synthetic opening line\n\nSynthetic line to dictate under.\n\n", "\n--\nSynthetic signature"],
+      ["Gmail-shaped, end of the line dictated under", "gmail", "getSelection().collapse(field.children[1], field.children[1].childNodes.length);",
+        "Synthetic opening line\n\nSynthetic line to dictate under.", "\n\n\n--\nSynthetic signature"],
+      ["Gmail-shaped, before a bold word", "gmail", "getSelection().collapse(field.children[1].children[0].firstChild, 0);",
+        "Synthetic opening line\n\nSynthetic ", "line to dictate under.\n\n\n--\nSynthetic signature"],
+    ]) {
+      await window.webContents.executeJavaScript(`(() => {
+        const field = document.getElementById(${JSON.stringify(field)});
+        field.focus();
+        ${script}
+      })()`);
+      await delay(200);
+      const read = await request("readScreen");
+      if (read?.textBeforeCaret !== before || read?.textAfterCaret !== after)
+        lineFailures.push(`${name}: read ${JSON.stringify({ before: read?.textBeforeCaret, after: read?.textAfterCaret })}, not ${JSON.stringify({ before, after })}`);
+    }
+    assert.deepEqual(lineFailures, [], "every paragraph is a line of its own around the caret");
     // Compare to the browser's rendered insertion point, not merely the field bounds.
     // A provider can report a plausible rectangle at the wrong end of the field.
     if (!privacyOnly) for (const [direction, text, width] of [
@@ -336,7 +372,7 @@ async function main() {
     const exited = [once(helper, "exit"), once(reader, "exit")]; helper.stdin.end(); reader.stdin.end();
     for (const exit of exited) assert.deepEqual(await exit, [0, null]);
     assert.equal(pending.size, 0);
-    const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: (protected or incomplete subtree|embedded objects, read by UI Automation)\n/gmu, "").replace(/^debug caret start: (paragraph [01], line [01]|paragraphs or lines unavailable)\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete)\n/gmu, "");
+    const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: (protected or incomplete subtree|embedded objects, read by UI Automation)\n/gmu, "").replace(/^debug caret start: (paragraph [01], line [01]|paragraphs or lines unavailable|(\d+|no) block starts near the caret; the caret (ends a line|starts its text))\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete)\n/gmu, "");
     assert.equal(logged(stderr), "debug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     assert.equal(logged(readerErrors), "debug screen access: excluded or unknown page not read\n", "the reader's refusals log categories without exposing focused content");
     process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");

@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 #ifndef TABMAIL_VOICE_CORE_H
 #define TABMAIL_VOICE_CORE_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -95,6 +96,12 @@ uint32_t voice_core_source_utf8_offer(VoiceSource *state, const uint8_t *data, s
 /* A caret source only, once, before finish: what starts at the caret as JSON
  * {paragraph,line,lineText} (the caret window's caretStarts). A refusal fails the source. */
 uint32_t voice_core_source_caret_starts(VoiceSource *state, const uint8_t *data, size_t length);
+/* A caret source only, once, before finish: where the provider starts each paragraph near the
+ * caret, `count` ascending offsets in the source's units; `caret_ends_line`: the selection starts
+ * at the end of the line above a paragraph starting at its offset, so that break follows it.
+ * A refusal fails the source. */
+uint32_t voice_core_source_paragraph_starts(VoiceSource *state, const size_t *starts, size_t count,
+                                            bool caret_ends_line);
 uint32_t voice_core_source_finish(const VoiceSource *state, VoiceCoreBuffer *output);
 void voice_core_source_free(VoiceSource *state);
 
