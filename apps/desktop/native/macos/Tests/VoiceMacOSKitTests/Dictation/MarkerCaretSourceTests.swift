@@ -243,11 +243,26 @@ struct MarkerCaretSourceTests {
     }
 
     /// A selection made backward starts at its focus: that is where the paragraph must start.
+    /// Made forward, it starts at its anchor.
     @Test func aBackwardSelectionStartingAParagraphGetsTheBreak() throws {
         let field = MarkerField(paragraphs: [0, 96, 105])
         let result = try #require(read(field, anchor: 110, focus: 96))
         #expect(result.parts == [Self.text.substring(to: 96) + "\n", Self.text.substring(with: NSRange(location: 96, length: 14)), Self.text.substring(from: 110)])
         #expect(read(MarkerField(paragraphs: [0, 90, 105]), anchor: 110, focus: 96)?.parts[0] == Self.text.substring(to: 96))
+        #expect(read(field, anchor: 96, focus: 110)?.parts[0] == Self.text.substring(to: 96) + "\n")
+    }
+
+    /// A field whose paragraph changes while it is read is unavailable, like one whose text does.
+    @Test func aFieldWhoseParagraphChangesWhileReadIsUnavailable() throws {
+        var snapshots = 0
+        let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
+            snapshots += 1
+            let field = MarkerField(paragraphs: snapshots > 1 ? [0, 90] : [0, 96])
+            return ScreenContextReader.valueSnapshot(markers: { (field.range(96, 96), field.range(0, 140)) }, parameterized: field.answer,
+                                                     characters: { (141, NSRange(location: 9, length: 0)) }, string: Self.string)
+        }, string: Self.string, focused: { true }))
+        #expect(result.selectionUnavailable)
+        #expect(result.parts == ["", Redactor.placeholder, ""])
     }
 
     /// A secret the caret sits inside, at the start of a line it wrapped onto, is read as one text

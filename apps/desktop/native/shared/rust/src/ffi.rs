@@ -1183,10 +1183,21 @@ mod source_abi_tests {
             Err(1)
         );
         assert_eq!(read(Some(paragraph), true), Err(1), "once only");
+        // A valid answer padded to `length` bytes: one past the bound is refused unread.
+        let padded = |length: usize| {
+            let mut padded = paragraph[..paragraph.len() - 1].to_vec();
+            padded.resize(length - 1, b' ');
+            padded.push(b'}');
+            padded
+        };
+        assert_eq!(
+            read(Some(&padded(crate::source::CARET_STARTS_BYTES)), false),
+            Ok("Is it ready?\n".to_owned())
+        );
         for bad in [
             &b"[]"[..],
             b"{",
-            &[b' '; crate::source::CARET_STARTS_BYTES + 1],
+            &padded(crate::source::CARET_STARTS_BYTES + 1),
         ] {
             assert_eq!(read(Some(bad), false), Err(1));
         }
