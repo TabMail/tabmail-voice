@@ -33,7 +33,14 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   and websites, secret-looking text) is refused or removed in the helper, never in the Electron app;
   a rule the app and the helpers both apply (which hosts a site covers) has its cases in
   `native/shared/privacy/` and every side runs them.
-- **Every tunable number goes in `src/core/config.ts`** (the helpers' in their `HelperConfig`), and
+- **Shared logic lives in Rust only; native code is thin OS adapters** (ADR-DESK-054). A rule that
+  does not depend on the OS (what is read, refused, withheld or redacted; how text is cut, measured
+  and rendered; budgets, limits, markers, reply shapes, request validation) is written once in
+  `native/shared/rust`, with its cases in `native/shared/`, and every helper calls it through the C
+  ABI and runs those cases. Swift and C++ keep only what the OS does: tree walks, attributes, text
+  ranges, geometry, focus, identity, clipboard, keys and providers.
+- **Every tunable number goes in `src/core/config.ts`** (the helpers' OS numbers in their
+  `HelperConfig`; a number the helpers share in the Rust core), and
   **every color in `src/core/palette.ts`** (ADR-DESK-048).
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-microphone` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary

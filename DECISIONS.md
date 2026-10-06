@@ -3592,3 +3592,72 @@ Known limitation, accepted by the owner (2026-10-05): a reader *started* during 
 the app restarted it for a read that superseded a still-running one, finds no focused window to
 start from, so that one dictation gets no screen context (and agent mode offers Compose rather than
 Edit). The next dictation reads normally.
+
+## ADR-DESK-054: Shared logic lives in Rust only; native code is thin OS adapters
+
+**Context:** The three platforms' helpers share a Rust static library (`native/shared/rust`) for
+redaction, exclusions, address classification, context rendering and the terminal viewport
+(ADR-DESK-046's shared-core amendment). A census of the Swift and C++ helpers on 2026-10-05 still found
+some 830 lines of logic that is not about the OS: the decisions made at each node of the screen
+walk, the excluded-page scan, building the screen read's reply, the terminal surfaces' run and caret
+arithmetic, the focused field's read policy, request validation, and constants and markers written
+out in each helper. Written three times, it had drifted apart: Windows never marks a withheld part
+`[hidden for privacy]`, and treats an excluded-page scan that runs out of budget as "no excluded
+page" where macOS withholds the part it was looking through (macOS keeps a three-way answer, none,
+excluded or not seen whole, and each of its call sites decides); the helpers counted a 0×0 box and a terminal caret at a run's ends differently, and checked
+the focused field's length in different units and ranges. Owner, 2026-10-05: move the platform
+logic that is really shared (redaction and everything like it: exclusions, viewport rules, text
+policy) into the shared Rust core, leaving only the OS walk and adapters per platform, and make the
+design explicit.
+
+**Decision:**
+- **Shared logic lives in Rust only.** A rule that does not depend on the OS — what is read, refused,
+  withheld or redacted, how text is cut, joined, measured and rendered, the budgets and limits, the
+  markers, the shape of a reply and the validation of a request — is written once, in
+  `native/shared/rust`, and every helper calls it through the C ABI (`include/voice_core.h`; Swift
+  `CVoiceCore`, C++ `VoiceCore.h`). A helper never re-implements one, and never keeps a copy of a
+  shared number or string; it asks the core (`limits`).
+- **Native code is a thin OS adapter.** What stays in Swift and C++ is what only the OS can do:
+  walking the Accessibility, UI Automation and AT-SPI trees and reading their attributes, text
+  ranges and geometry (UI Automation's opaque text-range endpoints included); focus and foreground
+  identity and their re-checks; getting an address from a provider; app identity; clipboard, keys,
+  portals, the GNOME extension, the microphone, the productivity providers, watchdogs and deadlines.
+  Where a decision needs facts from the walk, the adapter hands the core those facts (a node's role
+  class, frame, password flag, page, child count) and does what the core answers, through a handle
+  like the semantic and source handles.
+- **The core's cases are the contract.** Each shared rule has its cases in `native/shared/`
+  (`privacy/*-cases.json`, `context/*-cases.json`, `hotkey/gesture-cases.json`); the Rust suite runs
+  every file, and every helper's suite runs the cases of a rule that helper applies, through the
+  same C ABI it ships with (CTest on Windows and Linux, `scripts/swift-errors.sh test` on macOS,
+  which now runs `cargo test` too). A rule only the app applies has its cases run by Rust and the
+  app's suite (`context/terminal-action-cases.json`).
+- **Where the helpers disagreed, one answer, decided by the owner (2026-10-05):**
+  - An excluded-page scan that runs out of budget fails closed on every platform: a part to be read
+    whole (an element read in one piece, a terminal's surface) that the scan could not see whole is
+    withheld. ADR-DESK-047's two owner-kept cases (2026-10-01) stand: a walk that runs out of budget
+    keeps what it gathered, having never read the page it did not reach, and the 0.2 s page scan
+    before a field is read for corrections, which stay on this computer, does not stop that read.
+  - A withheld part is marked `[hidden for privacy]` on every platform, Windows too.
+  - The focused field's read for correction learning follows the macOS and Windows rule: only the
+    field itself is checked for being a password field, not its ancestors (the excluded-site page
+    scan before the read stays). A request's `maxLength` is 1 to 20,000, Windows's range (macOS took
+    any length from 0, Linux 0 to 20,000).
+  - A box thinner than 1 point (scaled for the display) either way is hidden; a 0×0 frame (none
+    reported) counts as shown; a hidden box's children are still walked.
+- **And two that need no owner call, being wording or strictly more private:** stop reasons are
+  `node budget` and `time budget` on every platform, and the host of the page a read came from is
+  checked against the excluded sites after every read, not only on macOS.
+- **Moved in steps, each its own PR with tests:** this rule, dead code that duplicated the core, and
+  the policy cases run by every helper; then the screen read's reply, the focused field's policy
+  and request validation; then the terminal surfaces' arithmetic; then the walk's per-node
+  decisions and the excluded-page scan, behind a walk-policy handle, applying the decisions above.
+
+**Consequences:**
+- A change to what is read or withheld is made once and holds on every platform; a helper's diff is
+  OS work only. Every new rule starts in the core with its cases, not in a helper.
+- The C ABI carries more calls per read (one per walked node once the walk policy moves), each a
+  small JSON or handle exchange; the walk's budgets bound how many.
+- Until the last step lands, the walk's per-node decisions are still per platform, and the
+  disagreements above stand where they live (the Windows marker and scan budget among them).
+- The helpers' own `HelperConfig` keeps only OS numbers (timeouts of an OS call, retry intervals);
+  a number the helpers share comes from the core.

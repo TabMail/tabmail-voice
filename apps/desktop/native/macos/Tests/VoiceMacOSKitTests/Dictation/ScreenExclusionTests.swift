@@ -190,6 +190,50 @@ struct ScreenExclusionTests {
         #expect(ScreenExclusions(hosts: ["example.org", "example.com"]).excludesHost("mail.example.com"))
     }
 
+    private struct PolicyCases: Decodable {
+        struct Case: Decodable {
+            let name: String
+            let input: JSON
+            let output: [String: Bool]?
+            let refused: Bool?
+        }
+        let cases: [Case]
+    }
+
+    /// The shared policy cases (`native/shared/privacy/policy-cases.json`), through the wrapper the
+    /// screen reads use. A refused case is refused when the lists are read, or every answer it asks
+    /// for is "excluded" (a core failure never allows a read). Two can't be asked of the wrapper: a
+    /// page of a kind that is no `PageHost`, and a page said to have a host with none.
+    @Test func policyIsAsTheSharedCasesSay() throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../shared/privacy/policy-cases.json").standardizedFileURL
+        let cases = try JSONDecoder().decode(PolicyCases.self, from: Data(contentsOf: file)).cases
+        #expect(cases.contains { $0.refused == true } && cases.contains { $0.output != nil })
+        for item in cases {
+            guard case let .object(input) = item.input else { Issue.record("\(item.name): input is no object"); continue }
+            guard let exclusions = try? ScreenExclusions(params: item.input, method: "readScreen") else {
+                #expect(item.refused == true, "\(item.name): the lists were refused")
+                continue
+            }
+            var answers: [String: Bool] = [:]
+            if let app = input["app"] { answers["app"] = exclusions.excludesApp(app.string) }
+            if let host = input["host"] { answers["host"] = exclusions.excludesHost(host.string) }
+            if let page = input["page"] {
+                switch page.string {
+                case "unknown": answers["page"] = exclusions.excludes(.unknown)
+                case "noHost": answers["page"] = exclusions.excludes(.noHost)
+                case "host": if let host = input["host"]?.string { answers["page"] = exclusions.excludes(.host(host)) }
+                default: break
+                }
+            }
+            if item.refused == true {
+                #expect(["unknown page enum", "missing page host"].contains(item.name) || (!answers.isEmpty && answers.values.allSatisfy { $0 }), "\(item.name)")
+            } else {
+                #expect(answers == item.output, "\(item.name)")
+            }
+        }
+    }
+
     private func page(_ host: String, _ text: String) -> FakeElement {
         FakeElement("AXWebArea", ["host": host], children: [FakeElement("AXStaticText", [kAXValueAttribute: text])])
     }

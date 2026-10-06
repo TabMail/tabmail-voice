@@ -10,38 +10,6 @@ import Testing
 @testable import VoiceMacOSKit
 
 struct ScreenContextTests {
-    // MARK: Caret window
-
-    @Test func caretWindowSplitsAroundTheSelection() throws {
-        let window = ScreenContext.caretWindow(in: "Hello there world", selection: NSRange(location: 6, length: 5), maxChars: 100)
-        #expect(window.before == "Hello ")
-        #expect(window.selected == "there")
-        #expect(window.after == " world")
-    }
-
-    @Test func caretWindowKeepsOnlyTheNearestCharacters() throws {
-        let window = ScreenContext.caretWindow(in: "abcdefghij", selection: NSRange(location: 5, length: 0), maxChars: 2)
-        #expect(window.before == "de")
-        #expect(window.selected == "")
-        #expect(window.after == "fg")
-    }
-
-    /// Accessibility reports ranges past the end at times (a stale caret); clamp, don't crash.
-    @Test func caretWindowClampsARangePastTheEnd() throws {
-        let window = ScreenContext.caretWindow(in: "abc", selection: NSRange(location: 10, length: 4), maxChars: 5)
-        #expect(window.before == "abc")
-        #expect(window.selected == "")
-        #expect(window.after == "")
-    }
-
-    /// Ranges count UTF-16 units; a cut through an emoji's surrogate pair keeps the whole emoji.
-    @Test func caretWindowNeverSplitsACharacter() throws {
-        let text = "a😀b" // "😀" is two UTF-16 units: a=0, 😀=1…2, b=3
-        let window = ScreenContext.caretWindow(in: text, selection: NSRange(location: 3, length: 0), maxChars: 1)
-        #expect(window.before == "😀")
-        #expect(window.after == "b")
-    }
-
     // MARK: Visible text
 
     @Test func appendSkipsBlanksAndRepeats() throws {

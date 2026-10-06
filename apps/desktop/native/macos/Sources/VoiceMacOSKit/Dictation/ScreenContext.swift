@@ -152,23 +152,6 @@ struct ScreenContext: Sendable, Equatable {
     }
     }
 
-    /// Up to `maxChars` on each side of the selection. Accessibility ranges count UTF-16 units;
-    /// the cuts are widened so no character (emoji, accented letter) is split.
-    static func caretWindow(in text: String, selection: NSRange, maxChars: Int) -> (before: String, selected: String, after: String) {
-        let string = text as NSString
-        let start = min(max(selection.location, 0), string.length)
-        let end = min(start + max(selection.length, 0), string.length)
-        func whole(_ range: NSRange) -> String {
-            range.length > 0 ? string.substring(with: string.rangeOfComposedCharacterSequences(for: range)) : ""
-        }
-        let beforeStart = max(0, start - maxChars)
-        return (
-            whole(NSRange(location: beforeStart, length: start - beforeStart)),
-            whole(NSRange(location: start, length: end - start)),
-            whole(NSRange(location: end, length: min(maxChars, string.length - end)))
-        )
-    }
-
     /// The first line whose top is at or below `windowTop`, by binary search over lines whose
     /// tops increase down the text (a terminal's scrollback). Nil when every line is above it.
     static func firstVisibleLine(lineCount: Int, windowTop: CGFloat, lineTop: (Int) -> CGFloat?) -> Int? {

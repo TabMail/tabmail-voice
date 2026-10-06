@@ -26,11 +26,6 @@ enum HelperConfig {
     static let contextTimeBudget: Double = 1.5
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
     static let contextMaxFocusDepth = 200
-    /// Characters kept on each side of the caret.
-    static let contextCaretWindowChars = 2_000
-    /// Longest visible text kept from one text field or terminal.
-    static let contextMaxFieldChars = 20_000
-    /// Longest text gathered for one heading, link or table row.
     /// What the screen read puts in place of a part of the window it does not read for privacy
     /// (a field that frames a page of an excluded website, or an element read in one piece that is
     /// too large to look through for one), so the reader knows something is there.
