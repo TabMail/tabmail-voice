@@ -5,7 +5,10 @@
 #include "accessibility.h"
 #include "identity.h"
 #include <algorithm>
+#include <functional>
 #include <iostream>
+#include <memory>
+#include <string_view>
 
 namespace voice {
 // Focus/window events start one bounded visit. A successful query stops retries;
@@ -13,7 +16,8 @@ namespace voice {
 class Foreground {
 public:
     static constexpr unsigned attempts = 5, retryMilliseconds = 1000;
-    Foreground() {
+    /** `shellHolds`: whether the Shell holds the keyboard for the dictation key (`GnomeCaret::holding`). */
+    explicit Foreground(std::function<bool()> shellHolds) : shellHolds(std::move(shellHolds)) {
         listener = own(atspi_event_listener_new([](AtspiEvent* event, void* data) {
             const auto freeEvent = [](AtspiEvent* value) { g_boxed_free(ATSPI_TYPE_EVENT, value); };
             std::unique_ptr<AtspiEvent, decltype(freeEvent)> owned(event, freeEvent);
@@ -44,7 +48,14 @@ public:
     bool matches(uint64_t token) const {
         return current && current->token == token && state(current->focus, ATSPI_STATE_FOCUSED);
     }
+    /** `matches`, or the Shell holds the keyboard for the dictation key: the window in front has no
+     * keyboard focus meanwhile, yet it is still the target. Not for an insertion: a paste while the
+     * Shell holds the keyboard reaches no window. */
+    bool targets(uint64_t token) const {
+        return matches(token) || (current && current->token == token && shellHolds());
+    }
 private:
+    std::function<bool()> shellHolds;
     Object<AtspiEventListener> listener;
     Node active;
     Node tokenWindow;
@@ -103,6 +114,9 @@ private:
         auto source = own(ATSPI_ACCESSIBLE(g_object_ref(event->source)));
         const std::string type = event->type ? event->type : "";
         try {
+            // The focus moves to the Shell and back while it holds the keyboard for the dictation
+            // key: the target stays. The Shell's own interface is never a target.
+            if (shell(source) || shellHolds()) return;
             if (type == "window:deactivate") {
                 if (same(source, active) || same(source, tokenWindow)) { current.reset(); active.reset(); cancelRetry(); }
             }
@@ -123,6 +137,16 @@ private:
             }
             else if (current && same(source, current->focus)) current.reset();
         } catch (...) { current.reset(); cancelRetry(); }
+    }
+    static bool shell(const Node& node) {
+        try {
+            const auto path = ancestors(node);
+            const auto app = parent(path.empty() ? node : path.back());
+            if (!app || role(app) != ATSPI_ROLE_APPLICATION) return false;
+            Error error;
+            std::unique_ptr<gchar, decltype(&g_free)> name(atspi_accessible_get_name(app.get(), &error.value), g_free);
+            return name && std::string_view(name.get()) == "gnome-shell";
+        } catch (...) { return false; } // An object gone meanwhile is handled as before.
     }
     void bootstrap() {
         auto desktop = own(atspi_get_desktop(0));

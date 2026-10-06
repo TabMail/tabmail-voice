@@ -111,5 +111,12 @@ int main() {
     emit("Activated", 6500, "cancel-F8");
     while (actions.size() == beforeClose) g_main_context_iteration(nullptr, true);
     require(actions.back() == Action::closeChat);
+    // Right Alt chosen instead: the portal's keys go, a dictation they started is cancelled, and
+    // the app is told once; letting go again tells it nothing.
+    gesture.chatOpen = false;
+    emit("Activated", 7000); while (!gesture.holding) g_main_context_iteration(nullptr, true);
+    portal.disable();
+    require(!portal.ready() && !gesture.active());
+    portal.disable();
     std::cerr << "shortcut permission refusal, retry, press/release and revoked-session cleanup passed\n";
 }

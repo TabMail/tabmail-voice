@@ -115,6 +115,8 @@ export interface SettingsState {
   /** Platform-specific wording for the permission needed to type into other apps. */
   keyboardPermission?: { title: string; description: string; button: string; instructions: string; agentShortcut?: string };
   gnomeIntegration?: GnomeIntegrationState;
+  /** Ubuntu: the Shell couldn't hold Right Alt, which is AltGr on this keyboard layout. */
+  hotkeyUnavailable?: boolean;
   openAtLogin: boolean;
   /** Whether this account may switch debug mode on (`DebugAccess`). */
   debugAllowed: boolean;

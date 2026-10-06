@@ -609,6 +609,17 @@ describe("main process wiring", () => {
     expect(app.overlay?.hitTest).toBe(hitTest);
   });
 
+  test("on Linux, Right Alt the Shell can't hold reaches the open Settings window", async () => {
+    await launch("linux");
+    const state = () => app.handlers.get(channels.getState)?.({}, "settings") as { hotkeyUnavailable?: boolean };
+    expect(state().hotkeyUnavailable).toBeUndefined();
+    const pushed: unknown[] = [];
+    app.listeners.set("voice:state", [(_event, name, pushedState) => { if (name === "settings") pushed.push((pushedState as { hotkeyUnavailable?: boolean }).hotkeyUnavailable); }]);
+    app.helpers.get("voice-hotkey")!.events.get("hotkeyUnavailable")?.({ event: "hotkeyUnavailable" });
+    expect(pushed).toEqual([true]);
+    expect(state().hotkeyUnavailable).toBe(true);
+  });
+
   test("Linux placement prefers the focused element's caret, asked before the screen read, over compositor geometry", async () => {
     await launch("linux");
     const accessible = app.helpers.get("voice-linux")!, compositor = app.helpers.get("voice-hotkey")!;
@@ -2025,6 +2036,8 @@ test("Windows queues the caret before screen context without a foreground IPC ro
 
 test("Linux helper exit invalidates established permission readiness", async () => {
   vi.doUnmock("../../src/core/onboarding/permissions.js");
+  // Outside GNOME: GNOME integration is not part of the permission there.
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
   await launch("linux");
   const insertion = app.helpers.get("voice-linux")!;
   const shortcut = app.helpers.get("voice-hotkey")!;
@@ -2033,6 +2046,23 @@ test("Linux helper exit invalidates established permission readiness", async () 
   expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(true);
   insertion.onExit!();
   expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
+  vi.unstubAllEnvs();
+});
+
+test("outside GNOME, Linux offers F8 and F9, with Shift for agent mode", async () => {
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "KDE");
+  try {
+    await launch("linux");
+    const settings = app.handlers.get(channels.getState)?.({}, "settings") as { hotkey: string; availableHotkeys: string[]; keyboardPermission: { agentShortcut?: string; instructions: string } };
+    expect(settings.availableHotkeys).toEqual(["F8", "F9"]);
+    expect(settings.hotkey).toBe("F8");
+    expect(settings.keyboardPermission.agentShortcut).toBe("Shift+F8");
+    expect(settings.keyboardPermission.instructions).toBe("Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.");
+    expect(settings.keyboardPermission).toMatchObject({ description: "Allows the dictation shortcut, pasting, and clipboard restoration." });
+    expect(app.helpers.get("voice-hotkey")!.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "F8" }) }));
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 /** Exercise the real GNOME adapter through its main-process consumer; only the
@@ -2049,16 +2079,44 @@ test("GNOME activation, readiness hints and recording ownership are wired to the
     } };
   });
   try {
+    vi.doUnmock("../../src/core/onboarding/permissions.js");
     await launch("linux");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name);
     await vi.waitFor(() => expect(state("settings")).toMatchObject({ gnomeIntegration: "available" }));
     expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: false });
+    // Right Alt is GNOME's default, held by the integration; Space switches modes, so no Shift shortcut.
+    expect(state("settings")).toMatchObject({ hotkey: "rightAlt", availableHotkeys: ["rightAlt", "F8", "F9"] });
     const hotkey = app.helpers.get("voice-hotkey")!;
+    expect(hotkey.requests).toContainEqual(expect.objectContaining({ method: "configure", params: expect.objectContaining({ hotkey: "rightAlt" }) }));
+    const keyboard = () => (state("welcome") as { keyboardPermission: { agentShortcut?: string; description: string; instructions: string } }).keyboardPermission;
+    expect(keyboard().agentShortcut).toBeUndefined();
+    expect(keyboard().description).toBe("Turns on GNOME integration and allows the dictation key, pasting, and clipboard restoration.");
+    expect(keyboard().instructions).toBe("This turns on GNOME integration; then allow keyboard interaction in the next system prompt.");
+    // F8 or F9 on GNOME is the portal's shortcut, which has its own approval.
+    await send({ type: "setHotkey", hotkey: "F8" });
+    expect(keyboard().instructions).toBe("This turns on GNOME integration; then approve the dictation shortcut, then allow keyboard interaction in the next system prompt.");
+    await send({ type: "setHotkey", hotkey: "rightAlt" });
+    // GNOME integration is part of the keyboard permission.
+    hotkey.events.get("hotkeyInstallationChanged")!({ installed: true });
+    app.helpers.get("voice-linux")!.events.get("insertionPermissionChanged")!({ granted: true });
+    expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(false);
+    // Turned on but not yet loaded by the Shell: only a new session finishes it.
+    hotkey.replies.set("gnomeIntegration", false);
+    const welcomePushed: string[] = [];
+    app.listeners.set("voice:state", [(_event, name, pushedState) => {
+      if (name === "welcome") welcomePushed.push((pushedState as { keyboardPermission: { instructions: string } }).keyboardPermission.instructions);
+    }]);
+    await send({ type: "enableGnomeIntegration" });
+    expect(state("settings")).toMatchObject({ gnomeIntegration: "restart" });
+    // The open welcome guide is told at once, not only when it next asks.
+    expect(welcomePushed.at(-1)).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
+    expect(keyboard().instructions).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
     hotkey.replies.set("gnomeIntegration", true);
     await send({ type: "enableGnomeIntegration" });
     expect(commands).toContainEqual(["gnome-extensions", ["enable", "voice-caret@tabmail.ai"]]);
     expect(state("settings")).toMatchObject({ gnomeIntegration: "ready" });
     expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: true });
+    expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(true);
     hotkey.requests.length = 0;
     app.controller!.onPhaseChange!({ kind: "arming" });
     app.controller!.onPhaseChange!({ kind: "listening" });

@@ -847,6 +847,30 @@ describe("GNOME integration", () => {
     expect(visibleText()).not.toContain("Shift");
   });
 
+  test.each(["available", "restart", "ready", undefined] as const)("Right Alt asks for the integration only while it is not enabled (%s)", async (state) => {
+    const shown: SettingsState = { ...signedIn, hotkey: "rightAlt", availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: state };
+    await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Dictation").click());
+    const asked = visibleText().includes("Right Alt works once GNOME integration is enabled in Permissions.");
+    expect(asked).toBe(state === "available" || state === "restart");
+  });
+
+  // Once F8 is chosen, Right Alt being unavailable no longer matters.
+  test.each([["rightAlt", true, true], ["rightAlt", undefined, false], ["F8", true, false]] as const)("Right Alt the Shell can't hold says to choose F8 or F9 (%s, %s)", async (hotkey, unavailable, said) => {
+    const shown: SettingsState = { ...signedIn, hotkey, availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: "ready", ...(unavailable ? { hotkeyUnavailable: true } : {}) };
+    await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Dictation").click());
+    expect(visibleText().includes("Right Alt types characters with this keyboard layout (AltGr), so it can’t be the dictation key. Choose F8 or F9.")).toBe(said);
+  });
+
+  test("F8 never asks for the integration", async () => {
+    const shown: SettingsState = { ...signedIn, hotkey: "F8", availableHotkeys: ["F8", "F9", "rightAlt"], gnomeIntegration: "available" };
+    await settingsPage({ error: null }, shown, shown);
+    await act(async () => button("Dictation").click());
+    expect(visibleText()).toContain("Hold F8 to dictate");
+    expect(visibleText()).not.toContain("Right Alt works once");
+  });
+
   test.each(["restart", "unavailable", "unsupported", "checking"] as const)("%s does not report the integration enabled", async (state) => {
     const initial: SettingsState = { ...signedIn, gnomeIntegration: state };
     await settingsPage({ error: null }, initial, initial);

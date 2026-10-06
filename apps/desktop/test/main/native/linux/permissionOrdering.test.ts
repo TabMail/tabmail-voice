@@ -11,7 +11,7 @@ function setup() {
  let resolveShortcut: (value: unknown) => void = () => {};
  const requestInsert=vi.fn(() => new Promise(resolve => {resolveInsert=resolve;}));
  const requestShortcut=vi.fn(() => new Promise(resolve => {resolveShortcut=resolve;}));
- const permissions=new LinuxPermissions({on: (_:string,h:typeof insertion)=>{insertion=h;},request:requestInsert} as unknown as HelperClient,{on:(_:string,h:typeof shortcut)=>{shortcut=h;},request:requestShortcut} as unknown as HelperClient);
+ const permissions=new LinuxPermissions({on: (_:string,h:typeof insertion)=>{insertion=h;},request:requestInsert} as unknown as HelperClient,{on:(name:string,h:typeof shortcut)=>{if(name==="hotkeyInstallationChanged")shortcut=h;},request:requestShortcut} as unknown as HelperClient);
  return {permissions,requestInsert,requestShortcut,insertion:(granted:boolean)=>insertion({granted}),shortcut:(installed:boolean)=>shortcut({installed}),resolveInsert:(x:unknown)=>resolveInsert(x),resolveShortcut:(x:unknown)=>resolveShortcut(x)};
 }
 test("newer shortcut revocation beats a preceding successful authorization response",async()=>{

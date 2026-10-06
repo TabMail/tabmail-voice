@@ -22,15 +22,19 @@ int main() {
                 !params.contains("doubleTapWindow") || !params["doubleTapWindow"].is_number()) throw std::runtime_error("invalid configuration");
             const auto key = params["hotkey"].get<std::string>();
             const double tap = params["tapMaxDuration"], window = params["doubleTapWindow"];
-            if ((key != "F8" && key != "F9") || !std::isfinite(tap) || tap < 0 || !std::isfinite(window) || window < 0)
+            if ((key != "F8" && key != "F9" && key != "rightAlt") || !std::isfinite(tap) || tap < 0 || !std::isfinite(window) || window < 0)
                 throw std::runtime_error("invalid shortcut configuration");
             gesture.tapMaxDuration = tap; gesture.doubleTapWindow = window;
-            reply({{"installed", portal.configure(key)}}, true);
+            // Right Alt is a lone modifier, which the portal cannot bind; the Shell
+            // extension holds it instead.
+            if (key == "rightAlt") { portal.disable(); controls.setHotkey(true, std::move(reply)); }
+            else { controls.setHotkey(false); reply({{"installed", portal.configure(key)}}, true); }
         } else if (method == "requestHotkey") {
             const auto parent = params.value("parent", std::string{});
             if (!parent.empty() && (parent.size() > 32 || !parent.starts_with("x11:") || parent.size() == 4 ||
                 !std::all_of(parent.begin() + 4, parent.end(), [](char c) { return g_ascii_isxdigit(c); }))) throw std::runtime_error("invalid portal parent");
-            portal.authorize(parent, std::move(reply));
+            if (controls.wantsHotkey()) controls.requestHotkey(std::move(reply));
+            else portal.authorize(parent, std::move(reply));
         } else if (method == "caretAnchor") {
             gnomeCaret.read(std::move(reply));
         } else if (method == "gnomeIntegration") {

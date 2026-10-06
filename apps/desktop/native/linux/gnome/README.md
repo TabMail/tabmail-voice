@@ -16,6 +16,23 @@ signals are sent only to that helper. No periodic polling, accessibility-tree
 traversal, or custom renderer is involved.
 The helper allows 25 ms for the bus call; the app bounds the entire request to 200 ms.
 
+Right Alt is the dictation key by default on GNOME, and GNOME integration is part of
+the app's keyboard permission there. While Right Alt is the dictation key, the extension also holds it for the helper,
+because the portal cannot bind a lone modifier: `Alt_R` starts a dictation and
+`<Shift>Alt_R` starts agent mode, both without autorepeat (and the same with `<Alt>`,
+which Sticky Keys adds after a lone Right Alt). Mutter reports the press but not the
+release, so while the key is down the extension holds the whole keyboard with a Shell
+modal grab: Space switches the mode, Escape cancels, other keys are swallowed, and the
+release of the same physical key ends the hold and is reported. Meanwhile the window in
+front has no keyboard focus; `Holding` tells the helper, which keeps that window as the
+target. Only the `Alt_R` keysym is held. Where Right Alt is AltGr the Shell either can't
+grab it or (finding `Alt_R` through a fallback layout, as on Greek) sees it pressed as
+`ISO_Level3_Shift`, and then lets it go unheld; either way it sends `hotkeyUnavailable`
+so Settings can say so. Cancelling a recording
+leaves the dictation key held. A screen lock, a lost helper or disabling the extension
+lets it go, with a release if it was down; when the extension is enabled or the screen
+unlocks, it broadcasts `ready` and the helper asks for the key again.
+
 ## Installation and activation
 
 The `.deb` installs the extension in GNOME's standard system directory:
@@ -26,9 +43,11 @@ The package manager owns these files and removes them when the app is uninstalle
 Open TabMail Voice Settings → Permissions → GNOME integration → Enable to activate
 it for the current user. This leaves other extensions unchanged. Newly installed or
 updated extensions may require logging out and back in. Settings checks the live
-extension protocol before reporting Enabled; files on disk alone are insufficient.
-GNOME version validation remains enabled. The portal shortcuts remain available
-when the extension is disabled or unavailable.
+extension protocol (`Version`, now 2) before reporting Enabled; files on disk alone are insufficient,
+and an older extension the Shell still runs after an upgrade reads as needing a log-out.
+GNOME version validation remains enabled. Allow Keyboard Control in the welcome guide
+or Settings enables it first. F8 and F9, through the portal, remain available as
+dictation keys, but the keyboard permission on GNOME needs the extension either way.
 
 For development only, copy the extension directory into
 `${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/`, log out and back in,

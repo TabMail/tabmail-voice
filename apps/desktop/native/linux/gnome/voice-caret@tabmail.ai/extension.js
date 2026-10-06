@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
+import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
@@ -16,6 +17,8 @@ const IFACE = `<node><interface name="ai.tabmail.Voice.Caret">
 <method name="Version"><arg type="u" direction="out"/></method>
 <method name="SetRecording"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
 <method name="SetChatOpen"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
+<method name="SetHotkey"><arg type="b" direction="in"/><arg type="b" direction="out"/></method>
+<method name="Holding"><arg type="b" direction="out"/></method>
 <signal name="Action"><arg type="s"/></signal>
 </interface></node>`;
 
@@ -34,7 +37,8 @@ export default class VoiceCaret extends Extension {
         this._rect = null;
         this._window = null;
         this._grabs = [];
-        this._wanted = {recording: false, chat: false};
+        this._wanted = {recording: false, chat: false, hotkey: false};
+        this._hold = null;
         const listen = (object, signal, callback) => {
             this._signals.push([object, object.connect(signal, callback)]);
         };
@@ -43,13 +47,27 @@ export default class VoiceCaret extends Extension {
         listen(Main.sessionMode, 'updated', () => {
             this._rect = null; this._focus = null;
             if (Main.sessionMode.isLocked) this._releaseRecording();
+            else this._announce();
         });
         listen(global.display, 'accelerator-activated', (_display, id) => {
             const action = this._grabs.find(item => item.id === id)?.action;
             if (!action || !this._owner || Main.sessionMode.isLocked) return;
-            Gio.DBus.session.emit_signal(this._owner, '/ai/tabmail/Voice/Caret',
-                'ai.tabmail.Voice.Caret', 'Action', new GLib.Variant('(s)', [action]));
-            if (action === 'cancel') this._releaseRecording();
+            if (action === 'hotkeyDown' || action === 'hotkeyAgentDown') {
+                if (this._hold) return;
+                // Mutter finds Alt_R through a fallback layout when the one in use has none (Greek,
+                // Hebrew, Arabic): there Right Alt is AltGr and types characters. It is given back
+                // and the helper says so; it is not held.
+                const press = Clutter.get_current_event();
+                if (![Clutter.KEY_Alt_R, Clutter.KEY_Meta_R].includes(press.get_key_symbol())) {
+                    const owner = this._owner;
+                    this._want(owner, 'hotkey', false);
+                    this._send('hotkeyUnavailable', owner);
+                    return;
+                }
+                this._holdKeyboard(press.get_key_code());
+            }
+            this._send(action);
+            if (action === 'cancel') this._cancel();
         });
         listen(Main.inputMethod, 'cursor-location-changed', (_source, rect) => {
             this._accept({x: rect.origin.x, y: rect.origin.y,
@@ -69,6 +87,18 @@ export default class VoiceCaret extends Extension {
         this._export = Gio.DBusExportedObject.wrapJSObject(IFACE, this);
         this._export.export(Gio.DBus.session, '/ai/tabmail/Voice/Caret');
         // GNOME Shell's existing session-bus name owns the exported object.
+        this._announce();
+    }
+
+    _send(action, destination = this._owner) {
+        Gio.DBus.session.emit_signal(destination, '/ai/tabmail/Voice/Caret',
+            'ai.tabmail.Voice.Caret', 'Action', new GLib.Variant('(s)', [action]));
+    }
+
+    /** Tells every helper the keys can be asked for: after a lock or a Shell restart the
+     * dictation key is no one's until its helper asks again. */
+    _announce() {
+        this._send('ready', null);
     }
 
     _focusChanged() {
@@ -104,6 +134,8 @@ export default class VoiceCaret extends Extension {
     }
 
     Read() {
+        if (this._hold)
+            return this._hold.caret;
         if (!this._rect || this._window !== global.display.focus_window ||
             Main.overview.visible || Main.sessionMode.isLocked ||
             (this._rect.source === 'wayland' && (!this._focus || this._focus !== Main.inputMethod.currentFocus)) ||
@@ -131,7 +163,7 @@ export default class VoiceCaret extends Extension {
         return JSON.stringify({...rect, source: 'accessibility'});
     }
 
-    Version() { return 1; }
+    Version() { return 2; }
 
     /** Space and Escape while dictating. */
     SetRecordingAsync([active], invocation) {
@@ -143,6 +175,73 @@ export default class VoiceCaret extends Extension {
         invocation.return_value(new GLib.Variant('(b)', [this._want(invocation.get_sender(), 'chat', open)]));
     }
 
+    /** Right Alt as the dictation key, held to dictate, with Shift for agent mode. Only the
+     * Alt_R keysym: where Right Alt is AltGr, it keeps typing characters. */
+    SetHotkeyAsync([active], invocation) {
+        invocation.return_value(new GLib.Variant('(b)', [this._want(invocation.get_sender(), 'hotkey', active)]));
+    }
+
+    /** Whether the keyboard is held for the dictation key, down now: the window in front has lost its
+     * keyboard focus to the hold, yet it is still the dictation's target. */
+    Holding() {
+        return Boolean(this._hold);
+    }
+
+    _cancel() {
+        this._want(this._owner, 'recording', false);
+        this._want(this._owner, 'chat', false);
+    }
+
+    /** While the dictation key is held the whole keyboard is the app's, as a game holds it:
+     * Space switches to agent mode, Escape cancels, the key's release ends the hold, and every
+     * other key is swallowed. Mutter matches an accelerator on its exact modifiers, so Space and
+     * Escape grabbed alone never fire with Alt down (and GNOME's own Alt+Space and Alt+Escape
+     * would), and a lone modifier's release is no accelerator at all. The release arrives as a
+     * key event, so a modifier Sticky Keys latched does not keep the hold going. The app in
+     * front loses its keyboard focus meanwhile, so the caret is the one read as the key went
+     * down. */
+    _holdKeyboard(keyCode) {
+        const caret = this.Read();
+        const actor = new Clutter.Actor({reactive: true});
+        Main.layoutManager.uiGroup.add_child(actor);
+        const grab = Main.pushModal(actor, {actionMode: Shell.ActionMode.NONE});
+        // A grab over this one (a system dialog) gets the keys, the release among them: the hold
+        // ends. Mutter notifies the top grab too when one under it ends, so only a revocation counts.
+        grab.connect('notify::revoked', () => {
+            if (grab.revoked) this._letGo();
+        });
+        actor.connect('key-press-event', (_actor, event) => {
+            const key = event.get_key_symbol();
+            if (event.get_flags() & Clutter.EventFlags.FLAG_REPEATED) {
+                // A key held down repeats; it was answered when it went down.
+            } else if (key === Clutter.KEY_space) {
+                this._send('toggleMode');
+            } else if (key === Clutter.KEY_Escape) {
+                this._send('cancel');
+                this._cancel();
+            }
+            return Clutter.EVENT_STOP;
+        });
+        actor.connect('key-release-event', (_actor, event) => {
+            // The key that went down, whatever it is called now (Meta_R with Shift down, or
+            // another name after a layout switch while it was held).
+            if (event.get_key_code() === keyCode)
+                this._letGo();
+            return Clutter.EVENT_STOP;
+        });
+        this._hold = {actor, grab, caret};
+    }
+
+    /** Gives the keyboard back and tells the helper the key is up. */
+    _letGo() {
+        if (!this._hold) return;
+        const {actor, grab} = this._hold;
+        this._hold = null;
+        Main.popModal(grab);
+        actor.destroy();
+        if (this._owner) this._send('hotkeyUp');
+    }
+
     _want(owner, kind, active) {
         // Only the client that acquired the session may change it. A second
         // helper cannot replace a live owner's shortcuts.
@@ -150,34 +249,52 @@ export default class VoiceCaret extends Extension {
             return false;
         if (active && Main.sessionMode.isLocked)
             return false;
-        this._wanted = {...this._wanted, [kind]: active};
+        const previous = this._wanted;
+        this._wanted = {...previous, [kind]: active};
+        try {
+            this._grab(owner);
+        } catch {
+            // Only this request is refused: the keys already held stay, so a recording
+            // key that cannot be had leaves the dictation key in place.
+            this._wanted = {...previous, [kind]: false};
+            this._grab(owner);
+            // Right Alt is AltGr on this layout (it types characters): the helper says so.
+            if (kind === 'hotkey') this._send('hotkeyUnavailable', owner);
+        }
+        // Letting go always succeeds, even when it was the last key and the owner is gone.
+        return !active || (Boolean(this._owner) && this._wanted[kind]);
+    }
+
+    /** Holds exactly the keys wanted; throws when one cannot be had. */
+    _grab(owner) {
         const keys = [];
+        // With Alt too: Sticky Keys latches Alt after a lone Right Alt, and Mutter matches an
+        // accelerator on its exact modifiers, so the next press would otherwise do nothing.
+        if (this._wanted.hotkey) {
+            keys.push(['Alt_R', 'hotkeyDown'], ['<Shift>Alt_R', 'hotkeyAgentDown'],
+                ['<Alt>Alt_R', 'hotkeyDown'], ['<Shift><Alt>Alt_R', 'hotkeyAgentDown']);
+        }
         if (this._wanted.recording) keys.push(['space', 'toggleMode']);
         if (this._wanted.recording || this._wanted.chat) keys.push(['Escape', 'cancel']);
         if (!keys.length) {
             this._releaseRecording();
-            return true;
+            return;
         }
-        try {
-            if (!this._owner) {
-                this._owner = owner;
-                this._ownerWatch = Gio.bus_watch_name_on_connection(Gio.DBus.session,
-                    owner, Gio.BusNameWatcherFlags.NONE, null, () => this._releaseRecording());
-            }
-            for (const grab of this._grabs.filter(item => !keys.some(([key]) => key === item.key)))
-                this._ungrab(grab);
-            this._grabs = this._grabs.filter(item => keys.some(([key]) => key === item.key));
-            for (const [key, action] of keys) {
-                if (this._grabs.some(item => item.key === key)) continue;
-                const id = global.display.grab_accelerator(key, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT);
-                if (!id) throw new Error(`Cannot acquire ${key}`);
-                this._grabs.push({id, key, action});
-                Main.wm.allowKeybinding(Meta.external_binding_name_for_action(id), Shell.ActionMode.NORMAL);
-            }
-        } catch {
-            this._releaseRecording();
+        if (!this._owner) {
+            this._owner = owner;
+            this._ownerWatch = Gio.bus_watch_name_on_connection(Gio.DBus.session,
+                owner, Gio.BusNameWatcherFlags.NONE, null, () => this._releaseRecording());
         }
-        return Boolean(this._owner) && (this._wanted[kind] || !active);
+        for (const grab of this._grabs.filter(item => !keys.some(([key]) => key === item.key)))
+            this._ungrab(grab);
+        this._grabs = this._grabs.filter(item => keys.some(([key]) => key === item.key));
+        for (const [key, action] of keys) {
+            if (this._grabs.some(item => item.key === key)) continue;
+            const id = global.display.grab_accelerator(key, Meta.KeyBindingFlags.IGNORE_AUTOREPEAT);
+            if (!id) throw new Error(`Cannot acquire ${key}`);
+            this._grabs.push({id, key, action});
+            Main.wm.allowKeybinding(Meta.external_binding_name_for_action(id), Shell.ActionMode.NORMAL);
+        }
     }
 
     _ungrab({id}) {
@@ -186,10 +303,11 @@ export default class VoiceCaret extends Extension {
     }
 
     _releaseRecording() {
+        this._letGo();
         for (const grab of this._grabs ?? [])
             this._ungrab(grab);
         this._grabs = [];
-        this._wanted = {recording: false, chat: false};
+        this._wanted = {recording: false, chat: false, hotkey: false};
         if (this._ownerWatch) Gio.bus_unwatch_name(this._ownerWatch);
         this._ownerWatch = 0;
         this._owner = null;
