@@ -5,8 +5,8 @@ that target architecture: the helpers link to its system AT-SPI, GLib, PulseAudi
 and ICU libraries. KDE support is deferred to [issue #100](https://github.com/TabMail/tabmail-voice/issues/100).
 
 `voice-hotkey` uses the GlobalShortcuts portal and the shared gesture state machine.
-On GNOME, Right Alt is the default, held through the GNOME extension (see `gnome/README.md`); elsewhere
-F8 is, with F9 available as an alternative. Hold to dictate, double-tap
+On GNOME, Right Alt is the default, held through the GNOME extension (see `gnome/README.md`); elsewhere,
+and on a GNOME the extension doesn't support, F8 is, with F9 available as an alternative. Hold to dictate, double-tap
 for hands-free, or triple-tap for history. Shift plus the selected key starts agent
 mode or switches mode during hands-free listening; Ctrl+Shift plus the key cancels
 or closes chat. Startup binds the selected shortcuts; GNOME restores previously

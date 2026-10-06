@@ -3463,7 +3463,9 @@ Wayland. The 20 ms read runs only while the key is held, so an idle desktop pays
 **Consequences:**
 - After a fresh install, GNOME loads the extension only after a log-out and in; until then the
   keyboard permission is not granted, and the welcome guide and Settings say to log out and back in.
-  GNOME releases the extension does not support (`unsupported`) go without it, as before.
+  GNOME releases the extension does not support (`unsupported`) go without it, as before. Right Alt
+  can never be held there, so it isn't offered: the dictation key is F8 (F9 the alternative), and a
+  stored Right Alt choice returns once GNOME integration is supported (owner, 2026-10-05).
 - On GNOME, Space switches to agent mode while dictating, so the welcome guide no longer names a
   Shift shortcut there; Shift with the dictation key still starts agent mode on every platform.
 - Right Alt is taken by TabMail Voice while it is the dictation key, so it no longer acts as Alt in

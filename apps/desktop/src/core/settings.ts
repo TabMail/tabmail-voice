@@ -96,10 +96,25 @@ export class AppSettings extends Observable {
     private readonly store: KeyValueStore,
     /** Whether a Thunderbird profile has TabMail's add-on (`EmailClient.hasTabMail`). */
     private readonly hasTabMail: () => boolean,
-    readonly availableHotkeys: readonly [DictationHotkey, ...DictationHotkey[]] = [defaultHotkey, "function"],
+    private offered: readonly [DictationHotkey, ...DictationHotkey[]] = [defaultHotkey, "function"],
     readonly builtInExcludedApps: readonly ExcludedApp[] = config.builtInExcludedApps,
   ) {
     super();
+  }
+
+  /** The keys Settings offers; the first is the default. */
+  get availableHotkeys(): readonly [DictationHotkey, ...DictationHotkey[]] {
+    return this.offered;
+  }
+
+  /** Offers other keys, as when GNOME integration turns out not to support this GNOME. The stored
+   * choice is kept: if it isn't offered now, the first key is used until it is offered again. */
+  offerHotkeys(keys: readonly [DictationHotkey, ...DictationHotkey[]]): void {
+    if (keys.length === this.offered.length && keys.every((key, index) => key === this.offered[index])) return;
+    const before = this.hotkey;
+    this.offered = keys;
+    this.changed();
+    if (this.hotkey !== before) this.onHotkeyChange?.(this.hotkey);
   }
 
   get hotkey(): DictationHotkey {

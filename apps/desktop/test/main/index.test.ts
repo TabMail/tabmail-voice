@@ -2102,6 +2102,33 @@ test("outside GNOME, Linux offers F8 and F9, with Shift for agent mode", async (
   }
 });
 
+/** Right Alt needs the extension, which supports GNOME 50 only: elsewhere the dictation key is F8
+ * (owner, 2026-10-05). */
+test("on a GNOME the integration doesn't support, the dictation key is F8 and Right Alt isn't offered", async () => {
+  vi.stubEnv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME");
+  vi.doMock("../../src/main/native/linux/gnomeIntegration.js", async (original) => {
+    const { GnomeIntegration } = await original<typeof import("../../src/main/native/linux/gnomeIntegration.js")>();
+    return { GnomeIntegration: class extends GnomeIntegration {
+      constructor(helper: ConstructorParameters<typeof GnomeIntegration>[0]) {
+        super(helper, async () => "GNOME Shell 49.2");
+      }
+    } };
+  });
+  try {
+    await launch("linux");
+    const state = (name: string) => app.handlers.get(channels.getState)?.({}, name);
+    await vi.waitFor(() => expect(state("settings")).toMatchObject({ gnomeIntegration: "unsupported" }));
+    expect(state("settings")).toMatchObject({ hotkey: "F8", availableHotkeys: ["F8", "F9"] });
+    const configured = app.helpers.get("voice-hotkey")!.requests.filter((request) => request.method === "configure");
+    expect(configured.at(-1)).toMatchObject({ params: expect.objectContaining({ hotkey: "F8" }) });
+    await send({ type: "setHotkey", hotkey: "rightAlt" });
+    expect(state("settings")).toMatchObject({ hotkey: "F8" });
+  } finally {
+    vi.unstubAllEnvs();
+    vi.doUnmock("../../src/main/native/linux/gnomeIntegration.js");
+  }
+});
+
 /** Exercise the real GNOME adapter through its main-process consumer; only the
  * desktop command boundary and native IPC transport are stand-ins. */
 test("GNOME activation, readiness hints and recording ownership are wired to the hotkey helper", async () => {

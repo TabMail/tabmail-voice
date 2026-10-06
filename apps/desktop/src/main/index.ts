@@ -132,9 +132,11 @@ function launch(): void {
 
   const store = new JSONFileStore(join(app.getPath("userData"), "settings.json"));
   // GNOME integration holds Right Alt (the portal cannot bind a lone modifier), so other Linux
-  // desktops have F8 and F9 only.
+  // desktops, and a GNOME the integration doesn't support, have F8 and F9 only.
   const isGnome = process.platform === "linux" && process.env.XDG_CURRENT_DESKTOP?.toLowerCase().split(":").includes("gnome") === true;
-  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? ["rightAlt", "F8", "F9"] : process.platform === "linux" ? ["F8", "F9"] : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
+  const gnomeHotkeys = ["rightAlt", "F8", "F9"] as const;
+  const portalHotkeys = ["F8", "F9"] as const;
+  const settings = new AppSettings(store, hasTabMail, process.platform === "darwin" ? ["rightOption", "function"] : isGnome ? gnomeHotkeys : process.platform === "linux" ? portalHotkeys : ["rightAlt", "rightControl"], process.platform === "darwin" ? config.builtInExcludedApps : process.platform === "win32" ? config.windowsBuiltInExcludedApps : []);
   const account = new AccountModel(new AuthClient(liveTransport), new KeychainSessionStore());
 
   const helpers = join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "dist"), "helpers");
@@ -176,7 +178,12 @@ function launch(): void {
 
   const windows = new Windows(stateOf);
   // GNOME integration is part of the keyboard permission.
-  if (gnomeIntegration) gnomeIntegration.onChange = () => { permissions.refresh(); pushSettingsWindows(); };
+  if (gnomeIntegration) gnomeIntegration.onChange = () => {
+    // Right Alt can never be held on a GNOME the extension doesn't support: F8 there (owner, 2026-10-05).
+    settings.offerHotkeys(gnomeIntegration.state === "unsupported" ? portalHotkeys : gnomeHotkeys);
+    permissions.refresh();
+    pushSettingsWindows();
+  };
 
   function sendAudio(command: AudioCommand): void {
     const contents = windows.audio().webContents;
