@@ -77,7 +77,7 @@ inline std::optional<std::string> stop(size_t nodes, unsigned long long elapsedM
 }
 
 // A metadata-only look inside `root` for a page of an excluded website, each step the core's
-// census, deep first with the children last fetched first. The element itself is judged (a page,
+// census, deep first, each element's children in order. The element itself is judged (a page,
 // a password element) but not counted; a password element's children are never asked for. The tree gives `withinBudget()`, `isPassword(node)`,
 // `page(node)` and `children(node, limit)`, which may stop early when out of time, so a look that
 // ends out of time has not seen the element whole. Each caller decides what `notSeenWhole` means

@@ -350,14 +350,12 @@ int main() {
         wide.children.resize(budget - 2);
         wide.children.insert(wide.children.begin(), &holder);
         expect(!voice::safeSubtree(census, &wide, policy, true), "a password element under the budget's edge is still found");
-        // Only visits count: an element fetched while others wait gets the visits left, so an
-        // excluded page among its last children, visited first, is found.
+        // Only visits count: an element fetched while nearly a budget's worth of others wait
+        // still gets the visits left, so an excluded page among its children is found.
         Element excluded{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
-        Element deep{ATSPI_ROLE_PANEL, "", {}, {}};
-        for (size_t at = 0; at + 1 < budget; ++at) deep.children.push_back(&fillers[at]);
-        deep.children.push_back(&excluded);
-        Element side{ATSPI_ROLE_PANEL, "", {}, {}};
-        Element top{ATSPI_ROLE_PANEL, "", {}, {&side, &deep}};
+        Element deep{ATSPI_ROLE_PANEL, "", {}, {&fillers[0], &fillers[1], &fillers[2], &excluded}};
+        Element top{ATSPI_ROLE_PANEL, "", {}, {&deep}};
+        for (size_t at = 3; at < budget; ++at) top.children.push_back(&fillers[at]);
         bool found = false;
         try { voice::safeSubtree(census, &top, policy, true); } catch (const voice::PrivacyHidden&) { found = true; }
         expect(found, "what waits does not shrink a later element's fetch");
