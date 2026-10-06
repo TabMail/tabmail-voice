@@ -240,7 +240,7 @@
     {
       "name": "Mac Unicode whitespace",
       "request": {
-        "normalize": "​ hello "
+        "normalize": "​ hello\u00a0"
       },
       "expected": {
         "text": "hello",
@@ -530,6 +530,42 @@
       }
     },
     {
+      "name": "a caret starting a soft-wrapped line after a space gets no break",
+      "request": {
+        "beforeCaret": {
+          "text": "Why does it ",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Why does it "
+      }
+    },
+    {
+      "name": "a caret starting a line after a tab gets no break",
+      "request": {
+        "beforeCaret": {
+          "text": "Why\t",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Why\t"
+      }
+    },
+    {
+      "name": "a caret starting a line after a no-break space gets no break",
+      "request": {
+        "beforeCaret": {
+          "text": "Why\u00a0",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Why\u00a0"
+      }
+    },
+    {
       "name": "a caret starting a line after a non-ASCII word gets a break",
       "request": {
         "beforeCaret": {
@@ -539,6 +575,519 @@
       },
       "expected": {
         "text": "Grüße 😀\n"
+      }
+    },
+    {
+      "name": "a rich editor's caret on the empty line after a paragraph ends the text before it in that line's break",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Hi All,"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Why does it move?"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "--"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "length": 30,
+        "caret": 27,
+        "selection": null
+      }
+    },
+    {
+      "name": "a rich editor's caret on its first empty line follows the first paragraph's break",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Hi All,"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Why does it move?"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "--"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "length": 30,
+        "caret": 8,
+        "selection": null
+      }
+    },
+    {
+      "name": "a rich editor's caret at a paragraph's end stays on that line",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Hi All,"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Why does it move?"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "--"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "length": 30,
+        "caret": 26,
+        "selection": null
+      }
+    },
+    {
+      "name": "a rich editor whose first line is its own text, then paragraphs, reads as one text",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "text": "Hi All,"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Why does it move?"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "--"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "length": 30,
+        "caret": 27,
+        "selection": null
+      }
+    },
+    {
+      "name": "a selection across paragraphs runs from the first part's start to the last part's end",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Hi "
+            },
+            {
+              "mark": "selectionStart"
+            },
+            {
+              "text": "All,"
+            },
+            {
+              "mark": "selectionEnd"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "selectionStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "selectionEnd"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "selectionStart"
+            },
+            {
+              "text": "Why"
+            },
+            {
+              "mark": "selectionEnd"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": " does it move?"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "\n"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "--"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "length": 30,
+        "caret": 12,
+        "selection": [
+          3,
+          12
+        ]
+      }
+    },
+    {
+      "name": "an inline element's text joins its line",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "text": "See "
+            },
+            {
+              "text": "docs"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": " now"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "See docs now",
+        "length": 12,
+        "caret": 8,
+        "selection": null
+      }
+    },
+    {
+      "name": "text after a block starts a new line",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "A"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "text": "B"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "A\nB",
+        "length": 3,
+        "caret": null,
+        "selection": null
+      }
+    },
+    {
+      "name": "a caret after a block, before the text that follows it, starts that new line",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "A"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "B"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "A\nB",
+        "length": 3,
+        "caret": 2,
+        "selection": null
+      }
+    },
+    {
+      "name": "an empty block adds no empty line",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "A"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "B"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "A\nB",
+        "length": 3,
+        "caret": null,
+        "selection": null
+      }
+    },
+    {
+      "name": "a field without a caret or selection reports neither",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "text": "Plain"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Plain",
+        "length": 5,
+        "caret": null,
+        "selection": null
+      }
+    },
+    {
+      "name": "offsets count Unicode scalars",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Grüße 😀"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "x"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Grüße 😀\nx",
+        "length": 9,
+        "caret": 8,
+        "selection": null
       }
     }
   ]

@@ -316,22 +316,87 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     // The text before a caret that starts a line, ending in a line break. Chromium gives an empty
     // line no character and leaves out some paragraph breaks, so without it the text reads as if
     // the caret followed the last word (ADR-DESK-007, 2026-10-06). `startsLine`: the caret's line,
-    // as the OS lays it out, starts at the caret.
+    // as the OS lays it out, starts at the caret. Text ending in whitespace or a break gets none.
     if let Some(caret) = request.get("beforeCaret") {
         let text = caret["text"].as_str().ok_or(1u32)?;
         let starts_line = caret["startsLine"].as_bool().ok_or(1u32)?;
-        let unbroken = text.chars().last().is_some_and(|last| {
-            !matches!(
-                last,
-                '\n' | '\r' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}'
-            )
-        });
+        // A line that starts after whitespace is a soft wrap (Chromium reports it as a line
+        // start too), not a break the text left out.
+        let unbroken = text
+            .chars()
+            .last()
+            .is_some_and(|last| !last.is_whitespace());
         let text = if starts_line && unbroken {
             format!("{text}\n")
         } else {
             text.to_owned()
         };
         return serde_json::to_vec(&json!({"text": text})).map_err(|_| 3);
+    }
+    // A rich editor's text, from the parts a helper read in order (ADR-DESK-007, 2026-10-06): AT-SPI
+    // gives each paragraph or link of a Chromium contenteditable as an embedded object with text of
+    // its own, so the helper sends each element's own text, where its caret and its part of the
+    // selection are, and where a block element starts and ends. A block starts a line of its own,
+    // and text after one starts a new line; the caret is the first reported, the selection runs from
+    // the first part's start to the last part's end. Offsets count Unicode scalars, as AT-SPI does.
+    if let Some(hypertext) = request.get("hypertext") {
+        let parts = hypertext["parts"].as_array().ok_or(1u32)?;
+        let mut text = String::new();
+        let mut length = 0usize;
+        let mut after_block = false;
+        let mut caret = None;
+        let mut selection: Option<(usize, usize)> = None;
+        let break_line = |text: &mut String, length: &mut usize| {
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+                *length += 1;
+            }
+        };
+        for part in parts {
+            if let Some(run) = part.get("text") {
+                let run = run.as_str().ok_or(1u32)?;
+                if after_block && !run.is_empty() {
+                    break_line(&mut text, &mut length);
+                    after_block = false;
+                }
+                text.push_str(run);
+                length += run.chars().count();
+                if text.len() > CARET_SOURCE_BYTES {
+                    return Err(1);
+                }
+                continue;
+            }
+            match part.get("mark").and_then(Value::as_str).ok_or(1u32)? {
+                "blockStart" => {
+                    break_line(&mut text, &mut length);
+                    after_block = false;
+                }
+                "blockEnd" => after_block = true,
+                mark @ ("caret" | "selectionStart") => {
+                    if after_block {
+                        break_line(&mut text, &mut length);
+                        after_block = false;
+                    }
+                    if mark == "caret" {
+                        caret.get_or_insert(length);
+                    } else if selection.is_none() {
+                        selection = Some((length, length));
+                    }
+                }
+                "selectionEnd" => match selection.as_mut() {
+                    Some(range) => range.1 = length,
+                    None => return Err(1),
+                },
+                _ => return Err(1),
+            }
+        }
+        return serde_json::to_vec(&json!({
+            "text": text,
+            "length": length,
+            "caret": caret,
+            "selection": selection.map(|(start, end)| [start, end]),
+        }))
+        .map_err(|_| 3);
     }
     if let Some(window) = request.get("caretWindow") {
         let parts = read_caret(&window["parts"])?;
@@ -706,6 +771,12 @@ mod tests {
     fn invalid_shape_refuses() {
         for value in [
             json!({}),
+            json!({"hypertext":{}}),
+            json!({"hypertext":{"parts":[{"text":1}]}}),
+            json!({"hypertext":{"parts":[{"mark":"elsewhere"}]}}),
+            json!({"hypertext":{"parts":[{}]}}),
+            json!({"hypertext":{"parts":[{"mark":"selectionEnd"}]}}),
+            json!({"hypertext":{"parts":[{"text":"x".repeat(CARET_SOURCE_BYTES + 1)}]}}),
             json!({"blocks":[{"kind":"unknown","text":"x"}]}),
             json!({"blocks":[],"caret":["x"]}),
         ] {
