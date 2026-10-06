@@ -18,7 +18,7 @@ The JSON dependency is fetched from its official versioned release with a pinned
 
 Windows offers Right Alt by default (the MacBook right Option key), with Right Control as the alternative. Control+Right Alt / AltGr input is passed through for ordinary typing, including its synthesized Control events; injected input never starts dictation. Space and Escape are swallowed only while the gesture owns them. Input/output queues are bounded, and EOF ends each helper and releases its native resources. The microphone opens a fresh WASAPI client for each recording and closes it when that session ends; preparation does not capture audio. UI Automation runs separately from microphone control and has a provider deadline.
 
-Current helper tests cover gesture timing and emitted action names, both Control-key chords, stale activation completions after returning to the same window, the documented zero-duration WASAPI event-driven initialization contract, protocol refusal/recovery, foreground identity shape, inactive caret queries, EOF, synthetic editable/password/read-only/non-text fields, real insertion, text and registered binary clipboard restoration, cancellation before insertion, expired deadlines, privacy flags, and preservation of a newer user copy. Correction learning reads the complete focused editable field only while its original window remains foreground, refuses password/read-only/non-text fields and fields beyond 20,000 UTF-16 units, and keeps the field text local. Tests exercise empty, Unicode, exact-limit and over-limit fields. Classic Win32 Edit controls use bounded system messages when they expose no UI Automation text range. They do not demonstrate live microphone recording, packaging, or complete app operation. Clipboard insertion captures all clonable formats before replacing anything, refuses owner-display/private-handle formats it cannot preserve, and restores only while its sequence and owner still match. The clipboard owner pumps messages during its restore delay so intervening copies can finish. UIA validates the same unprotected focused control before mutation; final nonblocking window/focus, deadline, cancellation and modifier checks precede SendInput. Higher-integrity targets are refused. The app must construct the Windows helper client with `cancelRequests: true`; the fire-and-forget cancel message carries the request id. Cancellation after input has already committed cannot undo that insertion. Apple Notes, iMessage, Apple Calendar and Apple Contacts integration requires platform-specific alternatives; the Mac adapters remain in `macos` folders.
+Current helper tests cover gesture timing and emitted action names, both Control-key chords, stale activation completions after returning to the same window, the documented zero-duration WASAPI event-driven initialization contract, protocol refusal/recovery, foreground identity shape, inactive caret queries, EOF, synthetic editable/password/read-only/non-text fields, real insertion, the text left on the clipboard, a clipboard owner that renders late never asked for its data, a clipboard held open by another program, cancellation before insertion, expired deadlines and privacy flags. Correction learning reads the complete focused editable field only while its original window remains foreground, refuses password/read-only/non-text fields and fields beyond 20,000 UTF-16 units, and keeps the field text local. Tests exercise empty, Unicode, exact-limit and over-limit fields. Classic Win32 Edit controls use bounded system messages when they expose no UI Automation text range. They do not demonstrate live microphone recording, packaging, or complete app operation. Clipboard insertion only writes the clipboard, never reads it, and does not put back what it held. UIA validates the same unprotected focused control before mutation; final nonblocking window/focus, deadline, cancellation and modifier checks precede SendInput. Higher-integrity targets are refused. The app must construct the Windows helper client with `cancelRequests: true`; the fire-and-forget cancel message carries the request id. Cancellation after input has already committed cannot undo that insertion. Apple Notes, iMessage, Apple Calendar and Apple Contacts integration requires platform-specific alternatives; the Mac adapters remain in `macos` folders.
 
 The synthetic UIA provider suite crosses the real COM boundary into the shipped helper and counts protected name, value, pattern and subtree reads. It covers password fields inside windows, rows, links and web controls; excluded pages at focus, below focus, elsewhere in the window and inside frames/rows; failed page-address reads; genuinely addressless pages; and address-bar correction learning. A failed address read remains unknown even when UIA substitutes an empty default value, so host exclusions fail closed. Portable policy tests also cover malformed host lists and absent foreground windows.
 
@@ -58,11 +58,12 @@ pane, explicit selection or ancestor-clipping behavior.
 Insertion sends the normal Ctrl+V command to the same unprotected focused control;
 it does not require an editable-value pattern or an application allowlist. The
 target decides whether to consume paste. A successful request confirms command
-delivery and clipboard restoration, not that the target changed its text. This
+delivery, not that the target changed its text. The clipboard is written, never
+read or put back: the text stays on it, marked out of history and the cloud. This
 matches the Mac and Ubuntu insertion contract. Correction learning remains
 restricted to editable whole-field values, so terminal output is never learned
-as a field. Focus, password, integrity, deadline and clipboard preservation checks
-remain in force. Elevated targets are refused.
+as a field. Focus, password, integrity and deadline checks remain in force.
+Elevated targets are refused.
 
 To check insertion without dictation, open a disposable Windows Terminal tab with
 its title fixed to `TabMail Terminal Insertion Fixture` (`--title` plus
@@ -74,9 +75,9 @@ node native/windows/tests/terminal-paste.mjs native/windows/build/Release/voice-
 
 Keep it focused until `TERMINAL_INSERTION_PASS`. The fixture consumes ASCII and
 Unicode paste in raw input mode and never sends Enter to a shell. It checks exact
-received text, retained focus and refusal of correction learning. The helper
-preserves the prior clipboard through its normal insertion path. Run this only
-in a disposable tab with no other activity.
+received text, retained focus and refusal of correction learning. The text stays
+on the clipboard afterwards. Run this only in a disposable tab with no other
+activity.
 
 For split panes, use a disposable Windows Terminal tab with two vertical panes.
 From `apps/desktop`, run this in the left pane (it stays alive for two minutes):

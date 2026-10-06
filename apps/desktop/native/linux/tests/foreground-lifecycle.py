@@ -14,6 +14,10 @@ import sys
 import tempfile
 import time
 
+# A synthetic RemoteDesktop portal reports each selection the helper offers and each key it sends.
+portal = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'remote-desktop-portal.py')],
+    stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)  # unbuffered: select() sees every line
+assert portal.stdout.readline() == b'ready\n', 'the synthetic portal starts'
 control_read, control_write = os.pipe()
 ack_read, ack_write = os.pipe()
 with tempfile.TemporaryFile(mode='w+t') as diagnostics:
@@ -40,6 +44,10 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         child.stdin.write(json.dumps({'id': sequence, 'method': method, 'params': params or policy}) + '\n')
         child.stdin.flush()
         reply = json.loads(line(child.stdout))
+        # An event (insertionPermissionChanged) can precede the reply in the same read; the reply may
+        # already be buffered, where select() would not see it, so read it directly (ctest bounds the wait).
+        while 'event' in reply:
+            reply = json.loads(child.stdout.readline())
         assert reply['id'] == sequence, reply
         if refused:
             assert 'error' in reply and 'result' not in reply, reply
@@ -64,6 +72,16 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
     # Each check runs in the process that serves it: the screen in the reader, the rest in the helper.
     def screen(params=None):
         return request('readScreen', params) if reader else True
+
+    def portal_events(settle):
+        events, deadline = [], time.monotonic() + settle
+        while (wait := deadline - time.monotonic()) > 0 and select.select([portal.stdout], [], [], wait)[0]:
+            events.append(portal.stdout.readline().decode().strip())
+        return events
+
+    def paste(window, refused):
+        deadline = int(time.time() * 1000) + 2000
+        request('insert', {'window': window, 'text': 'Synthetic held paste', 'deadline': deadline}, refused=refused)
 
     def field():
         if reader:
@@ -122,9 +140,17 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             caret = diagnostics.read()
             assert 'debug accessibility: caret ' in caret and 'stale target' not in caret and 'no target' not in caret, \
                 'the caret is read for the target while the Shell holds the keyboard'
+            # A paste while the Shell holds the keyboard would reach no window: nothing is offered or sent.
+            assert request('requestInsertion', {}) == {}, 'the synthetic portal grants keyboard control'
+            paste(window, refused=True)
+            assert portal_events(0.5) == [], 'no selection or key reaches the portal while the Shell holds the keyboard'
         command('H')
         if not reader:
             assert request('frontmostApp') == {'window': window}, 'the target keeps its token after the hold'
+            # The same paste once the hold ends goes through: the control for the refusal above.
+            paste(window, refused=False)
+            assert portal_events(0.5) == ['publish', 'key 65507 1', 'key 118 1', 'key 118 0', 'key 65507 0'], \
+                'after the hold the paste is offered and Ctrl+V is sent'
         # Without a hold, the Shell's own window is no target, and the window it took the focus from
         # is no longer one either.
         command('S')
@@ -238,6 +264,8 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             child.wait()
         os.close(control_write)
         acknowledgments.close()
+        portal.stdin.close()
+        portal.wait(timeout=2)
         if child.returncode:
             diagnostics.seek(0)
             sys.stderr.write(diagnostics.read())

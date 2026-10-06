@@ -54,7 +54,7 @@ void releaseGate() { std::lock_guard lock(gateMutex); released = true; gateChang
 uint64_t unixMilliseconds() { return 1000; }
 std::wstring utf16(std::string s) { return std::wstring(s.begin(), s.end()); }
 std::wstring executableName(HWND) { return L"Synthetic.exe"; }
-void paste(HWND, std::wstring, unsigned, uint64_t, std::function<bool()> canceled) { if (!canceled()) ++inserts; }
+void paste(HWND, std::wstring, uint64_t, std::function<bool()> canceled) { if (!canceled()) ++inserts; }
 template<class Name, class Read> JSON screenAccess(const JSON&, HWND w, Name, Read read, bool = false) { return read(w, ScreenExclusions{}); }
 struct Automation {
  JSON caret(HWND w) { ++caretCalls; gate(); if (providerFailure) throw std::runtime_error("synthetic provider failure"); if (!w || w != GetForegroundWindow()) return nullptr; return {{"x", reinterpret_cast<uintptr_t>(w)}, {"y", 20}, {"width", 1}, {"height", 20}}; }

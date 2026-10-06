@@ -18,7 +18,7 @@ export class WindowsSystem {
   /** Inserts only into the original positive target; the native helper revalidates it. */
   async paste(text: string, signal: AbortSignal, window: number): Promise<void> {
     if (!Number.isSafeInteger(window) || window <= 0) throw new HelperError("failed", "insert", "invalid target");
-    await this.helper.request("insert", { text, window, restoreDelay: config.clipboardRestoreDelay, deadline: Date.now() + config.helperRequestTimeout }, config.helperRequestTimeout + config.clipboardRestoreDelay, signal);
+    await this.helper.request("insert", { text, window, deadline: Date.now() + config.helperRequestTimeout }, config.helperRequestTimeout + config.insertionReplyGrace, signal);
   }
 
   /** Opaque foreground window identity, rather than a process id shared by multiple windows. */

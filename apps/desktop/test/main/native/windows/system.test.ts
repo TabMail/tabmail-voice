@@ -41,14 +41,14 @@ test("missing or malformed caret geometry does not reach Electron", async () => 
   expect(mocks.convert).not.toHaveBeenCalled();
 });
 
-test("paste carries the original target, deadline, restore delay and cancellation", async () => {
+test("paste carries the original target, deadline and cancellation, and no restore delay", async () => {
   const operation = new AbortController();
   mocks.request.mockResolvedValue({});
   const before = Date.now();
   await system.paste("Synthetic text", operation.signal, 101);
   const [method, params, timeout, signal] = mocks.request.mock.calls[0] ?? [];
   expect(method).toBe("insert");
-  expect(params).toMatchObject({ text: "Synthetic text", window: 101, restoreDelay: 500 });
+  expect(params).toEqual({ text: "Synthetic text", window: 101, deadline: expect.any(Number) });
   expect(params.deadline).toBeGreaterThanOrEqual(before + 3000);
   expect(params.deadline).toBeLessThanOrEqual(Date.now() + 3000);
   expect(timeout).toBe(3500);

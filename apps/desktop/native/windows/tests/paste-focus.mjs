@@ -41,18 +41,21 @@ try {
   const initial = await command("stats");
   assert.equal(initial.focus, 1);
   assert.equal(initial.firstEmpty && initial.secondEmpty && initial.clipboardOriginal, true);
-  const params = () => ({ window, text: "Synthetic focus paste", restoreDelay: 200, deadline: Date.now() + 2500 });
+  const params = () => ({ window, text: "Synthetic focus paste", deadline: Date.now() + 2500 });
   assert.equal((await request("insert", params())).error, undefined, "stable logical focus accepts paste without editable patterns");
-  const stable = await command("stats");
-  assert.equal(stable.firstExact && stable.secondEmpty && stable.clipboardOriginal, true, "positive control delivers exact text and restores clipboard");
+  // The helper answers once the paste keys are sent; the field takes the paste when it handles them.
+  let stable = await command("stats");
+  for (const by = Date.now() + 4000; !stable.firstExact && Date.now() < by; stable = await command("stats")) await pause(20);
+  assert.equal(stable.firstExact && stable.secondEmpty && stable.clipboardPasted, true, "positive control delivers exact text, which stays on the clipboard");
 
-  // A held clipboard: the paste waits to save it, then would type the text instead. Focus moves
-  // during that wait, and the check before typing refuses.
+  // A held clipboard: the paste waits to open it. Focus moves during that wait, and the check
+  // after it refuses before the clipboard is written.
+  await command("seed");
   await command("lock");
   const offset = helper.errors().length;
   const pending = request("insert", params());
   const deadline = Date.now() + 1000;
-  while (!helper.errors().slice(offset).includes("paste stage: clipboard-snapshot")) {
+  while (!helper.errors().slice(offset).includes("paste stage: clipboard-open")) {
     assert.ok(Date.now() < deadline, "initial UIA identity is captured before changing focus");
     await pause(5);
   }

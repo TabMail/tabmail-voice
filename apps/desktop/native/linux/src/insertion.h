@@ -7,28 +7,23 @@
 #include "input_session.h"
 
 namespace voice {
-// One bounded transaction at a time. Clipboard v1 has no compare-and-set: an
-// observed foreign owner vetoes restoration, but the final owner check and the
-// compositor mutation cannot be atomic. Never retry an uncertain paste.
+// One bounded transaction at a time. The clipboard is written, never read: the
+// text is offered, pasted once this session owns the selection, and left there
+// (ADR-DESK-002). Clipboard v1 has no compare-and-set: an observed foreign owner
+// vetoes the paste, but the final owner check and the compositor mutation cannot
+// be atomic. Never retry an uncertain paste.
 class Inserter {
-    // How long the app holding the clipboard gets to hand over its contents
-    // before the paste goes ahead without putting them back (owner, 2026-10-04).
-    static constexpr unsigned snapshotMilliseconds = 500;
     struct Transaction {
         int64_t id;
-        uint64_t target, snapshotEpoch;
-        unsigned restoreDelay;
+        uint64_t target;
         std::chrono::steady_clock::time_point deadline;
         std::string text;
         Channel::Reply reply;
-        Object<GCancellable> cancel = own(g_cancellable_new()), reading = own(g_cancellable_new());
-        InputSession::Offer saved;
-        std::vector<std::string> formats;
+        Object<GCancellable> cancel = own(g_cancellable_new());
         std::vector<int> chordKeys, pressedKeys;
         bool terminal = false;
-        size_t next = 0, bytes = 0;
-        guint timer = 0, snapshotTimer = 0;
-        bool restorable = true, canceled = false, published = false, publishComplete = false, sawOwner = false,
+        guint timer = 0;
+        bool canceled = false, published = false, publishComplete = false, sawOwner = false,
             foreignOwner = false, injectionStarted = false,
             successful = false, cleaning = false;
     };
@@ -47,23 +42,12 @@ class Inserter {
         if (!active(item)) return;
         if (item->timer && g_main_context_find_source_by_id(nullptr, item->timer)) g_source_remove(item->timer);
         item->timer = 0;
-        if (item->snapshotTimer && g_main_context_find_source_by_id(nullptr, item->snapshotTimer)) g_source_remove(item->snapshotTimer);
-        item->snapshotTimer = 0;
-        g_cancellable_cancel(item->cancel.get()); g_cancellable_cancel(item->reading.get());
+        g_cancellable_cancel(item->cancel.get());
         current.reset(); item->reply(nlohmann::json::object(), item->successful && !item->canceled);
-    }
-    void restore(const std::shared_ptr<Transaction>& item) {
-        if (!active(item)) return;
-        if (!item->published || !item->restorable || item->foreignOwner || !input.ready() || !input.state->selection.ours) { complete(item); return; }
-        // Cleanup has its own bounded lifetime; cancellation of the insertion
-        // must not cancel restoration or leave an injected modifier pressed.
-        input.state->publish(item->saved, nullptr, [this, item](bool success) {
-            item->successful = item->successful && success; complete(item);
-        });
     }
     void release(const std::shared_ptr<Transaction>& item) {
         if (!active(item)) return;
-        if (item->pressedKeys.empty() || !input.ready()) { restore(item); return; }
+        if (item->pressedKeys.empty() || !input.ready()) { complete(item); return; }
         const int key = item->pressedKeys.back(); item->pressedKeys.pop_back();
         input.state->key(key, false, nullptr, [this, item](bool) { release(item); });
     }
@@ -78,15 +62,7 @@ class Inserter {
         if (step < count && !valid(item)) { clean(item); return; }
         if (step == count * 2) {
             item->successful = true;
-            if (item->timer && g_main_context_find_source_by_id(nullptr, item->timer)) g_source_remove(item->timer);
-            item->timer = 0;
-            if (item->canceled) { clean(item); return; }
-            struct Delay { Inserter* self; std::shared_ptr<Transaction> item; };
-            item->timer = g_timeout_add_full(G_PRIORITY_DEFAULT, item->restoreDelay,
-                [](gpointer data) -> gboolean {
-                    auto delay = static_cast<Delay*>(data); delay->item->timer = 0;
-                    delay->self->clean(delay->item); return G_SOURCE_REMOVE;
-                }, new Delay{this, item}, [](gpointer data) { delete static_cast<Delay*>(data); });
+            clean(item);
             return;
         }
         // Submission, not the reply, is the irreversible boundary. Even a failed
@@ -105,33 +81,19 @@ class Inserter {
         if (!valid(item) || item->foreignOwner || !input.state->selection.ours) { clean(item); return; }
         item->injectionStarted = true; chord(item);
     }
-    void snapshot(const std::shared_ptr<Transaction>& item) {
-        if (!valid(item) || input.state->selection.epoch != item->snapshotEpoch) { complete(item); return; }
-        if (item->next == item->formats.size()) {
-            auto bytes = std::make_shared<const std::vector<unsigned char>>(item->text.begin(), item->text.end());
-            InputSession::Offer temporary{{"text/plain;charset=utf-8", bytes}, {"text/plain", bytes}, {"UTF8_STRING", bytes}};
-            item->published = true;
-            // Keep this call independent of the transaction cancellable. A
-            // submitted SetSelection may still commit after cancellation;
-            // observe its completion before scheduling restoration.
-            input.state->publish(std::move(temporary), nullptr, [this, item](bool success) {
-                if (!active(item)) return;
-                item->publishComplete = true;
-                if (!success || !valid(item)) { clean(item); return; }
-                maybeInject(item);
-            });
-            return;
-        }
-        const auto mime = item->formats[item->next++];
-        input.state->read(mime, item->reading.get(), [this, item, mime](InputSession::Bytes bytes) {
+    void publish(const std::shared_ptr<Transaction>& item) {
+        if (!valid(item)) { complete(item); return; }
+        auto bytes = std::make_shared<const std::vector<unsigned char>>(item->text.begin(), item->text.end());
+        InputSession::Offer offer{{"text/plain;charset=utf-8", bytes}, {"text/plain", bytes}, {"UTF8_STRING", bytes}};
+        item->published = true;
+        // Keep this call independent of the transaction cancellable. A
+        // submitted SetSelection may still commit after cancellation;
+        // observe its completion before ending the transaction.
+        input.state->publish(std::move(offer), nullptr, [this, item](bool success) {
             if (!active(item)) return;
-            if (!bytes || bytes->size() > 64 * 1024 * 1024 - item->bytes) {
-                // A clipboard that can't be saved isn't put back; the paste still happens.
-                std::cerr << "debug insertion: clipboard not saved, pasting without restoring it\n";
-                item->restorable = false; item->saved.clear(); item->next = item->formats.size();
-                snapshot(item); return;
-            }
-            item->bytes += bytes->size(); item->saved[mime] = bytes; snapshot(item);
+            item->publishComplete = true;
+            if (!success || !valid(item)) { clean(item); return; }
+            maybeInject(item);
         });
     }
 public:
@@ -148,7 +110,7 @@ public:
     ~Inserter() { input.state->onOwnerChange = {}; }
     void cancel(int64_t id) {
         if (!current || current->id != id) return;
-        current->canceled = true; g_cancellable_cancel(current->cancel.get()); g_cancellable_cancel(current->reading.get());
+        current->canceled = true; g_cancellable_cancel(current->cancel.get());
         // In-flight key calls perform their own release chain on completion.
         if (!current->injectionStarted && (!current->published || current->publishComplete)) clean(current);
     }
@@ -156,29 +118,20 @@ public:
         if (current || !input.ready() || !params.is_object() ||
             !params.contains("text") || !params["text"].is_string() ||
             !params.contains("window") || !params["window"].is_number_unsigned() ||
-            !params.contains("deadline") || !params["deadline"].is_number_integer() ||
-            !params.contains("restoreDelay") || !params["restoreDelay"].is_number_unsigned()) throw std::runtime_error("invalid insertion");
+            !params.contains("deadline") || !params["deadline"].is_number_integer()) throw std::runtime_error("invalid insertion");
         auto item = std::make_shared<Transaction>();
-        item->id = id; item->target = params["window"].get<uint64_t>(); item->restoreDelay = params["restoreDelay"].get<unsigned>();
+        item->id = id; item->target = params["window"].get<uint64_t>();
         item->text = params["text"].get<std::string>(); item->reply = std::move(reply);
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         const auto wallDeadline = params["deadline"].get<int64_t>();
-        if (!item->target || item->target > 9007199254740991ULL || item->restoreDelay > 10000 || params["restoreDelay"] != item->restoreDelay ||
+        if (!item->target || item->target > 9007199254740991ULL ||
             item->text.empty() || item->text.size() > 1024 * 1024 || item->text.find('\0') != std::string::npos ||
             !g_utf8_validate(item->text.data(), item->text.size(), nullptr) || wallDeadline <= now || wallDeadline > now + 3000) throw std::runtime_error("invalid insertion");
-        if (!input.state->selection.known) {
-            // No side effect has occurred. The caller keeps the text in history
-            // and can explain why automatic paste was unavailable.
-            item->reply({{"status", "clipboard-unavailable"}}, true);
-            return;
-        }
         item->terminal = terminalTarget();
         // GNOME terminals reserve Ctrl+V for terminal input; their clipboard
         // shortcut is Ctrl+Shift+V. Use the provider's semantic terminal role.
         item->chordKeys = item->terminal ? std::vector<int>{0xffe3, 0xffe1, 'v'} : std::vector<int>{0xffe3, 'v'};
         item->deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wallDeadline - now);
-        item->snapshotEpoch = input.state->selection.epoch; item->formats = input.state->selection.formats;
-        for (const auto& mime : item->formats) if (mime == "application/vnd.portal.filetransfer") throw std::runtime_error("unsupported clipboard capability");
         current = item;
         struct Deadline { Inserter* self; int64_t id; };
         item->timer = g_timeout_add_full(G_PRIORITY_DEFAULT, wallDeadline - now,
@@ -187,13 +140,7 @@ public:
                 if (deadline->self->current) deadline->self->current->timer = 0;
                 deadline->self->cancel(deadline->id); return G_SOURCE_REMOVE;
             }, new Deadline{this, id}, [](gpointer data) { delete static_cast<Deadline*>(data); });
-        struct Snapshot { std::shared_ptr<Transaction> item; };
-        item->snapshotTimer = g_timeout_add_full(G_PRIORITY_DEFAULT, snapshotMilliseconds,
-            [](gpointer data) -> gboolean {
-                const auto& item = static_cast<Snapshot*>(data)->item;
-                item->snapshotTimer = 0; g_cancellable_cancel(item->reading.get()); return G_SOURCE_REMOVE;
-            }, new Snapshot{item}, [](gpointer data) { delete static_cast<Snapshot*>(data); });
-        snapshot(item);
+        publish(item);
     }
 };
 }

@@ -40,7 +40,7 @@ apps/desktop/
 │   │   ├── VoiceMicrophone/         `voice-microphone`'s `main.swift`
 │   │   ├── VoiceMicrophoneKit/      The microphone, in a process of its own that runs one engine, ending itself after each dictation or an input change to be started afresh: `MicrophoneService` (its requests), `MicrophoneCapture` (the engine, prepared ahead), `HelperConfig`
 │   │   └── VoiceMacOSKit/           Everything else that needs AppKit or Accessibility; `MacService` (its requests) and `HelperConfig` (its tunable numbers) at the top
-│   │       ├── Dictation/               Paste and clipboard restore, the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
+│   │       ├── Dictation/               Paste (the clipboard written, never read), the caret, the focused field read after a paste, the keyboard's language, the screen read and its reader
 │   │       ├── Privacy/                 What must not leave the helper: secret-looking text taken out of a screen read (`Redactor` and `SharedContext`, thin adapters to the shared Rust core); the apps and websites a read excludes (`ScreenExclusions`)
 │   │       ├── System/                  The Accessibility activator, other apps (frontmost, email apps, icons), the Globe key
 │   │       └── Connectors/              What the agent's connectors reach: Calendar and Reminders (`EventStore`), Contacts (`ContactStore`), Spotlight and opening files (`FileSearch`)
@@ -128,7 +128,7 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    context read at key-down (`ScreenContextProbe`, waited for up to `contextWait`) and the
    dictionary. The backend transcribes it and runs the cleanup prompt in the same request, under its
    own deadline (backend ADR-027), and `voice-macos` pastes the cleaned text into the focused field,
-   restoring the clipboard (`TextInserter`); with another app in front than at key-down
+   leaving it on the clipboard (`TextInserter`); with another app in front than at key-down
    (`focusChanged`), nothing is pasted and the text is left on the clipboard, with a note at the mouse
    pointer (phase `copied`). Either way the text joins the paste history. If the cleanup failed for any reason, the transcript
    is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is

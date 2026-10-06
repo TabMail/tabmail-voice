@@ -122,20 +122,17 @@ public:
                     JSON result;
                     if (method == "insert") {
                         if (!params.contains("text") || !params["text"].is_string() ||
-                            !params.contains("restoreDelay") || !params["restoreDelay"].is_number_unsigned() ||
                             !params.contains("deadline") || !params["deadline"].is_number_unsigned()) throw std::runtime_error("invalid paste");
-                        const auto delay = params["restoreDelay"].get<unsigned>();
                         const auto deadline = params["deadline"].get<uint64_t>();
                         const auto now = voice::unixMilliseconds();
-                        if (delay > 1000 || deadline <= now || deadline - now > 5000) throw std::runtime_error("invalid paste deadline");
+                        if (deadline <= now || deadline - now > 5000) throw std::runtime_error("invalid paste deadline");
                         {
                             std::lock_guard lock(mutex);
-                            // Paste checks its insertion deadline before mutation and input.
-                            // Restoration has its own allowance in the caller's timeout;
-                            // killing at the generic UIA limit can strand the temporary clipboard.
-                            busyUntil = GetTickCount64() + (deadline - now) + delay;
+                            // Paste checks its insertion deadline before mutation and input; its clipboard
+                            // wait ends at the deadline, and this margin keeps the watchdog clear of it.
+                            busyUntil = GetTickCount64() + (deadline - now) + voice::HelperConfig::clipboardOpenWaitMs;
                         }
-                        voice::paste(window, voice::utf16(params["text"].get<std::string>()), delay, deadline, [this] { return canceled.load(); });
+                        voice::paste(window, voice::utf16(params["text"].get<std::string>()), deadline, [this] { return canceled.load(); });
                         result = JSON::object();
                     } else if (method == "focusedFieldValue") {
                         if (!params.contains("maxLength") || !params["maxLength"].is_number_unsigned()) throw std::runtime_error("invalid field bound");

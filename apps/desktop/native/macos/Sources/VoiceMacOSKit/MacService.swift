@@ -17,8 +17,7 @@ import VoiceHelperSupport
 ///   the app's focused field, null for none, a password field, one longer than `maxLength` UTF-16
 ///   code units (`FocusedField`), or one in an app or on a website the user excludes from screen
 ///   reading, which is not read. Secret-looking text is taken out of it (`Redactor`).
-/// - `insert {text, restoreDelay}` → `{}`: pastes `text` into the focused field, then restores the
-///   clipboard after `restoreDelay` seconds.
+/// - `insert {text}` → `{}`: pastes `text` into the focused field; the clipboard keeps it.
 /// - `keyboardLanguage` → `{code}`: the active input source's raw locale, or null; the app normalizes it.
 /// - `fullUserName` → `{name}`: the user account's full name, empty when it has none.
 /// - `globeRead` → `{value}` (null when this macOS lacks the calls); `globeUpdate {value}` → `{}`.
@@ -88,11 +87,8 @@ public enum MacService {
             return await Task.detached { ["value": screen.focusedField(pid, maxLength, exclusions).flatMap { try? Redactor.redact($0) }.map(JSON.string) ?? .null] }.value
         }
         channel.on("insert") { params in
-            guard let text = params["text"]?.string, let delay = params["restoreDelay"]?.number,
-                  let milliseconds = Int(exactly: (delay * 1000).rounded()), milliseconds >= 0 else {
-                throw HelperError("insert needs text and restoreDelay")
-            }
-            await TextInserter(restoreDelay: .milliseconds(milliseconds)).insert(text)
+            guard let text = params["text"]?.string else { throw HelperError("insert needs text") }
+            await TextInserter().insert(text)
             return [:]
         }
         channel.on("keyboardLanguage") { _ in

@@ -53,7 +53,7 @@ int main() {
  std::vector<int64_t> queued; for(int i=0;i<4;++i)queued.push_back(enqueue("caretAnchor",JSON::object()));
  auto overflow=enqueue("caretAnchor",JSON::object());check("queue remains bounded",output->take(overflow).contains("error"));
  voice::releaseGate();output->take(blocking);for(auto pending:queued)output->take(pending);
- JSON insert={{"text","synthetic"},{"restoreDelay",uint64_t{1}},{"deadline",uint64_t{2000}}};
+ JSON insert={{"text","synthetic"},{"deadline",uint64_t{2000}}};
  bool refused=request("insert",insert).contains("error");
  check("insert still requires explicit target and does not mutate",refused && voice::inserts==0);
  check("field read still requires explicit target",request("focusedFieldValue",{{"maxLength",uint64_t{20}}}).contains("error") && voice::fieldCalls==0);

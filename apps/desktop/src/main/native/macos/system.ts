@@ -17,11 +17,11 @@ import { keyboardLanguageCode } from "../keyboardLanguage.js";
 export class MacSystem {
   constructor(private readonly helper: HelperClient) {}
 
-  /** Pastes `text` into the focused field, then restores the user's clipboard (ADR-DESK-002). Given
+  /** Pastes `text` into the focused field; the clipboard keeps it (ADR-DESK-002). Given
    * its dictation's `signal`, the paste waits out a helper restart unless the dictation is canceled
    * first (`HelperClient.request`). */
   async paste(text: string, signal?: AbortSignal): Promise<void> {
-    await this.helper.request("insert", { text, restoreDelay: config.clipboardRestoreDelay / 1000 }, config.helperRequestTimeout + config.clipboardRestoreDelay, signal);
+    await this.helper.request("insert", { text }, config.helperRequestTimeout, signal);
   }
 
   /** The process of the app in front. */
