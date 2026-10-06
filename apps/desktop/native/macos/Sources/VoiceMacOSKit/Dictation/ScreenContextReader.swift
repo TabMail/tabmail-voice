@@ -174,30 +174,95 @@ enum ScreenContextReader {
     }
 
     private static func valueCaretWindow(of element: AXUIElement) -> SharedContext.CaretWindow? {
-        func snapshot() -> (Int, NSRange)? {
-            guard let count = int(CaretLocator.attribute(element, kAXNumberOfCharactersAttribute)),
-                  let value = CaretLocator.attribute(element, kAXSelectedTextRangeAttribute),
-                  CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
-            var range = CFRange()
-            guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
-            return (count, NSRange(location: range.location, length: range.length))
-        }
-        guard let initial = snapshot() else { return nil }
-        let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
         let started = Date()
+        func withinBudget() -> Bool { Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget }
+        func text(_ requested: NSRange) -> NSString? {
+            var range = CFRange(location: requested.location, length: requested.length)
+            guard withinBudget(), let parameter = AXValueCreate(.cfRange, &range),
+                  let value = CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString,
+                  withinBudget() else { return nil }
+            return value
+        }
+        return valueCaretWindow(snapshot: {
+            valueSnapshot(markers: {
+                guard withinBudget(), let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
+                      let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element) else { return nil }
+                return (selection, whole)
+            }, parameterized: { name, value in
+                guard withinBudget() else { return nil }
+                let result = CaretLocator.parameterized(element, name, value)
+                return withinBudget() ? result : nil
+            }, characters: {
+                guard let count = int(CaretLocator.attribute(element, kAXNumberOfCharactersAttribute)),
+                      let value = CaretLocator.attribute(element, kAXSelectedTextRangeAttribute),
+                      CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+                var range = CFRange()
+                guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+                return (count, NSRange(location: range.location, length: range.length))
+            }, string: text)
+        }, string: { requested in
+            guard let value = text(requested) else {
+                HelperLog.debug("ScreenContext: no text for \(requested.location)+\(requested.length) after \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+                return nil
+            }
+            return value
+        }, focused: {
+            (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+        })
+    }
+
+    /// A field's length and selection, and whether its markers counted them.
+    struct ValueSnapshot: Equatable {
+        let count: Int
+        let range: NSRange
+        let markers: Bool
+    }
+
+    /// A field with text markers but no public marker-index conversion (Chromium; WebKit, which
+    /// answers it only under private names) is counted and placed by its markers
+    /// (`MarkerCaretSource.selection`), any other by its character count and range. Only a field
+    /// with a character count is: an element that is no text field (a page, a link) has none, and
+    /// its markers would place a selection made before it inside it. The markers are trusted only when the field's string ranges end where they do: Chromium
+    /// counts an image or other embedded object as a character in its markers but not in its
+    /// string ranges, which would shift every range read. A field whose value has no characters is
+    /// empty, whatever its markers say: Chromium gives an empty text field its placeholder in them.
+    static func valueSnapshot(markers: () -> (selection: CFTypeRef, whole: CFTypeRef)?, parameterized: (String, CFTypeRef) -> CFTypeRef?,
+                              characters: () -> (count: Int, range: NSRange)?, string: (NSRange) -> NSString?) -> ValueSnapshot? {
+        let characters = characters()
+        if let characters, characters.count != 0, let state = markers(),
+           let selection = MarkerCaretSource.selection(selection: state.selection, whole: state.whole, parameterized: parameterized),
+           selection.count == 0 || string(NSRange(location: selection.count - 1, length: 1))?.length == 1,
+           (string(NSRange(location: selection.count, length: 1))?.length ?? 0) == 0 {
+            return ValueSnapshot(count: selection.count, range: selection.range, markers: true)
+        }
+        return characters.map { ValueSnapshot(count: $0.count, range: $0.range, markers: false) }
+    }
+
+    /// The text around a field's selection, read by its string ranges; unavailable when the field
+    /// changed or lost the focus while it was read, or a range gave no text of its length.
+    static func valueCaretWindow(snapshot: () -> ValueSnapshot?, string: (NSRange) -> NSString?, focused: () -> Bool) -> SharedContext.CaretWindow? {
+        guard let initial = snapshot() else { return nil }
+        HelperLog.debug("ScreenContext: caret \(initial.range.location)+\(initial.range.length) of \(initial.count) chars, from the \(initial.markers ? "text markers" : "character range")")
+        let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
         do {
-            let result = try BoundedCaretSource.read(count: initial.0, selection: initial.1) { requested in
-                guard Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget else { return nil }
-                var range = CFRange(location: requested.location, length: requested.length)
-                guard let parameter = AXValueCreate(.cfRange, &range),
-                      let value = CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString,
-                      Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget else { return nil }
+            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range) { requested in
+                let value = string(requested)
+                if let value, value.length != requested.length {
+                    HelperLog.debug("ScreenContext: \(value.length) characters for \(requested.location)+\(requested.length)")
+                }
                 return value
             }
-            guard let final = snapshot(), final.0 == initial.0, final.1 == initial.1,
-                  (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true else { return unavailable }
+            let final = snapshot()
+            let isFocused = focused()
+            guard let final, final == initial, isFocused else {
+                HelperLog.debug("ScreenContext: the field changed while it was read (now \(final.map { "\($0.range.location)+\($0.range.length) of \($0.count)" } ?? "unreadable"), focused \(isFocused)); selection unavailable")
+                return unavailable
+            }
             return result
-        } catch { return unavailable }
+        } catch {
+            HelperLog.debug("ScreenContext: the field's text could not be read around the caret; selection unavailable")
+            return unavailable
+        }
     }
 
     // MARK: Visible text

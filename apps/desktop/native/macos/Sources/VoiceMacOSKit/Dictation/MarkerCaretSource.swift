@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
+import ApplicationServices
 import Foundation
 
 /// Converts opaque provider markers to bounded native ranges. Marker indices can be
@@ -43,5 +44,31 @@ enum MarkerCaretSource {
                   CFEqual(initial.selection, final.selection), CFEqual(initial.whole, final.whole), focused() else { return unavailable }
             return result
         } catch { return unavailable }
+    }
+
+    /// The field's length and its selection, counted in its text markers: the length of the text
+    /// from the field's start to each end. Chromium gives a field no marker-index conversion (no
+    /// `AXStartTextMarkerForTextMarkerRange` or `AXEndTextMarkerForTextMarkerRange`), so `read` gives
+    /// up there, and its character range (`AXSelectedTextRange`) puts a caret on an empty line at the
+    /// start of the paragraph above it, while its markers are right (Gmail, 2026-10-05). Its value
+    /// (`AXNumberOfCharacters`) can hold a paragraph break its markers and string ranges
+    /// (`AXStringForRange`) leave out, so the field is counted in the markers too: a range read
+    /// near the end then stays inside the text the ranges hold.
+    /// A selection made backward has its markers in the order it was made (Chromium's anchor, then
+    /// focus), so the earlier one starts it.
+    static func selection(selection: CFTypeRef, whole: CFTypeRef,
+                          parameterized: (String, CFTypeRef) -> CFTypeRef?) -> (count: Int, range: NSRange)? {
+        guard CFGetTypeID(selection) == AXTextMarkerRangeGetTypeID(), CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID() else { return nil }
+        func length(_ range: CFTypeRef?) -> Int? {
+            guard let range, let value = parameterized("AXLengthForTextMarkerRange", range) as? NSNumber, value.intValue >= 0 else { return nil }
+            return value.intValue
+        }
+        let fieldStart = AXTextMarkerRangeCopyStartMarker(whole as! AXTextMarkerRange)
+        func offset(_ marker: AXTextMarker) -> Int? {
+            length(parameterized("AXTextMarkerRangeForUnorderedTextMarkers", [fieldStart, marker] as CFArray))
+        }
+        let ends = [AXTextMarkerRangeCopyStartMarker(selection as! AXTextMarkerRange), AXTextMarkerRangeCopyEndMarker(selection as! AXTextMarkerRange)]
+        guard let count = length(whole), let anchor = offset(ends[0]), let focus = offset(ends[1]), max(anchor, focus) <= count else { return nil }
+        return (count, NSRange(location: min(anchor, focus), length: abs(focus - anchor)))
     }
 }

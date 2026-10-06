@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
+import ApplicationServices
 import Foundation
 import Testing
 @testable import VoiceMacOSKit
@@ -40,6 +41,247 @@ struct MarkerCaretSourceTests {
         let result = try #require(provider.read())
         #expect(result.selectionUnavailable)
         #expect(result.parts == ["", Redactor.placeholder, ""])
+    }
+
+    /// Chromium: text markers but no marker-index conversion, and a character range that is wrong on
+    /// an empty line; the selection comes from the lengths between the markers.
+    @Test(arguments: [(96, 0), (9, 0), (0, 0), (120, 0), (90, 6), (0, 120)])
+    func selectionIsTheMarkersOffsetsInTheField(start: Int, length: Int) throws {
+        let field = MarkerField()
+        let markers = try #require(MarkerCaretSource.selection(selection: field.range(start, start + length), whole: field.range(0, 120),
+                                                               parameterized: field.answer))
+        #expect(markers.range == NSRange(location: start, length: length))
+    }
+
+    /// The field is counted in its markers, the characters its string ranges hold, whatever its value
+    /// counts: Chromium's value can hold a paragraph break the markers leave out.
+    @Test func theFieldIsCountedInItsMarkers() throws {
+        let field = MarkerField()
+        let markers = try #require(MarkerCaretSource.selection(selection: field.range(96, 96), whole: field.range(4, 124),
+                                                               parameterized: field.answer))
+        #expect(markers.count == 120)
+        #expect(markers.range == NSRange(location: 92, length: 0))
+    }
+
+    @Test func selectionIsNoneOutsideTheField() throws {
+        let field = MarkerField()
+        #expect(MarkerCaretSource.selection(selection: field.range(110, 110), whole: field.range(0, 100),
+                                            parameterized: field.answer) == nil)
+    }
+
+    @Test func selectionIsNoneWithoutMarkerLengths() throws {
+        let field = MarkerField()
+        #expect(MarkerCaretSource.selection(selection: field.range(96, 96), whole: field.range(0, 120),
+                                            parameterized: { name, value in name == "AXLengthForTextMarkerRange" ? nil : field.answer(name, value) }) == nil)
+    }
+
+    @Test func selectionIsNoneForAnythingButMarkerRanges() throws {
+        let field = MarkerField()
+        #expect(MarkerCaretSource.selection(selection: NSArray(array: [96, 96]), whole: field.range(0, 120),
+                                            parameterized: field.answer) == nil)
+        #expect(MarkerCaretSource.selection(selection: field.range(96, 96), whole: NSArray(array: [0, 120]),
+                                            parameterized: field.answer) == nil)
+    }
+
+    /// A selection made backward (its anchor after its focus) is the same selection made forward.
+    @Test func aBackwardSelectionIsTheSameSelection() throws {
+        let field = MarkerField()
+        let markers = try #require(MarkerCaretSource.selection(selection: field.range(130, 96), whole: field.range(0, 140),
+                                                               parameterized: field.answer))
+        #expect(markers.range == NSRange(location: 96, length: 34))
+    }
+
+    @Test func selectionIsNoneForANegativeLength() throws {
+        let field = MarkerField()
+        #expect(MarkerCaretSource.selection(selection: field.range(96, 96), whole: field.range(0, 120), parameterized: { name, value in
+            name == "AXLengthForTextMarkerRange" ? NSNumber(value: -1) : field.answer(name, value)
+        }) == nil)
+    }
+
+    /// An element with no character count (a page, a link) gets no caret read from its markers.
+    @Test func anElementWithNoCharacterCountIsNotRead() {
+        let field = MarkerField()
+        #expect(ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { (field.range(100, 110), field.range(0, 140)) }, parameterized: field.answer,
+                                              characters: { nil }, string: Self.string)
+        }, string: Self.string, focused: { true }) == nil)
+    }
+
+    /// Markers counting nothing in a field that has characters ask for no text before its start.
+    @Test func markersCountingNothingAskForNoTextBeforeTheField() throws {
+        let field = MarkerField()
+        var requests: [NSRange] = []
+        let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { (field.range(0, 0), field.range(0, 0)) }, parameterized: field.answer,
+                                              characters: { (140, NSRange(location: 9, length: 0)) }, string: { range in
+                requests.append(range)
+                return Self.string(range)
+            })
+        }, string: Self.string, focused: { true }))
+        #expect(requests.allSatisfy { $0.location >= 0 })
+        #expect(result.parts == [Self.text.substring(to: 9), "", Self.text.substring(from: 9)])
+    }
+
+    /// The read of a Chromium-shaped field: 140 characters in its markers and string ranges, and a
+    /// value counting one more (a paragraph break the markers leave out) with a character range on
+    /// the wrong line.
+    private static var text: NSString { (String(repeating: "x", count: 95) + "?" + String(repeating: "y", count: 44)) as NSString }
+
+    private static func string(_ range: NSRange) -> NSString? {
+        range.location >= 0 && range.location + range.length <= text.length ? text.substring(with: range) as NSString : nil
+    }
+
+    private func read(_ field: MarkerField = MarkerField(), anchor: Int, focus: Int, markerCount: Int = 140,
+                      characters: (count: Int, range: NSRange) = (141, NSRange(location: 9, length: 0)),
+                      changes: Bool = false, focused: Bool = true) -> SharedContext.CaretWindow? {
+        var snapshots = 0
+        return ScreenContextReader.valueCaretWindow(snapshot: {
+            snapshots += 1
+            return ScreenContextReader.valueSnapshot(markers: { (field.range(anchor, changes && snapshots > 1 ? focus + 1 : focus), field.range(0, markerCount)) },
+                                                     parameterized: field.answer, characters: { characters }, string: Self.string)
+        }, string: Self.string, focused: { focused })
+    }
+
+    @Test func aChromiumFieldIsReadNearItsEndThoughItsValueCountsMore() throws {
+        let result = try #require(read(anchor: 138, focus: 138))
+        #expect(!result.selectionUnavailable)
+        #expect(result.parts == [Self.text.substring(to: 138), "", Self.text.substring(from: 138)])
+    }
+
+    @Test func aChromiumSelectionMadeBackwardIsReadAsMadeForward() throws {
+        let backward = try #require(read(anchor: 110, focus: 96))
+        #expect(!backward.selectionUnavailable)
+        #expect(backward.parts == [Self.text.substring(to: 96), Self.text.substring(with: NSRange(location: 96, length: 14)), Self.text.substring(from: 110)])
+        #expect(backward.parts == read(anchor: 96, focus: 110)?.parts)
+    }
+
+    @Test(arguments: [(true, true), (false, false)])
+    func aFieldChangedOrLeftWhileReadIsUnavailable(changes: Bool, focused: Bool) throws {
+        let result = try #require(read(anchor: 100, focus: 100, changes: changes, focused: focused))
+        #expect(result.selectionUnavailable)
+        #expect(result.parts == ["", Redactor.placeholder, ""])
+    }
+
+    /// A field that stops answering while it is read is unavailable, though it keeps the focus.
+    @Test func aFieldUnreadableAfterItsReadIsUnavailable() throws {
+        var snapshots = 0
+        let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
+            snapshots += 1
+            return snapshots > 1 ? nil : ScreenContextReader.ValueSnapshot(count: 140, range: NSRange(location: 9, length: 0), markers: false)
+        }, string: Self.string, focused: { true }))
+        #expect(result.selectionUnavailable)
+        #expect(result.parts == ["", Redactor.placeholder, ""])
+    }
+
+    /// A field without text markers is read by its character count and range.
+    @Test func aFieldWithoutMarkersIsReadByItsCharacterRange() throws {
+        let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { nil }, parameterized: { _, _ in nil }, characters: { (140, NSRange(location: 9, length: 0)) },
+                                              string: Self.string)
+        }, string: Self.string, focused: { true }))
+        #expect(result.parts == [Self.text.substring(to: 9), "", Self.text.substring(from: 9)])
+    }
+
+    @Test func aFieldWithNeitherIsNotRead() {
+        #expect(ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { nil }, parameterized: { _, _ in nil }, characters: { nil }, string: { _ in nil })
+        }, string: { _ in nil }, focused: { true }) == nil)
+    }
+
+    /// Markers that are no marker ranges leave the field to its character count and range.
+    @Test func aFieldWhoseMarkersGiveNoSelectionIsReadByItsCharacterRange() throws {
+        let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { (NSArray(array: [96, 96]), NSArray(array: [0, 140])) }, parameterized: MarkerField().answer,
+                                              characters: { (140, NSRange(location: 9, length: 0)) }, string: Self.string)
+        }, string: Self.string, focused: { true }))
+        #expect(result.parts == [Self.text.substring(to: 9), "", Self.text.substring(from: 9)])
+    }
+
+    /// A field whose text can't be read around the caret is unavailable, not unread.
+    @Test func aFieldWhoseTextCantBeReadIsUnavailable() throws {
+        let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { nil }, parameterized: { _, _ in nil }, characters: { (140, NSRange(location: 9, length: 0)) },
+                                              string: Self.string)
+        }, string: { _ in nil }, focused: { true }))
+        #expect(result.selectionUnavailable)
+        #expect(result.parts == ["", Redactor.placeholder, ""])
+    }
+
+    /// Chromium counts an image as a character in its markers but not in its string ranges: the
+    /// markers then end past the text, and the field is read by its character count and range,
+    /// which agree with its string ranges, so the text read is the text around the caret.
+    @Test func aChromiumFieldWithAnImageIsReadByItsCharacterRange() throws {
+        let result = try #require(read(anchor: 139, focus: 139, markerCount: 141, characters: (140, NSRange(location: 138, length: 0))))
+        #expect(!result.selectionUnavailable)
+        #expect(result.parts == [Self.text.substring(to: 138), "", Self.text.substring(from: 138)])
+    }
+
+    /// Markers that end short of the text (string ranges reaching past them) aren't trusted either.
+    @Test func aChromiumFieldWhoseTextRunsPastItsMarkersIsReadByItsCharacterRange() throws {
+        let result = try #require(read(anchor: 100, focus: 100, markerCount: 139, characters: (140, NSRange(location: 101, length: 0))))
+        #expect(result.parts == [Self.text.substring(to: 101), "", Self.text.substring(from: 101)])
+    }
+
+    /// An empty Chromium text field gives its placeholder in its markers; its value has no
+    /// characters, and it is read as empty.
+    @Test func anEmptyChromiumFieldIsEmptyWhateverItsMarkersHold() throws {
+        let result = try #require(read(anchor: 0, focus: 0, characters: (0, NSRange(location: 0, length: 0))))
+        #expect(!result.selectionUnavailable)
+        #expect(result.parts == ["", "", ""])
+    }
+
+    /// A secret the caret sits inside, at the start of a line it wrapped onto, is read as one text
+    /// and redacted whole (ADR-DESK-007, ADR-DESK-046): nothing is put between the texts around
+    /// the caret.
+    @Test func aSecretWrappedAtTheCaretIsRedactedWhole() throws {
+        let head = "sk" + "-" + "a1B2c3D4e", tail = "5F6g7H8i9J0k1L2"
+        let text = ("Key " + head + tail + " end") as NSString
+        let caret = 4 + head.utf16.count
+        let field = MarkerField()
+        let read = ScreenContextReader.valueCaretWindow(snapshot: {
+            ScreenContextReader.valueSnapshot(markers: { (field.range(caret, caret), field.range(0, text.length)) }, parameterized: field.answer,
+                                              characters: { (text.length, NSRange(location: 0, length: 0)) }, string: { range in
+                range.location >= 0 && range.location + range.length <= text.length ? text.substring(with: range) as NSString : nil
+            })
+        }, string: { text.substring(with: $0) as NSString }, focused: { true })
+        let window = try #require(read)
+        #expect(window.parts == ["Key " + head, "", tail + " end"])
+        var context = ScreenContext(appName: "Example Browser", bundleID: "org.example.browser")
+        context.textBeforeCaret = window.parts[0]
+        context.selectedText = window.parts[1]
+        context.textAfterCaret = window.parts[2]
+        context.appendCaret()
+        let reply = context.json
+        for name in ["textBeforeCaret", "textAfterCaret", "renderedText", "logDescription"] {
+            let value = try #require(reply[name]?.string)
+            #expect(!value.contains(head) && !value.contains(tail), "\(name)")
+        }
+    }
+
+    /// Real text-marker objects holding an offset, answering as Chromium does: lengths and unordered
+    /// ranges, no index conversion. A range keeps its markers in the order given, as a selection made
+    /// backward does.
+    private struct MarkerField {
+        func marker(_ offset: Int) -> AXTextMarker {
+            var value = offset
+            return withUnsafeBytes(of: &value) { AXTextMarkerCreate(nil, $0.bindMemory(to: UInt8.self).baseAddress!, $0.count) }
+        }
+        func range(_ start: Int, _ end: Int) -> CFTypeRef { AXTextMarkerRangeCreate(nil, marker(start), marker(end)) }
+        static func offset(_ marker: AXTextMarker) -> Int {
+            UnsafeRawPointer(AXTextMarkerGetBytePtr(marker)).loadUnaligned(as: Int.self)
+        }
+        func answer(_ name: String, _ value: CFTypeRef) -> CFTypeRef? {
+            switch name {
+            case "AXLengthForTextMarkerRange":
+                let range = value as! AXTextMarkerRange
+                let start = Self.offset(AXTextMarkerRangeCopyStartMarker(range)), end = Self.offset(AXTextMarkerRangeCopyEndMarker(range))
+                return NSNumber(value: abs(end - start))
+            case "AXTextMarkerRangeForUnorderedTextMarkers":
+                let pair = (value as! NSArray).map { Self.offset($0 as! AXTextMarker) }
+                return range(pair.min()!, pair.max()!)
+            default: return nil
+            }
+        }
     }
 
     private final class Provider {

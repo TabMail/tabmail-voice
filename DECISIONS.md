@@ -375,6 +375,39 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   (an editor's document); it stays the caret block and is not walked into. A text area that can't
   be edited (a terminal, a read-only view) is still such a field and keeps the text around its
   caret, which Windows reads only from a field that can be edited or a terminal's pane.)*
+- *(Amended 2026-10-06, measured in Gmail's rich-text compose with the owner: a Chromium field on
+  the Mac is counted and placed by its text markers. Chromium gives a field no marker-index
+  conversion (no `AXStartTextMarkerForTextMarkerRange` or `AXEndTextMarkerForTextMarkerRange`, and
+  an `AXIndexForTextMarker` counted only from the marker's own node), so the marker read gives up
+  and the field's value and selected range were read, and both are wrong there:*
+  - *Its character range (`AXSelectedTextRange`) puts a caret on an empty line at the start of the
+    paragraph above it (9 against the markers' 96, on every read), with a placeholder for its
+    bounds. Its markers are right: the caret's offset is the length of the text from the field's
+    start to it (`AXLengthForTextMarkerRange`, `MarkerCaretSource.selection`). A selection made
+    backward keeps its markers in the order it was made, so the earlier one starts it.*
+  - *Its value (`AXNumberOfCharacters`) can hold a paragraph break that its markers and string
+    ranges (`AXStringForRange`) leave out (347 against 346). The read counted the field by its value
+    and read it by ranges, so the last range ran past the text, came back empty, and the whole read
+    became unavailable: the "[redacted]" caret the owner kept seeing. The field is now counted in
+    its markers too, but only when its string ranges end where its markers do: Chromium counts an
+    image or other embedded object as a character in its markers and not in its string ranges, so
+    a field holding one is read by its value and character range as before, which agree with its
+    string ranges. A field whose value has no characters is read as empty: Chromium gives an empty
+    text field its placeholder in its markers; an element with no character count (a page, a link)
+    gets no caret read, as before. WebKit (Safari, Mail) answers its marker-index conversion only
+    under private names and is read the same way; Gecko converts and keeps the marker read.*
+  - *An empty line has no character in either, and a left-out break joins two paragraphs, so the
+    text before a caret starting a line still reads as if the caret followed the last word (a
+    caret on the empty line below "is it ready?" reads as right after the "?"). A line break added
+    to that text when the caret's line starts at it was tried and dropped: a line also starts at a
+    wrap inside a word longer than the line, and a break put between the texts around the caret
+    there splits a secret the caret sits inside, which the shared core then redacts in neither
+    half (ADR-DESK-046). The owner wants the break where the caret starts a paragraph, on every
+    platform, in the shared core (2026-10-06); a paragraph's start is never inside a word.*
+
+  *Every read logs where the caret was placed (offsets and lengths, never text), and why a read
+  became unavailable. Windows (UIA) and Linux (AT-SPI) read the caret through other interfaces and
+  are not changed.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
