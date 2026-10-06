@@ -42,13 +42,17 @@ try:
 finally:
     stop(child)
 
-child = subprocess.Popen([executable, "--flood"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+child = subprocess.Popen([executable, "--flood"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
 try:
-    # Leave stdout unread to model a parent that no longer drains output.
+    with selectors.DefaultSelector() as ready:
+        ready.register(child.stdout, selectors.EVENT_READ)
+        assert ready.select(2), "producer did not reach the output path"
+        first = json.loads(child.stdout.readline())
+    assert first == {"sequence": 0, "payload": "x" * 4096}, "producer did not reach the output path"
+    child.stdin.write(b"\n")
+    # Leave stdout unread from here on to model a parent that no longer drains output.
     assert child.wait(timeout=2) == 1, "output backpressure must terminate before cleanup"
     assert b'enqueued400' not in child.stderr.read(), "producer exceeded the bounded queue"
-    first = json.loads(child.stdout.readline())
-    assert first == {"sequence": 0, "payload": "x" * 4096}, "producer did not reach the output path"
 finally:
     stop(child)
 print("Valid IPC, oversized input and blocked-output bounds passed")
