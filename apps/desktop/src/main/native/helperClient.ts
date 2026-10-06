@@ -159,7 +159,10 @@ export class HelperClient {
 
   private launch(): void {
     const { name, executable, args = [] } = this.options;
-    const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"] });
+    // The Windows helpers are console programs. Electron already starts every child with its console
+    // hidden; `windowsHide` makes that explicit, as at the app's other launch sites, and hides it
+    // under plain Node too (the native test scripts).
+    const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     this.child = child;
     createInterface({ input: child.stdout }).on("line", (line) => this.receive(line));
     createInterface({ input: child.stderr }).on("line", (line) => {
