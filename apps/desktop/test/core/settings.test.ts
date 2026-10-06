@@ -106,6 +106,37 @@ describe("AppSettings", () => {
     expect(heard).toEqual(["rightControl"]);
   });
 
+  /** A GNOME the integration doesn't support can't hold Right Alt: the keys offered narrow to F8 and
+   * F9, and the stored choice comes back if Right Alt is offered again. */
+  test("narrowing the offered hotkeys moves off a key no longer offered and keeps the stored choice", () => {
+    const store = new MemoryStore({ dictationHotkey: "rightAlt" });
+    const app = new AppSettings(store, () => false, ["rightAlt", "F8", "F9"]);
+    const heard: string[] = [];
+    let changes = 0;
+    app.onHotkeyChange = (hotkey) => heard.push(hotkey);
+    app.observe(() => changes++);
+    app.offerHotkeys(["F8", "F9"]);
+    expect(app.availableHotkeys).toEqual(["F8", "F9"]);
+    expect(app.hotkey).toBe("F8");
+    expect(heard).toEqual(["F8"]);
+    expect(changes).toBe(1);
+    expect(store.get("dictationHotkey")).toBe("rightAlt");
+    // The same keys again change nothing.
+    app.offerHotkeys(["F8", "F9"]);
+    expect(heard).toEqual(["F8"]);
+    expect(changes).toBe(1);
+    app.offerHotkeys(["rightAlt", "F8", "F9"]);
+    expect(app.hotkey).toBe("rightAlt");
+    expect(heard).toEqual(["F8", "rightAlt"]);
+    // A chosen key that stays offered stays chosen.
+    app.hotkey = "F9";
+    heard.length = 0;
+    app.offerHotkeys(["F8", "F9"]);
+    expect(app.hotkey).toBe("F9");
+    expect(heard).toEqual([]);
+    expect(changes).toBe(4);
+  });
+
   test("Windows defaults to right Alt, retains a selected right Control, and excludes Mac Fn", () => {
     const store = new MemoryStore();
     const windows = () => new AppSettings(store, () => false, ["rightAlt", "rightControl"]);

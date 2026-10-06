@@ -3503,6 +3503,11 @@ Rationale: a modal grab is the Shell's own way to own the keyboard for a moment,
 Space or Escape and the release comes from the key itself, with or without Sticky Keys. Consequence:
 during a hold no other key reaches any app, and a click goes nowhere until Right Alt is released.
 
+**Amendment (owner, 2026-10-05) — F8 on a GNOME the extension doesn't support.** There Right Alt can
+never be held, so Settings doesn't offer it: the dictation key is F8 (F9 the alternative), as on other
+Linux desktops, and the welcome guide names Shift+F8 for agent mode and no GNOME integration to turn on.
+A stored Right Alt choice is kept and returns once GNOME integration is supported.
+
 ---
 
 ## ADR-DESK-053: The screen is read by a program of its own
