@@ -27,7 +27,7 @@ import "./index.css";
  * switches agent mode and a double tap dictates without holding, each fading after a moment; how
  * hands-free listening ends, up while it listens, over the pill when the overlay opened above the
  * caret's line); in agent mode a bubble for each tool and each app Answer reaches sits in a row
- * under it, the one that ran last first, and the running ones' borders circle. Once agent mode
+ * under it, the one that ran last first; only the one running now, first in the row, circles, enlarged. Once agent mode
  * answers, the chat window (`ChatBox`) opens over the pill, which rests there as a small circle
  * between follow-ups.
  */
@@ -234,9 +234,9 @@ function PillLayout({
   let shown: BubbleKey[] = showsTools ? [...state.tools, ...state.connectors] : [];
   if (keepsBubbles && shown.length === 0) shown = kept.current;
   else kept.current = shown;
-  const running = mode.kind === "running" ? mode.tool : null;
-  const isRunning = (key: BubbleKey) => key === running || (isConnectorID(key) && state.runningConnectors.includes(key));
-  const anyRunning = running !== null || state.runningConnectors.length > 0;
+  // One bubble runs at a time, the first in the row: the app whose tool runs, else the tool agent mode runs.
+  const isRunning = (key: BubbleKey) => key === state.runningBubble;
+  const anyRunning = state.runningBubble !== null;
   const bubbles: BubbleItem[] = bubbleOrder(shown, state.recentBubbles)
     .map((key, index) => ({
       key,

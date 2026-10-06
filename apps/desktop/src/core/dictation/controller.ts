@@ -296,10 +296,13 @@ export class DictationController extends Observable {
     return this.recent;
   }
 
-  /** The apps whose tools run now: one on this computer (`ConnectorTool`), or on the backend (the web's
-   * search), each while it runs. */
-  get runningConnectors(): ConnectorID[] {
-    return [...this.runningApps];
+  /** The one bubble that runs now, first in the row (owner, 2026-10-05: "the only one that circles is the
+   * one on the far left"): the app whose tool started last, on this computer (`ConnectorTool`) or on the
+   * backend (the web's search), while it runs; otherwise the tool agent mode runs. */
+  get runningBubble(): BubbleKey | null {
+    const app = [...this.runningApps].at(-1);
+    if (app !== undefined) return app;
+    return this.currentPhase.kind === "running" ? this.currentPhase.tool : null;
   }
 
   /** In agent mode, the email app's bundle, whose icon the Thunderbird bubble shows. */
@@ -1099,8 +1102,12 @@ export class DictationController extends Observable {
     this.changed();
   }
 
+  /** One of `connector`'s tools ends: the bubble still running (the tool agent mode runs, the answer)
+   * moves back to the front. */
   private appEnded(connector: ConnectorID): void {
     this.runningApps.delete(connector);
+    const running = this.runningBubble;
+    if (running !== null) this.recent = ranNow(this.recent, running);
     this.changed();
   }
 

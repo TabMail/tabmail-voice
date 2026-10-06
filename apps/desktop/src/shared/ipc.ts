@@ -44,8 +44,8 @@ export interface OverlayState {
   connectors: ConnectorID[];
   /** The bubbles whose tools ran, the most recent first, which the row is ordered by (`bubbleOrder`). */
   recentBubbles: BubbleKey[];
-  /** The apps whose tools run now, whose bubbles run too. */
-  runningConnectors: ConnectorID[];
+  /** The one bubble that runs now (`DictationController.runningBubble`), first in the row; null when none does. */
+  runningBubble: BubbleKey | null;
   /** The email app's icon, for the Thunderbird bubble; null without one. */
   emailAppIcon: string | null;
   /** The chat window's conversation while it is open, over the pill. */
