@@ -52,23 +52,25 @@ export const DictationCleanup = {
 };
 
 /** What a dictation is spaced from when the caret is right after it (owner, 2026-10-05): a delimiter, or
- * a closing bracket or quote. Not an opening one: what is dictated there goes inside it. */
-const spacedDelimiter = /[,;:.…!?\p{Pe}\p{Pf}]$/u;
-/** Straight quotes that close a quotation: a run of them after a word or a mark ('hi'│, "Done."│,
- * students'│, "he said 'no'"│), not after a space, a line's start or an opening mark (said "│, ('│,
- * said "'│), where they open one. */
-const closingStraightQuote = /[^\s\p{Ps}\p{Pi}"']["']+$/u;
+ * a closing bracket. Not an opening one: what is dictated there goes inside it. */
+const spacedDelimiter = /[,;:.…!?\p{Pe}]$/u;
+/** Quotes that close a quotation: a run of them after a word or a mark ('hi'│, “Done.”│, students'│,
+ * "he said 'no'"│), not after a space, a line's start or an opening bracket (said "│, (“│, said "'│),
+ * where they open one. Which way a quote is drawn doesn't count (owner, 2026-10-05): „Hallo“│ closes,
+ * and so does a quote typed the wrong way round. */
+const closingQuote = /[^\s\p{Ps}"'\p{Pi}\p{Pf}]["'\p{Pi}\p{Pf}]+$/u;
 /** What a dictation starts with to be spaced from one: a letter, a digit, a currency sign, an opening
  * bracket or quote (straight quotes and Spanish ¿ ¡ among them). */
 const spacedStart = /^[\p{L}\p{N}\p{Sc}\p{Ps}\p{Pi}"'¿¡]/u;
 
 /** `text` as pasted at a caret right after `textBeforeCaret` (the focused field's, read at key-down):
- * with a space ahead of it when that ends with a delimiter or a closing bracket or quote, so "Note:"
- * and "buy milk" give "Note: buy milk". Unchanged otherwise: after a space, a word or an opening
- * bracket or quote, with no field read, before punctuation, or in a script written without spaces. */
+ * with a space ahead of it when that ends with a delimiter, a closing bracket or a closing quote, so
+ * "Note:" and "buy milk" give "Note: buy milk". Unchanged otherwise: after a space, a word, an opening
+ * bracket or an opening quote, with no field read, before punctuation, or in a script written without
+ * spaces. */
 export function spacedFromCaret(textBeforeCaret: string, text: string): string {
   const first = [...text][0] ?? "";
-  const closes = spacedDelimiter.test(textBeforeCaret) || closingStraightQuote.test(textBeforeCaret);
+  const closes = spacedDelimiter.test(textBeforeCaret) || closingQuote.test(textBeforeCaret);
   if (!closes || !spacedStart.test(first) || unspacedScript.test(first)) return text;
   log.debug("DictationCleanup: a space added after the delimiter or closing mark before the caret");
   return ` ${text}`;

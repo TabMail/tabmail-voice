@@ -631,11 +631,13 @@ clipboard the paste leaves behind): the paste history, the clipboard when the us
 agent mode's text are as written. Owner: after an opening quote "we want no space because we're going
 to be saying something inside the quote", after a closed one we do; a straight `"` or `'` is told
 apart by what is before it (a run of them, `'no'"`, by what is before the run): after a space, a
-line's start or an opening mark it opens (no space), after anything else it closes (a space), so an apostrophe (`students'`) reads as closing too, and a
+line's start or an opening bracket it opens (no space), after anything else it closes (a space), so an apostrophe (`students'`) reads as closing too, and a
 caret inside a word after one (`don'│t`) is not dictated at (owner: "very unlikely"). The read is
 the helper's, secrets already taken out: a secret right before the caret reads as its placeholder,
-which ends in `]`, and is spaced from. Quotes are told by Unicode's category, as English uses them
-(“ opens, ” closes). No field read (screen reading off, an excluded app or
+which ends in `]`, and is spaced from. Owner: curly quotes follow the same rule, whichever way they
+are drawn ("isn't it all just working fine if somebody just mistakenly does it the other way?"), so
+German `„Hallo“│` is spaced and `sagte „│` is not; brackets go by their shape (`foo(│` is not spaced).
+No field read (screen reading off, an excluded app or
 site, a read not done by the paste, a terminal read as a viewport) adds no space; nothing is read
 again at the paste, which would cost it time.
 

@@ -296,6 +296,12 @@ describe("spacedFromCaret", () => {
     ["She said \"he said 'no'\""],
     ["She said 'he said \"no\"'"],
     ["It\u2019s \u2018hi\u2019"],
+    // Which way a quote is drawn doesn't count: German, and quotes typed the wrong way round.
+    ["Er sagte \u201eHallo\u201c"],
+    ["Er sagte \u201aja\u2018"],
+    ["\u00bbHallo\u00ab"],
+    ["He said \u201chi\u201c"],
+    ["He said \u201dhi\u201d"],
   ])("spaces a dictation from the closing mark of %j", (before) => {
     expect(spacedFromCaret(before, "buy milk")).toBe(" buy milk");
   });
@@ -313,6 +319,14 @@ describe("spacedFromCaret", () => {
     ["He said \u00ab"],
     ["see ("],
     ["see ["],
+    ["call("],
+    ["Er sagte \u201e"],
+    ["Er sagte \u201a"],
+    ["Er sagte \u00bb"],
+    ["He said \u201d"],
+    ["He said \u201d'"],
+    ["\u201d"],
+    ["(\u2018"],
   ])("leaves a dictation inside the opening mark of %j", (before) => {
     expect(spacedFromCaret(before, "buy milk")).toBe("buy milk");
   });
