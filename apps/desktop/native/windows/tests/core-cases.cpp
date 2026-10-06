@@ -2,12 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// The shared request cases (`shared/context/request-cases.json`): a field read's bound and reply and
-// a paste's text and deadline, run through the C ABI this helper links. Linux builds this file too.
+// A shared case corpus run through the C ABI this helper links: `core-cases request
+// request-cases.json` (a field read's bound and reply, a paste's text and deadline) or `core-cases
+// viewport surface-cases.json` (a terminal surface's runs, selection and caret). Linux builds this
+// file too.
 #include "../../shared/rust/VoiceCore.h"
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <map>
 #include <string>
 
 using JSON = nlohmann::json;
@@ -16,15 +19,18 @@ static void expect(bool value, const std::string& message) {
 }
 
 static int run(int argc, char** argv) {
-    expect(argc == 2, "request corpus path required");
-    std::ifstream file(argv[1]);
+    expect(argc == 3, "operation and corpus path required");
+    const std::map<std::string, voice::core::Operation> operations{{"request", voice_core_request_json}, {"viewport", voice_core_viewport_json}};
+    const auto operation = operations.find(argv[1]);
+    expect(operation != operations.end(), "unknown operation");
+    std::ifstream file(argv[2]);
     const auto corpus = JSON::parse(file);
     unsigned refused = 0, answered = 0;
     for (const auto& item : corpus.at("cases")) {
         const auto name = item.at("name").get<std::string>();
         bool coreRefused = false;
         JSON reply;
-        try { reply = voice::core::request(item.at("request"), voice_core_request_json); } catch (const std::exception&) { coreRefused = true; }
+        try { reply = voice::core::request(item.at("request"), operation->second); } catch (const std::exception&) { coreRefused = true; }
         if (item.value("refused", false)) {
             ++refused;
             expect(coreRefused, name + ": the core answered a refused case");

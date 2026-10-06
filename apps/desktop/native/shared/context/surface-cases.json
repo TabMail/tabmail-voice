@@ -1,0 +1,1884 @@
+{
+  "description": "One terminal surface built from what a helper read of it as one document (ADR-DESK-054): its visible spans and their text, the selections and where the caret is drawn, in the helper's offset unit. The shared core builds the surface's runs (connected when spans meet), the selection (complete only when every selection is wholly inside the visible spans; withheld when unreadable or not fitting the document) and the caret (exact when it is in a span and drawn inside the clip, its leading edge on the clip's edges included; outside the viewport otherwise; unavailable when the helper has none), and refuses text over the byte budget. Run by Rust and every helper that reads a terminal as one document (macOS, Linux); `refused: true` cases are refused.",
+  "cases": [
+    {
+      "name": "one visible line with the caret drawn inside it",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "name": "two connected spans with a selection across them",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              5
+            ],
+            [
+              5,
+              10
+            ]
+          ],
+          "texts": [
+            "abcde",
+            "fghij"
+          ],
+          "selections": [
+            [
+              3,
+              7
+            ]
+          ],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "abcde",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            },
+            {
+              "id": 1,
+              "text": "fghij",
+              "connected": true,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": [
+              {
+                "run": 0,
+                "start": 3,
+                "end": 5
+              },
+              {
+                "run": 1,
+                "start": 0,
+                "end": 2
+              }
+            ]
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a gap between two spans",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              3
+            ],
+            [
+              10,
+              13
+            ]
+          ],
+          "texts": [
+            "abc",
+            "klm"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "abc",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            },
+            {
+              "id": 1,
+              "text": "klm",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a selection partly scrolled away is not complete",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              10,
+              20
+            ]
+          ],
+          "texts": [
+            "0123456789"
+          ],
+          "selections": [
+            [
+              5,
+              15
+            ]
+          ],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "0123456789",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": false,
+            "ranges": [
+              {
+                "run": 0,
+                "start": 0,
+                "end": 5
+              }
+            ]
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a selection the helper could not read",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": null,
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": false,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a selection past the document is withheld",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [
+            [
+              5,
+              50
+            ]
+          ],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": false,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "overlapping selections are withheld",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [
+            [
+              1,
+              4
+            ],
+            [
+              3,
+              6
+            ]
+          ],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": false,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a collapsed selection is complete",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [
+            [
+              4,
+              4
+            ]
+          ],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a caret at the end of the last span",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 11,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 11
+        }
+      }
+    },
+    {
+      "name": "a caret between two spans belongs to the one it starts",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              5
+            ],
+            [
+              5,
+              10
+            ]
+          ],
+          "texts": [
+            "abcde",
+            "fghij"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "abcde",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            },
+            {
+              "id": 1,
+              "text": "fghij",
+              "connected": true,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 1,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "name": "a caret drawn on the clip's right edge is inside",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              100,
+              10,
+              0,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "name": "a caret drawn past the clip's right edge",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              100.5,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "outsideViewport"
+        }
+      }
+    },
+    {
+      "name": "a caret drawn below the clip",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              10,
+              50,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "outsideViewport"
+        }
+      }
+    },
+    {
+      "name": "a caret whose drawing could not be confirmed",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": null
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "outsideViewport"
+        }
+      }
+    },
+    {
+      "name": "a caret in no visible span",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 15,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "outsideViewport"
+        }
+      }
+    },
+    {
+      "name": "an empty document with its caret",
+      "request": {
+        "surface": {
+          "id": 3,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 0,
+          "startKnown": true,
+          "endKnown": true,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              0
+            ]
+          ],
+          "texts": [
+            ""
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 0,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 3,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "",
+              "connected": false,
+              "startKnown": true,
+              "endKnown": true
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 3,
+          "run": 0,
+          "offset": 0
+        }
+      }
+    },
+    {
+      "name": "known ends only where a span meets them",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 10,
+          "startKnown": true,
+          "endKnown": true,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              4
+            ],
+            [
+              6,
+              10
+            ]
+          ],
+          "texts": [
+            "abcd",
+            "ghij"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "abcd",
+              "connected": false,
+              "startKnown": true,
+              "endKnown": false
+            },
+            {
+              "id": 1,
+              "text": "ghij",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": true
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "UTF-16 offsets count an emoji as two",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              4
+            ]
+          ],
+          "texts": [
+            "😀ab"
+          ],
+          "selections": [
+            [
+              2,
+              3
+            ]
+          ],
+          "caret": {
+            "offset": 2,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "😀ab",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": [
+              {
+                "run": 0,
+                "start": 2,
+                "end": 3
+              }
+            ]
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 2
+        }
+      }
+    },
+    {
+      "name": "scalar offsets count an emoji as one",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "scalar",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              3
+            ]
+          ],
+          "texts": [
+            "😀ab"
+          ],
+          "selections": [
+            [
+              1,
+              2
+            ]
+          ],
+          "caret": {
+            "offset": 1,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "😀ab",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": [
+              {
+                "run": 0,
+                "start": 1,
+                "end": 2
+              }
+            ]
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 1
+        }
+      }
+    },
+    {
+      "name": "text exactly at the byte budget",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 11,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "unavailable"
+        }
+      }
+    },
+    {
+      "name": "a caret past the document is not in view",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 21,
+            "frame": [
+              10,
+              10,
+              1,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "outsideViewport"
+        }
+      }
+    },
+    {
+      "name": "text over the byte budget",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 10,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "text longer than its span",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              5
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "spans out of order",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              5,
+              10
+            ],
+            [
+              0,
+              5
+            ]
+          ],
+          "texts": [
+            "abcde",
+            "fghij"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "overlapping spans",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              5
+            ],
+            [
+              4,
+              9
+            ]
+          ],
+          "texts": [
+            "abcde",
+            "fghij"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a span past the document",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              15,
+              26
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "texts and spans differ in number",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world",
+            "x"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an empty clip",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            0,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a clip that is not finite",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            "wide",
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an unknown offset unit",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "bytes",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "no offset unit",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a caret drawn with a negative height",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              10,
+              10,
+              1,
+              -1
+            ]
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "selections that are no list",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": {
+            "start": 1
+          },
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a surface with no budget",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "something beside the surface",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": null
+        },
+        "limits": true
+      },
+      "refused": true
+    }
+  ]
+}

@@ -160,83 +160,65 @@ extension TerminalViewportReader {
               let limits = try? project(["limits": true]), let byteLimit = limits["bytes"]?.integer,
               let runLimit = limits["runs"]?.integer else { return nil }
         let selectionSnapshot = selection()
-        if countSnapshot == 0 {
-            let empty = NSRange(location: 0, length: 0)
-            var caret: JSON = ["status": "unavailable"]
-            if focused, selectionSnapshot == empty,
-               integer(source.attribute(kAXInsertionPointLineNumberAttribute)) == 0,
-               let frame = bounds(empty), frame.minX >= clip.minX, frame.minX <= clip.maxX,
-               frame.maxY > clip.minY, frame.minY < clip.maxY {
-                caret = ["status": "exact", "surface": .number(Double(id)), "run": 0, "offset": 0]
-            }
-            guard valid() else { return nil }
-            diagnosticSucceeded = true
-            return Surface(source: ["id": .number(Double(id)),
-                "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
-                "runs": [["id": 0, "text": "", "connected": false, "startKnown": .bool(startKnown), "endKnown": .bool(endKnown)]],
-                "selection": ["complete": .bool(selectionSnapshot == empty), "ranges": []]], caret: caret)
-        }
-        diagnosticStage = "visible-geometry"
-        let lines = [NSRange(location: 0, length: countSnapshot)]
-        func plan() -> [NSRange]? {
-            var lineCache: [Int: Int] = [:]
-            func line(_ index: Int) -> Int? {
-                if let cached = lineCache[index] { return cached }
-                let result = integer(parameter(kAXLineForIndexParameterizedAttribute as String, index as CFNumber))
-                lineCache[index] = result
-                return result
-            }
-            func singleLine(_ range: NSRange) -> Bool {
-                guard let first = line(range.location), let last = line(NSMaxRange(range) - 1) else { return false }
-                return first == last
-            }
-            return visibleRanges(lines: lines, clip: clip, bounds: bounds, isSingleLine: singleLine, valid: metadataValid)
-        }
-        guard let ranges = plan(), ranges.count <= runLimit else { return nil }
-        let read: (NSRange) -> NSString? = { requested in
-            var range = CFRange(location: requested.location, length: requested.length)
-            guard let parameter = AXValueCreate(.cfRange, &range), valid() else { return nil }
-            return source.parameter(kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
-        }
-        // Three UTF-8 bytes per UTF-16 unit is the maximum conversion expansion.
-        diagnosticStage = "bounded-text"
-        guard let captured = capture(ranges: ranges, count: countSnapshot, unitBudget: min(byteLimit, byteBudget) / 3,
-                                     read: read, valid: valid) else { return nil }
-        diagnosticStage = "selection-caret"
-        var runs: [JSON] = []
-        var selections: [JSON] = []
-        var selectedUnits = 0
-        var caret: JSON = ["status": "unavailable"]
-        if focused, let selected = selectionSnapshot, selected.length == 0 { caret = ["status": "outsideViewport"] }
-        for (index, interval) in ranges.enumerated() {
-            runs.append(["id": .number(Double(index)), "text": .string(captured.texts[index]),
-                         "connected": .bool(index > 0 && NSMaxRange(ranges[index - 1]) == interval.location),
-                         "startKnown": .bool(startKnown && interval.location == 0),
-                         "endKnown": .bool(endKnown && NSMaxRange(interval) == countSnapshot)])
-            if let selected = selectionSnapshot, selected.length > 0 {
-                let intersection = NSIntersectionRange(selected, interval)
-                if intersection.length > 0 {
-                    selectedUnits += intersection.length
-                    selections.append(["run": .number(Double(index)), "start": .number(Double(intersection.location - interval.location)),
-                                       "end": .number(Double(NSMaxRange(intersection) - interval.location))])
+        let byteBudget = min(byteLimit, byteBudget)
+        var ranges = [NSRange(location: 0, length: 0)]
+        var texts = [""]
+        if countSnapshot > 0 {
+            diagnosticStage = "visible-geometry"
+            let lines = [NSRange(location: 0, length: countSnapshot)]
+            func plan() -> [NSRange]? {
+                var lineCache: [Int: Int] = [:]
+                func line(_ index: Int) -> Int? {
+                    if let cached = lineCache[index] { return cached }
+                    let result = integer(parameter(kAXLineForIndexParameterizedAttribute as String, index as CFNumber))
+                    lineCache[index] = result
+                    return result
                 }
+                func singleLine(_ range: NSRange) -> Bool {
+                    guard let first = line(range.location), let last = line(NSMaxRange(range) - 1) else { return false }
+                    return first == last
+                }
+                return visibleRanges(lines: lines, clip: clip, bounds: bounds, isSingleLine: singleLine, valid: metadataValid)
             }
-            if focused, let selected = selectionSnapshot, selected.length == 0,
-               selected.location >= interval.location, selected.location <= NSMaxRange(interval),
-               let insertionLine = integer(source.attribute(kAXInsertionPointLineNumberAttribute)),
-               let nativeLine = integer(parameter(kAXLineForIndexParameterizedAttribute as String, selected.location as CFNumber)),
-               insertionLine == nativeLine, let position = bounds(selected),
-               position.minX >= clip.minX, position.minX <= clip.maxX,
-               position.maxY > clip.minY, position.minY < clip.maxY {
-                caret = ["status": "exact", "surface": .number(Double(id)), "run": .number(Double(index)),
-                         "offset": .number(Double(selected.location - interval.location))]
+            guard let planned = plan(), planned.count <= runLimit else { return nil }
+            let read: (NSRange) -> NSString? = { requested in
+                var range = CFRange(location: requested.location, length: requested.length)
+                guard let parameter = AXValueCreate(.cfRange, &range), valid() else { return nil }
+                return source.parameter(kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
+            }
+            // A UTF-16 unit is at least one UTF-8 byte, so no more units are read than the budget has
+            // bytes; the shared core checks the bytes.
+            diagnosticStage = "bounded-text"
+            guard let captured = capture(ranges: planned, count: countSnapshot, unitBudget: byteBudget,
+                                         read: read, valid: valid) else { return nil }
+            ranges = captured.ranges
+            texts = captured.texts
+        }
+        diagnosticStage = "selection-caret"
+        // The caret, when the field has one and no selection: where it is and where it is drawn. iTerm2
+        // can report an insertion line other than its offset's, and then where it is drawn is unknown.
+        var caret: JSON = .null
+        if focused, let selected = selectionSnapshot, selected.length == 0 {
+            let insertionLine = integer(source.attribute(kAXInsertionPointLineNumberAttribute))
+            let line = countSnapshot == 0 ? 0 : integer(parameter(kAXLineForIndexParameterizedAttribute as String, selected.location as CFNumber))
+            let drawn = insertionLine != nil && insertionLine == line ? bounds(selected) : nil
+            let frame: JSON = drawn.map { .array([$0.minX, $0.minY, $0.width, $0.height].map { .number(Double($0)) }) } ?? .null
+            // An empty field's caret is offered only where it is drawn.
+            if countSnapshot > 0 || (selected.location == 0 && drawn != nil) {
+                caret = ["offset": .number(Double(selected.location)), "frame": frame]
             }
         }
-        guard valid() else { return nil }
+        let request: JSON = ["surface": [
+            "id": .number(Double(id)), "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
+            "offsetUnit": "utf16", "count": .number(Double(countSnapshot)), "startKnown": .bool(startKnown), "endKnown": .bool(endKnown),
+            "bytes": .number(Double(byteBudget)), "spans": .array(ranges.map { [.number(Double($0.location)), .number(Double(NSMaxRange($0)))] }),
+            "texts": .array(texts.map(JSON.string)),
+            "selections": selectionSnapshot.map { [[.number(Double($0.location)), .number(Double(NSMaxRange($0)))]] } ?? .null,
+            "caret": caret,
+        ]]
+        guard valid(), let built = try? project(request), let surface = built["surface"], let caret = built["caret"] else { return nil }
         diagnosticSucceeded = true
-        let completeSelection = selectionSnapshot.map { NSMaxRange($0) <= countSnapshot && selectedUnits == $0.length } ?? false
-        return Surface(source: ["id": .number(Double(id)), "frame": .array([clip.minX, clip.minY, clip.width, clip.height].map { .number(Double($0)) }),
-                                "runs": .array(runs), "selection": ["complete": .bool(completeSelection), "ranges": .array(selections)]], caret: caret)
+        return Surface(source: surface, caret: caret)
     }
 }
 
