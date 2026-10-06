@@ -14,6 +14,11 @@ namespace voice {
 // The focused window's screen (`readScreen`) or field (`focusedFieldValue`), from what has focus now.
 inline nlohmann::json focusedRead(const std::string& method, const nlohmann::json& params, const Foreground& foreground) {
     using JSON = nlohmann::json;
+    // The shared core decides the bound a field read may ask for (1 to 20,000 UTF-16 units) before
+    // anything is looked at; one it refuses is an error, as on the other platforms.
+    std::optional<int> limit;
+    if (method == "focusedFieldValue")
+        limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json).at("maxLength").get<int>();
     const auto target = foreground.target();
     const auto result = voice::screenAccess(params, target,
         [](const auto& target) -> std::optional<std::string> {
@@ -22,13 +27,8 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
         },
         [&](const auto& target, const voice::ScreenExclusions& policy) -> JSON {
             if (!foreground.targets(target->token)) return nullptr;
-            // The shared core decides the bound a field read may ask for (1 to 20,000 UTF-16 units);
-            // one it refuses is an error, as on the other platforms.
-            std::optional<int> limit;
-            if (method == "focusedFieldValue") {
-                if (!params.contains("window") || !params["window"].is_number_unsigned() || params["window"] != target->token) return nullptr;
-                limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json).at("maxLength").get<int>();
-            }
+            if (method == "focusedFieldValue" &&
+                (!params.contains("window") || !params["window"].is_number_unsigned() || params["window"] != target->token)) return nullptr;
             const auto path = voice::ancestors(target->focus);
             const auto window = std::find_if(path.begin(), path.end(), [](const auto& node) {
                 const auto role = voice::role(node); return role == ATSPI_ROLE_FRAME || role == ATSPI_ROLE_DIALOG || role == ATSPI_ROLE_WINDOW;

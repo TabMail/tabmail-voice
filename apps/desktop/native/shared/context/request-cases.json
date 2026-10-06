@@ -253,6 +253,38 @@
       "refused": true
     },
     {
+      "name": "a paste's clock with no deadline",
+      "request": {
+        "insert": {
+          "text": "Synthetic paste",
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's deadline with a fraction of a millisecond",
+      "request": {
+        "insert": {
+          "text": "Synthetic paste",
+          "deadline": 1760000001000.5,
+          "now": 1760000000000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a paste's clock with a fraction of a millisecond",
+      "request": {
+        "insert": {
+          "text": "Synthetic paste",
+          "deadline": 1760000001000,
+          "now": 1760000000000.5
+        }
+      },
+      "refused": true
+    },
+    {
       "name": "two requests at once",
       "request": {
         "field": {

@@ -80,6 +80,8 @@ try {
   assert.equal((await request("focusedFieldValue", { ...policy, window: target, maxLength: 23 })).result.value, "Synthetic field content");
   assert.deepEqual((await request("focusedFieldValue", { ...policy, window: target, maxLength: 22 })).result, { value: null });
   assert.deepEqual((await request("readScreen", { ...policy, excludedAppIDs: ["AI.TABMAIL.VOICE.FIXTURE.DESKTOP"] })).result, { hidden: true });
+  // The bound is checked before anything else, so an excluded app does not hide a bad request.
+  assert.ok((await request("focusedFieldValue", { ...policy, excludedAppIDs: ["AI.TABMAIL.VOICE.FIXTURE.DESKTOP"], window: target, maxLength: 0 })).error);
   assert.ok((await request("readScreen", { excludedAppIDs: [] })).error);
   assert.equal((await request("readScreen", { ...policy, excludedHosts: Array(1001).fill("synthetic.example") })).result?.bundleID, "ai.tabmail.voice.fixture.desktop");
   await command({ kind: "select", from: 10, to: 15 });
