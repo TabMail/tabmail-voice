@@ -92,6 +92,9 @@ uint32_t voice_core_visible_field_scalar_new(size_t count, size_t start, size_t 
 uint32_t voice_core_source_next(const VoiceSource *state, size_t *start, size_t *length);
 uint32_t voice_core_source_utf16_offer(VoiceSource *state, const uint16_t *data, size_t length);
 uint32_t voice_core_source_utf8_offer(VoiceSource *state, const uint8_t *data, size_t length);
+/* A caret source only, once, before finish: what starts at the caret as JSON
+ * {paragraph,line,lineText} (the caret window's caretStarts). A refusal fails the source. */
+uint32_t voice_core_source_caret_starts(VoiceSource *state, const uint8_t *data, size_t length);
 uint32_t voice_core_source_finish(const VoiceSource *state, VoiceCoreBuffer *output);
 void voice_core_source_free(VoiceSource *state);
 

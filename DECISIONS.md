@@ -453,6 +453,13 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   paragraph a BACKWARD selection ends at the start of (Shift+Up from a line's start): AT-SPI reports it
   as it does a selection of the line before alone, so that break is not selected. A forward one
   (Shift+Down) is told apart by the caret at the next paragraph's start, and holds the break.)*
+- *(Amended 2026-10-06: the Mac follows the core's rule. A Chromium field read by its text markers
+  (`MarkerCaretSource.selection`) is asked where the paragraph holding the selection's start begins
+  (`AXParagraphTextMarkerRangeForTextMarker` on the earlier marker; an empty line is a paragraph
+  of its own), and the bounded caret collector hands that to the core's `caretWindow` as
+  `caretStarts` (`voice_core_source_caret_starts`). The Mac measures no line, so only a paragraph
+  start adds the break, and a field that answers no paragraph, or one read by its value or a
+  marker-index conversion, gets none, as before.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
