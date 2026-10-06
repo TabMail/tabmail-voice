@@ -275,6 +275,11 @@ describe("spacedFromCaret", () => {
     ["¡Hola!", "¡Qué bien!", " ¡Qué bien!"],
     ["Total:", "$50", " $50"],
     ["Note:", "«Bonjour»", " «Bonjour»"],
+    // A quote opens by what follows it, whichever way it is drawn.
+    ["Han sa:", "\u201dHej\u201d", " \u201dHej\u201d"],
+    ["Er sagte:", "\u00bbHallo\u00ab", " \u00bbHallo\u00ab"],
+    ["Note:", "\"'quoted'\"", " \"'quoted'\""],
+    ["Note:", "\u201c(aside)\u201d", " \u201c(aside)\u201d"],
     // The first character as a reader sees it, not its first UTF-16 unit; the first letter decides the dictation's script.
     ["Note:", "𝐀lpha", " 𝐀lpha"],
     ["Note:", "OK 牛乳", " OK 牛乳"],
@@ -343,6 +348,9 @@ describe("spacedFromCaret", () => {
     ["before punctuation", "Note:", ", and milk"],
     ["before a closing bracket", "Note:", ") and milk"],
     ["before a closing quote", "Note:", "\u201d and milk"],
+    ["before a straight closing quote", "He said \"Done.", "\" and left"],
+    ["before a closing quote run", "Note:", "'\" and left"],
+    ["before a quote then a delimiter", "Note:", "\","],
     ["before a delimiter", "Note:", "; and milk"],
     ["before a script written without spaces", "Note:", "牛乳を買う"],
     ["before a bracket in a script written without spaces", "Note:", "「はい」"],

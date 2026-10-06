@@ -60,8 +60,10 @@ const spacedDelimiter = /[,;:.…!?\p{Pe}]$/u;
  * and so does a quote typed the wrong way round. */
 const closingQuote = /[^\s\p{Ps}"'\p{Pi}\p{Pf}]["'\p{Pi}\p{Pf}]+$/u;
 /** What a dictation starts with to be spaced from one: a letter, a digit, a currency sign, an opening
- * bracket or quote (straight quotes and Spanish ¿ ¡ among them). */
-const spacedStart = /^[\p{L}\p{N}\p{Sc}\p{Ps}\p{Pi}"'¿¡]/u;
+ * bracket, Spanish ¿ ¡, or quotes that open a quotation, told as at the caret by what is next to them
+ * rather than how they are drawn: followed by one of those (”Hej”, »Hallo«, "hi"), not by a space or
+ * punctuation (" and left). */
+const spacedStart = /^["'\p{Pi}\p{Pf}]*[\p{L}\p{N}\p{Sc}\p{Ps}¿¡]/u;
 /** The last letter or digit of a text, and the first: the script on each side of the caret (a bracket,
  * a quote or a digit belongs to none). */
 const lastLetter = /[\p{L}\p{N}](?=[^\p{L}\p{N}]*$)/u;
@@ -73,11 +75,10 @@ const firstLetter = /[\p{L}\p{N}]/u;
  * bracket or an opening quote, with no field read, before punctuation, or in a script written without
  * spaces. */
 export function spacedFromCaret(textBeforeCaret: string, text: string): string {
-  const first = [...text][0] ?? "";
   const closes = spacedDelimiter.test(textBeforeCaret) || closingQuote.test(textBeforeCaret);
   // No space where either side is written without spaces, as where a long dictation's chunks meet.
   const sides = [lastLetter.exec(textBeforeCaret)?.[0] ?? "", firstLetter.exec(text)?.[0] ?? ""];
-  if (!closes || !spacedStart.test(first) || sides.some((letter) => unspacedScript.test(letter))) return text;
+  if (!closes || !spacedStart.test(text) || sides.some((letter) => unspacedScript.test(letter))) return text;
   log.debug("DictationCleanup: a space added after the delimiter or closing mark before the caret");
   return ` ${text}`;
 }
