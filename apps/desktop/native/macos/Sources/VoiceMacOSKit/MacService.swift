@@ -262,10 +262,11 @@ extension ScreenContext {
             var viewport: JSON?
         }
         guard !coreFailed else { return ["hidden": .bool(true)] }
+        // The read is timed on the wall clock; one set back during the read must not hide it.
         var request = Request(appName: appName, bundleID: bundleID, windowTitle: windowTitle, host: host,
                               terminalProgram: terminalProgram, focusedRole: focusedRole,
                               exclusions: ["excludedAppIDs": exclusions.appIDs, "excludedHosts": exclusions.hosts],
-                              nodes: nodesVisited, milliseconds: Int(seconds * 1000), stopped: stoppedEarly)
+                              nodes: nodesVisited, milliseconds: Int(max(0, seconds) * 1000), stopped: stoppedEarly)
         if let terminalSource {
             request.viewport = terminalSource
         } else {

@@ -474,6 +474,15 @@ struct ScreenContextTests {
         #expect(context.summary.contains("caret 12/0/0 chars"))
     }
 
+    /// A read timed across a wall clock set back still gives its reply, timed at zero, never hidden.
+    @Test func aClockSetBackDuringTheReadDoesNotHideIt() throws {
+        var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
+        context.append(.text, "visible paragraph")
+        context.seconds = -0.01
+        #expect(try context.renderedText() == "visible paragraph")
+        #expect(context.summary.contains(" 0 ms"))
+    }
+
     /// The debug log file gets every field, the text around the caret and the visible text as the
     /// prompts receive it (ADR-DESK-015).
     @Test func aScreenReadLogsEveryField() throws {
