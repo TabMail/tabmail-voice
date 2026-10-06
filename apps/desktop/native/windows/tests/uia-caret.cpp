@@ -86,7 +86,7 @@ struct Provider final : IUIAutomationTextPattern2 {
     bool changeVisibility = false;
     std::string field() {
         VisibleContext context;
-        UiaCaretSource::appendField(this, context, {}, GetTickCount64());
+        UiaCaretSource::appendField(this, context, {});
         return context.render();
     }
     Provider(std::wstring field, int start, int end)
@@ -123,9 +123,9 @@ struct Provider final : IUIAutomationTextPattern2 {
         *result = &visible; return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_SupportedTextSelection(SupportedTextSelection* value) override { *value = SupportedTextSelection_Single; return S_OK; }
-    CaretSource read() { return UiaCaretSource::read(this, GetTickCount64()); }
+    CaretSource read() { return UiaCaretSource::read(this); }
     std::optional<std::string> readPage() {
-        return UiaCaretSource::selectedText(this, range(selectedStart, selectedEnd), range(docStart, docEnd), GetTickCount64());
+        return UiaCaretSource::selectedText(this, range(selectedStart, selectedEnd), range(docStart, docEnd));
     }
 };
 HRESULT Visible::get_Length(int* count) { *count = static_cast<int>(owner.visibleSpans.size()); return S_OK; }
@@ -199,7 +199,7 @@ struct EditFixture {
         }
         return result;
     }
-    std::optional<CaretSource> read() { return EditCaretSource::read(window, GetTickCount64()); }
+    std::optional<CaretSource> read() { return EditCaretSource::read(window); }
 };
 static void editContracts() {
     const HWND foreground = GetForegroundWindow();
@@ -224,14 +224,11 @@ static void editContracts() {
     EditFixture changed(L"before chosen after", 7, 13); changed.replaceText = true;
     result = changed.read();
     expect(result && result->selectionUnavailable, "Edit same-length content change refused");
-    EditFixture expired(L"plain", 0, 5); bool timedOut = false;
-    try { EditCaretSource::read(expired.window, GetTickCount64() - 1501); } catch (const std::exception&) { timedOut = true; }
-    expect(timedOut && expired.reads == 0, "Edit expired deadline prevents text acquisition");
     expect(GetForegroundWindow() == foreground, "hidden Edit tests preserve foreground");
 }
 static void viewportContracts() {
     const auto capture = [](Provider& p, bool focused = true, size_t budget = 262144) {
-        return UiaCaretSource::viewportSurface(&p, 1, {0,0,400,200}, focused, budget, GetTickCount64());
+        return UiaCaretSource::viewportSurface(&p, 1, {0,0,400,200}, focused, budget);
     };
     const auto visibleOnly = [](const Provider& p) {
         return std::all_of(p.readSpans.begin(), p.readSpans.end(), [&](const auto& read) {
@@ -327,7 +324,7 @@ int main() {
     {
         const auto caption = std::wstring(990, L'x') + L" AKIA" + std::wstring(16, L'A') + L". Long caption. ";
         Provider p(caption, 0, 0);
-        const auto source = UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64());
+        const auto source = UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd));
         expect(source == utf8(caption), "caption acquisition preserves complete text beyond historical 1000-unit cut");
         std::array<std::string,3> caret{};
         // Render-only ordinary blocks do not finalize; explicitly exercise the
@@ -339,18 +336,18 @@ int main() {
     {
         Provider p(L"private prefix Caption private suffix", 0, 0);
         p.docStart += 15; p.docEnd = p.docStart + 7;
-        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64()) == "Caption" && p.outsideReads == 0,
+        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)) == "Caption" && p.outsideReads == 0,
             "approved child caption never reads surrounding document source");
     }
     {
         Provider p(L"Visible. password: " + std::wstring(600000, L'x'), 0, 0); p.unitSize = 7;
-        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64()) == "Visible. ",
+        expect(UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)) == "Visible. ",
             "oversize caption keeps closed prefix but withholds incomplete credential");
     }
     {
         Provider p(L"Caption", 0, 0); p.changeText = true;
         bool refused = false;
-        try { (void)UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd), GetTickCount64()); }
+        try { (void)UiaCaretSource::rangeSource(p.range(p.docStart, p.docEnd)); }
         catch (const std::exception&) { refused = true; }
         expect(refused, "changed caption cannot become accepted source");
     }
@@ -423,9 +420,6 @@ int main() {
         expect(moved.read().selectionUnavailable, "changed selection refused");
         Provider changed(L"before chosen after", 7, 13); changed.changeText = true;
         expect(changed.read().selectionUnavailable, "same-length selected text change refused");
-        Provider expired(L"plain", 0, 5); bool timedOut = false;
-        try { UiaCaretSource::read(&expired, GetTickCount64() - 1501); } catch (const std::exception&) { timedOut = true; }
-        expect(timedOut && expired.reads == 0, "expired deadline prevents acquisition");
         Provider page(L"outside " + selection + L" outside", 8, 8 + static_cast<int>(selection.size()));
         expect(page.readPage() == std::optional<std::string>(std::string(20001, 's')), "page selection remains complete beyond old limit");
         expect(page.reads == 2 && std::all_of(page.ranges.begin(), page.ranges.end(), [&](const auto& range) {

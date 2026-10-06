@@ -34,8 +34,11 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
                 const auto role = voice::role(node); return role == ATSPI_ROLE_FRAME || role == ATSPI_ROLE_DIALOG || role == ATSPI_ROLE_WINDOW;
             });
             if (window == path.end()) { std::cerr << "debug screen: focused window unavailable\n"; return nullptr; }
-            voice::LiveScreenTree tree(*window);
-            if (method == "readScreen") return voice::gatherScreen(tree, *window, target->focus, path, target->app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
+            if (method == "readScreen") {
+                voice::LiveScreenTree tree(*window);
+                return voice::gatherScreen(tree, *window, target->focus, path, target->app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
+            }
+            voice::LiveScreenTree tree(*window, voice::LiveScreenTree::fieldReadMilliseconds);
             try {
                 if (!voice::safeSubtree(tree, *window, policy, false) || !voice::safeSubtree(tree, target->focus, policy, true)) return JSON{{"value", nullptr}};
             } catch (const voice::PrivacyHidden&) { return JSON{{"value", nullptr}}; }

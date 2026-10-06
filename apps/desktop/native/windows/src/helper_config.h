@@ -5,17 +5,12 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 namespace voice::HelperConfig {
 inline constexpr uint32_t accessibilityRequestTimeoutMs = 1000;
 inline constexpr uint32_t accessibilityRetryIntervalMs = 1000;
 inline constexpr unsigned accessibilityMaxAttempts = 5;
 // Longest the look through what holds a selection, before its text is asked for (ms).
 inline constexpr unsigned long long contextSelectionScanMs = 200;
-// A terminal read has no deadline (ms): it runs while the user speaks, in voice-screen-reader.exe,
-// a program of its own, so it holds up nothing else; a dictation uses it only if it is done in
-// time, and the app ends that process when the read is no longer wanted (owner, 2026-10-05).
-inline constexpr unsigned long long terminalReadBudgetMs = (std::numeric_limits<unsigned long long>::max)();
 // Longest one accessibility request may run before the helper ends itself, so a provider that
 // stops answering can't hold the queue (ms).
 inline constexpr unsigned long long accessibilityWatchdogMs = 2500;

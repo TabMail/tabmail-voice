@@ -6,11 +6,9 @@
 #include <ole2.h>
 #include <UIAutomation.h>
 #include <iostream>
-#include "helper_config.h"
 #include "microphone.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
-#include "../../shared/context/walk.h"
 #include "../../shared/context/screen_context.h"
 
 namespace voice {
@@ -18,11 +16,11 @@ namespace voice {
 // Validate actual returned text and endpoint relationships, never a moved count.
 class UiaCaretSource {
 public:
-    static CaretSource read(IUIAutomationTextPattern* pattern, ULONGLONG started) {
-        UiaCaretSource reader(started);
+    static CaretSource read(IUIAutomationTextPattern* pattern) {
+        UiaCaretSource reader;
         auto selected = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> document;
-        reader.check(); require(pattern->get_DocumentRange(&document)); reader.check();
+        require(pattern->get_DocumentRange(&document));
         if (!selected || !document || !reader.containSelection(selected.Get(), document.Get())) return CaretSource::unavailable();
         const auto limits = core::request({{"limits", true}}, voice_core_context_json);
         const auto selectionLimit = limits.at("selectionSourceBytes").get<size_t>();
@@ -34,12 +32,11 @@ public:
         const auto caretStarts = reader.starts(selected.Get());
         auto finalSelection = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> finalDocument;
-        reader.check(); require(pattern->get_DocumentRange(&finalDocument)); reader.check();
+        require(pattern->get_DocumentRange(&finalDocument));
         if (!finalSelection || !finalDocument || !reader.containSelection(finalSelection.Get(), finalDocument.Get())) return CaretSource::unavailable();
         BOOL sameSelection = FALSE, sameDocument = FALSE;
         require(selected->Compare(finalSelection.Get(), &sameSelection));
         require(document->Compare(finalDocument.Get(), &sameDocument));
-        reader.check();
         if (!sameSelection || !sameDocument || reader.text(finalSelection.Get(), selectionLimit) != selectionText) return CaretSource::unavailable();
         return CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second, caretStarts);
     }
@@ -48,15 +45,15 @@ public:
     // to DocumentRange: Windows Terminal ends that range beneath its cursor or
     // last text, while GetVisibleRanges also includes the remaining blank rows.
     static nlohmann::json viewportSurface(IUIAutomationTextPattern* pattern, size_t id,
-        ContextFrame frame, bool focused, size_t byteBudget, ULONGLONG started) {
-        UiaCaretSource reader(started, HelperConfig::terminalReadBudgetMs);
+        ContextFrame frame, bool focused, size_t byteBudget) {
+        UiaCaretSource reader;
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
         const auto limits = core::request({{"limits", true}}, voice_core_viewport_json);
         const size_t limit = std::min(byteBudget, limits.at("bytes").get<size_t>());
         const int rangeLimit = limits.at("runs").get<int>();
         const auto selectedRanges = [&] {
             ComPtr<IUIAutomationTextRangeArray> array;
-            reader.check(); require(pattern->GetSelection(&array)); reader.check();
+            require(pattern->GetSelection(&array));
             if (!array) throw std::runtime_error("terminal selection unavailable");
             int count = 0; require(array->get_Length(&count));
             if (count < 0 || count > rangeLimit) throw std::runtime_error("terminal selection count");
@@ -77,8 +74,8 @@ public:
             ComPtr<IUIAutomationTextRange> result;
             if (!focused) return result;
             if (advanced) {
-                BOOL active = FALSE; reader.check();
-                const HRESULT status = advanced->GetCaretRange(&active, &result); reader.check();
+                BOOL active = FALSE;
+                const HRESULT status = advanced->GetCaretRange(&active, &result);
                 if (FAILED(status) || !active) result.Reset();
             } else if (selected.size() == 1 && reader.compare(selected[0].Get(), start, selected[0].Get(), end) == 0) {
                 require(selected[0]->Clone(&result));
@@ -155,24 +152,23 @@ public:
             completeSelection = completeSelection && reader.compare(covered[i].Get(), end, selected[i].Get(), end) == 0;
         // The text is read once and kept, even if output arrives meanwhile (owner, 2026-10-05:
         // the screen as at key-down, rather than no screen at all).
-        reader.check();
         return {{"surface", {{"id", id}, {"frame", {frame.x, frame.y, frame.width, frame.height}}, {"runs", runs},
             {"selection", {{"complete", completeSelection}, {"ranges", selections}}}}}, {"caret", anchor}};
     }
     // Caller has approved the entire field subtree. UIA positions stay opaque;
     // Rust owns whole eligibility, probe sizes, source edges and projection.
     static void appendField(IUIAutomationTextPattern* pattern, VisibleContext& context,
-                            std::optional<ContextFrame> frame, ULONGLONG started) {
-        UiaCaretSource reader(started);
+                            std::optional<ContextFrame> frame) {
+        UiaCaretSource reader;
         ComPtr<IUIAutomationTextRange> document;
-        reader.check(); require(pattern->get_DocumentRange(&document)); reader.check();
+        require(pattern->get_DocumentRange(&document));
         if (!document) throw std::runtime_error("field document unavailable");
         const auto limit = core::request({{"limits", true}}, voice_core_context_json).at("sourceWindowBytes").get<size_t>();
         const auto unchangedDocument = [&] {
             ComPtr<IUIAutomationTextRange> current;
-            reader.check(); require(pattern->get_DocumentRange(&current)); reader.check();
+            require(pattern->get_DocumentRange(&current));
             if (!current) return false;
-            BOOL same = FALSE; require(document->Compare(current.Get(), &same)); reader.check(); return same != FALSE;
+            BOOL same = FALSE; require(document->Compare(current.Get(), &same)); return same != FALSE;
         };
         if (const auto whole = reader.text(document.Get(), limit);
             whole && core::request({{"fieldPlan", {{"text", *whole}}}}, voice_core_context_json).at("useWhole").get<bool>()) {
@@ -197,15 +193,15 @@ public:
         const auto current = reader.visibleRanges(pattern, document.Get());
         if (!unchangedDocument() || current.size() != ranges.size()) throw std::runtime_error("field changed");
         for (size_t i = 0; i < ranges.size(); ++i) {
-            BOOL same = FALSE; require(ranges[i]->Compare(current[i].Get(), &same)); reader.check();
+            BOOL same = FALSE; require(ranges[i]->Compare(current[i].Get(), &same));
             if (!same) throw std::runtime_error("field visibility changed");
         }
         context = std::move(candidate);
     }
     // Approved child captions have their own complete source domain. No text
     // outside that range may be used, even for recognition-only context.
-    static std::string rangeSource(IUIAutomationTextRange* approved, ULONGLONG started) {
-        UiaCaretSource reader(started);
+    static std::string rangeSource(IUIAutomationTextRange* approved) {
+        UiaCaretSource reader;
         const auto limit = core::request({{"limits", true}}, voice_core_context_json).at("blockSourceBytes").get<size_t>();
         const auto [target, value] = reader.boundedTarget(approved, limit, true);
         const bool complete = reader.compare(target.Get(), TextPatternRangeEndpoint_End, approved, TextPatternRangeEndpoint_End) == 0;
@@ -216,18 +212,18 @@ public:
     // The caller has approved only this selection's enclosing subtree. Never
     // read adjacent document text here or replace the approved range silently.
     static std::optional<std::string> selectedText(IUIAutomationTextPattern* pattern,
-        IUIAutomationTextRange* approved, IUIAutomationTextRange* document, ULONGLONG started) {
-        UiaCaretSource reader(started);
+        IUIAutomationTextRange* approved, IUIAutomationTextRange* document) {
+        UiaCaretSource reader;
         if (!approved || !document || reader.compare(approved, TextPatternRangeEndpoint_Start, document, TextPatternRangeEndpoint_Start) < 0 ||
             reader.compare(approved, TextPatternRangeEndpoint_End, document, TextPatternRangeEndpoint_End) > 0) return std::nullopt;
         const auto unchanged = [&]() {
             auto current = reader.selection(pattern);
             ComPtr<IUIAutomationTextRange> currentDocument;
-            reader.check(); require(pattern->get_DocumentRange(&currentDocument)); reader.check();
+            require(pattern->get_DocumentRange(&currentDocument));
             if (!current || !currentDocument) return false;
             BOOL same = FALSE, sameDocument = FALSE;
             require(approved->Compare(current.Get(), &same));
-            require(document->Compare(currentDocument.Get(), &sameDocument)); reader.check();
+            require(document->Compare(currentDocument.Get(), &sameDocument));
             return same && sameDocument;
         };
         if (!unchanged()) return std::nullopt;
@@ -237,22 +233,19 @@ public:
         return value;
     }
 private:
-    ULONGLONG started, budget;
-    explicit UiaCaretSource(ULONGLONG time, ULONGLONG limit = walk::limits().timeBudgetMilliseconds) : started(time), budget(limit) {}
-    void check() const { if (GetTickCount64() - started > budget) throw std::runtime_error("screen context time budget"); }
     int compare(IUIAutomationTextRange* a, TextPatternRangeEndpoint ae, IUIAutomationTextRange* b, TextPatternRangeEndpoint be) const {
-        check(); int result = 0; require(a->CompareEndpoints(ae, b, be, &result)); check(); return result;
+        int result = 0; require(a->CompareEndpoints(ae, b, be, &result)); return result;
     }
     void move(IUIAutomationTextRange* a, TextPatternRangeEndpoint ae, IUIAutomationTextRange* b, TextPatternRangeEndpoint be) const {
-        check(); require(a->MoveEndpointByRange(ae, b, be)); check();
+        require(a->MoveEndpointByRange(ae, b, be));
     }
     ComPtr<IUIAutomationTextRange> selection(IUIAutomationTextPattern* pattern) const {
         ComPtr<IUIAutomationTextRangeArray> ranges;
-        check(); require(pattern->GetSelection(&ranges)); check();
+        require(pattern->GetSelection(&ranges));
         if (!ranges) return {};
         int count = 0; require(ranges->get_Length(&count));
         if (count != 1) return {};
-        ComPtr<IUIAutomationTextRange> selected; require(ranges->GetElement(0, &selected)); check(); return selected;
+        ComPtr<IUIAutomationTextRange> selected; require(ranges->GetElement(0, &selected)); return selected;
     }
     bool containSelection(IUIAutomationTextRange* selected, IUIAutomationTextRange* document) const {
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
@@ -269,9 +262,8 @@ private:
         return true;
     }
     std::optional<std::string> text(IUIAutomationTextRange* range, size_t limit) const {
-        check();
         struct Text { BSTR value = nullptr; ~Text() { SysFreeString(value); } } text;
-        require(range->GetText(static_cast<int>(limit + 1), &text.value)); check();
+        require(range->GetText(static_cast<int>(limit + 1), &text.value));
         const auto length = text.value ? SysStringLen(text.value) : 0;
         if (length > limit + 1) throw std::runtime_error("provider exceeded text bound");
         if (length > limit) return std::nullopt;
@@ -283,14 +275,14 @@ private:
         if (!approved || compare(approved, TextPatternRangeEndpoint_Start, approved, TextPatternRangeEndpoint_End) > 0)
             throw std::runtime_error("source range unavailable");
         ComPtr<IUIAutomationTextRange> target;
-        check(); require(approved->Clone(&target)); check();
+        require(approved->Clone(&target));
         if (!target) throw std::runtime_error("source range unavailable");
         auto value = text(target.Get(), limit);
         if (!value) {
             for (const auto amount : probes(block)) {
                 move(target.Get(), TextPatternRangeEndpoint_End, approved, TextPatternRangeEndpoint_Start);
                 int moved = 0;
-                require(target->MoveEndpointByUnit(TextPatternRangeEndpoint_End, TextUnit_Character, amount, &moved)); check();
+                require(target->MoveEndpointByUnit(TextPatternRangeEndpoint_End, TextUnit_Character, amount, &moved));
                 if (compare(target.Get(), TextPatternRangeEndpoint_End, approved, TextPatternRangeEndpoint_End) > 0)
                     move(target.Get(), TextPatternRangeEndpoint_End, approved, TextPatternRangeEndpoint_End);
                 if (compare(target.Get(), TextPatternRangeEndpoint_Start, approved, TextPatternRangeEndpoint_Start) != 0)
@@ -307,14 +299,14 @@ private:
     }
     std::vector<ComPtr<IUIAutomationTextRange>> visibleRanges(IUIAutomationTextPattern* pattern, IUIAutomationTextRange* document, std::optional<int> maximum = {}) const {
         ComPtr<IUIAutomationTextRangeArray> ranges;
-        check(); require(pattern->GetVisibleRanges(&ranges)); check();
+        require(pattern->GetVisibleRanges(&ranges));
         if (!ranges) throw std::runtime_error("field visibility unavailable");
-        int count = 0; require(ranges->get_Length(&count)); check();
+        int count = 0; require(ranges->get_Length(&count));
         const auto limit = maximum.value_or(core::request({{"limits", true}}, voice_core_context_json).at("fieldRangeCount").get<int>());
         if (count < 0 || count > limit) throw std::runtime_error("invalid visible range count");
         std::vector<ComPtr<IUIAutomationTextRange>> result;
         for (int i = 0; i < count; ++i) {
-            ComPtr<IUIAutomationTextRange> range; require(ranges->GetElement(i, &range)); check();
+            ComPtr<IUIAutomationTextRange> range; require(ranges->GetElement(i, &range));
             if (!range || (document && (compare(range.Get(), TextPatternRangeEndpoint_Start, document, TextPatternRangeEndpoint_Start) < 0 ||
                 compare(range.Get(), TextPatternRangeEndpoint_End, document, TextPatternRangeEndpoint_End) > 0)) ||
                 compare(range.Get(), TextPatternRangeEndpoint_Start, range.Get(), TextPatternRangeEndpoint_End) > 0)
@@ -330,11 +322,10 @@ private:
     std::optional<CaretSource::CaretStarts> starts(IUIAutomationTextRange* selected) const {
         const auto enclosing = [&](TextUnit unit) -> ComPtr<IUIAutomationTextRange> {
             ComPtr<IUIAutomationTextRange> range;
-            check(); require(selected->Clone(&range)); check();
+            require(selected->Clone(&range));
             if (!range) throw std::runtime_error("provider range unavailable");
             move(range.Get(), TextPatternRangeEndpoint_End, selected, TextPatternRangeEndpoint_Start);
             if (FAILED(range->ExpandToEnclosingUnit(unit))) return nullptr;
-            check();
             return range;
         };
         const auto paragraph = enclosing(TextUnit_Paragraph), line = enclosing(TextUnit_Line);
@@ -355,10 +346,10 @@ private:
         const auto inner = before ? TextPatternRangeEndpoint_End : TextPatternRangeEndpoint_Start;
         const auto anchor = before ? TextPatternRangeEndpoint_Start : TextPatternRangeEndpoint_End;
         for (const int amount : probes()) {
-            check(); ComPtr<IUIAutomationTextRange> range; require(selected->Clone(&range)); check();
+            ComPtr<IUIAutomationTextRange> range; require(selected->Clone(&range));
             if (!range) throw std::runtime_error("provider range unavailable");
             move(range.Get(), inner, selected, anchor);
-            int moved = 0; require(range->MoveEndpointByUnit(outer, TextUnit_Character, before ? -amount : amount, &moved)); check();
+            int moved = 0; require(range->MoveEndpointByUnit(outer, TextUnit_Character, before ? -amount : amount, &moved));
             const int edge = compare(range.Get(), outer, document, outer);
             if ((before && edge < 0) || (!before && edge > 0)) move(range.Get(), outer, document, outer);
             if (compare(range.Get(), inner, selected, anchor) != 0) throw std::runtime_error("provider changed caret anchor");

@@ -194,7 +194,10 @@ if(WIN32)
       message(WARNING "Electron integration test unavailable: install desktop dependencies before configuring native tests")
     endif()
     # These fixtures own foreground focus and clipboard state. They cannot overlap.
-    set_tests_properties(voice-accessibility voice-paste voice-paste-focus voice-privacy-provider PROPERTIES RUN_SERIAL TRUE TIMEOUT 45)
+    set_tests_properties(voice-accessibility voice-paste voice-paste-focus PROPERTIES RUN_SERIAL TRUE TIMEOUT 45)
+    # No screen read has a time limit: each case too large to look through whole walks the look's
+    # whole node budget.
+    set_tests_properties(voice-privacy-provider PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
   endif()
   if(MSVC)
     target_compile_options(voice-windows PRIVATE /W4 /WX /utf-8)

@@ -3710,6 +3710,19 @@ the app restarted it for a read that superseded a still-running one, finds no fo
 start from, so that one dictation gets no screen context (and agent mode offers Compose rather than
 Edit). The next dictation reads normally.
 
+*Amendment (2026-10-06): no screen read has a time limit.* The shared walk's 1.5 s cap
+(`timeBudgetMilliseconds`, and the `elapsed` the helpers sent with each `stop`) is gone from the
+core and every helper; only the node budget (5,000) and the text budget stop a walk. A read runs
+in the reader while the user speaks, the caller decides how long to wait for it (above), and the
+cap cut Chrome reads short (it fell back to slow paths and left most of a long page unread); whole
+reads finish in 300–1,500 ms. This replaces the terminal-only exception above: Windows drops
+`terminalReadBudgetMs` and every time check in the walk and its caret sources, and Linux drops
+`withoutDeadline()`. What is not a screen read keeps its own bound: on macOS the look for an
+excluded page before a field read for corrections (`focusedFieldPageScanBudget`, 0.2 s), on Windows
+that read's looks (200 ms) and the look through what holds a page's selection
+(`contextSelectionScanMs`), and on Linux the whole field read (`fieldReadMilliseconds`, 1.5 s, the
+time it had before).
+
 ## ADR-DESK-054: Shared logic lives in Rust only; native code is thin OS adapters
 
 **Context:** The three platforms' helpers share a Rust static library (`native/shared/rust`) for

@@ -179,10 +179,11 @@ void configure(const std::string& mode) {
         // Run under a terminal's name: a window wider than the look's node budget.
         for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
     } else if (mode == "large-text") {
-        // Text read in one piece that holds more than the look takes in: withheld behind the marker.
+        // Text read in one piece that holds more than the look takes in (one element past its
+        // budget): withheld behind the marker.
         const int large = add(0, UIA_TextControlTypeId);
         nodes.at(large)->text = L"Synthetic large text";
-        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+        for (int i = 0; i < 5001; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-row" || mode == "large-link") {
         // A row or link that holds more than the look takes in: a row's cells are each looked
         // through and read; a link's name, read whole, is withheld behind the marker.
@@ -191,8 +192,8 @@ void configure(const std::string& mode) {
         nodes.at(add(large, UIA_TextControlTypeId))->text = L"Synthetic cell text";
         for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-field" || mode == "large-web-control") {
-        // A field, and a page's control, that hold more than the look takes in: withheld behind
-        // the marker, the field's as a field.
+        // A field, and a page's control, that hold more than the look takes in (one element past
+        // its budget): withheld behind the marker, the field's as a field.
         int parent = 0;
         if (mode == "large-web-control") {
             parent = add(0, UIA_DocumentControlTypeId);
@@ -200,10 +201,10 @@ void configure(const std::string& mode) {
         }
         const int large = add(parent, mode == "large-field" ? UIA_EditControlTypeId : UIA_ButtonControlTypeId);
         nodes.at(large)->text = L"Synthetic large name";
-        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+        for (int i = 0; i < 5001; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-focus") {
         // A focus that holds more than the look takes in: the window is still read, not hidden,
-        // and the focus itself is not (its look uses up the read's time here).
+        // and the focus itself is not.
         nodes.at(1)->text = L"Synthetic large text";
         for (int i = 0; i < 5000; ++i) add(1, UIA_GroupControlTypeId);
     } else if (mode == "large-window-field") {
