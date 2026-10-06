@@ -23,7 +23,11 @@ enum SharedRequest {
     /// `focusedFieldValue`'s reply for the field's text as read: null for none or one longer than
     /// `maxLength`, else the text with secret-looking text taken out.
     static func fieldValue(_ text: String?, maxLength: Int) throws -> JSON {
-        try call(["field": ["maxLength": .number(Double(maxLength)), "text": text.map(JSON.string) ?? .null]])
+        let reply = try call(["field": ["maxLength": .number(Double(maxLength)), "text": text.map(JSON.string) ?? .null]])
+        if let text, reply["value"] == .null {
+            HelperLog.debug("FocusedField: \(text.utf16.count) code units, over \(maxLength)")
+        }
+        return reply
     }
 
     /// Refuses a paste's text that is empty, longer than the core allows or holds a NUL.

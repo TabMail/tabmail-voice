@@ -41,8 +41,8 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
             } catch (const voice::PrivacyHidden&) { return JSON{{"value", nullptr}}; }
             // Characters never outnumber UTF-16 units, so the core's count in units decides the rest.
             const auto value = tree.field(target->focus, *limit);
-            return value ? voice::core::request({{"field", {{"maxLength", *limit}, {"text", *value}}}}, voice_core_request_json)
-                         : JSON(nullptr); // Local-only correction learning; never backend context.
+            // No text within the bound is a field with no value, as on the other platforms.
+            return voice::core::request({{"field", {{"maxLength", *limit}, {"text", value ? JSON(*value) : JSON(nullptr)}}}}, voice_core_request_json);
         });
     // A provider read may yield to another window while accessibility IPC is in flight.
     // Never return the previous window as the current screen/correction field.

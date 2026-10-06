@@ -3649,7 +3649,8 @@ design explicit.
   checked against the excluded sites after every read, not only on macOS.
 - **The paste's rules follow Windows's numbers** (a unification, reported to the owner
   2026-10-05): every helper refuses a text that is empty, longer than 512 KiB or holds a NUL, and
-  a deadline that is not after the helper's clock or more than 5 s past it. Until then macOS
+  the Windows and Linux helpers, which the app gives a deadline (macOS gets none), a deadline that
+  is not after the helper's clock or more than 5 s past it. Until then macOS
   pasted any text, empty or holding a NUL, at any length, and Linux took up to 1 MiB with a
   deadline at most 3 s ahead. The app's own paste is far under 512 KiB and sets its deadline
   within 5 s, so no dictation is refused by this.
