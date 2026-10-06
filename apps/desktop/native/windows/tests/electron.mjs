@@ -111,7 +111,7 @@ async function main() {
       <p>Unrelated footer outside focused field</p>
       <div style="display:none">hidden-display-secret</div>
       <div style="position:fixed;top:-5000px">offscreen-secret</div>
-      <div style="position:absolute;width:1px;height:1px;overflow:hidden">thin-hidden-secret</div>
+      <div style="position:absolute;width:1px;height:1px;overflow:hidden">Screen-reader-only label</div>
       <a href="https://example.com">Visible link</a>
     `)}`);
     window.show(); window.focus();
@@ -149,7 +149,10 @@ async function main() {
     assert.ok(context.renderedText.includes("Unrelated footer outside focused field"), "visible window footer is available");
     assert.ok(context.renderedText.includes("» Before ‸selected‸ after. 🙂"), "focused field is marked at its position in the window");
     assert.ok(context.renderedText.includes("Non-text"), "a labeled web control retains its visible caption");
-    for (const secret of ["synthetic-secret", "hidden-display-secret", "offscreen-secret", "thin-hidden-secret", "undrawn-button-secret", "undrawn-icon-secret"]) {
+    // A box that shows nothing is walked into on every platform (owner, 2026-10-05; ADR-DESK-054), and
+    // Chromium gives the text in it its own unclipped frame here, so a screen-reader-only label is read.
+    assert.ok(context.renderedText.includes("Screen-reader-only label"), "a screen-reader-only label is read, as decided");
+    for (const secret of ["synthetic-secret", "hidden-display-secret", "offscreen-secret", "undrawn-button-secret", "undrawn-icon-secret"]) {
       assert.ok(!context.renderedText.includes(secret), `password and hidden text never enter screen context: ${secret}`);
     }
     assert.ok(!context.summary.includes("Before") && !context.summary.includes("Unrelated"), "summary contains only sizes and timing");
