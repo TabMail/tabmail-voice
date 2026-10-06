@@ -267,6 +267,92 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(completions.requests).toHaveLength(0);
   });
 
+  /** The debug-level lines `run` logs, with debug logging on. */
+  async function debugLines(run: () => Promise<void>): Promise<string[]> {
+    const file: [LogLevel, string][] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: (level, text) => file.push([level, text]), error: () => {} } });
+    try {
+      await run();
+    } finally {
+      configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+    }
+    return file.filter(([level]) => level === "debug").map(([, text]) => text);
+  }
+
+  /** Whether each of `steps` matches a line of `debug`, in that order. */
+  function expectSteps(debug: string[], steps: RegExp[]): void {
+    const found = steps.map((step) => debug.findIndex((line) => step.test(line)));
+    expect(found.every((index) => index >= 0), `${debug.join("\n")}`).toBe(true);
+    expect([...found].sort((a, b) => a - b)).toEqual(found);
+  }
+
+  /** The debug log times every step from the release to the paste, a failed try included, so a slow
+   * dictation shows where its time went (owner, 2026-10-05); no debug line carries the text. */
+  test("the debug log times each step of a dictation, without its text", async () => {
+    transcription.enqueue(503, { error: "transcription_unavailable" });
+    transcription.enqueue(200, cleanedReply);
+    const debug = await debugLines(async () => {
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.transcriptionRetryDelays = [1];
+      controller.transcriptionRetryNoticeDelay = 0;
+      controller.captureContext = async () => null;
+      await holdAndRelease(controller);
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([cleaned]);
+    });
+    expectSteps(debug, [
+      /^DictationController: screen read answered in \d+ms$/,
+      /^DictationController: released after \d+ms; recording \d+ms more$/,
+      /^DictationController: recording encoded in \d+ms, \d+ms after the release$/,
+      /^DictationController: keyboard language read after \d+ms$/,
+      /^DictationController: waited \d+ms for the screen read$/,
+      /^Transcription: HTTP 503 in \d+ms$/,
+      /^DictationController: transcription failed \(.+\) after \d+ms; retrying in 1ms$/,
+      /^Transcription: HTTP 200 in \d+ms$/,
+      /^DictationController: transcription answered in \d+ms$/,
+      /^DictationController: transcript ready in \d+ms, \d+ms after the release \(/,
+      /^DictationController: app in front checked in \d+ms$/,
+      /^DictationController: pasted in \d+ms, \d+ms after the release$/,
+    ]);
+    expect(debug.filter((line) => line.includes(transcript) || line.includes(cleaned))).toEqual([]);
+  });
+
+  /** Each dictation's step times count from its own release: a step of the next dictation before its
+   * release (its screen read answered during the hold) is not timed from the last one's. */
+  test("the debug log times a dictation's steps from its own release, not the last one's", async () => {
+    transcription.enqueue(200, cleanedReply);
+    transcription.enqueue(200, cleanedReply);
+    const debug = await debugLines(async () => {
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => null;
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 2 && settled(controller))).toBe(true);
+    });
+    const answered = debug.filter((line) => line.startsWith("DictationController: screen read answered"));
+    expect(answered).toEqual([
+      expect.stringMatching(/^DictationController: screen read answered in \d+ms$/),
+      expect.stringMatching(/^DictationController: screen read answered in \d+ms$/),
+    ]);
+  });
+
+  /** A screen read not done in time: the log says how long the dictation waited for it. */
+  test("the debug log says how long a dictation waited for a screen read not done in time", async () => {
+    transcription.enqueue(200, cleanedReply);
+    const read = deferred<ScreenContext | null>();
+    const debug = await debugLines(async () => {
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = () => read.promise;
+      controller.contextWait = 50;
+      await holdAndRelease(controller);
+      expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
+    });
+    read.resolve(null);
+    expect(debug.filter((line) => /^DictationController: screen read not done in time \(waited \d+ms\); continuing without it$/.test(line))).toHaveLength(1);
+    expect(debug.filter((line) => line.includes("for the screen read"))).toEqual([]);
+  });
+
   /** The backend answers an empty cleanup when it failed or ran past its deadline; a backend from
    * before the cleanup moved into the transcription request answers none. */
   test.each([
@@ -1799,6 +1885,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual(["edit"]);
       expect(pastes).toEqual(["Could we ship on Friday?"]);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.");
+    });
+
+    /** Agent mode's own waits, for the whole screen read and the email app, are timed in the debug
+     * log, and no debug line carries the request or the reply. */
+    test("the debug log times agent mode's waits, without its text", async () => {
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, reply("Could we ship on Friday?"));
+      const debug = await debugLines(async () => {
+        const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+        controller.captureContext = async () => selectionScreen("Ship it Friday or else.");
+        await holdAndRelease(controller, "agent");
+        expect(await eventually(() => controller.phase.kind === "idle" && pastes.length > 0)).toBe(true);
+      });
+      expectSteps(debug, [
+        /^DictationController: transcript ready in \d+ms, \d+ms after the release \(/,
+        /^DictationController: agent waited \d+ms for the screen read$/,
+        /^DictationController: email app known after \d+ms$/,
+        /^Completions: HTTP 200 in \d+ms$/,
+      ]);
+      expect(debug.filter((line) => line.includes(request) || line.includes("Could we ship") || line.includes("Ship it Friday"))).toEqual([]);
     });
 
     /** A screen read still not done `agentScreenWait` after the transcript (an app that never
@@ -5598,6 +5704,31 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(variables).toEqual(backend.sent[0]?.body.cleanup);
       expect(variables.dictionary).toBe("Xyvora");
       expect(completions.body(0).disable_tools).toBe(true);
+    });
+
+    /** A long dictation's chunks, a failed try and the polish are timed in the debug log, and no debug
+     * line carries a chunk's transcript, its cleanup or the polish. */
+    test("the debug log times its chunks, their failed tries and the polish, without their text", async () => {
+      completions.enqueue(200, reply("Part zero, part one and part two."));
+      const backend = new ChunkBackend((chunk, attempt) => (chunk === 1 && attempt === 0 ? serverError : part(chunk)));
+      const debug = await debugLines(async () => {
+        const { controller, capture, pastes } = makeLong(backend);
+        await startHearing(controller, capture, pausedSpeech(1, 12, 12, 5));
+        expect(await eventually(() => backend.chunks === 2)).toBe(true);
+        controller.handle("finish");
+        expect(await eventually(() => settled(controller))).toBe(true);
+        expect(pastes).toEqual(["Part zero, part one and part two."]);
+      });
+      expect(backend.attempts(1)).toBe(2);
+      for (const chunk of [0, 1, 2]) expect(debug.filter((line) => new RegExp(`^DictationController: chunk ${chunk} transcribed in \\d+ms$`).test(line))).toHaveLength(1);
+      expect(debug.filter((line) => /^Transcription: HTTP 502 in \d+ms$/.test(line))).toHaveLength(1);
+      expectSteps(debug, [
+        /^DictationController: transcript ready in \d+ms, \d+ms after the release \(/,
+        /^Completions: HTTP 200 in \d+ms$/,
+        /^DictationController: polished in \d+ms, \d+ms after the release \(/,
+        /^DictationController: pasted in \d+ms, \d+ms after the release$/,
+      ]);
+      expect(debug.filter((line) => /raw \d|Part \d|Part zero/.test(line))).toEqual([]);
     });
 
     /** Smart dictation off: no chunk goes with a cleanup, nothing is polished, and the chunks'

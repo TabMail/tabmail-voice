@@ -5,6 +5,7 @@
 import { describe, expect, test } from "vitest";
 import { AccountModel, AuthClient, AuthError, type TabMailSession } from "../../../src/core/backend/account.js";
 import * as config from "../../../src/core/config.js";
+import { configureLog, type LogLevel } from "../../../src/core/log.js";
 import { deferred, Fixtures, InMemorySessionStore, StubTransport } from "../../support/stubs.js";
 
 function client(stub: StubTransport, key = "pk"): AuthClient {
@@ -95,6 +96,28 @@ describe("AccountModel", () => {
     expect(await account.validToken()).toBe("new");
     expect(store.load()?.refreshToken).toBe("refresh-2");
     expect(stub.body(0).refresh_token).toBe("refresh-1");
+  });
+
+  /** A refresh is a round trip a dictation can wait on: debug mode times it, and never logs a token. */
+  test("a refresh is timed in the debug log, with no token", async () => {
+    const stub = new StubTransport();
+    stub.enqueue(200, Fixtures.sessionJSON({ access: "new-access", refresh: "refresh-2" }));
+    stub.enqueue(500, { error: "unavailable" });
+    const file: [LogLevel, string][] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: (level, text) => file.push([level, text]), error: () => {} } });
+    try {
+      const account = new AccountModel(client(stub), new InMemorySessionStore(Fixtures.session({ access: "old-access", expiresIn: 0 })));
+      expect(await account.validToken()).toBe("new-access");
+      expect((await authError(account.validToken(true)))?.kind).toBe("failed");
+    } finally {
+      configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+    }
+    const debug = file.filter(([level]) => level === "debug").map(([, text]) => text);
+    expect(debug.filter((line) => line.startsWith("AccountModel: token refresh"))).toEqual([
+      expect.stringMatching(/^AccountModel: token refreshed in \d+ms$/),
+      expect.stringMatching(/^AccountModel: token refresh failed \(.+\) after \d+ms$/),
+    ]);
+    for (const secret of ["old-access", "new-access", "refresh-1", "refresh-2"]) expect(file.some(([, text]) => text.includes(secret))).toBe(false);
   });
 
   /** Refresh tokens are single-use: concurrent callers must share one refresh. */

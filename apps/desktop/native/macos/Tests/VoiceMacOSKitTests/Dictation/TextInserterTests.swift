@@ -44,6 +44,27 @@ struct TextInserterTests {
         #expect(provider.asked == 0)
     }
 
+    /// The paste's steps are timed in the debug log (stderr, which the app keeps in debug mode), with
+    /// nothing of the text. No other test in this target redirects stderr; each target runs alone.
+    @Test func timesThePasteStepsWithoutTheText() async throws {
+        let marker = "Dictated \(UUID().uuidString)"
+        let pipe = Pipe()
+        let saved = dup(STDERR_FILENO)
+        dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
+        await inserter().insert(marker)
+        dup2(saved, STDERR_FILENO)
+        close(saved)
+        try pipe.fileHandleForWriting.close()
+
+        let lines = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n").map(String.init)
+        let steps = ["clipboard written", "paste keystroke sent"].map { step in
+            lines.firstIndex { $0.wholeMatch(of: try! Regex("debug TextInserter: \(step) after \\d+ms")) != nil }
+        }
+        #expect(steps.allSatisfy { $0 != nil })
+        #expect(steps.compactMap { $0 } == steps.compactMap { $0 }.sorted())
+        #expect(!lines.contains { $0.contains(marker) })
+    }
+
     @Test func theTextStaysOnTheClipboard() async {
         pasteboard.clearContents()
         pasteboard.setString("user text", forType: .string)

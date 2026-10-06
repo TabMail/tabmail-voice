@@ -4,6 +4,7 @@
 
 import { expect, test } from "vitest";
 import * as config from "../../../src/core/config.js";
+import { configureLog } from "../../../src/core/log.js";
 import { type HelperClient, HelperError } from "../../../src/main/native/helperClient.js";
 import { ScreenReader } from "../../../src/main/native/screenReader.js";
 
@@ -91,4 +92,24 @@ test("every saved exclusion reaches the reader, past the old cap", async () => {
 
   expect(await read).toBeNull();
   expect(calls[0]?.[2]).toStrictEqual({ excludedAppIDs: apps, excludedHosts: sites });
+});
+
+test("the debug log times each read and says when a read restarts the reader", async () => {
+  const lines: string[] = [];
+  configureLog({ isDebugBuild: true, sinks: { file: (_level, text) => lines.push(text), error: () => {} } });
+  try {
+    const { screen, settle } = reader();
+    void screen.read(exclusions).catch(() => undefined);
+    void screen.read(exclusions);
+    settle[0]!.reject(new HelperError("exited", "readScreen"));
+    settle[1]!.resolve(null);
+    await flush();
+  } finally {
+    configureLog({ isDebugBuild: false, sinks: { error: () => {} } });
+  }
+  expect(lines).toEqual([
+    "ScreenReader: the last read is still going; restarting the reader",
+    expect.stringMatching(/^ScreenReader: read failed \(HelperError\.exited\(readScreen\)\) after \d+ms$/),
+    expect.stringMatching(/^ScreenReader: read answered in \d+ms$/),
+  ]);
 });
