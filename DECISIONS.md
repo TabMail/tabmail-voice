@@ -2147,7 +2147,7 @@ the stream was read whole and named its tools only in development builds.
   chose, then the app whose tool starts), then the rest alphabetically by name (`alphabetical`). The
   history lasts the app's run, in memory only. A bubble slides to its new place over
   `agentBubbleMoveDurationSeconds`.
-- **Running.** A bubble circles while its tool runs, and an app's while one of its tools runs: a
+- **Running.** *(Amended 2026-10-05, below: one bubble runs at a time, the first in the row.)* A bubble circles while its tool runs, and an app's while one of its tools runs: a
   `ConnectorTool` here, or a server tool of the app's (`serverToolConnector`: the web's `search_web`)
   inside a round, one at a time as the answer's tools run in turn
   (`DictationController.runningConnectors`, cleared at teardown). The pill circles while agent mode works (`running`). Bubbles are
@@ -2226,6 +2226,27 @@ overlay takes clicks only then; Linux windows get no moves while letting clicks 
 the overlay is cut to the chat's shape (`setShape`) instead (`ChatHitTest`). Placed afresh
 (`refreshPlacement`), it lets clicks through until the page's next move, unless the resting pointer
 is already over the chat as first measured (`fitChat`), so a click with no move since still reaches it.
+
+**Amendment 2026-10-05: one bubble runs, the first in the row.** Owner: with Answer running, a
+calendar tool's bubble "shows up on the left but it's not spinning". "The only one that circles is the
+one on the far left, and the only one that's enlarged". When the calendar result is back, "the answer
+tool just goes to the left again at the front and then circles". In the log, `calendar_read` ran for
+17 ms. Its bubble moved to the front and circled too briefly to see, and then stayed in front while
+Answer, which also circled, went on behind it.
+
+- `DictationController.runningBubble` replaces `runningConnectors` in `OverlayState`. It is the app
+  whose tool started last, while it runs (a `ConnectorTool`, or the web's search on the backend), and
+  otherwise the tool agent mode runs (`running(tool)`).
+- When an app's tool ends, the bubble still running (the answer) moves back to the front of the history
+  (`ranNow`). The running bubble is therefore always first in the row.
+- The overlay circles and enlarges only that bubble. Every other bubble, the answer an app runs for
+  included, is at rest size and faded (`agentBubbleIdleOpacity`). The pill still circles while agent
+  mode works.
+- `bubbleOrder`, the row's places and the history kept for the app's run are unchanged.
+- The history now ends with the answer first after a request whose apps ran ("answer, web, calendar"),
+  where it used to end "web, calendar, answer".
+- A tool shorter than a frame still never visibly circles. The bubble no longer stays in front once its
+  tool has finished.
 
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 

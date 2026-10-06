@@ -56,10 +56,10 @@ function laidOut(element: HTMLElement): { width: number; height: number } {
   return { width: 0, height: 0 };
 }
 
-const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningConnectors: [], chatPlacement: null };
+const listening: OverlayState = { phase: { kind: "listening" }, mode: "dictation", level: 0.5, isHearing: true, hasVoice: true, isRetrying: false, language: "en", tip: null, opensUpward: false, bubblesFitUnder: true, hotkey: "function", tools: [], connectors: [], emailAppIcon: null, chat: null, recentBubbles: [], runningBubble: null, chatPlacement: null };
 const warmingUp: OverlayState = { ...listening, isHearing: false };
 const idle: OverlayState = { ...listening, phase: { kind: "idle" } };
-const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent" };
+const running: OverlayState = { ...listening, phase: { kind: "running", tool: "answer" }, mode: "agent", runningBubble: "answer" };
 
 /** The overlay page, mounted afresh; `show` pushes it a state as the main process does. */
 async function overlayPage(): Promise<{ show(state: OverlayState): Promise<void>; tipFrame(): { top: number; bottom: number } | null; pillFrame(): { top: number; bottom: number }; commands: Command[] }> {
@@ -238,7 +238,7 @@ describe("overlay page", () => {
     if (bubblesFitUnder) for (const top of tops) expect(tipFrame?.top).toBeGreaterThanOrEqual(top + config.agentBubbleDiameter);
 
     // Compose running, having just been chosen: it moves to the front, circling, the rest fading.
-    await page.show({ ...listening, phase: { kind: "running", tool: "compose" }, mode: "agent", tools, connectors: apps, bubblesFitUnder, recentBubbles: ["compose"] });
+    await page.show({ ...listening, phase: { kind: "running", tool: "compose" }, mode: "agent", tools, connectors: apps, bubblesFitUnder, recentBubbles: ["compose"], runningBubble: "compose" });
     expect(labels()).toEqual(["compose", "answer", "calendar", "contacts"]);
     expect(opacities()[0]).toBe(1);
     expect(opacities().slice(1, config.agentBubbleRowVisibleCount)).toEqual([config.agentBubbleIdleOpacity, config.agentBubbleIdleOpacity]);
@@ -247,19 +247,24 @@ describe("overlay page", () => {
   });
 
   /** The row is a history of the tools that ran, the latest on the left: Answer's apps as their tools
-   * run too, each circling while it does, however many run at once. */
-  test("the latest tools to run lead the row, and every running app circles", async () => {
+   * run too. Only the one running circles and is enlarged, the first in the row (owner, 2026-10-05:
+   * "the only one that circles is the one on the far left, and the only one that's enlarged"); the
+   * answer it runs for is small and faded meanwhile. */
+  test("the latest tools to run lead the row, and only the running one circles, enlarged", async () => {
     const page = await overlayPage();
     const state: OverlayState = { ...running, tools: ["compose", "answer"], connectors: ["calendar", "web", "notes"] };
-    await page.show({ ...state, recentBubbles: ["web", "calendar", "answer", "notes"], runningConnectors: ["web", "calendar"] });
+    await page.show({ ...state, recentBubbles: ["web", "calendar", "answer", "notes"], runningBubble: "web" });
 
     const labels = [...document.querySelectorAll<HTMLElement>(".bubble")].map((bubble) => bubble.getAttribute("aria-label"));
     expect(labels).toEqual(["web", "calendar", "answer", "notes"]);
     const circling = [...document.querySelectorAll(".bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
-    expect(circling).toEqual(["web", "calendar", "answer"]);
-    // Neither running app fades; the idle ones do.
+    expect(circling).toEqual(["web"]);
+    const scale = (label: string) => document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`)?.style.transform;
+    expect(scale("web")).toBe(`scale(${config.agentBubbleRunningScale})`);
+    expect([scale("calendar"), scale("answer"), scale("notes")]).toEqual(["scale(1)", "scale(1)", "scale(1)"]);
+    // The running app doesn't fade; the others, the answer included, do.
     const opacity = (label: string) => parseFloat(document.querySelector<HTMLElement>(`.bubble[aria-label="${label}"]`)?.style.opacity ?? "");
-    expect([opacity("web"), opacity("calendar"), opacity("notes")]).toEqual([1, 1, config.agentBubbleIdleOpacity * (1 - 1 / (config.agentBubbleRowFadeCount + 1))]);
+    expect([opacity("web"), opacity("calendar"), opacity("answer")]).toEqual([1, config.agentBubbleIdleOpacity, config.agentBubbleIdleOpacity]);
   });
 
   /** In agent mode the pill glows as neon, a sign of the mode, in its own red-pink rather than the
@@ -356,7 +361,7 @@ describe("overlay page", () => {
     expect(said()).toEqual([connectorByID.calendar.displayName, connectorByID.calendar.settingsDescription]);
     expect(parseFloat(tooltip()?.style.left ?? "")).toBeCloseTo(left("calendar"));
     expect(tooltipBottom()).toBeCloseTo(grownTop("calendar", config.agentBubbleHoverScale) - config.bubbleTooltipGap);
-    await page.show({ ...state, phase: { kind: "running", tool: "answer" } });
+    await page.show({ ...state, phase: { kind: "running", tool: "answer" }, runningBubble: "answer" });
     expect([bubble("calendar").style.opacity, bubble("compose").style.opacity]).toEqual(["1", String(config.agentBubbleIdleOpacity)]);
     expect(said()[0]).toBe(connectorByID.calendar.displayName);
 
@@ -759,8 +764,8 @@ describe("the chat window", () => {
   /** In the chat as out of it, the pill circles whenever the agent works (owner, 2026-09-28: "whenever
    * thinking is being done or whenever a tool is being run"): its rim spins while the words and the
    * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it
-   * around the agent's sparkle, as it circles the running tools' bubbles. At rest nothing circles. */
-  test("the pill circles whenever the agent works, and so do the running tools' bubbles", async () => {
+   * around the agent's sparkle, as it circles the running bubble. At rest nothing circles. */
+  test("the pill circles whenever the agent works, and so does the running bubble", async () => {
     const page = await overlayPage();
     const pillCircles = () => document.querySelector(".chat-canvas .pill .spinning") !== null;
     const circling = () => [...document.querySelectorAll(".chat-canvas .bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
@@ -779,11 +784,11 @@ describe("the chat window", () => {
     expect(document.querySelector(".chat-canvas .pill .center-content")).not.toBeNull();
     expect(circling()).toEqual(["answer"]);
 
-    await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningConnectors: ["web"] });
+    await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningBubble: "web" });
     expect(pillCircles()).toBe(true);
-    expect(circling()).toEqual(["web", "answer"]);
+    expect(circling()).toEqual(["web"]);
 
-    await page.show({ ...running, ...agent, runningConnectors: [], chat: { ...chat(null), confirmation: "Add “Launch party” to your calendar on Friday at 18:00?" } });
+    await page.show({ ...running, ...agent, runningBubble: "answer", chat: { ...chat(null), confirmation: "Add “Launch party” to your calendar on Friday at 18:00?" } });
     expect(pillCircles()).toBe(true);
 
     await page.show({ ...idle, ...agent });

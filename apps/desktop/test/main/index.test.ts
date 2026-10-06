@@ -52,7 +52,7 @@ const app = vi.hoisted(() => ({
   audioCommands: [] as unknown[],
   placementAreas: [] as (Rect | null | undefined)[],
   overlay: null as { locate: () => Promise<Rect | null>; opensUpward: boolean; bubblesFitUnder: boolean; chatPlacement: object | null; onPlace: (() => void) | undefined; updates: [string, boolean][]; heights: number[]; pointers: boolean[]; hitTest?: string } | null,
-  controller: null as { connectors: string[]; recentBubbles: string[]; runningConnectors: string[]; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
+  controller: null as { connectors: string[]; recentBubbles: string[]; runningBubble: string | null; chat: object | null; onChatChange: ((isOpen: boolean) => void) | undefined; onPhaseChange: ((phase: { kind: string }) => void) | undefined; onNothingListening: (() => void) | undefined; onShowHistory: (() => void) | undefined; calls: string[] } | null,
   stored: new Map<string, unknown>(),
   /** Whether the preferences file can't be written: a value set is held, and reported unsaved. */
   savesFail: false,
@@ -351,7 +351,7 @@ vi.mock("../../src/core/dictation/controller.js", async (importOriginal) => ({
     tools = [];
     connectors: string[] = [];
     recentBubbles: string[] = [];
-    runningConnectors: string[] = [];
+    runningBubble: string | null = null;
     level = 0;
     language = null;
     tip = null;
@@ -894,7 +894,7 @@ describe("main process wiring", () => {
 
   /** The overlay page is given the conversation as the controller holds it, every turn, placed where
    * the overlay window placed it, and none once the window closes; and the bubbles' history and the
-   * apps running. */
+   * running bubble. */
   test("the overlay page is given the conversation, where it opened and the bubbles' history", async () => {
     await launch("darwin");
     const controller = app.controller;
@@ -912,10 +912,10 @@ describe("main process wiring", () => {
 
     controller.chat = chat;
     controller.recentBubbles = ["web", "answer"];
-    controller.runningConnectors = ["web"];
+    controller.runningBubble = "web";
     const placement = { below: false, maxHeight: config.chatMaxHeight, bubblesUnder: true, pillX: 206 };
     overlay.chatPlacement = placement;
-    expect(state()).toMatchObject({ chat, chatPlacement: placement, recentBubbles: ["web", "answer"], runningConnectors: ["web"] });
+    expect(state()).toMatchObject({ chat, chatPlacement: placement, recentBubbles: ["web", "answer"], runningBubble: "web" });
     controller.chat = null;
     overlay.chatPlacement = null;
     expect(state()).toMatchObject({ chat: null, chatPlacement: null });

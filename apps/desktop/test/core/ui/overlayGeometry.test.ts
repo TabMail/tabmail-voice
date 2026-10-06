@@ -161,8 +161,8 @@ describe("overlay geometry", () => {
     }
   });
 
-  /** Neighboring bubbles both running (an app's tool and the answer), each grown, stay apart; at rest
-   * a bubble is smaller than the pill (owner, 2026-09-28). */
+  /** Neighboring bubbles both grown to the running size stay apart, so the running one never touches
+   * its neighbor; at rest a bubble is smaller than the pill (owner, 2026-09-28). */
   test("running neighbors don't touch", () => {
     const pill = rect(100, 100, 120, config.listeningPillHeight);
     const [first, second] = bubbleRow(pill, 2, true).map((center) => grownBubble(framed(center, { width: config.agentBubbleDiameter, height: config.agentBubbleDiameter }), config.agentBubbleRunningScale));

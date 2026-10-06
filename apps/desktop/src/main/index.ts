@@ -354,7 +354,7 @@ function launch(): void {
       tools: controller.tools,
       connectors: controller.connectors,
       recentBubbles: controller.recentBubbles,
-      runningConnectors: controller.runningConnectors,
+      runningBubble: controller.runningBubble,
       emailAppIcon: emailAppIcon.path === controller.emailAppPath ? emailAppIcon.dataURL : null,
       chat: controller.chat,
       chatPlacement: overlay.chatPlacement,

@@ -156,7 +156,8 @@ native connector: ADR-DESK-037); each only while switched on
 in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request: `DesktopAgent.tool` picks among the tools
 offered (asking the backend's `system_prompt_desktop_agent`, with them in `available_tools`, unless
 only one is on), the phase becomes `running(tool)` (that bubble moves to the front of the row under
-the pill and its border circles, as the pill's does), and `DesktopAgent.write` has the tool's prompt
+the pill and its border circles, as the pill's does; while one of Answer's apps runs a tool, that app's
+bubble is the one in front and circling, and the answer's goes back there once it ends: one bubble runs at a time), and `DesktopAgent.write` has the tool's prompt
 write the text. Edit pastes over the selection; Compose pastes at the caret; Thunderbird sends it to
 TabMail's chat; Answer opens a chat window over the pill, which rests there (ADR-DESK-036), and while
 it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X or 30 untouched
