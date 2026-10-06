@@ -3527,3 +3527,7 @@ its own, not a mode of the big helpers — the Unix philosophy, one program doin
 *Amendment (2026-10-05, with ADR-DESK-052):* while GNOME holds the keyboard for Right Alt, the window
 in front has no focus. The Linux reader asks the extension (`Holding`), as the helper does, so a read
 made during the hold still reads that window; the Shell itself is never read.
+Known limitation, accepted by the owner (2026-10-05): a reader *started* during the hold, because
+the app restarted it for a read that superseded a still-running one, finds no focused window to
+start from, so that one dictation gets no screen context (and agent mode offers Compose rather than
+Edit). The next dictation reads normally.
