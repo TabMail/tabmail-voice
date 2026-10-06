@@ -75,7 +75,7 @@ struct TerminalEndpointBoundsTests {
         #expect(captured.source["runs"]?.array?.compactMap { $0["text"]?.string } == ["ab", "cd", "ef"])
         #expect(provider.reads == allowed)
         var context = ScreenContext(appName: "Synthetic Terminal", bundleID: "example.terminal")
-        try TerminalViewportReader.finish(["complete": true, "focusedSurface": 0,
+        TerminalViewportReader.finish(["complete": true, "focusedSurface": 0,
             "caret": captured.caret, "surfaces": .array([captured.source])], into: &context)
         #expect(context.json["renderedText"]?.string?.contains("XY") == false)
         #expect(context.json["renderedText"]?.string?.contains("ef") == true)

@@ -4,7 +4,7 @@
 import Foundation
 
 enum SharedContext {
-    struct Block: Codable {
+    struct Block: Encodable {
         var kind: String
         var text: String
         var frame: [Double]?
@@ -14,18 +14,6 @@ enum SharedContext {
             kind = block.kind.rawValue; text = block.text; source = block.source; runs = block.runs
             frame = block.frame.map { [Double($0.minX), Double($0.minY), Double($0.width), Double($0.height)] }
         }
-        func native() throws -> ScreenContext.Block {
-            guard source == nil, runs == nil, let kind = ScreenContext.Block.Kind(rawValue: kind), frame == nil || frame?.count == 4 else { throw Redactor.Failure.refused }
-            return ScreenContext.Block(kind: kind, text: text, frame: frame.map { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) })
-        }
-    }
-    struct Request: Encodable { var blocks: [Block]; var caret: [String]? }
-    struct Result: Decodable {
-        var blocks: [Block]
-        var caret: [String]?
-        var rendered: String
-        var truncated: Bool
-        func nativeBlocks() throws -> [ScreenContext.Block] { try blocks.map { try $0.native() } }
     }
     struct Admission: Decodable { var text: String; var used: Int; var budgetFull: Bool }
     /// Private recognition source; combined redaction must run before use.
@@ -90,9 +78,5 @@ enum SharedContext {
         let response = try JSONSerialization.jsonObject(with: Redactor.request(input, operation: .context)) as? [String: Any]
         guard let result = response?["text"] as? String else { throw Redactor.Failure.refused }
         return result
-    }
-    static func process(blocks: [ScreenContext.Block], caret: [String]? = nil) throws -> Result {
-        let input = try JSONEncoder().encode(Request(blocks: blocks.map(Block.init), caret: caret))
-        return try JSONDecoder().decode(Result.self, from: Redactor.request(input, operation: .context))
     }
 }

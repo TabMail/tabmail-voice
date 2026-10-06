@@ -16,35 +16,25 @@ enum Redactor {
         guard result.count == lines.count, zip(result, lines).allSatisfy({ $0.count == $1.count }) else { throw Failure.refused }
         return result
     }
-    enum Operation { case redact, context, policy, text, address, viewport }
+    enum Operation { case redact, context, policy, text, address, viewport, screen }
     static func request(_ input: Data, operation: Operation = .redact) throws -> Data {
         guard voice_core_abi_version() == 1 else { throw Failure.refused }
+        let call = switch operation {
+        case .redact: voice_core_redact_json
+        case .context: voice_core_context_json
+        case .policy: voice_core_policy_json
+        case .text: voice_core_redact_text_json
+        case .address: voice_core_address_json
+        case .viewport: voice_core_viewport_json
+        case .screen: voice_core_screen_json
+        }
         var output = VoiceCoreBuffer(data: nil, length: 0)
         let status = input.withUnsafeBytes { bytes in
-            (operation == .viewport ? voice_core_viewport_json : operation == .address ? voice_core_address_json : operation == .context ? voice_core_context_json : operation == .policy ? voice_core_policy_json : operation == .text ? voice_core_redact_text_json : voice_core_redact_json)(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &output)
+            call(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &output)
         }
         defer { voice_core_buffer_free(output) }
         guard status == 0, let data = output.data else { throw Failure.refused }
         return Data(bytes: data, count: output.length)
     }
 
-}
-
-extension ScreenContext {
-    var redacted: ScreenContext {
-        get throws {
-            guard !coreFailed else { throw Redactor.Failure.refused }
-            var context = self
-            context.windowTitle = try windowTitle.map(Redactor.redact)
-            if terminalViewport != nil { return context }
-            let result = try SharedContext.process(blocks: blocks, caret: [textBeforeCaret, selectedText, textAfterCaret])
-            guard let caret = result.caret, caret.count == 3 else { throw Redactor.Failure.refused }
-            context.blocks = try result.nativeBlocks()
-            if result.truncated && context.stoppedEarly == nil { context.stoppedEarly = "text budget" }
-            context.textBeforeCaret = caret[0]
-            context.selectedText = caret[1]
-            context.textAfterCaret = caret[2]
-            return context
-        }
-    }
 }

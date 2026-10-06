@@ -252,21 +252,11 @@ public:
             require(automation->CompareElements(element.Get(), current.Get(), &unchanged));
             if (password != protectedFocus || !unchanged || (logical && !logical->valid())) return nullptr;
         }
-        std::array<std::string, 3> caret{left, selection, right};
-        const bool redactionChangedSelection = privacy::ScreenPrivacy::apply(context, caret);
-        const bool selectionRedacted = selectionUnavailable || redactionChangedSelection;
-        const auto rendered = context.render();
-        const auto summary = "Windows screen context: " + std::to_string(context.nodes) + " nodes, " +
-            std::to_string(context.count()) + " blocks, " + std::to_string(rendered.size()) + " bytes, " +
-            std::to_string(GetTickCount64() - started) + " ms" +
-            (context.stopped.empty() ? "" : ", stopped: " + context.stopped);
         // The page the focus is in; without one, the first page the walk reached, as on the Mac.
         const auto pageName = focusedPage && focusedPage->kind == PageHost::Kind::host ? std::optional<std::wstring>(focusedPage->name) : walkedHost;
-        return {{"appName", utf8(app)}, {"bundleID", nullptr}, {"windowTitle", privacy::ScreenPrivacy::redact(utf8(title))},
-            {"host", pageName ? JSON(utf8(*pageName)) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", isEditable ? "editable text" : "control"},
-            {"textBeforeCaret", caret[0]}, {"selectedText", caret[1]}, {"textAfterCaret", caret[2]},
-            {"selectionRedacted", selectionRedacted},
-            {"renderedText", rendered}, {"summary", summary}, {"logDescription", rendered}};
+        return context.reply({{"appName", utf8(app)}, {"bundleID", nullptr}, {"windowTitle", utf8(title)},
+            {"host", pageName ? JSON(utf8(*pageName)) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", isEditable ? "editable text" : "control"}},
+            {left, selection, right}, selectionUnavailable, exclusions.lists(), GetTickCount64() - started);
     }
 
 private:
@@ -719,14 +709,9 @@ private:
         for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),started,HelperConfig::terminalReadBudgetMs)) return nullptr;
         wchar_t title[513]{};GetWindowTextW(window,title,513);
         if(!valid()) return nullptr;
-        const auto projected=core::request({{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},
-            {"complete",complete && !surfaces.empty()}},voice_core_viewport_json);
-        const auto rendered=projected.at("renderedText").get<std::string>();
-        return {{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",privacy::ScreenPrivacy::redact(utf8(title))},
-            {"host",nullptr},{"terminalProgram",nullptr},{"focusedRole","terminal"},{"textBeforeCaret",""},{"textAfterCaret",""},
-            {"selectedText",projected.at("selectedText")},{"selectionRedacted",!projected.at("selectionComplete").get<bool>()},
-            {"terminalViewport",projected},{"renderedText",rendered},{"logDescription",rendered},
-            {"summary","terminal surfaces="+std::to_string(surfaces.size())+" nodes="+std::to_string(visited)}};
+        const JSON viewport{{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"complete",complete && !surfaces.empty()}};
+        return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
+            {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
     }
     // The focused element as the walk treats it. `element` is null when the window has none.
     struct FocusRead {

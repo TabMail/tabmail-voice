@@ -116,7 +116,7 @@ struct TerminalViewportReaderTests {
 struct TerminalViewportWireTests {
     @Test func projectsAndRedactsBeforeSendingTypedCaretToTheApp() throws {
         var context = ScreenContext(appName: "Synthetic Terminal", bundleID: "example.terminal")
-        try TerminalViewportReader.finish([
+        TerminalViewportReader.finish([
             "complete": true, "focusedSurface": 1, "caret": ["status": "exact", "surface": 1, "run": 0, "offset": 24],
             "surfaces": [["id": 1, "frame": [0, 0, 400, 200],
                           "runs": [["id": 0, "text": "token=abc123456789\n> hello world", "connected": false, "startKnown": false, "endKnown": false]],
@@ -131,7 +131,7 @@ struct TerminalViewportWireTests {
     }
     @Test func incompleteSelectionAndUnavailableCaretSurviveTheWire() throws {
         var context = ScreenContext(appName: "Synthetic Terminal", bundleID: nil)
-        try TerminalViewportReader.finish([
+        TerminalViewportReader.finish([
             "complete": false, "focusedSurface": 1, "caret": ["status": "unavailable"],
             "surfaces": [["id": 1, "frame": [0, 0, 400, 200],
                           "runs": [["id": 0, "text": "visible", "connected": false, "startKnown": false, "endKnown": false]],
@@ -221,8 +221,8 @@ private final class TerminalAXFixture {
     func wire() throws -> JSON {
         let captured = try #require(capture())
         var context = ScreenContext(appName: "Synthetic Terminal", bundleID: "example.terminal")
-        try TerminalViewportReader.finish(["complete": true, "focusedSurface": 0,
-                                           "caret": captured.caret, "surfaces": .array([captured.source])], into: &context)
+        TerminalViewportReader.finish(["complete": true, "focusedSurface": 0,
+                                       "caret": captured.caret, "surfaces": .array([captured.source])], into: &context)
         return context.json
     }
 }
@@ -408,11 +408,11 @@ struct TerminalCollectorTests {
             tree.providers[ObjectIdentifier(surface)] = TerminalAXFixture()
             let context = try #require(tree.read(window, focused: surface, path: [window], bundleID: bundleID))
             if let bundleID, HelperConfig.terminalBundleIDs.contains(bundleID) {
-                #expect(context.terminalViewport?["caret"]?["offset"]?.integer == 7)
+                #expect(context.json["terminalViewport"]?["caret"]?["offset"]?.integer == 7)
                 #expect(context.json["renderedText"]?.string == "[Terminal surface 0]\n> hello world\nstatus bar\n")
                 #expect(tree.acquisitions.count == 1 && tree.genericReads == 0)
             } else {
-                #expect(context.terminalViewport == nil)
+                #expect(context.json["terminalViewport"] == nil)
                 #expect(tree.acquisitions.isEmpty && tree.genericReads > 0)
             }
         }
@@ -449,7 +449,7 @@ struct TerminalCollectorTests {
             tree.providers[ObjectIdentifier(surface)] = TerminalAXFixture()
             let result = tree.read(window, focused: surface, path: [window], exclusions: ["private.example"])
             if excludedPage { #expect(result == nil) }
-            else { #expect(result?.terminalViewport?["complete"]?.bool == false) }
+            else { #expect(result?.json["terminalViewport"]?["complete"]?.bool == false) }
             #expect(tree.acquisitions.isEmpty && tree.genericReads == 0)
         }
     }
@@ -475,7 +475,7 @@ struct TerminalCollectorTests {
         let tree = TerminalCollectorFixture()
         tree.providers[ObjectIdentifier(selected)] = TerminalAXFixture()
         let context = try #require(tree.read(window, focused: selected, path: [tab, window]))
-        #expect(context.terminalViewport?["complete"]?.bool == true)
+        #expect(context.json["terminalViewport"]?["complete"]?.bool == true)
         #expect(tree.acquisitions.count == 1 && tree.acquisitions.allSatisfy { $0 === selected })
         #expect(hidden.textReads == 0 && tree.genericReads == 0)
     }
@@ -489,7 +489,7 @@ struct TerminalCollectorTests {
         tree.providers[ObjectIdentifier(surface)] = provider
         let context = try #require(tree.read(window, focused: surface, path: [clipped, window]))
         #expect(context.json["renderedText"]?.string == "[Terminal surface 0]\nstatus bar\n")
-        #expect(context.terminalViewport?["caret"]?["status"]?.string == "outsideViewport")
+        #expect(context.json["terminalViewport"]?["caret"]?["status"]?.string == "outsideViewport")
         #expect(provider.reads == [NSRange(location: 22, length: 11)])
         #expect(provider.forbidden.isEmpty && tree.genericReads == 0)
     }
@@ -505,9 +505,9 @@ struct TerminalSnapshotInvariantTests {
         let a=TerminalAXFixture(), b=TerminalAXFixture()
         tree.providers=[ObjectIdentifier(left):a,ObjectIdentifier(right):b]
         let context=try #require(tree.read(window,focused:left,path:[window]))
-        #expect(context.terminalViewport?["surfaces"]?.array?.count == 2)
-        #expect(context.terminalViewport?["caret"]?["surface"]?.integer == 0)
-        #expect(context.terminalViewport?["caret"]?["offset"]?.integer == 7)
+        #expect(context.json["terminalViewport"]?["surfaces"]?.array?.count == 2)
+        #expect(context.json["terminalViewport"]?["caret"]?["surface"]?.integer == 0)
+        #expect(context.json["terminalViewport"]?["caret"]?["offset"]?.integer == 7)
         #expect(tree.acquisitions.count == 2)
         #expect(a.forbidden.isEmpty && b.forbidden.isEmpty)
     }
@@ -570,9 +570,9 @@ struct TerminalFocusedSelectionTests {
             b.selection = NSRange(location: 16, length: 5) // world
             tree.providers = [ObjectIdentifier(left): a, ObjectIdentifier(right): b]
             let context = try #require(tree.read(window, focused: focusedFirst ? left : right, path: [window]))
-            #expect(context.terminalViewport?["surfaces"]?.array?.count == 2)
-            #expect(context.selectedText == (focusedFirst ? "hello" : "world"))
-            #expect(context.terminalViewport?["selectionComplete"]?.bool == true)
+            #expect(context.json["terminalViewport"]?["surfaces"]?.array?.count == 2)
+            #expect(context.json["selectedText"]?.string == (focusedFirst ? "hello" : "world"))
+            #expect(context.json["terminalViewport"]?["selectionComplete"]?.bool == true)
             #expect(tree.acquisitions.count == 2 && tree.genericReads == 0)
             #expect(a.forbidden.isEmpty && b.forbidden.isEmpty)
         }

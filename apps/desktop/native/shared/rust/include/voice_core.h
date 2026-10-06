@@ -21,6 +21,9 @@ uint32_t voice_core_context_json(const uint8_t *data, size_t length, VoiceCoreBu
 uint32_t voice_core_policy_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 uint32_t voice_core_address_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 uint32_t voice_core_redact_text_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
+/* The screen read's whole reply (ADR-DESK-054): what the walk found, with the read's exclusions,
+ * in; the reply the app receives, or {"hidden":true} for an excluded page, out. */
+uint32_t voice_core_screen_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 void voice_core_buffer_free(VoiceCoreBuffer buffer);
 /* Semantic text ABI. One policy for all platforms; no platform-selected limits.
  * Kinds: 1 row, 2 heading, 3 link. Decisions: 1 read approved root, 2 read

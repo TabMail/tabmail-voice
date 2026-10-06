@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "Privacy/ScreenPrivacy.h"
+#include "screen_context.h"
 #include "text.h"
 #include <nlohmann/json.hpp>
 #include <chrono>
@@ -46,14 +47,15 @@ int main(int argc, char** argv) {
         voice::VisibleContext context;
         context.append(voice::ContextKind::text, "password:");
         context.append(voice::ContextKind::caret, "ignored markers", voice::ContextFrame{1, 2, 3, 4});
-        std::array<std::string, 3> caret{"synthetic", "value", "123"};
-        expect(ScreenPrivacy::apply(context, caret), "split secret changes the selection");
-        expect(caret[1] == "[redacted]", "empty redacted selection remains a selection");
-        expect(context.render() == "password:\n» [redacted]‸[redacted]‸", "blocks and caret redact together before rendering");
+        const JSON none{{"excludedAppIDs", JSON::array()}, {"excludedHosts", JSON::array()}};
+        auto reply = context.reply({{"appName", "Synthetic"}}, {"synthetic", "value", "123"}, false, none, 0);
+        expect(reply.at("selectionRedacted") == true, "split secret changes the selection");
+        expect(reply.at("selectedText") == "[redacted]", "empty redacted selection remains a selection");
+        expect(reply.at("renderedText") == "password:\n» [redacted]‸[redacted]‸", "blocks and caret redact together before rendering");
         voice::VisibleContext absent;
         absent.append(voice::ContextKind::text, "password:");
-        caret = {"synthetic", "value", "123"};
-        expect(ScreenPrivacy::apply(absent, caret) && caret[1] == "[redacted]", "caret text is still filtered when no caret block was walked");
+        reply = absent.reply({{"appName", "Synthetic"}}, {"synthetic", "value", "123"}, false, none, 0);
+        expect(reply.at("selectionRedacted") == true && reply.at("selectedText") == "[redacted]", "caret text is still filtered when no caret block was walked");
         // Every generated definition is load-bearing on the shared conformance corpus.
         // Definition mutations are tested once by the Rust crate.
         for (const auto start : {u"sk-", u"data token=7", u"Bearer ", u"eyJ", u"eyJa.eyJ", u"eyJa.eyJa.", u"://u:",

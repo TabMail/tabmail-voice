@@ -4,6 +4,7 @@
 
 import Foundation
 import Testing
+import VoiceHelperSupport
 @testable import VoiceMacOSKit
 
 /// What looks like a secret is taken out of text read off the screen, and everything around it, and
@@ -123,8 +124,6 @@ struct RedactorTests {
         let log = reply["logDescription"]?.string ?? ""
         #expect(log.hasSuffix("--- visible text ---\nYour key:\n\(gone)\nAuthorization: Bearer\n\(gone)\nDone"))
         for secret in body + [token] { #expect(!log.contains(secret)) }
-        // The blocks left empty are gone, the others are where they were.
-        #expect(try context.redacted.blocks.map(\.text) == ["Your key:", gone, "Authorization: Bearer", gone, "Done"])
     }
 
     /// A secret of several lines is redacted whatever kind of element shows it: the marks the
@@ -291,7 +290,6 @@ struct RedactorTests {
         context.append(.text, "sidebar", frame: CGRect(x: 400, y: 0, width: 80, height: 20))
 
         #expect(context.json["renderedText"]?.string == "key \(Redactor.placeholder)\n» note ‸\n\nsidebar")
-        #expect(try context.redacted.blocks.map(\.frame) == context.blocks.map(\.frame))
     }
 
     /// A selection that begins inside a secret and ends in blank space keeps only the blank: the app
@@ -348,7 +346,6 @@ struct RedactorTests {
         #expect(reply["textAfterCaret"]?.string == " \(gone)")
         #expect(reply["renderedText"]?.string == "> echo \(gone)")
         #expect(reply["selectionRedacted"] == .bool(false))
-        #expect(try context.redacted.blocks.count == 1)
     }
 
     /// The reply says when the selection had secret-looking text taken out, so the app never pastes a
@@ -441,6 +438,26 @@ struct RedactorTests {
             let result = try #require(JSONSerialization.jsonObject(with: Redactor.request(request, operation: .context)) as? NSDictionary)
             let expected = try #require(item["expected"] as? [String: NSObject])
             for (key, value) in expected { #expect((result[key] as? NSObject) == value) }
+        }
+    }
+
+    /// The screen read's whole reply comes from the shared core: every case every helper runs.
+    @Test func sharedScreenCasesRunThroughTheNativeABI() throws {
+        struct Case: Decodable { var name: String; var request: JSON; var expected: JSON?; var refused: Bool? }
+        struct Cases: Decodable { var cases: [Case] }
+        let native = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: native.appendingPathComponent("shared/context/screen-cases.json"))
+        let cases = try JSONDecoder().decode(Cases.self, from: data).cases
+        #expect(cases.contains { $0.refused == true } && cases.contains { $0.expected?["hidden"] == .bool(true) })
+        for item in cases {
+            let request = try JSONEncoder().encode(item.request)
+            if item.refused == true {
+                #expect(throws: Redactor.Failure.self, "\(item.name)") { try Redactor.request(request, operation: .screen) }
+            } else {
+                let reply = try JSONDecoder().decode(JSON.self, from: Redactor.request(request, operation: .screen))
+                #expect(reply == item.expected, "\(item.name)")
+            }
         }
     }
 

@@ -30,10 +30,7 @@ struct BoundedFieldReaderTests {
         #expect(result.parts[1] == visible)
         var context = ScreenContext(appName: "Synthetic", bundleID: nil, windowTitle: nil)
         context.appendField(result.parts)
-        let redacted = try context.redacted
-        #expect(redacted.blocks.first?.source == nil)
-        #expect(redacted.blocks.first?.text == Redactor.placeholder)
-        #expect(try redacted.renderedText() == "> [redacted]")
+        #expect(try context.renderedText() == "> [redacted]")
     }
     @Test func longWholeSnapshotReusesItsNativeStorageForVisibleSource() throws {
         let prefix = String(repeating: "x", count: 300000) + ". Before "

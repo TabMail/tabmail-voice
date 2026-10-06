@@ -5,14 +5,25 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 #include "../rust/VoiceCore.h"
 
-namespace voice::privacy { struct ScreenPrivacy; }
-
 namespace voice {
+// The screen read's whole reply, built by the shared core (ADR-DESK-054): the helper's fields (the
+// app, window title, host, terminal program and focused role, with the blocks and the text around the
+// caret, or a terminal's viewport request), the read's exclusion lists, its node count, time and stop
+// reason. {"hidden":true} when the page read is excluded; throws when the core refuses.
+inline nlohmann::json screenReply(nlohmann::json request, const nlohmann::json& exclusions, size_t nodes,
+                                  uint64_t milliseconds, const std::string& stopped) {
+    request["exclusions"] = exclusions;
+    request["nodes"] = nodes;
+    request["milliseconds"] = milliseconds;
+    request["stopped"] = stopped.empty() ? nlohmann::json(nullptr) : nlohmann::json(stopped);
+    return core::request(request, voice_core_screen_json);
+}
 inline std::string normalizedContextText(const std::string& text, const std::optional<std::string>& previous = {}) {
     return core::request({{"normalize", text}, {"previous", previous ? nlohmann::json(*previous) : nlohmann::json(nullptr)}},
         voice_core_context_json).at("text").get<std::string>();
@@ -85,9 +96,16 @@ public:
     std::string render() const {
         return core::request({{"blocks", blocksJSON()}}, voice_core_context_json).at("rendered").get<std::string>();
     }
+    // This read's reply (`screenReply`), its blocks with the text around the caret.
+    nlohmann::json reply(nlohmann::json fields, const std::array<std::string, 3>& caret, bool selectionUnavailable,
+                         const nlohmann::json& exclusions, uint64_t milliseconds) const {
+        fields["blocks"] = blocksJSON();
+        fields["caret"] = caret;
+        fields["selectionUnavailable"] = selectionUnavailable;
+        return screenReply(std::move(fields), exclusions, nodes, milliseconds, stopped);
+    }
 
 private:
-    friend struct privacy::ScreenPrivacy;
     size_t bytes = 0;
     std::vector<ContextBlock> blocks;
     static constexpr const char* kinds[] = {"text", "heading", "link", "row", "field", "caret"};
@@ -102,19 +120,6 @@ private:
         auto result = nlohmann::json::array();
         for (const auto& block : blocks) result.push_back(blockJSON(block));
         return result;
-    }
-    static ContextBlock blockFromJSON(const nlohmann::json& value) {
-        if (value.contains("source") || value.contains("runs")) throw std::runtime_error("private source survived finalization");
-        const auto kind = value.at("kind").get<std::string>();
-        size_t index = 0;
-        while (index < std::size(kinds) && kind != kinds[index]) ++index;
-        if (index == std::size(kinds)) throw std::runtime_error("invalid context kind");
-        ContextBlock block{static_cast<ContextKind>(index), value.at("text").get<std::string>(), {}};
-        if (value.contains("frame") && !value.at("frame").is_null()) {
-            const auto f = value.at("frame").get<std::array<double, 4>>();
-            block.frame = ContextFrame{f[0], f[1], f[2], f[3]};
-        }
-        return block;
     }
 };
 }

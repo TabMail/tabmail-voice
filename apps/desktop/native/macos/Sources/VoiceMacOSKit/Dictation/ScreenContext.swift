@@ -6,8 +6,8 @@ import Foundation
 import VoiceHelperSupport
 
 /// What was on screen when a dictation started: the app, where in it, the text around the caret
-/// and the visible text in reading order, laid out in lines as on screen. User content: never stored, and logged only to the debug
-/// log file (`logDescription`, ADR-DESK-015); `summary` is what the other logs carry.
+/// and the visible text in reading order, laid out in lines as on screen. User content: never stored,
+/// and sent only through the shared core's reply (`json`), which redacts and renders it (ADR-DESK-054).
 struct ScreenContext: Sendable, Equatable {
     struct Block: Sendable, Equatable {
         enum Kind: String, Sendable {
@@ -26,8 +26,9 @@ struct ScreenContext: Sendable, Equatable {
         var isInline: Bool { kind == .text || kind == .link }
     }
 
-    /// Already redacted and projected by shared Rust; never holds native source.
-    var terminalViewport: JSON?
+    /// A terminal's viewport source, as acquired: private until the shared core projects and redacts
+    /// it in the reply.
+    var terminalSource: JSON?
     var appName: String
     var bundleID: String?
     var windowTitle: String?
@@ -106,17 +107,6 @@ struct ScreenContext: Sendable, Equatable {
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
 
-    /// The visible text laid out as on screen: text and links side by side on one line are joined
-    /// (a chat message's author and time), everything else starts a line, and a jump back up the
-    /// window (the next pane or column) leaves a blank line. Headings are marked, links bracketed,
-    /// row cells joined.
-    func renderedText() throws -> String {
-        guard !coreFailed else { throw Redactor.Failure.refused }
-        if let terminalViewport, let rendered = terminalViewport["renderedText"]?.string { return rendered }
-        let caret = blocks.contains(where: { $0.source != nil || $0.runs != nil }) ? [textBeforeCaret, selectedText, textAfterCaret] : nil
-        return try SharedContext.process(blocks: blocks, caret: caret).rendered
-    }
-
     /// Whether an element can show its text. Web apps keep hidden text in the tree in boxes at most
     /// a point thin: screen-reader-only labels, list items scrolled out of view (Chromium clips
     /// them to 0×1 at the list's edge), hover-only actions. A 0×0 frame says nothing (an app
@@ -124,32 +114,6 @@ struct ScreenContext: Sendable, Equatable {
     static func isShown(_ frame: CGRect) -> Bool {
         guard frame.width > 0 || frame.height > 0 else { return true }
         return min(frame.width, frame.height) > HelperConfig.contextHiddenMaxThickness
-    }
-
-    /// Sizes and timings only, safe to log.
-    var summary: String {
-        let counts = Dictionary(grouping: blocks, by: \.kind).mapValues(\.count)
-        let visible = blocks.reduce(0) { $0 + $1.text.count }
-        return "app \(bundleID ?? appName), host \(host ?? "-"), program \(terminalProgram ?? "-"), "
-            + "focused \(focusedRole ?? "-"), title \(windowTitle?.count ?? 0) chars, "
-            + "caret \(textBeforeCaret.count)/\(selectedText.count)/\(textAfterCaret.count) chars, "
-            + "\(blocks.count) blocks (\(counts[.heading] ?? 0) headings, \(counts[.row] ?? 0) rows, "
-            + "\(counts[.link] ?? 0) links, \(counts[.field] ?? 0) fields, caret placed \(counts[.caret] != nil)) \(visible) chars, "
-            + "\(nodesVisited) nodes, \(Int(seconds * 1000)) ms" + (stoppedEarly.map { ", stopped: \($0)" } ?? "")
-    }
-
-    /// Everything read, for the debug log file (`Log.content`): the fields, the text around the caret
-    /// and the visible text as the prompts receive it.
-    var logDescription: String {
-        get throws {
-        "app \(appName) (\(bundleID ?? "-")), window title \(windowTitle ?? "-"), host \(host ?? "-"), "
-            + "terminal program \(terminalProgram ?? "-"), focused \(focusedRole ?? "-")"
-            + (stoppedEarly.map { ", stopped: \($0)" } ?? "") + "\n"
-            + "--- text before the caret ---\n\(textBeforeCaret)\n"
-            + "--- selected text ---\n\(selectedText)\n"
-            + "--- text after the caret ---\n\(textAfterCaret)\n"
-            + "--- visible text ---\n\(try renderedText())"
-    }
     }
 
     /// The first line whose top is at or below `windowTop`, by binary search over lines whose

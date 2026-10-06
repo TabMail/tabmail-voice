@@ -246,33 +246,35 @@ struct ScreenAccess: Sendable {
 }
 
 extension ScreenContext {
-    /// What the app receives: the fields, and the text already rendered for the prompts and the logs,
-    /// all of it with secret-looking text taken out (`redacted`: ADR-DESK-046).
-    var json: JSON {
-        guard let context = try? redacted else { return ["hidden": .bool(true)] }
-        return (try? context.json(selectionRedacted: selectionUnavailable || context.selectedText != selectedText)) ?? ["hidden": .bool(true)]
-    }
-
-    private func json(selectionRedacted: Bool) throws -> JSON {
-        func optional(_ value: String?) -> JSON { value.map(JSON.string) ?? .null }
-        var fields: [String: JSON] = [
-            "appName": .string(appName),
-            "bundleID": optional(bundleID),
-            "windowTitle": optional(windowTitle),
-            "host": optional(host),
-            "terminalProgram": optional(terminalProgram),
-            "focusedRole": optional(focusedRole),
-            "textBeforeCaret": .string(textBeforeCaret),
-            "selectedText": .string(selectedText),
-            // The selection as sent is not the user's text: the app must not paste a rewrite of it
-            // over the real one.
-            "selectionRedacted": .bool(selectionRedacted),
-            "textAfterCaret": .string(textAfterCaret),
-            "renderedText": .string(try renderedText()),
-            "summary": .string(summary),
-            "logDescription": .string(try logDescription),
-        ]
-        if let terminalViewport { fields["terminalViewport"] = terminalViewport }
-        return .object(fields)
+    /// What the app receives, built by the shared core (`voice_core_screen_json`, ADR-DESK-054): the
+    /// fields, the text redacted and rendered for the prompts and the logs, the summary and the log
+    /// description; `{hidden: true}` when the page read is on an excluded website, or the core refuses.
+    func json(_ exclusions: ScreenExclusions) -> JSON {
+        struct Request: Encodable {
+            var appName: String
+            var bundleID, windowTitle, host, terminalProgram, focusedRole: String?
+            var exclusions: [String: [String]]
+            var nodes, milliseconds: Int
+            var stopped: String?
+            var blocks: [SharedContext.Block]?
+            var caret: [String]?
+            var selectionUnavailable: Bool?
+            var viewport: JSON?
+        }
+        guard !coreFailed else { return ["hidden": .bool(true)] }
+        var request = Request(appName: appName, bundleID: bundleID, windowTitle: windowTitle, host: host,
+                              terminalProgram: terminalProgram, focusedRole: focusedRole,
+                              exclusions: ["excludedAppIDs": exclusions.appIDs, "excludedHosts": exclusions.hosts],
+                              nodes: nodesVisited, milliseconds: Int(seconds * 1000), stopped: stoppedEarly)
+        if let terminalSource {
+            request.viewport = terminalSource
+        } else {
+            request.blocks = blocks.map(SharedContext.Block.init)
+            request.caret = [textBeforeCaret, selectedText, textAfterCaret]
+            request.selectionUnavailable = selectionUnavailable
+        }
+        do {
+            return try JSONDecoder().decode(JSON.self, from: Redactor.request(JSONEncoder().encode(request), operation: .screen))
+        } catch { return ["hidden": .bool(true)] }
     }
 }

@@ -8,6 +8,7 @@
 #include "privacy.h"
 #include "identity.h"
 #include "../../shared/privacy/ScreenPrivacy.h"
+#include "../../shared/context/screen_context.h"
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -537,10 +538,15 @@ std::string semanticLabel(Tree& tree, typename Tree::Node root, SemanticText::Ki
                           const std::optional<ContextFrame>& window = {}) {
     return semanticSource(tree, root, kind, visited, window).at("text").template get<std::string>();
 }
+// How long a read took, for its reply's summary.
+inline uint64_t elapsedMilliseconds(std::chrono::steady_clock::time_point started) {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
+}
 template<class Tree>
 nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, typename Tree::Node focus,
     const std::vector<typename Tree::Node>& path, const AppIdentity& app, const ScreenExclusions& exclusions) {
     using JSON=nlohmann::json;
+    const auto started = std::chrono::steady_clock::now();
     if constexpr (!requires { tree.viewportSurface(focus, size_t{}, ContextFrame{}, true, size_t{}); }) {
         return nullptr;
     } else {
@@ -601,15 +607,12 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         // Privacy is checked again at the end; the text is not read again.
         for(const auto& node:read) if(!safeSubtree(tree,node,exclusions,true)) return nullptr;
         if(!safeSubtree(tree,window,exclusions,false)) return nullptr;
-        const auto projected=core::request({{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"offsetUnit","scalar"},
-            {"complete",complete && !surfaces.empty()}},voice_core_viewport_json);
-        const auto title=privacy::ScreenPrivacy::redact(tree.label(window));
+        const JSON viewport{{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"offsetUnit","scalar"},
+            {"complete",complete && !surfaces.empty()}};
+        const auto title=tree.label(window);
         if(!tree.withinBudget()) return nullptr;
-        const auto rendered=projected.at("renderedText").template get<std::string>();
-        return {{"appName",app.name},{"bundleID",app.id},{"windowTitle",title},{"host",nullptr},{"terminalProgram",nullptr},{"focusedRole","terminal"},
-            {"textBeforeCaret",""},{"textAfterCaret",""},{"selectedText",projected.at("selectedText")},
-            {"selectionRedacted",!projected.at("selectionComplete").template get<bool>()},{"terminalViewport",projected},
-            {"renderedText",rendered},{"summary","terminal surfaces="+std::to_string(surfaces.size())+" nodes="+std::to_string(visited)}, {"logDescription",rendered}};
+        return screenReply({{"appName",app.name},{"bundleID",app.id},{"windowTitle",title},{"host",nullptr},{"terminalProgram",nullptr},
+            {"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,elapsedMilliseconds(started),"");
     }
 }
 
@@ -617,6 +620,7 @@ template<class Tree>
 nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typename Tree::Node focus,
     const std::vector<typename Tree::Node>& path, const AppIdentity& app, const ScreenExclusions& exclusions) {
     using JSON = nlohmann::json;
+    const auto started = std::chrono::steady_clock::now();
     if (!tree.withinBudget()) return nullptr;
     std::optional<std::string> host;
     bool protectedFocus = false;
@@ -649,7 +653,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     }
     if (!fieldInFocus) { around[0].clear(); around[2].clear(); }
     // The focused page checks precede the title, as on macOS.
-    const auto title = privacy::ScreenPrivacy::redact(tree.label(window));
+    const auto title = tree.label(window);
     const auto windowFrame = tree.frame(window);
     VisibleContext context(around);
     std::vector<std::pair<typename Tree::Node, bool>> stack{{window, false}};
@@ -719,15 +723,9 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             for (auto it = children.rbegin(); it != children.rend(); ++it) stack.emplace_back(*it, web);
         } catch (const ScreenBudgetExceeded&) { context.stopped = "lookup budget"; break; }
     }
-    const bool redactionChangedSelection = privacy::ScreenPrivacy::apply(context, around);
-    const bool selectionRedacted = selectionUnavailable || redactionChangedSelection;
-    const auto rendered = context.render();
-    const auto summary = "nodes=" + std::to_string(context.nodes) + " blocks=" + std::to_string(context.count()) +
-        " bytes=" + std::to_string(rendered.size()) + (context.stopped.empty() ? "" : " stopped=" + context.stopped);
-    return JSON{{"appName", app.name}, {"bundleID", app.id}, {"windowTitle", title},
-        {"host", host ? JSON(*host) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", std::to_string(focusRole)},
-        {"textBeforeCaret", around[0]}, {"selectedText", around[1]}, {"textAfterCaret", around[2]},
-        {"selectionRedacted", selectionRedacted}, {"renderedText", rendered}, {"summary", summary}, {"logDescription", rendered}};
+    return context.reply({{"appName", app.name}, {"bundleID", app.id}, {"windowTitle", title},
+        {"host", host ? JSON(*host) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", std::to_string(focusRole)}},
+        around, selectionUnavailable, exclusions.lists(), elapsedMilliseconds(started));
 }
 template<class Tree>
 nlohmann::json gatherScreen(Tree& tree, typename Tree::Node window, typename Tree::Node focus,

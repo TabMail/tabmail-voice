@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "../../shared/privacy/ScreenPrivacy.h"
+#include "../../shared/context/screen_context.h"
 #include <nlohmann/json.hpp>
 #include <unicode/ustring.h>
 #include <chrono>
@@ -56,14 +57,15 @@ int main(int argc, char** argv) {
         voice::VisibleContext context;
         context.append(voice::ContextKind::text, "password:");
         context.append(voice::ContextKind::caret, "ignored markers", voice::ContextFrame{1, 2, 3, 4});
-        std::array<std::string, 3> caret{"synthetic", "value", "123"};
-        expect(ScreenPrivacy::apply(context, caret), "split secret changes the selection");
-        expect(caret[1] == "[redacted]", "empty redacted selection remains a selection");
-        expect(context.render() == "password:\n» [redacted]‸[redacted]‸", "blocks and caret redact together before rendering");
+        const JSON none{{"excludedAppIDs", JSON::array()}, {"excludedHosts", JSON::array()}};
+        auto reply = context.reply({{"appName", "Synthetic"}}, {"synthetic", "value", "123"}, false, none, 0);
+        expect(reply.at("selectionRedacted") == true, "split secret changes the selection");
+        expect(reply.at("selectedText") == "[redacted]", "empty redacted selection remains a selection");
+        expect(reply.at("renderedText") == "password:\n» [redacted]‸[redacted]‸", "blocks and caret redact together before rendering");
         voice::VisibleContext absent;
         absent.append(voice::ContextKind::text, "password:");
-        caret = {"synthetic", "value", "123"};
-        expect(ScreenPrivacy::apply(absent, caret) && caret[1] == "[redacted]", "unwalked caret is filtered");
+        reply = absent.reply({{"appName", "Synthetic"}}, {"synthetic", "value", "123"}, false, none, 0);
+        expect(reply.at("selectionRedacted") == true && reply.at("selectedText") == "[redacted]", "unwalked caret is filtered");
         const std::string unicode = "Grüße 🙂 漢字";
         expect(ScreenPrivacy::encode(ScreenPrivacy::decode(unicode)) == unicode, "shared UTF conversion round trip");
         bool invalidRefused = false;

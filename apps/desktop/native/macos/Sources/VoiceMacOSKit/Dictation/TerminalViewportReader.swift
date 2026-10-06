@@ -241,22 +241,15 @@ extension TerminalViewportReader {
 }
 
 extension TerminalViewportReader {
-    /// Projects source exactly once, then transfers only safe output to the
-    /// helper's existing screen wire. Any selection refusal disables Edit.
-    static func finish(_ source: JSON, into context: inout ScreenContext) throws {
-        let output = try project(source)
-        guard let selected = output["selectedText"]?.string,
-              let selectionComplete = output["selectionComplete"]?.bool,
-              let complete = output["complete"]?.bool,
-              output["renderedText"]?.string != nil else { throw Redactor.Failure.refused }
-        context.terminalViewport = output
+    /// Keeps the viewport source for the reply, where the shared core projects and redacts it once
+    /// (`ScreenContext.json`); nothing else of the context is sent for a terminal.
+    static func finish(_ source: JSON, into context: inout ScreenContext) {
+        context.terminalSource = source
         context.terminalProgram = nil
         context.textBeforeCaret = ""
+        context.selectedText = ""
         context.textAfterCaret = ""
-        context.selectedText = selected
-        context.selectionUnavailable = !selectionComplete
         context.blocks = []
-        if !complete { context.stoppedEarly = "terminal viewport incomplete" }
     }
 
     /// Metadata-only approval of an aggregate source, including secure descendants.
@@ -363,14 +356,12 @@ extension TerminalViewportReader {
         context.nodesVisited = seen.count
         context.windowTitle = tree.sourceString(window, kAXTitleAttribute)
         guard valid(), surfaceElements.allSatisfy({ readable($0) }) else { return nil }
-        do {
-            try finish(["surfaces": .array(surfaces), "focusedSurface": focusedID, "caret": caret,
-                        "complete": .bool(complete && !surfaces.isEmpty)], into: &context)
-            context.seconds = Date().timeIntervalSince(started)
-            diagnosticSucceeded = true
-            HelperLog.debug("TerminalViewport: result surfaces=\(surfaces.count) complete=\(complete) nodes=\(seen.count) elapsedMs=\(Int(context.seconds * 1000))")
-            return context
-        } catch { return nil }
+        finish(["surfaces": .array(surfaces), "focusedSurface": focusedID, "caret": caret,
+                "complete": .bool(complete && !surfaces.isEmpty)], into: &context)
+        context.seconds = Date().timeIntervalSince(started)
+        diagnosticSucceeded = true
+        HelperLog.debug("TerminalViewport: result surfaces=\(surfaces.count) complete=\(complete) nodes=\(seen.count) elapsedMs=\(Int(context.seconds * 1000))")
+        return context
     }
 }
 
