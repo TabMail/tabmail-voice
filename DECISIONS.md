@@ -3732,7 +3732,7 @@ the app restarted it for a read that superseded a still-running one, finds no fo
 start from, so that one dictation gets no screen context (and agent mode offers Compose rather than
 Edit). The next dictation reads normally.
 
-*Amendment (2026-10-06): no screen read has a time limit.* The shared walk's 1.5 s cap
+*Amendment (2026-10-06, owner direction): no screen read has a time limit.* The shared walk's 1.5 s cap
 (`timeBudgetMilliseconds`, and the `elapsed` the helpers sent with each `stop`) is gone from the
 core and every helper; only the node budget (5,000) and the text budget stop a walk. A read runs
 in the reader while the user speaks, the caller decides how long to wait for it (above), and the

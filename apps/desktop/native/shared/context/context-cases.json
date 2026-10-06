@@ -1187,6 +1187,56 @@
       }
     },
     {
+      "name": "a paragraph start where an open edge is cut gets no break at the start of the text kept",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Cut words. First",
+            "",
+            "Second"
+          ],
+          "startKnown": false,
+          "endKnown": true,
+          "paragraphStarts": [
+            9
+          ]
+        }
+      },
+      "expected": {
+        "parts": [
+          ". First",
+          "",
+          "Second"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a paragraph start at the end of the text read gets its break at the end of the after part",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "First",
+            "",
+            "Second"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "paragraphStarts": [
+            11
+          ]
+        }
+      },
+      "expected": {
+        "parts": [
+          "First",
+          "",
+          "Second\u2029"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
       "name": "put-back breaks are shown as line breaks",
       "request": {
         "blocks": [
