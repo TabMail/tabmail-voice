@@ -28,6 +28,12 @@ uint32_t voice_core_screen_json(const uint8_t *data, size_t length, VoiceCoreBuf
  * field read's bound, and with the text as read gives its {value} (null when too long, else redacted);
  * {"insert":{text[,deadline,now]}} validates a paste's text and deadline, giving {wait}. */
 uint32_t voice_core_request_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
+/* The screen walk's rules every helper shares (ADR-DESK-054): {"node":{role,focus,...}} gives what to do
+ * with one element ({action}), {"look":{read,found}} what a look inside a part read whole for an
+ * excluded page decides ({outcome}), {"census":{visited,late,page,intoPages,password}} one step of that
+ * look ({step}), {"stop":{nodes,elapsed,textFull}} why a walk stops ({stopped}), {"limits":true} its
+ * budgets. */
+uint32_t voice_core_walk_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 void voice_core_buffer_free(VoiceCoreBuffer buffer);
 /* Semantic text ABI. One policy for all platforms; no platform-selected limits.
  * Kinds: 1 row, 2 heading, 3 link. Decisions: 1 read approved root, 2 read

@@ -1,0 +1,1614 @@
+{
+  "description": "The screen walk's rules every helper shares, decided by the shared core (ADR-DESK-054): what to do with each element (node), what a look inside a part read whole for an excluded page decides (look), one step of that look (census), why a walk stops (stop) and its budgets (limits). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "cases": [
+    {
+      "name": "the walk's budgets",
+      "request": {
+        "limits": true
+      },
+      "expected": {
+        "nodeBudget": 5000,
+        "timeBudgetMilliseconds": 1500,
+        "focusDepth": 200
+      }
+    },
+    {
+      "name": "a container is walked into",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a container in a page keeps its children in the page",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a piece of text in a page keeps what it holds in the page, for a helper that walks into one with no name",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a field in a page keeps what it holds in the page, for a helper that walks into one not shown safe",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "field",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a page's control in a row keeps what it holds in the page, for a helper that walks into one with no caption",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1,
+          "inPage": true,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "caption",
+        "shown": true,
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a page not excluded is walked into and gives the walk its host",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": true,
+        "host": true
+      }
+    },
+    {
+      "name": "a page of an excluded website refuses the window",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page refuses the window even when hidden or thin",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
+          "hidden": true,
+          "frame": [
+            10,
+            10,
+            1,
+            600
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page with no height at the window's top edge is in it, and refuses it",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
+          "frame": [
+            10,
+            0,
+            100,
+            0
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page with no width at the window's right edge is in it, and refuses it",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
+          "frame": [
+            800,
+            10,
+            0,
+            100
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page wholly outside the window is skipped with what it holds",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
+          "frame": [
+            900,
+            0,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "pageExcluded means nothing on an element that is no page",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "pageExcluded": true
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "the focused field is where the caret goes",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "focus": "self",
+          "focusedField": true
+        }
+      },
+      "expected": {
+        "action": "caret"
+      }
+    },
+    {
+      "name": "the focused field takes the caret even when it is a password field",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "focus": "self",
+          "focusedField": true,
+          "password": true
+        }
+      },
+      "expected": {
+        "action": "caret"
+      }
+    },
+    {
+      "name": "a focused page of an excluded website refuses the window",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "focus": "self",
+          "pageExcluded": true,
+          "focusedField": true
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "a focused element that is no field is read like any other",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "focus": "self"
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a focused element's selection goes before it",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "focus": "self",
+          "selection": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false,
+        "caretFirst": true
+      }
+    },
+    {
+      "name": "a focused element's selection is placed even when it is skipped",
+      "request": {
+        "node": {
+          "role": "chrome",
+          "thin": 1,
+          "focus": "self",
+          "selection": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "caretFirst": true
+      }
+    },
+    {
+      "name": "the focus's ancestors are walked into whatever they are",
+      "request": {
+        "node": {
+          "role": "chrome",
+          "thin": 1,
+          "focus": "path",
+          "password": true,
+          "hidden": true,
+          "frame": [
+            900,
+            0,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a heading on the focus's path is walked into, not read whole",
+      "request": {
+        "node": {
+          "role": "heading",
+          "thin": 1,
+          "focus": "path"
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a page on the focus's path is walked into without giving the host",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "focus": "path"
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "an excluded page on the focus's path refuses the window",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "focus": "path",
+          "pageExcluded": true
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "a password field is never read nor walked into",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "password": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an element wholly outside the window is skipped",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            800,
+            0,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an element touching the window's edge from inside is read",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            790,
+            590,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "an element above the window is skipped",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "frame": [
+            0,
+            -10,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an element ending at the window's left edge is skipped",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            -10,
+            0,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an element starting at the window's bottom edge is skipped",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            0,
+            600,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an unsized element is never outside the window",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            900,
+            900,
+            0,
+            0
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "with no window frame nothing is outside it",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            900,
+            900,
+            10,
+            10
+          ]
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "chrome is skipped",
+      "request": {
+        "node": {
+          "role": "chrome",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "chrome is skipped in a page too",
+      "request": {
+        "node": {
+          "role": "chrome",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "a control outside pages is chrome",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "a toolbar outside pages is chrome",
+      "request": {
+        "node": {
+          "role": "toolbar",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "a page's control is read by its caption",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "caption",
+        "shown": true,
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a page's hidden control: one with a caption is skipped, one without walked into",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1,
+          "inPage": true,
+          "frame": [
+            0,
+            0,
+            1,
+            20
+          ]
+        }
+      },
+      "expected": {
+        "action": "caption",
+        "shown": false,
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a page's toolbar is walked into",
+      "request": {
+        "node": {
+          "role": "toolbar",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "text is read whole",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a field is read by its value",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "field",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a heading is read whole",
+      "request": {
+        "node": {
+          "role": "heading",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "semantic",
+        "kind": "heading"
+      }
+    },
+    {
+      "name": "a link is read whole",
+      "request": {
+        "node": {
+          "role": "link",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "semantic",
+        "kind": "link"
+      }
+    },
+    {
+      "name": "a row is read whole",
+      "request": {
+        "node": {
+          "role": "row",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "semantic",
+        "kind": "row"
+      }
+    },
+    {
+      "name": "a list item outside pages is a row",
+      "request": {
+        "node": {
+          "role": "listItem",
+          "thin": 1
+        }
+      },
+      "expected": {
+        "action": "semantic",
+        "kind": "row"
+      }
+    },
+    {
+      "name": "a page's list item is walked into",
+      "request": {
+        "node": {
+          "role": "listItem",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "text in a box a point thin is not read",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            0,
+            0,
+            1,
+            20
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "text in a box a point short is not read",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            0,
+            0,
+            20,
+            1
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "text in a box just over a point is read",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            0,
+            0,
+            1.5,
+            20
+          ]
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a 0x0 box counts as shown",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            10,
+            10,
+            0,
+            0
+          ]
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a 0-wide box of some height is hidden",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            10,
+            10,
+            0,
+            20
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "the thinness is the helper's (DPI-scaled pixels)",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 2,
+          "frame": [
+            0,
+            0,
+            1.5,
+            20
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "text the OS says is not drawn is not read",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "a hidden field is not read",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "field"
+      }
+    },
+    {
+      "name": "a hidden heading is not read",
+      "request": {
+        "node": {
+          "role": "heading",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "a hidden link is not read",
+      "request": {
+        "node": {
+          "role": "link",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "a hidden row is not read",
+      "request": {
+        "node": {
+          "role": "row",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "a hidden list item outside pages is not read",
+      "request": {
+        "node": {
+          "role": "listItem",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "a box that shows nothing is walked into",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "frame": [
+            0,
+            0,
+            1,
+            2
+          ]
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "a box the OS says is not drawn is walked into",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "inside a part: text is read",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "inside a part: a field is read by its value",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "field",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "inside a part: a page's control by its caption",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1,
+          "part": true,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "caption",
+        "shown": true,
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "inside a part: a control outside pages is chrome",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "inside a part: a heading is walked into",
+      "request": {
+        "node": {
+          "role": "heading",
+          "thin": 1,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": false
+      }
+    },
+    {
+      "name": "inside a part: a box that shows nothing is not gone into",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "part": true,
+          "frame": [
+            0,
+            0,
+            1,
+            2
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip",
+        "look": "text"
+      }
+    },
+    {
+      "name": "inside a part: a password field is skipped",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "part": true,
+          "password": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "inside a part: an excluded page refuses the window",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "part": true,
+          "pageExcluded": true
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "inside a part: a page not excluded is walked into",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "descend",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "an unknown role is refused",
+      "request": {
+        "node": {
+          "role": "window",
+          "thin": 1
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a part has no focus",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "part": true,
+          "focus": "self"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an unknown focus is refused",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "focus": "near"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a flag that is not true or false is refused",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "hidden": 1
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a frame of three numbers is refused",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": 1,
+          "frame": [
+            0,
+            0,
+            1
+          ]
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a negative thinness is refused",
+      "request": {
+        "node": {
+          "role": "other",
+          "thin": -1
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "no thinness is refused",
+      "request": {
+        "node": {
+          "role": "text"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a look that found nothing reads",
+      "request": {
+        "look": {
+          "read": "text",
+          "found": "none"
+        }
+      },
+      "expected": {
+        "outcome": "read"
+      }
+    },
+    {
+      "name": "an excluded page in text refuses the window",
+      "request": {
+        "look": {
+          "read": "text",
+          "found": "excluded"
+        }
+      },
+      "expected": {
+        "outcome": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page in a heading, link or row refuses the window",
+      "request": {
+        "look": {
+          "read": "semantic",
+          "found": "excluded"
+        }
+      },
+      "expected": {
+        "outcome": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page in a control refuses the window",
+      "request": {
+        "look": {
+          "read": "caption",
+          "found": "excluded"
+        }
+      },
+      "expected": {
+        "outcome": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page in a field is hidden behind the marker",
+      "request": {
+        "look": {
+          "read": "field",
+          "found": "excluded"
+        }
+      },
+      "expected": {
+        "outcome": "marker"
+      }
+    },
+    {
+      "name": "text not seen whole is hidden behind the marker",
+      "request": {
+        "look": {
+          "read": "text",
+          "found": "notSeenWhole"
+        }
+      },
+      "expected": {
+        "outcome": "marker"
+      }
+    },
+    {
+      "name": "a field not seen whole is hidden behind the marker",
+      "request": {
+        "look": {
+          "read": "field",
+          "found": "notSeenWhole"
+        }
+      },
+      "expected": {
+        "outcome": "marker"
+      }
+    },
+    {
+      "name": "a look for an unknown read is refused",
+      "request": {
+        "look": {
+          "read": "caret",
+          "found": "none"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a look with an unknown finding is refused",
+      "request": {
+        "look": {
+          "read": "text",
+          "found": "maybe"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a look's first step fetches the element's children, one more than the budget",
+      "request": {
+        "census": {
+          "start": true
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 5001
+      }
+    },
+    {
+      "name": "a look out of time at its first step has not seen the element whole",
+      "request": {
+        "census": {
+          "start": true,
+          "late": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a look's first step takes no counts",
+      "request": {
+        "census": {
+          "start": true,
+          "visited": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a look's first step at an excluded page finds it",
+      "request": {
+        "census": {
+          "start": true,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "excluded"
+      }
+    },
+    {
+      "name": "a look's first step at a page not excluded, not into pages, looks no further",
+      "request": {
+        "census": {
+          "start": true,
+          "page": "allowed"
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
+      "name": "a look's first step at a password element looks no further",
+      "request": {
+        "census": {
+          "start": true,
+          "password": true,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
+      "name": "a census step at the first element inside",
+      "request": {
+        "census": {
+          "visited": 0
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 5000
+      }
+    },
+    {
+      "name": "a census step fetches the visits left after it and one more",
+      "request": {
+        "census": {
+          "visited": 10
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 4990
+      }
+    },
+    {
+      "name": "a census at the budget's last element",
+      "request": {
+        "census": {
+          "visited": 4999
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 1
+      }
+    },
+    {
+      "name": "a census past the budget has not seen the element whole",
+      "request": {
+        "census": {
+          "visited": 5000
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a census at the budget's last element still finds an excluded page",
+      "request": {
+        "census": {
+          "visited": 4999,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "excluded"
+      }
+    },
+    {
+      "name": "a census out of time has not seen the element whole",
+      "request": {
+        "census": {
+          "visited": 0,
+          "late": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a census past the budget gives up before an excluded page",
+      "request": {
+        "census": {
+          "visited": 5000,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a census finds an excluded page",
+      "request": {
+        "census": {
+          "visited": 3,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "excluded"
+      }
+    },
+    {
+      "name": "a census does not look into a page not excluded",
+      "request": {
+        "census": {
+          "visited": 3,
+          "page": "allowed"
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
+      "name": "a census into pages looks into one not excluded",
+      "request": {
+        "census": {
+          "visited": 3,
+          "page": "allowed",
+          "intoPages": true
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 4997
+      }
+    },
+    {
+      "name": "a census does not go into a password element",
+      "request": {
+        "census": {
+          "visited": 3,
+          "password": true
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
+      "name": "a census past the budget gives up at a password element too",
+      "request": {
+        "census": {
+          "visited": 5000,
+          "password": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a census with an unknown page is refused",
+      "request": {
+        "census": {
+          "visited": 0,
+          "page": "maybe"
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a census without a count is refused",
+      "request": {
+        "census": {
+          "late": false
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a walk goes on within its budgets",
+      "request": {
+        "stop": {
+          "nodes": 4999,
+          "elapsed": 1500
+        }
+      },
+      "expected": {
+        "stopped": null
+      }
+    },
+    {
+      "name": "a walk stops at the node budget",
+      "request": {
+        "stop": {
+          "nodes": 5000,
+          "elapsed": 0
+        }
+      },
+      "expected": {
+        "stopped": "node budget"
+      }
+    },
+    {
+      "name": "a walk stops past its time",
+      "request": {
+        "stop": {
+          "nodes": 0,
+          "elapsed": 1501
+        }
+      },
+      "expected": {
+        "stopped": "time budget"
+      }
+    },
+    {
+      "name": "a full text budget stops the walk first",
+      "request": {
+        "stop": {
+          "nodes": 5000,
+          "elapsed": 1501,
+          "textFull": true
+        }
+      },
+      "expected": {
+        "stopped": "text budget"
+      }
+    },
+    {
+      "name": "a stop without the time is refused",
+      "request": {
+        "stop": {
+          "nodes": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "two requests at once are refused",
+      "request": {
+        "limits": true,
+        "stop": {
+          "nodes": 0,
+          "elapsed": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "an unknown request is refused",
+      "request": {
+        "walk": true
+      },
+      "refused": true
+    }
+  ]
+}

@@ -9,6 +9,7 @@
 #include "microphone.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
+#include "../../shared/context/walk.h"
 #include "../../shared/context/screen_context.h"
 
 namespace voice {
@@ -235,7 +236,7 @@ public:
     }
 private:
     ULONGLONG started, budget;
-    explicit UiaCaretSource(ULONGLONG time, ULONGLONG limit = 1500) : started(time), budget(limit) {}
+    explicit UiaCaretSource(ULONGLONG time, ULONGLONG limit = walk::limits().timeBudgetMilliseconds) : started(time), budget(limit) {}
     void check() const { if (GetTickCount64() - started > budget) throw std::runtime_error("screen context time budget"); }
     int compare(IUIAutomationTextRange* a, TextPatternRangeEndpoint ae, IUIAutomationTextRange* b, TextPatternRangeEndpoint be) const {
         check(); int result = 0; require(a->CompareEndpoints(ae, b, be, &result)); check(); return result;

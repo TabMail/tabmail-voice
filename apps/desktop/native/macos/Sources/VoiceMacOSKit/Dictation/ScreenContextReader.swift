@@ -99,16 +99,10 @@ enum ScreenContextReader {
     /// it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
-    /// element is taken to hold none, or, with `unlessSeenWhole`, to hold one: a field is read only
-    /// when all of it was looked through.
+    /// element is taken to hold none.
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
-                                                    intoPages: Bool = true, unlessSeenWhole: Bool = false,
-                                                    within seconds: Double, since started: Date) -> Bool {
-        switch lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) {
-        case .excluded: return true
-        case .none: return false
-        case .notSeenWhole: return unlessSeenWhole
-        }
+                                                    intoPages: Bool = true, within seconds: Double, since started: Date) -> Bool {
+        lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) == .excluded
     }
 
     /// What a look inside an element for a page of an excluded website found.
@@ -118,16 +112,24 @@ enum ScreenContextReader {
     /// the element was seen whole.
     static func lookForExcludedPage<Tree: ScreenTree>(in element: Tree.Element, _ tree: Tree, excluding exclusions: ScreenExclusions,
                                                       intoPages: Bool = true, within seconds: Double, since started: Date) -> PageLook {
+        // Each step is the shared core's (ADR-DESK-054); one it refuses has not seen the element whole.
+        func late() -> Bool { Date().timeIntervalSince(started) > seconds }
+        // AX gives an element's children all at once, so each is taken whole: the core's budget
+        // counts visits, and what waits past it leaves the look not seen whole.
+        guard case .descend? = try? SharedWalk.censusStart(late: late()) else { return .notSeenWhole }
         var stack = tree.children(of: element)
         var visited = 0
         while let next = stack.popLast() {
-            if visited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > seconds { return .notSeenWhole }
+            let page = tree.string(next, kAXRoleAttribute) == "AXWebArea" ? exclusions.excludes(tree.page(of: next)) : nil
+            guard let step = try? SharedWalk.census(visited: visited, late: late(), page: page,
+                                                    intoPages: intoPages) else { return .notSeenWhole }
             visited += 1
-            if tree.string(next, kAXRoleAttribute) == "AXWebArea" {
-                if exclusions.excludes(tree.page(of: next)) { return .excluded }
-                if !intoPages { continue }
+            switch step {
+            case .notSeenWhole: return .notSeenWhole
+            case .excluded: return .excluded
+            case .skip: continue
+            case .descend: stack.append(contentsOf: tree.children(of: next))
             }
-            stack.append(contentsOf: tree.children(of: next))
         }
         return .none
     }
@@ -267,11 +269,13 @@ enum ScreenContextReader {
 
     // MARK: Visible text
 
-    /// Depth-first in child order (reading order), skipping chrome and anything outside the window.
+    /// Depth-first in child order (reading order). What to do with each element is the shared
+    /// core's (`SharedWalk`, ADR-DESK-054); this walk says what macOS tells it about the element.
+    /// It skips chrome and anything outside the window.
     /// Each piece of text keeps its frame, so it can be laid out in lines as on screen. In web
-    /// content controls and toolbars are read (`contextWebReadRoles`): a control adds the text
-    /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (`isShown`) is left
-    /// out, but its box is still walked into: Slack keeps its message list in one.
+    /// content controls and toolbars are read (`contextRoles`): a control adds the text
+    /// drawn in it (`drawnTitle`), else its children's. Text in a hidden box (at most a point thin)
+    /// is left out, but its box is still walked into: Slack keeps its message list in one.
     /// The focused field becomes the caret block at its place in that order; a focused element that
     /// is no field (`isFieldInFocus`: a page clicked on, a list, a row) is read like any element,
     /// after its selection, if any, as the caret block.
@@ -294,112 +298,102 @@ enum ScreenContextReader {
         var stack = [(window, false)]
         while let (element, inWeb) = stack.popLast() {
             if context.coreFailed { return true }
-            if context.textBudgetFull { context.stoppedEarly = "text budget"; return true }
-            if context.nodesVisited >= HelperConfig.contextNodeBudget { context.stoppedEarly = "node budget"; return true }
-            if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; return true }
-            context.nodesVisited += 1
-
-            let isFocus = focused.map { tree.isSame(element, $0) } ?? false
-            if isFocus {
-                if tree.string(element, kAXRoleAttribute) == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return false }
-                if isFieldInFocus(element, in: tree) {
-                    context.appendCaret(frame: tree.frame(of: element))
+            do {
+                if let stopped = try SharedWalk.stop(nodes: context.nodesVisited, since: started, textFull: context.textBudgetFull) {
+                    context.stoppedEarly = stopped
+                    return true
+                }
+                context.nodesVisited += 1
+                let isFocus = focused.map { tree.isSame(element, $0) } ?? false
+                let onPath = !isFocus && focusPath.contains(where: { tree.isSame($0, element) })
+                let role = tree.string(element, kAXRoleAttribute) ?? ""
+                let page = role == "AXWebArea" ? tree.page(of: element) : nil
+                let frame = tree.frame(of: element)
+                var facts = SharedWalk.Node(role: HelperConfig.contextRoles[role] ?? "other", focus: isFocus ? "self" : onPath ? "path" : nil,
+                                            inPage: inWeb, frame: frame, window: windowFrame)
+                facts.password = isPasswordField(element, in: tree)
+                facts.pageExcluded = page.map(exclusions.excludes) ?? false
+                facts.focusedField = isFocus && isFieldInFocus(element, in: tree)
+                facts.selection = isFocus && !context.selectedText.isEmpty
+                let step = try SharedWalk.node(facts)
+                if step.caretFirst == true { context.appendCaret(frame: frame) }
+                // A part read in one piece is looked through first: its label can be made of what it holds.
+                func look(_ read: SharedWalk.Step.Action) throws -> SharedWalk.Outcome {
+                    try SharedWalk.look(read, found: lookForExcludedPage(in: element, tree, excluding: exclusions,
+                                                                         within: HelperConfig.contextTimeBudget, since: started))
+                }
+                switch step.action {
+                case .refuse:
+                    return false
+                case .skip:
+                    // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                    if let read = step.look, try look(read) == .refuse { return false }
                     continue
-                }
-                if !context.selectedText.isEmpty { context.appendCaret(frame: tree.frame(of: element)) }
-            } else if focusPath.contains(where: { tree.isSame($0, element) }) {
-                let isWebArea = tree.string(element, kAXRoleAttribute) == "AXWebArea"
-                if isWebArea, exclusions.excludes(tree.page(of: element)) { return false }
-                let childrenInWeb = inWeb || isWebArea
-                stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, childrenInWeb) })
-                continue
-            }
-            if isPasswordField(element, in: tree) { continue }
-            let frame = tree.frame(of: element)
-            if let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
-            let role = tree.string(element, kAXRoleAttribute) ?? ""
-            if isSkipped(role, inWeb: inWeb) { continue }
-            let shown = frame.map(ScreenContext.isShown) ?? true
-            func look() -> PageLook {
-                lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
-            }
-
-            switch role {
-            case "AXWebArea":
-                let page = tree.page(of: element)
-                if exclusions.excludes(page) { return false }
-                if context.host == nil { context.host = page.name }
-            case "AXStaticText":
-                if shown {
-                    let held = look()
-                    if held == .excluded { return false }
-                    context.append(.text, held == .notSeenWhole ? context.hiddenMarker
-                        : tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
-                }
-                continue
-            case "AXHeading", "AXLink", "AXRow":
-                if shown {
-                    let kind: ScreenContext.Block.Kind = role == "AXHeading" ? .heading : role == "AXLink" ? .link : .row
-                    do {
-                        let reducer = try SharedSemanticText(kind == .row ? .row : kind == .heading ? .heading : .link)
-                        // Rust requests the source. Approval precedes each aggregate label read.
-                        func rootLabel() -> String? {
-                            let held = look()
-                            if held == .excluded { return nil }
-                            return held == .notSeenWhole ? context.hiddenMarker : label(of: element, in: tree) ?? ""
-                        }
-                        if try reducer.decision == .root {
-                            guard let root = rootLabel() else { return false }
-                            try reducer.offer(.root, root)
-                        }
-                        if try reducer.decision == .descendants {
-                            guard try subtreeText(of: element, in: tree, reducer: reducer, inWeb: inWeb, windowFrame: windowFrame,
-                                                  excluding: exclusions, started: started, context: &context) else { return false }
-                        }
-                        if try reducer.decision == .root {
-                            guard let root = rootLabel() else { return false }
-                            try reducer.offer(.root, root)
-                        }
-                        context.appendSemantic(kind, try reducer.projectedSource(), frame: frame)
-                    } catch {
-                        context.coreFailed = true; context.stoppedEarly = "shared core refused"
-                        return true
+                case .caret:
+                    context.appendCaret(frame: frame)
+                    continue
+                case .text:
+                    switch try look(.text) {
+                    case .refuse: return false
+                    case .marker: context.append(.text, context.hiddenMarker, frame: frame)
+                    case .read: context.append(.text, tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
                     }
-                }
-                continue
-            case "AXTextArea", "AXTextField":
-                // A field is read by its value and not walked into, so a page framed in it is looked for:
-                // a field holding one, or too large to look through, is not read, and the read says
-                // that something there is hidden.
-                if shown {
-                    let hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
-                                                   within: HelperConfig.contextTimeBudget, since: started)
-                    if hidden {
+                    continue
+                case .semantic:
+                    let kind: ScreenContext.Block.Kind = step.kind == "heading" ? .heading : step.kind == "link" ? .link : .row
+                    let reducer = try SharedSemanticText(kind == .row ? .row : kind == .heading ? .heading : .link)
+                    // Rust requests the source. Approval precedes each aggregate label read.
+                    func rootLabel() throws -> String? {
+                        switch try look(.semantic) {
+                        case .refuse: return nil
+                        case .marker: return context.hiddenMarker
+                        case .read: return label(of: element, in: tree) ?? ""
+                        }
+                    }
+                    if try reducer.decision == .root {
+                        guard let root = try rootLabel() else { return false }
+                        try reducer.offer(.root, root)
+                    }
+                    if try reducer.decision == .descendants {
+                        guard try subtreeText(of: element, in: tree, reducer: reducer, inWeb: inWeb, windowFrame: windowFrame,
+                                              excluding: exclusions, started: started, context: &context) else { return false }
+                    }
+                    if try reducer.decision == .root {
+                        guard let root = try rootLabel() else { return false }
+                        try reducer.offer(.root, root)
+                    }
+                    context.appendSemantic(kind, try reducer.projectedSource(), frame: frame)
+                    continue
+                case .field:
+                    // A field is read by its value and not walked into, so a page framed in it is looked for:
+                    // a field holding one, or too large to look through, is not read, and the read says
+                    // that something there is hidden.
+                    if try look(.field) != .read {
                         context.append(.field, context.hiddenMarker, frame: frame)
                     } else if let source = tree.fieldSource(of: element, windowFrame: windowFrame) {
                         context.appendField(source, frame: frame)
                     }
-                }
-                continue
-            case _ where inWeb && HelperConfig.contextWebControlRoles.contains(role):
-                if let title = drawnTitle(of: element, in: tree) {
-                    if shown {
-                        let held = look()
-                        if held == .excluded { return false }
-                        context.append(.text, held == .notSeenWhole ? context.hiddenMarker : title, frame: frame)
-                    }
                     continue
+                case .caption:
+                    if let title = drawnTitle(of: element, in: tree) {
+                        // Looked inside whether shown or not: an excluded page under it refuses the window.
+                        switch try look(.caption) {
+                        case .refuse: return false
+                        case .marker: if step.shown == true { context.append(.text, context.hiddenMarker, frame: frame) }
+                        case .read: if step.shown == true { context.append(.text, title, frame: frame) }
+                        }
+                        continue
+                    }
+                case .descend:
+                    if step.host == true, context.host == nil { context.host = page?.name }
                 }
-            default:
-                break
+                stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, step.childrenInPage ?? inWeb) })
+            } catch {
+                context.coreFailed = true; context.stoppedEarly = "shared core refused"
+                return true
             }
-            stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, inWeb || role == "AXWebArea") })
         }
         return true
-    }
-
-    static func isSkipped(_ role: String, inWeb: Bool) -> Bool {
-        HelperConfig.contextSkippedRoles.contains(role) && !(inWeb && HelperConfig.contextWebReadRoles.contains(role))
     }
 
     /// Whether the element is a password field, which is never read: the screen read doesn't rely on
@@ -426,60 +420,68 @@ enum ScreenContextReader {
     private static func subtreeText<Tree: ScreenTree>(of root: Tree.Element, in tree: Tree, reducer: SharedSemanticText, inWeb: Bool, windowFrame: CGRect?,
                                                       excluding exclusions: ScreenExclusions, started: Date,
                                                       context: inout ScreenContext) throws -> Bool {
-        if context.nodesVisited >= HelperConfig.contextNodeBudget || Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget {
-            context.stoppedEarly = context.nodesVisited >= HelperConfig.contextNodeBudget ? "node budget" : "time budget"
+        func stopped() throws -> Bool {
+            guard let reason = try SharedWalk.stop(nodes: context.nodesVisited, since: started, textFull: false) else { return false }
+            context.stoppedEarly = reason
+            return true
+        }
+        if try stopped() {
             try reducer.offer(.interrupted)
             return true
         }
-        var stack = Array(tree.children(of: root).reversed())
+        var stack = tree.children(of: root).reversed().map { ($0, inWeb) }
         while try reducer.decision == .descendants, !stack.isEmpty {
-            if context.nodesVisited >= HelperConfig.contextNodeBudget { context.stoppedEarly = "node budget"; break }
-            if Date().timeIntervalSince(started) > HelperConfig.contextTimeBudget { context.stoppedEarly = "time budget"; break }
-            let element = stack.removeLast()
+            if try stopped() { break }
+            let (element, inPage) = stack.removeLast()
             context.nodesVisited += 1
             let role = tree.string(element, kAXRoleAttribute) ?? ""
-            if role == "AXWebArea", exclusions.excludes(tree.page(of: element)) { return false }
-            if isSkipped(role, inWeb: inWeb) || isPasswordField(element, in: tree) { continue }
-            let frame = tree.frame(of: element)
-            if let windowFrame, let frame, frame.width > 0, frame.height > 0, !frame.intersects(windowFrame) { continue }
-            let shown = frame.map(ScreenContext.isShown) ?? true
-            if !shown { continue }
-            let title = inWeb && HelperConfig.contextWebControlRoles.contains(role) ? drawnTitle(of: element, in: tree) : nil
-            if role == "AXStaticText" || role == "AXTextField" || role == "AXTextArea" || title != nil {
+            var facts = SharedWalk.Node(role: HelperConfig.contextRoles[role] ?? "other", part: true, inPage: inPage,
+                                        frame: tree.frame(of: element), window: windowFrame)
+            facts.password = isPasswordField(element, in: tree)
+            facts.pageExcluded = role == "AXWebArea" && exclusions.excludes(tree.page(of: element))
+            let step = try SharedWalk.node(facts)
+            func found() -> PageLook {
+                lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started)
+            }
+            switch step.action {
+            case .refuse:
+                return false
+            case .field:
                 // A field is read by its value and not walked into, so a page framed in it is looked
-                // for: a field holding one is not read, and the row says that something there is hidden.
-                // A piece of text or a titled control that holds one refuses the window, as in the
-                // walk, and one too large to look through is hidden like such a field.
-                var hidden = false
-                if shown, role == "AXTextField" || role == "AXTextArea" {
-                    hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
-                                               within: HelperConfig.contextTimeBudget, since: started)
-                } else if shown {
-                    switch lookForExcludedPage(in: element, tree, excluding: exclusions, within: HelperConfig.contextTimeBudget, since: started) {
-                    case .excluded: return false
-                    case .notSeenWhole: hidden = true
-                    case .none: break
-                    }
-                }
-                if !hidden && (role == "AXTextField" || role == "AXTextArea") {
-                    if let parts = tree.fieldSource(of: element, windowFrame: windowFrame) {
-                        try reducer.offerProjected(.descendant, parts)
-                    } else if let label = label(of: element, in: tree) {
-                        // Value-less native fields can still expose an approved caption.
-                        try reducer.offer(.descendant, label)
-                    }
-                } else {
-                    let text = hidden ? context.hiddenMarker
-                        : (title ?? tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree)) ?? ""
-                    try reducer.offer(.descendant, text)
+                // for: a field holding one, or too large to look through, is not read, and the row
+                // says that something there is hidden.
+                if try SharedWalk.look(.field, found: found()) != .read {
+                    try reducer.offer(.descendant, context.hiddenMarker)
+                } else if let parts = tree.fieldSource(of: element, windowFrame: windowFrame) {
+                    try reducer.offerProjected(.descendant, parts)
+                } else if let label = label(of: element, in: tree) {
+                    // Value-less native fields can still expose an approved caption.
+                    try reducer.offer(.descendant, label)
                 }
                 continue
+            case .text, .caption:
+                // A piece of text or a titled control that holds an excluded page refuses the window,
+                // as in the walk, and one too large to look through is hidden like such a field.
+                let title = step.action == .caption ? drawnTitle(of: element, in: tree) : nil
+                if step.action == .text || title != nil {
+                    switch try SharedWalk.look(step.action, found: found()) {
+                    case .refuse: return false
+                    case .marker: try reducer.offer(.descendant, context.hiddenMarker)
+                    case .read: try reducer.offer(.descendant, (title ?? tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree)) ?? "")
+                    }
+                    continue
+                }
+            case .skip:
+                // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                if let read = step.look, try SharedWalk.look(read, found: found()) == .refuse { return false }
+                continue
+            case .caret, .semantic, .descend:
+                break
             }
-            stack.append(contentsOf: tree.children(of: element).reversed())
+            stack.append(contentsOf: tree.children(of: element).reversed().map { ($0, step.childrenInPage ?? inPage) })
         }
         if try reducer.decision == .descendants {
-            let complete = stack.isEmpty && context.nodesVisited < HelperConfig.contextNodeBudget && Date().timeIntervalSince(started) <= HelperConfig.contextTimeBudget
-            try reducer.offer(complete ? .complete : .interrupted)
+            try reducer.offer(stack.isEmpty && !(try stopped()) ? .complete : .interrupted)
         }
         return true
     }

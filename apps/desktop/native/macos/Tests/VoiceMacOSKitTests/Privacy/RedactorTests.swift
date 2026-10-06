@@ -499,4 +499,24 @@ struct RedactorTests {
         }
     }
 
+    /// The screen walk's rules every helper shares (`walk-cases.json`, ADR-DESK-054), through this
+    /// helper's ABI.
+    @Test func sharedWalkCasesRunThroughTheNativeABI() throws {
+        struct Case: Decodable { var name: String; var request: JSON; var expected: JSON?; var refused: Bool? }
+        struct Cases: Decodable { var cases: [Case] }
+        let native = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: native.appendingPathComponent("shared/context/walk-cases.json"))
+        let cases = try JSONDecoder().decode(Cases.self, from: data).cases
+        #expect(cases.contains { $0.refused == true } && cases.contains { $0.refused == nil })
+        for item in cases {
+            let request = try JSONEncoder().encode(item.request)
+            if item.refused == true {
+                #expect(throws: Redactor.Failure.self, "\(item.name)") { try Redactor.request(request, operation: .walk) }
+            } else {
+                let reply = try JSONDecoder().decode(JSON.self, from: Redactor.request(request, operation: .walk))
+                #expect(reply == item.expected, "\(item.name)")
+            }
+        }
+    }
 }

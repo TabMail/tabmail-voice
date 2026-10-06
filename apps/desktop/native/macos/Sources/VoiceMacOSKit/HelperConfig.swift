@@ -21,24 +21,25 @@ enum HelperConfig {
     /// (focused field, window, children) wait up to the system-wide timeout.
     static let contextLookupTimeout: Float = 0.25
     /// The walk of the focused window stops after this many elements…
-    static let contextNodeBudget = 5_000
-    /// …or after this long (seconds). It runs in the background while the user speaks.
-    static let contextTimeBudget: Double = 1.5
+    static var contextNodeBudget: Int { SharedWalk.limits.nodeBudget }
+    /// …or after this long (seconds). It runs in the background while the user speaks. Both are
+    /// the shared core's (ADR-DESK-054).
+    static var contextTimeBudget: Double { Double(SharedWalk.limits.timeBudgetMilliseconds) / 1000 }
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
-    static let contextMaxFocusDepth = 200
-    /// Roles whose text is interface chrome, not content: skipped with their subtree.
-    static let contextSkippedRoles: Set<String> = [
-        "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXMenuBar",
-        "AXMenu", "AXMenuItem", "AXToolbar", "AXImage", "AXScrollBar", "AXSlider", "AXIncrementor",
+    static var contextMaxFocusDepth: Int { SharedWalk.limits.focusDepth }
+    /// Each AX role as one of the shared core's roles, which decide how the walk reads it
+    /// (ADR-DESK-054): controls and toolbars are interface chrome in native apps, which title their
+    /// icon buttons, and content in web pages (a chat message's author is a button, a chat's
+    /// header with the conversation's name a toolbar); menus, images and scroll bars are chrome
+    /// everywhere. A role not listed is a container, walked into.
+    static let contextRoles: [String: String] = [
+        "AXWebArea": "page", "AXStaticText": "text", "AXHeading": "heading", "AXLink": "link", "AXRow": "row",
+        "AXTextField": "field", "AXTextArea": "field",
+        "AXButton": "control", "AXMenuButton": "control", "AXPopUpButton": "control", "AXCheckBox": "control",
+        "AXRadioButton": "control", "AXToolbar": "toolbar",
+        "AXMenuBar": "chrome", "AXMenu": "chrome", "AXMenuItem": "chrome", "AXImage": "chrome", "AXScrollBar": "chrome",
+        "AXSlider": "chrome", "AXIncrementor": "chrome",
     ]
-    /// Controls read in web content, where the text drawn in them is content (a chat message's
-    /// author is a button); native apps title their icon buttons, so there they stay skipped.
-    static let contextWebControlRoles: Set<String> = [
-        "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton",
-    ]
-    /// Skipped roles read after all in web content: its controls, and toolbars, which there hold
-    /// content (a chat's header with the conversation's name).
-    static let contextWebReadRoles: Set<String> = contextWebControlRoles.union(["AXToolbar"])
     /// Roles the caret is in when focused: the text around it is read, and the walk never goes
     /// into them. Any other focused element is read like the rest of the window.
     static let contextFieldRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox"]

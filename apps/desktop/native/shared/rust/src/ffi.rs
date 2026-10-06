@@ -74,6 +74,15 @@ pub unsafe extern "C" fn voice_core_request_json(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_walk_json(
+    data: *const u8,
+    length: usize,
+    output: *mut Buffer,
+) -> u32 {
+    unsafe { process(data, length, output, crate::walk::process) }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn voice_core_screen_json(
     data: *const u8,
     length: usize,
@@ -848,7 +857,10 @@ mod tests {
                 .map(|number| {
                     let mut lines = (0..3).map(|row| line(number, row)).collect::<Vec<_>>();
                     if number == 1 {
-                        lines.splice(0..0, ["Key backup".into(), "-----BEGIN PRIVATE KEY-----".into()]);
+                        lines.splice(
+                            0..0,
+                            ["Key backup".into(), "-----BEGIN PRIVATE KEY-----".into()],
+                        );
                     }
                     if number == 3 {
                         lines.push("-----END PRIVATE KEY-----".into());
@@ -862,16 +874,25 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             for (first, last) in [(1, 3), (1, 2), (2, 2), (2, 3), (3, 3)] {
-                let before = if first > 1 { format!("{}\n\n", pages[first - 2]) } else { String::new() };
+                let before = if first > 1 {
+                    format!("{}\n\n", pages[first - 2])
+                } else {
+                    String::new()
+                };
                 let text = pages[first - 1..last].join("\n\n");
-                let after = if last < 3 { format!("\n\n{}", pages[last]) } else { String::new() };
+                let after = if last < 3 {
+                    format!("\n\n{}", pages[last])
+                } else {
+                    String::new()
+                };
                 let input = serde_json::to_vec(
                     &serde_json::json!({"before": before, "text": text, "after": after}),
                 )
                 .unwrap();
                 let mut output = Buffer::empty();
-                let status =
-                    unsafe { voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output) };
+                let status = unsafe {
+                    voice_core_redact_text_json(input.as_ptr(), input.len(), &mut output)
+                };
                 assert_eq!(status, 0);
                 let bytes = unsafe { std::slice::from_raw_parts(output.data, output.length) };
                 let reply: serde_json::Value = serde_json::from_slice(bytes).unwrap();

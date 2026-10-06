@@ -4,8 +4,8 @@
 
 // A shared case corpus run through the C ABI this helper links: `core-cases request
 // request-cases.json` (a field read's bound and reply, a paste's text and deadline) or `core-cases
-// viewport surface-cases.json` (a terminal surface's runs, selection and caret). Linux builds this
-// file too.
+// viewport surface-cases.json` (a terminal surface's runs, selection and caret) or `core-cases walk
+// walk-cases.json` (the screen walk's rules). Linux builds this file too.
 #include "../../shared/rust/VoiceCore.h"
 #include <fstream>
 #include <iostream>
@@ -20,7 +20,7 @@ static void expect(bool value, const std::string& message) {
 
 static int run(int argc, char** argv) {
     expect(argc == 3, "operation and corpus path required");
-    const std::map<std::string, voice::core::Operation> operations{{"request", voice_core_request_json}, {"viewport", voice_core_viewport_json}};
+    const std::map<std::string, voice::core::Operation> operations{{"request", voice_core_request_json}, {"viewport", voice_core_viewport_json}, {"walk", voice_core_walk_json}};
     const auto operation = operations.find(argv[1]);
     expect(operation != operations.end(), "unknown operation");
     std::ifstream file(argv[2]);

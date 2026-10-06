@@ -86,9 +86,10 @@ int main() {
         Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&first, &second, &last}};
         Tree tree;
         size_t visited = 0;
+        const voice::ScreenExclusions none(JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", JSON::array()}});
         auto rowText = [&](std::optional<voice::ContextFrame> window = {}) {
             visited = 0;
-            return voice::semanticLabel(tree, &row, voice::SemanticText::Kind::row, visited, window);
+            return voice::semanticLabel(tree, &row, voice::SemanticText::Kind::row, visited, none, window);
         };
         expect(rowText() == "same | must not be read after refusal", "shared row normalization and canonical adjacent deduplication");
         last.visible = false; tree = Tree{};
@@ -103,7 +104,7 @@ int main() {
         row.label = "Root label"; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
         tree = Tree{}; visited = 0;
-        expect(voice::semanticLabel(tree, &row, voice::SemanticText::Kind::heading, visited) == "Root label" && tree.counts == 0,
+        expect(voice::semanticLabel(tree, &row, voice::SemanticText::Kind::heading, visited, none) == "Root label" && tree.counts == 0,
             "heading root prevents all descendant value reads");
         row.label.clear(); first.label = std::string(10000, 'a'); second.label = std::string(10000, 'b'); tree = Tree{};
         last.bounds.reset();
@@ -323,5 +324,125 @@ int main() {
     expect(!voice::safeSubtree(bulk, &page, policy, true), "metadata response past deadline cannot authorize content");
     bulk.census = std::vector<Element*>{&page}; bulk.budget = false;
     expect(!voice::safeSubtree(bulk, &page, policy, true), "bulk query cannot bypass time budget");
+    {
+        // Without a provider collection the census walks the tree, fetching at most what the
+        // node budget still allows. The element looked inside is not
+        // counted: as many elements inside it as the budget are seen whole, one more is not, and
+        // what lies under the elements fetched at the budget's edge is still looked at.
+        struct Truncating : Tree {
+            std::vector<Node> children(Node node, size_t limit) {
+                auto result = node->children;
+                if (result.size() > limit) result.resize(limit);
+                return result;
+            }
+        };
+        const auto budget = voice::walk::limits().nodeBudget;
+        Element hidden{ATSPI_ROLE_PASSWORD_TEXT, "", {}, {}};
+        Element holder{ATSPI_ROLE_PANEL, "", {}, {&hidden}};
+        std::vector<Element> fillers(budget, Element{ATSPI_ROLE_PANEL, "", {}, {}});
+        Element wide{ATSPI_ROLE_PANEL, "", {}, {}};
+        for (auto& filler : fillers) wide.children.push_back(&filler);
+        Truncating census;
+        expect(voice::safeSubtree(census, &wide, policy, true), "the budget's worth of elements inside is seen whole");
+        Element extra{ATSPI_ROLE_PANEL, "", {}, {}};
+        wide.children.push_back(&extra);
+        expect(!voice::safeSubtree(census, &wide, policy, true), "one element more than the budget is not seen whole");
+        wide.children.resize(budget - 2);
+        wide.children.insert(wide.children.begin(), &holder);
+        expect(!voice::safeSubtree(census, &wide, policy, true), "a password element under the budget's edge is still found");
+        // Only visits count: an element fetched while nearly a budget's worth of others wait
+        // still gets the visits left, so an excluded page among its children is found.
+        Element excluded{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
+        Element deep{ATSPI_ROLE_PANEL, "", {}, {&fillers[0], &fillers[1], &fillers[2], &excluded}};
+        Element top{ATSPI_ROLE_PANEL, "", {}, {&deep}};
+        for (size_t at = 3; at < budget; ++at) top.children.push_back(&fillers[at]);
+        bool found = false;
+        try { voice::safeSubtree(census, &top, policy, true); } catch (const voice::PrivacyHidden&) { found = true; }
+        expect(found, "what waits does not shrink a later element's fetch");
+    }
+    {
+        // The shared walk's rules, as this helper applies them (ADR-DESK-054).
+        Element focus{ATSPI_ROLE_ENTRY, "", {}, {}};
+        Element frame{ATSPI_ROLE_FRAME, "Synthetic", {}, {}};
+        const auto read = [&](std::vector<Element*> children, std::vector<Element*> path = {}) {
+            frame.children = std::move(children);
+            if (path.empty()) path = {&frame};
+            Tree walked;
+            return voice::gatherScreen(walked, &frame, &focus, path, app, policy);
+        };
+        const auto shows = [](const JSON& screen, const std::string& words) {
+            return screen.contains("renderedText") && screen["renderedText"].get<std::string>().find(words) != std::string::npos;
+        };
+        // A list's item outside a page is a row, read as one line.
+        Element sender{ATSPI_ROLE_STATIC, "Sender One", {}, {}};
+        Element subject{ATSPI_ROLE_STATIC, "Quarterly plan", {}, {}};
+        Element item{ATSPI_ROLE_LIST_ITEM, "", {}, {&sender, &subject}};
+        expect(shows(read({&focus, &item}), "Sender One | Quarterly plan"), "a list item outside a page is a row");
+        // A password element on the focus's path is walked into, its own text never read.
+        Element beside{ATSPI_ROLE_STATIC, "Beside words", {}, {}};
+        Element guard{ATSPI_ROLE_PASSWORD_TEXT, "must never be read", {}, {&focus, &beside}};
+        auto screen = read({&guard}, {&guard, &frame});
+        expect(shows(screen, "Beside words") && screen.dump().find("must never be read") == std::string::npos,
+            "a password element on the focus's path is walked into");
+        // Hidden text is not read, nor what it holds.
+        Element under{ATSPI_ROLE_STATIC, "Under hidden words", {}, {}};
+        Element hiddenText{ATSPI_ROLE_STATIC, "Hidden words", {}, {&under}};
+        hiddenText.visible = false;
+        screen = read({&focus, &hiddenText});
+        expect(screen.is_object() && !shows(screen, "Hidden words") && !shows(screen, "Under hidden words"),
+            "hidden text is not walked into");
+        // But it is looked through, as is a hidden row or link and a row's part too thin to show:
+        // an excluded page under one may still be on screen, and refuses the window (ADR-DESK-047).
+        Element underPage{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
+        for (const auto role : {ATSPI_ROLE_STATIC, ATSPI_ROLE_TABLE_ROW, ATSPI_ROLE_LINK}) {
+            Element holder{role, "Holder words", {}, {&underPage}};
+            holder.visible = false;
+            expect(read({&focus, &holder}) == voice::hiddenScreen(), "an excluded page under a hidden element refuses the window");
+        }
+        Element thinPanel{ATSPI_ROLE_PANEL, "", {}, {&underPage}};
+        thinPanel.bounds = voice::ContextFrame{10, 10, 1, 2};
+        Element thinPartRow{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &thinPanel}};
+        expect(read({&focus, &thinPartRow}) == voice::hiddenScreen(), "an excluded page under a row's part too thin to show refuses the window");
+        // A page's hidden control with a caption is looked through: an excluded page in it refuses.
+        Element framed{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
+        Element button{ATSPI_ROLE_PUSH_BUTTON, "Pay", {}, {&framed}};
+        button.bounds = voice::ContextFrame{10, 10, 1, 20};
+        Element allowed{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://allowed.example/"), {&focus, &button}};
+        expect(read({&allowed}, {&allowed, &frame}) == voice::hiddenScreen(), "a page's hidden control is looked through");
+        // A row's parts are judged one by one: a button is chrome outside a page, content in one.
+        Element archive{ATSPI_ROLE_PUSH_BUTTON, "Archive", {}, {}};
+        Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &archive}};
+        screen = read({&focus, &row});
+        expect(shows(screen, "Quarterly plan") && !shows(screen, "Archive"), "a row's button outside a page is chrome");
+        allowed.children = {&focus, &row};
+        expect(shows(read({&allowed}, {&allowed, &frame}), "Quarterly plan | Archive"), "a row's button in a page is its caption");
+        // A page's control with no caption is walked into, and what it holds is still in the page.
+        Element direct{ATSPI_ROLE_CHECK_BOX, "Direct option", {}, {}};
+        Element nested{ATSPI_ROLE_CHECK_BOX, "Nested option", {}, {}};
+        Element plain{ATSPI_ROLE_STATIC, "Plain words", {}, {}};
+        Element bare{ATSPI_ROLE_PUSH_BUTTON, "", {}, {&nested, &plain}};
+        allowed.children = {&focus, &direct, &bare};
+        screen = read({&allowed}, {&allowed, &frame});
+        expect(shows(screen, "Direct option") && shows(screen, "Nested option") && shows(screen, "Plain words"),
+            "what a page's control with no caption holds is in the page");
+        Element rowOption{ATSPI_ROLE_CHECK_BOX, "Row option", {}, {}};
+        Element bareInRow{ATSPI_ROLE_PUSH_BUTTON, "", {}, {&rowOption}};
+        Element optionRow{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &bareInRow}};
+        allowed.children = {&focus, &optionRow};
+        expect(shows(read({&allowed}, {&allowed, &frame}), "Quarterly plan | Row option"),
+            "what a row's page control with no caption holds is in the page");
+        // An excluded page wholly outside the window is skipped with what it holds; one the window
+        // may show refuses it.
+        Element seen{ATSPI_ROLE_STATIC, "Visible words", {}, {}};
+        Element farText{ATSPI_ROLE_STATIC, "Far words", {}, {}};
+        Element far{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {&farText}};
+        frame.bounds = voice::ContextFrame{0, 0, 400, 300};
+        far.bounds = voice::ContextFrame{0, 900, 100, 100};
+        screen = read({&focus, &seen, &far});
+        expect(shows(screen, "Visible words") && !shows(screen, "Far words"), "an excluded page outside the window is skipped");
+        far.bounds = voice::ContextFrame{0, 100, 100, 100};
+        expect(read({&focus, &seen, &far}) == voice::hiddenScreen(), "an excluded page in the window refuses it");
+        frame.bounds.reset();
+    }
     std::cout << "screen semantic layout and password/page access census passed\n";
 }

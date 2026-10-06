@@ -57,7 +57,7 @@ let fixture;
 const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 40_000);
 let checks = 0;
 try {
-  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
+  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row", "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
     "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document", "terminal-wide"]) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever
@@ -82,12 +82,17 @@ try {
         assert.ok(context.renderedText.includes("» ‸"), "protected focus is marker only");
       } else if (mode !== "large-window-field" && mode !== "large-focus") assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
       if (mode === "row-hidden") assert.ok(context.renderedText.includes("| Synthetic cell text") && !context.renderedText.includes("Synthetic hidden text"), "a row's block leaves out a cell in a box that shows nothing");
-      if (mode === "hidden-box") assert.ok(context.renderedText.includes("Synthetic hidden-box text") && !context.renderedText.includes("Synthetic thin box text"), "a box that shows nothing is walked into, its own text left out");
-      if (mode === "large-text") assert.ok(context.renderedText.includes("[hidden for privacy]") && !context.renderedText.includes("Synthetic large text"), "text too large to look through whole is withheld behind the marker");
-      if (mode === "large-row" || mode === "large-link") {
-        assert.ok(context.renderedText.includes("[hidden for privacy]"), `${mode}: a part too large to look through whole is withheld behind the marker`);
-        assert.ok(!context.renderedText.includes("Synthetic large name") && !context.renderedText.includes("Synthetic cell text"), `${mode}: nothing of it is read`);
+      if (mode === "hidden-box") {
+        assert.ok(context.renderedText.includes("Synthetic hidden-box text"), "a container that shows nothing is walked into");
+        assert.ok(!context.renderedText.includes("Synthetic thin box text") && !context.renderedText.includes("Synthetic under thin text"), "a text box that shows nothing is skipped with what it holds");
       }
+      if (mode === "large-text") assert.ok(context.renderedText.includes("[hidden for privacy]") && !context.renderedText.includes("Synthetic large text"), "text too large to look through whole is withheld behind the marker");
+      // A row is gathered from its parts, each looked through on its own; a link's name is read
+      // whole, so one too large to look through is withheld behind the marker (ADR-DESK-054).
+      if (mode === "large-row") assert.ok(context.renderedText.includes("| Synthetic cell text") && !context.renderedText.includes("Synthetic large name"),
+        "a large row reads its cells, each looked through, and not its own name");
+      if (mode === "large-link") assert.ok(context.renderedText.includes("[[hidden for privacy]]") && !context.renderedText.includes("Synthetic large name") &&
+        !context.renderedText.includes("Synthetic cell text"), "a link too large to look through whole is withheld behind the marker");
       if (mode === "large-field" || mode === "large-web-control") {
         const marker = mode === "large-field" ? "> [hidden for privacy]" : "[hidden for privacy]";
         assert.ok(context.renderedText.includes(marker) && !context.renderedText.includes("Synthetic large name"),
@@ -95,6 +100,13 @@ try {
       }
       if (mode === "large-focus") assert.ok(context.hidden !== true && !context.renderedText.includes("Synthetic large text"),
         "a focus too large to look through whole lets the read go on, and is not read");
+      if (mode === "bare-page-control") assert.ok(context.renderedText.includes("Synthetic nested option") && !context.renderedText.includes("Synthetic undrawn label"),
+        "what a page's control with no caption holds is in the page: its text read, a control's Name not");
+      if (mode === "outside-page") assert.ok(context.hidden !== true, "an excluded page wholly outside the window is skipped with what it holds");
+      if (mode === "text-full") {
+        const nodes = Number(/(\d+) nodes/.exec(context.summary ?? "")?.[1] ?? -1);
+        assert.ok(context.summary.includes("stopped: text budget") && nodes >= 0 && nodes < 100, "a read stops when its text budget is full");
+      }
       if (mode === "outside-window") assert.ok(context.renderedText.includes("Synthetic visible text") && !(context.summary ?? "").includes("node budget"),
         "a box outside the window is skipped with what it holds");
       if (mode === "password-row") assert.ok(context.renderedText.includes("| Synthetic cell text"), "a row is one block of its cells, without its password field");

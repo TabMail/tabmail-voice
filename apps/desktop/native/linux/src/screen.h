@@ -9,6 +9,7 @@
 #include "identity.h"
 #include "../../shared/privacy/ScreenPrivacy.h"
 #include "../../shared/context/screen_context.h"
+#include "../../shared/context/walk.h"
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -27,15 +28,14 @@ using CaretText = CaretSource;
 class LiveScreenTree {
 public:
     using Node = voice::Node;
-    static constexpr size_t nodeBudget = 5000;
     explicit LiveScreenTree(const Node& root) {
         // A browser can publish its tree after our client first sees the window.
         // Refresh cached descendants for each read, including correction learning.
         atspi_accessible_clear_cache(root.get());
     }
     bool same(const Node& first, const Node& second) { return voice::same(first, second); }
-    // How long a read may take (ms).
-    static constexpr unsigned readMilliseconds = 1500;
+    // How long a read may take (ms): the walk's time budget.
+    static unsigned long long readMilliseconds() { return walk::limits().timeBudgetMilliseconds; }
     bool withinBudget() const { return std::chrono::steady_clock::now() < deadline; }
     // A terminal read has no deadline: it runs while the user speaks, in voice-screen-reader, a
     // program of its own, so it holds up nothing else; a dictation uses it only if it is
@@ -76,7 +76,7 @@ public:
             nullptr, ATSPI_Collection_MATCH_ALL, FALSE));
         Error error;
         auto matches = atspi_collection_get_matches(collection.get(), rule.get(),
-            ATSPI_Collection_SORT_ORDER_CANONICAL, nodeBudget + 1, TRUE, &error.value);
+            ATSPI_Collection_SORT_ORDER_CANONICAL, static_cast<gint>(walk::limits().nodeBudget + 1), TRUE, &error.value);
         std::unique_ptr<GArray, decltype(&g_array_unref)> ownedMatches(matches, &g_array_unref);
         std::vector<Node> result{node}; // Collection returns descendants, not its root.
         if (matches) for (guint i = 0; i < matches->len; ++i)
@@ -411,7 +411,7 @@ public:
     }
 
 private:
-    std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(readMilliseconds);
+    std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(readMilliseconds());
     void check() const { if (!withinBudget()) throw ScreenBudgetExceeded(); }
     std::string range(const Object<AtspiText>& text, int from, int to) {
         check(); Error error;
@@ -428,9 +428,10 @@ private:
 // Aggregated ranges may include descendants, so they need a password census too.
 template<class Tree>
 bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& exclusions, bool prohibitPasswords) {
+    const size_t budget = walk::limits().nodeBudget;
     if constexpr (requires { tree.privacyNodes(root); }) {
         if (auto nodes = tree.privacyNodes(root)) {
-            if (nodes->size() > 5000) return false;
+            if (nodes->size() > budget) return false;
             for (const auto& node : *nodes) {
                 if (!tree.withinBudget()) return false;
                 if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
@@ -439,39 +440,24 @@ bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& e
             return tree.withinBudget();
         }
     }
+    // The element itself is not counted: as many elements inside it as the budget are seen
+    // whole. Each element fetches one more child than the visits left, so a census that
+    // overflows says so; only visits count, as what waits may never be visited (the shared
+    // core's census, walk.rs).
     std::vector<typename Tree::Node> stack{root};
     size_t visited = 0;
+    bool first = true;
     while (!stack.empty()) {
-        if (++visited > 5000 || !tree.withinBudget()) return false;
+        if (!first && ++visited > budget) return false;
+        if (!tree.withinBudget()) return false;
+        first = false;
         auto node = std::move(stack.back()); stack.pop_back();
         if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
         if (const auto page = tree.page(node); page && exclusions.excludes(*page)) throw PrivacyHidden{};
-        auto children = tree.children(node, 5000 - visited - stack.size());
+        auto children = tree.children(node, budget + 1 - visited);
         for (auto it = children.rbegin(); it != children.rend(); ++it) stack.push_back(*it);
     }
     return tree.withinBudget();
-}
-inline bool skippedRole(AtspiRole role, bool web) {
-    switch (role) {
-        case ATSPI_ROLE_PUSH_BUTTON: case ATSPI_ROLE_TOGGLE_BUTTON: case ATSPI_ROLE_CHECK_BOX:
-        case ATSPI_ROLE_RADIO_BUTTON: case ATSPI_ROLE_COMBO_BOX: case ATSPI_ROLE_TOOL_BAR: return !web;
-        case ATSPI_ROLE_MENU_BAR: case ATSPI_ROLE_MENU: case ATSPI_ROLE_MENU_ITEM: case ATSPI_ROLE_IMAGE:
-        case ATSPI_ROLE_SCROLL_BAR: case ATSPI_ROLE_SLIDER: case ATSPI_ROLE_SPIN_BUTTON: return true;
-        default: return false;
-    }
-}
-// Whether a box can show its text: one at most a pixel thin either way shows nothing
-// (screen-reader-only labels, list items scrolled out of view); a 0×0 frame says
-// nothing and counts as shown, as on the other platforms (ADR-DESK-054).
-inline bool shownBox(const std::optional<ContextFrame>& frame) {
-    return !frame || (frame->width <= 0 && frame->height <= 0) || std::min(frame->width, frame->height) > 1;
-}
-// Some providers put semantic row/link text in descendant text areas rather
-// than the container name. Read these only after the caller's privacy census.
-inline bool outsideWindow(const std::optional<ContextFrame>& frame, const std::optional<ContextFrame>& window) {
-    return window && frame && frame->width > 0 && frame->height > 0 &&
-        (frame->x + frame->width <= window->x || frame->y + frame->height <= window->y ||
-         frame->x >= window->x + window->width || frame->y >= window->y + window->height);
 }
 // Simple test trees retain their legacy fixture method; live readers use the
 // shared source collector, never a native character cutoff, for screen text.
@@ -480,27 +466,105 @@ std::optional<std::string> screenText(Tree& tree, typename Tree::Node node) {
     if constexpr (requires { tree.screenText(node); }) return tree.screenText(node);
     else return tree.field(node, static_cast<int>(VisibleContext::sourceLimit()));
 }
+// How long a read took, for its reply's summary.
+inline uint64_t elapsedMilliseconds(std::chrono::steady_clock::time_point started) {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
+}
+// The shared walk's role (walk.rs) of an AT-SPI role. A page is what the tree gives a page for.
+inline std::string sharedRole(AtspiRole role) {
+    switch (role) {
+        case ATSPI_ROLE_PARAGRAPH: case ATSPI_ROLE_STATIC: case ATSPI_ROLE_LABEL: return "text";
+        case ATSPI_ROLE_TEXT: case ATSPI_ROLE_ENTRY: case ATSPI_ROLE_PASSWORD_TEXT: case ATSPI_ROLE_TERMINAL: return "field";
+        case ATSPI_ROLE_HEADING: return "heading";
+        case ATSPI_ROLE_LINK: return "link";
+        case ATSPI_ROLE_TABLE_ROW: return "row";
+        case ATSPI_ROLE_LIST_ITEM: return "listItem";
+        case ATSPI_ROLE_PUSH_BUTTON: case ATSPI_ROLE_TOGGLE_BUTTON: case ATSPI_ROLE_CHECK_BOX:
+        case ATSPI_ROLE_RADIO_BUTTON: case ATSPI_ROLE_COMBO_BOX: return "control";
+        case ATSPI_ROLE_TOOL_BAR: return "toolbar";
+        case ATSPI_ROLE_MENU_BAR: case ATSPI_ROLE_MENU: case ATSPI_ROLE_MENU_ITEM: case ATSPI_ROLE_IMAGE:
+        case ATSPI_ROLE_SCROLL_BAR: case ATSPI_ROLE_SLIDER: case ATSPI_ROLE_SPIN_BUTTON: return "chrome";
+        default: return "other";
+    }
+}
+inline std::optional<walk::Frame> walkFrame(const std::optional<ContextFrame>& frame) {
+    if (!frame) return {};
+    return walk::Frame{frame->x, frame->y, frame->width, frame->height};
+}
+// What AT-SPI says about one element, for the shared walk (`walk::node`). A password element is
+// asked nothing more than where it is: no page, name or text.
+template<class Tree>
+walk::Facts factsOf(Tree& tree, typename Tree::Node node, bool inPage, const std::optional<ContextFrame>& window,
+                    const ScreenExclusions& exclusions, std::optional<PageHost>& page, std::optional<ContextFrame>& frame) {
+    walk::Facts facts;
+    facts.role = sharedRole(tree.role(node));
+    facts.inPage = inPage;
+    facts.password = tree.isPassword(node);
+    if (!facts.password) page = tree.page(node);
+    if (page) {
+        facts.role = "page";
+        facts.pageExcluded = exclusions.excludes(*page);
+    }
+    frame = tree.frame(node);
+    facts.hidden = !tree.shown(node);
+    facts.frame = walkFrame(frame);
+    facts.window = walkFrame(window);
+    return facts;
+}
+// A look inside an element read whole: the metadata census (`safeSubtree`, with the provider's
+// collection where it has one), as the shared walk's look. A protected element inside, or a
+// census that ran out of budget, has not shown the element safe to read whole.
+template<class Tree>
+walk::PageLook lookInside(Tree& tree, typename Tree::Node node, const ScreenExclusions& exclusions) {
+    try { return safeSubtree(tree, node, exclusions, true) ? walk::PageLook::none : walk::PageLook::notSeenWhole; }
+    catch (const PrivacyHidden&) { return walk::PageLook::excluded; }
+}
+// Text of a heading, link or row gathered from what is under it, as the walk reads it: its text
+// and its fields, each part as the shared walk says (`part`). Throws `PrivacyHidden` when a page
+// of an excluded website is among them.
 template<class Tree>
 nlohmann::json semanticSource(Tree& tree, typename Tree::Node root, SemanticText::Kind kind, size_t& visited,
-                          const std::optional<ContextFrame>& window = {}) {
+                              const ScreenExclusions& exclusions, bool inPage = false, const std::optional<ContextFrame>& window = {}) {
+    const auto& limits = walk::limits();
+    // The tree keeps the read's clock (`withinBudget`); the core says when its elements run out.
+    const auto stopped = [&] { return walk::stop(visited, 0, false) || !tree.withinBudget(); };
     SemanticText reducer(kind);
-    if (reducer.decision() == SemanticText::Decision::root) reducer.offer(SemanticText::Event::root, tree.label(root));
+    // Its own label can be made of what it holds, so it is looked through first.
+    const auto offerRoot = [&] {
+        const auto outcome = walk::look("semantic", lookInside(tree, root, exclusions));
+        if (outcome == "refuse") throw PrivacyHidden{};
+        reducer.offer(SemanticText::Event::root, outcome == "marker" ? VisibleContext::hiddenMarker() : tree.label(root));
+    };
+    if (reducer.decision() == SemanticText::Decision::root) offerRoot();
     if (reducer.decision() == SemanticText::Decision::descendants) {
-        if (visited >= 5000 || !tree.withinBudget()) { reducer.offer(SemanticText::Event::interrupted); return reducer.projectedSource(); }
-        auto initial = tree.children(root, 5000 - std::min<size_t>(visited, 5000));
-        std::vector<typename Tree::Node> stack(initial.rbegin(), initial.rend());
+        if (stopped()) { reducer.offer(SemanticText::Event::interrupted); return reducer.projectedSource(); }
+        std::vector<std::pair<typename Tree::Node, bool>> stack;
+        const auto push = [&](typename Tree::Node node, bool childrenInPage) {
+            auto children = tree.children(node, limits.nodeBudget - std::min(limits.nodeBudget, visited + stack.size()));
+            for (auto it = children.rbegin(); it != children.rend(); ++it) stack.emplace_back(*it, childrenInPage);
+        };
+        push(root, inPage);
         while (!stack.empty() && reducer.decision() == SemanticText::Decision::descendants) {
-            if (visited >= 5000 || !tree.withinBudget()) break;
+            if (stopped()) break;
             ++visited;
-            auto node = std::move(stack.back()); stack.pop_back();
-            if (tree.isPassword(node)) continue;
-            const auto frame = tree.frame(node);
-            if (!tree.shown(node) || !shownBox(frame) || outsideWindow(frame, window)) continue;
-            const auto role = tree.role(node);
-            if (role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY || role == ATSPI_ROLE_STATIC ||
-                role == ATSPI_ROLE_PARAGRAPH || role == ATSPI_ROLE_LABEL) {
-                if constexpr (requires { tree.appendFieldSource(node, window, std::declval<VisibleContext&>(), frame); }) {
-                    if (role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY) {
+            auto [node, partInPage] = std::move(stack.back()); stack.pop_back();
+            std::optional<PageHost> page;
+            std::optional<ContextFrame> frame;
+            auto facts = factsOf(tree, node, partInPage, window, exclusions, page, frame);
+            facts.part = true;
+            const auto step = walk::node(facts);
+            if (step.action == "refuse") throw PrivacyHidden{};
+            if (step.action == "skip") {
+                // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                if (!step.look.empty() && walk::look(step.look, lookInside(tree, node, exclusions)) == "refuse") throw PrivacyHidden{};
+                continue;
+            }
+            if (step.action == "field" || step.action == "text" || step.action == "caption") {
+                const auto outcome = walk::look(step.action, lookInside(tree, node, exclusions));
+                if (outcome == "refuse") throw PrivacyHidden{};
+                if (outcome == "marker") { reducer.offer(SemanticText::Event::descendant, VisibleContext::hiddenMarker()); continue; }
+                if (step.action == "field") {
+                    if constexpr (requires { tree.appendFieldSource(node, window, std::declval<VisibleContext&>(), frame); }) {
                         VisibleContext field;
                         tree.appendFieldSource(node, window, field, frame);
                         const auto sources = field.fieldSources();
@@ -512,28 +576,30 @@ nlohmann::json semanticSource(Tree& tree, typename Tree::Node root, SemanticText
                         continue;
                     }
                 }
+                if (step.action == "caption") {
+                    // A page's control: its name, or, having none, what it holds.
+                    const auto label = tree.label(node);
+                    if (label.empty()) { push(node, step.childrenInPage); continue; }
+                    reducer.offer(SemanticText::Event::descendant, label);
+                    continue;
+                }
                 const auto field = screenText(tree, node);
                 reducer.offer(SemanticText::Event::descendant, field ? *field : tree.label(node));
                 continue;
             }
-            auto children = tree.children(node, 5000 - visited - stack.size());
-            for (auto it = children.rbegin(); it != children.rend(); ++it) stack.push_back(*it);
+            push(node, step.childrenInPage);
         }
         if (reducer.decision() == SemanticText::Decision::descendants)
-            reducer.offer(stack.empty() && visited < 5000 && tree.withinBudget() ? SemanticText::Event::complete : SemanticText::Event::interrupted);
+            reducer.offer(stack.empty() && !stopped() ? SemanticText::Event::complete : SemanticText::Event::interrupted);
     }
-    if (reducer.decision() == SemanticText::Decision::root) reducer.offer(SemanticText::Event::root, tree.label(root));
+    if (reducer.decision() == SemanticText::Decision::root) offerRoot();
     return reducer.projectedSource();
 }
 // String convenience for simple test trees; production retains projected metadata.
 template<class Tree>
 std::string semanticLabel(Tree& tree, typename Tree::Node root, SemanticText::Kind kind, size_t& visited,
-                          const std::optional<ContextFrame>& window = {}) {
-    return semanticSource(tree, root, kind, visited, window).at("text").template get<std::string>();
-}
-// How long a read took, for its reply's summary.
-inline uint64_t elapsedMilliseconds(std::chrono::steady_clock::time_point started) {
-    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
+                          const ScreenExclusions& exclusions, const std::optional<ContextFrame>& window = {}) {
+    return semanticSource(tree, root, kind, visited, exclusions, false, window).at("text").template get<std::string>();
 }
 template<class Tree>
 nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, typename Tree::Node focus,
@@ -557,7 +623,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         std::vector<Node> seen;
         std::vector<Node> read;
         while(!stack.empty()) {
-            if(!tree.withinBudget() || visited>=5000) { complete=false; break; }
+            if(!tree.withinBudget() || visited>=walk::limits().nodeBudget) { complete=false; break; }
             auto [node,clip]=stack.back();stack.pop_back();
             if(std::any_of(seen.begin(),seen.end(),[&](const auto& prior){return tree.same(prior,node);})) continue;
             seen.push_back(node);++visited;
@@ -593,8 +659,8 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
                 if(ownsFocus) {focusedID=id;caret=value.at("caret");}
                 continue;
             }
-            if(stack.size()>=5000-visited) {complete=false;break;}
-            auto children=tree.children(node,5000-visited-stack.size());
+            if(stack.size()>=walk::limits().nodeBudget-visited) {complete=false;break;}
+            auto children=tree.children(node,walk::limits().nodeBudget-visited-stack.size());
             for(auto it=children.rbegin();it!=children.rend();++it) stack.emplace_back(*it,clip);
         }
         // Privacy is checked again at the end; the text is not read again.
@@ -649,72 +715,68 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     const auto title = tree.label(window);
     const auto windowFrame = tree.frame(window);
     VisibleContext context(around);
+    const auto& limits = walk::limits();
     std::vector<std::pair<typename Tree::Node, bool>> stack{{window, false}};
     while (!stack.empty()) {
-        if (context.textBudgetFull) { context.stopped = "text budget"; break; }
-        if (context.nodes >= 5000) { context.stopped = "node budget"; break; }
-        if (!tree.withinBudget()) { context.stopped = "time budget"; break; }
+        // What to do with each element is the shared core's (`walk::node`, ADR-DESK-054); the
+        // tree keeps the read's clock.
+        auto stopped = walk::stop(context.nodes, 0, context.textBudgetFull);
+        if (!stopped && !tree.withinBudget()) stopped = "time budget";
+        if (stopped) { context.stopped = *stopped; break; }
         try {
-            auto [node, web] = std::move(stack.back()); stack.pop_back(); ++context.nodes;
-            const auto role = tree.role(node);
-            if (tree.isPassword(node) && !tree.same(node, focus)) continue;
-            if (auto page = tree.page(node)) { if (exclusions.excludes(*page)) throw PrivacyHidden{}; web = true; if (!host && !page->name.empty()) host = page->name; }
-            const auto frame = tree.frame(node);
-            const bool shown = tree.shown(node) && shownBox(frame);
-            if (tree.same(node, focus)) {
-                if (fieldInFocus) {
-                    context.append(ContextKind::caret, "‸", frame);
+            auto [node, inPage] = std::move(stack.back()); stack.pop_back(); ++context.nodes;
+            const bool isFocus = tree.same(node, focus);
+            const bool ancestor = !isFocus && std::any_of(path.begin(), path.end(), [&](const auto& parent) { return tree.same(parent, node); });
+            std::optional<PageHost> page;
+            std::optional<ContextFrame> frame;
+            auto facts = factsOf(tree, node, inPage, windowFrame, exclusions, page, frame);
+            facts.focus = isFocus ? "self" : ancestor ? "path" : "";
+            facts.focusedField = isFocus && fieldInFocus;
+            facts.selection = isFocus && !around[1].empty();
+            const auto step = walk::node(facts);
+            if (step.action == "refuse") throw PrivacyHidden{};
+            if (step.caretFirst || step.action == "caret") context.append(ContextKind::caret, "‸", frame);
+            if (step.action == "skip" && !step.look.empty() && walk::look(step.look, lookInside(tree, node, exclusions)) == "refuse")
+                throw PrivacyHidden{};
+            if (step.action == "caret" || step.action == "skip") continue;
+            if (step.host && !host && page && !page->name.empty()) host = page->name;
+            // A part read in one piece is looked through first: one that holds an excluded page
+            // refuses the window (a field: the marker), and one too large to look through, or
+            // holding a protected element, is withheld behind the marker.
+            if (step.action == "field" || step.action == "text" || step.action == "caption") {
+                const auto outcome = walk::look(step.action, lookInside(tree, node, exclusions));
+                if (outcome == "refuse") throw PrivacyHidden{};
+                if (outcome == "marker") {
+                    if (step.action != "caption" || step.shown)
+                        context.append(step.action == "field" ? ContextKind::field : ContextKind::text, VisibleContext::hiddenMarker(), frame);
                     continue;
                 }
-                if (!around[1].empty() && !terminalInFocus) context.append(ContextKind::caret, "‸", frame);
-            }
-            const bool ancestor = !tree.same(node, focus) && std::any_of(path.begin(), path.end(), [&](const auto& parent) { return tree.same(parent, node); });
-            if (!ancestor && outsideWindow(frame, windowFrame)) continue;
-            if (!ancestor && skippedRole(role, web)) continue;
-            // A non-focused field is atomic, so a refused descendant replaces
-            // that field only. A refused page reached elsewhere hides the window.
-            if (role == ATSPI_ROLE_TERMINAL || (!ancestor && (role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY))) {
-                if (shown) {
-                    bool safe = false;
-                    try { safe = safeSubtree(tree, node, exclusions, true); }
-                    catch (const PrivacyHidden&) { /* The field carries the privacy marker. */ }
-                    if (!safe) context.append(ContextKind::field, VisibleContext::hiddenMarker(), frame);
-                    else {
-                        if constexpr (requires { tree.appendFieldSource(node, windowFrame, context, frame); })
-                            tree.appendFieldSource(node, windowFrame, context, frame);
-                        else if (const auto value = screenText(tree, node)) context.append(ContextKind::field, *value, frame);
-                    }
+                if (step.action == "field") {
+                    if constexpr (requires { tree.appendFieldSource(node, windowFrame, context, frame); })
+                        tree.appendFieldSource(node, windowFrame, context, frame);
+                    else if (const auto value = screenText(tree, node)) context.append(ContextKind::field, *value, frame);
+                    continue;
                 }
+                if (step.action == "text") {
+                    const auto field = screenText(tree, node);
+                    context.append(ContextKind::text, field ? *field : tree.label(node), frame);
+                    continue;
+                }
+                // A page's control: its name, or, having none, what it holds.
+                const auto label = tree.label(node);
+                if (!label.empty()) {
+                    if (step.shown) context.append(ContextKind::text, label, frame);
+                    continue;
+                }
+            }
+            if (step.action == "semantic") {
+                const auto kind = step.kind == "heading" ? SemanticText::Kind::heading : step.kind == "link" ? SemanticText::Kind::link : SemanticText::Kind::row;
+                const auto label = semanticSource(tree, node, kind, context.nodes, exclusions, inPage, windowFrame);
+                context.appendSemantic(step.kind == "heading" ? ContextKind::heading : step.kind == "link" ? ContextKind::link : ContextKind::row, label, frame);
                 continue;
             }
-            const bool webControl = web && (role == ATSPI_ROLE_PUSH_BUTTON || role == ATSPI_ROLE_TOGGLE_BUTTON ||
-                role == ATSPI_ROLE_CHECK_BOX || role == ATSPI_ROLE_RADIO_BUTTON || role == ATSPI_ROLE_COMBO_BOX);
-            const bool textRole = role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY || role == ATSPI_ROLE_PARAGRAPH || role == ATSPI_ROLE_STATIC || role == ATSPI_ROLE_LABEL ||
-                role == ATSPI_ROLE_HEADING || role == ATSPI_ROLE_LINK || role == ATSPI_ROLE_TABLE_ROW || webControl;
-            if (!ancestor && shown && textRole) {
-                if (!safeSubtree(tree, node, exclusions, true)) {
-                    context.append(ContextKind::text, VisibleContext::hiddenMarker(), frame);
-                    continue;
-                }
-                if (role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY || role == ATSPI_ROLE_PARAGRAPH || role == ATSPI_ROLE_STATIC || role == ATSPI_ROLE_LABEL) {
-                    const auto field = screenText(tree, node);
-                    const auto label = field ? *field : tree.label(node);
-                    context.append(role == ATSPI_ROLE_ENTRY || role == ATSPI_ROLE_TEXT ? ContextKind::field : ContextKind::text, label, frame);
-                    continue;
-                }
-                if (role == ATSPI_ROLE_HEADING || role == ATSPI_ROLE_LINK || role == ATSPI_ROLE_TABLE_ROW) {
-                    const auto kind = role == ATSPI_ROLE_HEADING ? SemanticText::Kind::heading : role == ATSPI_ROLE_LINK ? SemanticText::Kind::link : SemanticText::Kind::row;
-                    const auto label = semanticSource(tree, node, kind, context.nodes, windowFrame);
-                    context.appendSemantic(role == ATSPI_ROLE_HEADING ? ContextKind::heading : role == ATSPI_ROLE_LINK ? ContextKind::link : ContextKind::row, label, frame);
-                    continue;
-                }
-                if (webControl) {
-                    const auto label = tree.label(node);
-                    if (!label.empty()) { context.append(ContextKind::text, label, frame); continue; }
-                }
-            }
-            auto children = tree.children(node, 5000 - context.nodes - stack.size());
-            for (auto it = children.rbegin(); it != children.rend(); ++it) stack.emplace_back(*it, web);
+            auto children = tree.children(node, limits.nodeBudget - std::min(limits.nodeBudget, context.nodes + stack.size()));
+            for (auto it = children.rbegin(); it != children.rend(); ++it) stack.emplace_back(*it, step.childrenInPage);
         } catch (const ScreenBudgetExceeded&) { context.stopped = "time budget"; break; }
     }
     return context.reply({{"appName", app.name}, {"bundleID", app.id}, {"windowTitle", title},

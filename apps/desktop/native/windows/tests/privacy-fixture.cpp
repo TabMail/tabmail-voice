@@ -34,7 +34,7 @@ std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false, outside = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false, outside = false, placeFails = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -116,6 +116,7 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE get_BoundingRectangle(UiaRect* result) override {
+        if (placeFails) return UIA_E_ELEMENTNOTAVAILABLE; // What UI Automation passes back for an element gone.
         RECT frame{}; GetWindowRect(window, &frame);
         // A thin box shows nothing; what is under it still reports its full size. A box outside
         // sits above the window.
@@ -165,12 +166,15 @@ void configure(const std::string& mode) {
         nodes.at(box)->thin = true;
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
     } else if (mode == "hidden-box") {
-        // A text box that shows nothing, with a child reporting a full size: walked into, its own
-        // text left out (ADR-DESK-054).
-        const int box = add(0, UIA_TextControlTypeId);
+        // A container that shows nothing, with a child reporting a full size, is walked into; a
+        // text box that shows nothing is skipped with what it holds (ADR-DESK-054).
+        const int box = add(0, UIA_GroupControlTypeId);
         nodes.at(box)->thin = true;
-        nodes.at(box)->text = L"Synthetic thin box text";
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden-box text";
+        const int thinText = add(0, UIA_TextControlTypeId);
+        nodes.at(thinText)->thin = true;
+        nodes.at(thinText)->text = L"Synthetic thin box text";
+        nodes.at(add(thinText, UIA_TextControlTypeId))->text = L"Synthetic under thin text";
     } else if (mode == "terminal-wide") {
         // Run under a terminal's name: a window wider than the look's node budget.
         for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
@@ -180,8 +184,8 @@ void configure(const std::string& mode) {
         nodes.at(large)->text = L"Synthetic large text";
         for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-row" || mode == "large-link") {
-        // A row or link that holds more than the look takes in: withheld behind the marker, with
-        // its name and its cells.
+        // A row or link that holds more than the look takes in: a row's cells are each looked
+        // through and read; a link's name, read whole, is withheld behind the marker.
         const int large = add(0, mode == "large-row" ? UIA_DataItemControlTypeId : UIA_HyperlinkControlTypeId);
         nodes.at(large)->text = L"Synthetic large name";
         nodes.at(add(large, UIA_TextControlTypeId))->text = L"Synthetic cell text";
@@ -206,6 +210,62 @@ void configure(const std::string& mode) {
         // A field in a window that holds more than the look takes in: not refused for corrections.
         nodes.at(1)->type = UIA_EditControlTypeId;
         for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
+    } else if (mode == "bare-page-control") {
+        // A page's control with no caption is walked into, and what it holds is in the page: a
+        // control under it gives its drawn caption, never its Name, and with none is walked into
+        // too (outside a page a control is skipped with what it holds).
+        const int page = add(0, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://open.example/synthetic";
+        const int bare = add(page, UIA_ButtonControlTypeId);
+        const int nested = add(bare, UIA_CheckBoxControlTypeId);
+        nodes.at(nested)->text = L"Synthetic undrawn label";
+        nodes.at(add(nested, UIA_TextControlTypeId))->text = L"Synthetic nested option";
+    } else if (mode == "outside-page") {
+        // An excluded page wholly outside the window: skipped with what it holds.
+        const int page = add(0, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://blocked.example/synthetic";
+        nodes.at(page)->outside = nodes.at(page)->forbidden = true;
+        nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
+    } else if (mode == "page-place-fails") {
+        // An excluded page whose place can't be read may be in view: the window is refused.
+        const int page = add(0, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://blocked.example/synthetic";
+        nodes.at(page)->placeFails = nodes.at(page)->forbidden = true;
+        nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
+    } else if (mode == "page-under-thin-row" || mode == "page-under-thin-part") {
+        // An excluded page under a row that shows nothing, or under a row's part that shows
+        // nothing, may still be on screen: looked for first, it refuses the window.
+        const int row = add(0, UIA_DataItemControlTypeId);
+        int holder = row;
+        if (mode == "page-under-thin-row") nodes.at(row)->thin = true;
+        else {
+            nodes.at(add(row, UIA_TextControlTypeId))->text = L"Synthetic cell text";
+            holder = add(row, UIA_GroupControlTypeId);
+            nodes.at(holder)->thin = true;
+        }
+        const int page = add(holder, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://blocked.example/synthetic";
+        nodes.at(page)->forbidden = true;
+        nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
+    } else if (mode == "page-in-text" || mode == "page-in-control") {
+        // A piece of text, or a page's control, holding an excluded page refuses the window.
+        int parent = 0;
+        if (mode == "page-in-control") {
+            parent = add(0, UIA_DocumentControlTypeId);
+            nodes.at(parent)->address = L"https://open.example/synthetic";
+        }
+        const int holder = add(parent, mode == "page-in-text" ? UIA_TextControlTypeId : UIA_ButtonControlTypeId);
+        nodes.at(holder)->text = L"Synthetic holder";
+        const int page = add(holder, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://blocked.example/synthetic";
+        nodes.at(page)->forbidden = true;
+        nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
+    } else if (mode == "text-full") {
+        // Text past the read's byte budget: the walk stops there, not after every element.
+        std::wstring filler;
+        while (filler.size() < 20000) filler += L"Synthetic filler words ";
+        for (int i = 0; i < 14; ++i) nodes.at(add(0, UIA_TextControlTypeId))->text = L"Block " + std::to_wstring(i) + L" " + filler;
+        for (int i = 0; i < 300; ++i) add(0, UIA_GroupControlTypeId);
     } else if (mode == "outside-window") {
         // A container wholly outside the window, holding more than the walk's node budget,
         // before text in view: skipped with what it holds, so the text is read.
