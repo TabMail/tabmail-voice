@@ -464,9 +464,12 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   first of two empty lines under a sentence read one empty line short, and every paragraph that
   starts right after text (each `<div>` of a rich editor) ran into the one above. The adapter now
   says where each paragraph starts within the core's `paragraphStartUnits` (twice the graphemes a
-  side shows) of the selection, in its own offsets (`voice_core_source_paragraph_starts`; the Mac
-  walks `AXParagraphTextMarkerRangeForTextMarker` back and on from the selection, counting the
-  lengths between neighbouring markers, never from the field's start). The core's `caretWindow`
+  side shows) of the selection, in its own offsets (`voice_core_source_paragraph_starts`). The Mac reports where each block
+  of the field's tree starts (`HelperConfig.blockRoles`: a `<div>` is an `AXGroup`, inline
+  formatting and links are not), and text after a block, finding the first sibling that reaches
+  the window by halves. Chromium's own paragraph answers were tried first and dropped: walked back
+  from a paragraph's start they give each run of text (a word edited apart) as a paragraph, and
+  the owner's smoke test read "plan" / "ning" on two lines. The core's `caretWindow`
   puts back the break before each start that has none, as U+2029, within each part's budget (a
   side at its limit gives up its far end, and its edge is then unknown). The render shows U+2029 as
   a line break, and redacts the caret's text without the put-back breaks too, with each one

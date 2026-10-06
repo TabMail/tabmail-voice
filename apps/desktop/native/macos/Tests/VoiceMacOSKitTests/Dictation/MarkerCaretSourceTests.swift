@@ -299,62 +299,39 @@ struct MarkerCaretSourceTests {
     /// Real text-marker objects holding an offset, answering as Chromium does: lengths and unordered
     /// ranges, no index conversion. A range keeps its markers in the order given, as a selection made
     /// backward does.
-    /// Chromium's paragraphs, measured on a Gmail-shaped field: a line, an empty paragraph, the
-    /// line dictated under, then a signature block of two empty lines, "--" and a name. A paragraph
-    /// starting right after text has no break before it (its start and the last one's end are the
-    /// same offset, two markers); the caret is on the signature's first empty line.
-    @Test func paragraphStartsAreWalkedEitherSideOfTheCaret() throws {
-        let field = ParagraphField(paragraphs: [(0, 22), (22, 22), (23, 55), (55, 55), (56, 56), (57, 59), (60, 79)])
-        let caret = field.range(field.marker(55, 3), field.marker(55, 3))
-        let starts = MarkerCaretSource.paragraphStarts(selection: caret, whole: field.range(field.marker(0, 0), field.marker(79, 6)),
-                                                       range: NSRange(location: 55, length: 0), within: 4000, parameterized: field.answer)
-        #expect(starts == [0, 22, 23, 55, 56, 57, 60])
-        // Only as far as asked either side.
-        #expect(MarkerCaretSource.paragraphStarts(selection: caret, whole: field.range(field.marker(0, 0), field.marker(79, 6)),
-                                                  range: NSRange(location: 55, length: 0), within: 10, parameterized: field.answer) == [55, 56, 57, 60])
-        // A selection is walked from its start, through it.
-        let selected = field.range(field.marker(23, 2), field.marker(57, 5))
-        #expect(MarkerCaretSource.paragraphStarts(selection: selected, whole: field.range(field.marker(0, 0), field.marker(79, 6)),
-                                                  range: NSRange(location: 23, length: 34), within: 0, parameterized: field.answer) == [23, 55, 56, 57])
-        // No lengths, no starts.
-        #expect(MarkerCaretSource.paragraphStarts(selection: caret, whole: field.range(field.marker(0, 0), field.marker(79, 6)),
-                                                  range: NSRange(location: 55, length: 0), within: 4000,
-                                                  parameterized: { name, value in name == "AXLengthForTextMarkerRange" ? nil : field.answer(name, value) }) == nil)
+    /// A Gmail compose field as Chromium's tree gives it (measured 2026-10-06): a line of text, an
+    /// empty <div>, a <div> holding a sentence edited into runs, and the signature's <div>. Each
+    /// block, and text after one, starts where the text may leave out its break.
+    @Test func blockStartsAreTheBlocksNearTheSelection() throws {
+        let field = Node("field", children: [
+            Node("text", 0, 16),
+            Node("block", 16, 1),
+            Node("block", 17, 30, children: [Node("text", 17, 25), Node("text", 42, 4), Node("text", 46, 1)]),
+            Node("block", 47, 124, children: [Node("text", 49, 2), Node("text", 52, 13)]),
+            Node("text", 171, 5),
+        ])
+        func starts(_ range: NSRange, within units: Int, elements: Int = 500) -> [Int]? {
+            MarkerCaretSource.blockStarts(in: field, around: range, within: units, elements: elements,
+                                          children: \.children, isBlock: { $0.kind == "block" }, span: \.span)
+        }
+        #expect(starts(NSRange(location: 47, length: 0), within: 4000) == [16, 17, 47, 171])
+        // Only those within the window, found without looking at every sibling before it.
+        #expect(starts(NSRange(location: 47, length: 0), within: 10) == [47])
+        #expect(starts(NSRange(location: 20, length: 0), within: 3) == [17])
+        // Too many looks, or an element with no place, gives none.
+        #expect(starts(NSRange(location: 47, length: 0), within: 4000, elements: 3) == nil)
+        #expect(MarkerCaretSource.blockStarts(in: field, around: NSRange(location: 47, length: 0), within: 4000, elements: 500,
+                                              children: \.children, isBlock: { $0.kind == "block" }, span: { _ in nil }) == nil)
     }
 
-    /// A field whose markers name an offset and the paragraph holding it, as Chromium's do: the end
-    /// of one paragraph and the start of the next can be the same offset.
-    private struct ParagraphField {
-        let paragraphs: [(start: Int, end: Int)]
-        func marker(_ offset: Int, _ paragraph: Int) -> AXTextMarker {
-            var value = (offset, paragraph)
-            return withUnsafeBytes(of: &value) { AXTextMarkerCreate(nil, $0.bindMemory(to: UInt8.self).baseAddress!, $0.count) }
-        }
-        func range(_ start: AXTextMarker, _ end: AXTextMarker) -> CFTypeRef { AXTextMarkerRangeCreate(nil, start, end) }
-        static func place(_ marker: CFTypeRef) -> (offset: Int, paragraph: Int) {
-            UnsafeRawPointer(AXTextMarkerGetBytePtr(marker as! AXTextMarker)).loadUnaligned(as: (Int, Int).self)
-        }
-        func answer(_ name: String, _ value: CFTypeRef) -> CFTypeRef? {
-            switch name {
-            case "AXLengthForTextMarkerRange":
-                let range = value as! AXTextMarkerRange
-                return NSNumber(value: abs(Self.place(AXTextMarkerRangeCopyEndMarker(range)).offset - Self.place(AXTextMarkerRangeCopyStartMarker(range)).offset))
-            case "AXTextMarkerRangeForUnorderedTextMarkers":
-                let pair = (value as! NSArray).map { $0 as! AXTextMarker }.sorted { Self.place($0).offset < Self.place($1).offset }
-                return range(pair[0], pair[1])
-            case "AXParagraphTextMarkerRangeForTextMarker":
-                let at = Self.place(value)
-                return range(marker(paragraphs[at.paragraph].start, at.paragraph), marker(paragraphs[at.paragraph].end, at.paragraph))
-            case "AXPreviousTextMarkerForTextMarker":
-                let at = Self.place(value)
-                if at.offset > paragraphs[at.paragraph].start { return marker(at.offset - 1, at.paragraph) }
-                return at.paragraph > 0 ? marker(paragraphs[at.paragraph - 1].end, at.paragraph - 1) : nil
-            case "AXNextTextMarkerForTextMarker":
-                let at = Self.place(value)
-                if at.offset < paragraphs[at.paragraph].end { return marker(at.offset + 1, at.paragraph) }
-                return at.paragraph + 1 < paragraphs.count ? marker(paragraphs[at.paragraph + 1].start, at.paragraph + 1) : nil
-            default: return nil
-            }
+    private struct Node {
+        let kind: String
+        let span: NSRange?
+        let children: [Node]
+        init(_ kind: String, _ start: Int = 0, _ length: Int = 0, children: [Node] = []) {
+            self.kind = kind
+            span = NSRange(location: start, length: length)
+            self.children = children
         }
     }
 

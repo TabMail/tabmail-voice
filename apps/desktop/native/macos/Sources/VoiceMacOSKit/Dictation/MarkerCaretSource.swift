@@ -80,59 +80,43 @@ enum MarkerCaretSource {
         return (count, NSRange(location: start, length: abs(focus - anchor)), startsParagraph)
     }
 
-    /// Where Chromium starts each paragraph from `units` before the selection (`range`, as
-    /// `selection` counted it) to `units` after it, ascending: its text leaves out the break
-    /// before a paragraph that starts right after text (each <div> of a rich editor), and the
-    /// shared core puts those back (ADR-DESK-007, 2026-10-06). Its paragraphs
-    /// (`AXParagraphTextMarkerRangeForTextMarker`) are walked back from the selection and on from
-    /// it, each start counted from the last place by the length between them, never from the
-    /// field's start. Nil when a length can't be had; the walk ends where the markers do.
-    static func paragraphStarts(selection: CFTypeRef, whole: CFTypeRef, range: NSRange, within units: Int,
-                                parameterized: (String, CFTypeRef) -> CFTypeRef?) -> [Int]? {
-        guard CFGetTypeID(selection) == AXTextMarkerRangeGetTypeID(), CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID(), units >= 0 else { return nil }
-        func length(_ from: CFTypeRef, _ to: CFTypeRef) -> Int? {
-            guard let range = parameterized("AXTextMarkerRangeForUnorderedTextMarkers", [from, to] as CFArray),
-                  let value = parameterized("AXLengthForTextMarkerRange", range) as? NSNumber, value.intValue >= 0 else { return nil }
-            return value.intValue
+    /// Where a Chromium rich editor starts its blocks from `units` before the selection to `units`
+    /// after it, ascending: its text leaves out the break before a block that starts right after
+    /// text (each <div>), and the shared core puts those back where the text has none
+    /// (ADR-DESK-007, 2026-10-06). A block is an element `isBlock` says is one (a <div> is a
+    /// group; inline formatting and links are not), and text after a block starts a line too.
+    /// `span` is an element's place in the field's text. Chromium's own paragraph answers can't be
+    /// used: walked from a break they give each run of text (a word edited apart) as a paragraph.
+    /// Siblings are searched by halves for the first that reaches the window, so a long field costs
+    /// a few looks. Nil when an element has no place, or past `elements` looks.
+    static func blockStarts<Node>(in field: Node, around range: NSRange, within units: Int, elements: Int,
+                                  children: (Node) -> [Node], isBlock: (Node) -> Bool, span: (Node) -> NSRange?) -> [Int]? {
+        let low = range.location - units, high = NSMaxRange(range) + units
+        var starts = Set<Int>(), looks = 0
+        func place(_ node: Node) -> NSRange? {
+            looks += 1
+            return looks <= elements ? span(node) : nil
         }
-        func paragraph(_ marker: CFTypeRef) -> (start: AXTextMarker, end: AXTextMarker)? {
-            guard let value = parameterized("AXParagraphTextMarkerRangeForTextMarker", marker),
-                  CFGetTypeID(value) == AXTextMarkerRangeGetTypeID() else { return nil }
-            return (AXTextMarkerRangeCopyStartMarker(value as! AXTextMarkerRange), AXTextMarkerRangeCopyEndMarker(value as! AXTextMarkerRange))
+        func walk(_ node: Node) -> Bool {
+            let nodes = children(node)
+            // The first child that ends at or after the window's start.
+            var lower = 0, upper = nodes.count
+            while lower < upper {
+                let middle = (lower + upper) / 2
+                guard let span = place(nodes[middle]) else { return false }
+                if NSMaxRange(span) < low { lower = middle + 1 } else { upper = middle }
+            }
+            var afterBlock = lower > 0 && isBlock(nodes[lower - 1])
+            for node in nodes[lower...] {
+                guard let span = place(node) else { return false }
+                if span.location > high { break }
+                let block = isBlock(node)
+                if block || afterBlock, span.location >= low { starts.insert(span.location) }
+                if block, !walk(node) { return false }
+                afterBlock = block
+            }
+            return true
         }
-        func step(_ name: String, _ marker: CFTypeRef) -> CFTypeRef? {
-            guard let value = parameterized(name, marker), CFGetTypeID(value) == AXTextMarkerGetTypeID(), !CFEqual(value, marker) else { return nil }
-            return value
-        }
-        let ends = [AXTextMarkerRangeCopyStartMarker(selection as! AXTextMarkerRange), AXTextMarkerRangeCopyEndMarker(selection as! AXTextMarkerRange)]
-        let fieldStart = AXTextMarkerRangeCopyStartMarker(whole as! AXTextMarkerRange)
-        guard let anchor = length(fieldStart, ends[0]) else { return nil }
-        let first: CFTypeRef = anchor == range.location ? ends[0] : ends[1]
-        // Every paragraph holds a character or none, so a walk past this many has stopped moving.
-        let steps = 2 * units + range.length + 2
-        var starts = Set<Int>()
-        // Back: the paragraph holding the marker, then the one holding the marker before its start.
-        var marker = first, offset = range.location
-        for _ in 0 ..< steps {
-            guard let held = paragraph(marker), let back = length(held.start, marker) else { break }
-            let start = offset - back
-            guard start >= range.location - units, start >= 0 else { break }
-            starts.insert(start)
-            guard let previous = step("AXPreviousTextMarkerForTextMarker", held.start), let gap = length(previous, held.start) else { break }
-            (marker, offset) = (previous, start - gap)
-        }
-        // On: past the end of the paragraph holding the marker, to the next paragraph's start.
-        let last = range.location + range.length
-        (marker, offset) = (first, range.location)
-        for _ in 0 ..< steps {
-            guard let held = paragraph(marker), let ahead = length(marker, held.end),
-                  let next = step("AXNextTextMarkerForTextMarker", held.end), let gap = length(held.end, next),
-                  let following = paragraph(next), !CFEqual(following.start, held.start), let into = length(following.start, next) else { break }
-            let start = offset + ahead + gap - into
-            guard start <= last + units else { break }
-            starts.insert(start)
-            (marker, offset) = (next, offset + ahead + gap)
-        }
-        return starts.sorted()
+        return walk(field) ? starts.sorted() : nil
     }
 }

@@ -50,7 +50,7 @@ const page = `
   <input id="filled" value="Synthetic subject line">
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
   <div id="rich" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
-  <div id="gmail" contenteditable="true">Synthetic opening line<div><br></div><div>Synthetic line to dictate under.</div><div><br><br>--<br>Synthetic signature</div></div>
+  <div id="gmail" contenteditable="true">Synthetic opening line<div><br></div><div>Synthetic <b>line</b> to <i>dictate</i> under.</div><div><br><br>--<br>Synthetic signature</div></div>
 `;
 // Puts the caret in `field` (`script` places it) and gives the field's box and the caret's line
 // box on screen, as Chromium lays them out.
@@ -151,7 +151,8 @@ async function main() {
     await expectRead("rich text, start of a paragraph after another",
                      "Synthetic first paragraph\n\nSynthetic third paragraph\n", "Synthetic fourth paragraph\n\n\nSynthetic seventh paragraph");
 
-    // Gmail: a line, an empty one, the line dictated under, then the signature block, which starts
+    // Gmail: a line, an empty one, the line dictated under (in several runs of text, which must not
+    // read as paragraphs), then the signature block, which starts
     // with two empty lines; the caret on the first of them (the block's start) is on line 3.
     frame = await place("gmail", "getSelection().collapse(field.children[2], 0);");
     expectOnLine(await anchor("Gmail-shaped, empty line starting the signature block", frame, 3));

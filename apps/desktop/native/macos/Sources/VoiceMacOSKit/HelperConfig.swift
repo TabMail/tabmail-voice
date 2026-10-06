@@ -42,6 +42,10 @@ enum HelperConfig {
     /// Roles the caret is in when focused: the text around it is read, and the walk never goes
     /// into them. Any other focused element is read like the rest of the window.
     static let contextFieldRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox"]
+    /// Roles of the blocks in a Chromium rich editor (a <div> or <blockquote> is a group, a list
+    /// or heading its own role), each starting a line of its own: the caret's read puts back the
+    /// break Chromium's text leaves out before one. Inline formatting and links are never these.
+    static let blockRoles: Set<String> = ["AXGroup", "AXList", "AXHeading", "AXTable"]
     /// Elements at most this thin (points) show nothing: web apps keep screen-reader-only text,
     /// list items scrolled out of view and hover-only actions in 1-point boxes.
     static let contextHiddenMaxThickness: CGFloat = 1

@@ -203,11 +203,26 @@ enum ScreenContextReader {
         }, paragraphStarts: { snapshot in
             let looked = Date()
             guard snapshot.markers, let state = markers(), let limits = try? SharedContext.sourceLimits() else { return nil }
-            let starts = MarkerCaretSource.paragraphStarts(selection: state.selection, whole: state.whole, range: snapshot.range,
-                                                           within: limits.paragraphStartUnits) { name, value in
-                CaretLocator.parameterized(element, name, value)
+            let fieldStart = AXTextMarkerRangeCopyStartMarker(state.whole as! AXTextMarkerRange)
+            func length(_ range: CFTypeRef?) -> Int? {
+                guard let range, let value = CaretLocator.parameterized(element, "AXLengthForTextMarkerRange", range) as? NSNumber,
+                      value.intValue >= 0 else { return nil }
+                return value.intValue
             }
-            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") paragraph starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms")
+            let starts = MarkerCaretSource.blockStarts(in: element, around: snapshot.range, within: limits.paragraphStartUnits,
+                                                       elements: limits.caretSourceElements, children: { node in
+                (CaretLocator.attribute(node, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+            }, isBlock: { node in
+                (CaretLocator.attribute(node, kAXRoleAttribute) as? String).map(HelperConfig.blockRoles.contains) ?? false
+            }, span: { node in
+                guard let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", node),
+                      CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID(),
+                      let start = length(CaretLocator.parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers",
+                                                                    [fieldStart, AXTextMarkerRangeCopyStartMarker(whole as! AXTextMarkerRange)] as CFArray)),
+                      let count = length(whole) else { return nil }
+                return NSRange(location: start, length: count)
+            })
+            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms")
             return starts
         })
     }

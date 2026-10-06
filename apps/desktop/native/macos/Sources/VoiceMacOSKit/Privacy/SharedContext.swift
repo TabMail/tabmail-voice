@@ -22,6 +22,7 @@ enum SharedContext {
         var selectionSourceBytes: Int
         var sourceChunkUnits: Int
         var paragraphStartUnits: Int
+        var caretSourceElements: Int
     }
     static func sourceLimits() throws -> SourceLimits {
         let input = try JSONSerialization.data(withJSONObject: ["limits": true])
