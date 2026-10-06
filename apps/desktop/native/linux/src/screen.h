@@ -232,8 +232,8 @@ public:
             for (int i=0;i<total;++i) {
                 check(); auto value = atspi_text_get_selection(text.get(), i, &error.value);
                 std::unique_ptr<AtspiRange, decltype(&g_free)> owned(value, &g_free); error.check();
-                if (!value || value->start_offset < 0 || value->end_offset < value->start_offset || value->end_offset > count ||
-                    (!result.empty() && result.back()[1] > value->start_offset)) throw std::runtime_error("terminal selection range");
+                if (!value) throw std::runtime_error("terminal selection range");
+                // The shared core withholds a selection that does not fit the text.
                 result.push_back({value->start_offset,value->end_offset});
             }
             return result;
@@ -305,48 +305,35 @@ public:
             return result;
         };
         const auto spans=spansNow();
-        auto runs=nlohmann::json::array(), selections=nlohmann::json::array();
-        nlohmann::json anchor={{"status","unavailable"}};
-        size_t remaining=limit; bool selectionComplete=true;
-        std::vector<int> covered; for(const auto& value:selected) covered.push_back(value[0]);
-        const auto readVisible = [&](const std::array<int,2>& span, size_t budget) {
+        // VTE can encode a scrolled-away cursor as visible-text start/end.
+        // Those boundary positions lack independent visible insertion proof.
+        nlohmann::json caretRead=nullptr;
+        if(focused && caret>0 && caret<count) {
+            check(); Error error; auto rectangle=atspi_text_get_character_extents(text.get(),caret,ATSPI_COORD_TYPE_WINDOW,&error.value);
+            std::unique_ptr<AtspiRect,decltype(&g_free)> owned(rectangle,&g_free);
+            if(!error.value && rectangle && rectangle->width>=0 && rectangle->height>0)
+                caretRead={{"offset",caret},{"frame",{rectangle->x,rectangle->y,rectangle->width,rectangle->height}}};
+        }
+        // A character is at least one UTF-8 byte, so no more characters are read than the budget has
+        // bytes; the shared core checks the bytes.
+        auto spanList=nlohmann::json::array(), texts=nlohmann::json::array(), selections=nlohmann::json::array();
+        size_t remaining=limit;
+        for(const auto& span:spans) {
             const auto length=static_cast<size_t>(span[1]-span[0]);
-            if(length > budget / 4) throw std::runtime_error("terminal source budget");
+            if(length > remaining) throw std::runtime_error("terminal source budget");
             auto value=readScalarField(length,0,length,[&](size_t from,size_t to){
                 return range(text,span[0]+static_cast<int>(from),span[0]+static_cast<int>(to));
             });
-            if(!value.complete || value.text.size()>budget) throw std::runtime_error("terminal source incomplete");
-            return value.text;
-        };
-        // VTE can encode a scrolled-away cursor as visible-text start/end.
-        // Those boundary positions lack independent visible insertion proof.
-        const auto caretFrameNow = [&]() -> std::optional<std::array<int,4>> {
-            if(!focused || caret<=0 || caret>=count) return {};
-            check(); Error error; auto rectangle=atspi_text_get_character_extents(text.get(),caret,ATSPI_COORD_TYPE_WINDOW,&error.value);
-            std::unique_ptr<AtspiRect,decltype(&g_free)> owned(rectangle,&g_free);
-            if(error.value || !rectangle || rectangle->width<0 || rectangle->height<=0) return {};
-            return std::array<int,4>{rectangle->x,rectangle->y,rectangle->width,rectangle->height};
-        };
-        const auto caretFrame=caretFrameNow();
-        const bool caretVisible=caretFrame && (*caretFrame)[0]>=clip.x && (*caretFrame)[0]<clip.x+clip.width &&
-            static_cast<double>((*caretFrame)[1])+(*caretFrame)[3]>clip.y && (*caretFrame)[1]<clip.y+clip.height;
-        if(caretFrame && !caretVisible) anchor={{"status","outsideViewport"}};
-        for(size_t i=0;i<spans.size();++i) {
-            const auto& span=spans[i]; const auto value=readVisible(span,remaining); remaining-=value.size();
-            runs.push_back({{"id",i},{"text",value},{"connected",i>0 && spans[i-1][1]==span[0]},{"startKnown",false},{"endKnown",false}});
-            if(caretVisible && caret>=span[0] && caret<span[1]) anchor={{"status","exact"},{"surface",id},{"run",i},{"offset",caret-span[0]}};
-            for(size_t j=0;j<selected.size();++j) {
-                const int from=std::max(span[0],selected[j][0]),to=std::min(span[1],selected[j][1]);
-                if(from>=to) continue;
-                selectionComplete=selectionComplete && covered[j]==from;covered[j]=to;
-                selections.push_back({{"run",i},{"start",from-span[0]},{"end",to-span[0]}});
-            }
+            if(!value.complete || value.text.size()>remaining) throw std::runtime_error("terminal source incomplete");
+            remaining-=value.text.size(); spanList.push_back({span[0],span[1]}); texts.push_back(std::move(value.text));
         }
-        for(size_t j=0;j<selected.size();++j) selectionComplete=selectionComplete && covered[j]==selected[j][1];
+        for(const auto& value:selected) selections.push_back({value[0],value[1]});
         // Read once and kept, even if output arrives meanwhile (owner, 2026-10-05: the screen as at key-down).
         check();
-        return {{"surface",{{"id",id},{"frame",{clip.x,clip.y,clip.width,clip.height}},{"runs",runs},
-            {"selection",{{"complete",selectionComplete},{"ranges",selections}}}}},{"caret",anchor},{"offsetUnit","scalar"}};
+        // The runs, the selection and the caret are the shared core's (`surface-cases.json`).
+        return core::request({{"surface",{{"id",id},{"frame",{clip.x,clip.y,clip.width,clip.height}},{"offsetUnit","scalar"},
+            {"count",count},{"startKnown",false},{"endKnown",false},{"bytes",limit},{"spans",spanList},{"texts",texts},
+            {"selections",selections},{"caret",caretRead}}}}, voice_core_viewport_json);
     }
     std::optional<CaretText> selection(const Node& node) {
         check();

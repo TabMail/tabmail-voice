@@ -115,6 +115,12 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         )
         .map_err(|_| 3);
     }
+    if let Some(surface) = request.get("surface") {
+        if request.as_object().is_none_or(|fields| fields.len() != 1) {
+            return Err(1);
+        }
+        return surface::build(surface);
+    }
     let surfaces = request["surfaces"].as_array().ok_or(1u32)?;
     if surfaces.len() > MAX_SURFACES {
         return Err(1);
@@ -390,5 +396,6 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
     .map_err(|_| 3)
 }
 
+mod surface;
 #[cfg(test)]
 mod tests;

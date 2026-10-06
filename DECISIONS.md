@@ -3701,3 +3701,26 @@ design explicit.
   disagreements above stand where they live (the Windows marker and scan budget among them).
 - The helpers' own `HelperConfig` keeps only OS numbers (timeouts of an OS call, retry intervals);
   a number the helpers share comes from the core.
+
+**Amendment 2026-10-06 — the terminal surface's rules (the third step).** One `surface` op in the
+core now builds a terminal's runs, selection and caret from what the helper read (its spans, texts,
+selections, caret offset and drawn frame). Where macOS and Linux had answered differently, the core
+answers once:
+- A caret drawn on the clip's edge is inside it, on all four sides (a caret at a line's first column
+  sits on the left edge); one whose bottom touches the clip's top, or whose top touches its bottom,
+  is outside.
+- A caret at a span's end belongs to that span, a caret on a boundary to the span it starts, and a
+  caret in no span is `outsideViewport`.
+- A malformed selection (inverted, out of range, unsorted or overlapping) is withheld, and the
+  surface kept: the reply says the selection is incomplete and has no ranges, so Edit refuses.
+  Linux refused the whole surface before. **Windows still refuses the surface** (its UI Automation
+  read is not on the op); both fail closed, and Windows moves to the op's rule when its terminal
+  read does.
+- The budget is in UTF-8 bytes. A helper reads at most that many UTF-16 units (macOS) or scalars
+  (Linux), each at least one byte, so nothing that fits is left unread; the core then checks the
+  exact bytes and refuses a surface over them. macOS read a third and Linux a quarter of the budget
+  before, refusing mostly-ASCII screens that fit.
+- A caret frame that is not finite or has a negative size refuses the surface, as a request the
+  core cannot trust. A caret whose drawing could not be confirmed is sent without a frame on macOS
+  (`outsideViewport`) and without a caret on Linux (`unavailable`), as is VTE's ambiguous caret at
+  a text's start or end. None of these is `exact`, the only status the app acts on.

@@ -484,3 +484,34 @@ fn disconnected_selected_runs_must_refuse_writing() {
     assert_eq!(output["selectionComplete"], false);
     assert_eq!(output["selectedText"], privacy::PLACEHOLDER);
 }
+
+/// Every helper that reads a terminal as one document runs the same surface cases through the C ABI.
+#[test]
+fn shared_surface_cases() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../context/surface-cases.json")).unwrap();
+    let cases = fixture["cases"].as_array().unwrap();
+    assert!(cases.iter().any(|case| case["refused"] == true));
+    for case in cases {
+        let result = process(&serde_json::to_vec(&case["request"]).unwrap())
+            .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap());
+        if case["refused"] == true {
+            assert_eq!(result, Err(1), "{}", case["name"]);
+        } else {
+            assert_eq!(result.unwrap(), case["expected"], "{}", case["name"]);
+        }
+    }
+}
+
+/// A surface the core built is one the projection takes: its caret and selection come through.
+#[test]
+fn a_built_surface_projects() {
+    let built = result(&json!({"surface": {"id": 1, "frame": [0, 0, 400, 200], "offsetUnit": "utf16",
+        "count": 10, "startKnown": false, "endKnown": false, "bytes": 100, "spans": [[0, 5], [5, 10]],
+        "texts": ["abcde", "fghij"], "selections": [[3, 7]], "caret": null}}));
+    let projected = result(&json!({"surfaces": [built["surface"]], "focusedSurface": 1, "complete": true,
+        "caret": built["caret"]}));
+    assert_eq!(projected["selectedText"], "defg");
+    assert_eq!(projected["selectionComplete"], true);
+    assert_eq!(projected["caret"]["status"], "unavailable");
+}
