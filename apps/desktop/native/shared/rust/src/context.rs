@@ -313,6 +313,26 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         }
         return serde_json::to_vec(&json!({"amounts":probes})).map_err(|_| 3);
     }
+    // The text before a caret that starts a line, ending in a line break. Chromium gives an empty
+    // line no character and leaves out some paragraph breaks, so without it the text reads as if
+    // the caret followed the last word (ADR-DESK-007, 2026-10-06). `startsLine`: the caret's line,
+    // as the OS lays it out, starts at the caret.
+    if let Some(caret) = request.get("beforeCaret") {
+        let text = caret["text"].as_str().ok_or(1u32)?;
+        let starts_line = caret["startsLine"].as_bool().ok_or(1u32)?;
+        let unbroken = text.chars().last().is_some_and(|last| {
+            !matches!(
+                last,
+                '\n' | '\r' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+            )
+        });
+        let text = if starts_line && unbroken {
+            format!("{text}\n")
+        } else {
+            text.to_owned()
+        };
+        return serde_json::to_vec(&json!({"text": text})).map_err(|_| 3);
+    }
     if let Some(window) = request.get("caretWindow") {
         let parts = read_caret(&window["parts"])?;
         let start_known = window["startKnown"].as_bool().ok_or(1u32)?;

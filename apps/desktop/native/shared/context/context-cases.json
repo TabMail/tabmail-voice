@@ -432,6 +432,114 @@
         ],
         "selectionUnavailable": true
       }
+    },
+    {
+      "name": "a caret starting an empty line after a paragraph ends its before-text in a line break",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,\nWhy does it move?",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Hi All,\nWhy does it move?\n"
+      }
+    },
+    {
+      "name": "a caret starting the line after the first paragraph gets its left-out break",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n"
+      }
+    },
+    {
+      "name": "a caret ending a sentence keeps its before-text",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,\nWhy does it move?",
+          "startsLine": false
+        }
+      },
+      "expected": {
+        "text": "Hi All,\nWhy does it move?"
+      }
+    },
+    {
+      "name": "a caret starting a line whose break is shown gets no second break",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,\n",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Hi All,\n"
+      }
+    },
+    {
+      "name": "a carriage return counts as a shown break",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,\r",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Hi All,\r"
+      }
+    },
+    {
+      "name": "a line separator counts as a shown break",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,\u2028",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Hi All,\u2028"
+      }
+    },
+    {
+      "name": "a paragraph separator counts as a shown break",
+      "request": {
+        "beforeCaret": {
+          "text": "Hi All,\u2029",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Hi All,\u2029"
+      }
+    },
+    {
+      "name": "a caret at the field start stays empty",
+      "request": {
+        "beforeCaret": {
+          "text": "",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": ""
+      }
+    },
+    {
+      "name": "a caret starting a line after a non-ASCII word gets a break",
+      "request": {
+        "beforeCaret": {
+          "text": "Grüße 😀",
+          "startsLine": true
+        }
+      },
+      "expected": {
+        "text": "Grüße 😀\n"
+      }
     }
   ]
 }

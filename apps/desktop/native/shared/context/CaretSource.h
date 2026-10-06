@@ -16,6 +16,10 @@ struct CaretSource {
     static CaretSource fromJSON(const nlohmann::json& result) {
         return {result.at("parts").get<std::array<std::string, 3>>(), result.at("selectionUnavailable").get<bool>()};
     }
+    // The text before a caret, ending in a line break when the caret starts a line it doesn't show.
+    static std::string beforeCaret(const std::string& text, bool startsLine) {
+        return core::request({{"beforeCaret", {{"text", text}, {"startsLine", startsLine}}}}, voice_core_context_json).at("text").get<std::string>();
+    }
     static CaretSource window(const std::array<std::string, 3>& parts, bool startKnown, bool endKnown) {
         return fromJSON(core::request({{"caretWindow", {{"parts", parts}, {"startKnown", startKnown}, {"endKnown", endKnown}}}}, voice_core_context_json));
     }

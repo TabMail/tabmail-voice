@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <ole2.h>
 #include <UIAutomation.h>
+#include <iostream>
 #include "helper_config.h"
 #include "microphone.h"
 #include "text.h"
@@ -39,7 +40,9 @@ public:
         require(document->Compare(finalDocument.Get(), &sameDocument));
         reader.check();
         if (!sameSelection || !sameDocument || reader.text(finalSelection.Get(), selectionLimit) != selectionText) return CaretSource::unavailable();
-        return CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second);
+        auto result = CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second);
+        if (!result.selectionUnavailable) result.parts[0] = CaretSource::beforeCaret(result.parts[0], reader.startsLine(selected.Get()));
+        return result;
     }
     // Caller proves privacy, visible provider identity and focus. Every GetText
     // stays inside an approved visible range. Do not constrain terminal ranges
@@ -320,6 +323,23 @@ private:
             result.push_back(std::move(range));
         }
         return result;
+    }
+    // Whether the selection starts a line as the provider lays it out. Chromium gives an empty
+    // line no character, so the text before a caret there may not show the break.
+    bool startsLine(IUIAutomationTextRange* selected) const {
+        ComPtr<IUIAutomationTextRange> line;
+        check(); require(selected->Clone(&line)); check();
+        if (!line) throw std::runtime_error("provider range unavailable");
+        move(line.Get(), TextPatternRangeEndpoint_End, selected, TextPatternRangeEndpoint_Start);
+        // A provider without lines says nothing about them: no break is added.
+        if (FAILED(line->ExpandToEnclosingUnit(TextUnit_Line))) {
+            std::cerr << "debug caret line: lines unavailable\n";
+            return false;
+        }
+        check();
+        const bool starts = compare(line.Get(), TextPatternRangeEndpoint_Start, selected, TextPatternRangeEndpoint_Start) == 0;
+        std::cerr << "debug caret line: starts " << starts << '\n';
+        return starts;
     }
     std::pair<std::string, bool> side(IUIAutomationTextRange* selected, IUIAutomationTextRange* document, bool before, size_t limit) const {
         const auto outer = before ? TextPatternRangeEndpoint_Start : TextPatternRangeEndpoint_End;

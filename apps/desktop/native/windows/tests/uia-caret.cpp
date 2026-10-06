@@ -38,7 +38,7 @@ struct Range final : IUIAutomationTextRange {
     }
     HRESULT STDMETHODCALLTYPE MoveEndpointByUnit(TextPatternRangeEndpoint e, TextUnit unit, int count, int* moved) override;
     HRESULT STDMETHODCALLTYPE GetText(int maximum, BSTR* result) override;
-    HRESULT STDMETHODCALLTYPE ExpandToEnclosingUnit(TextUnit) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE ExpandToEnclosingUnit(TextUnit unit) override;
     HRESULT STDMETHODCALLTYPE FindAttribute(TEXTATTRIBUTEID, VARIANT, BOOL, IUIAutomationTextRange**) override { return E_NOTIMPL; }
     HRESULT STDMETHODCALLTYPE FindText(BSTR, BOOL, BOOL, IUIAutomationTextRange**) override { return E_NOTIMPL; }
     HRESULT STDMETHODCALLTYPE GetAttributeValue(TEXTATTRIBUTEID, VARIANT*) override { return E_NOTIMPL; }
@@ -75,6 +75,8 @@ struct Provider final : IUIAutomationTextPattern2 {
     int caretPosition = 0, caretWidth = 0, caretReads = 0;
     HRESULT caretStatus = S_OK;
     std::vector<int> caps;
+    // Where the provider's laid-out lines start, from the field's start; none: it has no lines.
+    std::vector<int> lines;
     std::vector<std::array<int,2>> readSpans;
     std::vector<std::unique_ptr<Range>> ranges;
     Selection selected{*this};
@@ -141,6 +143,15 @@ HRESULT Range::MoveEndpointByUnit(TextPatternRangeEndpoint e, TextUnit unit, int
     const auto requested = static_cast<int64_t>(endpoint(e)) + static_cast<int64_t>(count) * owner.unitSize;
     const int target = static_cast<int>(std::clamp<int64_t>(requested, 0, static_cast<int64_t>(owner.text.size())));
     *moved = (target - endpoint(e)) / owner.unitSize; set(e, target); return S_OK;
+}
+HRESULT Range::ExpandToEnclosingUnit(TextUnit unit) {
+    if (unit != TextUnit_Line || owner.lines.empty()) return E_NOTIMPL;
+    int lineStart = owner.docStart, lineEnd = owner.docEnd;
+    for (const int line : owner.lines) {
+        if (owner.docStart + line <= start) lineStart = owner.docStart + line;
+        else { lineEnd = owner.docStart + line; break; }
+    }
+    start = lineStart; end = lineEnd; return S_OK;
 }
 HRESULT Range::GetText(int maximum, BSTR* result) {
     ++owner.reads; owner.caps.push_back(maximum); owner.readSpans.push_back({start,end});
@@ -428,6 +439,34 @@ int main() {
         expect(!pageChanged.readPage(), "same-length page selection change refused");
         Provider pageOutside(L"plain", 0, 5); pageOutside.selectedStart = 0;
         expect(!pageOutside.readPage() && pageOutside.reads == 0, "page selection outside document refused before text access");
+        // Chromium gives an empty line no character: a caret there sits where the paragraph above
+        // ends, and only its line says it starts one.
+        const std::wstring paragraphs = L"Hi All,\nWhy does it move?\n--";
+        Provider emptyLine(paragraphs, 25, 25); emptyLine.lines = {0, 8, 25, 26};
+        result = emptyLine.read();
+        expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?\n" && result.parts[2] == "\n--",
+            "a caret starting an empty line ends its before-text in a line break");
+        Provider leftOut(paragraphs, 8, 8); leftOut.text.erase(leftOut.docStart + 7, 1); --leftOut.docEnd; --leftOut.selectedStart; --leftOut.selectedEnd;
+        leftOut.lines = {0, 7, 24};
+        result = leftOut.read();
+        expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\n" && result.parts[2] == "Why does it move?\n--",
+            "a caret starting a line whose break was left out gets it back");
+        Provider sentenceEnd(paragraphs, 25, 25); sentenceEnd.lines = {0, 8, 26};
+        result = sentenceEnd.read();
+        expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?", "a caret ending a sentence gets no break");
+        Provider shownBreak(paragraphs, 8, 8); shownBreak.lines = {0, 8, 26};
+        result = shownBreak.read();
+        expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\n", "a line start whose break shows gets no second one");
+        Provider fieldStart(paragraphs, 0, 0); fieldStart.lines = {0, 8, 26};
+        result = fieldStart.read();
+        expect(!result.selectionUnavailable && result.parts[0].empty(), "a caret at the field's start gets no break");
+        Provider selectedLine(paragraphs, 25, 27); selectedLine.lines = {0, 8, 25, 26};
+        result = selectedLine.read();
+        expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?\n" && result.parts[1] == "\n-",
+            "a selection starting a line ends the text before it in a break");
+        Provider noLines(paragraphs, 25, 25);
+        result = noLines.read();
+        expect(!result.selectionUnavailable && result.parts[0] == "Hi All,\nWhy does it move?", "a provider without lines gets no break");
         viewportContracts();
         editContracts();
         std::cout << "UIA and Edit caret acquisition contracts passed\n";
