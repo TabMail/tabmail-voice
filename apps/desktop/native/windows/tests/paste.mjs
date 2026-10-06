@@ -28,14 +28,17 @@ fixtureLines.on("line", (line) => {
   if (readers.length) readers.shift()(reply); else messages.push(reply);
 });
 const next = () => messages.length ? Promise.resolve(messages.shift()) : new Promise((resolve) => readers.push(resolve));
+const methods = new Map();
 function request(method, params = {}) {
   const requestID = ++id;
+  methods.set(requestID, method);
   const result = new Promise((resolve) => pending.set(requestID, resolve));
   helper.stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
   return { id: requestID, result };
 }
 async function command(value) {
   const deadline = Date.now() + 1000;
+  fixtureCommand = value;
   while (true) {
     fixture.stdin.write(`${value}\n`);
     const reply = await next();
@@ -46,7 +49,13 @@ async function command(value) {
   }
 }
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const timeout = setTimeout(() => { helper.kill(); fixture.kill(); process.exitCode = 1; }, 20_000);
+let fixtureCommand = "window";
+// Say what never answered, or a hung run fails without a word.
+const timeout = setTimeout(() => {
+  const stages = errors.match(/^debug paste stage: [a-z-]+$/gmu) ?? [];
+  process.stderr.write(`paste test timed out waiting for ${pending.size ? `helper ${[...pending.keys()].map((key) => `${methods.get(key)} #${key}`).join(", ")}` : "no helper reply"}${readers.length ? `, fixture ${fixtureCommand}` : ""}; last paste stages: ${stages.slice(-4).join(" / ")}\n`);
+  helper.kill(); fixture.kill(); process.exitCode = 1;
+}, 20_000);
 try {
   const { window } = await next();
   const params = (extra = {}) => ({ window, text: "Synthetic inserted text", deadline: Date.now() + 2000, ...extra });

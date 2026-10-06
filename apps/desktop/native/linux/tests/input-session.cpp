@@ -57,9 +57,9 @@ struct Fixture {
                 *interface, &table, this, nullptr, &error.value));
         g_dbus_node_info_unref(info);
     }
-    void owner(bool ours) {
+    void owner(bool ours, const char* format = "text/plain;charset=utf-8") {
         GVariantBuilder dictionary; g_variant_builder_init(&dictionary, G_VARIANT_TYPE_VARDICT);
-        const char* formats[]{"text/plain;charset=utf-8"};
+        const char* formats[]{format};
         g_variant_builder_add(&dictionary, "{sv}", "mime_types", g_variant_new_strv(formats, 1));
         g_variant_builder_add(&dictionary, "{sv}", "session_is_owner", g_variant_new_boolean(ours));
         require(g_dbus_connection_emit_signal(bus.get(), nullptr, InputSession::State::desktop, InputSession::State::clipboard, "SelectionOwnerChanged",
@@ -202,6 +202,16 @@ int main() {
     fixture.copyAfterPublish = true;
     run(77, false);
     require(fixture.publications == 1 && fixture.keys.empty() && !input.state->selection.ours);
+    reset();
+    // Another app's file transfer on the clipboard is replaced like any copy, and never read.
+    {
+        const auto seen = changes;
+        fixture.owner(false, "application/vnd.portal.filetransfer");
+        while (changes == seen) g_main_context_iteration(nullptr, true);
+    }
+    run(93, true);
+    require(fixture.publications == 1 && offered() && fixture.reads == 0);
+    require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {'v', 1}, {'v', 0}, {0xffe3, 0}});
     reset();
     fixture.onKey = [&](int key, unsigned down) { if (key == 0xffe3 && down) inserter.cancel(78); };
     run(78, false);

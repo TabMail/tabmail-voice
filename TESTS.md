@@ -80,7 +80,7 @@ going off after each dictation (the engine's release has no automated test, by t
 - Sign in with an email code in Settings; relaunch — still signed in.
 - The screen reader (ADR-DESK-053), on each platform: Activity Monitor / Task Manager / `ps` shows `voice-screen-reader`, gone after Quit; dictating over a page or document still gives screen context (Show Last Screen Context). Windows and Linux: dictate in a terminal showing a full screen of output; the context has the whole viewport, however long the read took, and the paste is never late.
 - Hold Right Option in: TextEdit, Mail, Thunderbird compose, Safari/Chrome text areas, Slack,
-  VS Code, Terminal. The text appears and the clipboard is unchanged afterwards.
+  VS Code, Terminal. The text appears, and stays on the clipboard afterwards.
 - ⌥-letter while holding Right Option types the special character and inserts nothing.
 - A tap shorter than `minimumHoldDuration` uploads nothing; holding without speaking shows
   "Didn't catch that. Try again." on one line and types nothing.
