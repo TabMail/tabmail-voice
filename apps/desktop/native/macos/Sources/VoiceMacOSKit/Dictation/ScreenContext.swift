@@ -112,15 +112,6 @@ struct ScreenContext: Sendable, Equatable {
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
 
-    /// Whether an element can show its text. Web apps keep hidden text in the tree in boxes at most
-    /// a point thin: screen-reader-only labels, list items scrolled out of view (Chromium clips
-    /// them to 0×1 at the list's edge), hover-only actions. A 0×0 frame says nothing (an app
-    /// that reports no size), so it counts as shown.
-    static func isShown(_ frame: CGRect) -> Bool {
-        guard frame.width > 0 || frame.height > 0 else { return true }
-        return min(frame.width, frame.height) > HelperConfig.contextHiddenMaxThickness
-    }
-
     /// The first line whose top is at or below `windowTop`, by binary search over lines whose
     /// tops increase down the text (a terminal's scrollback). Nil when every line is above it.
     static func firstVisibleLine(lineCount: Int, windowTop: CGFloat, lineTop: (Int) -> CGFloat?) -> Int? {

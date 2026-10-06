@@ -133,28 +133,38 @@ struct ScreenContextTests {
     // MARK: What is read
 
     /// Web apps keep hidden text in boxes at most a point thin (frames measured in Slack and
-    /// Chrome 2026-09-26); a 0×0 frame says nothing and counts as shown.
+    /// Chrome 2026-09-26); a 0×0 frame says nothing and counts as shown. The shared core decides,
+    /// with this helper's thinness.
     @Test func textInAPointThinBoxIsHidden() throws {
-        #expect(!ScreenContext.isShown(CGRect(x: 945, y: 234, width: 147, height: 1)))  // scrolled out of Slack's list
-        #expect(!ScreenContext.isShown(CGRect(x: 2099, y: 278, width: 0, height: 1)))   // scrolled out in Chrome
-        #expect(!ScreenContext.isShown(CGRect(x: 1477, y: 774, width: 1, height: 36)))  // hover-only action
-        #expect(!ScreenContext.isShown(CGRect(x: 797, y: 146, width: 1, height: 1)))    // screen-reader-only
-        #expect(ScreenContext.isShown(CGRect(x: 868, y: 874, width: 52, height: 25)))
-        #expect(ScreenContext.isShown(CGRect(x: 0, y: 0, width: 2, height: 2)))
-        #expect(ScreenContext.isShown(.zero))
+        func action(_ frame: CGRect) throws -> SharedWalk.Step.Action {
+            try SharedWalk.node(.init(role: "text", inPage: true, frame: frame, window: nil)).action
+        }
+        #expect(try action(CGRect(x: 945, y: 234, width: 147, height: 1)) == .skip)   // scrolled out of Slack's list
+        #expect(try action(CGRect(x: 2099, y: 278, width: 0, height: 1)) == .skip)    // scrolled out in Chrome
+        #expect(try action(CGRect(x: 1477, y: 774, width: 1, height: 36)) == .skip)   // hover-only action
+        #expect(try action(CGRect(x: 797, y: 146, width: 1, height: 1)) == .skip)     // screen-reader-only
+        #expect(try action(CGRect(x: 868, y: 874, width: 52, height: 25)) == .text)
+        #expect(try action(CGRect(x: 0, y: 0, width: 2, height: 2)) == .text)
+        #expect(try action(.zero) == .text)
     }
 
     /// In web content controls and toolbars are read; in native apps they stay skipped, and
-    /// images, menus and scroll bars everywhere.
+    /// images, menus and scroll bars everywhere: this helper's AX roles as the shared core's.
     @Test func controlsAndToolbarsAreReadOnlyInWebContent() throws {
-        for role in ["AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXToolbar"] {
-            #expect(!ScreenContextReader.isSkipped(role, inWeb: true))
-            #expect(ScreenContextReader.isSkipped(role, inWeb: false))
+        func action(_ role: String, inWeb: Bool) throws -> SharedWalk.Step.Action {
+            try SharedWalk.node(.init(role: HelperConfig.contextRoles[role] ?? "other", inPage: inWeb, frame: nil, window: nil)).action
         }
+        for role in ["AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton"] {
+            #expect(try action(role, inWeb: true) == .caption)
+            #expect(try action(role, inWeb: false) == .skip)
+        }
+        #expect(try action("AXToolbar", inWeb: true) == .descend)
+        #expect(try action("AXToolbar", inWeb: false) == .skip)
         for role in ["AXImage", "AXMenu", "AXMenuItem", "AXMenuBar", "AXScrollBar", "AXSlider", "AXIncrementor"] {
-            #expect(ScreenContextReader.isSkipped(role, inWeb: true))
+            #expect(try action(role, inWeb: true) == .skip)
         }
-        #expect(!ScreenContextReader.isSkipped("AXStaticText", inWeb: false))
+        #expect(try action("AXStaticText", inWeb: false) == .text)
+        #expect(try action("AXGroup", inWeb: false) == .descend)
     }
 
     /// A web control's title is text drawn in it only when it has no description: Slack's message

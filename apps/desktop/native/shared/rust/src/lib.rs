@@ -17,6 +17,7 @@ mod source_window;
 pub mod source;
 
 mod viewport;
+mod walk;
 
 #[cfg(test)]
 mod allocation_tests;
