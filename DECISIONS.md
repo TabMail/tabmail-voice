@@ -429,8 +429,11 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   inside a key wrapped at the caret would split it into halves no pattern matches (a reviewer of the
   Mac's first version showed both halves leaving unredacted), and so would one between a field's
   key and its label in the block above. Only the whole screen shows the second, so the render
-  decides: it redacts the screen without a break just before the caret, and takes the break out
-  where the redactor places the caret inside a match, or the redaction fails. Owner, 2026-10-06: the paragraph rule
+  decides: it redacts the screen without a break just before the caret too, and where the redactor
+  places the caret inside a match there, neither text can be trusted alone. The break may be one the
+  text holds, and taking that out can join two keys into one match that hides the second's start. So
+  the caret's text is withheld there (a selection becomes the refusal marker), and a block that reads
+  differently with and without the break refuses the read. Owner, 2026-10-06: the paragraph rule
   is the stricter one and holds on every platform; the Mac's own rule (`MarkerCaretSource`) moves
   to the core's after the Chrome caret change lands. Left: a soft wrap inside a long word, and a
   break Chromium leaves out further back than the caret's line.)*

@@ -98,6 +98,13 @@ int main() {
         large.elements[0] = Element{std::string(30, 'a'), -1, std::nullopt, {}};
         flat = flattenHypertext(large, 0, 100, 20);
         expect(!flat.complete && large.reads == 0, "an element larger than the budget is never read");
+        // The second paragraph fits the whole budget but not what the first left of it: it is never read.
+        Fake rest;
+        rest.elements[0] = Element{object + object, -1, std::nullopt, {{0, 1}, {1, 2}}, true};
+        rest.elements[1] = Element{"aaaaaaaaaa", -1, std::nullopt, {}, true};
+        rest.elements[2] = Element{"bbbbbbbbbb", -1, std::nullopt, {}, true};
+        flat = flattenHypertext(rest, 0, 100, 20);
+        expect(!flat.complete && rest.reads == 2, "an element larger than the budget left is never read");
         // GTK's labels (gtklabelaccessible.c): a link's text is inline, and its element is the label
         // itself. A link whose text is no embedded object is read as the text it is.
         Fake label;

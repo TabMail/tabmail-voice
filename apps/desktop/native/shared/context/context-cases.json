@@ -1002,7 +1002,7 @@
       }
     },
     {
-      "name": "a break before a caret inside a secret is taken out, so the secret is redacted whole",
+      "name": "a caret inside a secret once the break before it is taken out is withheld",
       "request": {
         "blocks": [],
         "caret": [
@@ -1013,14 +1013,15 @@
       },
       "expected": {
         "caret": [
-          "Reply. password=[redacted]",
           "",
-          " after"
-        ]
+          "",
+          ""
+        ],
+        "selectionRedacted": false
       }
     },
     {
-      "name": "a break before a caret inside a secret that starts in the block above is taken out",
+      "name": "a caret inside a secret that starts in the block above, once the break before it is taken out, is withheld",
       "request": {
         "blocks": [
           {
@@ -1039,12 +1040,49 @@
         ]
       },
       "expected": {
-        "rendered": "Authorization: Bearer\n» [redacted]‸ thanks",
+        "rendered": "Authorization: Bearer\n» ‸",
         "caret": [
-          "[redacted]",
           "",
-          " thanks"
+          "",
+          ""
         ]
+      }
+    },
+    {
+      "name": "a break of the text's own that two keys would be joined across withholds the caret, so neither key is shown in part",
+      "request": {
+        "blocks": [],
+        "caret": [
+          "ghp_AAAAAAAAAAAAAAAAAAAA\n",
+          "",
+          "ghp_0123456789abcdefXYZW"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "a selection after a break withheld with the caret is the refusal marker",
+      "request": {
+        "blocks": [],
+        "caret": [
+          "ghp_AAAAAAAAAAAAAAAAAAAA\n",
+          "ghp_0123456789abcdefXYZW",
+          " after"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "",
+          "[redacted]",
+          ""
+        ],
+        "selectionRedacted": true
       }
     },
     {

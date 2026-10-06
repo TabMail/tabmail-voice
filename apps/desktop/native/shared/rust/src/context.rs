@@ -417,7 +417,8 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .chars()
             .last()
             .is_some_and(|last| !matches!(last, '\n' | '\r' | '\u{2028}' | '\u{2029}'));
-        // The render, which redacts the whole screen, takes it out again where it splits a secret.
+        // The render, which redacts the whole screen, withholds the caret where the break may split a
+        // secret.
         if starts_paragraph && unbroken {
             parts[0].push('\n');
             if parts[0].len() > SOURCE_WINDOW_BYTES {
@@ -665,7 +666,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         return Err(1);
     }
     if let Some(caret_value) = request.get("caret").or(projected.then_some(&empty_caret)) {
-        let mut caret = read_caret(caret_value)?;
+        let caret = read_caret(caret_value)?;
         let block_source_bytes = blocks
             .iter()
             .filter(|b| b.kind != "caret")
@@ -698,11 +699,15 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         if caret_index == blocks.len() {
             lines.push(caret.clone());
         }
-        // A break just before the caret (the left-out one a caret window added, or the text's own)
-        // stays only where the caret, without it, is outside every secret on the screen: a break
-        // there would split what the redactor has to see whole, a key soft-wrapped at the caret or
-        // one in a field under its label's block. A caret the redactor places inside a match, or a
-        // redaction that fails, loses it (ADR-DESK-007, 2026-10-06).
+        // A break just before the caret is either the left-out one a caret window added or the
+        // text's own, and neither text can be trusted alone where the caret, without the break, is
+        // inside a match: an added break would split a secret the redactor has to see whole (a key
+        // soft-wrapped at the caret, or one in a field under its label's block), and taking out the
+        // text's own can join two keys into one match that hides the second's start. There the
+        // caret's text is withheld, and the rest must read the same either way, or nothing is read
+        // (ADR-DESK-007, 2026-10-06).
+        let redacted = privacy::redact(&lines).map_err(|_| 3u32)?;
+        let mut withheld = false;
         if caret[0].ends_with('\n') {
             let mut joined = lines.clone();
             joined[caret_index][0].pop();
@@ -716,16 +721,27 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 })
                 .sum::<usize>()
                 + joined[caret_index][0].encode_utf16().count();
-            if !matches!(
-                privacy::redact_anchored(&joined, &[anchor]),
-                Ok((_, anchors)) if anchors.first().is_some_and(Option::is_some)
-            ) {
-                caret[0].pop();
-                lines = joined;
+            let (without, anchors) =
+                privacy::redact_anchored(&joined, &[anchor]).map_err(|_| 3u32)?;
+            if anchors.first().is_none_or(Option::is_none) {
+                let differs = (0..redacted.len())
+                    .any(|index| index != caret_index && redacted[index] != without[index]);
+                if differs {
+                    return Err(3);
+                }
+                withheld = true;
             }
         }
-        let redacted = privacy::redact(&lines).map_err(|_| 3u32)?;
-        let mut around = redacted[caret_index].clone();
+        let mut around = if withheld {
+            let selected = if caret[1].is_empty() {
+                ""
+            } else {
+                privacy::PLACEHOLDER
+            };
+            vec![String::new(), selected.to_owned(), String::new()]
+        } else {
+            redacted[caret_index].clone()
+        };
         let changed = around[1] != caret[1];
         if changed && around[1].trim_matches(whitespace).is_empty() {
             around[1] = privacy::PLACEHOLDER.into();
@@ -936,8 +952,8 @@ mod budget_tests {
         assert!(reply["caret"][0].as_str().unwrap().ends_with("bbb\n"));
         assert!(!reply.to_string().contains("G7h8I9j0"));
     }
-    /// A key soft-wrapped at a caret said to start a paragraph leaves the helper redacted whole:
-    /// the break that would split it is not added, so neither half reaches the reply.
+    /// A key soft-wrapped at a caret said to start a paragraph never reaches the reply in halves:
+    /// without the break the caret is inside it, so the caret's text is withheld.
     #[test]
     fn a_secret_wrapped_at_the_caret_is_redacted_whole() {
         let (head, tail) = ("Key ghp_0123456789", "abcdefghijKLMNOP rest");
@@ -950,11 +966,11 @@ mod budget_tests {
             !text.contains("0123456789") && !text.contains("abcdefghij"),
             "{text}"
         );
-        assert!(text.contains(privacy::PLACEHOLDER), "{text}");
+        assert_eq!(reply["caret"], json!(["", "", ""]));
     }
     /// A key in a field under its label's block, with the caret said to start a paragraph inside
     /// it: the caret's own text holds no secret, so only the whole screen shows that the break
-    /// would split one, and the render takes it out.
+    /// would split one, and the render withholds the caret's text.
     #[test]
     fn a_secret_under_its_label_block_is_not_split_by_the_break() {
         let window = call(
@@ -965,7 +981,41 @@ mod budget_tests {
         );
         let text = reply.to_string();
         assert!(!text.contains("1B2c3D4"), "{text}");
-        assert!(text.contains(privacy::PLACEHOLDER), "{text}");
+        assert_eq!(reply["caret"], json!(["", "", ""]));
+        assert!(text.contains("Authorization: Bearer"), "{text}");
+    }
+    /// Two keys on lines of their own, the caret at the second's start, whether the break between
+    /// them is the text's own or one the caret window added: joined, the first key's match would
+    /// take the second's prefix, and split, an added break would cut a key the text holds whole.
+    /// Neither key reaches the reply, whole or in part.
+    #[test]
+    fn two_keys_at_a_break_are_never_shown_in_part() {
+        let (first, second) = ("ghp_AAAAAAAAAAAAAAAAAAAA", "ghp_0123456789abcdefXYZW");
+        let added = call(
+            json!({"caretWindow":{"parts":[first,"",second],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
+        );
+        for caret in [
+            json!([format!("{first}\n"), "", second]),
+            added["parts"].clone(),
+        ] {
+            let text =
+                call(json!({"blocks":[{"kind":"text","text":"Keys"}],"caret":caret})).to_string();
+            assert!(
+                !text.contains("AAAAAAAAAAAA") && !text.contains("0123456789abcdef"),
+                "{text}"
+            );
+            assert!(text.contains("Keys"), "{text}");
+        }
+    }
+    /// Key lines whose last line the caret starts a paragraph inside: joined, the block above is a
+    /// key line too and is redacted, split, it is not. A block that reads differently either way
+    /// can't be shown, so nothing is.
+    #[test]
+    fn a_block_the_break_decides_the_redaction_of_refuses_the_read() {
+        let line = "QUJD".repeat(16);
+        let caret = json!([format!("{}\n", &line[..30]), "", &line[30..60]]);
+        let request = json!({"blocks":[{"kind":"text","text":line},{"kind":"caret","text":"ignored"}],"caret":caret});
+        assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(3));
     }
     #[test]
     fn caret_window_never_returns_a_partial_selection_at_an_open_edge() {
