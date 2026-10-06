@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "Privacy/ScreenAccess.h"
+#include <algorithm>
 #include <sstream>
 #include <fstream>
 #include "Privacy/PageScan.h"
@@ -103,10 +104,11 @@ static int run(int argc, char** argv) {
         bool withinBudget() { return budget && budget--; }
         bool isPassword(Node n) { return nodes.at(n).password; }
         auto page(Node n) { expect(!nodes.at(n).password, "protected page property never requested"); return nodes.at(n).page; }
-        std::vector<Node> children(Node n, size_t) {
+        std::vector<Node> children(Node n, size_t limit) {
             expect(!nodes.at(n).password, "protected children never requested");
             ++childReads;
-            return nodes.at(n).children;
+            const auto& all = nodes.at(n).children;
+            return {all.begin(), all.begin() + static_cast<std::ptrdiff_t>(std::min(limit, all.size()))};
         }
     };
     using voice::privacy::PageLook;
@@ -132,6 +134,8 @@ static int run(int argc, char** argv) {
     Tree timed{{{false, {}, {1}}, {false, {}, {2}}, {false, {}, {}}}};
     timed.budget = 2;
     expect(voice::privacy::lookForExcludedPage(timed, 0, policy, true) == PageLook::notSeenWhole, "out of time is not seen whole");
+    timed.budget = 3;
+    expect(voice::privacy::lookForExcludedPage(timed, 0, policy, true) == PageLook::notSeenWhole, "out of time after the last listing is not seen whole");
     timed.budget = ~0u;
     expect(voice::privacy::lookForExcludedPage(timed, 0, policy, true) == PageLook::none, "seen whole within budget");
     for (const int width : {4998, 4999}) {
@@ -140,6 +144,14 @@ static int run(int argc, char** argv) {
         const auto look = voice::privacy::lookForExcludedPage(wide, 0, policy, true);
         expect(width == 4998 ? look == PageLook::none : look == PageLook::notSeenWhole, "the node budget decides whether it was seen whole");
     }
+    // A list wider than the node budget is listed only in part, and an excluded page in that part is
+    // still found: the go-on callers (the focus and correction-window looks) refuse on it.
+    Tree wideList{{{false, {}, {1}}, {false, {}, {}}}};
+    for (int item = 2; item < 6002; ++item) {
+        wideList.nodes[1].children.push_back(item);
+        wideList.nodes.push_back({false, item == 12 ? std::optional{refused} : std::nullopt, {}});
+    }
+    expect(voice::privacy::lookForExcludedPage(wideList, 0, policy, true) == PageLook::excluded, "an excluded page in a list wider than the budget is found");
     std::cout << "Screen handlers refuse excluded and malformed requests before any read\n";
     return 0;
 }

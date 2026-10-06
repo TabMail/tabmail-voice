@@ -39,6 +39,7 @@ template<class Tree>
 PageLook lookForExcludedPage(Tree& tree, typename Tree::Node root, const ScreenExclusions& exclusions, bool intoPages) {
     std::vector<typename Tree::Node> stack{root};
     size_t visited = 0;
+    bool incomplete = false;
     while (!stack.empty()) {
         if (visited >= 5000 || !tree.withinBudget()) return PageLook::notSeenWhole;
         auto node = std::move(stack.back());
@@ -52,9 +53,10 @@ PageLook lookForExcludedPage(Tree& tree, typename Tree::Node root, const ScreenE
         }
         auto children = tree.children(node, 5000 - visited - stack.size());
         for (auto it = children.rbegin(); it != children.rend(); ++it) stack.push_back(std::move(*it));
-        // At the exact limit we cannot establish there were no omitted children.
-        if (visited + stack.size() >= 5000) return PageLook::notSeenWhole;
+        // At the exact limit we cannot establish there were no omitted children; the ones listed are
+        // still looked through, so an excluded page among them is found.
+        if (visited + stack.size() >= 5000) incomplete = true;
     }
-    return tree.withinBudget() ? PageLook::none : PageLook::notSeenWhole;
+    return !incomplete && tree.withinBudget() ? PageLook::none : PageLook::notSeenWhole;
 }
 }

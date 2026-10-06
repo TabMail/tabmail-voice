@@ -97,6 +97,9 @@ int main() {
         expect(rowText(voice::ContextFrame{0, 0, 100, 100}) == "same" && tree.counts == 2, "off-window semantic descendants are not read");
         last.bounds = voice::ContextFrame{0, 0, 20, 1}; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2, "clipped semantic descendants are not read");
+        last.bounds = voice::ContextFrame{0, 0, 0, 0}; tree = Tree{};
+        expect(rowText() == "same | must not be read after refusal", "a 0x0 cell in a row counts as shown");
+        last.bounds.reset();
         row.label = "Root label"; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
         tree = Tree{}; visited = 0;
@@ -259,6 +262,16 @@ int main() {
         expect(text.find("Unsized words") != std::string::npos, "a 0x0 box counts as shown");
         expect(text.find("Thin words") == std::string::npos, "a box a pixel thin shows nothing");
         expect(text.find("Listed message") != std::string::npos, "a hidden box is walked into");
+        // A row's cells count toward the walk's 5000 nodes: one that uses them up stops the walk.
+        std::vector<Element> cells(4997, Element{ATSPI_ROLE_PANEL, "", {}, {}});
+        Element wide{ATSPI_ROLE_TABLE_ROW, "", {}, {}};
+        for (auto& cell : cells) wide.children.push_back(&cell);
+        Element after{ATSPI_ROLE_STATIC, "Unreached words", {}, {}};
+        window.children = {&field, &wide, &after}; tree = Tree{};
+        result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
+        expect(result["summary"].get<std::string>().find("stopped: node budget") != std::string::npos &&
+            result["renderedText"].get<std::string>().find("Unreached words") == std::string::npos,
+            "a walk out of nodes says so in the words every platform uses");
     }
     Element checkbox{ATSPI_ROLE_CHECK_BOX, "Include replies", {}, {}};
     page.page = voice::hostOfAddress("https://allowed.example/"); page.children = {&field, &checkbox}; window.children = {&page}; tree = Tree{};
