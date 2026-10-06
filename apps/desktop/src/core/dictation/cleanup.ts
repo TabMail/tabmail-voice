@@ -53,8 +53,9 @@ export const DictationCleanup = {
 
 /** Delimiters a dictation is spaced from when the caret is right after one (owner, 2026-10-05). */
 const spacedDelimiter = /[,;:.!?]$/u;
-/** What a dictation starts with to be spaced from one: a letter, a digit, an opening bracket or quote. */
-const spacedStart = /^[\p{L}\p{N}\p{Ps}\p{Pi}]/u;
+/** What a dictation starts with to be spaced from one: a letter, a digit, a currency sign, an opening
+ * bracket or quote (straight quotes and Spanish ¿ ¡ among them). */
+const spacedStart = /^[\p{L}\p{N}\p{Sc}\p{Ps}\p{Pi}"'¿¡]/u;
 
 /** `text` as pasted at a caret right after `textBeforeCaret` (the focused field's, read at key-down):
  * with a space ahead of it when that ends with a delimiter, so "Note:" and "buy milk" give

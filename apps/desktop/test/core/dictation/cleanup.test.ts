@@ -269,6 +269,15 @@ describe("spacedFromCaret", () => {
     ["Note:", "(optional)", " (optional)"],
     ["Note:", "\u201cquoted\u201d", " \u201cquoted\u201d"],
     ["Note:", "Émile", " Émile"],
+    ["He said,", "\"I'll be there.\"", " \"I'll be there.\""],
+    ["Note:", "'quoted'", " 'quoted'"],
+    ["Hola Juan,", "¿cómo estás?", " ¿cómo estás?"],
+    ["¡Hola!", "¡Qué bien!", " ¡Qué bien!"],
+    ["Total:", "$50", " $50"],
+    ["Note:", "«Bonjour»", " «Bonjour»"],
+    // The first character as a reader sees it, not its first UTF-16 unit; only it is checked for a script without spaces.
+    ["Note:", "𝐀lpha", " 𝐀lpha"],
+    ["Note:", "OK 牛乳", " OK 牛乳"],
   ])("after %j, %j starts with a word or an opening mark: %j", (before, text, expected) => {
     expect(spacedFromCaret(before, text)).toBe(expected);
   });
@@ -281,6 +290,8 @@ describe("spacedFromCaret", () => {
     ["with no field read", "", "buy milk"],
     ["before punctuation", "Note:", ", and milk"],
     ["before a closing bracket", "Note:", ") and milk"],
+    ["before a closing quote", "Note:", "\u201d and milk"],
+    ["before a delimiter", "Note:", "; and milk"],
     ["before a script written without spaces", "Note:", "牛乳を買う"],
     ["for nothing", "Note:", ""],
   ])("leaves the text as it is %s", (_name, before, text) => {

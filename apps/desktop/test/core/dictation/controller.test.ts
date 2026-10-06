@@ -610,6 +610,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual([transcript]);
     });
 
+    /** The paste never waits for the screen read: one not done by then adds no space, and its
+     * finishing later pastes nothing more. */
+    test("a screen read not done by the paste adds no space and is not waited for", async () => {
+      prefs.value = { ...defaultSettings(), smartDictation: false };
+      transcription.enqueue(200, { text: transcript });
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      const read = deferred<ScreenRead | null>();
+      controller.captureContext = () => read.promise;
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+      expect(pastes).toEqual([transcript]);
+
+      read.resolve(blankScreen({ appName: "Example Notes", textBeforeCaret: "Note:", renderedText: "» Note:‸" }));
+      expect(await throughout(100, () => pastes.length === 1)).toBe(true);
+      expect(pastes).toEqual([transcript]);
+    });
+
     /** Only a dictation is spaced: text copied for another app, and agent mode's, go as written. */
     test.each<["dictation" | "agent"]>([["dictation"], ["agent"]])("%s text after a delimiter is not spaced when copied or written by the agent", async (mode) => {
       prefs.value = { ...defaultSettings(), enabledTools: ["compose"] };
