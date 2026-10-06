@@ -152,6 +152,53 @@ fn the_right_half_of_a_wide_character_is_part_of_it() {
     assert_eq!(output["caret"]["offset"], 1);
 }
 #[test]
+fn dropped_halves_move_offsets_in_every_unit_and_across_connected_runs() {
+    let caret = |native: &str, offset: usize, unit: &str| {
+        let mut input = request(
+            vec![surface(1, vec![run(1, native, false)])],
+            exact(1, 1, offset),
+        );
+        input["offsetUnit"] = json!(unit);
+        result(&input)["caret"]["offset"].clone()
+    };
+    // A half after a character outside the BMP: native UTF-16 offsets on either side of it.
+    for (native, expected) in [(2, 2), (3, 2), (4, 3)] {
+        assert_eq!(caret("👍\u{0}x", native, "utf16"), expected, "{native}");
+    }
+    // Scalar native offsets, mapped to UTF-16 in the cleaned text.
+    for (native, expected) in [(1, 2), (2, 2), (3, 3), (5, 5), (6, 5), (7, 6)] {
+        assert_eq!(
+            caret("👍\u{0}x 日\u{0}y", native, "scalar"),
+            expected,
+            "{native}"
+        );
+    }
+    // A run connected to one with dropped halves starts where the cleaned text ends.
+    let mut s = surface(
+        1,
+        vec![run(1, "日\u{0}本\u{0}", false), run(2, "ab cd", true)],
+    );
+    s["selection"] =
+        json!({"complete":true,"ranges":[{"run":1,"start":2,"end":4},{"run":2,"start":0,"end":2}]});
+    let output = result(&request(vec![s], exact(1, 2, 3)));
+    assert_eq!(output["caret"]["offset"], 3);
+    assert_eq!(
+        output["caret"]["renderedOffset"].as_u64().unwrap(),
+        output["surfaces"][0]["runs"][1]["renderedOffset"]
+            .as_u64()
+            .unwrap()
+            + 3
+    );
+    assert_eq!(output["selectedText"], "本ab");
+    assert_eq!(output["selectionComplete"], true);
+    // After ASCII punctuation, as after a letter, a NUL is a blank.
+    let output = result(&request(
+        vec![surface(1, vec![run(1, "a:\u{0}b.\u{0}c", false)])],
+        json!({"status":"unavailable"}),
+    ));
+    assert_eq!(output["surfaces"][0]["runs"][0]["text"], "a: b. c");
+}
+#[test]
 fn blank_cells_are_seen_by_redaction() {
     // Redaction reads the blanks: a token after a skipped cell is still a bearer token, and a value
     // of wide characters stays one value.
