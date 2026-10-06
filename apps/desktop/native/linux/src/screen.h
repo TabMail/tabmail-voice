@@ -10,6 +10,7 @@
 #include "../../shared/privacy/ScreenPrivacy.h"
 #include "../../shared/context/screen_context.h"
 #include "../../shared/context/walk.h"
+#include "hypertext.h"
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -118,7 +119,12 @@ public:
         Error error;
         const auto count = atspi_text_get_character_count(text.get(), &error.value);
         error.check();
-        if (count < 0 || count > maxLength) return {};
+        if (count < 0) return {};
+        if (const auto rich = hypertext(node)) {
+            if (!rich->complete || rich->length > static_cast<size_t>(maxLength)) return {};
+            return rich->text;
+        }
+        if (count > maxLength) return {};
         return range(text, 0, count);
     }
     std::optional<std::string> screenText(const Node& node) {
@@ -132,6 +138,10 @@ public:
             if (count < 0) throw std::runtime_error("invalid text count");
             return count;
         };
+        if (const auto rich = hypertext(node)) {
+            if (!rich->complete) return {};
+            return readScalarBlock(rich->length, [&](size_t from, size_t to) { return scalarSlice(rich->text, from, to); }).text;
+        }
         const auto count = characterCount();
         const auto result = readScalarBlock(count, [&](size_t from, size_t to) {
             if (characterCount() != count) throw std::runtime_error("static text changed");
@@ -153,6 +163,15 @@ public:
             if (count < 0) throw std::runtime_error("invalid field count");
             return count;
         };
+        // A rich editor's text is read whole, or not at all: its embedded elements have no
+        // visible ranges of the field's own.
+        if (const auto rich = hypertext(node)) {
+            if (!rich->complete) return;
+            const auto whole = readScalarField(rich->length, 0, rich->length, [&](size_t from, size_t to) { return scalarSlice(rich->text, from, to); });
+            if (whole.complete && core::request({{"fieldPlan", {{"text", whole.text}}}}, voice_core_context_json).at("useWhole").get<bool>())
+                context.appendField({"", whole.text, ""}, geometry);
+            return;
+        }
         const auto count = characterCount();
         const auto read = [&](size_t from, size_t to) {
             if (characterCount() != count) throw std::runtime_error("field changed");
@@ -397,6 +416,27 @@ public:
         };
         const auto initial = snapshot();
         if (!initial) return unavailable();
+        // Only a rich editor's caret is read through its elements: a page in focus (Chromium gives its
+        // document hypertext too) is read by its own text, as any element, not walked element by element.
+        if (hasLinks(node) && editable(node)) {
+            const auto rich = hypertext(node);
+            if (!rich || !rich->complete) return unavailable();
+            const auto [count, offset, selections, from, to] = *initial;
+            (void)count; (void)offset;
+            // A selection the elements' parts lost is not read as none.
+            if (selections && from < to && rich->selection && rich->selection->first == rich->selection->second) return unavailable();
+            // The root's selection is in its own offsets; the elements' own parts place it.
+            std::optional<std::pair<size_t, size_t>> range;
+            if (selections && rich->selection) range = rich->selection;
+            else if (!selections && rich->caret) range = std::pair{*rich->caret, *rich->caret};
+            if (!range) return unavailable();
+            const auto result = readScalarCaret(rich->length, range->first, range->second,
+                [&](size_t begin, size_t end) { return scalarSlice(rich->text, begin, end); });
+            const auto final = snapshot();
+            check();
+            if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return unavailable();
+            return result;
+        }
         const auto [count, offset, selections, from, to] = *initial;
         // The provider owns scalar offsets and transport; Rust owns every range,
         // byte budget, selection refusal and incomplete-edge decision.
@@ -411,6 +451,101 @@ public:
     }
 
 private:
+    // An element whose text holds embedded objects (a rich editor's paragraphs and links).
+    bool hasLinks(const Node& node) {
+        check();
+        auto links = own(atspi_accessible_get_hypertext_iface(node.get()));
+        if (!links) return false;
+        Error error;
+        const int count = atspi_hypertext_get_n_links(links.get(), &error.value);
+        error.check(); check();
+        return count > 0;
+    }
+    struct HypertextSource {
+        using Node = voice::Node;
+        LiveScreenTree& tree;
+        std::optional<std::string> text(const Node& node, size_t bytes) {
+            auto text = own(atspi_accessible_get_text_iface(node.get()));
+            if (!text) return std::string();
+            tree.check(); Error error;
+            const auto count = atspi_text_get_character_count(text.get(), &error.value);
+            error.check();
+            if (count < 0) throw std::runtime_error("invalid text count");
+            // Each scalar is at least a byte: more of them than `bytes` are not asked for.
+            if (static_cast<size_t>(count) > bytes) return {};
+            return tree.range(text, 0, count);
+        }
+        bool same(const Node& first, const Node& second) { return tree.same(first, second); }
+        int caret(const Node& node) {
+            auto text = own(atspi_accessible_get_text_iface(node.get()));
+            if (!text) return -1;
+            tree.check(); Error error;
+            const auto offset = atspi_text_get_caret_offset(text.get(), &error.value);
+            error.check(); tree.check();
+            return offset;
+        }
+        std::optional<std::pair<int, int>> selection(const Node& node) {
+            auto text = own(atspi_accessible_get_text_iface(node.get()));
+            if (!text) return {};
+            tree.check(); Error error;
+            const auto count = atspi_text_get_n_selections(text.get(), &error.value);
+            error.check();
+            if (count == 0) return {};
+            if (count != 1) throw std::runtime_error("hypertext selection count");
+            auto range = atspi_text_get_selection(text.get(), 0, &error.value);
+            std::unique_ptr<AtspiRange, decltype(&g_free)> owned(range, &g_free);
+            error.check(); tree.check();
+            if (!range || range->start_offset < 0 || range->end_offset < range->start_offset) throw std::runtime_error("hypertext selection");
+            return std::pair{range->start_offset, range->end_offset};
+        }
+        std::optional<std::vector<std::pair<int, Node>>> links(const Node& node, size_t most) {
+            std::vector<std::pair<int, Node>> result;
+            auto links = own(atspi_accessible_get_hypertext_iface(node.get()));
+            if (!links) return result;
+            tree.check(); Error error;
+            const int count = atspi_hypertext_get_n_links(links.get(), &error.value);
+            error.check();
+            if (count < 0) throw std::runtime_error("hypertext link count");
+            if (static_cast<size_t>(count) > most) return {};
+            for (int i = 0; i < count; ++i) {
+                tree.check();
+                auto link = own(atspi_hypertext_get_link(links.get(), i, &error.value));
+                error.check();
+                if (!link) throw std::runtime_error("hypertext link unavailable");
+                const int start = atspi_hyperlink_get_start_index(link.get(), &error.value);
+                error.check();
+                auto child = own(atspi_hyperlink_get_object(link.get(), 0, &error.value));
+                error.check();
+                if (!child || start < 0) throw std::runtime_error("hypertext link unavailable");
+                result.emplace_back(start, std::move(child));
+            }
+            std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            return result;
+        }
+        // A block element starts a line of its own; a link or image joins its line.
+        bool block(const Node& node) {
+            tree.check(); Error error;
+            auto attributes = atspi_accessible_get_attributes(node.get(), &error.value);
+            std::unique_ptr<GHashTable, decltype(&g_hash_table_unref)> owned(attributes, &g_hash_table_unref);
+            error.check();
+            if (const auto display = attributes ? static_cast<const char*>(g_hash_table_lookup(attributes, "display")) : nullptr)
+                return !g_str_has_prefix(display, "inline");
+            const auto kind = tree.role(node);
+            return kind != ATSPI_ROLE_LINK && kind != ATSPI_ROLE_IMAGE;
+        }
+    };
+    // A rich editor's text, its caret and selection placed (hypertext.h); none for any other element.
+    // One the read can't take (too many elements or bytes, or malformed) is not read, and the rest of
+    // the screen is.
+    std::optional<Hypertext> hypertext(const Node& node) {
+        if (!hasLinks(node)) return {};
+        HypertextSource source{*this};
+        static const auto limits = core::request({{"limits", true}}, voice_core_context_json);
+        try {
+            return flattenHypertext(source, node, limits.at("caretSourceElements").get<size_t>(), limits.at("caretSourceBytes").get<size_t>());
+        } catch (const ScreenBudgetExceeded&) { throw; }
+        catch (const std::exception&) { return Hypertext{{}, 0, std::nullopt, std::nullopt, false}; }
+    }
     std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(readMilliseconds());
     void check() const { if (!withinBudget()) throw ScreenBudgetExceeded(); }
     std::string range(const Object<AtspiText>& text, int from, int to) {

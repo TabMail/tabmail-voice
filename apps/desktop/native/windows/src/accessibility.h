@@ -157,7 +157,11 @@ public:
                 refusedPages(window, logical->metadata(), exclusions, 200, true) ||
                 !safeTextSubtree(logical->metadata(), GetTickCount64(), 200)) return {{"value", nullptr}};
             value = logical->value(maxLength);
-        } else {
+        }
+        // IA2 gives a rich editor's paragraphs and links as embedded objects, not their text;
+        // UI Automation gives the text, so such a field is read through it.
+        if (!logical || (value && value->find(L'\uFFFC') != std::wstring::npos)) {
+            value.reset();
             ComPtr<IUIAutomationTextPattern> pattern;
             if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pattern))) && pattern) {
                 ComPtr<IUIAutomationTextRange> document;
@@ -225,6 +229,14 @@ public:
             // window is still read, as for a field read through UI Automation below.
             if (safeTextSubtree(logical->metadata(), started, walk::limits().timeBudgetMilliseconds)) parts = logical->parts(selectionUnavailable, started);
             else std::cerr << "debug accessible text: protected or incomplete subtree\n";
+            // IA2 gives a rich editor's paragraphs and links as embedded objects, not their text;
+            // UI Automation gives the text, so such a field is read through it.
+            if (parts && std::any_of(parts->begin(), parts->end(), [](const std::string& part) { return part.find("\xEF\xBF\xBC") != std::string::npos; })) {
+                std::cerr << "debug accessible text: embedded objects, read by UI Automation\n";
+                selectionUnavailable = false;
+                parts = safeTextSubtree(element.Get(), started, walk::limits().timeBudgetMilliseconds)
+                    ? textParts(element.Get(), selectionUnavailable, started) : std::nullopt;
+            }
         } else if (isEditable) {
             if (safeTextSubtree(element.Get(), started, walk::limits().timeBudgetMilliseconds)) parts = textParts(element.Get(), selectionUnavailable, started);
         } else if (pageInFocus) pageSelection = selectedInPage(element.Get(), exclusions, selectionUnavailable, started);

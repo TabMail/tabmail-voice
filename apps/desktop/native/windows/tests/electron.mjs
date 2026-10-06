@@ -103,6 +103,8 @@ async function main() {
       <h1>Unrelated heading outside focused field</h1>
       <textarea id="editor">Before selected after. 🙂</textarea>
       <div id="rich" contenteditable="true">Rich selected text.</div>
+      <div id="paragraphs" contenteditable="true"><div>Hi All,</div><div><br></div><div>Why does it move?</div><div><br></div><div>--</div></div>
+      <div id="wrapped" contenteditable="true" style="width:120px;word-break:break-all"><div>Hi,</div><div>https://example.com/a/link/longer/than/its/line</div></div>
       <div id="guarded" contenteditable="true">Guarded text <input type="password" value="synthetic-secret"></div>
       <input id="secret" type="password" value="synthetic-secret">
       <input id="readonly" readonly value="synthetic-readonly">
@@ -244,6 +246,36 @@ async function main() {
     assert.ok(rich && rich.renderedText.includes("Unrelated") && !rich.renderedText.includes("synthetic-secret"), "rich editor retains safe visible window context");
     assert.ok(!rich.textBeforeCaret.includes("Unrelated") && !rich.textAfterCaret.includes("Unrelated"), "rich caret text remains scoped to its field");
     await anchor(target, "rich");
+    // A rich editor's paragraphs: IA2 gives each as an embedded object, not its text, so the field is
+    // read through UI Automation. Chromium gives an empty line no character, so the text before a
+    // caret starting an empty line or a paragraph ends in a break, as on the Mac.
+    for (const [line, end, before] of [[3, false, "Hi All,\nWhy does it move?\n"], [1, false, "Hi All,\n"], [2, true, "Hi All,\nWhy does it move?"]]) {
+      await window.webContents.executeJavaScript(`(() => {
+        const field = document.getElementById("paragraphs"), line = field.children[${line}], range = document.createRange();
+        field.focus();
+        if (${end}) range.setStart(line.firstChild, line.firstChild.length); else range.setStart(line, 0);
+        range.collapse(true); getSelection().removeAllRanges(); getSelection().addRange(range);
+      })()`);
+      await delay(150);
+      assert.deepEqual(await request("focusedFieldValue", { window: target, maxLength: 20_000 }), { value: "Hi All,\nWhy does it move?\n--" },
+        "a rich editor's value is its text, not embedded objects");
+      const paragraphs = await request("readScreen");
+      assert.equal(paragraphs?.textBeforeCaret, before, `the text before a caret on line ${line} of a rich editor`);
+      assert.ok(!JSON.stringify(paragraphs).includes("\uFFFC"), "no embedded-object placeholder is read");
+    }
+    // A word longer than its line wraps inside itself: the caret at the wrapped line's start starts no
+    // paragraph, so no break is added.
+    const wrap = await window.webContents.executeJavaScript(`(() => {
+      const field = document.getElementById("wrapped"), text = field.children[1].firstChild, range = document.createRange();
+      const top = (at) => { range.setStart(text, at); range.setEnd(text, at + 1); return range.getBoundingClientRect().top; };
+      let at = 1;
+      while (at < text.length && top(at) === top(0)) ++at;
+      field.focus(); range.setStart(text, at); range.collapse(true); getSelection().removeAllRanges(); getSelection().addRange(range);
+      return { at, text: text.data };
+    })()`);
+    assert.ok(wrap.at > 1 && wrap.at < wrap.text.length, "the fixture's word wraps");
+    await delay(150);
+    assert.equal((await request("readScreen"))?.textBeforeCaret, `Hi,\n${wrap.text.slice(0, wrap.at)}`, "a caret starting a soft-wrapped line gets no break");
     // Compare to the browser's rendered insertion point, not merely the field bounds.
     // A provider can report a plausible rectangle at the wrong end of the field.
     if (!privacyOnly) for (const [direction, text, width] of [
@@ -304,7 +336,7 @@ async function main() {
     const exited = [once(helper, "exit"), once(reader, "exit")]; helper.stdin.end(); reader.stdin.end();
     for (const exit of exited) assert.deepEqual(await exit, [0, null]);
     assert.equal(pending.size, 0);
-    const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: protected or incomplete subtree\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete)\n/gmu, "");
+    const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: (protected or incomplete subtree|embedded objects, read by UI Automation)\n/gmu, "").replace(/^debug caret start: (paragraph [01], line [01]|paragraphs or lines unavailable)\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete)\n/gmu, "");
     assert.equal(logged(stderr), "debug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     assert.equal(logged(readerErrors), "debug screen access: excluded or unknown page not read\n", "the reader's refusals log categories without exposing focused content");
     process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");

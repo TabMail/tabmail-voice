@@ -409,6 +409,50 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   *Every read logs where the caret was placed (offsets and lengths, never text), and why a read
   became unavailable. Windows (UIA) and Linux (AT-SPI) read the caret through other interfaces and
   are not changed.)*
+- *(Amended 2026-10-06: a Chromium rich editor (a `contenteditable`, Gmail's compose) is read
+  around its caret on Windows and Ubuntu, as on the Mac. AT-SPI gives each paragraph or link as an
+  embedded object (U+FFFC) with text of its own; Linux walks them in order (`hypertext.h`) and the
+  core's `hypertext` op joins them, a block on a line of its own. A link is gone into only where
+  its text is U+FFFC and its element is not one the read is already in: GTK's labels give a link's
+  text inline and the label itself as its element, and are read as they are. A caret Chromium gives
+  a text at an element's object, the element reporting none (the caret at the end of the text before
+  a link), is placed just before that element. A selection's start or end Chromium gives at an
+  element's object, the element reporting no part of its own or an empty one, is at the element's end
+  (measured in Chrome on Ubuntu, 2026-10-06, as Chromium's source has it: an endpoint inside an element
+  maps to its object, and one anywhere else gives the element a part): a selection from a paragraph's end starts before the break after it, one
+  ending at the next paragraph holds that break, and one at an image keeps its edge. The caret is read this way
+  only in an editable focus; a page in focus (Chromium gives it document hypertext too) is read by its
+  own text, as any element. A rich text holding
+  more than the caret source's bytes or its own element budget (`caretSourceElements`, 300, in the core:
+  measured in Chrome on Ubuntu, 300 paragraphs read in 0.6–0.7 s and 499 in up to 1.5 s, the whole
+  screen read's time) is
+  not read at all (an element is not asked for its text past the bytes left, nor for its links when it
+  has more than the elements left); nor is one the core refuses to join. Neither
+  fails the rest of the screen read. A selection the editor reports that the elements' parts leave
+  empty makes the caret unavailable rather than a caret with none. Windows reads the field through
+  UIA's TextPattern, which leaves out the break of an empty line: measured on Electron's
+  Chromium, a caret on an empty line sits at the end of the paragraph above, its line starts at
+  the caret and holds only the break, and its paragraph starts before it. So the helper sends what
+  starts at the caret (`caretStarts`: whether a paragraph does, whether a line does, and the line's
+  first bytes, at most `caretLineBytes`), and the core's `caretWindow` adds the break left out
+  when the caret starts a paragraph, or a line holding only a break, and the text before it ends
+  in none. A line a soft wrap starts gets no break: a long link wrapped at the caret stays one
+  line. The break counts within the before-part's budget (one at the limit gives up the part's first
+  character, and its start is then unknown), and never stays at a caret inside a secret: a break
+  inside a key wrapped at the caret would split it into halves no pattern matches (a reviewer of the
+  Mac's first version showed both halves leaving unredacted), and so would one between a field's
+  key and its label in the block above. Only the whole screen shows the second, so the render
+  decides: it redacts the screen without a break just before the caret too, and where the redactor
+  places the caret inside a match there, neither text can be trusted alone. The break may be one the
+  text holds, and taking that out can join two keys into one match that hides the second's start. So
+  the caret's text is withheld there (a selection becomes the refusal marker), and a block that reads
+  differently with and without the break refuses the read. Owner, 2026-10-06: the paragraph rule
+  is the stricter one and holds on every platform; the Mac's own rule (`MarkerCaretSource`) moves
+  to the core's after the Chrome caret change lands. Left: a soft wrap inside a long word, a
+  break Chromium leaves out further back than the caret's line, and on Ubuntu the break before a
+  paragraph a BACKWARD selection ends at the start of (Shift+Up from a line's start): AT-SPI reports it
+  as it does a selection of the line before alone, so that break is not selected. A forward one
+  (Shift+Down) is told apart by the caret at the next paragraph's start, and holds the break.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

@@ -311,7 +311,8 @@ struct RedactorTests {
         context.selectedText = "i9J0k1L2m3N4o5P6\n-----END " + "PRIVATE KEY-----\n"
         context.textAfterCaret = "next"
         reply = context.json
-        #expect(reply["textBeforeCaret"]?.string == gone)
+        // Without the break before it the caret is inside the key, so the text around it is withheld.
+        #expect(reply["textBeforeCaret"]?.string == "")
         #expect(reply["selectedText"]?.string == gone)
         #expect(reply["selectionRedacted"] == .bool(true))
 
