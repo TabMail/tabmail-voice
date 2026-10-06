@@ -655,7 +655,11 @@ private:
             facts->part = true;
             const auto step = walk::node(*facts);
             if (step.action == "refuse") return false;
-            if (step.action == "skip") continue;
+            if (step.action == "skip") {
+                // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                if (!step.look.empty() && walk::look(step.look, lookInside(part.element, walker, started, exclusions)) == "refuse") return false;
+                continue;
+            }
             if (step.action == "field") {
                 // Read by its value, never walked into: one holding an excluded page, or too large
                 // to look through, is not read, and the row says that something there is hidden.
@@ -889,7 +893,11 @@ private:
                 else context.append(ContextKind::caret, caretText, geometry);
                 continue;
             }
-            if (step.action == "skip") continue;
+            if (step.action == "skip") {
+                // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                if (!step.look.empty() && walk::look(step.look, lookInside(entry.element, walker.Get(), started, exclusions)) == "refuse") return refuse();
+                continue;
+            }
             if (type == UIA_DocumentControlTypeId) {
                 ComPtr<IUIAutomationTextPattern> document;
                 if (SUCCEEDED(node->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&document)))) entry.document = document;

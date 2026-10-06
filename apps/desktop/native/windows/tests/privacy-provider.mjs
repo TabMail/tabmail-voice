@@ -57,7 +57,7 @@ let fixture;
 const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 40_000);
 let checks = 0;
 try {
-  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
+  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row", "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
     "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document", "terminal-wide"]) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever

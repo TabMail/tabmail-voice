@@ -99,16 +99,10 @@ enum ScreenContextReader {
     /// it is looked into here first, for pages only: no text is asked for.
     /// `intoPages` false stops at each page that is not excluded, without looking for one framed
     /// in it. Bounded by the walk's node budget and by `seconds` since `started`; past them the
-    /// element is taken to hold none, or, with `unlessSeenWhole`, to hold one: a field is read only
-    /// when all of it was looked through.
+    /// element is taken to hold none.
     static func holdsExcludedPage<Tree: ScreenTree>(_ element: Tree.Element, in tree: Tree, excluding exclusions: ScreenExclusions,
-                                                    intoPages: Bool = true, unlessSeenWhole: Bool = false,
-                                                    within seconds: Double, since started: Date) -> Bool {
-        switch lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) {
-        case .excluded: return true
-        case .none: return false
-        case .notSeenWhole: return unlessSeenWhole
-        }
+                                                    intoPages: Bool = true, within seconds: Double, since started: Date) -> Bool {
+        lookForExcludedPage(in: element, tree, excluding: exclusions, intoPages: intoPages, within: seconds, since: started) == .excluded
     }
 
     /// What a look inside an element for a page of an excluded website found.
@@ -332,6 +326,8 @@ enum ScreenContextReader {
                 case .refuse:
                     return false
                 case .skip:
+                    // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                    if let read = step.look, try look(read) == .refuse { return false }
                     continue
                 case .caret:
                     context.appendCaret(frame: frame)
@@ -380,12 +376,11 @@ enum ScreenContextReader {
                     continue
                 case .caption:
                     if let title = drawnTitle(of: element, in: tree) {
-                        if step.shown == true {
-                            switch try look(.caption) {
-                            case .refuse: return false
-                            case .marker: context.append(.text, context.hiddenMarker, frame: frame)
-                            case .read: context.append(.text, title, frame: frame)
-                            }
+                        // Looked inside whether shown or not: an excluded page under it refuses the window.
+                        switch try look(.caption) {
+                        case .refuse: return false
+                        case .marker: if step.shown == true { context.append(.text, context.hiddenMarker, frame: frame) }
+                        case .read: if step.shown == true { context.append(.text, title, frame: frame) }
                         }
                         continue
                     }
@@ -477,6 +472,8 @@ enum ScreenContextReader {
                     continue
                 }
             case .skip:
+                // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                if let read = step.look, try SharedWalk.look(read, found: found()) == .refuse { return false }
                 continue
             case .caret, .semantic, .descend:
                 break

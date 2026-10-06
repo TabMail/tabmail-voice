@@ -137,6 +137,31 @@
       }
     },
     {
+      "name": "an excluded page with no height at the window's top edge is in it, and refuses it",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
+          "frame": [
+            10,
+            0,
+            100,
+            0
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
       "name": "an excluded page wholly outside the window is skipped with what it holds",
       "request": {
         "node": {
@@ -718,7 +743,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -736,7 +762,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -792,7 +819,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -810,7 +838,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -823,7 +852,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -836,7 +866,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "field"
       }
     },
     {
@@ -849,7 +880,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -862,7 +894,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -875,7 +908,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -888,7 +922,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {
@@ -1011,7 +1046,8 @@
         }
       },
       "expected": {
-        "action": "skip"
+        "action": "skip",
+        "look": "text"
       }
     },
     {

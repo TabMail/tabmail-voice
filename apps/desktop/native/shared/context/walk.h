@@ -42,9 +42,12 @@ struct Facts {
     std::optional<Frame> frame, window;
     double thin = 1;
 };
+// `look` (with `skip`): an element that shows nothing, looked inside first as for that read; an
+// excluded page under it refuses the window.
 struct Step {
     std::string action, kind;
     bool caretFirst = false, childrenInPage = false, host = false, shown = false;
+    std::string look;
 };
 
 inline Step node(const Facts& facts) {
@@ -56,7 +59,8 @@ inline Step node(const Facts& facts) {
     if (facts.window) request["window"] = *facts.window;
     const auto reply = ask({{"node", request}});
     return Step{reply.at("action").get<std::string>(), reply.value("kind", std::string()), reply.value("caretFirst", false),
-                reply.value("childrenInPage", false), reply.value("host", false), reply.value("shown", false)};
+                reply.value("childrenInPage", false), reply.value("host", false), reply.value("shown", false),
+                reply.value("look", std::string())};
 }
 
 // What a look inside an element for a page of an excluded website found. `notSeenWhole`: a

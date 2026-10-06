@@ -700,9 +700,11 @@ struct ScreenExclusionTests {
         if role == "AXRow" { #expect(read.text.contains("card 4242") && !read.text.contains("Pay now")) }
         else { #expect(read.text.contains("Pay now") && !read.text.contains("card 4242")) }
 
-        // One too thin to show anything is not read and not looked through, as before.
+        // One too thin to show anything is not read, but is looked through: the page it holds may
+        // still be on screen, and refuses the window (ADR-DESK-047).
         let thin = window(frame: CGRect(x: 0, y: 0, width: 200, height: 1))
-        let hidden = walk(thin.window, excluding: ["example.com"])
+        #expect(!walk(thin.window, excluding: ["example.com"]).read)
+        let hidden = walk(thin.window, excluding: ["example.net"])
         #expect(hidden.read && hidden.text == "Outer")
 
         // Inside a row with no label, whose text is gathered: a piece of text or a titled control
@@ -713,10 +715,11 @@ struct ScreenExclusionTests {
             let inRow = FakeElement("AXWindow", children: [area])
             #expect(!walk(inRow, excluding: ["example.com"]).read)
             #expect(walk(inRow, excluding: ["example.net"]).text == "| 10:15 | Pay now")
-            // Too thin to show, it is neither read nor looked through there either.
+            // Too thin to show, it is not read there either, but is looked through.
             let thinRow = FakeElement("AXRow", children: [FakeElement("AXStaticText", [kAXValueAttribute: "10:15"]), thin.holder])
-            let thinInRow = walk(FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [thinRow])]),
-                                 excluding: ["example.com"])
+            let thinWindow = FakeElement("AXWindow", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [thinRow])])
+            #expect(!walk(thinWindow, excluding: ["example.com"]).read)
+            let thinInRow = walk(thinWindow, excluding: ["example.net"])
             #expect(thinInRow.read && thinInRow.text == "| 10:15")
         }
 
@@ -889,8 +892,8 @@ struct ScreenExclusionTests {
         // A field is read only when all of it was looked through: out of time or of elements, with a
         // page behind them or none, it is taken to hold one.
         func fieldHolds(_ element: FakeElement, since started: Date = Date()) -> Bool {
-            ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
-                                                  unlessSeenWhole: true, within: HelperConfig.contextTimeBudget, since: started)
+            ScreenContextReader.lookForExcludedPage(in: element, FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
+                                                    within: HelperConfig.contextTimeBudget, since: started) != ScreenContextReader.PageLook.none
         }
         #expect(fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")]), since: .distantPast))
         #expect(!fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")])))

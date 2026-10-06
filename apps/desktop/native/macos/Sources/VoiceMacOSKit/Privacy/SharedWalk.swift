@@ -34,6 +34,9 @@ enum SharedWalk {
         var childrenInPage: Bool?
         var host: Bool?
         var shown: Bool?
+        /// With `skip`: an element that shows nothing, looked inside first as for this read; an
+        /// excluded page under it refuses the window.
+        var look: Action?
     }
     enum Outcome: String, Decodable { case read, refuse, marker }
     struct Limits: Decodable {

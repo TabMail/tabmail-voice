@@ -326,7 +326,7 @@ int main() {
     expect(!voice::safeSubtree(bulk, &page, policy, true), "bulk query cannot bypass time budget");
     {
         // Without a provider collection the census walks the tree, fetching at most what the
-        // node budget still allows, as the live tree does. The element looked inside is not
+        // node budget still allows. The element looked inside is not
         // counted: as many elements inside it as the budget are seen whole, one more is not, and
         // what lies under the elements fetched at the budget's edge is still looked at.
         struct Truncating : Tree {
@@ -391,6 +391,18 @@ int main() {
         screen = read({&focus, &hiddenText});
         expect(screen.is_object() && !shows(screen, "Hidden words") && !shows(screen, "Under hidden words"),
             "hidden text is not walked into");
+        // But it is looked through, as is a hidden row or link and a row's part too thin to show:
+        // an excluded page under one may still be on screen, and refuses the window (ADR-DESK-047).
+        Element underPage{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
+        for (const auto role : {ATSPI_ROLE_STATIC, ATSPI_ROLE_TABLE_ROW, ATSPI_ROLE_LINK}) {
+            Element holder{role, "Holder words", {}, {&underPage}};
+            holder.visible = false;
+            expect(read({&focus, &holder}) == voice::hiddenScreen(), "an excluded page under a hidden element refuses the window");
+        }
+        Element thinPanel{ATSPI_ROLE_PANEL, "", {}, {&underPage}};
+        thinPanel.bounds = voice::ContextFrame{10, 10, 1, 2};
+        Element thinPartRow{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &thinPanel}};
+        expect(read({&focus, &thinPartRow}) == voice::hiddenScreen(), "an excluded page under a row's part too thin to show refuses the window");
         // A page's hidden control with a caption is looked through: an excluded page in it refuses.
         Element framed{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
         Element button{ATSPI_ROLE_PUSH_BUTTON, "Pay", {}, {&framed}};

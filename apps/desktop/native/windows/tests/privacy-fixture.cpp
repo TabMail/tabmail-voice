@@ -232,6 +232,34 @@ void configure(const std::string& mode) {
         nodes.at(page)->address = L"https://blocked.example/synthetic";
         nodes.at(page)->placeFails = nodes.at(page)->forbidden = true;
         nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
+    } else if (mode == "page-under-thin-row" || mode == "page-under-thin-part") {
+        // An excluded page under a row that shows nothing, or under a row's part that shows
+        // nothing, may still be on screen: looked for first, it refuses the window.
+        const int row = add(0, UIA_DataItemControlTypeId);
+        int holder = row;
+        if (mode == "page-under-thin-row") nodes.at(row)->thin = true;
+        else {
+            nodes.at(add(row, UIA_TextControlTypeId))->text = L"Synthetic cell text";
+            holder = add(row, UIA_GroupControlTypeId);
+            nodes.at(holder)->thin = true;
+        }
+        const int page = add(holder, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://blocked.example/synthetic";
+        nodes.at(page)->forbidden = true;
+        nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
+    } else if (mode == "page-in-text" || mode == "page-in-control") {
+        // A piece of text, or a page's control, holding an excluded page refuses the window.
+        int parent = 0;
+        if (mode == "page-in-control") {
+            parent = add(0, UIA_DocumentControlTypeId);
+            nodes.at(parent)->address = L"https://open.example/synthetic";
+        }
+        const int holder = add(parent, mode == "page-in-text" ? UIA_TextControlTypeId : UIA_ButtonControlTypeId);
+        nodes.at(holder)->text = L"Synthetic holder";
+        const int page = add(holder, UIA_DocumentControlTypeId);
+        nodes.at(page)->address = L"https://blocked.example/synthetic";
+        nodes.at(page)->forbidden = true;
+        nodes.at(add(page, UIA_TextControlTypeId))->forbidden = true;
     } else if (mode == "text-full") {
         // Text past the read's byte budget: the walk stops there, not after every element.
         std::wstring filler;

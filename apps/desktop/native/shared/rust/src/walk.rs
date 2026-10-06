@@ -80,10 +80,12 @@ fn outside(frame: Option<[f64; 4]>, window: Option<[f64; 4]>) -> bool {
 /// is the thickest a box can be and still hide its text (1 point; DPI-scaled pixels).
 ///
 /// The reply's `action`: `refuse` (the window shows an excluded page: nothing of it is used),
-/// `skip`, `caret` (the focused field: the caret block goes here), `descend` (walk into it, its
+/// `skip` (with `look`, a hidden element: look inside it first, as for that read, and refuse the
+/// window on `refuse`), `caret` (the focused field: the caret block goes here), `descend` (walk into it, its
 /// children inside a page when `childrenInPage`), `text`, `field`, `semantic` (a heading, link or
 /// row of `kind`, from its label and what it holds) or `caption` (a page's control: its drawn
-/// caption, or, having none, walk into it; when not `shown` a control with a caption is skipped).
+/// caption, or, having none, walk into it; when not `shown` a control with a caption is looked
+/// inside, then skipped).
 /// `caretFirst`: the focus's selection goes before it. `host`: the walk's page host is this
 /// page's, unless it has one already. Every read in one piece looks inside the element for an
 /// excluded page first (`look`).
@@ -155,13 +157,18 @@ fn node(facts: &Value) -> Result<Value, u32> {
         || (!in_page && (role == "control" || role == "toolbar"))
         || outside(at, window);
     let shown = !hidden && shown_box(at, thin);
+    // An element that shows nothing is skipped, but only once a look inside it has found no
+    // excluded page (`look`: the read its look stands for): a page under a hidden row or panel
+    // may still be on screen, and refuses the window (ADR-DESK-047).
+    let hidden_skip =
+        || json!({"action": "skip", "look": if role == "field" { "field" } else { "text" }});
     let mut step = if skipped {
         json!({"action": "skip"})
     } else if part {
         // Inside a heading, link or row: its text, fields and a page's control captions; a box
         // that shows nothing is not gone into.
         match role {
-            _ if !shown => json!({"action": "skip"}),
+            _ if !shown => hidden_skip(),
             "text" | "field" => json!({"action": role}),
             "control" => json!({"action": "caption", "shown": true}),
             _ => descend,
@@ -174,8 +181,8 @@ fn node(facts: &Value) -> Result<Value, u32> {
             "text" | "field" if shown => json!({"action": role}),
             "heading" | "link" | "row" if shown => json!({"action": "semantic", "kind": role}),
             "listItem" if !in_page && shown => json!({"action": "semantic", "kind": "row"}),
-            "text" | "field" | "heading" | "link" | "row" => json!({"action": "skip"}),
-            "listItem" if !in_page => json!({"action": "skip"}),
+            "text" | "field" | "heading" | "link" | "row" => hidden_skip(),
+            "listItem" if !in_page => hidden_skip(),
             "control" => json!({"action": "caption", "shown": shown}),
             _ => descend,
         }

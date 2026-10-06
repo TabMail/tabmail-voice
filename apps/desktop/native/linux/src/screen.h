@@ -554,7 +554,11 @@ nlohmann::json semanticSource(Tree& tree, typename Tree::Node root, SemanticText
             facts.part = true;
             const auto step = walk::node(facts);
             if (step.action == "refuse") throw PrivacyHidden{};
-            if (step.action == "skip") continue;
+            if (step.action == "skip") {
+                // One that shows nothing is looked inside first: an excluded page under it refuses the window.
+                if (!step.look.empty() && walk::look(step.look, lookInside(tree, node, exclusions)) == "refuse") throw PrivacyHidden{};
+                continue;
+            }
             if (step.action == "field" || step.action == "text" || step.action == "caption") {
                 const auto outcome = walk::look(step.action, lookInside(tree, node, exclusions));
                 if (outcome == "refuse") throw PrivacyHidden{};
@@ -732,6 +736,8 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             const auto step = walk::node(facts);
             if (step.action == "refuse") throw PrivacyHidden{};
             if (step.caretFirst || step.action == "caret") context.append(ContextKind::caret, "‸", frame);
+            if (step.action == "skip" && !step.look.empty() && walk::look(step.look, lookInside(tree, node, exclusions)) == "refuse")
+                throw PrivacyHidden{};
             if (step.action == "caret" || step.action == "skip") continue;
             if (step.host && !host && page && !page->name.empty()) host = page->name;
             // A part read in one piece is looked through first: one that holds an excluded page
