@@ -8,7 +8,9 @@ import Foundation
 enum BoundedCaretSource {
     /// `startsParagraph`: whether a paragraph starts at the selection, as the provider lays the
     /// text out; the shared core then puts back a break the text before it leaves out.
-    static func read(count: Int, selection: NSRange, startsParagraph: Bool? = nil,
+    /// `paragraphStarts`: where the provider starts each paragraph near the selection, ascending;
+    /// the core puts back the break before each that the text leaves out.
+    static func read(count: Int, selection: NSRange, startsParagraph: Bool? = nil, paragraphStarts: [Int]? = nil,
                      range: (NSRange) -> NSString?) throws -> SharedContext.CaretWindow {
         guard count >= 0, selection.location >= 0, selection.length >= 0,
               selection.location <= count, selection.length <= count - selection.location else {
@@ -18,7 +20,7 @@ enum BoundedCaretSource {
             try JSONSerialization.data(withJSONObject: ["paragraph": paragraph, "line": false, "lineText": NSNull()])
         }
         let data = try collect(count: count, start: selection.location, end: selection.location + selection.length,
-                               purpose: .caret, caretStarts: starts, range: range)
+                               purpose: .caret, caretStarts: starts, paragraphStarts: paragraphStarts, range: range)
         let result = try JSONDecoder().decode(SharedContext.CaretWindow.self, from: data)
         guard result.parts.count == 3 else { throw Redactor.Failure.refused }
         return result
@@ -48,7 +50,7 @@ enum BoundedCaretSource {
     }
     private enum Purpose { case caret, field, visibleField, block }
     private static func collect(count: Int, start: Int, end: Int, purpose: Purpose, caretStarts: Data? = nil,
-                                range: (NSRange) -> NSString?) throws -> Data {
+                                paragraphStarts: [Int]? = nil, range: (NSRange) -> NSString?) throws -> Data {
         var owner: OpaquePointer?
         let create = switch purpose {
         case .caret: voice_core_source_utf16_new
@@ -63,6 +65,13 @@ enum BoundedCaretSource {
         if let caretStarts {
             let status = caretStarts.withUnsafeBytes {
                 voice_core_source_caret_starts(owner, $0.bindMemory(to: UInt8.self).baseAddress, $0.count)
+            }
+            guard status == 0 else { throw Redactor.Failure.refused }
+        }
+        if let paragraphStarts {
+            guard paragraphStarts.allSatisfy({ $0 >= 0 }) else { throw Redactor.Failure.refused }
+            let status = paragraphStarts.withUnsafeBufferPointer {
+                voice_core_source_paragraph_starts(owner, $0.baseAddress, $0.count)
             }
             guard status == 0 else { throw Redactor.Failure.refused }
         }

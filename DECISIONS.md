@@ -460,6 +460,19 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   `caretStarts` (`voice_core_source_caret_starts`). The Mac measures no line, so only a paragraph
   start adds the break, and a field that answers no paragraph, or one read by its value or a
   marker-index conversion, gets none, as before.)*
+- *(Amended 2026-10-06, owner: the breaks further back are put back too. In Gmail the caret on the
+  first of two empty lines under a sentence read one empty line short, and every paragraph that
+  starts right after text (each `<div>` of a rich editor) ran into the one above. The adapter now
+  says where each paragraph starts within the core's `paragraphStartUnits` (twice the graphemes a
+  side shows) of the selection, in its own offsets (`voice_core_source_paragraph_starts`; the Mac
+  walks `AXParagraphTextMarkerRangeForTextMarker` back and on from the selection, counting the
+  lengths between neighbouring markers, never from the field's start). The core's `caretWindow`
+  puts back the break before each start that has none, as U+2029, within each part's budget (a
+  side at its limit gives up its far end, and its edge is then unknown). The render shows U+2029 as
+  a line break, and redacts the caret's text without the put-back breaks too, with each one
+  anchored: one inside a match there withholds the caret's text, and a block that reads differently
+  either way refuses the read, as for the caret's own break. Windows and Linux send their block
+  starts the same way. Tested in real Chromium by `native/macos/Tests/electron.mjs`.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

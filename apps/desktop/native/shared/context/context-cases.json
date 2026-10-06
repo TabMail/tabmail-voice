@@ -388,7 +388,8 @@
         "selectionSourceBytes": 262138,
         "caretSourceBytes": 786426,
         "caretLineBytes": 3,
-        "caretSourceElements": 300
+        "caretSourceElements": 300,
+        "paragraphStartUnits": 4000
       }
     },
     {
@@ -1054,6 +1055,86 @@
           " then more"
         ],
         "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "each paragraph start after text gets back the break the text leaves out, the caret's before it",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Synthetic opening line\nSynthetic line to dictate under.",
+            "",
+            "\n\n--\nSynthetic signature"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "paragraphStarts": [
+            22,
+            23,
+            55
+          ]
+        }
+      },
+      "expected": {
+        "parts": [
+          "Synthetic opening line\u2029\nSynthetic line to dictate under.\u2029",
+          "",
+          "\n\n--\nSynthetic signature"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a paragraph start after a break, or at the selection's end, gets its break where the text has none",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "First paragraph\n",
+            "Second",
+            "Third"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "paragraphStarts": [
+            16,
+            22
+          ]
+        }
+      },
+      "expected": {
+        "parts": [
+          "First paragraph\n",
+          "Second",
+          "\u2029Third"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "put-back breaks are shown as line breaks",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Compose"
+          },
+          {
+            "kind": "caret",
+            "text": "ignored"
+          }
+        ],
+        "caret": [
+          "Synthetic opening line\u2029\nSynthetic line to dictate under.\u2029",
+          "",
+          "\n\n--\nSynthetic signature"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "Synthetic opening line\n\nSynthetic line to dictate under.\n",
+          "",
+          "\n\n--\nSynthetic signature"
+        ]
       }
     },
     {

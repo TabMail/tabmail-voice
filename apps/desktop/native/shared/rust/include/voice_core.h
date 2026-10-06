@@ -95,6 +95,9 @@ uint32_t voice_core_source_utf8_offer(VoiceSource *state, const uint8_t *data, s
 /* A caret source only, once, before finish: what starts at the caret as JSON
  * {paragraph,line,lineText} (the caret window's caretStarts). A refusal fails the source. */
 uint32_t voice_core_source_caret_starts(VoiceSource *state, const uint8_t *data, size_t length);
+/* A caret source only, once, before finish: where the provider starts each paragraph near the
+ * caret, `count` ascending offsets in the source's units. A refusal fails the source. */
+uint32_t voice_core_source_paragraph_starts(VoiceSource *state, const size_t *starts, size_t count);
 uint32_t voice_core_source_finish(const VoiceSource *state, VoiceCoreBuffer *output);
 void voice_core_source_free(VoiceSource *state);
 

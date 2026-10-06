@@ -176,12 +176,13 @@ enum ScreenContextReader {
             guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
             return CaretLocator.parameterized(element, kAXStringForRangeParameterizedAttribute as String, parameter) as? NSString
         }
+        func markers() -> (selection: CFTypeRef, whole: CFTypeRef)? {
+            guard let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
+                  let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element) else { return nil }
+            return (selection, whole)
+        }
         return valueCaretWindow(snapshot: {
-            valueSnapshot(markers: {
-                guard let selection = CaretLocator.attribute(element, "AXSelectedTextMarkerRange"),
-                      let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", element) else { return nil }
-                return (selection, whole)
-            }, parameterized: { name, value in
+            valueSnapshot(markers: markers, parameterized: { name, value in
                 CaretLocator.parameterized(element, name, value)
             }, characters: {
                 guard let count = int(CaretLocator.attribute(element, kAXNumberOfCharactersAttribute)),
@@ -199,6 +200,15 @@ enum ScreenContextReader {
             return value
         }, focused: {
             (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+        }, paragraphStarts: { snapshot in
+            let looked = Date()
+            guard snapshot.markers, let state = markers(), let limits = try? SharedContext.sourceLimits() else { return nil }
+            let starts = MarkerCaretSource.paragraphStarts(selection: state.selection, whole: state.whole, range: snapshot.range,
+                                                           within: limits.paragraphStartUnits) { name, value in
+                CaretLocator.parameterized(element, name, value)
+            }
+            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") paragraph starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms")
+            return starts
         })
     }
 
@@ -233,12 +243,17 @@ enum ScreenContextReader {
 
     /// The text around a field's selection, read by its string ranges; unavailable when the field
     /// changed or lost the focus while it was read, or a range gave no text of its length.
-    static func valueCaretWindow(snapshot: () -> ValueSnapshot?, string: (NSRange) -> NSString?, focused: () -> Bool) -> SharedContext.CaretWindow? {
+    /// `paragraphStarts`: where the provider starts paragraphs near the selection, asked once, so
+    /// the shared core puts back the breaks its text leaves out.
+    static func valueCaretWindow(snapshot: () -> ValueSnapshot?, string: (NSRange) -> NSString?, focused: () -> Bool,
+                                 paragraphStarts: (ValueSnapshot) -> [Int]? = { _ in nil }) -> SharedContext.CaretWindow? {
         guard let initial = snapshot() else { return nil }
+        let starts = paragraphStarts(initial)
         HelperLog.debug("ScreenContext: caret \(initial.range.location)+\(initial.range.length) of \(initial.count) chars, from the \(initial.markers ? "text markers" : "character range")")
         let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
         do {
-            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range, startsParagraph: initial.startsParagraph) { requested in
+            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range, startsParagraph: initial.startsParagraph,
+                                                     paragraphStarts: starts) { requested in
                 let value = string(requested)
                 if let value, value.length != requested.length {
                     HelperLog.debug("ScreenContext: \(value.length) characters for \(requested.location)+\(requested.length)")
