@@ -184,9 +184,10 @@ const CARET_SOURCE_BYTES: usize = SELECTION_SOURCE_BYTES + 2 * SOURCE_WINDOW_BYT
 // a longer line is sent as `null`.
 const CARET_LINE_BYTES: usize = 3;
 /// The most elements a rich editor's text may hold for the caret's or the walk's read of it (Linux
-/// AT-SPI asks each a handful of D-Bus calls): one holding more is not read, so a large page with
-/// the focus can't spend the screen read's time on it.
-const CARET_SOURCE_ELEMENTS: usize = 500;
+/// AT-SPI asks each a handful of D-Bus calls): one holding more is not read, so a large editor in
+/// focus can't spend the screen read's time on it. Measured in Chrome on Ubuntu (2026-10-06): 200
+/// paragraphs read in about 0.5 s, 300 in 0.6–0.7 s, 499 in 0.9–1.5 s.
+const CARET_SOURCE_ELEMENTS: usize = 300;
 const CARET_SIDE_GRAPHEMES: usize = 2_000;
 
 fn caret_text(parts: &[String]) -> String {

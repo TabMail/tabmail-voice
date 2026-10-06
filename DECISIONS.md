@@ -420,8 +420,12 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   element's object, the element reporting no part of its own or an empty one, is at the element's end
   (measured in Chrome on Ubuntu, 2026-10-06, as Chromium's source has it: an endpoint inside an element
   maps to its object, and one anywhere else gives the element a part): a selection from a paragraph's end starts before the break after it, one
-  ending at the next paragraph holds that break, and one at an image keeps its edge. A rich text holding
-  more than the caret source's bytes or its own element budget (`caretSourceElements`, in the core) is
+  ending at the next paragraph holds that break, and one at an image keeps its edge. The caret is read this way
+  only in an editable focus; a page in focus (Chromium gives it document hypertext too) is read by its
+  own text, as any element. A rich text holding
+  more than the caret source's bytes or its own element budget (`caretSourceElements`, 300, in the core:
+  measured in Chrome on Ubuntu, 300 paragraphs read in 0.6–0.7 s and 499 in up to 1.5 s, the whole
+  screen read's time) is
   not read at all (an element is not asked for its text past the bytes left, nor for its links when it
   has more than the elements left); nor is one the core refuses to join. Neither
   fails the rest of the screen read. A selection the editor reports that the elements' parts leave

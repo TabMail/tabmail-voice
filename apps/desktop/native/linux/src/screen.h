@@ -416,7 +416,9 @@ public:
         };
         const auto initial = snapshot();
         if (!initial) return unavailable();
-        if (hasLinks(node)) {
+        // Only a rich editor's caret is read through its elements: a page in focus (Chromium gives its
+        // document hypertext too) is read by its own text, as any element, not walked element by element.
+        if (hasLinks(node) && editable(node)) {
             const auto rich = hypertext(node);
             if (!rich || !rich->complete) return unavailable();
             const auto [count, offset, selections, from, to] = *initial;

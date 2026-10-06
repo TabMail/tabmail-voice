@@ -15,11 +15,12 @@ struct Element {
     std::optional<std::array<int, 2>> selection;
     std::vector<std::pair<int, AtspiAccessible*>> links;
     std::string display = "block";
+    bool editable = true;
 };
 std::map<const void*, Element> elements;
 std::map<const void*, std::pair<int, AtspiAccessible*>> hyperlinks;
 // The most scalars any one text read asked for, and a change to make after this many reads.
-int largestRead = 0, readsBeforeChange = -1;
+int largestRead = 0, readsBeforeChange = -1, linkFetches = 0;
 AtspiAccessible* changed = nullptr;
 Element& at(const void* value) { return elements.at(value); }
 AtspiAccessible* element(Element value) {
@@ -49,6 +50,7 @@ extern "C" AtspiHypertext* __wrap_atspi_accessible_get_hypertext_iface(AtspiAcce
 }
 extern "C" gint __wrap_atspi_hypertext_get_n_links(AtspiHypertext* value, GError**) { return static_cast<gint>(at(value).links.size()); }
 extern "C" AtspiHyperlink* __wrap_atspi_hypertext_get_link(AtspiHypertext* value, gint index, GError**) {
+    ++linkFetches;
     auto link = static_cast<AtspiHyperlink*>(g_object_new(ATSPI_TYPE_HYPERLINK, nullptr));
     hyperlinks[link] = at(value).links.at(static_cast<size_t>(index));
     return link;
@@ -62,9 +64,10 @@ extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* v
     g_hash_table_insert(result, g_strdup("display"), g_strdup(at(value).display.c_str()));
     return result;
 }
-extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*) {
+extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto result = atspi_state_set_new(nullptr);
     atspi_state_set_add(result, ATSPI_STATE_SHOWING); atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
+    if (elements.count(value) && at(value).editable) atspi_state_set_add(result, ATSPI_STATE_EDITABLE);
     return result;
 }
 int main() {
@@ -150,9 +153,11 @@ int main() {
             }
             auto root = voice::own(element(many));
             voice::LiveScreenTree tree(root);
+            linkFetches = 0;
             expect(!tree.screenText(root) && !tree.field(root, std::numeric_limits<int>::max()), "a rich text with too many elements is not read");
             const auto caret = tree.caret(root);
             expect(caret && caret->selectionUnavailable, "a caret in a rich text with too many elements is unavailable");
+            expect(linkFetches == 0, "the links of a rich text with too many elements are never fetched");
         }
         {
             // A rich text the read can't make sense of (a link past its text) is not read either.
@@ -171,6 +176,15 @@ int main() {
             voice::LiveScreenTree tree(root);
             const auto caret = tree.caret(root);
             expect(caret && caret->selectionUnavailable, "a selection the elements lost is unavailable");
+        }
+        {
+            // A page in focus that is no editor is read by its own text, not element by element.
+            auto [root, lines] = editor(0, 2);
+            at(root.get()).editable = false;
+            voice::LiveScreenTree tree(root);
+            linkFetches = 0;
+            const auto caret = tree.caret(root);
+            expect(caret && caret->parts[0].find("Hi") == std::string::npos && linkFetches == 0, "a page in focus is not read through its elements");
         }
         std::cout << "rich text through AT-SPI passed\n";
         return 0;

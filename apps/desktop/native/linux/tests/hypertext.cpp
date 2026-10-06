@@ -143,6 +143,13 @@ int main() {
         many.elements[0].selection.reset();
         expect(!flattenHypertext(many, 0, 3, 1000).complete && many.reads == 1, "an element with more links than the budget left is not read");
         expect(flattenHypertext(many, 0, 4, 1000).complete, "links within the budget left are read");
+        // Elements nested past the budget are not read, though no one element has more links than it.
+        Fake nested;
+        nested.elements[0] = Element{object + object, -1, std::nullopt, {{0, 1}, {1, 2}}, true};
+        nested.elements[1] = Element{object, -1, std::nullopt, {{0, 3}}, true};
+        nested.elements[2] = Element{"b", -1, std::nullopt, {}, true};
+        nested.elements[3] = Element{"a", -1, std::nullopt, {}, true};
+        expect(!flattenHypertext(nested, 0, 3, 1000).complete && flattenHypertext(nested, 0, 4, 1000).complete, "elements nested past the budget are not read");
         // Text after a paragraph starts a line of its own.
         Fake after;
         after.elements[0] = Element{object + "tail", -1, std::nullopt, {{0, 1}}, true};

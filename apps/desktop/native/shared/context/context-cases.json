@@ -388,7 +388,7 @@
         "selectionSourceBytes": 262138,
         "caretSourceBytes": 786426,
         "caretLineBytes": 3,
-        "caretSourceElements": 500
+        "caretSourceElements": 300
       }
     },
     {
@@ -1166,6 +1166,39 @@
           "",
           " then more"
         ]
+      }
+    },
+    {
+      "name": "a rich editor's text after a paragraph takes one break, with a caret in it",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "para"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "text": "ta"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "il"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "para\ntail",
+        "length": 9,
+        "caret": 7,
+        "selection": null
       }
     },
     {
