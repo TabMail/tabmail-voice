@@ -56,10 +56,50 @@ fn insertion_offset(text: &str, position: usize, scalar: bool) -> Result<usize, 
     if count == position { Ok(units) } else { Err(1) }
 }
 
+/// iTerm2 writes NUL in its accessibility text for a cell that holds no character of its own: the
+/// right half of a double-width character, and a cell nothing was written to (tmux skips blank cells
+/// by moving the cursor). A NUL right after a non-ASCII character is taken for its right half and
+/// dropped, since iTerm2's widths depend on its settings (ambiguous-width letters, flags) but an
+/// ASCII character is never double width; any other NUL is a blank on screen and reads as a space.
+/// Dropping can only join text, so it never splits a secret away from redaction. Returns the text
+/// and the UTF-16 offsets, in the native text, of the NULs dropped.
+fn blank_cells(native: &str) -> (String, Vec<usize>) {
+    let mut text = String::with_capacity(native.len());
+    let mut dropped = Vec::new();
+    let mut units = 0;
+    let mut after_wide = false;
+    for ch in native.chars() {
+        if ch == '\0' {
+            if after_wide {
+                dropped.push(units);
+            } else {
+                text.push(' ');
+            }
+            after_wide = false;
+        } else {
+            text.push(ch);
+            after_wide = !ch.is_ascii();
+        }
+        units += ch.len_utf16();
+    }
+    (text, dropped)
+}
+
 struct Run<'a> {
     id: usize,
-    text: &'a str,
+    native: &'a str,
+    text: String,
+    /// UTF-16 offsets in `native` of the NULs `blank_cells` dropped.
+    dropped: Vec<usize>,
     connected: bool,
+}
+
+impl Run<'_> {
+    /// A native insertion offset as an offset in `text`.
+    fn offset(&self, position: usize, scalar: bool) -> Result<usize, u32> {
+        let units = insertion_offset(self.native, position, scalar)?;
+        Ok(units - self.dropped.iter().take_while(|&&at| at < units).count())
+    }
 }
 struct Selection {
     run: usize,
@@ -157,9 +197,12 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
             }
             boolean(&value["startKnown"])?;
             boolean(&value["endKnown"])?;
+            let (blanked, dropped) = blank_cells(text);
             runs.push(Run {
                 id: run_id,
-                text,
+                native: text,
+                text: blanked,
+                dropped,
                 connected,
             });
         }
@@ -174,8 +217,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         for range in ranges {
             let run_id = number(&range["run"])?;
             let index = runs.iter().position(|run| run.id == run_id).ok_or(1u32)?;
-            let start = insertion_offset(runs[index].text, number(&range["start"])?, scalar)?;
-            let end = insertion_offset(runs[index].text, number(&range["end"])?, scalar)?;
+            let start = runs[index].offset(number(&range["start"])?, scalar)?;
+            let end = runs[index].offset(number(&range["end"])?, scalar)?;
             if start > end
                 || previous.is_some_and(|(old_index, old_end)| {
                     index < old_index || (index == old_index && start < old_end)
@@ -183,8 +226,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
             {
                 return Err(1);
             }
-            byte_offset(runs[index].text, start)?;
-            byte_offset(runs[index].text, end)?;
+            byte_offset(&runs[index].text, start)?;
+            byte_offset(&runs[index].text, end)?;
             if let Some((old_index, old_end)) = previous {
                 // A disjoint/rectangular selection is useful context, but the
                 // existing replacement operation can act on only one interval.
@@ -229,8 +272,7 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
             {
                 found_caret = true;
                 caret_position = Some((positions.len(), index));
-                positions
-                    .push(starts[index] + insertion_offset(group[index].text, offset, scalar)?);
+                positions.push(starts[index] + group[index].offset(offset, scalar)?);
             }
             let mut selection_positions = Vec::new();
             for selection in selections.iter().filter(|s| s.run >= first && s.run < end) {
@@ -264,8 +306,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
                     let local_b = b.checked_sub(output_starts[index]).ok_or(3u32)?;
                     let selected = &redacted[index][byte_offset(&redacted[index], local_a)?
                         ..byte_offset(&redacted[index], local_b)?];
-                    let original = &group[index].text[byte_offset(group[index].text, start)?
-                        ..byte_offset(group[index].text, end)?];
+                    let original = &group[index].text[byte_offset(&group[index].text, start)?
+                        ..byte_offset(&group[index].text, end)?];
                     let unchanged = selected == original;
                     safe_selection &= unchanged;
                     output_selection.push(json!({"run":group[index].id,"start":local_a,"end":local_b,"redacted":!unchanged}));

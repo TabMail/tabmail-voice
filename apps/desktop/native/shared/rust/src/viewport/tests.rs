@@ -95,6 +95,103 @@ fn unknown_edges_preserve_native_caret_and_whitespace() {
     assert_eq!(output["complete"], true);
 }
 #[test]
+fn empty_terminal_cells_read_as_blanks_without_moving_offsets() {
+    // iTerm2 reports a cell nothing was written to (tmux skips blank cells by moving the cursor) as
+    // NUL in its accessibility text; on screen it is a blank, so the words around it stay apart.
+    let text = "\u{0}\u{0}one\u{0}two\u{0}\u{0}│ right";
+    let mut surface = surface(1, vec![run(1, text, false)]);
+    surface["selection"] = json!({"complete":true,"ranges":[{"run":1,"start":2,"end":9}]});
+    let output = result(&request(vec![surface], exact(1, 1, 6)));
+    assert_eq!(
+        output["surfaces"][0]["runs"][0]["text"],
+        "  one two  │ right"
+    );
+    assert!(!output["renderedText"].as_str().unwrap().contains('\u{0}'));
+    assert_eq!(output["caret"]["offset"], 6);
+    assert_eq!(output["selectedText"], "one two");
+    assert_eq!(output["selectionComplete"], true);
+}
+#[test]
+fn the_right_half_of_a_wide_character_is_part_of_it() {
+    // iTerm2 writes NUL for the second cell of a double-width character too: dropped, not a blank,
+    // while a cell after it that nothing was written to is still a blank. Which characters are double
+    // width depends on iTerm2's settings, so a NUL after any non-ASCII character is taken for a half.
+    for (native, expected) in [
+        ("日\u{0}本\u{0}語\u{0} ok", "日本語 ok"),
+        ("안\u{0}녕\u{0}\u{0}하\u{0}", "안녕 하"),
+        ("❤\u{FE0F}\u{0}ok 👍🏽\u{0}.", "❤\u{FE0F}ok 👍🏽."),
+        ("🇺🇸\u{0}x", "🇺🇸x"),
+        (
+            "か\u{3099}\u{0}x #\u{FE0F}\u{20E3}\u{0}y",
+            "か\u{3099}x #\u{FE0F}\u{20E3}y",
+        ),
+        ("п\u{0}а\u{0}\u{0}ü\u{0}", "па ü"),
+        ("e\u{301}\u{0}x a\u{0}b", "e\u{301}x a b"),
+    ] {
+        let output = result(&request(
+            vec![surface(1, vec![run(1, native, false)])],
+            json!({"status":"unavailable"}),
+        ));
+        assert_eq!(
+            output["surfaces"][0]["runs"][0]["text"], expected,
+            "{native:?}"
+        );
+    }
+    // Native offsets after a dropped half move back by the halves before them; one on a half is
+    // the end of its character.
+    let native = "日\u{0}本\u{0}語\u{0} ok";
+    let mut s = surface(1, vec![run(1, native, false)]);
+    s["selection"] = json!({"complete":true,"ranges":[{"run":1,"start":2,"end":6}]});
+    let output = result(&request(vec![s], exact(1, 1, 7)));
+    assert_eq!(output["selectedText"], "本語");
+    assert_eq!(output["caret"]["offset"], 4);
+    let output = result(&request(
+        vec![surface(1, vec![run(1, native, false)])],
+        exact(1, 1, 1),
+    ));
+    assert_eq!(output["caret"]["offset"], 1);
+}
+#[test]
+fn blank_cells_are_seen_by_redaction() {
+    // Redaction reads the blanks: a token after a skipped cell is still a bearer token, and a value
+    // of wide characters stays one value.
+    let token = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6";
+    let native = format!("Authorization: Bearer\u{0}{token}");
+    let mut s = surface(1, vec![run(1, &native, false)]);
+    s["selection"] =
+        json!({"complete":true,"ranges":[{"run":1,"start":0,"end":native.encode_utf16().count()}]});
+    let output = result(&request(vec![s], exact(1, 1, 0)));
+    let text = output["surfaces"][0]["runs"][0]["text"].as_str().unwrap();
+    assert_eq!(text, "Authorization: Bearer [redacted]");
+    assert_eq!(output["selectionComplete"], false);
+    let output = result(&request(
+        vec![surface(
+            1,
+            vec![run(1, "DB_PASSWORD=한\u{0}글\u{0}비\u{0}번\u{0}x12", false)],
+        )],
+        json!({"status":"unavailable"}),
+    ));
+    assert!(!output["renderedText"].as_str().unwrap().contains("x12"));
+    // With iTerm2's ambiguous-width setting, letters such as é and Cyrillic take two cells; their
+    // right halves must not split a value away from its redactor.
+    for native in [
+        "password=Café\u{0}9x7q",
+        "token: п\u{0}а\u{0}р\u{0}о\u{0}л\u{0}ь\u{0}42",
+        "https://user:Café\u{0}9x7q@example.com/",
+    ] {
+        let output = result(&request(
+            vec![surface(1, vec![run(1, native, false)])],
+            json!({"status":"unavailable"}),
+        ));
+        let rendered = output["renderedText"].as_str().unwrap();
+        assert!(rendered.contains("[redacted]"), "{native:?}");
+        assert!(
+            !rendered.contains("9x7q") && !rendered.contains("42"),
+            "{native:?}"
+        );
+    }
+}
+#[test]
 fn selection_and_caret_are_independent() {
     let mut s = surface(1, vec![run(1, "left selected right", false)]);
     s["selection"]["ranges"] = json!([{"run":1,"start":5,"end":13}]);
