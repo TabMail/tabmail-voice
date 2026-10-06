@@ -57,6 +57,7 @@ const settings = {
   update: { kind: "idle" },
   dictionary: [],
   learnsWords: true,
+  smartDictation: false,
   canLearnWords: true,
   excludedApps: [],
   excludedSites: [],

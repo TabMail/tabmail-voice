@@ -374,6 +374,7 @@ function launch(): void {
       dictionary: settings.dictionary,
       learnsWords: settings.learnsWords,
       canLearnWords: nativeAudio,
+      smartDictation: settings.smartDictation,
       excludedApps: settings.excludedApps,
       canExcludeApps: nativeAudio,
       builtInExcludedApps: settings.builtInExcludedApps,
@@ -806,6 +807,9 @@ function launch(): void {
         return;
       case "setLearnsWords":
         settings.learnsWords = command.value;
+        return;
+      case "setSmartDictation":
+        settings.smartDictation = command.value;
         return;
       case "excludeApp":
         return excludePickedApp();

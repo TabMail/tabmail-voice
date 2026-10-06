@@ -87,6 +87,7 @@ describe("AppSettings", () => {
     const app = settings();
     expect(app.hotkey).toBe("rightOption");
     expect(app.readsScreen).toBe(true);
+    expect(app.smartDictation).toBe(false);
     expect(app.hasConsented).toBe(false);
     expect(app.hasFinishedWelcome).toBe(false);
     expect(app.emailClient).toBeNull();
@@ -128,10 +129,11 @@ describe("AppSettings", () => {
     app.hasConsented = true;
     app.hasFinishedWelcome = true;
     app.emailClient = "org.mozilla.thunderbirdbeta";
+    app.smartDictation = true;
 
     const relaunched = settings(store);
-    expect([relaunched.hotkey, relaunched.readsScreen, relaunched.hasConsented, relaunched.hasFinishedWelcome, relaunched.emailClient])
-      .toEqual(["function", false, true, true, "org.mozilla.thunderbirdbeta"]);
+    expect([relaunched.hotkey, relaunched.readsScreen, relaunched.hasConsented, relaunched.hasFinishedWelcome, relaunched.emailClient, relaunched.smartDictation])
+      .toEqual(["function", false, true, true, "org.mozilla.thunderbirdbeta", true]);
 
     app.emailClient = null;
     expect(settings(store).emailClient).toBeNull();
@@ -173,6 +175,7 @@ describe("AppSettings", () => {
     app.learnsWords = false;
     app.excludeApp({ bundleIdentifier: "org.example.bank", name: "Example Bank" });
     app.excludeSite("example.com");
+    app.smartDictation = true;
 
     expect(snapshot).toEqual({
       hasConsented: true,
@@ -188,8 +191,9 @@ describe("AppSettings", () => {
       userName: "",
       dictionary: [],
       learnsWords: true,
+      smartDictation: false,
     });
-    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false });
+    expect(app.dictation(null)).toMatchObject({ dictionary: ["Xyvora"], learnsWords: false, smartDictation: true });
     expect(app.dictation(null).excludedApps).toContain("org.example.bank");
     expect(app.dictation(null).excludedSites).toContain("example.com");
   });

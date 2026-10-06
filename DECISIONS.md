@@ -481,6 +481,16 @@ is placed: the dictation replaces it, so the cleanup gets the caret alone, and t
 counts no selected text. A caret line that is also another whole field line lower on screen places
 the marker there; the owner asked for the line search.
 
+**Amendment 2026-10-05 — Smart dictation, a setting, off by default (owner).** The cleanup costs about
+a second per dictation (0.4–1.8 s measured on 2026-10-05). Owner: "default off, but an option to have
+that cleanup on"; in Settings › Dictation, a switch noting it delays each dictation by a second or more.
+`smartDictation` (stored, default false) is part of the dictation's settings snapshot taken at key-down.
+Off, the recording carries no `cleanup`, so the backend runs none, the screen read is not waited for,
+the transcript is pasted as heard, and a long dictation is not polished (ADR-DESK-049). On, everything is
+as before. Released builds keep sending the cleanup; the backend has it switched off (backend ADR-027
+amendment, 2026-10-05) until clients with this switch ship, then turns it back on. As the iOS app's
+Smart Dictation (ADR-IOS-085 amendment).
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the

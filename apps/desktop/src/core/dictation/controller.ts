@@ -635,7 +635,8 @@ export class DictationController extends Observable {
     const account = this.deps.account;
     const userID = account.session?.userID ?? null;
     const settings = this.dictationSettings;
-    const cleans = forChunks || this.currentMode === "dictation";
+    // Smart Dictation off (Settings, the default): no cleanup, so no screen to wait for.
+    const cleans = settings.smartDictation && (forChunks || this.currentMode === "dictation");
     const language = await this.languageRead;
     let context: ScreenContext | null = null;
     if (cleans) {
@@ -693,7 +694,7 @@ export class DictationController extends Observable {
       }
       this.deps.useWords(heard.flatMap((part) => (part.transcription.cleanedText === null ? [part.text] : [part.text, part.transcription.cleanedText])));
       if (mode === "dictation") {
-        const joined = joinChunkTexts(texts.map((part) => ({ text: part.text === "" ? "" : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
+        const joined = joinChunkTexts(texts.map((part) => ({ text: part.text === "" || !settings.smartDictation ? part.text : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
         const text = result.polish ? await this.polished(joined, result.polish, signal) : joined;
         if (!isCurrent()) return;
         await this.paste(text, targetApp, signal);

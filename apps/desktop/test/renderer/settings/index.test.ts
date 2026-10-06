@@ -25,6 +25,7 @@ const signedIn: SettingsState = {
   suggestedName: "Alex Example",
   dictionary: [],
   learnsWords: true,
+  smartDictation: false,
   canLearnWords: true,
   excludedApps: [],
   excludedSites: [],
@@ -436,7 +437,7 @@ describe("Settings page", () => {
   test("each section in the sidebar shows its own settings", async () => {
     const own: Record<string, string[]> = {
       Account: ["Sign Out"],
-      Dictation: ["Hold to dictate", "Read the screen while dictating"],
+      Dictation: ["Hold to dictate", "Smart dictation", "Read the screen while dictating"],
       Dictionary: ["No words yet.", "Learn from my corrections"],
       "Agent mode": ["Your name", "Edit", "Compose", "Answer"],
       Privacy: ["Excluded apps", "No apps added yet.", "Password managers are always excluded", "Excluded websites", "No websites added yet.", "Password managers’ websites are always excluded"],
@@ -545,11 +546,13 @@ describe("Settings page", () => {
     const shown = { ...signedIn, readsScreen: false, openAtLogin: true, debugAllowed: true, debugMode: false };
     const page = await settingsPage({ error: null }, shown, shown);
 
+    await act(async () => toggle("Smart dictation").click());
     await act(async () => toggle("Read the screen while dictating").click());
     await act(async () => toggle("Open at login").click());
     await act(async () => toggle("Debug mode").click());
 
     expect(page.commands).toEqual([
+      { type: "setSmartDictation", value: true },
       { type: "setReadsScreen", value: true },
       { type: "setOpenAtLogin", value: false },
       { type: "setDebugMode", value: true },
@@ -744,8 +747,8 @@ describe("Settings page", () => {
 
     for (const note of document.querySelectorAll<HTMLElement>(".toggle .caption")) await act(async () => note.click());
 
-    // Screen reading, learning the user's corrections, debug mode and the three agent tools.
-    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(6);
+    // Smart dictation, screen reading, learning the user's corrections, debug mode and the three agent tools.
+    expect(document.querySelectorAll(".toggle .caption")).toHaveLength(7);
     expect(page.commands).toEqual([]);
   });
 
@@ -801,6 +804,7 @@ describe("Settings page", () => {
       "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.",
       "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
       "Your recording is sent to TabMail for transcription and isn’t stored.",
+      "Lets AI clean up your dictation: names and terms spelled as on screen, filler words removed, grammar fixed. Adds a delay of a second or more to each dictation.",
       "Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.",
       "Uses the development server and shows debug items in the menu.",
       "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
