@@ -15,8 +15,9 @@ export interface ChunkText {
 /** An ellipsis at the end or the start of a text: a model may write the pause a chunk was cut at as one. */
 const trailingEllipsis = /(?:\s*(?:\.{3}|…))+\s*$/u;
 const leadingEllipsis = /^\s*(?:(?:\.{3}|…)\s*)+/u;
-/** Scripts written without spaces between words: no space is added where one meets another chunk. */
-const unspacedScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+/** Scripts written without spaces between words: no space is added where one meets another chunk,
+ * or a delimiter before the caret (`spacedFromCaret`). */
+export const unspacedScript = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
 /**
  * A long dictation's text, from its chunks' texts in order (ADR-DESK-049).

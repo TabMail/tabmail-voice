@@ -621,6 +621,16 @@ as before. Released builds keep sending the cleanup; the backend has it switched
 amendment, 2026-10-05) until clients with this switch ship, then turns it back on. As the iOS app's
 Smart Dictation (ADR-IOS-085 amendment).
 
+**Amendment 2026-10-05 — a space after a delimiter.** Owner: dictating with the caret right after a
+delimiter ("Note:") pasted the text flush against it. The pasted text is still trimmed, so the space
+is the app's to add: when the focused field's text before the caret, as read at key-down, ends with
+`,` `;` `:` `.` `!` or `?`, and the text starts with a letter, a digit or an opening bracket or quote
+(not in a script written without spaces), the dictation is pasted with one space ahead
+(`spacedFromCaret`). Only the paste gets it: the paste history, the clipboard when the user switched
+apps, and agent mode's text are as written. No field read (screen reading off, an excluded app or
+site, a read not done by the paste, a terminal read as a viewport) adds no space; nothing is read
+again at the paste, which would cost it time.
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the

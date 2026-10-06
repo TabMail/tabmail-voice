@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { screenVariables } from "../../../src/core/agent/tools.js";
-import { DictationCleanup, textAroundCaret } from "../../../src/core/dictation/cleanup.js";
+import { DictationCleanup, spacedFromCaret, textAroundCaret } from "../../../src/core/dictation/cleanup.js";
 import * as config from "../../../src/core/config.js";
 import type { ScreenContext } from "../../../src/core/dictation/screenContext.js";
 import { CancellationError, sleep, TimeoutError, withTimeout } from "../../../src/core/util/timeout.js";
@@ -255,6 +255,36 @@ describe("DictationCleanup.pasted", () => {
    * transcription request). */
   test("no cleanup returned pastes the transcript as heard", () => {
     expect(DictationCleanup.pasted(transcript, null)).toBe(transcript);
+  });
+});
+
+/** A dictation pasted right after a delimiter is spaced from it (owner, 2026-10-05). */
+describe("spacedFromCaret", () => {
+  test.each([",", ";", ":", ".", "!", "?"])("spaces a dictation from %j before the caret", (delimiter) => {
+    expect(spacedFromCaret(`Note${delimiter}`, "buy milk")).toBe(" buy milk");
+  });
+
+  test.each([
+    ["Note:", "42 eggs", " 42 eggs"],
+    ["Note:", "(optional)", " (optional)"],
+    ["Note:", "\u201cquoted\u201d", " \u201cquoted\u201d"],
+    ["Note:", "Émile", " Émile"],
+  ])("after %j, %j starts with a word or an opening mark: %j", (before, text, expected) => {
+    expect(spacedFromCaret(before, text)).toBe(expected);
+  });
+
+  test.each([
+    ["after a space", "Note: ", "buy milk"],
+    ["after a line break", "Note:\n", "buy milk"],
+    ["after a word", "Note", "buy milk"],
+    ["after a closing bracket", "(Note)", "buy milk"],
+    ["with no field read", "", "buy milk"],
+    ["before punctuation", "Note:", ", and milk"],
+    ["before a closing bracket", "Note:", ") and milk"],
+    ["before a script written without spaces", "Note:", "牛乳を買う"],
+    ["for nothing", "Note:", ""],
+  ])("leaves the text as it is %s", (_name, before, text) => {
+    expect(spacedFromCaret(before, text)).toBe(text);
   });
 });
 

@@ -5,6 +5,7 @@
 import type { CleanupVariables } from "../backend/transcription.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
+import { unspacedScript } from "./chunkJoin.js";
 import type { ScreenContext, TerminalViewport } from "./screenContext.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 
@@ -49,6 +50,22 @@ export const DictationCleanup = {
     return text;
   },
 };
+
+/** Delimiters a dictation is spaced from when the caret is right after one (owner, 2026-10-05). */
+const spacedDelimiter = /[,;:.!?]$/u;
+/** What a dictation starts with to be spaced from one: a letter, a digit, an opening bracket or quote. */
+const spacedStart = /^[\p{L}\p{N}\p{Ps}\p{Pi}]/u;
+
+/** `text` as pasted at a caret right after `textBeforeCaret` (the focused field's, read at key-down):
+ * with a space ahead of it when that ends with a delimiter, so "Note:" and "buy milk" give
+ * "Note: buy milk". Unchanged otherwise: after a space or a word, with no field read, before
+ * punctuation, or in a script written without spaces. */
+export function spacedFromCaret(textBeforeCaret: string, text: string): string {
+  const first = [...text][0] ?? "";
+  if (!spacedDelimiter.test(textBeforeCaret) || !spacedStart.test(first) || unspacedScript.test(first)) return text;
+  log.debug("DictationCleanup: a space added after the delimiter before the caret");
+  return ` ${text}`;
+}
 
 /** `value` within the backend's limit on a cleanup field (`config.cleanupFieldMaxLength`), its start
  * kept, cut between characters. Bounds the cleanup model's input only. */

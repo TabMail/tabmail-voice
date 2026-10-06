@@ -575,6 +575,60 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
     });
 
+    /** The caret right after a delimiter in the focused field at key-down: the dictation is pasted a
+     * space after it (owner, 2026-10-05). The paste history keeps the text as it is. */
+    test.each<[string, string]>([
+      ["Note:", ` ${cleaned}`],
+      ["Milk, eggs;", ` ${cleaned}`],
+      ["Note: ", cleaned],
+      ["Note", cleaned],
+      ["", cleaned],
+    ])("after %j in the field, pastes %j", async (before, expected) => {
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes, history } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: before, renderedText: `» ${before}‸` });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+
+      expect(pastes).toEqual([expected]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+    });
+
+    /** Smart dictation off (the default): the transcript as heard is spaced the same way, the screen
+     * read still taken at key-down though nothing waits for it. */
+    test("with Smart dictation off, the transcript after a delimiter is pasted a space after it", async () => {
+      prefs.value = { ...defaultSettings(), smartDictation: false };
+      transcription.enqueue(200, { text: transcript });
+      const { controller, pastes, history } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: "Note:", renderedText: "» Note:‸" });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+
+      expect(pastes).toEqual([` ${transcript}`]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([transcript]);
+    });
+
+    /** Only a dictation is spaced: text copied for another app, and agent mode's, go as written. */
+    test.each<["dictation" | "agent"]>([["dictation"], ["agent"]])("%s text after a delimiter is not spaced when copied or written by the agent", async (mode) => {
+      prefs.value = { ...defaultSettings(), enabledTools: ["compose"] };
+      const written = "Synthetic composed result.";
+      transcription.enqueue(200, mode === "agent" ? { text: request } : cleanedReply);
+      if (mode === "agent") completions.enqueue(200, reply(written));
+      let reads = 0;
+      const { controller, pastes, copies } = makeController({
+        capture: new CountingCapture(true),
+        frontmostApp: async () => (mode === "dictation" && (reads += 1) > 1 ? 202 : 101),
+      });
+      controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: "Note:", renderedText: "» Note:‸" });
+
+      await holdAndRelease(controller, mode);
+      expect(await eventually(() => settled(controller) && pastes.length + copies.length === 1)).toBe(true);
+
+      expect(mode === "dictation" ? copies : pastes).toEqual([mode === "dictation" ? cleaned : written]);
+    });
+
     /** Another app in front, or one that can't be read then or at key-down: the paste goes only where
      * the user is known to be. */
     test.each<[string, (reads: number) => Promise<number | null>]>([
