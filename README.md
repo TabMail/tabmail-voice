@@ -22,7 +22,9 @@ and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to com
 
 ## See it in action
 
-[Watch the Voice demo](https://youtu.be/q8aHxmUA8tE) · [Try TabMail Voice](https://tabmail.ai/voice)
+https://github.com/user-attachments/assets/eb30f9e0-971c-447b-8601-e2550767ee82
+
+Can't see the video? [Watch it on YouTube](https://youtu.be/q8aHxmUA8tE) · [Try TabMail Voice](https://tabmail.ai/voice)
 
 [Audio-described version and captions](https://tabmail.ai/demo-accessibility/#voice).
 
