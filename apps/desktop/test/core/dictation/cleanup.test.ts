@@ -282,11 +282,42 @@ describe("spacedFromCaret", () => {
     expect(spacedFromCaret(before, text)).toBe(expected);
   });
 
+  /** A closing bracket or quote ends what was before; an opening one has the dictation go inside it. */
+  test.each([
+    ["(see above)"],
+    ["see [1]"],
+    ["He said \u201chi\u201d"],
+    ["\u00abBonjour\u00bb"],
+    ["He said \"hi\""],
+    ["He said \"Done.\""],
+    ["(\"hi\")"],
+    ["I don't know 'hi'"],
+    ["the students'"],
+    ["It\u2019s \u2018hi\u2019"],
+  ])("spaces a dictation from the closing mark of %j", (before) => {
+    expect(spacedFromCaret(before, "buy milk")).toBe(" buy milk");
+  });
+
+  test.each([
+    ["He said \""],
+    ["He said '"],
+    ["\""],
+    ["Note:\n'"],
+    ["(\""],
+    ["\u201c'"],
+    ["He said \"'"],
+    ["He said \u201c"],
+    ["He said \u00ab"],
+    ["see ("],
+    ["see ["],
+  ])("leaves a dictation inside the opening mark of %j", (before) => {
+    expect(spacedFromCaret(before, "buy milk")).toBe("buy milk");
+  });
+
   test.each([
     ["after a space", "Note: ", "buy milk"],
     ["after a line break", "Note:\n", "buy milk"],
     ["after a word", "Note", "buy milk"],
-    ["after a closing bracket", "(Note)", "buy milk"],
     ["with no field read", "", "buy milk"],
     ["before punctuation", "Note:", ", and milk"],
     ["before a closing bracket", "Note:", ") and milk"],
