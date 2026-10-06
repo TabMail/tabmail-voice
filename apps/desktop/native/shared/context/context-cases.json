@@ -1169,6 +1169,48 @@
       }
     },
     {
+      "name": "a rich editor's selection ending after a paragraph holds that paragraph's break",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Hi All,"
+            },
+            {
+              "mark": "selectionStart"
+            },
+            {
+              "mark": "blockEnd"
+            },
+            {
+              "mark": "selectionEnd"
+            },
+            {
+              "mark": "blockStart"
+            },
+            {
+              "text": "Why"
+            },
+            {
+              "mark": "blockEnd"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\nWhy",
+        "length": 11,
+        "caret": null,
+        "selection": [
+          7,
+          8
+        ]
+      }
+    },
+    {
       "name": "a rich editor's caret on the empty line after a paragraph ends the text before it in that line's break",
       "request": {
         "hypertext": {

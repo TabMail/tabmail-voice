@@ -416,10 +416,14 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   its text is U+FFFC and its element is not one the read is already in: GTK's labels give a link's
   text inline and the label itself as its element, and are read as they are. A caret Chromium gives
   a text at an element's object, the element reporting none (the caret at the end of the text before
-  a link), is placed just before that element, and so is a selection's start or end there when the
-  element has no part of its own, or an empty one (an image). A rich text holding more than the caret
-  source's bytes or its own element budget (`caretSourceElements`, in the core) is not read at all (an
-  element is not asked for its text past the bytes left); nor is one the core refuses to join. Neither
+  a link), is placed just before that element. A selection's start or end Chromium gives at an
+  element's object, the element reporting no part of its own or an empty one, is at the element's end
+  (measured in Chrome on Ubuntu, 2026-10-06, as Chromium's source has it: an endpoint inside an element
+  maps to its object, and one anywhere else gives the element a part): a selection from a paragraph's end starts before the break after it, one
+  ending at the next paragraph holds that break, and one at an image keeps its edge. A rich text holding
+  more than the caret source's bytes or its own element budget (`caretSourceElements`, in the core) is
+  not read at all (an element is not asked for its text past the bytes left, nor for its links when it
+  has more than the elements left); nor is one the core refuses to join. Neither
   fails the rest of the screen read. A selection the editor reports that the elements' parts leave
   empty makes the caret unavailable rather than a caret with none. Windows reads the field through
   UIA's TextPattern, which leaves out the break of an empty line: measured on Electron's
@@ -440,8 +444,11 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   the caret's text is withheld there (a selection becomes the refusal marker), and a block that reads
   differently with and without the break refuses the read. Owner, 2026-10-06: the paragraph rule
   is the stricter one and holds on every platform; the Mac's own rule (`MarkerCaretSource`) moves
-  to the core's after the Chrome caret change lands. Left: a soft wrap inside a long word, and a
-  break Chromium leaves out further back than the caret's line.)*
+  to the core's after the Chrome caret change lands. Left: a soft wrap inside a long word, a
+  break Chromium leaves out further back than the caret's line, and on Ubuntu the break before a
+  paragraph a BACKWARD selection ends at the start of (Shift+Up from a line's start): AT-SPI reports it
+  as it does a selection of the line before alone, so that break is not selected. A forward one
+  (Shift+Down) is told apart by the caret at the next paragraph's start, and holds the break.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 

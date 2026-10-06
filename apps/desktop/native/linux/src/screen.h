@@ -496,14 +496,15 @@ private:
             if (!range || range->start_offset < 0 || range->end_offset < range->start_offset) throw std::runtime_error("hypertext selection");
             return std::pair{range->start_offset, range->end_offset};
         }
-        std::vector<std::pair<int, Node>> links(const Node& node) {
+        std::optional<std::vector<std::pair<int, Node>>> links(const Node& node, size_t most) {
             std::vector<std::pair<int, Node>> result;
             auto links = own(atspi_accessible_get_hypertext_iface(node.get()));
             if (!links) return result;
             tree.check(); Error error;
             const int count = atspi_hypertext_get_n_links(links.get(), &error.value);
             error.check();
-            if (count < 0 || static_cast<size_t>(count) > walk::limits().nodeBudget) throw std::runtime_error("hypertext link budget");
+            if (count < 0) throw std::runtime_error("hypertext link count");
+            if (static_cast<size_t>(count) > most) return {};
             for (int i = 0; i < count; ++i) {
                 tree.check();
                 auto link = own(atspi_hypertext_get_link(links.get(), i, &error.value));

@@ -29,7 +29,8 @@ struct Hypertext {
 
 // `Source` gives, for an element: `text` (UTF-8; none when it holds more than the bytes it is given,
 // before reading it), `caret` (-1 when the caret is elsewhere), `selection` (its part, or none),
-// `links` (each link's offset and the element it stands for, in order), `block` (whether the element
+// `links` (each link's offset and the element it stands for, in order; none when there are more than
+// the elements it is given, before fetching any), `block` (whether the element
 // starts a line of its own) and `same`. At most `limit` elements are visited, and at most `bytes` of
 // text read; past either, the result is not complete.
 // A link stands for an element of its own only where its text is an embedded object (U+FFFC) and
@@ -49,7 +50,9 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
         const std::string& text = *owned;
         const int caret = source.caret(node);
         const auto selected = source.selection(node);
-        const auto links = source.links(node);
+        const auto found = source.links(node, limit - visited);
+        if (!found) { fits = false; return; }
+        const auto& links = *found;
         std::string run;
         const auto flush = [&] { if (!run.empty()) { parts.push_back({{"text", run}}); run.clear(); } };
         size_t next = 0;
@@ -63,20 +66,25 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
             if (next < links.size() && links[next].first == index) {
                 flush();
                 const auto& child = links[next++].second;
+                // A selection ending at an element's start, the caret there (a forward selection's
+                // focus, as Shift+Down from a line's start leaves it), holds the break before it.
+                if (selected && index == selected->second && index > selected->first && source.caret(child) == 0) mark("selectionEnd");
                 const bool block = source.block(child);
                 if (block) mark("blockStart");
                 // A caret before the element: Chromium gives the caret at the end of the text before
                 // a link to the text holding it, at the link's object, and none to the link itself.
                 if (caret == index && source.caret(child) < 0) mark("caret");
-                // So is a selection's start or end there, at an element with no part of its own (an
-                // image, or a link with no text), or an empty one.
+                // A selection's start or end at an element with no part of its own, or an empty one, is
+                // at the element's end: Chromium gives an end inside an element at the element's
+                // object, and a start or end anywhere else in it a part of its own. A start there is
+                // before the break after a paragraph, and an end after it (the break is selected).
                 const auto part = selected && index >= selected->first && index < selected->second ? source.selection(child) : std::nullopt;
                 const bool own = part && part->first < part->second;
-                if (selected && index == selected->first && !own) mark("selectionStart");
                 self(self, child);
                 if (!fits) return;
-                if (selected && index + 1 == selected->second && !own) mark("selectionEnd");
+                if (selected && index == selected->first && !own) mark("selectionStart");
                 if (block) mark("blockEnd");
+                if (selected && index + 1 == selected->second && !own) mark("selectionEnd");
                 continue;
             }
             const bool chosen = selected && index >= selected->first && index < selected->second;

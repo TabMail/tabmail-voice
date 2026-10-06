@@ -370,10 +370,17 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                         selection = Some((length, length));
                     }
                 }
-                "selectionEnd" => match selection.as_mut() {
-                    Some(range) => range.1 = length,
-                    None => return Err(1),
-                },
+                "selectionEnd" => {
+                    // An end after a block holds the block's break.
+                    if after_block {
+                        break_line(&mut text, &mut length);
+                        after_block = false;
+                    }
+                    match selection.as_mut() {
+                        Some(range) => range.1 = length,
+                        None => return Err(1),
+                    }
+                }
                 _ => return Err(1),
             }
         }

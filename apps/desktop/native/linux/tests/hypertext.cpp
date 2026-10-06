@@ -32,7 +32,10 @@ struct Fake {
     bool same(int first, int second) { return first == second; }
     int caret(int node) { return elements.at(node).caret; }
     std::optional<std::pair<int, int>> selection(int node) { return elements.at(node).selection; }
-    std::vector<std::pair<int, int>> links(int node) { return elements.at(node).links; }
+    std::optional<std::vector<std::pair<int, int>>> links(int node, size_t most) {
+        if (elements.at(node).links.size() > most) return {};
+        return elements.at(node).links;
+    }
     bool block(int node) { return elements.at(node).block; }
 };
 static const std::string object = "\xEF\xBF\xBC";
@@ -101,6 +104,45 @@ int main() {
         image.elements[1].selection = std::pair{0, 0};
         edged = flattenHypertext(image, 0, 100, 1000);
         expect(edged.selection && edged.selection->first == 0 && edged.selection->second == 1, "an image reporting an empty part keeps the end");
+        // A selection from a paragraph's end, which Chromium gives that paragraph no part of (or an
+        // empty one) and the editor the paragraph's object, starts at the paragraph's end: the break
+        // and the words after it are selected, not the paragraph.
+        const auto twoParagraphs = [&](std::pair<int, int> range) {
+            Fake fake;
+            fake.elements[0] = Element{object + object + object, -1, range, {{0, 1}, {1, 2}, {2, 3}}, true};
+            fake.elements[1] = Element{"Hi All,", -1, std::nullopt, {}, true};
+            fake.elements[2] = Element{"Why does it move?", -1, std::nullopt, {}, true};
+            fake.elements[3] = Element{"--", -1, std::nullopt, {}, true};
+            return fake;
+        };
+        const auto selectedText = [](const Hypertext& flat) {
+            return flat.selection ? scalarSlice(flat.text, flat.selection->first, flat.selection->second) : std::string("none");
+        };
+        auto fromEnd = twoParagraphs({0, 2});
+        fromEnd.elements[2].selection = std::pair{0, 3};
+        expect(selectedText(flattenHypertext(fromEnd, 0, 100, 1000)) == "\nWhy", "a selection from a paragraph's end starts there");
+        fromEnd.elements[1].selection = std::pair{7, 7};
+        expect(selectedText(flattenHypertext(fromEnd, 0, 100, 1000)) == "\nWhy", "a paragraph reporting an empty part at its end starts the selection there");
+        auto onlyBreak = twoParagraphs({0, 1});
+        expect(selectedText(flattenHypertext(onlyBreak, 0, 100, 1000)) == "\n", "a selection of the break between paragraphs is the break");
+        auto toStart = twoParagraphs({0, 2});
+        toStart.elements[1].selection = std::pair{3, 7};
+        toStart.elements[2].selection = std::pair{0, 17};
+        const auto upTo = selectedText(flattenHypertext(toStart, 0, 100, 1000));
+        expect(upTo.rfind("All,\nWhy does it move?", 0) == 0 && upTo.find("--") == std::string::npos, "a selection ending at a paragraph's start leaves that paragraph out");
+        // A line selected down to the next one's start (Shift+Down), the caret there, holds its break.
+        auto lineDown = twoParagraphs({1, 2});
+        lineDown.elements[2].selection = std::pair{0, 17};
+        lineDown.elements[3].caret = 0;
+        expect(selectedText(flattenHypertext(lineDown, 0, 100, 1000)) == "Why does it move?\n", "a line selected to the next one's start holds its break");
+        lineDown.elements[3].caret = -1;
+        lineDown.elements[2].caret = 17;
+        expect(selectedText(flattenHypertext(lineDown, 0, 100, 1000)) == "Why does it move?", "a line selected to its own end does not");
+        // More links than the elements left are never fetched or read.
+        auto many = twoParagraphs({0, 0});
+        many.elements[0].selection.reset();
+        expect(!flattenHypertext(many, 0, 3, 1000).complete && many.reads == 1, "an element with more links than the budget left is not read");
+        expect(flattenHypertext(many, 0, 4, 1000).complete, "links within the budget left are read");
         // Text after a paragraph starts a line of its own.
         Fake after;
         after.elements[0] = Element{object + "tail", -1, std::nullopt, {{0, 1}}, true};
