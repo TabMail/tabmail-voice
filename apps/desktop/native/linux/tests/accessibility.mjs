@@ -75,6 +75,10 @@ try {
   const target = (await request("frontmostApp")).result.window;
   assert.ok(Number.isSafeInteger(target) && target > 0);
   assert.equal((await request("focusedFieldValue", { ...policy, window: target, maxLength: 20000 })).result.value, "Synthetic field content");
+  // The shared core's bound: 1 to 20,000 UTF-16 units, a longer field sent as null.
+  for (const maxLength of [0, 20001, undefined]) assert.ok((await request("focusedFieldValue", { ...policy, window: target, maxLength })).error);
+  assert.equal((await request("focusedFieldValue", { ...policy, window: target, maxLength: 23 })).result.value, "Synthetic field content");
+  assert.deepEqual((await request("focusedFieldValue", { ...policy, window: target, maxLength: 22 })).result, { value: null });
   assert.deepEqual((await request("readScreen", { ...policy, excludedAppIDs: ["AI.TABMAIL.VOICE.FIXTURE.DESKTOP"] })).result, { hidden: true });
   assert.ok((await request("readScreen", { excludedAppIDs: [] })).error);
   assert.equal((await request("readScreen", { ...policy, excludedHosts: Array(1001).fill("synthetic.example") })).result?.bundleID, "ai.tabmail.voice.fixture.desktop");
@@ -96,6 +100,12 @@ try {
   assert.ok(!JSON.stringify(read).includes("syntheticvalue123"));
   const redactedTarget = (await request("frontmostApp")).result.window;
   assert.equal((await request("focusedFieldValue", { ...policy, window: redactedTarget, maxLength: 20000 })).result.value, "password: [redacted]");
+  // An emoji is two UTF-16 units: "a😀" fits in 3, not in 2.
+  await command({ kind: "entry", text: "a😀" });
+  await context();
+  const emojiTarget = (await request("frontmostApp")).result.window;
+  assert.equal((await request("focusedFieldValue", { ...policy, window: emojiTarget, maxLength: 3 })).result.value, "a😀");
+  assert.deepEqual((await request("focusedFieldValue", { ...policy, window: emojiTarget, maxLength: 2 })).result, { value: null });
   // The main helper serves no screen reads, and the reader nothing else.
   assert.equal((await send(helper, "readScreen", policy)).error?.message, "native request failed", "the main helper reads no screen");
   for (const method of ["caretAnchor", "insert", "focusedFieldValue", "frontmostApp", "microphoneStart", "appInfo"])

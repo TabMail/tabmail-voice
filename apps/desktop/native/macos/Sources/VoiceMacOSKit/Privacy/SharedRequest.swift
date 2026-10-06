@@ -15,7 +15,7 @@ enum SharedRequest {
     /// The bound a `focusedFieldValue` request asks for, in UTF-16 code units: 1 to 20,000.
     static func fieldBound(_ value: JSON?) throws -> Int {
         guard let bound = (try? call(["field": ["maxLength": value ?? .null]]))?["maxLength"]?.integer else {
-            throw HelperError("focusedFieldValue needs maxLength from 1 to 20000")
+            throw HelperError("focusedFieldValue needs a maxLength the shared core accepts")
         }
         return bound
     }

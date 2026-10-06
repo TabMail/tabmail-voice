@@ -73,7 +73,11 @@ struct MacServiceRequestTests {
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let service = MacService.register(on: channel)
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
+            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
+            paste: { text in pasted.withLock { $0.append(text) } })
         let requests = [
             #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
             #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
@@ -89,6 +93,25 @@ struct MacServiceRequestTests {
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
+        // A refused paste never reaches the pasteboard or ⌘V.
+        #expect(pasted.withLock { $0 }.isEmpty)
+        withExtendedLifetime(service) {}
+    }
+
+    /// The paste the shared core accepts reaches the pasteboard as sent.
+    @Test func anAcceptedPasteIsPastedAsSent() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
+            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
+            paste: { text in pasted.withLock { $0.append(text) } })
+        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"Dictated 😀 text"}}"#.utf8))
+        let line = try #require(lines.withLock { $0.first })
+        let reply = try #require(JSONSerialization.jsonObject(with: line) as? [String: Any])
+        #expect(reply["result"] as? NSDictionary == [:])
+        #expect(pasted.withLock { $0 } == ["Dictated 😀 text"])
         withExtendedLifetime(service) {}
     }
 
