@@ -717,7 +717,7 @@ export class DictationController extends Observable {
         const joined = joinChunkTexts(texts.map((part) => ({ text: part.text === "" || !settings.smartDictation ? part.text : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
         const text = result.polish ? await this.polished(joined, result.polish, signal) : joined;
         if (!isCurrent()) return;
-        await this.paste(text, targetApp, signal, this.screenRead?.textBeforeCaret ?? "");
+        await this.paste(text, targetApp, signal, this.screenRead);
         const corrections = this.deps.corrections;
         if (settings.learnsWords && corrections) {
           const pid = await targetApp;
@@ -1295,10 +1295,10 @@ export class DictationController extends Observable {
   /** Pastes into the focused field, logging what it pastes (debug builds, ADR-DESK-015), and keeps
    * the text in the paste history, pasted or not. Only into `targetApp`, the app in front at
    * key-down: when the user has gone to another app (`focusChanged`), the text goes on the clipboard
-   * instead, and the dictation ends saying so (`NotPastedError`, ADR-DESK-042). A dictation passes the
-   * field's text before the caret at key-down, to be spaced from a delimiter there (`spacedFromCaret`);
-   * the history and the clipboard get the text as it is. */
-  private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal, textBeforeCaret = ""): Promise<void> => {
+   * instead, and the dictation ends saying so (`NotPastedError`, ADR-DESK-042). A dictation passes its
+   * screen read at key-down, to be spaced from a delimiter before the caret and from a word after it
+   * (`spacedFromCaret`); the history and the clipboard get the text as it is. */
+  private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal, screenRead: ScreenContext | null = null): Promise<void> => {
     log.content("DictationController: pasting", text);
     const checking = performance.now();
     const changed = await this.focusChanged(targetApp);
@@ -1317,7 +1317,7 @@ export class DictationController extends Observable {
     // focusChanged requires a positive identity; pass it through for the native final check.
     if (target === null) throw new NotPastedError();
     const pasting = performance.now();
-    await this.deps.paste(spacedFromCaret(textBeforeCaret, text), signal, target);
+    await this.deps.paste(spacedFromCaret(screenRead?.textBeforeCaret ?? "", text, screenRead?.textAfterCaret ?? ""), signal, target);
     log.debug(() => `DictationController: pasted in ${elapsed(pasting)}${this.sinceRelease()}`);
   };
 

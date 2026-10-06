@@ -644,6 +644,19 @@ No field read (screen reading off, an excluded app or
 site, a read not done by the paste, a terminal read as a viewport) adds no space; nothing is read
 again at the paste, which would cost it time.
 
+**Amendment 2026-10-06 — a space before a word after the caret.** Owner: a dictation dropped in
+front of existing text ("Done." with the caret before "Next") should be spaced from it too. The same
+rule, mirrored: when the dictation ends with a delimiter or a closing bracket or quote and the
+field's text after the caret, as read at key-down, starts with a letter, a digit, a currency sign,
+an opening bracket, `¿` `¡` or opening quotes, and neither side is in a script written without
+spaces, one space is pasted after it (`spacedFromCaret`, both sides at once). Nothing is added
+after a dictation that ends with a word (a caret inside a word is the user's to space), before a
+space, a line break, punctuation or the field's end. As before the caret, a secret right after it
+reads as its placeholder, which starts with `[`, and is spaced from. Only the paste gets it.
+Chromium rich-text fields read the caret's line ends right since the restored paragraph breaks
+(ADR-DESK-007 amendment, 2026-10-06), so a caret at the end of a line is followed by its break,
+not the next paragraph's first word, and gets no trailing space.
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the

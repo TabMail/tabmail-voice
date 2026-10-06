@@ -595,6 +595,25 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
     });
 
+    /** A word right after the caret: the dictation, which ends with a full stop, is pasted a space
+     * before it (owner, 2026-10-06), on both sides with a delimiter before the caret too. */
+    test.each<[string, string, string]>([
+      ["Note:", "Then more", ` ${cleaned} `],
+      ["", "Then more", `${cleaned} `],
+      ["Note:", " Then more", ` ${cleaned}`],
+      ["Note:", "\nThen more", ` ${cleaned}`],
+    ])("between %j and %j in the field, pastes %j", async (before, after, expected) => {
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes, history } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: before, textAfterCaret: after, renderedText: `» ${before}‸${after}` });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+
+      expect(pastes).toEqual([expected]);
+      expect(history.entries.map((entry) => entry.text)).toEqual([cleaned]);
+    });
+
     /** Smart dictation off (the default): the transcript as heard is spaced the same way, the screen
      * read still taken at key-down though nothing waits for it. */
     test("with Smart dictation off, the transcript after a delimiter is pasted a space after it", async () => {

@@ -69,18 +69,27 @@ const spacedStart = /^["'\p{Pi}\p{Pf}]*[\p{L}\p{N}\p{Sc}\p{Ps}¿¡]/u;
 const lastLetter = /[\p{L}\p{N}](?=[^\p{L}\p{N}]*$)/u;
 const firstLetter = /[\p{L}\p{N}]/u;
 
-/** `text` as pasted at a caret right after `textBeforeCaret` (the focused field's, read at key-down):
- * with a space ahead of it when that ends with a delimiter, a closing bracket or a closing quote, so
- * "Note:" and "buy milk" give "Note: buy milk". Unchanged otherwise: after a space, a word, an opening
- * bracket or an opening quote, with no field read, before punctuation, or in a script written without
- * spaces. */
-export function spacedFromCaret(textBeforeCaret: string, text: string): string {
-  const closes = spacedDelimiter.test(textBeforeCaret) || closingQuote.test(textBeforeCaret);
+/** `text` as pasted at a caret between `textBeforeCaret` and `textAfterCaret` (the focused field's,
+ * read at key-down): with a space ahead of it when the text before ends with a delimiter, a closing
+ * bracket or a closing quote, so "Note:" and "buy milk" give "Note: buy milk", and a space after it
+ * when it ends with one and a word follows (owner, 2026-10-06), so "Done." before "Next" gives
+ * "Done. Next". Unchanged otherwise: next to a space, a word, an opening bracket or an opening quote,
+ * with no field read, before punctuation, or in a script written without spaces. */
+export function spacedFromCaret(textBeforeCaret: string, text: string, textAfterCaret = ""): string {
+  const before = spacedBetween(textBeforeCaret, text) ? " " : "";
+  const after = spacedBetween(text, textAfterCaret) ? " " : "";
+  if (before !== "") log.debug("DictationCleanup: a space added after the delimiter or closing mark before the caret");
+  if (after !== "") log.debug("DictationCleanup: a space added before the word after the caret");
+  return `${before}${text}${after}`;
+}
+
+/** Whether `left` and `right`, side by side, are spaced: `left` ends with a delimiter, a closing
+ * bracket or a closing quote, and `right` starts with a word or an opening mark. */
+function spacedBetween(left: string, right: string): boolean {
+  const closes = spacedDelimiter.test(left) || closingQuote.test(left);
   // No space where either side is written without spaces, as where a long dictation's chunks meet.
-  const sides = [lastLetter.exec(textBeforeCaret)?.[0] ?? "", firstLetter.exec(text)?.[0] ?? ""];
-  if (!closes || !spacedStart.test(text) || sides.some((letter) => unspacedScript.test(letter))) return text;
-  log.debug("DictationCleanup: a space added after the delimiter or closing mark before the caret");
-  return ` ${text}`;
+  const sides = [lastLetter.exec(left)?.[0] ?? "", firstLetter.exec(right)?.[0] ?? ""];
+  return closes && spacedStart.test(right) && !sides.some((letter) => unspacedScript.test(letter));
 }
 
 /** `value` within the backend's limit on a cleanup field (`config.cleanupFieldMaxLength`), its start

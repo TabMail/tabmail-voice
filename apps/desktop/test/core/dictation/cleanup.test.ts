@@ -365,6 +365,37 @@ describe("spacedFromCaret", () => {
   ])("leaves the text as it is %s", (_name, before, text) => {
     expect(spacedFromCaret(before, text)).toBe(text);
   });
+
+  /** A dictation ending with a delimiter or a closing mark is spaced from a word after the caret
+   * (owner, 2026-10-06), by the same rules as the space before it. */
+  test.each([
+    ["Done.", "Next step", "Done. "],
+    ["Milk, eggs,", "and bread", "Milk, eggs, "],
+    ["Wait!", "(aside)", "Wait! "],
+    ["(see above)", "and more", "(see above) "],
+    ["He said \"hi\"", "to me", "He said \"hi\" "],
+    ["Done.", "\u201cquoted\u201d", "Done. "],
+  ])("pastes %j before %j as %j", (text, after, expected) => {
+    expect(spacedFromCaret("", text, after)).toBe(expected);
+  });
+
+  test("spaces a dictation on both sides at once", () => {
+    expect(spacedFromCaret("Note:", "buy milk.", "Then eggs")).toBe(" buy milk. ");
+  });
+
+  test.each([
+    ["ending with a word", "buy milk", "Then"],
+    ["before a space", "Done.", " Next"],
+    ["before a line break", "Done.", "\nNext"],
+    ["at the field's end", "Done.", ""],
+    ["before punctuation", "Done.", ", next"],
+    ["before a closing bracket", "(see above", ") next"],
+    ["before a script written without spaces", "Done.", "牛乳を買う"],
+    ["ending in a script written without spaces", "好的。", "明天见"],
+    ["ending inside an opening quote", "He said \"", "hi"],
+  ])("adds no space after a dictation %s", (_name, text, after) => {
+    expect(spacedFromCaret("", text, after)).toBe(text);
+  });
 });
 
 describe("terminal viewport caret", () => {
