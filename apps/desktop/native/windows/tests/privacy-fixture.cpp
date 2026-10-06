@@ -165,12 +165,15 @@ void configure(const std::string& mode) {
         nodes.at(box)->thin = true;
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
     } else if (mode == "hidden-box") {
-        // A text box that shows nothing, with a child reporting a full size: walked into, its own
-        // text left out (ADR-DESK-054).
-        const int box = add(0, UIA_TextControlTypeId);
+        // A container that shows nothing, with a child reporting a full size, is walked into; a
+        // text box that shows nothing is skipped with what it holds (ADR-DESK-054).
+        const int box = add(0, UIA_GroupControlTypeId);
         nodes.at(box)->thin = true;
-        nodes.at(box)->text = L"Synthetic thin box text";
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden-box text";
+        const int thinText = add(0, UIA_TextControlTypeId);
+        nodes.at(thinText)->thin = true;
+        nodes.at(thinText)->text = L"Synthetic thin box text";
+        nodes.at(add(thinText, UIA_TextControlTypeId))->text = L"Synthetic under thin text";
     } else if (mode == "terminal-wide") {
         // Run under a terminal's name: a window wider than the look's node budget.
         for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);

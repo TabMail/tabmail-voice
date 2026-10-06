@@ -82,7 +82,10 @@ try {
         assert.ok(context.renderedText.includes("» ‸"), "protected focus is marker only");
       } else if (mode !== "large-window-field" && mode !== "large-focus") assert.ok(context.renderedText.includes("Synthetic safe label"), `${mode}: safe siblings retained`);
       if (mode === "row-hidden") assert.ok(context.renderedText.includes("| Synthetic cell text") && !context.renderedText.includes("Synthetic hidden text"), "a row's block leaves out a cell in a box that shows nothing");
-      if (mode === "hidden-box") assert.ok(context.renderedText.includes("Synthetic hidden-box text") && !context.renderedText.includes("Synthetic thin box text"), "a box that shows nothing is walked into, its own text left out");
+      if (mode === "hidden-box") {
+        assert.ok(context.renderedText.includes("Synthetic hidden-box text"), "a container that shows nothing is walked into");
+        assert.ok(!context.renderedText.includes("Synthetic thin box text") && !context.renderedText.includes("Synthetic under thin text"), "a text box that shows nothing is skipped with what it holds");
+      }
       if (mode === "large-text") assert.ok(context.renderedText.includes("[hidden for privacy]") && !context.renderedText.includes("Synthetic large text"), "text too large to look through whole is withheld behind the marker");
       if (mode === "large-row" || mode === "large-link") {
         assert.ok(context.renderedText.includes("[hidden for privacy]"), `${mode}: a part too large to look through whole is withheld behind the marker`);
