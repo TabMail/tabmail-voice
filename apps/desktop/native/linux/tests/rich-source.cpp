@@ -14,8 +14,10 @@ struct Element {
     int caret = -1;
     std::optional<std::array<int, 2>> selection;
     std::vector<std::pair<int, AtspiAccessible*>> links;
+    // None ("") when the provider gives no `display` attribute.
     std::string display = "block";
     bool editable = true;
+    AtspiRole role = ATSPI_ROLE_PARAGRAPH;
 };
 std::map<const void*, Element> elements;
 std::map<const void*, std::pair<int, AtspiAccessible*>> hyperlinks;
@@ -61,9 +63,10 @@ extern "C" AtspiAccessible* __wrap_atspi_hyperlink_get_object(AtspiHyperlink* li
 }
 extern "C" GHashTable* __wrap_atspi_accessible_get_attributes(AtspiAccessible* value, GError**) {
     auto result = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-    g_hash_table_insert(result, g_strdup("display"), g_strdup(at(value).display.c_str()));
+    if (!at(value).display.empty()) g_hash_table_insert(result, g_strdup("display"), g_strdup(at(value).display.c_str()));
     return result;
 }
+extern "C" AtspiRole __wrap_atspi_accessible_get_role(AtspiAccessible* value, GError**) { return at(value).role; }
 extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible* value) {
     auto result = atspi_state_set_new(nullptr);
     atspi_state_set_add(result, ATSPI_STATE_SHOWING); atspi_state_set_add(result, ATSPI_STATE_FOCUSED);
@@ -125,6 +128,14 @@ int main() {
             at(label.get()).links = {{6, label.get()}};
             largestRead = 0;
             expect(tree.screenText(label) == "Visit example.com now" && largestRead == 21, "a label linking to itself is read once, as it is");
+            // A provider that gives no `display`: a link or image joins its line, any other element
+            // starts a line of its own.
+            auto link = element({"docs", -1, std::nullopt, {}, "", true, ATSPI_ROLE_LINK});
+            auto image = element({"", -1, std::nullopt, {}, "", true, ATSPI_ROLE_IMAGE});
+            auto next = element({"Next", -1, std::nullopt, {}, "", true, ATSPI_ROLE_PARAGRAPH});
+            const auto bare = voice::own(element({"See " + object + " and" + object + " now" + object, -1, std::nullopt,
+                                                  {{4, link}, {9, image}, {14, next}}, ""}));
+            expect(tree.screenText(bare) == "See docs and now\nNext", "without display, a link or image joins its line and another element starts one");
         }
         {
             // An element holding more than the read may take is not asked for its text: the walk
@@ -141,6 +152,21 @@ int main() {
             voice::VisibleContext context;
             tree.appendFieldSource(root, voice::ContextFrame{0, 0, 90, 80}, context, voice::ContextFrame{10, 20, 100, 100});
             expect(context.render().find("xxxx") == std::string::npos && largestRead <= 1, "a rich field too large is not read");
+        }
+        {
+            // A rich field within the read's bytes but holding more than a field is read whole up
+            // to: its text is read, but not shown, and the rest of the screen still is.
+            const auto graphemes = voice::core::request({{"limits", true}}, voice_core_context_json).at("semanticGraphemes").get<size_t>();
+            auto text = element({std::string(graphemes + 1, 'x'), -1, std::nullopt, {}, "block"});
+            auto root = voice::own(element({object, 0, std::nullopt, {{0, text}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            voice::VisibleContext context;
+            context.append(voice::ContextKind::text, "Synthetic label", voice::ContextFrame{10, 0, 100, 10});
+            largestRead = 0;
+            tree.appendFieldSource(root, voice::ContextFrame{0, 0, 90, 80}, context, voice::ContextFrame{10, 20, 100, 100});
+            const auto rendered = context.render();
+            expect(largestRead == static_cast<int>(graphemes + 1) && rendered.find("xxxx") == std::string::npos &&
+                   rendered.find("Synthetic label") != std::string::npos, "a rich field longer than a whole read is not shown, and the rest of the screen is");
         }
         {
             // A rich text holding more elements than the read may take is not read, and the
