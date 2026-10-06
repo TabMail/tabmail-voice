@@ -281,6 +281,125 @@
       }
     },
     {
+      "name": "a terminal whose selection was read whole: not said to be redacted",
+      "request": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "windowTitle": "shell",
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "terminal",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 9,
+        "milliseconds": 21,
+        "stopped": null,
+        "viewport": {
+          "surfaces": [
+            {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "runs": [
+                {
+                  "id": 1,
+                  "text": "$ ls\nfile token=abc123456789\n$ ",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": [
+                  {
+                    "run": 1,
+                    "start": 0,
+                    "end": 4
+                  }
+                ]
+              }
+            }
+          ],
+          "focusedSurface": 1,
+          "complete": true,
+          "caret": {
+            "status": "exact",
+            "surface": 1,
+            "run": 1,
+            "offset": 29
+          }
+        }
+      },
+      "expected": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "focusedRole": "terminal",
+        "host": null,
+        "logDescription": "app Terminal (org.example.Terminal), window title shell, host -, terminal program -, focused terminal\n--- text before the caret ---\n\n--- selected text ---\n$ ls\n--- text after the caret ---\n\n--- visible text ---\n[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "selectedText": "$ ls",
+        "selectionRedacted": false,
+        "summary": "terminal, 1 surfaces, 50 chars, title 5 chars, caret 0/4/0 chars, 9 nodes, 21 ms",
+        "terminalProgram": null,
+        "terminalViewport": {
+          "caret": {
+            "offset": 27,
+            "renderedOffset": 48,
+            "run": 1,
+            "status": "exact",
+            "surface": 1
+          },
+          "complete": true,
+          "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+          "selectedText": "$ ls",
+          "selectionComplete": true,
+          "surfaces": [
+            {
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "id": 1,
+              "runs": [
+                {
+                  "complete": true,
+                  "connected": false,
+                  "id": 1,
+                  "renderedOffset": 21,
+                  "text": "$ ls\nfile token=[redacted]\n$ "
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": [
+                  {
+                    "end": 4,
+                    "redacted": false,
+                    "renderedEnd": 25,
+                    "renderedStart": 21,
+                    "run": 1,
+                    "start": 0
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "textAfterCaret": "",
+        "textBeforeCaret": "",
+        "windowTitle": "shell"
+      }
+    },
+    {
       "name": "an unfinished terminal viewport: the summary says the read stopped",
       "request": {
         "appName": "Terminal",

@@ -56,6 +56,16 @@ int main(int argc, char** argv) {
         absent.append(voice::ContextKind::text, "password:");
         reply = absent.reply({{"appName", "Synthetic"}}, {"synthetic", "value", "123"}, false, none, 0);
         expect(reply.at("selectionRedacted") == true && reply.at("selectedText") == "[redacted]", "caret text is still filtered when no caret block was walked");
+        // A selection the helper could not read whole is sent as the placeholder, which redaction leaves
+        // as it is: only the flag says it is not the user's text, so Edit never pastes over it.
+        voice::VisibleContext unreadable;
+        unreadable.append(voice::ContextKind::text, "plain words");
+        reply = unreadable.reply({{"appName", "Synthetic"}}, {"before ", "[redacted]", " after"}, true, none, 0);
+        expect(reply.at("selectionRedacted") == true, "a selection not read whole is flagged");
+        voice::VisibleContext readable;
+        readable.append(voice::ContextKind::text, "plain words");
+        reply = readable.reply({{"appName", "Synthetic"}}, {"before ", "chosen", " after"}, false, none, 0);
+        expect(reply.at("selectionRedacted") == false && reply.at("selectedText") == "chosen", "a selection read whole is not flagged");
         // Every generated definition is load-bearing on the shared conformance corpus.
         // Definition mutations are tested once by the Rust crate.
         for (const auto start : {u"sk-", u"data token=7", u"Bearer ", u"eyJ", u"eyJa.eyJ", u"eyJa.eyJa.", u"://u:",
