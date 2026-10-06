@@ -612,8 +612,8 @@ describe("the chat window", () => {
     expect(document.querySelector(".chat-canvas .pill")).not.toBeNull();
   });
 
-  /** The request as Thunderbird's chat shows one: a faint tint and hairline border, at most most of
-   * the window's width. */
+  /** The request as Thunderbird's chat shows one: one flat pale color (no gradient) and a hairline
+   * border, at most most of the window's width. */
   test("a request shows as Thunderbird's chat shows one", async () => {
     const page = await overlayPage();
     await page.show({ ...idle, chatPlacement: above, chat: chat(null) });
@@ -621,7 +621,9 @@ describe("the chat window", () => {
     const request = document.querySelector<HTMLElement>(".chat-request");
     expect(request?.style.maxWidth).toBe(`${config.chatWidth * config.chatRequestMaxWidthFraction}px`);
     expect(request?.style.borderRadius).toBe(`${config.chatBubbleCornerRadius}px`);
-    expect(request?.style.border).toContain("solid");
+    expect(request?.style.backgroundColor).toBe(palette.chatRequestFill);
+    expect(request?.style.backgroundImage).not.toContain("gradient");
+    expect(request?.style.border).toBe(`${config.pillBorderWidth}px solid ${palette.chatRequestBorder}`);
   });
 
   /** A reply is revealed a line or list item at a time, `chatRevealStepInterval` apart, each fading in:

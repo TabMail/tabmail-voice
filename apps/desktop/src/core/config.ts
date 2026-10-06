@@ -744,12 +744,11 @@ export const chatPadding = 12;
 export const chatTurnSpacing = 10;
 export const chatBubblePadding = 8;
 export const chatBubbleCornerRadius = 8;
-/** The user's words, in a lightly tinted bubble with a hairline border on the right, as far as this
- * share of the chat's width; the reply in plain text under it, as TabMail's chat in Thunderbird shows
- * them (`chat.css`: `.user-message`, `.agent-message`). */
+/** The user's words, in a flat pale bubble with a hairline border on the right (its colors are
+ * `palette.chatRequestFill` and `chatRequestBorder`), as far as this share of the chat's width; the
+ * reply in plain text under it, as TabMail's chat in Thunderbird shows them (`chat.css`:
+ * `.user-message`, `.agent-message`). */
 export const chatRequestMaxWidthFraction = 0.72;
-export const chatRequestFillOpacity = 0.1;
-export const chatRequestBorderOpacity = 0.3;
 export const chatFontSize = 13;
 /** Line height, in ems; space between a reply's paragraphs; a list's indent, as Thunderbird's. */
 export const chatLineHeight = 1.4;
