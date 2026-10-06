@@ -894,7 +894,7 @@ describe("main process wiring", () => {
 
   /** The overlay page is given the conversation as the controller holds it, every turn, placed where
    * the overlay window placed it, and none once the window closes; and the bubbles' history and the
-   * apps running. */
+   * running bubble. */
   test("the overlay page is given the conversation, where it opened and the bubbles' history", async () => {
     await launch("darwin");
     const controller = app.controller;

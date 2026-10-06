@@ -764,8 +764,8 @@ describe("the chat window", () => {
   /** In the chat as out of it, the pill circles whenever the agent works (owner, 2026-09-28: "whenever
    * thinking is being done or whenever a tool is being run"): its rim spins while the words and the
    * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it
-   * around the agent's sparkle, as it circles the running tools' bubbles. At rest nothing circles. */
-  test("the pill circles whenever the agent works, and so do the running tools' bubbles", async () => {
+   * around the agent's sparkle, as it circles the running bubble. At rest nothing circles. */
+  test("the pill circles whenever the agent works, and so does the running bubble", async () => {
     const page = await overlayPage();
     const pillCircles = () => document.querySelector(".chat-canvas .pill .spinning") !== null;
     const circling = () => [...document.querySelectorAll(".chat-canvas .bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
