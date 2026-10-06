@@ -9,11 +9,11 @@ import VoiceHelperSupport
 /// it (`ScreenReader` in the app). `voice-macos` doesn't serve it.
 ///
 /// - `readScreen {excludedAppIDs, excludedHosts}` → the screen context of the app in front
-///   (`ScreenContext.json`); null without one; `{hidden: true}` when it is an app, or shows a
-///   website, the user excludes from screen reading (`ScreenExclusions`), or a page whose address is
-///   unknown, which is not read: nothing of it is sent, only that it is hidden. Secret-looking text is
-///   taken out of it before it is sent (`Redactor`), and `selectionRedacted` says whether any was in
-///   the selection.
+///   (`ScreenContext.json`, built by the shared core); null without one; `{hidden: true}` when it is
+///   an app, or shows a website, the user excludes from screen reading (`ScreenExclusions`), or a page
+///   whose address is unknown, which is not read: nothing of it is sent, only that it is hidden.
+///   Secret-looking text is taken out of it before it is sent, and `selectionRedacted` says whether
+///   any was in the selection.
 public enum ScreenReaderService {
     @MainActor
     public static func register(on channel: HelperChannel) {
@@ -33,12 +33,13 @@ public enum ScreenReaderService {
             // Blocking Accessibility calls: off the main thread, which answers the requests.
             return await Task.detached { () -> JSON in
                 guard let context = screen.read(pid, name, bundleID, exclusions) else { return hiddenScreen }
-                // The reader refuses an excluded website itself; a context on one never leaves the helper.
-                if exclusions.excludesHost(context.host) {
-                    HelperLog.debug("ScreenContext: the page read is on a website excluded from screen reading; dropped")
-                    return hiddenScreen
+                // The reader refuses an excluded website itself; the shared core checks the page read
+                // once more, so a context on one never leaves the helper.
+                let reply = context.json(exclusions)
+                if reply == hiddenScreen {
+                    HelperLog.debug("ScreenContext: the page read is on a website excluded from screen reading, or the shared core refused it; dropped")
                 }
-                return context.json
+                return reply
             }.value
         }
     }

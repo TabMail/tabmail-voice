@@ -18,8 +18,8 @@ struct SharedSemanticTextTests {
         context.appendSemantic(.row, try reducer.projectedSource())
         #expect(context.blocks.count == 2)
         #expect(try context.renderedText() == "» Draft ‸\n| [redacted]")
-        let finalized = try SharedContext.process(blocks: context.blocks, caret: ["Draft ", "", ""])
-        #expect(try finalized.nativeBlocks().allSatisfy { $0.runs == nil && $0.source == nil })
+        #expect(try !context.logDescription.contains("syntheticSecret123"))
+        #expect(context.json["blocks"] == nil)
     }
 
     @Test func commonCorpusUsesTheSameAcquisitionDecisionsOnEveryPlatform() throws {

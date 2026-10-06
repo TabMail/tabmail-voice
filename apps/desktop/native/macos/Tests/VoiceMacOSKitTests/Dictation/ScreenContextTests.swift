@@ -457,9 +457,9 @@ struct ScreenContextTests {
         context.textBeforeCaret = "left"; context.selectedText = "chosen"; context.textAfterCaret = "right"
         #expect(ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: nil, focusPath: [], excluding: ScreenExclusions(), started: Date(), into: &context))
         #expect(context.textBudgetFull && late.textReads == 0)
-        let shown = try context.redacted
-        #expect(shown.selectedText == "chosen")
-        #expect(shown.blocks.reduce(0) { $0 + $1.text.utf8.count } <= 262_144 - "left‸chosen‸right".utf8.count)
+        let shown = context.json
+        #expect(shown["selectedText"]?.string == "chosen")
+        #expect(try context.renderedText().filter { $0 == "x" }.count <= 262_144 - "left‸chosen‸right".utf8.count)
     }
 
     @Test func summaryCarriesSizesNotText() throws {
@@ -470,7 +470,17 @@ struct ScreenContextTests {
         #expect(!context.summary.contains("secret"))
         #expect(!context.summary.contains("confidential"))
         #expect(!context.summary.contains("Private"))
+        #expect(!context.summary.contains("Example") && !context.summary.contains("com.example.app"))
         #expect(context.summary.contains("caret 12/0/0 chars"))
+    }
+
+    /// A read timed across a wall clock set back still gives its reply, timed at zero, never hidden.
+    @Test func aClockSetBackDuringTheReadDoesNotHideIt() throws {
+        var context = ScreenContext(appName: "Example", bundleID: "com.example.app")
+        context.append(.text, "visible paragraph")
+        context.seconds = -0.01
+        #expect(try context.renderedText() == "visible paragraph")
+        #expect(context.summary.contains(" 0 ms"))
     }
 
     /// The debug log file gets every field, the text around the caret and the visible text as the
@@ -519,8 +529,8 @@ struct ScreenContextTests {
         #expect(json["selectedText"]?.string == "Ship it.")
         #expect(json["textAfterCaret"]?.string == "")
         #expect(json["renderedText"]?.string == "## Agenda\n» Note: ‸Ship it.‸")
-        #expect(json["summary"]?.string == context.summary)
-        #expect(try json["logDescription"]?.string == context.logDescription)
+        #expect(json["summary"]?.string == "2 blocks (1 headings, 0 rows, 0 links, 0 fields, caret placed true), 28 chars, title 5 chars, caret 6/8/0 chars, 0 nodes, 0 ms")
+        #expect(json["logDescription"]?.string?.hasPrefix("app Example (com.example.app), window title Inbox, host -, terminal program -, focused -\n--- text before the caret ---\nNote: \n") == true)
     }
 
     // MARK: Terminal visible lines
@@ -584,9 +594,12 @@ struct FakeScreenTree: ScreenTree {
 // Verify separators through the real renderer without retaining native geometry policy.
 private extension ScreenContext {
     static func separator(between first: Block, and second: Block) -> String {
-        let a = try! SharedContext.process(blocks: [first]).rendered
-        let b = try! SharedContext.process(blocks: [second]).rendered
-        let both = try! SharedContext.process(blocks: [first, second]).rendered
+        func rendered(_ blocks: [Block]) -> String {
+            var context = ScreenContext(appName: "Synthetic")
+            context.blocks = blocks
+            return try! context.renderedText()
+        }
+        let a = rendered([first]), b = rendered([second]), both = rendered([first, second])
         return String(both.dropFirst(a.count).dropLast(b.count))
     }
 }

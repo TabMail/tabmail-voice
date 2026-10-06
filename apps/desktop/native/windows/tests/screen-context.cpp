@@ -5,7 +5,6 @@
 #include "screen_context.h"
 #include "../../shared/context/CaretSource.h"
 #include "../../shared/context/SemanticText.h"
-#include "../../shared/privacy/ScreenPrivacy.h"
 #include <filesystem>
 #include <iostream>
 #include <fstream>
@@ -94,9 +93,9 @@ int main(int argc, char** argv) {
         });
         expect(source.complete, "visible field acquires its complete target");
         projected.appendField(source.parts);
-        std::array<std::string, 3> caret{};
-        privacy::ScreenPrivacy::apply(projected, caret);
-        expect(projected.render() == "> [redacted]", "private field sides redact the visible target and never render");
+        const nlohmann::json none{{"excludedAppIDs", nlohmann::json::array()}, {"excludedHosts", nlohmann::json::array()}};
+        expect(projected.reply({{"appName", "Synthetic"}}, {"", "", ""}, false, none, 0).at("renderedText") == "> [redacted]",
+            "private field sides redact the visible target and never render");
     }
     std::ifstream file(argv[1]);
     nlohmann::json corpus; file >> corpus;

@@ -8,6 +8,7 @@ mod ffi;
 mod gesture;
 mod policy;
 pub mod privacy;
+mod screen;
 mod semantic;
 
 mod source_window;

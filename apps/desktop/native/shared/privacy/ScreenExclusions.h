@@ -34,6 +34,8 @@ public:
         policy = {{"excludedAppIDs", params["excludedAppIDs"]}, {"excludedHosts", params["excludedHosts"]}};
         core::request(policy, voice_core_policy_json);
     }
+    // The lists as the request carried them, for the shared core's own checks.
+    const nlohmann::json& lists() const { return policy; }
     bool excludesApp(const std::string& name) const { return decision("app", name); }
     bool excludesHost(const std::string& name) const { return decision("host", name); }
     bool excludesPage(const char* kind, const std::string& host) const {

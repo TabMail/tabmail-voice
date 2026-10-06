@@ -1,0 +1,796 @@
+{
+  "description": "The screen read's whole reply, built by the shared core (ADR-DESK-054): each helper sends what its walk found and the read's exclusions, and the app receives exactly `expected`. `refused: true` cases are refused (no reply). Run by Rust and by every helper's suite.",
+  "cases": [
+    {
+      "name": "a window read: the title and the caret redacted, the blocks rendered, the summary sizes only",
+      "request": {
+        "appName": "Example Mail",
+        "bundleID": "com.example.mail",
+        "windowTitle": "Inbox password: Synthetic9pass",
+        "host": "mail.example.com",
+        "terminalProgram": null,
+        "focusedRole": "AXTextArea",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": [
+            "vault.example.org"
+          ]
+        },
+        "nodes": 12,
+        "milliseconds": 34,
+        "stopped": null,
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "Reply"
+          },
+          {
+            "kind": "text",
+            "text": "From Alex"
+          },
+          {
+            "kind": "caret",
+            "text": "‸"
+          }
+        ],
+        "caret": [
+          "Dear Sam, ",
+          "",
+          " regards"
+        ],
+        "selectionUnavailable": false
+      },
+      "expected": {
+        "appName": "Example Mail",
+        "bundleID": "com.example.mail",
+        "focusedRole": "AXTextArea",
+        "host": "mail.example.com",
+        "logDescription": "app Example Mail (com.example.mail), window title Inbox password: [redacted], host mail.example.com, terminal program -, focused AXTextArea\n--- text before the caret ---\nDear Sam, \n--- selected text ---\n\n--- text after the caret ---\n regards\n--- visible text ---\n## Reply\nFrom Alex\n» Dear Sam, ‸ regards",
+        "renderedText": "## Reply\nFrom Alex\n» Dear Sam, ‸ regards",
+        "selectedText": "",
+        "selectionRedacted": false,
+        "summary": "3 blocks (1 headings, 0 rows, 0 links, 0 fields, caret placed true), 40 chars, title 26 chars, caret 10/0/8 chars, 12 nodes, 34 ms",
+        "terminalProgram": null,
+        "textAfterCaret": " regards",
+        "textBeforeCaret": "Dear Sam, ",
+        "windowTitle": "Inbox password: [redacted]"
+      }
+    },
+    {
+      "name": "a selection holding a secret is redacted and said so",
+      "request": {
+        "appName": "Editor",
+        "bundleID": null,
+        "windowTitle": null,
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "editable text",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 3,
+        "milliseconds": 5,
+        "stopped": "node budget",
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "‸"
+          }
+        ],
+        "caret": [
+          "config ",
+          "token=Synthetic123456",
+          " end"
+        ],
+        "selectionUnavailable": false
+      },
+      "expected": {
+        "appName": "Editor",
+        "bundleID": null,
+        "focusedRole": "editable text",
+        "host": null,
+        "logDescription": "app Editor (-), window title -, host -, terminal program -, focused editable text, stopped: node budget\n--- text before the caret ---\nconfig \n--- selected text ---\ntoken=[redacted]\n--- text after the caret ---\n end\n--- visible text ---\n» config ‸token=[redacted]‸ end",
+        "renderedText": "» config ‸token=[redacted]‸ end",
+        "selectedText": "token=[redacted]",
+        "selectionRedacted": true,
+        "summary": "1 blocks (0 headings, 0 rows, 0 links, 0 fields, caret placed true), 31 chars, title 0 chars, caret 7/16/4 chars, 3 nodes, 5 ms, stopped: node budget",
+        "terminalProgram": null,
+        "textAfterCaret": " end",
+        "textBeforeCaret": "config ",
+        "windowTitle": null
+      }
+    },
+    {
+      "name": "a selection that could not be read whole is said to be redacted",
+      "request": {
+        "appName": "Editor",
+        "bundleID": null,
+        "windowTitle": "Notes",
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "control",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 1,
+        "milliseconds": 0,
+        "stopped": null,
+        "blocks": [],
+        "caret": [
+          "",
+          "partial",
+          ""
+        ],
+        "selectionUnavailable": true
+      },
+      "expected": {
+        "appName": "Editor",
+        "bundleID": null,
+        "focusedRole": "control",
+        "host": null,
+        "logDescription": "app Editor (-), window title Notes, host -, terminal program -, focused control\n--- text before the caret ---\n\n--- selected text ---\npartial\n--- text after the caret ---\n\n--- visible text ---\n",
+        "renderedText": "",
+        "selectedText": "partial",
+        "selectionRedacted": true,
+        "summary": "0 blocks (0 headings, 0 rows, 0 links, 0 fields, caret placed false), 0 chars, title 5 chars, caret 0/7/0 chars, 1 nodes, 0 ms",
+        "terminalProgram": null,
+        "textAfterCaret": "",
+        "textBeforeCaret": "",
+        "windowTitle": "Notes"
+      }
+    },
+    {
+      "name": "the page the read came from is excluded: hidden",
+      "request": {
+        "appName": "Browser",
+        "bundleID": "com.example.browser",
+        "windowTitle": "Vault",
+        "host": "app.vault.example.org",
+        "terminalProgram": null,
+        "focusedRole": null,
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": [
+            "Vault.Example.org"
+          ]
+        },
+        "nodes": 40,
+        "milliseconds": 7,
+        "stopped": null,
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "account 1234"
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "expected": {
+        "hidden": true
+      }
+    },
+    {
+      "name": "a terminal: its viewport projected, its selection not complete said to be redacted",
+      "request": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "windowTitle": "shell",
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "terminal",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 9,
+        "milliseconds": 21,
+        "stopped": null,
+        "viewport": {
+          "surfaces": [
+            {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "runs": [
+                {
+                  "id": 1,
+                  "text": "$ ls\nfile token=abc123456789\n$ ",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": false,
+                "ranges": []
+              }
+            }
+          ],
+          "focusedSurface": 1,
+          "complete": true,
+          "caret": {
+            "status": "exact",
+            "surface": 1,
+            "run": 1,
+            "offset": 29
+          }
+        }
+      },
+      "expected": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "focusedRole": "terminal",
+        "host": null,
+        "logDescription": "app Terminal (org.example.Terminal), window title shell, host -, terminal program -, focused terminal\n--- text before the caret ---\n\n--- selected text ---\n[redacted]\n--- text after the caret ---\n\n--- visible text ---\n[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "selectedText": "[redacted]",
+        "selectionRedacted": true,
+        "summary": "terminal, 1 surfaces, 50 chars, title 5 chars, caret 0/10/0 chars, 9 nodes, 21 ms",
+        "terminalProgram": null,
+        "terminalViewport": {
+          "caret": {
+            "offset": 27,
+            "renderedOffset": 48,
+            "run": 1,
+            "status": "exact",
+            "surface": 1
+          },
+          "complete": true,
+          "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+          "selectedText": "[redacted]",
+          "selectionComplete": false,
+          "surfaces": [
+            {
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "id": 1,
+              "runs": [
+                {
+                  "complete": true,
+                  "connected": false,
+                  "id": 1,
+                  "renderedOffset": 21,
+                  "text": "$ ls\nfile token=[redacted]\n$ "
+                }
+              ],
+              "selection": {
+                "complete": false,
+                "ranges": []
+              }
+            }
+          ]
+        },
+        "textAfterCaret": "",
+        "textBeforeCaret": "",
+        "windowTitle": "shell"
+      }
+    },
+    {
+      "name": "a terminal whose selection was read whole: not said to be redacted",
+      "request": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "windowTitle": "shell",
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "terminal",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 9,
+        "milliseconds": 21,
+        "stopped": null,
+        "viewport": {
+          "surfaces": [
+            {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "runs": [
+                {
+                  "id": 1,
+                  "text": "$ ls\nfile token=abc123456789\n$ ",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": [
+                  {
+                    "run": 1,
+                    "start": 0,
+                    "end": 4
+                  }
+                ]
+              }
+            }
+          ],
+          "focusedSurface": 1,
+          "complete": true,
+          "caret": {
+            "status": "exact",
+            "surface": 1,
+            "run": 1,
+            "offset": 29
+          }
+        }
+      },
+      "expected": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "focusedRole": "terminal",
+        "host": null,
+        "logDescription": "app Terminal (org.example.Terminal), window title shell, host -, terminal program -, focused terminal\n--- text before the caret ---\n\n--- selected text ---\n$ ls\n--- text after the caret ---\n\n--- visible text ---\n[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "selectedText": "$ ls",
+        "selectionRedacted": false,
+        "summary": "terminal, 1 surfaces, 50 chars, title 5 chars, caret 0/4/0 chars, 9 nodes, 21 ms",
+        "terminalProgram": null,
+        "terminalViewport": {
+          "caret": {
+            "offset": 27,
+            "renderedOffset": 48,
+            "run": 1,
+            "status": "exact",
+            "surface": 1
+          },
+          "complete": true,
+          "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+          "selectedText": "$ ls",
+          "selectionComplete": true,
+          "surfaces": [
+            {
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "id": 1,
+              "runs": [
+                {
+                  "complete": true,
+                  "connected": false,
+                  "id": 1,
+                  "renderedOffset": 21,
+                  "text": "$ ls\nfile token=[redacted]\n$ "
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": [
+                  {
+                    "end": 4,
+                    "redacted": false,
+                    "renderedEnd": 25,
+                    "renderedStart": 21,
+                    "run": 1,
+                    "start": 0
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "textAfterCaret": "",
+        "textBeforeCaret": "",
+        "windowTitle": "shell"
+      }
+    },
+    {
+      "name": "an unfinished terminal viewport: the summary says the read stopped",
+      "request": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "windowTitle": "shell",
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "terminal",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 9,
+        "milliseconds": 21,
+        "stopped": null,
+        "viewport": {
+          "surfaces": [
+            {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "runs": [
+                {
+                  "id": 1,
+                  "text": "$ ls\nfile token=abc123456789\n$ ",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": false,
+                "ranges": []
+              }
+            }
+          ],
+          "focusedSurface": 1,
+          "complete": false,
+          "caret": {
+            "status": "exact",
+            "surface": 1,
+            "run": 1,
+            "offset": 29
+          }
+        }
+      },
+      "expected": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "focusedRole": "terminal",
+        "host": null,
+        "logDescription": "app Terminal (org.example.Terminal), window title shell, host -, terminal program -, focused terminal, stopped: terminal viewport incomplete\n--- text before the caret ---\n\n--- selected text ---\n[redacted]\n--- text after the caret ---\n\n--- visible text ---\n[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+        "selectedText": "[redacted]",
+        "selectionRedacted": true,
+        "summary": "terminal, 1 surfaces, 50 chars, title 5 chars, caret 0/10/0 chars, 9 nodes, 21 ms, stopped: terminal viewport incomplete",
+        "terminalProgram": null,
+        "terminalViewport": {
+          "caret": {
+            "offset": 27,
+            "renderedOffset": 48,
+            "run": 1,
+            "status": "exact",
+            "surface": 1
+          },
+          "complete": false,
+          "renderedText": "[Terminal surface 1]\n$ ls\nfile token=[redacted]\n$ ",
+          "selectedText": "[redacted]",
+          "selectionComplete": false,
+          "surfaces": [
+            {
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "id": 1,
+              "runs": [
+                {
+                  "complete": true,
+                  "connected": false,
+                  "id": 1,
+                  "renderedOffset": 21,
+                  "text": "$ ls\nfile token=[redacted]\n$ "
+                }
+              ],
+              "selection": {
+                "complete": false,
+                "ranges": []
+              }
+            }
+          ]
+        },
+        "textAfterCaret": "",
+        "textBeforeCaret": "",
+        "windowTitle": "shell"
+      }
+    },
+    {
+      "name": "no exclusions",
+      "request": {
+        "appName": "A",
+        "nodes": 0,
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "no app name",
+      "request": {
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 0,
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "both blocks and a viewport",
+      "request": {
+        "appName": "A",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 0,
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false,
+        "viewport": {
+          "surfaces": [
+            {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "runs": [
+                {
+                  "id": 1,
+                  "text": "$ ls\nfile token=abc123456789\n$ ",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": false,
+                "ranges": []
+              }
+            }
+          ],
+          "focusedSurface": 1,
+          "complete": true,
+          "caret": {
+            "status": "exact",
+            "surface": 1,
+            "run": 1,
+            "offset": 29
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a window read with no word on its selection",
+      "request": {
+        "appName": "Example Mail",
+        "bundleID": "com.example.mail",
+        "windowTitle": "Inbox password: Synthetic9pass",
+        "host": "mail.example.com",
+        "terminalProgram": null,
+        "focusedRole": "AXTextArea",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": [
+            "vault.example.org"
+          ]
+        },
+        "nodes": 12,
+        "milliseconds": 34,
+        "stopped": null,
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "Reply"
+          },
+          {
+            "kind": "text",
+            "text": "From Alex"
+          },
+          {
+            "kind": "caret",
+            "text": "‸"
+          }
+        ],
+        "caret": [
+          "Dear Sam, ",
+          "",
+          " regards"
+        ]
+      },
+      "refused": true
+    },
+    {
+      "name": "a read with no time",
+      "request": {
+        "appName": "Example Mail",
+        "bundleID": "com.example.mail",
+        "windowTitle": "Inbox password: Synthetic9pass",
+        "host": "mail.example.com",
+        "terminalProgram": null,
+        "focusedRole": "AXTextArea",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": [
+            "vault.example.org"
+          ]
+        },
+        "nodes": 12,
+        "stopped": null,
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "Reply"
+          },
+          {
+            "kind": "text",
+            "text": "From Alex"
+          },
+          {
+            "kind": "caret",
+            "text": "‸"
+          }
+        ],
+        "caret": [
+          "Dear Sam, ",
+          "",
+          " regards"
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "a window read with no caret",
+      "request": {
+        "appName": "Example Mail",
+        "bundleID": "com.example.mail",
+        "windowTitle": "Inbox password: Synthetic9pass",
+        "host": "mail.example.com",
+        "terminalProgram": null,
+        "focusedRole": "AXTextArea",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": [
+            "vault.example.org"
+          ]
+        },
+        "nodes": 12,
+        "milliseconds": 34,
+        "stopped": null,
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "Reply"
+          },
+          {
+            "kind": "text",
+            "text": "From Alex"
+          },
+          {
+            "kind": "caret",
+            "text": "‸"
+          }
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "a host that is no string",
+      "request": {
+        "appName": "A",
+        "host": 7,
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 0,
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "no node count",
+      "request": {
+        "appName": "A",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "exclusion lists the policy refuses",
+      "request": {
+        "appName": "A",
+        "host": "example.com",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": null
+        },
+        "nodes": 0,
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    },
+    {
+      "name": "exclusion lists the policy refuses, with no host",
+      "request": {
+        "appName": "A",
+        "host": null,
+        "exclusions": {
+          "excludedAppIDs": [
+            1
+          ],
+          "excludedHosts": []
+        },
+        "nodes": 0,
+        "milliseconds": 0,
+        "blocks": [],
+        "caret": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      },
+      "refused": true
+    }
+  ]
+}
