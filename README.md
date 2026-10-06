@@ -6,20 +6,25 @@
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-blue.svg)](./LICENSE)
 ![Platform: macOS 15+](https://img.shields.io/badge/platform-macOS_15+-lightgrey)
 
-Dictation anywhere on your Mac. Hold **Right Option (⌥)**, speak, and let go: your words are
-cleaned up and typed into whatever you're writing in. Switch to agent mode to ask for something
-instead: edit the text you selected, write a reply from what's on screen, or answer a question
-with your calendar, contacts, files and the web. Speech is transcribed by TabMail's servers and
-isn't stored.
+Dictation that knows what you're talking about. Hold **Right Option (⌥)**, speak,
+and let go: your words are transcribed into whatever you're writing in. With screen
+reading enabled, visible names, acronyms, and terms help the transcriber recognize
+what you say. There is no separate filler-word or grammar cleanup pass.
+
+Switch to **agent mode** to dictate an intention. “Count me in” uses the
+conversation on screen to write a reply. Use Answer to check your calendar and
+search the web, then ask Compose to write a reply using that conversation in the
+field you already have open. Review the result and send it yourself.
+Speech is transcribed by TabMail's servers and isn't stored.
 
 Requires macOS 15 or later and a TabMail account. Windows ([#61](https://github.com/TabMail/tabmail-voice/issues/61))
 and Linux ([#62](https://github.com/TabMail/tabmail-voice/issues/62)) are to come.
 
 ## See it in action
 
-https://github.com/user-attachments/assets/66857e8f-0757-4faa-b6e0-ad01a4a88244
+[Watch the Voice demo](https://youtu.be/q8aHxmUA8tE) · [Try TabMail Voice](https://tabmail.ai/voice)
 
-Can't see the video? [Watch it on YouTube](https://youtu.be/S0otE7WY2VI).
+[Audio-described version and captions](https://tabmail.ai/demo-accessibility/#voice).
 
 [Get TabMail](https://tabmail.ai)
 
@@ -61,7 +66,7 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
 
 - **Hold** the dictation key, speak, **release**. A swirl gathers at your text cursor and turns
   into a pill whose waveform follows your voice once the microphone is listening. When you let
-  go, the pill shrinks to a spinning circle while your words are transcribed and cleaned up, then
+  go, the pill shrinks to a spinning circle while your words are transcribed, then
   the text is typed in. The language badge follows the keyboard language selected when you start
   speaking. A quick tap does nothing.
 - **Double-tap** the key to dictate without holding it. Tap it again to finish, or press Esc to
@@ -70,13 +75,14 @@ Then sign in with your TabMail email in Settings (we email you a one-time code).
   it switches to **agent mode**, where what you say is a request, and pressing it again switches
   back. With text selected, ask to edit it; otherwise ask it to write something new, or ask a
   question. Agent mode can use your calendar, reminders, contacts, files, notes, messages, email and
-  the web, and it asks before it sends or creates anything. Turn each of these on or off in
+  the web. Messages and new calendar, reminder, contact and note entries require confirmation;
+  email opens as a draft for you to review and send. Turn each connection on or off in
   Settings › Agent mode.
 - **Dictionary**: add names and terms in Settings › Dictionary so they're spelled your way. When
   you correct a word after a dictation, TabMail Voice can learn the new spelling. The dictionary
   stays on your computer.
 - **Read the screen while dictating** (Settings › Dictation) sends the text in the window in
-  front with your dictation, so names and terms come out as they appear there. It isn't stored.
+  front with your dictation, to help the transcriber recognize names and terms as they appear there. It isn't stored.
 - Choose Fn/Globe instead of Right Option in Settings. While it is the hotkey, TabMail Voice sets
   System Settings › Keyboard › "Press 🌐 key to" to "Do Nothing", and puts your choice back when you
   pick another key or quit.
