@@ -2190,12 +2190,19 @@ test("GNOME activation, readiness hints and recording ownership are wired to the
     // The open welcome guide is told at once, not only when it next asks.
     expect(welcomePushed.at(-1)).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
     expect(keyboard().instructions).toBe("Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here.");
+    // Right Alt stays offered and in use whatever state a supported GNOME's integration is in.
+    const rightAltKept = () => {
+      expect(state("settings")).toMatchObject({ hotkey: "rightAlt", availableHotkeys: ["rightAlt", "F8", "F9"] });
+      expect(hotkey.requests.filter(({ method }) => method === "configure").at(-1)).toMatchObject({ params: expect.objectContaining({ hotkey: "rightAlt" }) });
+    };
+    rightAltKept();
     hotkey.replies.set("gnomeIntegration", true);
     await send({ type: "enableGnomeIntegration" });
     expect(commands).toContainEqual(["gnome-extensions", ["enable", "voice-caret@tabmail.ai"]]);
     expect(state("settings")).toMatchObject({ gnomeIntegration: "ready" });
     expect(state("overlay")).toMatchObject({ gnomeRecordingKeys: true });
     expect((app.trayState?.() as unknown as { accessibilityTrusted: boolean }).accessibilityTrusted).toBe(true);
+    rightAltKept();
     hotkey.requests.length = 0;
     app.controller!.onPhaseChange!({ kind: "arming" });
     app.controller!.onPhaseChange!({ kind: "listening" });
