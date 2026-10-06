@@ -610,6 +610,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(history.entries.map((entry) => entry.text)).toEqual([transcript]);
     });
 
+    /** A dictation is spaced from its own field only: the screen read of the dictation before it never
+     * stands in for one that is off or not done by the paste. */
+    test.each<[string, (controller: DictationController) => void]>([
+      ["screen reading off", () => {
+        prefs.value = { ...defaultSettings(), readsScreen: false };
+      }],
+      ["a read not done by the paste", (controller) => {
+        controller.captureContext = () => deferred<ScreenRead | null>().promise;
+      }],
+    ])("the next dictation with %s is not spaced from the field before", async (_name, second) => {
+      transcription.enqueue(200, cleanedReply);
+      transcription.enqueue(200, cleanedReply);
+      const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
+      controller.captureContext = async () => blankScreen({ appName: "Example Notes", textBeforeCaret: "Note:", renderedText: "» Note:‸" });
+
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 1)).toBe(true);
+      second(controller);
+      await holdAndRelease(controller);
+      expect(await eventually(() => controller.phase.kind === "idle" && pastes.length === 2)).toBe(true);
+
+      expect(pastes).toEqual([` ${cleaned}`, cleaned]);
+    });
+
     /** The paste never waits for the screen read: one not done by then adds no space, and its
      * finishing later pastes nothing more. */
     test("a screen read not done by the paste adds no space and is not waited for", async () => {

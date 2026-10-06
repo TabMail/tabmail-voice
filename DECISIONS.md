@@ -625,7 +625,9 @@ Smart Dictation (ADR-IOS-085 amendment).
 delimiter ("Note:") pasted the text flush against it. The pasted text is still trimmed, so the space
 is the app's to add: when the focused field's text before the caret, as read at key-down, ends with
 `,` `;` `:` `.` `…` `!` or `?`, or a closing bracket or quote, and the text starts with a letter, a digit, a currency sign or an opening
-bracket or quote (straight quotes and `¿` `¡` among them; not in a script written without spaces), the
+bracket or quote (straight quotes and `¿` `¡` among them), and neither the last letter before the caret
+nor the dictation's first is in a script written without spaces (as where a long dictation's chunks
+meet: a bracket, a quote or a digit belongs to no script), the
 dictation is pasted with one space ahead (`spacedFromCaret`). Only the paste gets it (and so the
 clipboard the paste leaves behind): the paste history, the clipboard when the user switched apps, and
 agent mode's text are as written. Owner: after an opening quote "we want no space because we're going

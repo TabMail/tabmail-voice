@@ -275,9 +275,11 @@ describe("spacedFromCaret", () => {
     ["¡Hola!", "¡Qué bien!", " ¡Qué bien!"],
     ["Total:", "$50", " $50"],
     ["Note:", "«Bonjour»", " «Bonjour»"],
-    // The first character as a reader sees it, not its first UTF-16 unit; only it is checked for a script without spaces.
+    // The first character as a reader sees it, not its first UTF-16 unit; the first letter decides the dictation's script.
     ["Note:", "𝐀lpha", " 𝐀lpha"],
     ["Note:", "OK 牛乳", " OK 牛乳"],
+    // The last letter before the caret decides that side's script.
+    ["牛乳 Note:", "buy milk", " buy milk"],
   ])("after %j, %j starts with a word or an opening mark: %j", (before, text, expected) => {
     expect(spacedFromCaret(before, text)).toBe(expected);
   });
@@ -343,6 +345,11 @@ describe("spacedFromCaret", () => {
     ["before a closing quote", "Note:", "\u201d and milk"],
     ["before a delimiter", "Note:", "; and milk"],
     ["before a script written without spaces", "Note:", "牛乳を買う"],
+    ["before a bracket in a script written without spaces", "Note:", "「はい」"],
+    ["after a closing bracket in a script written without spaces", "「はい」", "「いいえ」と言った"],
+    ["after a closing quote in a script written without spaces", "他说：“好的。”", "“明天见。”她回答。"],
+    ["before a number after a script written without spaces", "（注）", "2024年に"],
+    ["after a script written without spaces last", "Note 牛乳:", "buy milk"],
     ["for nothing", "Note:", ""],
   ])("leaves the text as it is %s", (_name, before, text) => {
     expect(spacedFromCaret(before, text)).toBe(text);
