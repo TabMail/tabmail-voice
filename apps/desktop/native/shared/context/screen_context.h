@@ -42,6 +42,8 @@ struct ContextBlock {
 class VisibleContext {
 public:
     static size_t sourceLimit() { return core::request({{"limits", true}}, voice_core_context_json).at("screenBytes").get<size_t>(); }
+    // What stands in for a part withheld for privacy.
+    static std::string hiddenMarker() { return core::request({{"limits", true}}, voice_core_context_json).at("hiddenMarker").get<std::string>(); }
     explicit VisibleContext(const std::array<std::string, 3>& caret = {}) {
         const auto result = core::request({{"reserveCaret", caret}}, voice_core_context_json);
         bytes = result.at("used").get<size_t>();

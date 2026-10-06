@@ -292,7 +292,8 @@
         "screenBytes": 262144,
         "semanticGraphemes": 20000,
         "caretSideGraphemes": 2000,
-        "blockSourceBytes": 524291
+        "blockSourceBytes": 524291,
+        "hiddenMarker": "[hidden for privacy]"
       }
     },
     {

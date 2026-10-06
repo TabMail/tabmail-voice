@@ -162,6 +162,16 @@ void configure(const std::string& mode) {
         const int box = add(row, UIA_GroupControlTypeId);
         nodes.at(box)->thin = true;
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
+    } else if (mode == "hidden-box") {
+        // A box that shows nothing, its text reporting a full size: walked into (ADR-DESK-054).
+        const int box = add(0, UIA_GroupControlTypeId);
+        nodes.at(box)->thin = true;
+        nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden-box text";
+    } else if (mode == "large-text") {
+        // Text read in one piece that holds more than the look takes in: withheld behind the marker.
+        const int large = add(0, UIA_TextControlTypeId);
+        nodes.at(large)->text = L"Synthetic large text";
+        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode.starts_with("password-")) {
         int container = 0;
         if (mode == "password-row") container = add(0, UIA_DataItemControlTypeId);

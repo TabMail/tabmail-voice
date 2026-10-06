@@ -26,10 +26,6 @@ enum HelperConfig {
     static let contextTimeBudget: Double = 1.5
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
     static let contextMaxFocusDepth = 200
-    /// What the screen read puts in place of a part of the window it does not read for privacy
-    /// (a field that frames a page of an excluded website, or an element read in one piece that is
-    /// too large to look through for one), so the reader knows something is there.
-    static let contextHiddenMarker = "[hidden for privacy]"
     /// Roles whose text is interface chrome, not content: skipped with their subtree.
     static let contextSkippedRoles: Set<String> = [
         "AXButton", "AXMenuButton", "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXMenuBar",

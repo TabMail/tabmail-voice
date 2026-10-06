@@ -52,8 +52,13 @@ struct ScreenContext: Sendable, Equatable {
         do {
             let result = try SharedContext.reserveCaret([textBeforeCaret, selectedText, textAfterCaret])
             sourceBytes = result.used; textBudgetFull = result.budgetFull
+            hiddenMarker = try SharedContext.hiddenMarker()
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
+    /// What stands in for a part withheld for privacy (a field that frames a page of an excluded
+    /// website, or an element read in one piece too large to look through for one): the shared
+    /// core's, read with the text budget.
+    var hiddenMarker = ""
     /// Why the walk stopped before covering the window, if it did.
     var stoppedEarly: String?
     var seconds: Double = 0

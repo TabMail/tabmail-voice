@@ -460,6 +460,12 @@ inline bool skippedRole(AtspiRole role, bool web) {
         default: return false;
     }
 }
+// Whether a box can show its text: one at most a pixel thin either way shows nothing
+// (screen-reader-only labels, list items scrolled out of view); a 0×0 frame says
+// nothing and counts as shown, as on the other platforms (ADR-DESK-054).
+inline bool shownBox(const std::optional<ContextFrame>& frame) {
+    return !frame || (frame->width <= 0 && frame->height <= 0) || std::min(frame->width, frame->height) > 1;
+}
 // Some providers put semantic row/link text in descendant text areas rather
 // than the container name. Read these only after the caller's privacy census.
 inline bool outsideWindow(const std::optional<ContextFrame>& frame, const std::optional<ContextFrame>& window) {
@@ -489,7 +495,7 @@ nlohmann::json semanticSource(Tree& tree, typename Tree::Node root, SemanticText
             auto node = std::move(stack.back()); stack.pop_back();
             if (tree.isPassword(node)) continue;
             const auto frame = tree.frame(node);
-            if (!tree.shown(node) || (frame && (frame->width <= 1 || frame->height <= 1)) || outsideWindow(frame, window)) continue;
+            if (!tree.shown(node) || !shownBox(frame) || outsideWindow(frame, window)) continue;
             const auto role = tree.role(node);
             if (role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY || role == ATSPI_ROLE_STATIC ||
                 role == ATSPI_ROLE_PARAGRAPH || role == ATSPI_ROLE_LABEL) {
@@ -646,14 +652,15 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     std::vector<std::pair<typename Tree::Node, bool>> stack{{window, false}};
     while (!stack.empty()) {
         if (context.textBudgetFull) { context.stopped = "text budget"; break; }
-        if (context.nodes >= 5000 || !tree.withinBudget()) { context.stopped = "lookup budget"; break; }
+        if (context.nodes >= 5000) { context.stopped = "node budget"; break; }
+        if (!tree.withinBudget()) { context.stopped = "time budget"; break; }
         try {
             auto [node, web] = std::move(stack.back()); stack.pop_back(); ++context.nodes;
             const auto role = tree.role(node);
             if (tree.isPassword(node) && !tree.same(node, focus)) continue;
             if (auto page = tree.page(node)) { if (exclusions.excludes(*page)) throw PrivacyHidden{}; web = true; if (!host && !page->name.empty()) host = page->name; }
             const auto frame = tree.frame(node);
-            const bool shown = tree.shown(node) && (!frame || (frame->width > 1 && frame->height > 1));
+            const bool shown = tree.shown(node) && shownBox(frame);
             if (tree.same(node, focus)) {
                 if (fieldInFocus) {
                     context.append(ContextKind::caret, "‸", frame);
@@ -671,7 +678,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
                     bool safe = false;
                     try { safe = safeSubtree(tree, node, exclusions, true); }
                     catch (const PrivacyHidden&) { /* The field carries the privacy marker. */ }
-                    if (!safe) context.append(ContextKind::field, "[hidden for privacy]", frame);
+                    if (!safe) context.append(ContextKind::field, VisibleContext::hiddenMarker(), frame);
                     else {
                         if constexpr (requires { tree.appendFieldSource(node, windowFrame, context, frame); })
                             tree.appendFieldSource(node, windowFrame, context, frame);
@@ -686,7 +693,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
                 role == ATSPI_ROLE_HEADING || role == ATSPI_ROLE_LINK || role == ATSPI_ROLE_TABLE_ROW || webControl;
             if (!ancestor && shown && textRole) {
                 if (!safeSubtree(tree, node, exclusions, true)) {
-                    context.append(ContextKind::text, "[hidden for privacy]", frame);
+                    context.append(ContextKind::text, VisibleContext::hiddenMarker(), frame);
                     continue;
                 }
                 if (role == ATSPI_ROLE_TEXT || role == ATSPI_ROLE_ENTRY || role == ATSPI_ROLE_PARAGRAPH || role == ATSPI_ROLE_STATIC || role == ATSPI_ROLE_LABEL) {
@@ -708,7 +715,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             }
             auto children = tree.children(node, 5000 - context.nodes - stack.size());
             for (auto it = children.rbegin(); it != children.rend(); ++it) stack.emplace_back(*it, web);
-        } catch (const ScreenBudgetExceeded&) { context.stopped = "lookup budget"; break; }
+        } catch (const ScreenBudgetExceeded&) { context.stopped = "time budget"; break; }
     }
     return context.reply({{"appName", app.name}, {"bundleID", app.id}, {"windowTitle", title},
         {"host", host ? JSON(*host) : JSON(nullptr)}, {"terminalProgram", nullptr}, {"focusedRole", std::to_string(focusRole)}},

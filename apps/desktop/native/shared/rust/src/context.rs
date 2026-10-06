@@ -136,6 +136,8 @@ pub(crate) fn whitespace(ch: char) -> bool {
 }
 
 const SCREEN_BYTES: usize = crate::semantic::MAX_BYTES;
+/// What stands in the screen read for a part withheld for privacy, on every platform.
+const HIDDEN_MARKER: &str = "[hidden for privacy]";
 pub(crate) const BLOCK_SOURCE_BYTES: usize = 2 * SCREEN_BYTES + 3;
 const FIELD_SOURCE_BYTES: usize = 3 * SOURCE_WINDOW_BYTES;
 pub(crate) const SEMANTIC_SOURCE_BYTES: usize = SCREEN_BYTES + FIELD_SOURCE_BYTES + 3;
@@ -369,7 +371,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.

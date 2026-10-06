@@ -98,7 +98,9 @@ static int run(int argc, char** argv) {
         using Node = int;
         std::vector<FakeNode> nodes;
         unsigned childReads = 0;
-        bool withinBudget() const { return true; }
+        // Budget checks left before the time budget runs out.
+        unsigned budget = ~0u;
+        bool withinBudget() { return budget && budget--; }
         bool isPassword(Node n) { return nodes.at(n).password; }
         auto page(Node n) { expect(!nodes.at(n).password, "protected page property never requested"); return nodes.at(n).page; }
         std::vector<Node> children(Node n, size_t) {
@@ -107,23 +109,37 @@ static int run(int argc, char** argv) {
             return nodes.at(n).children;
         }
     };
+    using voice::privacy::PageLook;
     const voice::PageHost refused{voice::PageHost::Kind::host, L"mail.example.com"};
     const voice::PageHost safe{voice::PageHost::Kind::host, L"other.example"};
     for (const auto page : {refused, voice::PageHost{}}) {
         Tree tree{{{false, {}, {1}}, {false, page, {2}}, {false, {}, {}}}};
-        expect(voice::privacy::holdsExcludedPage(tree, 0, policy, true), "nested excluded and unknown pages refuse");
+        expect(voice::privacy::lookForExcludedPage(tree, 0, policy, true) == PageLook::excluded, "nested excluded and unknown pages refuse");
         expect(tree.childReads == 1, "refused page's descendants not queried");
     }
     Tree protectedTree{{{false, {}, {1}}, {true, refused, {2}}, {false, {}, {}}}};
-    expect(!voice::privacy::holdsExcludedPage(protectedTree, 0, policy, true), "password subtree never read");
+    expect(voice::privacy::lookForExcludedPage(protectedTree, 0, policy, true) == PageLook::none, "password subtree never read");
     expect(protectedTree.childReads == 1, "password subtree not entered");
     expect(!voice::privacy::safeTextSubtree(protectedTree, 0), "aggregate text containing a protected descendant is not read");
     Tree plainTree{{{false, {}, {1}}, {false, {}, {}}}};
     expect(voice::privacy::safeTextSubtree(plainTree, 0), "ordinary aggregate text remains readable");
     Tree frame{{{false, safe, {1}}, {false, refused, {}}}};
-    expect(voice::privacy::holdsExcludedPage(frame, 0, policy, true), "nested frame refused");
+    expect(voice::privacy::lookForExcludedPage(frame, 0, policy, true) == PageLook::excluded, "nested frame refused");
     frame.childReads = 0;
-    expect(!voice::privacy::holdsExcludedPage(frame, 0, policy, false) && frame.childReads == 0, "bounded correction window scan stops at safe page");
+    expect(voice::privacy::lookForExcludedPage(frame, 0, policy, false) == PageLook::none && frame.childReads == 0, "bounded correction window scan stops at safe page");
+    // A look that runs out of either budget before the end has not seen the element whole,
+    // even where nothing excluded is in what it reached (ADR-DESK-054).
+    Tree timed{{{false, {}, {1}}, {false, {}, {2}}, {false, {}, {}}}};
+    timed.budget = 2;
+    expect(voice::privacy::lookForExcludedPage(timed, 0, policy, true) == PageLook::notSeenWhole, "out of time is not seen whole");
+    timed.budget = ~0u;
+    expect(voice::privacy::lookForExcludedPage(timed, 0, policy, true) == PageLook::none, "seen whole within budget");
+    for (const int width : {4998, 4999}) {
+        Tree wide{{{false, {}, {}}}};
+        for (int child = 1; child <= width; ++child) { wide.nodes[0].children.push_back(child); wide.nodes.push_back({false, {}, {}}); }
+        const auto look = voice::privacy::lookForExcludedPage(wide, 0, policy, true);
+        expect(width == 4998 ? look == PageLook::none : look == PageLook::notSeenWhole, "the node budget decides whether it was seen whole");
+    }
     std::cout << "Screen handlers refuse excluded and malformed requests before any read\n";
     return 0;
 }

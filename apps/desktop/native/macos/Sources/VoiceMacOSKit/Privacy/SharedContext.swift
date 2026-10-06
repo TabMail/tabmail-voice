@@ -26,6 +26,12 @@ enum SharedContext {
         let input = try JSONSerialization.data(withJSONObject: ["limits": true])
         return try JSONDecoder().decode(SourceLimits.self, from: Redactor.request(input, operation: .context))
     }
+    /// What stands in the screen read for a part withheld for privacy.
+    static func hiddenMarker() throws -> String {
+        struct Limits: Decodable { var hiddenMarker: String }
+        let input = try JSONSerialization.data(withJSONObject: ["limits": true])
+        return try JSONDecoder().decode(Limits.self, from: Redactor.request(input, operation: .context)).hiddenMarker
+    }
     struct CaretWindow: Decodable {
         var parts: [String]
         var selectionUnavailable: Bool

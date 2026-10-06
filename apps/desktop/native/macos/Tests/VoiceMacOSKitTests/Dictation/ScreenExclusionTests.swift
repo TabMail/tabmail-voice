@@ -585,7 +585,7 @@ struct ScreenExclusionTests {
     /// framed in another website's page there. A field too thin to show anything is not read
     /// either way, and leaves no marker.
     @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
-    func aFieldFramingAnExcludedWebsiteIsMarkedHiddenAndTheRestRead(role: String, inRow: Bool) {
+    func aFieldFramingAnExcludedWebsiteIsMarkedHiddenAndTheRestRead(role: String, inRow: Bool) throws {
         let excluded = page("pay.example.com", "card 4242")
         let shown = CGRect(x: 10, y: 40, width: 200, height: 40)
         let shapes: [(name: String, frame: CGRect, inside: FakeElement)] = [
@@ -593,7 +593,7 @@ struct ScreenExclusionTests {
             ("too thin to show", CGRect(x: 10, y: 40, width: 200, height: 1), FakeElement("AXGroup", children: [excluded])),
             ("in another page", shown, FakeElement("AXWebArea", ["host": "news.example.org"], children: [excluded])),
         ]
-        let marker = HelperConfig.contextHiddenMarker
+        let marker = try SharedContext.hiddenMarker()
         for shape in shapes {
             let field = FakeElement(role, [kAXValueAttribute: "Field words"], frame: shape.frame, children: [shape.inside])
             let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300), children: [
@@ -621,7 +621,7 @@ struct ScreenExclusionTests {
     /// budget, and a page it did not reach might be an excluded one. One element fewer, and the
     /// field is looked through whole and read.
     @Test(arguments: ["AXTextArea", "AXTextField"], [true, false])
-    func aFieldTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) {
+    func aFieldTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) throws {
         let shown = CGRect(x: 10, y: 40, width: 200, height: 40)
         func read(fillers: Int, behind host: String?) -> String {
             // The look takes the last child first: the page, when there is one, is reached last.
@@ -638,7 +638,8 @@ struct ScreenExclusionTests {
             return result.text
         }
         let mark = inRow ? "| " : "> "
-        let hidden = "Outer\n\(mark)\(HelperConfig.contextHiddenMarker)\nAfter"
+        let marker = try SharedContext.hiddenMarker()
+        let hidden = "Outer\n\(mark)\(marker)\nAfter"
         let budget = HelperConfig.contextNodeBudget
         // One element more than the look takes in: hidden whether the one not reached is an
         // excluded page or nothing of the kind.
@@ -722,7 +723,7 @@ struct ScreenExclusionTests {
     /// budget, and a page it did not reach might be an excluded one. The marker stands in its
     /// place and the rest is read. One element fewer, and it is looked through whole.
     @Test(arguments: ["AXRow", "AXHeading", "AXLink", "AXStaticText", "AXButton"], [true, false])
-    func aLabelledElementTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) {
+    func aLabelledElementTooLargeToLookThroughIsMarkedHidden(role: String, inRow: Bool) throws {
         func read(fillers: Int, behind host: String?) -> (read: Bool, text: String) {
             // The look takes the last child first: the page, when there is one, is reached last.
             let page = host.map { [self.page($0, "card 4242")] } ?? []
@@ -738,7 +739,7 @@ struct ScreenExclusionTests {
         // Inside a row with no label only a piece of text and a titled control are read in one
         // piece; a row, heading or link there is walked into.
         guard !inRow || role == "AXStaticText" || role == "AXButton" else { return }
-        let marker = HelperConfig.contextHiddenMarker
+        let marker = try SharedContext.hiddenMarker()
         let budget = HelperConfig.contextNodeBudget
         if role == "AXRow" && !inRow {
             // Descendant-first traversal reaches the excluded page before the
@@ -766,13 +767,14 @@ struct ScreenExclusionTests {
     /// A web control with no title of its own is walked into, not read in one piece: a field in
     /// it that frames an excluded page keeps its marker, and the rest of the window is read.
     @Test(arguments: [[kAXDescriptionAttribute: "Copy"], [:]])
-    func aWebControlWithoutATitleIsWalkedIntoNotLookedThrough(attributes: [String: String]) {
+    func aWebControlWithoutATitleIsWalkedIntoNotLookedThrough(attributes: [String: String]) throws {
         let field = FakeElement("AXTextField", [kAXValueAttribute: "Field words"], children: [page("pay.example.com", "card 4242")])
         let area = FakeElement("AXWebArea", ["host": "example.org"], children: [
             FakeElement("AXStaticText", [kAXValueAttribute: "Outer"]), FakeElement("AXButton", attributes, children: [field]),
         ])
         let read = walk(FakeElement("AXWindow", children: [area]), excluding: ["example.com"])
-        #expect(read.read && read.text == "Outer\n> \(HelperConfig.contextHiddenMarker)")
+        let marker = try SharedContext.hiddenMarker()
+        #expect(read.read && read.text == "Outer\n> \(marker)")
     }
 
     /// A password field is asked for no text, and neither is anything inside it: in the window, in
