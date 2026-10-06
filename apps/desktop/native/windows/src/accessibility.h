@@ -584,7 +584,9 @@ private:
     }
     // What UI Automation says about one element, for the shared walk (`walk::node`). A password
     // element is asked nothing more: no control type, name, value, text pattern or page.
-    // None when the provider gives no answer: the element is passed over.
+    // None when the provider gives no answer: the element is passed over. One whose control type
+    // can't be read fails the read, and an excluded page whose place can't be read is one the
+    // window may show, so the core refuses it.
     std::optional<walk::Facts> factsOf(IUIAutomationElement* node, bool inPage, const WalkFrame& within,
                                        const ScreenExclusions& exclusions, CONTROLTYPEID& type,
                                        std::optional<PageHost>& page, std::optional<Placement>& place) {
@@ -596,14 +598,14 @@ private:
         if (FAILED(node->get_CurrentIsPassword(&password))) return std::nullopt;
         facts.password = password != FALSE;
         if (facts.password) return facts;
-        if (FAILED(node->get_CurrentControlType(&type))) return std::nullopt;
+        require(node->get_CurrentControlType(&type));
         facts.role = sharedRole(node, type);
         if (facts.role == "page") {
             page = pageHost(node);
             facts.pageExcluded = page && exclusions.excludes(*page);
         }
         place = placement(node, within.window, within.hiddenThickness);
-        if (!place) return std::nullopt;
+        if (!place) return facts.pageExcluded ? std::optional<walk::Facts>(facts) : std::nullopt;
         facts.hidden = place->offscreen;
         facts.frame = frameOf(place->frame);
         return facts;

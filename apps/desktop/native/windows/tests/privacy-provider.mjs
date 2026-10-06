@@ -57,7 +57,7 @@ let fixture;
 const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 40_000);
 let checks = 0;
 try {
-  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
+  for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
     "page-focus", "page-focus-child", "page-in-focus", "page-outside-focus", "page-frame", "page-row", "page-link", "page-unknown", "page-no-address", "page-address-bar",
     "page-gecko", "page-ie", "page-no-framework", "page-framework-fails", "open-page", "open-page-focus", "text-document", "terminal-wide"]) {
     // The fixture's process is no known browser: a page is told by its web framework, whichever
@@ -100,6 +100,13 @@ try {
       }
       if (mode === "large-focus") assert.ok(context.hidden !== true && !context.renderedText.includes("Synthetic large text"),
         "a focus too large to look through whole lets the read go on, and is not read");
+      if (mode === "bare-page-control") assert.ok(context.renderedText.includes("Synthetic nested option") && !context.renderedText.includes("Synthetic undrawn label"),
+        "what a page's control with no caption holds is in the page: its text read, a control's Name not");
+      if (mode === "outside-page") assert.ok(context.hidden !== true, "an excluded page wholly outside the window is skipped with what it holds");
+      if (mode === "text-full") {
+        const nodes = Number(/(\d+) nodes/.exec(context.summary ?? "")?.[1] ?? -1);
+        assert.ok(context.summary.includes("stopped: text budget") && nodes >= 0 && nodes < 100, "a read stops when its text budget is full");
+      }
       if (mode === "outside-window") assert.ok(context.renderedText.includes("Synthetic visible text") && !(context.summary ?? "").includes("node budget"),
         "a box outside the window is skipped with what it holds");
       if (mode === "password-row") assert.ok(context.renderedText.includes("| Synthetic cell text"), "a row is one block of its cells, without its password field");

@@ -371,7 +371,7 @@ int main() {
             return voice::gatherScreen(walked, &frame, &focus, path, app, policy);
         };
         const auto shows = [](const JSON& screen, const std::string& words) {
-            return screen.is_object() && screen["renderedText"].get<std::string>().find(words) != std::string::npos;
+            return screen.contains("renderedText") && screen["renderedText"].get<std::string>().find(words) != std::string::npos;
         };
         // A list's item outside a page is a row, read as one line.
         Element sender{ATSPI_ROLE_STATIC, "Sender One", {}, {}};
@@ -404,6 +404,33 @@ int main() {
         expect(shows(screen, "Quarterly plan") && !shows(screen, "Archive"), "a row's button outside a page is chrome");
         allowed.children = {&focus, &row};
         expect(shows(read({&allowed}, {&allowed, &frame}), "Quarterly plan | Archive"), "a row's button in a page is its caption");
+        // A page's control with no caption is walked into, and what it holds is still in the page.
+        Element direct{ATSPI_ROLE_CHECK_BOX, "Direct option", {}, {}};
+        Element nested{ATSPI_ROLE_CHECK_BOX, "Nested option", {}, {}};
+        Element plain{ATSPI_ROLE_STATIC, "Plain words", {}, {}};
+        Element bare{ATSPI_ROLE_PUSH_BUTTON, "", {}, {&nested, &plain}};
+        allowed.children = {&focus, &direct, &bare};
+        screen = read({&allowed}, {&allowed, &frame});
+        expect(shows(screen, "Direct option") && shows(screen, "Nested option") && shows(screen, "Plain words"),
+            "what a page's control with no caption holds is in the page");
+        Element rowOption{ATSPI_ROLE_CHECK_BOX, "Row option", {}, {}};
+        Element bareInRow{ATSPI_ROLE_PUSH_BUTTON, "", {}, {&rowOption}};
+        Element optionRow{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &bareInRow}};
+        allowed.children = {&focus, &optionRow};
+        expect(shows(read({&allowed}, {&allowed, &frame}), "Quarterly plan | Row option"),
+            "what a row's page control with no caption holds is in the page");
+        // An excluded page wholly outside the window is skipped with what it holds; one the window
+        // may show refuses it.
+        Element seen{ATSPI_ROLE_STATIC, "Visible words", {}, {}};
+        Element farText{ATSPI_ROLE_STATIC, "Far words", {}, {}};
+        Element far{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {&farText}};
+        frame.bounds = voice::ContextFrame{0, 0, 400, 300};
+        far.bounds = voice::ContextFrame{0, 900, 100, 100};
+        screen = read({&focus, &seen, &far});
+        expect(shows(screen, "Visible words") && !shows(screen, "Far words"), "an excluded page outside the window is skipped");
+        far.bounds = voice::ContextFrame{0, 100, 100, 100};
+        expect(read({&focus, &seen, &far}) == voice::hiddenScreen(), "an excluded page in the window refuses it");
+        frame.bounds.reset();
     }
     std::cout << "screen semantic layout and password/page access census passed\n";
 }

@@ -40,6 +40,50 @@
       }
     },
     {
+      "name": "a piece of text in a page keeps what it holds in the page, for a helper that walks into one with no name",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "text",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a field in a page keeps what it holds in the page, for a helper that walks into one not shown safe",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "inPage": true
+        }
+      },
+      "expected": {
+        "action": "field",
+        "childrenInPage": true
+      }
+    },
+    {
+      "name": "a page's control in a row keeps what it holds in the page, for a helper that walks into one with no caption",
+      "request": {
+        "node": {
+          "role": "control",
+          "thin": 1,
+          "inPage": true,
+          "part": true
+        }
+      },
+      "expected": {
+        "action": "caption",
+        "shown": true,
+        "childrenInPage": true
+      }
+    },
+    {
       "name": "a page not excluded is walked into and gives the walk its host",
       "request": {
         "node": {
@@ -127,7 +171,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -184,7 +229,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -346,7 +392,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -442,7 +489,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -460,7 +508,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -523,7 +572,8 @@
       },
       "expected": {
         "action": "caption",
-        "shown": true
+        "shown": true,
+        "childrenInPage": true
       }
     },
     {
@@ -543,7 +593,8 @@
       },
       "expected": {
         "action": "caption",
-        "shown": false
+        "shown": false,
+        "childrenInPage": true
       }
     },
     {
@@ -569,7 +620,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -581,7 +633,8 @@
         }
       },
       "expected": {
-        "action": "field"
+        "action": "field",
+        "childrenInPage": false
       }
     },
     {
@@ -701,7 +754,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -719,7 +773,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -879,7 +934,8 @@
         }
       },
       "expected": {
-        "action": "text"
+        "action": "text",
+        "childrenInPage": false
       }
     },
     {
@@ -892,7 +948,8 @@
         }
       },
       "expected": {
-        "action": "field"
+        "action": "field",
+        "childrenInPage": false
       }
     },
     {
@@ -907,7 +964,8 @@
       },
       "expected": {
         "action": "caption",
-        "shown": true
+        "shown": true,
+        "childrenInPage": true
       }
     },
     {

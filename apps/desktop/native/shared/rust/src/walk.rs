@@ -180,6 +180,11 @@ fn node(facts: &Value) -> Result<Value, u32> {
             _ => descend,
         }
     };
+    // What a helper may still walk into after reading it (a page's control with no caption, a
+    // piece of text with no name, a field not shown safe) keeps the page it is in.
+    if matches!(step["action"].as_str(), Some("text" | "field" | "caption")) {
+        step["childrenInPage"] = json!(children_in_page);
+    }
     if caret_first {
         step["caretFirst"] = json!(true);
     }
