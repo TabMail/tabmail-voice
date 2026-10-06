@@ -601,12 +601,14 @@ pub unsafe extern "C" fn voice_core_source_caret_starts(
     }
 }
 /// Where the provider starts each paragraph near the caret (`count` ascending offsets), for a
-/// caret source before it finishes. A refusal fails the source.
+/// caret source before it finishes; `caret_ends_line`: the selection starts at the end of the
+/// line above a paragraph starting at its offset. A refusal fails the source.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn voice_core_source_paragraph_starts(
     state: *mut crate::source::Source,
     starts: *const usize,
     count: usize,
+    caret_ends_line: bool,
 ) -> u32 {
     if state.is_null() {
         return 1;
@@ -621,7 +623,7 @@ pub unsafe extern "C" fn voice_core_source_paragraph_starts(
         } else {
             unsafe { std::slice::from_raw_parts(starts, count) }
         };
-        state.set_paragraph_starts(starts)
+        state.set_paragraph_starts(starts, caret_ends_line)
     });
     match result {
         Ok(()) => 0,
@@ -1274,7 +1276,7 @@ mod source_abi_tests {
             );
             let starts = [11usize];
             assert_eq!(
-                voice_core_source_paragraph_starts(state, starts.as_ptr(), starts.len()),
+                voice_core_source_paragraph_starts(state, starts.as_ptr(), starts.len(), false),
                 0
             );
             loop {
@@ -1297,15 +1299,47 @@ mod source_abi_tests {
             voice_core_buffer_free(output);
             voice_core_source_free(state);
 
+            // A caret at the end of the line above the paragraph: the break follows it.
+            assert_eq!(
+                voice_core_source_utf16_new(text.len(), 11, 11, &mut state),
+                0
+            );
+            assert_eq!(
+                voice_core_source_paragraph_starts(state, starts.as_ptr(), starts.len(), true),
+                0
+            );
+            loop {
+                let (mut start, mut length) = (0, 0);
+                assert_eq!(voice_core_source_next(state, &mut start, &mut length), 0);
+                if length == 0 {
+                    break;
+                }
+                assert_eq!(
+                    voice_core_source_utf16_offer(state, text[start..].as_ptr(), length),
+                    0
+                );
+            }
+            let mut output = Buffer::empty();
+            assert_eq!(voice_core_source_finish(state, &mut output), 0);
+            let value: serde_json::Value =
+                serde_json::from_slice(std::slice::from_raw_parts(output.data, output.length))
+                    .unwrap();
+            assert_eq!(
+                value["parts"],
+                serde_json::json!(["First line.", "", "\u{2029}Second"])
+            );
+            voice_core_buffer_free(output);
+            voice_core_source_free(state);
+
             // Told nothing is fine; a null list of some, an unordered one, a second one, or one for
             // a field source poisons it.
             assert_eq!(voice_core_source_utf16_new(1, 1, 1, &mut state), 0);
             assert_eq!(
-                voice_core_source_paragraph_starts(state, std::ptr::null(), 0),
+                voice_core_source_paragraph_starts(state, std::ptr::null(), 0, false),
                 0
             );
             assert_eq!(
-                voice_core_source_paragraph_starts(state, std::ptr::null(), 0),
+                voice_core_source_paragraph_starts(state, std::ptr::null(), 0, false),
                 1
             );
             let (mut start, mut length) = (0, 0);
@@ -1317,17 +1351,20 @@ mod source_abi_tests {
             voice_core_source_free(state);
             for (pointer, count) in [(std::ptr::null(), 2), ([2usize, 1].as_ptr(), 2)] {
                 assert_eq!(voice_core_source_utf16_new(4, 2, 2, &mut state), 0);
-                assert_eq!(voice_core_source_paragraph_starts(state, pointer, count), 1);
+                assert_eq!(
+                    voice_core_source_paragraph_starts(state, pointer, count, false),
+                    1
+                );
                 voice_core_source_free(state);
             }
             assert_eq!(voice_core_field_utf16_new(1, 0, 1, &mut state), 0);
             assert_eq!(
-                voice_core_source_paragraph_starts(state, starts.as_ptr(), 1),
+                voice_core_source_paragraph_starts(state, starts.as_ptr(), 1, false),
                 1
             );
             voice_core_source_free(state);
             assert_eq!(
-                voice_core_source_paragraph_starts(std::ptr::null_mut(), starts.as_ptr(), 1),
+                voice_core_source_paragraph_starts(std::ptr::null_mut(), starts.as_ptr(), 1, false),
                 1
             );
         }

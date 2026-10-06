@@ -469,7 +469,14 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   formatting and links are not), and text after a block, finding the first sibling that reaches
   the window by halves. Chromium's own paragraph answers were tried first and dropped: walked back
   from a paragraph's start they give each run of text (a word edited apart) as a paragraph, and
-  the owner's smoke test read "plan" / "ning" on two lines. The core's `caretWindow`
+  the owner's smoke test read "plan" / "ning" on two lines. A caret at the end of a line and one
+  at the start of the block after it have one offset in the text, so the adapter also says which
+  (`caretEndsLine`; the Mac: the element Chromium gives the caret's marker started before it and
+  reaches it), and the break at that offset then follows the caret; without it the owner's caret
+  after a line's last word read as if on the next line. With the block starts, the Mac no longer
+  sends Chromium's answer to whether a paragraph starts at the caret (`caretStarts.paragraph`):
+  every left-out break is at a block start, and that answer also says yes at a bold word or link
+  inside a line. The core's `caretWindow`
   puts back the break before each start that has none, as U+2029, within each part's budget (a
   side at its limit gives up its far end, and its edge is then unknown). The render shows U+2029 as
   a line break, and redacts the caret's text without the put-back breaks too, with each one

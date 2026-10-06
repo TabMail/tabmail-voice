@@ -119,4 +119,14 @@ enum MarkerCaretSource {
         }
         return walk(field) ? starts.sorted() : nil
     }
+
+    /// Whether a selection starting at `location` is at the end of the line above a block that
+    /// starts there, not at that block's start: the text gives both places one offset, and
+    /// Chromium tells them apart by the element its start marker is in (`span`, its place in the
+    /// field's text), the line's text or block ending there or the block starting there (measured
+    /// 2026-10-06). The shared core then puts that block's break after the caret.
+    static func endsLine(caretElement span: NSRange?, at location: Int) -> Bool {
+        guard let span else { return false }
+        return span.location < location && NSMaxRange(span) >= location
+    }
 }

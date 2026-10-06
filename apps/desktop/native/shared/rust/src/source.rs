@@ -36,6 +36,7 @@ pub struct Source {
     failed: bool,
     caret_starts: Option<serde_json::Value>,
     paragraph_starts: Option<Vec<usize>>,
+    caret_ends_line: bool,
 }
 fn high(unit: u16) -> bool {
     (0xd800..=0xdbff).contains(&unit)
@@ -78,6 +79,7 @@ impl Source {
             failed: false,
             caret_starts: None,
             paragraph_starts: None,
+            caret_ends_line: false,
         };
         if !field && end - start > crate::context::SELECTION_SOURCE_BYTES {
             state.unavailable = true;
@@ -129,8 +131,14 @@ impl Source {
     }
     /// Where the provider starts each paragraph near the caret, in its offsets, ascending
     /// (ADR-DESK-007, 2026-10-06): the caret window puts back the break before each that its text
-    /// leaves out. Only a caret source takes them, once.
-    pub fn set_paragraph_starts(&mut self, starts: &[usize]) -> Result<(), u32> {
+    /// leaves out. `caret_ends_line`: the selection starts at the end of the line above a
+    /// paragraph that starts at its offset, so that break follows it. Only a caret source takes
+    /// them, once.
+    pub fn set_paragraph_starts(
+        &mut self,
+        starts: &[usize],
+        caret_ends_line: bool,
+    ) -> Result<(), u32> {
         if self.field_edges.is_some()
             || self.paragraph_starts.is_some()
             || starts.len() > PARAGRAPH_STARTS
@@ -139,6 +147,7 @@ impl Source {
             return Err(1);
         }
         self.paragraph_starts = Some(starts.to_vec());
+        self.caret_ends_line = caret_ends_line;
         Ok(())
     }
     /// The paragraph starts inside what was read, as byte offsets into its parts joined: a start
@@ -340,6 +349,7 @@ impl Source {
         }
         if self.paragraph_starts.is_some() {
             window["paragraphStarts"] = json!(self.paragraph_bytes());
+            window["caretEndsLine"] = json!(self.caret_ends_line);
         }
         let request = serde_json::to_vec(&json!({ "caretWindow": window })).map_err(|_| 3u32)?;
         crate::context::process(&request)
@@ -356,6 +366,7 @@ mod tests {
         caret: usize,
         starts: &[usize],
         scalar: bool,
+        ends_line: bool,
     ) -> serde_json::Value {
         let units: Vec<u16> = text.encode_utf16().collect();
         let scalars: Vec<char> = text.chars().collect();
@@ -366,7 +377,7 @@ mod tests {
             Source::new(count, caret, caret)
         }
         .unwrap();
-        source.set_paragraph_starts(starts).unwrap();
+        source.set_paragraph_starts(starts, ends_line).unwrap();
         while let Some((at, length)) = source.next().unwrap() {
             if scalar {
                 source
@@ -385,32 +396,41 @@ mod tests {
     #[test]
     fn paragraph_starts_map_from_provider_offsets_into_the_parts() {
         assert_eq!(
-            read_with_starts("Ab😀cd", 6, &[0, 1, 3, 4, 6, 9], false),
+            read_with_starts("Ab😀cd", 6, &[0, 1, 3, 4, 6, 9], false, false),
             json!(["A\u{2029}b😀\u{2029}cd\u{2029}", "", ""])
         );
         assert_eq!(
-            read_with_starts("Ab😀cdef", 4, &[0, 3, 5], true),
+            read_with_starts("Ab😀cdef", 4, &[0, 3, 5], true, false),
             json!(["Ab😀\u{2029}c", "", "d\u{2029}ef"])
         );
         assert_eq!(
-            read_with_starts("Ab\ncd", 3, &[3], false),
+            read_with_starts("Ab\ncd", 3, &[3], false, false),
             json!(["Ab\n", "", "cd"])
+        );
+        // The caret ends the line above the paragraph starting at its offset: the break follows it.
+        assert_eq!(
+            read_with_starts("Abcd", 2, &[2], false, true),
+            json!(["Ab", "", "\u{2029}cd"])
+        );
+        assert_eq!(
+            read_with_starts("Abcd", 2, &[2], false, false),
+            json!(["Ab\u{2029}", "", "cd"])
         );
     }
     #[test]
     fn paragraph_starts_are_a_caret_sources_once_and_ascending() {
         let mut source = Source::new(4, 2, 2).unwrap();
-        assert_eq!(source.set_paragraph_starts(&[2, 1]), Err(1));
-        assert_eq!(source.set_paragraph_starts(&[1, 1]), Err(1));
-        assert_eq!(source.set_paragraph_starts(&[1, 2]), Ok(()));
-        assert_eq!(source.set_paragraph_starts(&[1, 2]), Err(1));
+        assert_eq!(source.set_paragraph_starts(&[2, 1], false), Err(1));
+        assert_eq!(source.set_paragraph_starts(&[1, 1], false), Err(1));
+        assert_eq!(source.set_paragraph_starts(&[1, 2], false), Ok(()));
+        assert_eq!(source.set_paragraph_starts(&[1, 2], false), Err(1));
         let mut field = Source::field(4, 0, 4).unwrap();
-        assert_eq!(field.set_paragraph_starts(&[1]), Err(1));
+        assert_eq!(field.set_paragraph_starts(&[1], false), Err(1));
         let mut many = Source::new(4, 2, 2).unwrap();
         let starts: Vec<usize> = (0..=PARAGRAPH_STARTS).collect();
-        assert_eq!(many.set_paragraph_starts(&starts), Err(1));
+        assert_eq!(many.set_paragraph_starts(&starts, false), Err(1));
         assert_eq!(
-            many.set_paragraph_starts(&starts[..PARAGRAPH_STARTS]),
+            many.set_paragraph_starts(&starts[..PARAGRAPH_STARTS], false),
             Ok(())
         );
     }

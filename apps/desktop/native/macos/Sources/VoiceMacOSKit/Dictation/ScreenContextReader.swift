@@ -209,21 +209,33 @@ enum ScreenContextReader {
                       value.intValue >= 0 else { return nil }
                 return value.intValue
             }
-            let starts = MarkerCaretSource.blockStarts(in: element, around: snapshot.range, within: limits.paragraphStartUnits,
-                                                       elements: limits.caretSourceElements, children: { node in
-                (CaretLocator.attribute(node, kAXChildrenAttribute) as? [AXUIElement]) ?? []
-            }, isBlock: { node in
-                (CaretLocator.attribute(node, kAXRoleAttribute) as? String).map(HelperConfig.blockRoles.contains) ?? false
-            }, span: { node in
+            func span(_ node: AXUIElement) -> NSRange? {
                 guard let whole = CaretLocator.parameterized(element, "AXTextMarkerRangeForUIElement", node),
                       CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID(),
                       let start = length(CaretLocator.parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers",
                                                                     [fieldStart, AXTextMarkerRangeCopyStartMarker(whole as! AXTextMarkerRange)] as CFArray)),
                       let count = length(whole) else { return nil }
                 return NSRange(location: start, length: count)
-            })
-            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms")
-            return starts
+            }
+            let starts = MarkerCaretSource.blockStarts(in: element, around: snapshot.range, within: limits.paragraphStartUnits,
+                                                       elements: limits.caretSourceElements, children: { node in
+                (CaretLocator.attribute(node, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+            }, isBlock: { node in
+                (CaretLocator.attribute(node, kAXRoleAttribute) as? String).map(HelperConfig.blockRoles.contains) ?? false
+            }, span: span)
+            // The element the selection's start is in, to tell the end of a line from the start of
+            // the block after it.
+            let caret = [AXTextMarkerRangeCopyStartMarker(state.selection as! AXTextMarkerRange),
+                         AXTextMarkerRangeCopyEndMarker(state.selection as! AXTextMarkerRange)].first { marker in
+                length(CaretLocator.parameterized(element, "AXTextMarkerRangeForUnorderedTextMarkers", [fieldStart, marker] as CFArray))
+                    == snapshot.range.location
+            }
+            let caretElement = caret.flatMap { CaretLocator.parameterized(element, "AXUIElementForTextMarker", $0) }
+                .flatMap { CFGetTypeID($0) == AXUIElementGetTypeID() ? ($0 as! AXUIElement) : nil }
+                .flatMap { CFEqual($0, element) ? nil : span($0) }
+            let endsLine = MarkerCaretSource.endsLine(caretElement: caretElement, at: snapshot.range.location)
+            HelperLog.debug("ScreenContext: \(starts.map { "\($0.count)" } ?? "no") block starts near the caret in \(Int(Date().timeIntervalSince(looked) * 1000)) ms; the caret \(endsLine ? "ends a line" : "starts its text")")
+            return starts.map { (starts: $0, caretEndsLine: endsLine) }
         })
     }
 
@@ -258,17 +270,23 @@ enum ScreenContextReader {
 
     /// The text around a field's selection, read by its string ranges; unavailable when the field
     /// changed or lost the focus while it was read, or a range gave no text of its length.
-    /// `paragraphStarts`: where the provider starts paragraphs near the selection, asked once, so
-    /// the shared core puts back the breaks its text leaves out.
+    /// `paragraphStarts`: where the provider starts paragraphs near the selection, and whether the
+    /// selection starts at the end of the line above one at its offset, asked once, so the shared
+    /// core puts back the breaks its text leaves out.
     static func valueCaretWindow(snapshot: () -> ValueSnapshot?, string: (NSRange) -> NSString?, focused: () -> Bool,
-                                 paragraphStarts: (ValueSnapshot) -> [Int]? = { _ in nil }) -> SharedContext.CaretWindow? {
+                                 paragraphStarts: (ValueSnapshot) -> (starts: [Int], caretEndsLine: Bool)? = { _ in nil })
+        -> SharedContext.CaretWindow? {
         guard let initial = snapshot() else { return nil }
         let starts = paragraphStarts(initial)
         HelperLog.debug("ScreenContext: caret \(initial.range.location)+\(initial.range.length) of \(initial.count) chars, from the \(initial.markers ? "text markers" : "character range")")
         let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
         do {
-            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range, startsParagraph: initial.startsParagraph,
-                                                     paragraphStarts: starts) { requested in
+            // With the field's block starts, Chromium's own answer to whether a paragraph starts at
+            // the caret is not asked: every break its text leaves out is at a block start, and that
+            // answer also says yes at a run of formatted text inside a line (measured 2026-10-06).
+            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range,
+                                                     startsParagraph: starts == nil ? initial.startsParagraph : nil,
+                                                     paragraphStarts: starts?.starts, caretEndsLine: starts?.caretEndsLine ?? false) { requested in
                 let value = string(requested)
                 if let value, value.length != requested.length {
                     HelperLog.debug("ScreenContext: \(value.length) characters for \(requested.location)+\(requested.length)")

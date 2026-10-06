@@ -161,6 +161,14 @@ async function main() {
     frame = await place("gmail", "getSelection().collapse(field.children[2], 0);");
     await expectRead("Gmail-shaped, empty line starting the signature block",
                      "Synthetic opening line\n\nSynthetic line to dictate under.\n", "\n\n--\nSynthetic signature");
+    // The end of the line dictated under has the signature block's start's offset, and the break
+    // follows it; a caret before a bold word is inside a line.
+    frame = await place("gmail", "getSelection().collapse(field.children[1], field.children[1].childNodes.length);");
+    await expectRead("Gmail-shaped, end of the line dictated under",
+                     "Synthetic opening line\n\nSynthetic line to dictate under.", "\n\n\n--\nSynthetic signature");
+    frame = await place("gmail", "getSelection().collapse(field.children[1].children[0].firstChild, 0);");
+    await expectRead("Gmail-shaped, before a bold word", "Synthetic opening line\n\nSynthetic ",
+                     "line to dictate under.\n\n\n--\nSynthetic signature");
 
     if (failures.length) {
       process.stderr.write(`${failures.join("\n")}\n`);

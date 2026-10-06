@@ -1111,6 +1111,32 @@
       }
     },
     {
+      "name": "a caret at the end of the line above a paragraph starting at its offset gets that break after it",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Line dictated under.",
+            "",
+            "Signature"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "paragraphStarts": [
+            20
+          ],
+          "caretEndsLine": true
+        }
+      },
+      "expected": {
+        "parts": [
+          "Line dictated under.",
+          "",
+          "\u2029Signature"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
       "name": "put-back breaks are shown as line breaks",
       "request": {
         "blocks": [

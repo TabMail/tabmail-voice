@@ -133,13 +133,14 @@ struct MarkerCaretSourceTests {
 
     private func read(_ field: MarkerField = MarkerField(), anchor: Int, focus: Int, markerCount: Int = 140,
                       characters: (count: Int, range: NSRange) = (141, NSRange(location: 9, length: 0)),
-                      changes: Bool = false, focused: Bool = true) -> SharedContext.CaretWindow? {
+                      changes: Bool = false, focused: Bool = true,
+                      paragraphStarts: (starts: [Int], caretEndsLine: Bool)? = nil) -> SharedContext.CaretWindow? {
         var snapshots = 0
         return ScreenContextReader.valueCaretWindow(snapshot: {
             snapshots += 1
             return ScreenContextReader.valueSnapshot(markers: { (field.range(anchor, changes && snapshots > 1 ? focus + 1 : focus), field.range(0, markerCount)) },
                                                      parameterized: field.answer, characters: { characters }, string: Self.string)
-        }, string: Self.string, focused: { focused })
+        }, string: Self.string, focused: { focused }, paragraphStarts: { _ in paragraphStarts })
     }
 
     @Test func aChromiumFieldIsReadNearItsEndThoughItsValueCountsMore() throws {
@@ -252,6 +253,20 @@ struct MarkerCaretSourceTests {
         #expect(read(field, anchor: 96, focus: 110)?.parts[0] == Self.text.substring(to: 96) + "\n")
     }
 
+    /// With the field's block starts, Chromium's answer that a paragraph starts at the caret (which
+    /// it also gives at a run of formatted text inside a line) adds no break; the block starts
+    /// decide, and a caret ending the line above a block gets that block's break after it.
+    @Test func blockStartsDecideTheBreaksAtTheCaret() throws {
+        let field = MarkerField(paragraphs: [0, 96])
+        #expect(read(field, anchor: 96, focus: 96)?.parts[0] == Self.text.substring(to: 96) + "\n")
+        #expect(read(field, anchor: 96, focus: 96, paragraphStarts: ([], false))?.parts == [
+            Self.text.substring(to: 96), "", Self.text.substring(from: 96)])
+        #expect(read(field, anchor: 96, focus: 96, paragraphStarts: ([96], false))?.parts == [
+            Self.text.substring(to: 96) + "\u{2029}", "", Self.text.substring(from: 96)])
+        #expect(read(field, anchor: 96, focus: 96, paragraphStarts: ([96], true))?.parts == [
+            Self.text.substring(to: 96), "", "\u{2029}" + Self.text.substring(from: 96)])
+    }
+
     /// A field whose paragraph changes while it is read is unavailable, like one whose text does.
     @Test func aFieldWhoseParagraphChangesWhileReadIsUnavailable() throws {
         var snapshots = 0
@@ -299,6 +314,16 @@ struct MarkerCaretSourceTests {
     /// Real text-marker objects holding an offset, answering as Chromium does: lengths and unordered
     /// ranges, no index conversion. A range keeps its markers in the order given, as a selection made
     /// backward does.
+    /// A caret at the end of a line and one at the start of the block after it share an offset;
+    /// the element the caret is in tells them apart (Chromium, measured 2026-10-06).
+    @Test func aCaretEndsALineWhenItsElementStartedBeforeIt() {
+        #expect(MarkerCaretSource.endsLine(caretElement: NSRange(location: 23, length: 32), at: 55))
+        #expect(MarkerCaretSource.endsLine(caretElement: NSRange(location: 48, length: 7), at: 55))
+        #expect(!MarkerCaretSource.endsLine(caretElement: NSRange(location: 55, length: 24), at: 55))
+        #expect(!MarkerCaretSource.endsLine(caretElement: NSRange(location: 23, length: 10), at: 55), "an element ending before the caret")
+        #expect(!MarkerCaretSource.endsLine(caretElement: nil, at: 55))
+    }
+
     /// A Gmail compose field as Chromium's tree gives it (measured 2026-10-06): a line of text, an
     /// empty <div>, a <div> holding a sentence edited into runs, and the signature's <div>. Each
     /// block, and text after one, starts where the text may leave out its break.

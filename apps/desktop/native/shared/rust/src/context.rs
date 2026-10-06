@@ -202,10 +202,16 @@ fn line_break(character: char) -> bool {
 }
 /// Puts back the break before each paragraph start (byte offsets into the parts joined,
 /// ascending) whose text has none, as `ADDED_BREAK`. A start at the selection's start goes before
-/// the caret, one at its end after the selection. A part that grows past its budget gives up
+/// the caret, unless `caret_ends_line`: the caret is then at the end of the line above that
+/// paragraph (the text gives both places one offset), and the break follows it. One at the
+/// selection's end goes after the selection. A part that grows past its budget gives up
 /// characters at its far end; one in the selection that would not fit is not added.
 /// Returns whether the before part lost its start and the after part its end.
-fn add_left_out_breaks(parts: &mut [String], starts: &[usize]) -> Result<(bool, bool), u32> {
+fn add_left_out_breaks(
+    parts: &mut [String],
+    starts: &[usize],
+    caret_ends_line: bool,
+) -> Result<(bool, bool), u32> {
     let text = parts.concat();
     if starts.windows(2).any(|pair| pair[0] >= pair[1])
         || starts
@@ -219,7 +225,7 @@ fn add_left_out_breaks(parts: &mut [String], starts: &[usize]) -> Result<(bool, 
         if text[..start].chars().next_back().is_some_and(line_break) {
             continue;
         }
-        let (part, at) = if start <= before {
+        let (part, at) = if start < before || (start == before && !caret_ends_line) {
             (0, start)
         } else if start < before + selected {
             (1, start - before)
@@ -454,10 +460,15 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         // Chromium's text leaves out the break before a paragraph that starts right after text
         // (each <div> of a rich editor): the adapter says where its paragraphs start, and each such
         // break is put back, so the text reads in the lines it is laid out in (ADR-DESK-007,
-        // 2026-10-06). Absent: nothing told, nothing added.
+        // 2026-10-06). Absent: nothing told, nothing added. `caretEndsLine`: the caret is at the end
+        // of a line, not the start of a paragraph at the same offset (absent: it starts it).
         if let Some(starts) = window.get("paragraphStarts") {
             let starts: Vec<usize> = serde_json::from_value(starts.clone()).map_err(|_| 1u32)?;
-            let (lost_start, lost_end) = add_left_out_breaks(&mut parts, &starts)?;
+            let caret_ends_line = match window.get("caretEndsLine") {
+                None => false,
+                Some(value) => value.as_bool().ok_or(1u32)?,
+            };
+            let (lost_start, lost_end) = add_left_out_breaks(&mut parts, &starts, caret_ends_line)?;
             start_known &= !lost_start;
             end_known &= !lost_end;
         }
@@ -969,6 +980,7 @@ mod tests {
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true}}}),
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":"abcd"}}}),
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":7}}}),
+            json!({"caretWindow":{"parts":["a","",""],"startKnown":true,"endKnown":true,"paragraphStarts":[1],"caretEndsLine":1}}),
             json!({"hypertext":{"parts":[{"text":1}]}}),
             json!({"hypertext":{"parts":[{"mark":"elsewhere"}]}}),
             json!({"hypertext":{"parts":[{}]}}),
@@ -1232,7 +1244,10 @@ mod budget_tests {
         ];
         let (before, selected) = (parts[0].len(), parts[1].len());
         let starts = [18, before, before + 18, before + selected + 18];
-        assert_eq!(add_left_out_breaks(&mut parts, &starts), Ok((true, true)));
+        assert_eq!(
+            add_left_out_breaks(&mut parts, &starts, false),
+            Ok((true, true))
+        );
         assert!(
             parts
                 .iter()
@@ -1256,13 +1271,18 @@ mod budget_tests {
                         String::new(),
                         String::new()
                     ],
-                    bad
+                    bad,
+                    false
                 ),
                 Err(1)
             );
         }
         assert_eq!(
-            add_left_out_breaks(&mut [String::from("é"), String::new(), String::new()], &[1]),
+            add_left_out_breaks(
+                &mut [String::from("é"), String::new(), String::new()],
+                &[1],
+                false
+            ),
             Err(1)
         );
     }
