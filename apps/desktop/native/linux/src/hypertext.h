@@ -5,6 +5,7 @@
 #include "../../shared/rust/VoiceCore.h"
 #include <glib.h>
 #include <array>
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -22,21 +23,30 @@ struct Hypertext {
     size_t length = 0;
     std::optional<size_t> caret;
     std::optional<std::pair<size_t, size_t>> selection;
+    // False when it holds more elements or text than the read may take: none of it is read.
+    bool complete = true;
 };
 
-// `Source` gives, for an element: `text` (UTF-8), `caret` (-1 when the caret is elsewhere),
-// `selection` (its part, or none), `links` (each embedded object's offset and the element it stands
-// for, in order) and `block` (whether the element starts a line of its own). At most `limit`
-// elements are visited, and at most `bytes` of text read.
+// `Source` gives, for an element: `text` (UTF-8; none when it holds more than the bytes it is given,
+// before reading it), `caret` (-1 when the caret is elsewhere), `selection` (its part, or none),
+// `links` (each link's offset and the element it stands for, in order), `block` (whether the element
+// starts a line of its own) and `same`. At most `limit` elements are visited, and at most `bytes` of
+// text read; past either, the result is not complete.
+// A link stands for an element of its own only where its text is an embedded object (U+FFFC) and
+// that element is not one the read is already in. Elsewhere it is read as the text it is: GTK's
+// labels give a link's text inline, and the label itself as its element.
 template<class Source>
 Hypertext flattenHypertext(Source& source, const typename Source::Node& root, size_t limit, size_t bytes) {
     auto parts = nlohmann::json::array();
     size_t visited = 0, read = 0;
+    bool fits = true;
+    std::vector<typename Source::Node> path;
     const auto mark = [&](const char* name) { parts.push_back({{"mark", name}}); };
     const auto emit = [&](auto& self, const typename Source::Node& node) -> void {
-        if (++visited > limit) throw std::runtime_error("hypertext element budget");
-        const std::string text = source.text(node);
-        if ((read += text.size()) > bytes) throw std::runtime_error("hypertext text budget");
+        if (++visited > limit) { fits = false; return; }
+        const auto owned = source.text(node, bytes - read);
+        if (!owned || (read += owned->size()) > bytes) { fits = false; return; }
+        const std::string& text = *owned;
         const int caret = source.caret(node);
         const auto selected = source.selection(node);
         const auto links = source.links(node);
@@ -44,13 +54,19 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
         const auto flush = [&] { if (!run.empty()) { parts.push_back({{"text", run}}); run.clear(); } };
         size_t next = 0;
         int index = 0;
+        path.push_back(node);
         for (const char* at = text.c_str(); *at; at = g_utf8_next_char(at), ++index) {
+            const bool embedded = g_utf8_get_char(at) == 0xFFFC;
+            while (next < links.size() && links[next].first == index && (!embedded ||
+                   std::any_of(path.begin(), path.end(), [&](const auto& on) { return source.same(on, links[next].second); })))
+                ++next;
             if (next < links.size() && links[next].first == index) {
                 flush();
                 const auto& child = links[next++].second;
                 const bool block = source.block(child);
                 if (block) mark("blockStart");
                 self(self, child);
+                if (!fits) return;
                 if (block) mark("blockEnd");
                 continue;
             }
@@ -61,10 +77,12 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
             if (chosen && index + 1 == selected->second) { flush(); mark("selectionEnd"); }
         }
         flush();
+        path.pop_back();
         if (next != links.size()) throw std::runtime_error("hypertext link outside its text");
         if (caret == index) mark("caret");
     };
     emit(emit, root);
+    if (!fits) return Hypertext{{}, 0, std::nullopt, std::nullopt, false};
     const auto reply = core::request({{"hypertext", {{"parts", parts}}}}, voice_core_context_json);
     Hypertext flat{reply.at("text").get<std::string>(), reply.at("length").get<size_t>(), std::nullopt, std::nullopt};
     if (!reply.at("caret").is_null()) flat.caret = reply.at("caret").get<size_t>();

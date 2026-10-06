@@ -121,7 +121,7 @@ public:
         error.check();
         if (count < 0) return {};
         if (const auto rich = hypertext(node)) {
-            if (rich->length > static_cast<size_t>(maxLength)) return {};
+            if (!rich->complete || rich->length > static_cast<size_t>(maxLength)) return {};
             return rich->text;
         }
         if (count > maxLength) return {};
@@ -138,8 +138,10 @@ public:
             if (count < 0) throw std::runtime_error("invalid text count");
             return count;
         };
-        if (const auto rich = hypertext(node))
+        if (const auto rich = hypertext(node)) {
+            if (!rich->complete) return {};
             return readScalarBlock(rich->length, [&](size_t from, size_t to) { return scalarSlice(rich->text, from, to); }).text;
+        }
         const auto count = characterCount();
         const auto result = readScalarBlock(count, [&](size_t from, size_t to) {
             if (characterCount() != count) throw std::runtime_error("static text changed");
@@ -164,6 +166,7 @@ public:
         // A rich editor's text is read whole, or not at all: its embedded elements have no
         // visible ranges of the field's own.
         if (const auto rich = hypertext(node)) {
+            if (!rich->complete) return;
             const auto whole = readScalarField(rich->length, 0, rich->length, [&](size_t from, size_t to) { return scalarSlice(rich->text, from, to); });
             if (whole.complete && core::request({{"fieldPlan", {{"text", whole.text}}}}, voice_core_context_json).at("useWhole").get<bool>())
                 context.appendField({"", whole.text, ""}, geometry);
@@ -418,7 +421,7 @@ public:
             try { rich = hypertext(node); }
             catch (const ScreenBudgetExceeded&) { throw; }
             catch (const std::exception&) { return unavailable(); }
-            if (!rich) return unavailable();
+            if (!rich || !rich->complete) return unavailable();
             const auto [count, offset, selections, from, to] = *initial;
             (void)count; (void)offset; (void)from; (void)to;
             // The root's selection is in its own offsets; the elements' own parts place it.
@@ -460,15 +463,18 @@ private:
     struct HypertextSource {
         using Node = voice::Node;
         LiveScreenTree& tree;
-        std::string text(const Node& node) {
+        std::optional<std::string> text(const Node& node, size_t bytes) {
             auto text = own(atspi_accessible_get_text_iface(node.get()));
-            if (!text) return {};
+            if (!text) return std::string();
             tree.check(); Error error;
             const auto count = atspi_text_get_character_count(text.get(), &error.value);
             error.check();
             if (count < 0) throw std::runtime_error("invalid text count");
+            // Each scalar is at least a byte: more of them than `bytes` are not asked for.
+            if (static_cast<size_t>(count) > bytes) return {};
             return tree.range(text, 0, count);
         }
+        bool same(const Node& first, const Node& second) { return tree.same(first, second); }
         int caret(const Node& node) {
             auto text = own(atspi_accessible_get_text_iface(node.get()));
             if (!text) return -1;

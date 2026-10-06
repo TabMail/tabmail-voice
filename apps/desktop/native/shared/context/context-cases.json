@@ -1513,6 +1513,33 @@
         "caret": 8,
         "selection": null
       }
+    },
+    {
+      "name": "a rich editor's caret is the first one its elements report",
+      "request": {
+        "hypertext": {
+          "parts": [
+            {
+              "text": "ab"
+            },
+            {
+              "mark": "caret"
+            },
+            {
+              "text": "cd"
+            },
+            {
+              "mark": "caret"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "abcd",
+        "length": 4,
+        "caret": 2,
+        "selection": null
+      }
     }
   ]
 }

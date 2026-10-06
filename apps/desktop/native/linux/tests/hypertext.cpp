@@ -21,7 +21,15 @@ struct Element {
 struct Fake {
     using Node = int;
     std::map<int, Element> elements;
-    std::string text(int node) { return elements.at(node).text; }
+    int reads = 0;
+    // As AT-SPI is asked: its scalars counted first, and none read past `bytes` of them.
+    std::optional<std::string> text(int node, size_t bytes) {
+        const auto& text = elements.at(node).text;
+        if (static_cast<size_t>(g_utf8_strlen(text.c_str(), -1)) > bytes) return {};
+        ++reads;
+        return text;
+    }
+    bool same(int first, int second) { return first == second; }
     int caret(int node) { return elements.at(node).caret; }
     std::optional<std::pair<int, int>> selection(int node) { return elements.at(node).selection; }
     std::vector<std::pair<int, int>> links(int node) { return elements.at(node).links; }
@@ -76,16 +84,33 @@ int main() {
         inlineLink.elements[1] = Element{"d😀cs", -1, std::nullopt, {}, false};
         flat = flattenHypertext(inlineLink, 0, 100, 1000);
         expect(flat.text == "See d😀cs now" && flat.length == 12 && flat.caret == 12u, "a link joins its line; offsets count Unicode scalars");
-        bool refused = false;
-        try { (void)flattenHypertext(selected, 0, 5, 1000); } catch (const std::exception&) { refused = true; }
-        expect(refused, "more elements than the budget are refused");
-        refused = false;
-        try { (void)flattenHypertext(selected, 0, 100, 20); } catch (const std::exception&) { refused = true; }
-        expect(refused, "more text than the budget is refused");
+        expect(!flattenHypertext(selected, 0, 5, 1000).complete, "more elements than the budget are not read");
+        expect(!flattenHypertext(selected, 0, 100, 20).complete, "more text than the budget is not read");
+        // An element holding more scalars than the bytes left is not read at all.
+        Fake large;
+        large.elements[0] = Element{std::string(30, 'a'), -1, std::nullopt, {}};
+        flat = flattenHypertext(large, 0, 100, 20);
+        expect(!flat.complete && large.reads == 0, "an element larger than the budget is never read");
+        // GTK's labels (gtklabelaccessible.c): a link's text is inline, and its element is the label
+        // itself. A link whose text is no embedded object is read as the text it is.
+        Fake label;
+        label.elements[0] = Element{"Visit example.com now", -1, std::nullopt, {{6, 0}}};
+        flat = flattenHypertext(label, 0, 100, 1000);
+        expect(flat.complete && flat.text == "Visit example.com now" && label.reads == 1, "a label linking to itself is read once, as it is");
+        label.elements[0].links = {{6, 1}};
+        label.elements[1] = Element{"", -1, std::nullopt, {}, false};
+        flat = flattenHypertext(label, 0, 100, 1000);
+        expect(flat.text == "Visit example.com now", "a link whose text is inline keeps its first character");
+        // An embedded object standing for an element the read is already in is not gone into again.
+        Fake cycle;
+        cycle.elements[0] = Element{"a" + object + "b", -1, std::nullopt, {{1, 1}}};
+        cycle.elements[1] = Element{"c" + object, -1, std::nullopt, {{1, 0}}, false};
+        flat = flattenHypertext(cycle, 0, 100, 1000);
+        expect(flat.complete && cycle.reads == 2 && scalarSlice(flat.text, 0, 2) == "ac", "a link back to an element being read is not followed");
         Fake outside;
         outside.elements[0] = Element{"ab", -1, std::nullopt, {{5, 1}}};
         outside.elements[1] = Element{"x", -1, std::nullopt, {}, true};
-        refused = false;
+        bool refused = false;
         try { (void)flattenHypertext(outside, 0, 100, 1000); } catch (const std::exception&) { refused = true; }
         expect(refused, "a link outside its element's text is refused");
         std::cout << "rich editor hypertext flattening passed\n";

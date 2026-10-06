@@ -150,6 +150,18 @@ if(BUILD_TESTING)
   target_link_libraries(voice-hypertext-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json voice-core)
   target_compile_options(voice-hypertext-tests PRIVATE -Wall -Wextra -Werror)
   add_test(NAME voice-hypertext COMMAND voice-hypertext-tests)
+  add_executable(voice-rich-source-tests tests/rich-source.cpp)
+  target_link_libraries(voice-rich-source-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
+  target_compile_options(voice-rich-source-tests PRIVATE -Wall -Wextra -Werror)
+  target_link_options(voice-rich-source-tests PRIVATE
+    -Wl,--wrap=atspi_accessible_clear_cache -Wl,--wrap=atspi_accessible_get_text_iface
+    -Wl,--wrap=atspi_text_get_character_count -Wl,--wrap=atspi_text_get_text
+    -Wl,--wrap=atspi_text_get_caret_offset -Wl,--wrap=atspi_text_get_n_selections
+    -Wl,--wrap=atspi_text_get_selection -Wl,--wrap=atspi_accessible_get_hypertext_iface
+    -Wl,--wrap=atspi_hypertext_get_n_links -Wl,--wrap=atspi_hypertext_get_link
+    -Wl,--wrap=atspi_hyperlink_get_start_index -Wl,--wrap=atspi_hyperlink_get_object
+    -Wl,--wrap=atspi_accessible_get_attributes -Wl,--wrap=atspi_accessible_get_state_set)
+  add_test(NAME voice-rich-source COMMAND voice-rich-source-tests)
   add_executable(voice-screen-collection-tests tests/screen-collection.cpp)
   target_link_libraries(voice-screen-collection-tests PRIVATE PkgConfig::ATSPI nlohmann_json::nlohmann_json ICU::uc ICU::i18n voice-core)
   target_compile_options(voice-screen-collection-tests PRIVATE -Wall -Wextra -Werror)

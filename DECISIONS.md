@@ -412,7 +412,11 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
 - *(Amended 2026-10-06: a Chromium rich editor (a `contenteditable`, Gmail's compose) is read
   around its caret on Windows and Ubuntu, as on the Mac. AT-SPI gives each paragraph or link as an
   embedded object (U+FFFC) with text of its own; Linux walks them in order (`hypertext.h`) and the
-  core's `hypertext` op joins them, a block on a line of its own. Windows reads the field through
+  core's `hypertext` op joins them, a block on a line of its own. A link is gone into only where
+  its text is U+FFFC and its element is not one the read is already in: GTK's labels give a link's
+  text inline and the label itself as its element, and are read as they are. A rich text holding
+  more than the caret source's bytes or the node budget is not read at all (an element is not asked
+  for its text past the bytes left), and never fails the rest of the screen read. Windows reads the field through
   UIA's TextPattern, which leaves out the break of an empty line: measured on Electron's
   Chromium, a caret on an empty line sits at the end of the paragraph above, its line starts at
   the caret and holds only the break, and its paragraph starts before it. So the helper sends what
