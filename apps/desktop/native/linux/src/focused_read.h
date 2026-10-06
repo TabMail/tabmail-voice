@@ -22,13 +22,12 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
         },
         [&](const auto& target, const voice::ScreenExclusions& policy) -> JSON {
             if (!foreground.targets(target->token)) return nullptr;
-            // The shared core decides the bound a field read may ask for (1 to 20,000 UTF-16 units).
+            // The shared core decides the bound a field read may ask for (1 to 20,000 UTF-16 units);
+            // one it refuses is an error, as on the other platforms.
             std::optional<int> limit;
             if (method == "focusedFieldValue") {
                 if (!params.contains("window") || !params["window"].is_number_unsigned() || params["window"] != target->token) return nullptr;
-                try {
-                    limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json).at("maxLength").get<int>();
-                } catch (const std::exception&) { return nullptr; }
+                limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json).at("maxLength").get<int>();
             }
             const auto path = voice::ancestors(target->focus);
             const auto window = std::find_if(path.begin(), path.end(), [](const auto& node) {
