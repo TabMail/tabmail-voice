@@ -3757,9 +3757,9 @@ AT-SPI's collection census, `safeSubtree`, and maps its answer onto `look`). The
 Mac's, the most tested, so on Windows and Linux (overnight owner rule, 2026-10-05: the Mac is the
 reference for a behaviour difference, the more robust option for a conflict):
 - A field holding an excluded page is replaced by the marker; the window is no longer refused.
-- An element wholly outside the window is skipped with what it holds (Windows walked into it),
-  an excluded page there too (ADR-DESK-047's 2026-10-01 amendment); one the window may show, even
-  hidden or thin, still refuses it.
+- An element wholly outside the window is skipped with what it holds, an excluded page there too
+  (ADR-DESK-047's 2026-10-01 amendment; Windows refused one); one the window may show, even hidden
+  or thin, still refuses it.
 - A piece of text, field, heading, link or row whose box shows nothing is skipped, not walked into
   (Linux walked into hidden text); containers and a page's list items are still walked into.
 - A heading, link or row is read as on the Mac: its own label is looked through when it is read,

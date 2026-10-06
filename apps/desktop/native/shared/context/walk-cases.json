@@ -162,6 +162,31 @@
       }
     },
     {
+      "name": "an excluded page with no width at the window's right edge is in it, and refuses it",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
+          "frame": [
+            800,
+            10,
+            0,
+            100
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
       "name": "an excluded page wholly outside the window is skipped with what it holds",
       "request": {
         "node": {
