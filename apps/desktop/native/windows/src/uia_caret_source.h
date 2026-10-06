@@ -67,6 +67,9 @@ public:
     // The field's blocks, from its own tree: which children are blocks, and where each child's text
     // is (`RangeFromChild`). Chromium's paragraphs are groups only the raw view holds, so a node's
     // children come in one call with a raw-view tree filter (a search's own view is the control view).
+    // Measured in Chromium, not documented: the raw-view filter, and `RangeFromChild` on a field's
+    // grandchildren. Where either fails, a node has no children or no range, and where the text
+    // disagrees, `offsets` gives none: the breaks are left out, as before.
     static LayoutRead layout(IUIAutomation* automation, IUIAutomationElement* field, IUIAutomationTextPattern* pattern) {
         return [automation, field, pattern](IUIAutomationTextRange* selected, IUIAutomationTextRange* low, IUIAutomationTextRange* high) -> std::optional<Layout> {
             using Node = ComPtr<IUIAutomationElement>;

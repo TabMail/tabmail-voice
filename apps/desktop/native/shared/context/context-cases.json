@@ -1137,6 +1137,56 @@
       }
     },
     {
+      "name": "a paragraph start inside the selection gets its break inside the selection",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Intro ",
+            "First paragraphSecond",
+            " paragraph"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "paragraphStarts": [
+            21
+          ]
+        }
+      },
+      "expected": {
+        "parts": [
+          "Intro ",
+          "First paragraph\u2029Second",
+          " paragraph"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a put-back break never makes the sentence end an open edge is cut at",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "head.tail",
+            "",
+            " after"
+          ],
+          "startKnown": false,
+          "endKnown": true,
+          "paragraphStarts": [
+            5
+          ]
+        }
+      },
+      "expected": {
+        "parts": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
       "name": "put-back breaks are shown as line breaks",
       "request": {
         "blocks": [
