@@ -285,6 +285,9 @@ describe("spacedFromCaret", () => {
     ["Note:", "OK 牛乳", " OK 牛乳"],
     // The last letter before the caret decides that side's script.
     ["牛乳 Note:", "buy milk", " buy milk"],
+    // A digit belongs to no script: the letter before it, or the dictation itself, decides.
+    ["東京2024:", "buy milk", " buy milk"],
+    ["Note:", "2025年に行く", " 2025年に行く"],
   ])("after %j, %j starts with a word or an opening mark: %j", (before, text, expected) => {
     expect(spacedFromCaret(before, text)).toBe(expected);
   });
