@@ -53,10 +53,11 @@ export const DictationCleanup = {
 
 /** What a dictation is spaced from when the caret is right after it (owner, 2026-10-05): a delimiter, or
  * a closing bracket or quote. Not an opening one: what is dictated there goes inside it. */
-const spacedDelimiter = /[,;:.!?\p{Pe}\p{Pf}]$/u;
-/** A straight quote that closes a quotation: one after a word or a mark ('hi'│, "Done."│, students'│),
- * not after a space, a line's start or an opening mark (said "│, ('│), where it opens one. */
-const closingStraightQuote = /[^\s\p{Ps}\p{Pi}"']["']$/u;
+const spacedDelimiter = /[,;:.…!?\p{Pe}\p{Pf}]$/u;
+/** Straight quotes that close a quotation: a run of them after a word or a mark ('hi'│, "Done."│,
+ * students'│, "he said 'no'"│), not after a space, a line's start or an opening mark (said "│, ('│,
+ * said "'│), where they open one. */
+const closingStraightQuote = /[^\s\p{Ps}\p{Pi}"']["']+$/u;
 /** What a dictation starts with to be spaced from one: a letter, a digit, a currency sign, an opening
  * bracket or quote (straight quotes and Spanish ¿ ¡ among them). */
 const spacedStart = /^[\p{L}\p{N}\p{Sc}\p{Ps}\p{Pi}"'¿¡]/u;

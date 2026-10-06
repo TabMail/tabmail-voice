@@ -260,7 +260,7 @@ describe("DictationCleanup.pasted", () => {
 
 /** A dictation pasted right after a delimiter is spaced from it (owner, 2026-10-05). */
 describe("spacedFromCaret", () => {
-  test.each([",", ";", ":", ".", "!", "?"])("spaces a dictation from %j before the caret", (delimiter) => {
+  test.each([",", ";", ":", ".", "\u2026", "!", "?"])("spaces a dictation from %j before the caret", (delimiter) => {
     expect(spacedFromCaret(`Note${delimiter}`, "buy milk")).toBe(" buy milk");
   });
 
@@ -293,6 +293,8 @@ describe("spacedFromCaret", () => {
     ["(\"hi\")"],
     ["I don't know 'hi'"],
     ["the students'"],
+    ["She said \"he said 'no'\""],
+    ["She said 'he said \"no\"'"],
     ["It\u2019s \u2018hi\u2019"],
   ])("spaces a dictation from the closing mark of %j", (before) => {
     expect(spacedFromCaret(before, "buy milk")).toBe(" buy milk");
@@ -306,6 +308,7 @@ describe("spacedFromCaret", () => {
     ["(\""],
     ["\u201c'"],
     ["He said \"'"],
+    ["He said '\""],
     ["He said \u201c"],
     ["He said \u00ab"],
     ["see ("],
@@ -318,6 +321,8 @@ describe("spacedFromCaret", () => {
     ["after a space", "Note: ", "buy milk"],
     ["after a line break", "Note:\n", "buy milk"],
     ["after a word", "Note", "buy milk"],
+    ["after a word after a closing quote", "He said \"hi\" to", "buy milk"],
+    ["after a word after a delimiter", "Note: milk", "and eggs"],
     ["with no field read", "", "buy milk"],
     ["before punctuation", "Note:", ", and milk"],
     ["before a closing bracket", "Note:", ") and milk"],
