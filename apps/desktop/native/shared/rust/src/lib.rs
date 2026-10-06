@@ -8,6 +8,7 @@ mod ffi;
 mod gesture;
 mod policy;
 pub mod privacy;
+mod request;
 mod screen;
 mod semantic;
 

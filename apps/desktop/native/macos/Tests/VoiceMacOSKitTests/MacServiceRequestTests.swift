@@ -73,7 +73,11 @@ struct MacServiceRequestTests {
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
-        let service = MacService.register(on: channel)
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
+            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
+            paste: { text in pasted.withLock { $0.append(text) } })
         let requests = [
             #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
             #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
@@ -81,12 +85,33 @@ struct MacServiceRequestTests {
             #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
             #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
             #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
+            #"{"id":9,"method":"insert","params":{"text":""}}"#,
+            #"{"id":10,"method":"insert","params":{"text":"a\u0000b"}}"#,
         ]
         for request in requests { await channel.handle(line: Data(request.utf8)) }
 
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
+        // A refused paste never reaches the pasteboard or ⌘V.
+        #expect(pasted.withLock { $0 }.isEmpty)
+        withExtendedLifetime(service) {}
+    }
+
+    /// The paste the shared core accepts reaches the pasteboard as sent.
+    @Test func anAcceptedPasteIsPastedAsSent() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        let pasted = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let service = MacService.register(
+            on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
+            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }),
+            paste: { text in pasted.withLock { $0.append(text) } })
+        await channel.handle(line: Data(#"{"id":1,"method":"insert","params":{"text":"Dictated 😀 text"}}"#.utf8))
+        let line = try #require(lines.withLock { $0.first })
+        let reply = try #require(JSONSerialization.jsonObject(with: line) as? [String: Any])
+        #expect(reply["result"] as? NSDictionary == [:])
+        #expect(pasted.withLock { $0 } == ["Dictated 😀 text"])
         withExtendedLifetime(service) {}
     }
 
@@ -106,7 +131,7 @@ struct MacServiceRequestTests {
         #expect((main.first?["error"] as? [String: Any])?["message"] as? String == "unknown method readScreen")
         withExtendedLifetime(service) {}
 
-        let nothing = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, read: { _, _, _, _ in nil }, focusedField: { _, _, _ in nil })
+        let nothing = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, read: { _, _, _, _ in nil }, focusedField: { _, _ in nil })
         let others = ["frontmostApp", "caretAnchor", "focusedFieldValue", "insert", "keyboardLanguage", "startActivator"]
         let reader = try await replies({ ScreenReaderService.register(on: $0, screen: nothing) },
                                        [read] + others.enumerated().map { #"{"id":\#($0.offset + 2),"method":"\#($0.element)","params":{}}"# })

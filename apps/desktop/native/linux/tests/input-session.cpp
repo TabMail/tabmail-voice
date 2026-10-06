@@ -274,6 +274,25 @@ int main() {
         require(!fixture.failKey && fixture.keys == expectedKeys && fixture.publications == 1);
         require(offered());
     }
+    // What the shared core refuses (an empty or oversized text, a deadline reached, past or too far
+    // ahead) is refused before anything is published or typed, and the next paste still runs.
+    reset();
+    const auto refused = [&](nlohmann::json change) {
+        auto request = parameters();
+        const auto now = request["deadline"].get<int64_t>() - 2000;
+        if (change.contains("deadline")) change["deadline"] = now + change["deadline"].get<int64_t>();
+        request.update(change);
+        bool threw = false, replied = false;
+        try { inserter.insert(100, request, [&](auto, bool) { replied = true; }); } catch (const std::exception&) { threw = true; }
+        require(threw && !replied && fixture.publications == 0 && fixture.keys.empty());
+    };
+    refused({{"text", ""}});
+    refused({{"text", std::string(512 * 1024 + 1, 'a')}});
+    refused({{"deadline", 0}});
+    refused({{"deadline", -1}});
+    refused({{"deadline", 10000}});
+    run(101, true);
+    require(fixture.publications == 1 && offered());
     // No insertion read the clipboard.
     require(fixture.reads == 0);
     std::weak_ptr<const std::vector<unsigned char>> retained = input.state->offer.at("text/plain;charset=utf-8");

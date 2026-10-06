@@ -3680,6 +3680,13 @@ design explicit.
 - **And two that need no owner call, being wording or strictly more private:** stop reasons are
   `node budget` and `time budget` on every platform, and the host of the page a read came from is
   checked against the excluded sites after every read, not only on macOS.
+- **The paste's rules follow Windows's numbers** (a unification, reported to the owner
+  2026-10-05): every helper refuses a text that is empty, longer than 512 KiB or holds a NUL, and
+  the Windows and Linux helpers, which the app gives a deadline (macOS gets none), a deadline that
+  is not after the helper's clock or more than 5 s past it. Until then macOS
+  pasted any text, empty or holding a NUL, at any length, and Linux took up to 1 MiB with a
+  deadline at most 3 s ahead. The app's own paste is far under 512 KiB and sets its deadline
+  within 5 s, so no dictation is refused by this.
 - **Moved in steps, each its own PR with tests:** this rule, dead code that duplicated the core, and
   the policy cases run by every helper; then the screen read's reply, the focused field's policy
   and request validation; then the terminal surfaces' arithmetic; then the walk's per-node

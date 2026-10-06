@@ -5,6 +5,7 @@
 // Synthetic OS/provider boundaries for the actual production request worker.
 // No UI, clipboard or audio operations occur in this fixture.
 #include <nlohmann/json.hpp>
+#include "../../shared/rust/VoiceCore.h"
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>

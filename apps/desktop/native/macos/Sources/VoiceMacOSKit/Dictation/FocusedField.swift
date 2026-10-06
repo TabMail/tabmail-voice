@@ -6,16 +6,15 @@ import ApplicationServices
 import VoiceHelperSupport
 
 /// The text of an app's focused field, read after a dictation's paste so the app can learn the user's
-/// corrections to it (ADR-DESK-038). Never a password field's, never one in a page of an excluded
-/// website, and nothing past `maxLength`.
+/// corrections to it (ADR-DESK-038). Never a password field's, and never one in a page of an excluded
+/// website; the shared core decides how long one may be (`SharedRequest.fieldValue`).
 enum FocusedField {
     /// The focused field's whole text in the app `pid`, or nil when there is no focused element, it
-    /// has no text, it is a password field, its window shows a page of an excluded website, or its text is
-    /// longer than `maxLength` UTF-16 code units.
+    /// has no text, it is a password field, or its window shows a page of an excluded website.
     /// Blocking cross-process Accessibility calls: call off the main thread. Those on the focused
     /// element are bounded by `HelperConfig.focusedFieldTimeout`; those on what is above and inside
     /// it (looked at for pages only) by the system-wide default.
-    static func value(inApp pid: pid_t, maxLength: Int, excluding exclusions: ScreenExclusions) -> String? {
+    static func value(inApp pid: pid_t, excluding exclusions: ScreenExclusions) -> String? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, HelperConfig.focusedFieldTimeout)
         guard let focused = CaretLocator.attribute(app, kAXFocusedUIElementAttribute),
@@ -25,14 +24,13 @@ enum FocusedField {
         }
         let element = focused as! AXUIElement
         AXUIElementSetMessagingTimeout(element, HelperConfig.focusedFieldTimeout)
-        return value(of: element, above: ScreenContextReader.ancestors(of: element), in: LiveScreenTree(), maxLength: maxLength,
-                     excluding: exclusions)
+        return value(of: element, above: ScreenContextReader.ancestors(of: element), in: LiveScreenTree(), excluding: exclusions)
     }
 
-    /// The focused element's text, as `value(inApp:maxLength:excluding:)` has it; `focusPath` is what
+    /// The focused element's text, as `value(inApp:excluding:)` has it; `focusPath` is what
     /// is above the element. A page of an excluded website in the element's window is looked for before
     /// the text is asked for.
-    static func value<Tree: ScreenTree>(of element: Tree.Element, above focusPath: [Tree.Element], in tree: Tree, maxLength: Int,
+    static func value<Tree: ScreenTree>(of element: Tree.Element, above focusPath: [Tree.Element], in tree: Tree,
                                         excluding exclusions: ScreenExclusions) -> String? {
         let started = Date()
         func holdsExcludedPage(_ element: Tree.Element, intoPages: Bool) -> Bool {
@@ -49,22 +47,17 @@ enum FocusedField {
         }
         // The value is asked for only once the field is known not to be a password field.
         let subrole = tree.string(element, kAXSubroleAttribute)
-        return readable(subrole: subrole, value: subrole == kAXSecureTextFieldSubrole ? nil : tree.string(element, kAXValueAttribute),
-                        maxLength: maxLength)
+        return readable(subrole: subrole, value: subrole == kAXSecureTextFieldSubrole ? nil : tree.string(element, kAXValueAttribute))
     }
 
-    /// `value`, unless it is a password field's (`subrole`), missing, or longer than `maxLength`.
-    static func readable(subrole: String?, value: String?, maxLength: Int) -> String? {
+    /// `value`, unless it is a password field's (`subrole`) or missing.
+    static func readable(subrole: String?, value: String?) -> String? {
         if subrole == kAXSecureTextFieldSubrole {
             HelperLog.debug("FocusedField: a password field; not read")
             return nil
         }
         guard let value else {
             HelperLog.debug("FocusedField: no text")
-            return nil
-        }
-        guard value.utf16.count <= maxLength else {
-            HelperLog.debug("FocusedField: \(value.utf16.count) code units, over \(maxLength)")
             return nil
         }
         return value

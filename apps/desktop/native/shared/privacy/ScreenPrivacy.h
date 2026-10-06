@@ -9,11 +9,10 @@
 #include <string>
 
 namespace voice::privacy {
-// Redacts one native value (a focused field's text). A screen read's blocks and caret are redacted
-// together, before rendering, in its shared reply (`screenReply`).
+// UTF-8 to and from the redactor's UTF-16. Redaction itself is the shared core's: a screen read's in
+// its reply (`screenReply`), a focused field's in the `request` op.
 struct ScreenPrivacy {
     static std::u16string decode(const std::string& text) { return decodeUtf8(text); }
     static std::string encode(const std::u16string& text) { return encodeUtf16(text); }
-    static std::string redact(const std::string& text) { return encode(Redactor::redact(decode(text))); }
 };
 }

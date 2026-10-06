@@ -56,6 +56,16 @@ int main() {
  JSON insert={{"text","synthetic"},{"deadline",uint64_t{2000}}};
  bool refused=request("insert",insert).contains("error");
  check("insert still requires explicit target and does not mutate",refused && voice::inserts==0);
+ // What the shared core refuses is refused before the paste: an empty text, one over 512 KiB, and a
+ // deadline reached or more than 5 s past the helper's clock (the fixture's clock is 1000).
+ bool coreRefused=true;
+ for(auto params:std::vector<JSON>{{{"text",""},{"deadline",uint64_t{2000}}},{{"text",std::string(512*1024+1,'a')},{"deadline",uint64_t{2000}}},
+     {{"text","synthetic"},{"deadline",uint64_t{1000}}},{{"text","synthetic"},{"deadline",uint64_t{6001}}}}) {
+  params["window"]=uint64_t{42};
+  coreRefused &= request("insert",params).contains("error");
+ }
+ check("core-refused pastes never reach the clipboard",coreRefused && voice::inserts==0);
+ check("an accepted paste is pasted once",request("insert",{{"window",uint64_t{42}},{"text","synthetic"},{"deadline",uint64_t{6000}}}).contains("result") && voice::inserts==1);
  check("field read still requires explicit target",request("focusedFieldValue",{{"maxLength",uint64_t{20}}}).contains("error") && voice::fieldCalls==0);
  worker->finish();
  int failed=0;for(const auto& c:cases)if(!c["pass"].get<bool>())++failed;

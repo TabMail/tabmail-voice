@@ -14,10 +14,12 @@ import VoiceHelperSupport
 /// it (`ScreenReaderService`).
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
 /// - `focusedFieldValue {pid, maxLength, excludedAppIDs, excludedHosts}` → `{value}`: the text of
-///   the app's focused field, null for none, a password field, one longer than `maxLength` UTF-16
-///   code units (`FocusedField`), or one in an app or on a website the user excludes from screen
-///   reading, which is not read. Secret-looking text is taken out of it (`Redactor`).
-/// - `insert {text}` → `{}`: pastes `text` into the focused field; the clipboard keeps it.
+///   the app's focused field, null for none, a password field (`FocusedField`), or one in an app or
+///   on a website the user excludes from screen reading, which is not read. The shared core
+///   (`SharedRequest`) checks `maxLength`, sends null for a field longer than it in UTF-16 code
+///   units, and takes secret-looking text out of the rest.
+/// - `insert {text}` → `{}`: pastes `text` into the focused field once the shared core accepts it;
+///   the clipboard keeps it.
 /// - `keyboardLanguage` → `{code}`: the active input source's raw locale, or null; the app normalizes it.
 /// - `fullUserName` → `{name}`: the user account's full name, empty when it has none.
 /// - `globeRead` → `{value}` (null when this macOS lacks the calls); `globeUpdate {value}` → `{}`.
@@ -51,13 +53,13 @@ public enum MacService {
         register(on: channel, eventStore: EventKitStore(), contactStore: ContactsFrameworkStore())
     }
 
-    /// `eventStore` and `contactStore` are the user's calendars and contacts, `fileSearch` Spotlight
-    /// and `fileOpener` the Finder, or a test's stand-ins.
+    /// `eventStore` and `contactStore` are the user's calendars and contacts, `fileSearch` Spotlight,
+    /// `fileOpener` the Finder and `paste` the pasteboard and ⌘V, or a test's stand-ins.
     @MainActor
     static func register(
         on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore,
         fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace,
-        screen: ScreenAccess = .accessibility
+        screen: ScreenAccess = .accessibility, paste: @escaping @MainActor @Sendable (String) async -> Void = { await TextInserter().insert($0) }
     ) -> AnyObject {
         let activator = AccessibilityActivator()
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
@@ -75,20 +77,21 @@ public enum MacService {
             }.value
         }
         channel.on("focusedFieldValue") { params in
-            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }),
-                  let maxLength = params["maxLength"]?.integer, maxLength >= 0 else {
+            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else {
                 throw HelperError("focusedFieldValue needs pid and maxLength")
             }
+            let maxLength = try SharedRequest.fieldBound(params["maxLength"])
             let exclusions = try ScreenExclusions(params: params, method: "focusedFieldValue")
             if exclusions.excludesApp(screen.bundleIdentifier(pid)) {
                 HelperLog.debug("FocusedField: the app is excluded from screen reading; not read")
                 return ["value": .null]
             }
-            return await Task.detached { ["value": screen.focusedField(pid, maxLength, exclusions).flatMap { try? Redactor.redact($0) }.map(JSON.string) ?? .null] }.value
+            return await Task.detached { (try? SharedRequest.fieldValue(screen.focusedField(pid, exclusions), maxLength: maxLength)) ?? ["value": .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string else { throw HelperError("insert needs text") }
-            await TextInserter().insert(text)
+            try SharedRequest.insert(text)
+            await paste(text)
             return [:]
         }
         channel.on("keyboardLanguage") { _ in
@@ -234,14 +237,14 @@ struct ScreenAccess: Sendable {
     var bundleIdentifier: @Sendable (pid_t) -> String?
     /// The screen context of the app, as read; none when an excluded website is showing.
     var read: @Sendable (pid_t, String, String?, ScreenExclusions) -> ScreenContext?
-    /// The text of the app's focused field, up to a length (`FocusedField`); none in an excluded website.
-    var focusedField: @Sendable (pid_t, Int, ScreenExclusions) -> String?
+    /// The text of the app's focused field (`FocusedField`); none in an excluded website.
+    var focusedField: @Sendable (pid_t, ScreenExclusions) -> String?
 
     static let accessibility = ScreenAccess(
         frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
         bundleIdentifier: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
         read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2, excluding: $3) },
-        focusedField: { FocusedField.value(inApp: $0, maxLength: $1, excluding: $2) }
+        focusedField: { FocusedField.value(inApp: $0, excluding: $1) }
     )
 }
 

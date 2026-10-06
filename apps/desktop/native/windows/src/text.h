@@ -9,7 +9,8 @@
 
 namespace voice {
 inline std::wstring utf16(const std::string& value) {
-    if (value.empty() || value.size() > 512 * 1024 || value.find('\0') != std::string::npos) throw std::runtime_error("invalid paste text");
+    // What may be pasted is the shared core's; a Windows string ends at its first NUL.
+    if (value.find('\0') != std::string::npos) throw std::runtime_error("text holds a NUL");
     const auto size = static_cast<int>(value.size());
     const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), size, nullptr, 0);
     if (!count) throw std::runtime_error("text conversion failed");

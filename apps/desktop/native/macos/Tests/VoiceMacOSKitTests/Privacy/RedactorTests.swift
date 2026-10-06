@@ -461,4 +461,23 @@ struct RedactorTests {
         }
     }
 
+    @Test func sharedRequestCasesRunThroughTheNativeABI() throws {
+        struct Case: Decodable { var name: String; var request: JSON; var expected: JSON?; var refused: Bool? }
+        struct Cases: Decodable { var cases: [Case] }
+        let native = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: native.appendingPathComponent("shared/context/request-cases.json"))
+        let cases = try JSONDecoder().decode(Cases.self, from: data).cases
+        #expect(cases.contains { $0.refused == true } && cases.contains { $0.refused == nil })
+        for item in cases {
+            let request = try JSONEncoder().encode(item.request)
+            if item.refused == true {
+                #expect(throws: Redactor.Failure.self, "\(item.name)") { try Redactor.request(request, operation: .request) }
+            } else {
+                let reply = try JSONDecoder().decode(JSON.self, from: Redactor.request(request, operation: .request))
+                #expect(reply == item.expected, "\(item.name)")
+            }
+        }
+    }
+
 }

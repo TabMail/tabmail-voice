@@ -5,6 +5,7 @@
 #include "channel.h"
 #include "foreground.h"
 #include "input_session.h"
+#include "../../shared/rust/VoiceCore.h"
 
 namespace voice {
 // One bounded transaction at a time. The clipboard is written, never read: the
@@ -133,9 +134,9 @@ public:
         item->text = params["text"].get<std::string>(); item->reply = std::move(reply);
         const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         const auto wallDeadline = params["deadline"].get<int64_t>();
-        if (!item->target || item->target > 9007199254740991ULL ||
-            item->text.empty() || item->text.size() > 1024 * 1024 || item->text.find('\0') != std::string::npos ||
-            !g_utf8_validate(item->text.data(), item->text.size(), nullptr) || wallDeadline <= now || wallDeadline > now + 3000) throw std::runtime_error("invalid insertion");
+        if (!item->target || item->target > 9007199254740991ULL || !g_utf8_validate(item->text.data(), item->text.size(), nullptr)) throw std::runtime_error("invalid insertion");
+        // The shared core decides what may be pasted and how far ahead its deadline may be.
+        voice::core::request({{"insert", {{"text", item->text}, {"deadline", wallDeadline}, {"now", now}}}}, voice_core_request_json);
         item->terminal = terminalTarget();
         // GNOME terminals reserve Ctrl+V for terminal input; their clipboard
         // shortcut is Ctrl+Shift+V. Use the provider's semantic terminal role.
