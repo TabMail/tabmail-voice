@@ -153,6 +153,16 @@ limit across all run text. Oversized or invalid requests refuse instead of silen
 truncating. Native collectors must enforce these bounds while acquiring text.
 Runs separated by a hidden gap are never coalesced or read through that gap.
 
+A NUL in run text is a cell with no character of its own (iTerm2 writes one for
+an unwritten cell and for the right half of a double-width character). Before
+redaction, a NUL right after a non-ASCII character is dropped as its right half
+(iTerm2's widths depend on its settings; ASCII is never double width), and any
+other NUL reads as a space. Dropping can only join text, so a right half never
+splits a secret away from redaction; the accepted cost (owner, 2026-10-05) is that
+a single blank cell right after a non-ASCII character reads as nothing. Request
+caret and selection offsets count the native text, NULs included; the result's
+offsets count the cleaned text.
+
 The result preserves surface/run identity and whitespace, returns only redacted
 text, and gives `renderedText`, per-run `renderedOffset`, exact caret
 `renderedOffset` when available, and per-selection `renderedStart`/`renderedEnd`.
