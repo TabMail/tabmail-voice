@@ -68,8 +68,14 @@ Hypertext flattenHypertext(Source& source, const typename Source::Node& root, si
                 // A caret before the element: Chromium gives the caret at the end of the text before
                 // a link to the text holding it, at the link's object, and none to the link itself.
                 if (caret == index && source.caret(child) < 0) mark("caret");
+                // So is a selection's start or end there, at an element with no part of its own (an
+                // image, or a link with no text), or an empty one.
+                const auto part = selected && index >= selected->first && index < selected->second ? source.selection(child) : std::nullopt;
+                const bool own = part && part->first < part->second;
+                if (selected && index == selected->first && !own) mark("selectionStart");
                 self(self, child);
                 if (!fits) return;
+                if (selected && index + 1 == selected->second && !own) mark("selectionEnd");
                 if (block) mark("blockEnd");
                 continue;
             }

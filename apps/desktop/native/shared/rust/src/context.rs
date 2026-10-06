@@ -183,6 +183,10 @@ const CARET_SOURCE_BYTES: usize = SELECTION_SOURCE_BYTES + 2 * SOURCE_WINDOW_BYT
 // How much of the line at a caret an adapter reads to tell an empty line (a break) from words;
 // a longer line is sent as `null`.
 const CARET_LINE_BYTES: usize = 3;
+/// The most elements a rich editor's text may hold for the caret's or the walk's read of it (Linux
+/// AT-SPI asks each a handful of D-Bus calls): one holding more is not read, so a large page with
+/// the focus can't spend the screen read's time on it.
+const CARET_SOURCE_ELEMENTS: usize = 500;
 const CARET_SIDE_GRAPHEMES: usize = 2_000;
 
 fn caret_text(parts: &[String]) -> String {
@@ -481,7 +485,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.
@@ -1010,15 +1014,37 @@ mod budget_tests {
             assert!(text.contains("Keys"), "{text}");
         }
     }
+    /// The break at the limit gives up the before part's first character even when every caret
+    /// part is at its largest, so the window still fits the caret source and is read.
+    #[test]
+    fn a_left_out_break_fits_a_caret_window_at_every_limit() {
+        let words = |bytes: usize| {
+            "Why does it move. ".repeat(bytes / 18 + 1)[..bytes - 1].to_owned() + "x"
+        };
+        let parts = [
+            words(SOURCE_WINDOW_BYTES),
+            words(SELECTION_SOURCE_BYTES),
+            words(SOURCE_WINDOW_BYTES),
+        ];
+        assert_eq!(
+            parts.iter().map(String::len).sum::<usize>(),
+            CARET_SOURCE_BYTES
+        );
+        let reply = call(
+            json!({"caretWindow":{"parts":parts,"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":"Wh"}}}),
+        );
+        assert!(reply["parts"][0].as_str().unwrap().ends_with("x\n"));
+        assert_eq!(reply["parts"][1], json!(parts[1]));
+    }
     /// The caret's place in the screen the redactor sees counts the blocks above it in UTF-16
     /// units, as the redactor does: text above it outside ASCII must not move it off the key.
     #[test]
     fn a_key_split_at_the_caret_below_wide_text_is_still_withheld() {
         let window = call(
-            json!({"caretWindow":{"parts":[concat!("Key gh", "p_0123456789"),"","abcdef rest"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
+            json!({"caretWindow":{"parts":[concat!("😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀 Key gh", "p_0123456789"),"","abcdef rest"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
         );
         let reply = call(
-            json!({"blocks":[{"kind":"text","text":"Notes ☕☕☕☕"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+            json!({"blocks":[{"kind":"text","text":"Notes ☕☕ 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
         );
         let text = reply.to_string();
         assert!(

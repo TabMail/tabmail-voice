@@ -88,6 +88,29 @@ int main() {
         beforeParagraph.elements[0].caret = 2;
         atLink = flattenHypertext(beforeParagraph, 0, 100, 1000);
         expect(atLink.caret && before(atLink) == "Hi All,\n\n", "a caret before a paragraph that reports none starts its line");
+        // A selection starting or ending at an element with no part of its own (an image) keeps
+        // that edge: the text holding the element marks it.
+        Fake image;
+        image.elements[0] = Element{"a" + object + "bc", -1, std::pair{1, 4}, {{1, 1}}, true};
+        image.elements[1] = Element{"", -1, std::nullopt, {}, false};
+        auto edged = flattenHypertext(image, 0, 100, 1000);
+        expect(edged.selection && edged.selection->first == 1 && edged.selection->second == 3, "a selection starting at an image keeps its start");
+        image.elements[0].selection = std::pair{0, 2};
+        edged = flattenHypertext(image, 0, 100, 1000);
+        expect(edged.selection && edged.selection->first == 0 && edged.selection->second == 1, "a selection ending at an image keeps its end");
+        image.elements[1].selection = std::pair{0, 0};
+        edged = flattenHypertext(image, 0, 100, 1000);
+        expect(edged.selection && edged.selection->first == 0 && edged.selection->second == 1, "an image reporting an empty part keeps the end");
+        // Text after a paragraph starts a line of its own.
+        Fake after;
+        after.elements[0] = Element{object + "tail", -1, std::nullopt, {{0, 1}}, true};
+        after.elements[1] = Element{"para", -1, std::nullopt, {}, true};
+        expect(flattenHypertext(after, 0, 100, 1000).text == "para\ntail", "text after a paragraph starts its own line");
+        // The budget counts bytes: four two-byte scalars take eight.
+        Fake wide;
+        wide.elements[0] = Element{object, -1, std::nullopt, {{0, 1}}, true};
+        wide.elements[1] = Element{"\xC3\xA9\xC3\xA9\xC3\xA9\xC3\xA9", -1, std::nullopt, {}, true};
+        expect(!flattenHypertext(wide, 0, 100, 10).complete && flattenHypertext(wide, 0, 100, 11).complete, "the budget counts a rich text's bytes");
         auto selected = paragraphs(false);
         selected.elements[0].selection = std::pair{0, 3};
         selected.elements[1].selection = std::pair{3, 7};

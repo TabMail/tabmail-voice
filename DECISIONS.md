@@ -416,9 +416,12 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   its text is U+FFFC and its element is not one the read is already in: GTK's labels give a link's
   text inline and the label itself as its element, and are read as they are. A caret Chromium gives
   a text at an element's object, the element reporting none (the caret at the end of the text before
-  a link), is placed just before that element. A rich text holding
-  more than the caret source's bytes or the node budget is not read at all (an element is not asked
-  for its text past the bytes left), and never fails the rest of the screen read. Windows reads the field through
+  a link), is placed just before that element, and so is a selection's start or end there when the
+  element has no part of its own, or an empty one (an image). A rich text holding more than the caret
+  source's bytes or its own element budget (`caretSourceElements`, in the core) is not read at all (an
+  element is not asked for its text past the bytes left); nor is one the core refuses to join. Neither
+  fails the rest of the screen read. A selection the editor reports that the elements' parts leave
+  empty makes the caret unavailable rather than a caret with none. Windows reads the field through
   UIA's TextPattern, which leaves out the break of an empty line: measured on Electron's
   Chromium, a caret on an empty line sits at the end of the paragraph above, its line starts at
   the caret and holds only the break, and its paragraph starts before it. So the helper sends what

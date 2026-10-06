@@ -387,7 +387,8 @@
         "sourceWindowBytes": 262144,
         "selectionSourceBytes": 262138,
         "caretSourceBytes": 786426,
-        "caretLineBytes": 3
+        "caretLineBytes": 3,
+        "caretSourceElements": 500
       }
     },
     {
@@ -941,6 +942,60 @@
       "expected": {
         "parts": [
           "Why does it ",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a caret on a line holding only a carriage return gets the break",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Hi All,",
+            "",
+            ""
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "caretStarts": {
+            "paragraph": false,
+            "line": true,
+            "lineText": "\r"
+          }
+        }
+      },
+      "expected": {
+        "parts": [
+          "Hi All,\n",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a caret on a line holding only a paragraph separator gets the break",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Hi All,",
+            "",
+            ""
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "caretStarts": {
+            "paragraph": false,
+            "line": true,
+            "lineText": "\u2029"
+          }
+        }
+      },
+      "expected": {
+        "parts": [
+          "Hi All,\n",
           "",
           ""
         ],

@@ -139,6 +139,39 @@ int main() {
             tree.appendFieldSource(root, voice::ContextFrame{0, 0, 90, 80}, context, voice::ContextFrame{10, 20, 100, 100});
             expect(context.render().find("xxxx") == std::string::npos && largestRead <= 1, "a rich field too large is not read");
         }
+        {
+            // A rich text holding more elements than the read may take is not read, and the
+            // rest of the screen still is: nothing throws.
+            const auto limit = voice::core::request({{"limits", true}}, voice_core_context_json).at("caretSourceElements").get<size_t>();
+            Element many{"", 0, std::nullopt, {}, "block"};
+            for (size_t index = 0; index < limit; ++index) {
+                many.text += object;
+                many.links.push_back({static_cast<int>(index), element({"a", -1, std::nullopt, {}, "inline"})});
+            }
+            auto root = voice::own(element(many));
+            voice::LiveScreenTree tree(root);
+            expect(!tree.screenText(root) && !tree.field(root, std::numeric_limits<int>::max()), "a rich text with too many elements is not read");
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable, "a caret in a rich text with too many elements is unavailable");
+        }
+        {
+            // A rich text the read can't make sense of (a link past its text) is not read either.
+            auto child = element({"x", -1, std::nullopt, {}, "inline"});
+            auto root = voice::own(element({"ab", 0, std::nullopt, {{5, child}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            expect(!tree.screenText(root) && !tree.field(root, 100), "a malformed rich text is not read");
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable, "a caret in a malformed rich text is unavailable");
+        }
+        {
+            // A selection the elements' parts leave empty, while the editor reports one, is not
+            // read as none: the caret is unavailable.
+            auto empty = element({"", -1, std::nullopt, {}, "inline"});
+            auto root = voice::own(element({"a" + object + "b", 1, std::array{1, 2}, {{1, empty}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable, "a selection the elements lost is unavailable");
+        }
         std::cout << "rich text through AT-SPI passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

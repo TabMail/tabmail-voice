@@ -417,13 +417,12 @@ public:
         const auto initial = snapshot();
         if (!initial) return unavailable();
         if (hasLinks(node)) {
-            std::optional<Hypertext> rich;
-            try { rich = hypertext(node); }
-            catch (const ScreenBudgetExceeded&) { throw; }
-            catch (const std::exception&) { return unavailable(); }
+            const auto rich = hypertext(node);
             if (!rich || !rich->complete) return unavailable();
             const auto [count, offset, selections, from, to] = *initial;
-            (void)count; (void)offset; (void)from; (void)to;
+            (void)count; (void)offset;
+            // A selection the elements' parts lost is not read as none.
+            if (selections && from < to && rich->selection && rich->selection->first == rich->selection->second) return unavailable();
             // The root's selection is in its own offsets; the elements' own parts place it.
             std::optional<std::pair<size_t, size_t>> range;
             if (selections && rich->selection) range = rich->selection;
@@ -533,11 +532,16 @@ private:
         }
     };
     // A rich editor's text, its caret and selection placed (hypertext.h); none for any other element.
+    // One the read can't take (too many elements or bytes, or malformed) is not read, and the rest of
+    // the screen is.
     std::optional<Hypertext> hypertext(const Node& node) {
         if (!hasLinks(node)) return {};
         HypertextSource source{*this};
-        return flattenHypertext(source, node, walk::limits().nodeBudget,
-            core::request({{"limits", true}}, voice_core_context_json).at("caretSourceBytes").get<size_t>());
+        static const auto limits = core::request({{"limits", true}}, voice_core_context_json);
+        try {
+            return flattenHypertext(source, node, limits.at("caretSourceElements").get<size_t>(), limits.at("caretSourceBytes").get<size_t>());
+        } catch (const ScreenBudgetExceeded&) { throw; }
+        catch (const std::exception&) { return Hypertext{{}, 0, std::nullopt, std::nullopt, false}; }
     }
     std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(readMilliseconds());
     void check() const { if (!withinBudget()) throw ScreenBudgetExceeded(); }
