@@ -199,7 +199,7 @@ public:
         const bool terminal = std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
             [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
         std::optional<PageHost> focusedPage;
-        if (element && refusedPages(window, element.Get(), exclusions, terminal ? HelperConfig::terminalReadBudgetMs : 1500, false, &focusedPage))
+        if (element && refusedPages(window, element.Get(), exclusions, terminal ? HelperConfig::terminalReadBudgetMs : walk::limits().timeBudgetMilliseconds, false, &focusedPage))
             return hiddenScreen();
         // A protected focus contributes only the caret marker. Never ask it for
         // value/text patterns, including the editable capability probe.
@@ -220,13 +220,13 @@ public:
                 std::cerr << "debug accessible text: metadata ownership unavailable\n";
                 return nullptr;
             }
-            if (refusedPages(window, logical->metadata(), exclusions, 1500, false)) return hiddenScreen();
+            if (refusedPages(window, logical->metadata(), exclusions, walk::limits().timeBudgetMilliseconds, false)) return hiddenScreen();
             // A field that can't be shown safe gives no caret text, and the rest of the
             // window is still read, as for a field read through UI Automation below.
-            if (safeTextSubtree(logical->metadata(), started, 1500)) parts = logical->parts(selectionUnavailable, started);
+            if (safeTextSubtree(logical->metadata(), started, walk::limits().timeBudgetMilliseconds)) parts = logical->parts(selectionUnavailable, started);
             else std::cerr << "debug accessible text: protected or incomplete subtree\n";
         } else if (isEditable) {
-            if (safeTextSubtree(element.Get(), started, 1500)) parts = textParts(element.Get(), selectionUnavailable, started);
+            if (safeTextSubtree(element.Get(), started, walk::limits().timeBudgetMilliseconds)) parts = textParts(element.Get(), selectionUnavailable, started);
         } else if (pageInFocus) pageSelection = selectedInPage(element.Get(), exclusions, selectionUnavailable, started);
         else if (element && !protectedFocus && terminal) parts = readOnlyParts(element.Get(), selectionUnavailable, started);
         const std::string left = parts ? (*parts)[0] : "";
@@ -238,7 +238,7 @@ public:
         // a read that stopped because the window lost the foreground is no context.
         bool hiddenPage = false;
         std::optional<std::wstring> walkedHost;
-        const FocusRead focus{element.Get(), terminal, !terminal && (protectedFocus || parts.has_value()), !pageSelection.empty()};
+        const FocusRead focus{element.Get(), !terminal && (protectedFocus || parts.has_value()), !pageSelection.empty()};
         if (!readVisible(window, focus, caretText, started, context, exclusions, hiddenPage, walkedHost)) {
             return hiddenPage ? hiddenScreen() : JSON(nullptr);
         }
@@ -379,7 +379,7 @@ private:
         PageTree tree{this, {}, GetTickCount64(), budget};
         require(automation->get_RawViewWalker(&tree.walker));
         ComPtr<IUIAutomationElement> node = focus;
-        for (unsigned depth = 0; node && depth < 200 && tree.withinBudget(); ++depth) {
+        for (size_t depth = 0; node && depth < walk::limits().focusDepth && tree.withinBudget(); ++depth) {
             if (!tree.isPassword(node)) {
                 const auto page = tree.page(node);
                 if (focusedPage && !*focusedPage && page) *focusedPage = page;
@@ -394,14 +394,14 @@ private:
         }
         // A look that ran out of budget lets the read go on (ADR-DESK-047): each part the walk
         // reads whole is looked through again first, and the focused field by `safeTextSubtree`.
-        if (privacy::lookForExcludedPage(tree, ComPtr<IUIAutomationElement>(focus), exclusions, true) == privacy::PageLook::excluded) {
+        if (walk::lookForExcludedPage(tree, ComPtr<IUIAutomationElement>(focus), exclusions, true) == walk::PageLook::excluded) {
             std::cerr << "debug screen access: excluded or unknown page not read\n";
             return true;
         }
         if (field) {
             ComPtr<IUIAutomationElement> root;
             require(automation->ElementFromHandle(window, &root));
-            if (root && privacy::lookForExcludedPage(tree, root, exclusions, false) == privacy::PageLook::excluded) {
+            if (root && walk::lookForExcludedPage(tree, root, exclusions, false) == walk::PageLook::excluded) {
                 std::cerr << "debug screen access: excluded or unknown page not read\n";
                 return true;
             }
@@ -486,7 +486,7 @@ private:
         try {
             PageTree tree{this, {}, GetTickCount64(), HelperConfig::contextSelectionScanMs};
             require(automation->get_RawViewWalker(&tree.walker));
-            if (privacy::lookForExcludedPage(tree, enclosing, exclusions, true) != privacy::PageLook::none) return {};
+            if (walk::lookForExcludedPage(tree, enclosing, exclusions, true) != walk::PageLook::none) return {};
             if (!privacy::safeTextSubtree(tree, enclosing)) return {};
             const auto value = UiaCaretSource::selectedText(pattern.Get(), selected.Get(), whole.Get(), started);
             if (value) return *value;
@@ -512,28 +512,37 @@ private:
         CONTROLTYPEID type = 0;
         return SUCCEEDED(element->get_CurrentControlType(&type)) && type == UIA_DocumentControlTypeId;
     }
-    static bool isControl(CONTROLTYPEID type) {
-        return type == UIA_ButtonControlTypeId || type == UIA_SplitButtonControlTypeId || type == UIA_CheckBoxControlTypeId ||
-            type == UIA_RadioButtonControlTypeId || type == UIA_ComboBoxControlTypeId;
-    }
-    // Interface chrome, skipped with everything under it. In a page its controls and
-    // toolbars hold content, and are read.
-    static bool isChrome(CONTROLTYPEID type, bool web) {
-        return type == UIA_MenuBarControlTypeId || type == UIA_MenuControlTypeId ||
-            type == UIA_MenuItemControlTypeId || type == UIA_ImageControlTypeId ||
-            type == UIA_ScrollBarControlTypeId || type == UIA_SliderControlTypeId ||
-            type == UIA_SpinnerControlTypeId || (!web && (isControl(type) || type == UIA_ToolBarControlTypeId));
-    }
-    // A row of a table or of an app's own list, read as one block of its cells like the Mac's
-    // table row. A page's list item is no row: it is walked into.
-    static bool isRow(CONTROLTYPEID type, bool web) {
-        return type == UIA_DataItemControlTypeId || (!web && type == UIA_ListItemControlTypeId);
+    // The shared walk's role (walk.rs) of a UI Automation element: a text or link with a
+    // heading level is a heading, a document a page (a native one too: it is walked like one).
+    static std::string sharedRole(IUIAutomationElement* node, CONTROLTYPEID type) {
+        switch (type) {
+            case UIA_DocumentControlTypeId: return "page";
+            case UIA_TextControlTypeId:
+            case UIA_HyperlinkControlTypeId: {
+                VARIANT heading;
+                VariantInit(&heading);
+                const HRESULT status = node->GetCurrentPropertyValue(UIA_HeadingLevelPropertyId, &heading);
+                const bool isHeading = SUCCEEDED(status) && heading.vt == VT_I4 &&
+                    heading.lVal >= HeadingLevel1 && heading.lVal <= HeadingLevel9;
+                VariantClear(&heading);
+                return isHeading ? "heading" : type == UIA_HyperlinkControlTypeId ? "link" : "text";
+            }
+            case UIA_DataItemControlTypeId: return "row";
+            case UIA_ListItemControlTypeId: return "listItem";
+            case UIA_EditControlTypeId: return "field";
+            case UIA_ButtonControlTypeId: case UIA_SplitButtonControlTypeId: case UIA_CheckBoxControlTypeId:
+            case UIA_RadioButtonControlTypeId: case UIA_ComboBoxControlTypeId: return "control";
+            case UIA_ToolBarControlTypeId: return "toolbar";
+            case UIA_MenuBarControlTypeId: case UIA_MenuControlTypeId: case UIA_MenuItemControlTypeId: case UIA_ImageControlTypeId:
+            case UIA_ScrollBarControlTypeId: case UIA_SliderControlTypeId: case UIA_SpinnerControlTypeId: return "chrome";
+            default: return "other";
+        }
     }
     // Where an element is, and whether it can show text there: in the window, not off screen.
     // A box at most a pixel thin shows nothing (screen-reader-only text, a list item
     // scrolled out of view); one that reports no size says nothing and counts as shown.
     struct Placement {
-        bool shown, inWindow;
+        bool shown, offscreen;
         std::optional<ContextFrame> geometry;
         RECT frame;
     };
@@ -550,7 +559,7 @@ private:
             ((width == 0 && height == 0) || std::min(width, height) > hiddenThickness);
         const std::optional<ContextFrame> geometry = sized ?
             std::optional<ContextFrame>{{static_cast<double>(frame.left), static_cast<double>(frame.top), width, height}} : std::nullopt;
-        return Placement{shown, inWindow, geometry, frame};
+        return Placement{shown, offscreen != FALSE, geometry, frame};
     }
     // An element's children in the provider's order: no more than the walk could still
     // visit, and none past its time.
@@ -560,7 +569,7 @@ private:
         ComPtr<IUIAutomationElement> child;
         if (FAILED(walker->GetFirstChildElement(node, &child))) return children;
         while (child && children.size() < limit) {
-            if (GetTickCount64() - started > 1500) { outOfTime = true; break; }
+            if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) { outOfTime = true; break; }
             children.push_back(child);
             ComPtr<IUIAutomationElement> next;
             if (FAILED(walker->GetNextSiblingElement(child.Get(), &next))) break;
@@ -569,81 +578,142 @@ private:
         return children;
     }
     struct WalkFrame { RECT window; double hiddenThickness; };
-    // Text of a heading, link or row gathered from what is under it, as the walk reads it:
-    // its text, its fields' and in a page its controls' captions. None when a page of an
-    // excluded website is among them.
-    bool subtreeText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, SemanticText& reducer, bool web,
-                                           IUIAutomationTextPattern* document, const WalkFrame& within, ULONGLONG started,
-                                           const ScreenExclusions& exclusions, VisibleContext& context) {
+    static walk::Frame frameOf(const RECT& rect) {
+        return {static_cast<double>(rect.left), static_cast<double>(rect.top),
+                static_cast<double>(rect.right) - rect.left, static_cast<double>(rect.bottom) - rect.top};
+    }
+    // What UI Automation says about one element, for the shared walk (`walk::node`). A password
+    // element is asked nothing more: no control type, name, value, text pattern or page.
+    // None when the provider gives no answer: the element is passed over.
+    std::optional<walk::Facts> factsOf(IUIAutomationElement* node, bool inPage, const WalkFrame& within,
+                                       const ScreenExclusions& exclusions, CONTROLTYPEID& type,
+                                       std::optional<PageHost>& page, std::optional<Placement>& place) {
+        walk::Facts facts;
+        facts.inPage = inPage;
+        facts.thin = within.hiddenThickness;
+        facts.window = frameOf(within.window);
+        BOOL password = TRUE;
+        if (FAILED(node->get_CurrentIsPassword(&password))) return std::nullopt;
+        facts.password = password != FALSE;
+        if (facts.password) return facts;
+        if (FAILED(node->get_CurrentControlType(&type))) return std::nullopt;
+        facts.role = sharedRole(node, type);
+        if (facts.role == "page") {
+            page = pageHost(node);
+            facts.pageExcluded = page && exclusions.excludes(*page);
+        }
+        place = placement(node, within.window, within.hiddenThickness);
+        if (!place) return std::nullopt;
+        facts.hidden = place->offscreen;
+        facts.frame = frameOf(place->frame);
+        return facts;
+    }
+    // A look inside an element for a page of an excluded website, within the walk's time.
+    walk::PageLook lookInside(const ComPtr<IUIAutomationElement>& element, IUIAutomationTreeWalker* walker,
+                        ULONGLONG started, const ScreenExclusions& exclusions) {
+        PageTree tree{this, ComPtr<IUIAutomationTreeWalker>(walker), started, walk::limits().timeBudgetMilliseconds};
+        return walk::lookForExcludedPage(tree, element, exclusions, true);
+    }
+    // Text of a heading, link or row gathered from what is under it, as the walk reads it: its
+    // text, its fields' and in a page its controls' captions, each part as the shared walk says
+    // (`part`). False when a page of an excluded website is among them.
+    bool subtreeText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, SemanticText& reducer, bool inPage,
+                     IUIAutomationTextPattern* document, const WalkFrame& within, ULONGLONG started,
+                     const ScreenExclusions& exclusions, VisibleContext& context) {
+        const auto& limits = walk::limits();
         bool outOfTime = false;
-        std::vector<ComPtr<IUIAutomationElement>> stack;
-        const auto push = [&](IUIAutomationElement* parent) {
-            auto children = childrenOf(walker, parent, 5001 - std::min<size_t>(context.nodes, 5000), started, outOfTime);
-            for (auto child = children.rbegin(); child != children.rend(); ++child) stack.push_back(std::move(*child));
+        const auto stopped = [&] {
+            const auto reason = outOfTime ? std::optional<std::string>("time budget") :
+                walk::stop(context.nodes, GetTickCount64() - started, false);
+            if (reason) context.stopped = *reason;
+            return reason.has_value();
         };
-        if (context.nodes < 5000 && GetTickCount64() - started <= 1500) push(root);
-        else outOfTime = GetTickCount64() - started > 1500;
-        while (!stack.empty() && reducer.decision() == SemanticText::Decision::descendants && context.nodes < 5000 && !outOfTime) {
-            if (GetTickCount64() - started > 1500) { outOfTime = true; break; }
-            const auto element = std::move(stack.back());
+        struct Part { ComPtr<IUIAutomationElement> element; bool inPage; };
+        std::vector<Part> stack;
+        const auto push = [&](IUIAutomationElement* parent, bool childrenInPage) {
+            auto children = childrenOf(walker, parent, limits.nodeBudget + 1 - std::min(context.nodes, limits.nodeBudget), started, outOfTime);
+            for (auto child = children.rbegin(); child != children.rend(); ++child) stack.push_back({std::move(*child), childrenInPage});
+        };
+        if (stopped()) {
+            reducer.offer(SemanticText::Event::interrupted);
+            return true;
+        }
+        push(root, inPage);
+        while (reducer.decision() == SemanticText::Decision::descendants && !stack.empty()) {
+            if (stopped()) break;
+            auto part = std::move(stack.back());
             stack.pop_back();
             ++context.nodes;
-            auto* node = element.Get();
-            BOOL password = TRUE;
-            if (FAILED(node->get_CurrentIsPassword(&password)) || password) continue;
-            if (const auto page = pageHost(node); page && exclusions.excludes(*page)) return false;
+            auto* node = part.element.Get();
             CONTROLTYPEID type = 0;
-            if (FAILED(node->get_CurrentControlType(&type)) || isChrome(type, web)) continue;
-            const auto place = placement(node, within.window, within.hiddenThickness);
-            // A box that shows nothing is not gone into here, as in the Mac's.
-            if (!place || !place->shown) continue;
-            // What is read in one piece is looked through whole first: one that holds an
-            // excluded page refuses the window, and one too large to look through gives the
-            // marker in its place (ADR-DESK-054).
-            if ((web && isControl(type)) || type == UIA_TextControlTypeId || type == UIA_EditControlTypeId) {
-                PageTree tree{this, ComPtr<IUIAutomationTreeWalker>(walker), started, 1500};
-                const auto held = privacy::lookForExcludedPage(tree, element, exclusions, true);
-                if (held == privacy::PageLook::excluded) return false;
-                if (held == privacy::PageLook::notSeenWhole) {
+            std::optional<PageHost> page;
+            std::optional<Placement> place;
+            auto facts = factsOf(node, part.inPage, within, exclusions, type, page, place);
+            if (!facts) continue;
+            facts->part = true;
+            const auto step = walk::node(*facts);
+            if (step.action == "refuse") return false;
+            if (step.action == "skip") continue;
+            if (step.action == "field") {
+                // Read by its value, never walked into: one holding an excluded page, or too large
+                // to look through, is not read, and the row says that something there is hidden.
+                if (walk::look("field", lookInside(part.element, walker, started, exclusions)) != "read") {
                     reducer.offer(SemanticText::Event::descendant, VisibleContext::hiddenMarker());
                     continue;
                 }
-            }
-            std::string piece;
-            bool read = false;
-            if (web && isControl(type)) {
-                piece = safeTextSubtree(node, started, 1500) ? controlText(document, node, place->frame, started) : "";
-                read = !piece.empty();
-            } else if (type == UIA_TextControlTypeId) {
-                piece = safeTextSubtree(node, started, 1500) ? elementName(node) : "";
-                read = !piece.empty();
-            } else if (type == UIA_EditControlTypeId && safeTextSubtree(node, started, 1500)) {
-                VisibleContext field;
-                appendVisibleField(node, field, {}, started);
-                for (const auto& parts : field.fieldSources()) {
-                    if (reducer.decision() != SemanticText::Decision::descendants) break;
-                    reducer.offerProjected(SemanticText::Event::descendant, parts);
+                if (safeTextSubtree(node, started, limits.timeBudgetMilliseconds)) {
+                    VisibleContext field;
+                    appendVisibleField(node, field, {}, started);
+                    for (const auto& parts : field.fieldSources()) {
+                        if (reducer.decision() != SemanticText::Decision::descendants) break;
+                        reducer.offerProjected(SemanticText::Event::descendant, parts);
+                    }
+                    continue;
                 }
-                continue;
+                // Descend safely instead of aggregating a protected child.
+            } else if (step.action == "text" || step.action == "caption") {
+                const auto outcome = walk::look(step.action, lookInside(part.element, walker, started, exclusions));
+                if (outcome == "refuse") return false;
+                if (outcome == "marker") {
+                    reducer.offer(SemanticText::Event::descendant, VisibleContext::hiddenMarker());
+                    continue;
+                }
+                const auto piece = !safeTextSubtree(node, started, limits.timeBudgetMilliseconds) ? std::string() :
+                    step.action == "caption" ? controlText(document, node, place->frame, started) : elementName(node);
+                // A piece of text with no name of its own, or a control with no caption, is
+                // walked into: Chromium keeps such text in its children.
+                if (!piece.empty()) {
+                    reducer.offer(SemanticText::Event::descendant, piece);
+                    continue;
+                }
             }
-            if (!read) { push(node); continue; }
-            reducer.offer(SemanticText::Event::descendant, piece);
+            push(node, step.childrenInPage);
         }
         if (reducer.decision() == SemanticText::Decision::descendants)
-            reducer.offer(stack.empty() && !outOfTime && context.nodes < 5000 ? SemanticText::Event::complete : SemanticText::Event::interrupted);
-        if (outOfTime) context.stopped = "time budget";
-        else if (!stack.empty() && context.nodes >= 5000) context.stopped = "node budget";
+            reducer.offer(stack.empty() && !stopped() ? SemanticText::Event::complete : SemanticText::Event::interrupted);
         return true;
     }
-    std::optional<nlohmann::json> semanticText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, SemanticText::Kind kind, bool web,
+    std::optional<nlohmann::json> semanticText(IUIAutomationElement* root, IUIAutomationTreeWalker* walker, SemanticText::Kind kind, bool inPage,
                                            IUIAutomationTextPattern* document, const WalkFrame& within, ULONGLONG started,
                                            const ScreenExclusions& exclusions, VisibleContext& context) {
         SemanticText reducer(kind);
-        const auto rootText = [&] { return safeTextSubtree(root, started, 1500) ? elementName(root) : std::string(); };
-        if (reducer.decision() == SemanticText::Decision::root) reducer.offer(SemanticText::Event::root, rootText());
+        // Its own label can be made of what it holds, so it is looked through first: one that
+        // holds an excluded page refuses the window, one too large to look through gives the marker.
+        const auto rootText = [&]() -> std::optional<std::string> {
+            const auto outcome = walk::look("semantic", lookInside(ComPtr<IUIAutomationElement>(root), walker, started, exclusions));
+            if (outcome == "refuse") return std::nullopt;
+            if (outcome == "marker") return VisibleContext::hiddenMarker();
+            return safeTextSubtree(root, started, walk::limits().timeBudgetMilliseconds) ? elementName(root) : std::string();
+        };
+        const auto offerRoot = [&] {
+            const auto text = rootText();
+            if (text) reducer.offer(SemanticText::Event::root, *text);
+            return text.has_value();
+        };
+        if (reducer.decision() == SemanticText::Decision::root && !offerRoot()) return std::nullopt;
         if (reducer.decision() == SemanticText::Decision::descendants &&
-            !subtreeText(root, walker, reducer, web, document, within, started, exclusions, context)) return std::nullopt;
-        if (reducer.decision() == SemanticText::Decision::root) reducer.offer(SemanticText::Event::root, rootText());
+            !subtreeText(root, walker, reducer, inPage, document, within, started, exclusions, context)) return std::nullopt;
+        if (reducer.decision() == SemanticText::Decision::root && !offerRoot()) return std::nullopt;
         return std::optional<nlohmann::json>(std::in_place, reducer.projectedSource());
     }
     JSON readTerminalScreen(HWND window, IUIAutomationElement* focus, const std::wstring& app,
@@ -663,14 +733,14 @@ private:
         };
         PageTree privacyTree{this,walker,started,HelperConfig::terminalReadBudgetMs};
         // The surfaces are read whole: a window not looked through whole is not read (ADR-DESK-054).
-        switch (privacy::lookForExcludedPage(privacyTree,root,exclusions,true)) {
-            case privacy::PageLook::excluded: return hiddenScreen();
-            case privacy::PageLook::notSeenWhole: return nullptr;
-            case privacy::PageLook::none: break;
+        switch (walk::lookForExcludedPage(privacyTree,root,exclusions,true)) {
+            case walk::PageLook::excluded: return hiddenScreen();
+            case walk::PageLook::notSeenWhole: return nullptr;
+            case walk::PageLook::none: break;
         }
         std::vector<ComPtr<IUIAutomationElement>> focusPath;
         ComPtr<IUIAutomationElement> ancestor=focus;
-        while (ancestor && focusPath.size()<200 && valid()) {
+        while (ancestor && focusPath.size()<walk::limits().focusDepth && valid()) {
             focusPath.push_back(ancestor);
             if (same(ancestor.Get(),root.Get())) break;
             ComPtr<IUIAutomationElement> parent;
@@ -687,7 +757,7 @@ private:
         JSON surfaces=JSON::array(),focusedID=nullptr,caret={{"status","unavailable"}};
         bool complete=true;
         while (!stack.empty()) {
-            if (!valid() || visited>=5000) { complete=false;break; }
+            if (!valid() || visited>=walk::limits().nodeBudget) { complete=false;break; }
             auto entry=std::move(stack.back()); stack.pop_back();
             if (std::any_of(seen.begin(),seen.end(),[&](const auto& prior){return same(prior.Get(),entry.node.Get());})) continue;
             seen.push_back(entry.node);++visited;
@@ -719,15 +789,15 @@ private:
                 captures.push_back({entry.node});
                 continue;
             }
-            if(stack.size()>=5000-visited) {complete=false;break;}
-            auto children=privacyTree.children(entry.node,5000-visited-stack.size());
+            if(stack.size()>=walk::limits().nodeBudget-visited) {complete=false;break;}
+            auto children=privacyTree.children(entry.node,walk::limits().nodeBudget-visited-stack.size());
             for(auto child=children.rbegin();child!=children.rend();++child) stack.push_back({*child,clip});
         }
         if(!valid()) return nullptr;
-        switch (privacy::lookForExcludedPage(privacyTree,root,exclusions,true)) {
-            case privacy::PageLook::excluded: return hiddenScreen();
-            case privacy::PageLook::notSeenWhole: return nullptr;
-            case privacy::PageLook::none: break;
+        switch (walk::lookForExcludedPage(privacyTree,root,exclusions,true)) {
+            case walk::PageLook::excluded: return hiddenScreen();
+            case walk::PageLook::notSeenWhole: return nullptr;
+            case walk::PageLook::none: break;
         }
         for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),started,HelperConfig::terminalReadBudgetMs)) return nullptr;
         wchar_t title[513]{};GetWindowTextW(window,title,513);
@@ -739,15 +809,16 @@ private:
     // The focused element as the walk treats it. `element` is null when the window has none.
     struct FocusRead {
         IUIAutomationElement* element;
-        bool terminal;      // In a terminal app: never a caret block (see readScreen).
         bool field;         // The caret's field: its caret text was read, or it is a protected field.
         bool pageSelected;  // A page that has the focus itself, with something selected in it.
     };
-    // Depth-first in the provider's child order, as the Mac walk: chrome and anything outside
-    // the window are skipped, each piece of text keeps its frame, and the focused element
-    // field becomes the caret block at its place (a page in focus is walked into, after its
-    // selection). The focused element's ancestors are always walked into and never read.
-    // A box that shows nothing in the window is walked into, as on every platform (owner, 2026-10-05; Slack
+    // Depth-first in the provider's child order, as the Mac walk; what to do with each element
+    // is the shared core's (`walk::node`, ADR-DESK-054), and this walk says what UI Automation
+    // tells it about the element. Chrome and anything outside the window are skipped, each piece
+    // of text keeps its frame, and the focused field becomes the caret block at its place (a
+    // page in focus is walked into, after its selection). The focused element's ancestors are
+    // always walked into and never read.
+    // A box that shows nothing is walked into, as on every platform (owner, 2026-10-05; Slack
     // keeps its message list in one), though Chromium reports its children's frames unclipped
     // here, so a screen-reader-only label's text can be read (ADR-DESK-054). A focused element
     // that is no field is read like any other, where the Mac leaves it out.
@@ -755,6 +826,7 @@ private:
                      ULONGLONG started, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
                      std::optional<std::wstring>& walkedHost) {
         auto* const focus = target.element;
+        const auto& limits = walk::limits();
         ComPtr<IUIAutomationElement> root;
         require(automation->ElementFromHandle(window, &root));
         if (!root) return true;
@@ -765,7 +837,7 @@ private:
         std::vector<ComPtr<IUIAutomationElement>> focusPath;
         ComPtr<IUIAutomationElement> ancestor;
         if (focus && SUCCEEDED(walker->GetParentElement(focus, &ancestor))) {
-            while (ancestor && focusPath.size() < 200 && GetTickCount64() - started <= 1500) {
+            while (ancestor && focusPath.size() < limits.focusDepth && GetTickCount64() - started <= limits.timeBudgetMilliseconds) {
                 focusPath.push_back(ancestor);
                 if (same(ancestor.Get(), root.Get())) break;
                 ComPtr<IUIAutomationElement> parent;
@@ -780,11 +852,13 @@ private:
         };
         // Walk only this window. Its desktop siblings are never queried. An explicit
         // continuation stack preserves provider child order without recursive depth.
-        struct Entry { ComPtr<IUIAutomationElement> element; bool web; ComPtr<IUIAutomationTextPattern> document; };
+        struct Entry { ComPtr<IUIAutomationElement> element; bool inPage; ComPtr<IUIAutomationTextPattern> document; };
         std::vector<Entry> stack{{root, false, {}}};
         while (!stack.empty()) {
-            if (context.nodes >= 5000) { context.stopped = "node budget"; break; }
-            if (GetTickCount64() - started > 1500) { context.stopped = "time budget"; break; }
+            if (const auto stopped = walk::stop(context.nodes, GetTickCount64() - started, context.textBudgetFull)) {
+                context.stopped = *stopped;
+                break;
+            }
             if (!context.stopped.empty()) break;
             if (GetForegroundWindow() != window) return false;
             auto entry = std::move(stack.back());
@@ -792,109 +866,89 @@ private:
             ++context.nodes;
             auto* node = entry.element.Get();
             const bool isFocus = focus && same(node, focus);
-            BOOL password = TRUE;
-            if (FAILED(node->get_CurrentIsPassword(&password))) continue;
-            if (password) {
-                if (isFocus && target.field) context.append(ContextKind::caret, "‸");
-                continue; // No name, value, text pattern, or child access.
-            }
-            const bool onFocusPath = std::any_of(focusPath.begin(), focusPath.end(),
+            const bool onPath = !isFocus && std::any_of(focusPath.begin(), focusPath.end(),
                 [&](const auto& parent) { return same(node, parent.Get()); });
-            const bool onPath = isFocus || onFocusPath;
-            if (const auto page = pageHost(node); page) {
-                if (exclusions.excludes(*page)) return refuse();
-                // The first page the walk reaches off the focus's own path, as on the Mac.
-                if (!onPath && !walkedHost && page->kind == PageHost::Kind::host) walkedHost = page->name;
-            }
-            const auto place = placement(node, within.window, within.hiddenThickness);
-            if (!place) continue;
-            // A box wholly outside the window is skipped with what it holds, as on the Mac and Linux.
-            if (!place->inWindow && !onPath) continue;
-            const auto& geometry = place->geometry;
-            if (isFocus && target.field) {
-                context.append(ContextKind::caret, caretText, geometry);
+            CONTROLTYPEID type = 0;
+            std::optional<PageHost> page;
+            std::optional<Placement> place;
+            auto facts = factsOf(node, entry.inPage, within, exclusions, type, page, place);
+            if (!facts) continue;
+            facts->focus = isFocus ? "self" : onPath ? "path" : "";
+            facts->focusedField = isFocus && target.field;
+            facts->selection = isFocus && target.pageSelected;
+            const auto step = walk::node(*facts);
+            if (step.action == "refuse") return refuse();
+            const std::optional<ContextFrame> geometry = place ? place->geometry : std::nullopt;
+            // A page in focus with a selection: the selection, then the page like any page.
+            if (step.caretFirst) context.append(ContextKind::caret, caretText, geometry);
+            if (step.action == "caret") {
+                // A protected field gives only the caret, and nothing of where it is.
+                if (facts->password) context.append(ContextKind::caret, "‸");
+                else context.append(ContextKind::caret, caretText, geometry);
                 continue;
             }
-            // A page in focus with a selection: the selection, then the page like any page.
-            if (isFocus && target.pageSelected) context.append(ContextKind::caret, caretText, geometry);
-            CONTROLTYPEID type = 0;
-            if (FAILED(node->get_CurrentControlType(&type))) continue;
-            const bool web = entry.web || type == UIA_DocumentControlTypeId;
-            if (!onFocusPath && isChrome(type, web)) continue;
+            if (step.action == "skip") continue;
             if (type == UIA_DocumentControlTypeId) {
                 ComPtr<IUIAutomationTextPattern> document;
                 if (SUCCEEDED(node->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&document)))) entry.document = document;
             }
-            const bool control = isControl(type);
-            if (isFocus && target.terminal && type != UIA_EditControlTypeId) {
-                // A terminal's pane: the lines in view, as a field.
-                ComPtr<IUIAutomationTextPattern> pane;
-                if (SUCCEEDED(node->GetCurrentPatternAs(UIA_TextPatternId, IID_PPV_ARGS(&pane))) && pane) {
-                    if (place->shown && safeTextSubtree(node, started, 1500)) appendVisibleField(node, context, geometry, started);
+            // A part read in one piece is looked through first: its label can be made of what it
+            // holds. One that holds an excluded page refuses the window (a field: the marker), and
+            // one too large to look through is withheld behind the marker.
+            const auto look = [&](const char* read) { return walk::look(read, lookInside(entry.element, walker.Get(), started, exclusions)); };
+            if (step.action == "text") {
+                const auto outcome = look("text");
+                if (outcome == "refuse") return refuse();
+                if (outcome == "marker") {
+                    context.append(ContextKind::text, VisibleContext::hiddenMarker(), geometry);
                     continue;
                 }
-            }
-            if (place->shown && !onFocusPath) {
-                const bool row = isRow(type, web);
-                if ((web && control) || row || type == UIA_EditControlTypeId || type == UIA_TextControlTypeId || type == UIA_HyperlinkControlTypeId) {
-                    // Read in one piece, so looked through whole first: one too large to look
-                    // through is withheld, and the marker stands in its place (ADR-DESK-054).
-                    PageTree tree{this, walker, started, 1500};
-                    const auto held = privacy::lookForExcludedPage(tree, entry.element, exclusions, true);
-                    if (held == privacy::PageLook::excluded) return refuse();
-                    if (held == privacy::PageLook::notSeenWhole) {
-                        context.append(type == UIA_EditControlTypeId ? ContextKind::field : ContextKind::text, VisibleContext::hiddenMarker(), geometry);
-                        continue;
-                    }
-                }
-                if (web && control) {
-                    const auto caption = safeTextSubtree(node, started, 1500) ? controlText(entry.document.Get(), node, place->frame, started) : "";
-                    if (!caption.empty()) {
-                        context.append(ContextKind::text, caption, geometry);
-                        continue;
-                    }
-                }
-                if (type == UIA_EditControlTypeId) {
-                    if (safeTextSubtree(node, started, 1500)) {
-                        appendVisibleField(node, context, geometry, started);
-                        continue;
-                    }
-                    // Descend safely instead of aggregating a protected child.
-                }
-                if (row) {
-                    // Its cells as one block; a row that gives none is read by its name.
-                    auto cells = semanticText(node, walker.Get(), SemanticText::Kind::row, web, entry.document.Get(), within, started, exclusions, context);
-                    if (!cells) return refuse();
-                    context.appendSemantic(ContextKind::row, *cells, geometry);
+                const auto name = safeTextSubtree(node, started, limits.timeBudgetMilliseconds) ? elementName(node) : "";
+                context.append(ContextKind::text, name, geometry);
+                // A piece of text with no name of its own is walked into: Chromium keeps its text
+                // in its children.
+                if (!normalizedContextText(name).empty()) continue;
+            } else if (step.action == "field") {
+                if (look("field") != "read") {
+                    context.append(ContextKind::field, VisibleContext::hiddenMarker(), geometry);
                     continue;
                 }
-                // A web control's Name can be an undrawn aria-label. Read its
-                // visible text descendants instead, as the Mac reference does
-                // for controls whose accessibility title is a description.
-                if (type == UIA_TextControlTypeId || type == UIA_HyperlinkControlTypeId) {
-                    VARIANT heading;
-                    VariantInit(&heading);
-                    const HRESULT status = node->GetCurrentPropertyValue(UIA_HeadingLevelPropertyId, &heading);
-                    const bool isHeading = SUCCEEDED(status) && heading.vt == VT_I4 &&
-                        heading.lVal >= HeadingLevel1 && heading.lVal <= HeadingLevel9;
-                    VariantClear(&heading);
-                    const bool isLink = type == UIA_HyperlinkControlTypeId;
-                    if (isHeading || isLink) {
-                        const auto gathered = semanticText(node, walker.Get(), isHeading ? SemanticText::Kind::heading : SemanticText::Kind::link,
-                                                           web, entry.document.Get(), within, started, exclusions, context);
-                        if (!gathered) return refuse();
-                        context.appendSemantic(isHeading ? ContextKind::heading : ContextKind::link, *gathered, geometry);
-                        continue;
-                    }
-                    const auto name = safeTextSubtree(node, started, 1500) ? elementName(node) : "";
-                    context.append(ContextKind::text, name, geometry);
-                    if (!normalizedContextText(name).empty()) continue;
+                if (safeTextSubtree(node, started, limits.timeBudgetMilliseconds)) {
+                    appendVisibleField(node, context, geometry, started);
+                    continue;
                 }
+                // Descend safely instead of aggregating a protected child.
+            } else if (step.action == "semantic") {
+                const auto kind = step.kind == "heading" ? SemanticText::Kind::heading : step.kind == "link" ? SemanticText::Kind::link : SemanticText::Kind::row;
+                const auto gathered = semanticText(node, walker.Get(), kind, entry.inPage, entry.document.Get(), within, started, exclusions, context);
+                if (!gathered) return refuse();
+                context.appendSemantic(step.kind == "heading" ? ContextKind::heading : step.kind == "link" ? ContextKind::link : ContextKind::row,
+                                       *gathered, geometry);
+                continue;
+            } else if (step.action == "caption") {
+                // A page's control: its drawn caption, not its Name, which can be an undrawn
+                // aria-label; without one, its children. One not shown is not read.
+                const auto outcome = look("caption");
+                if (outcome == "refuse") return refuse();
+                if (outcome == "marker") {
+                    if (step.shown) context.append(ContextKind::text, VisibleContext::hiddenMarker(), geometry);
+                    continue;
+                }
+                const auto caption = safeTextSubtree(node, started, limits.timeBudgetMilliseconds) ?
+                    controlText(entry.document.Get(), node, place->frame, started) : "";
+                if (!caption.empty()) {
+                    if (step.shown) context.append(ContextKind::text, caption, geometry);
+                    continue;
+                }
+            } else if (step.host && !walkedHost && page && page->kind == PageHost::Kind::host) {
+                // The first page the walk reaches off the focus's ancestors, as on the Mac.
+                walkedHost = page->name;
             }
             bool outOfTime = false;
-            auto children = childrenOf(walker.Get(), node, 5001 - std::min<size_t>(context.nodes, 5000), started, outOfTime);
+            auto children = childrenOf(walker.Get(), node, limits.nodeBudget + 1 - std::min(context.nodes, limits.nodeBudget), started, outOfTime);
             if (outOfTime) context.stopped = "time budget";
-            for (auto child = children.rbegin(); child != children.rend(); ++child) stack.push_back({std::move(*child), web, entry.document});
+            for (auto child = children.rbegin(); child != children.rend(); ++child)
+                stack.push_back({std::move(*child), step.childrenInPage, entry.document});
         }
         // A provider may omit the focus node from its tree. Retain the independently
         // bounded caret context rather than dropping it from a partial screen read.

@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include "../../shared/context/CaretSource.h"
+#include "../../shared/context/walk.h"
 
 namespace voice {
 class EditCaretSource {
@@ -14,7 +15,7 @@ public:
         wchar_t name[16]{};
         if (!edit || !GetClassNameW(edit, name, 16) || _wcsicmp(name, L"Edit") != 0 || !permitted(edit)) return std::nullopt;
         const auto check = [started]() {
-            if (GetTickCount64() - started > 1500) throw std::runtime_error("screen context time budget");
+            if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) throw std::runtime_error("screen context time budget");
         };
         const auto send = [&](UINT message, WPARAM value, LPARAM data) {
             check(); DWORD_PTR result = 0;

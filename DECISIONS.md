@@ -3743,3 +3743,32 @@ answers once:
   core cannot trust. A caret whose drawing could not be confirmed is sent without a frame on macOS
   (`outsideViewport`) and without a caret on Linux (`unavailable`), as is VTE's ambiguous caret at
   a text's start or end. None of these is `exact`, the only status the app acts on.
+
+**Amendment 2026-10-06 (the walk-policy step):** the walk's decisions now live in the core,
+`voice_core_walk_json`: `node` (what to do with one element, from the facts a helper sends: a
+shared role, focus, page, password, hidden, frame, window and how thin a box hides its text),
+`look` (what a look inside a part read whole decides), `census` (each step of that look),
+`stop` and `limits`. `native/shared/context/walk-cases.json` holds its cases, run by Rust,
+Swift and CTest `voice-walk`. Each helper maps its OS roles onto the shared ones (macOS
+`HelperConfig.contextRoles`, Windows and Linux `sharedRole`) and keeps only OS work: the tree,
+attributes, geometry, a page's address, a field's or control's text, and the provider census it
+looks with (Windows asks the core at each step, `walk.h`'s `lookForExcludedPage`; Linux keeps
+AT-SPI's collection census, `safeSubtree`, and maps its answer onto `look`). The rules are the
+Mac's, the most tested, so on Windows and Linux (overnight owner rule, 2026-10-05: the Mac is the
+reference for a behaviour difference, the more robust option for a conflict):
+- A field holding an excluded page is replaced by the marker; the window is no longer refused.
+- An element wholly outside the window is skipped with what it holds (Windows walked into it).
+- A piece of text, field, heading, link or row whose box shows nothing is skipped, not walked into
+  (Linux walked into hidden text); containers and a page's list items are still walked into.
+- A heading, link or row is read as on the Mac: its own label is looked through when it is read,
+  and each of its parts is judged and looked through on its own; the whole block is no longer
+  withheld when one look of everything under it runs out (Windows, Linux).
+- A password element on the focus's path is walked into like any ancestor; one elsewhere is never.
+- Linux reads a list item outside a page as a row; Windows already did.
+- A look does not count the element it looks inside: up to 5,000 elements inside it are seen
+  whole. Linux's census without a provider collection had missed what lay under the last
+  elements it fetched at the budget's edge; it now fetches one more than fits, so it says when
+  it overflows.
+- The more robust choice where the Mac has no answer: a page's control on Windows and Linux is
+  looked through before its caption is read, shown or not, so a hidden control holding an
+  excluded page refuses the window (the Mac skips a hidden titled control unread).

@@ -86,9 +86,10 @@ int main() {
         Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&first, &second, &last}};
         Tree tree;
         size_t visited = 0;
+        const voice::ScreenExclusions none(JSON{{"excludedAppIDs", JSON::array()}, {"excludedHosts", JSON::array()}});
         auto rowText = [&](std::optional<voice::ContextFrame> window = {}) {
             visited = 0;
-            return voice::semanticLabel(tree, &row, voice::SemanticText::Kind::row, visited, window);
+            return voice::semanticLabel(tree, &row, voice::SemanticText::Kind::row, visited, none, window);
         };
         expect(rowText() == "same | must not be read after refusal", "shared row normalization and canonical adjacent deduplication");
         last.visible = false; tree = Tree{};
@@ -103,7 +104,7 @@ int main() {
         row.label = "Root label"; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
         tree = Tree{}; visited = 0;
-        expect(voice::semanticLabel(tree, &row, voice::SemanticText::Kind::heading, visited) == "Root label" && tree.counts == 0,
+        expect(voice::semanticLabel(tree, &row, voice::SemanticText::Kind::heading, visited, none) == "Root label" && tree.counts == 0,
             "heading root prevents all descendant value reads");
         row.label.clear(); first.label = std::string(10000, 'a'); second.label = std::string(10000, 'b'); tree = Tree{};
         last.bounds.reset();
@@ -323,5 +324,32 @@ int main() {
     expect(!voice::safeSubtree(bulk, &page, policy, true), "metadata response past deadline cannot authorize content");
     bulk.census = std::vector<Element*>{&page}; bulk.budget = false;
     expect(!voice::safeSubtree(bulk, &page, policy, true), "bulk query cannot bypass time budget");
+    {
+        // Without a provider collection the census walks the tree, fetching at most what the
+        // node budget still allows, as the live tree does. The element looked inside is not
+        // counted: as many elements inside it as the budget are seen whole, one more is not, and
+        // what lies under the elements fetched at the budget's edge is still looked at.
+        struct Truncating : Tree {
+            std::vector<Node> children(Node node, size_t limit) {
+                auto result = node->children;
+                if (result.size() > limit) result.resize(limit);
+                return result;
+            }
+        };
+        const auto budget = voice::walk::limits().nodeBudget;
+        Element hidden{ATSPI_ROLE_PASSWORD_TEXT, "", {}, {}};
+        Element holder{ATSPI_ROLE_PANEL, "", {}, {&hidden}};
+        std::vector<Element> fillers(budget, Element{ATSPI_ROLE_PANEL, "", {}, {}});
+        Element wide{ATSPI_ROLE_PANEL, "", {}, {}};
+        for (auto& filler : fillers) wide.children.push_back(&filler);
+        Truncating census;
+        expect(voice::safeSubtree(census, &wide, policy, true), "the budget's worth of elements inside is seen whole");
+        Element extra{ATSPI_ROLE_PANEL, "", {}, {}};
+        wide.children.push_back(&extra);
+        expect(!voice::safeSubtree(census, &wide, policy, true), "one element more than the budget is not seen whole");
+        wide.children.resize(budget - 2);
+        wide.children.insert(wide.children.begin(), &holder);
+        expect(!voice::safeSubtree(census, &wide, policy, true), "a password element under the budget's edge is still found");
+    }
     std::cout << "screen semantic layout and password/page access census passed\n";
 }

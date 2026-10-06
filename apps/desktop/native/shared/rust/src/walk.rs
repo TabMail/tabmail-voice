@@ -205,35 +205,31 @@ fn look(request: &Value) -> Result<Value, u32> {
 }
 
 /// `{"census": {"visited": n, "queued": m, "late": bool, "page": null | "excluded" | "allowed",
-/// "intoPages": bool}}`: one step of a look inside an element for an excluded page, at the element
-/// taken next, with `n` elements visited before it and `m` still waiting. `step`: `notSeenWhole`
-/// (more elements than the budget, or out of time: the look gives up), `excluded`, `skip` (a
-/// page not excluded, not looked into without `intoPages`) or `descend`, fetching at most
-/// `children` of its children (one more than fits, so a look that overflows says so).
-/// `{"census": {"start": true, "late": bool}}` is the look's first step, at the element looked
-/// inside, which is neither counted nor judged: what it is was decided before the look.
+/// "intoPages": bool, "password": bool}}`: one step of a look inside an element for an excluded
+/// page, at the element taken next, with `n` elements visited before it and `m` still waiting.
+/// `step`: `notSeenWhole` (more elements than the budget, or out of time: the look gives up),
+/// `excluded`, `skip` (a password element, whose children a helper never asks for, or a page not
+/// excluded, not looked into without `intoPages`) or `descend`, fetching at most `children` of its
+/// children (one more than fits, so a look that overflows says so).
+/// With `"start": true` the step is the look's first, at the element looked inside itself: it is
+/// not counted (no `visited` or `queued`), and is judged only by the facts sent about it.
 fn census(request: &Value) -> Result<Value, u32> {
-    let late = flag(request, "late")?;
-    if flag(request, "start")? {
-        if request
-            .as_object()
-            .is_none_or(|request| request.keys().any(|key| key != "start" && key != "late"))
-        {
+    let start = flag(request, "start")?;
+    let (visited, queued) = if start {
+        if request.get("visited").is_some() || request.get("queued").is_some() {
             return Err(1);
         }
-        return Ok(if late {
-            json!({"step": "notSeenWhole"})
-        } else {
-            json!({"step": "descend", "children": NODE_BUDGET + 1})
-        });
-    }
-    let visited = number(request, "visited")?;
-    let queued = number(request, "queued")?;
+        (0, 0)
+    } else {
+        (number(request, "visited")?, number(request, "queued")?)
+    };
     let known = visited
         .checked_add(queued)
-        .and_then(|known| known.checked_add(1))
+        .and_then(|known| known.checked_add(u64::from(!start)))
         .ok_or(1u32)?;
+    let late = flag(request, "late")?;
     let into_pages = flag(request, "intoPages")?;
+    let password = flag(request, "password")?;
     let page = match request.get("page") {
         None | Some(Value::Null) => None,
         Some(Value::String(page)) if page == "excluded" || page == "allowed" => Some(page.as_str()),
@@ -241,6 +237,7 @@ fn census(request: &Value) -> Result<Value, u32> {
     };
     Ok(match page {
         _ if late || known > NODE_BUDGET => json!({"step": "notSeenWhole"}),
+        _ if password => json!({"step": "skip"}),
         Some("excluded") => json!({"step": "excluded"}),
         Some(_) if !into_pages => json!({"step": "skip"}),
         _ => json!({"step": "descend", "children": NODE_BUDGET + 1 - known}),

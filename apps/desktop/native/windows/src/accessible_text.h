@@ -9,6 +9,7 @@
 #include "microphone.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
+#include "../../shared/context/walk.h"
 #include <optional>
 #include <array>
 #include <algorithm>
@@ -83,9 +84,9 @@ public:
         const auto [length, start, end] = *before;
         auto result = readUtf16Caret(static_cast<size_t>(length), static_cast<size_t>(start), static_cast<size_t>(end),
             [&](size_t from, size_t to) {
-                if (GetTickCount64() - started > 1500) throw std::runtime_error("screen context time budget");
+                if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) throw std::runtime_error("screen context time budget");
                 auto value = range(static_cast<long>(from), static_cast<long>(to));
-                if (GetTickCount64() - started > 1500) throw std::runtime_error("screen context time budget");
+                if (GetTickCount64() - started > walk::limits().timeBudgetMilliseconds) throw std::runtime_error("screen context time budget");
                 return value;
             });
         if (selection() != before || !valid()) result = CaretSource::unavailable();

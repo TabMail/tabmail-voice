@@ -1104,6 +1104,43 @@
       "refused": true
     },
     {
+      "name": "a look's first step at an excluded page finds it",
+      "request": {
+        "census": {
+          "start": true,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "excluded"
+      }
+    },
+    {
+      "name": "a look's first step at a page not excluded, not into pages, looks no further",
+      "request": {
+        "census": {
+          "start": true,
+          "page": "allowed"
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
+      "name": "a look's first step at a password element looks no further",
+      "request": {
+        "census": {
+          "start": true,
+          "password": true,
+          "page": "excluded"
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
       "name": "a census step at the first element inside",
       "request": {
         "census": {
@@ -1231,6 +1268,32 @@
       "expected": {
         "step": "descend",
         "children": 4996
+      }
+    },
+    {
+      "name": "a census does not go into a password element",
+      "request": {
+        "census": {
+          "visited": 3,
+          "queued": 1,
+          "password": true
+        }
+      },
+      "expected": {
+        "step": "skip"
+      }
+    },
+    {
+      "name": "a census past the budget gives up at a password element too",
+      "request": {
+        "census": {
+          "visited": 5000,
+          "queued": 0,
+          "password": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
       }
     },
     {

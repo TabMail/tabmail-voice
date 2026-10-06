@@ -128,7 +128,7 @@ int main() {
         // reader's own process, which the app ends when the read is no longer wanted).
         using Tree = voice::LiveScreenTree;
         Tree ordinary({}), terminal({}); terminal.withoutDeadline();
-        std::this_thread::sleep_for(std::chrono::milliseconds(Tree::readMilliseconds + 200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(Tree::readMilliseconds() + 200));
         check(!ordinary.withinBudget(), "an ordinary read ends at its limit");
         check(terminal.withinBudget(), "a terminal read runs past an ordinary read's time");
     }
