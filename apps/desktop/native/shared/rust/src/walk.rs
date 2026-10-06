@@ -145,7 +145,9 @@ fn node(facts: &Value) -> Result<Value, u32> {
         }
         _ => {}
     }
-    if excluded {
+    // An excluded page wholly outside the window is skipped with what it holds, like any other
+    // element there; one the window may show refuses it (ADR-DESK-047, 2026-10-01).
+    if excluded && !outside(at, window) {
         return Ok(json!({"action": "refuse"}));
     }
     let skipped = password
@@ -204,29 +206,27 @@ fn look(request: &Value) -> Result<Value, u32> {
     Ok(json!({"outcome": outcome}))
 }
 
-/// `{"census": {"visited": n, "queued": m, "late": bool, "page": null | "excluded" | "allowed",
-/// "intoPages": bool, "password": bool}}`: one step of a look inside an element for an excluded
-/// page, at the element taken next, with `n` elements visited before it and `m` still waiting.
-/// `step`: `notSeenWhole` (more elements than the budget, or out of time: the look gives up),
-/// `excluded`, `skip` (a password element, whose children a helper never asks for, or a page not
-/// excluded, not looked into without `intoPages`) or `descend`, fetching at most `children` of its
-/// children (one more than fits, so a look that overflows says so).
+/// `{"census": {"visited": n, "late": bool, "page": null | "excluded" | "allowed", "intoPages":
+/// bool, "password": bool}}`: one step of a look inside an element for an excluded page, at the
+/// element taken next, with `n` elements visited before it. `step`: `notSeenWhole` (the budget's
+/// elements are visited, or out of time: the look gives up), `excluded`, `skip` (a password
+/// element, whose children a helper never asks for, or a page not excluded, not looked into
+/// without `intoPages`) or `descend`, fetching at most `children` of its children: one more than
+/// the visits left, so a look given more than it can visit ends at the budget, not seen whole.
+/// Only visits count: what waits may never be visited, as a look goes deep first (the elements
+/// last fetched first), and one that holds an excluded page refuses before the budget runs out.
 /// With `"start": true` the step is the look's first, at the element looked inside itself: it is
-/// not counted (no `visited` or `queued`), and is judged only by the facts sent about it.
+/// not counted (no `visited`), and is judged only by the facts sent about it.
 fn census(request: &Value) -> Result<Value, u32> {
     let start = flag(request, "start")?;
-    let (visited, queued) = if start {
-        if request.get("visited").is_some() || request.get("queued").is_some() {
+    let visited = if start {
+        if request.get("visited").is_some() {
             return Err(1);
         }
-        (0, 0)
+        0
     } else {
-        (number(request, "visited")?, number(request, "queued")?)
+        number(request, "visited")?
     };
-    let known = visited
-        .checked_add(queued)
-        .and_then(|known| known.checked_add(u64::from(!start)))
-        .ok_or(1u32)?;
     let late = flag(request, "late")?;
     let into_pages = flag(request, "intoPages")?;
     let password = flag(request, "password")?;
@@ -236,11 +236,12 @@ fn census(request: &Value) -> Result<Value, u32> {
         Some(_) => return Err(1),
     };
     Ok(match page {
-        _ if late || known > NODE_BUDGET => json!({"step": "notSeenWhole"}),
+        _ if late || visited >= NODE_BUDGET => json!({"step": "notSeenWhole"}),
         _ if password => json!({"step": "skip"}),
         Some("excluded") => json!({"step": "excluded"}),
         Some(_) if !into_pages => json!({"step": "skip"}),
-        _ => json!({"step": "descend", "children": NODE_BUDGET + 1 - known}),
+        // The visits left after this element (the start is not counted), and one more.
+        _ => json!({"step": "descend", "children": NODE_BUDGET - visited - u64::from(!start) + 1}),
     })
 }
 

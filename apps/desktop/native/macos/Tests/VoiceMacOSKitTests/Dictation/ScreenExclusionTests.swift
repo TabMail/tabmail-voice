@@ -328,7 +328,9 @@ struct ScreenExclusionTests {
     /// excluded website refuses a read, not the budget.
     @Test func aReadStoppedByItsBudgetIsKept() throws {
         let texts = (0 ..< HelperConfig.contextNodeBudget + 10).map { FakeElement("AXStaticText", [kAXValueAttribute: "line \($0)"]) }
-        let large = gather(FakeElement("AXWindow", [kAXTitleAttribute: "Large"], children: texts), focused: nil, focusPath: [], excluding: ["example.com"])
+        // Started in the future, so a loaded test machine never runs out of time before the nodes.
+        let large = gather(FakeElement("AXWindow", [kAXTitleAttribute: "Large"], children: texts), focused: nil, focusPath: [],
+                           excluding: ["example.com"], started: .distantFuture)
         #expect(large.read)
         #expect(large.context.stoppedEarly == "node budget")
         #expect(large.context.windowTitle == "Large")
@@ -546,6 +548,31 @@ struct ScreenExclusionTests {
         }
         // The outer page excluded, the framed one not.
         #expect(!gather(window, focused: field, focusPath: [frame, group, outer, window], excluding: ["example.org"]).read)
+    }
+
+    /// An excluded page behind more elements than the look's budget, among the last it lists, is
+    /// found: in the focused field, before its caret is read, and in text read whole.
+    @Test func anExcludedPageBehindAWideElementIsFound() throws {
+        let fillers = (0 ..< HelperConfig.contextNodeBudget + 1).map { _ in FakeElement("AXGroup") }
+        let page = FakeElement("AXWebArea", ["host": "pay.example.com"])
+        let field = FakeElement("AXTextArea", Self.caret, children: fillers + [page])
+        let window = FakeElement("AXWindow", [kAXTitleAttribute: "Notes"], children: [field, FakeElement("AXStaticText", [kAXValueAttribute: "Other"])])
+        let refused = gather(window, focused: field, focusPath: [window], excluding: ["example.com"])
+        #expect(!refused.read && refused.asked.caret == 0)
+        let text = FakeElement("AXStaticText", [kAXValueAttribute: "Label"], children: fillers + [page])
+        #expect(!gather(FakeElement("AXWindow", children: [text]), focused: nil, focusPath: [], excluding: ["example.com"]).read)
+    }
+
+    /// An excluded page wholly outside the window is skipped with what it holds, like any element
+    /// there: the window it is not shown in is read (ADR-DESK-047, 2026-10-01).
+    @Test func anExcludedPageOutsideTheWindowIsSkipped() throws {
+        let away = FakeElement("AXWebArea", ["host": "pay.example.com"], frame: CGRect(x: 0, y: 900, width: 400, height: 300),
+                               children: [FakeElement("AXStaticText", [kAXValueAttribute: "card 4242"])])
+        let window = FakeElement("AXWindow", frame: CGRect(x: 0, y: 0, width: 400, height: 300),
+                                 children: [FakeElement("AXStaticText", [kAXValueAttribute: "Visible"]), away])
+        let read = gather(window, focused: nil, focusPath: [], excluding: ["example.com"])
+        #expect(read.read)
+        #expect(try read.context.renderedText() == "Visible")
     }
 
     /// With the caret outside every page (the browser's address field), a page of an excluded
@@ -848,6 +875,9 @@ struct ScreenExclusionTests {
         let fillers = (0 ..< HelperConfig.contextNodeBudget).map { _ in FakeElement("AXGroup") }
         #expect(!holds(FakeElement("AXGroup", children: [frame] + fillers)))
         #expect(holds(FakeElement("AXGroup", children: [frame] + fillers.dropLast())))
+        // Only visits count: children waiting past the budget do not hide a page the look reaches.
+        #expect(holds(FakeElement("AXGroup", children: fillers + [frame])))
+        #expect(holds(FakeElement("AXGroup", children: fillers + [FakeElement("AXGroup"), frame])))
         #expect(!holds(FakeElement("AXGroup", children: [frame]), since: .distantPast))
         #expect(holds(FakeElement("AXGroup", children: [frame])))
         #expect(!holds(frame))

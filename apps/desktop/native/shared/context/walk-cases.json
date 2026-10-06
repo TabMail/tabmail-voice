@@ -67,13 +67,38 @@
       }
     },
     {
-      "name": "an excluded page refuses the window even when hidden or outside it",
+      "name": "an excluded page refuses the window even when hidden or thin",
       "request": {
         "node": {
           "role": "page",
           "thin": 1,
           "pageExcluded": true,
           "hidden": true,
+          "frame": [
+            10,
+            10,
+            1,
+            600
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "refuse"
+      }
+    },
+    {
+      "name": "an excluded page wholly outside the window is skipped with what it holds",
+      "request": {
+        "node": {
+          "role": "page",
+          "thin": 1,
+          "pageExcluded": true,
           "frame": [
             900,
             0,
@@ -89,7 +114,7 @@
         }
       },
       "expected": {
-        "action": "refuse"
+        "action": "skip"
       }
     },
     {
@@ -333,6 +358,54 @@
           "frame": [
             0,
             -10,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an element ending at the window's left edge is skipped",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            -10,
+            0,
+            10,
+            10
+          ],
+          "window": [
+            0,
+            0,
+            800,
+            600
+          ]
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "an element starting at the window's bottom edge is skipped",
+      "request": {
+        "node": {
+          "role": "text",
+          "thin": 1,
+          "frame": [
+            0,
+            600,
             10,
             10
           ],
@@ -699,7 +772,46 @@
       }
     },
     {
-      "name": "a hidden field, heading and row are not read",
+      "name": "a hidden field is not read",
+      "request": {
+        "node": {
+          "role": "field",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "a hidden heading is not read",
+      "request": {
+        "node": {
+          "role": "heading",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "a hidden link is not read",
+      "request": {
+        "node": {
+          "role": "link",
+          "thin": 1,
+          "hidden": true
+        }
+      },
+      "expected": {
+        "action": "skip"
+      }
+    },
+    {
+      "name": "a hidden row is not read",
       "request": {
         "node": {
           "role": "row",
@@ -1097,8 +1209,7 @@
       "request": {
         "census": {
           "start": true,
-          "visited": 0,
-          "queued": 0
+          "visited": 0
         }
       },
       "refused": true
@@ -1144,8 +1255,7 @@
       "name": "a census step at the first element inside",
       "request": {
         "census": {
-          "visited": 0,
-          "queued": 0
+          "visited": 0
         }
       },
       "expected": {
@@ -1154,24 +1264,22 @@
       }
     },
     {
-      "name": "a census step with room for the rest of the budget and one more",
+      "name": "a census step fetches the visits left after it and one more",
       "request": {
         "census": {
-          "visited": 10,
-          "queued": 89
+          "visited": 10
         }
       },
       "expected": {
         "step": "descend",
-        "children": 4901
+        "children": 4990
       }
     },
     {
       "name": "a census at the budget's last element",
       "request": {
         "census": {
-          "visited": 4999,
-          "queued": 0
+          "visited": 4999
         }
       },
       "expected": {
@@ -1183,8 +1291,7 @@
       "name": "a census past the budget has not seen the element whole",
       "request": {
         "census": {
-          "visited": 5000,
-          "queued": 0
+          "visited": 5000
         }
       },
       "expected": {
@@ -1192,15 +1299,15 @@
       }
     },
     {
-      "name": "a census with more waiting than the budget has not seen it whole",
+      "name": "a census at the budget's last element still finds an excluded page",
       "request": {
         "census": {
-          "visited": 0,
-          "queued": 5000
+          "visited": 4999,
+          "page": "excluded"
         }
       },
       "expected": {
-        "step": "notSeenWhole"
+        "step": "excluded"
       }
     },
     {
@@ -1208,7 +1315,6 @@
       "request": {
         "census": {
           "visited": 0,
-          "queued": 0,
           "late": true
         }
       },
@@ -1221,7 +1327,6 @@
       "request": {
         "census": {
           "visited": 5000,
-          "queued": 0,
           "page": "excluded"
         }
       },
@@ -1234,7 +1339,6 @@
       "request": {
         "census": {
           "visited": 3,
-          "queued": 1,
           "page": "excluded"
         }
       },
@@ -1247,7 +1351,6 @@
       "request": {
         "census": {
           "visited": 3,
-          "queued": 1,
           "page": "allowed"
         }
       },
@@ -1260,14 +1363,13 @@
       "request": {
         "census": {
           "visited": 3,
-          "queued": 1,
           "page": "allowed",
           "intoPages": true
         }
       },
       "expected": {
         "step": "descend",
-        "children": 4996
+        "children": 4997
       }
     },
     {
@@ -1275,7 +1377,6 @@
       "request": {
         "census": {
           "visited": 3,
-          "queued": 1,
           "password": true
         }
       },
@@ -1288,7 +1389,6 @@
       "request": {
         "census": {
           "visited": 5000,
-          "queued": 0,
           "password": true
         }
       },
@@ -1301,7 +1401,6 @@
       "request": {
         "census": {
           "visited": 0,
-          "queued": 0,
           "page": "maybe"
         }
       },
@@ -1311,7 +1410,7 @@
       "name": "a census without a count is refused",
       "request": {
         "census": {
-          "queued": 0
+          "late": false
         }
       },
       "refused": true

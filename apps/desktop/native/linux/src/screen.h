@@ -441,7 +441,9 @@ bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& e
         }
     }
     // The element itself is not counted: as many elements inside it as the budget are seen
-    // whole. One more is fetched than fits, so a census that overflows says so.
+    // whole. Each element fetches one more child than the visits left, so a census that
+    // overflows says so; only visits count, as what waits may never be visited (the shared
+    // core's census, walk.rs).
     std::vector<typename Tree::Node> stack{root};
     size_t visited = 0;
     bool first = true;
@@ -452,8 +454,7 @@ bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& e
         auto node = std::move(stack.back()); stack.pop_back();
         if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
         if (const auto page = tree.page(node); page && exclusions.excludes(*page)) throw PrivacyHidden{};
-        const size_t known = visited + stack.size();
-        auto children = tree.children(node, known > budget ? 0 : budget + 1 - known);
+        auto children = tree.children(node, budget + 1 - visited);
         for (auto it = children.rbegin(); it != children.rend(); ++it) stack.push_back(*it);
     }
     return tree.withinBudget();

@@ -30,7 +30,7 @@ uint32_t voice_core_screen_json(const uint8_t *data, size_t length, VoiceCoreBuf
 uint32_t voice_core_request_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);
 /* The screen walk's rules every helper shares (ADR-DESK-054): {"node":{role,focus,...}} gives what to do
  * with one element ({action}), {"look":{read,found}} what a look inside a part read whole for an
- * excluded page decides ({outcome}), {"census":{visited,queued,late,page,intoPages}} one step of that
+ * excluded page decides ({outcome}), {"census":{visited,late,page,intoPages,password}} one step of that
  * look ({step}), {"stop":{nodes,elapsed,textFull}} why a walk stops ({stopped}), {"limits":true} its
  * budgets. */
 uint32_t voice_core_walk_json(const uint8_t *data, size_t length, VoiceCoreBuffer *output);

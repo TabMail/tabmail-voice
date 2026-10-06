@@ -41,8 +41,9 @@ enum SharedWalk {
         var timeBudgetMilliseconds: Int
         var focusDepth: Int
     }
-    /// One step of a look inside an element for an excluded page.
-    enum CensusStep: Equatable { case notSeenWhole, excluded, skip, descend(children: Int) }
+    /// One step of a look inside an element for an excluded page. The core's `children` cap is
+    /// for providers that fetch children one by one; AX gives them all at once.
+    enum CensusStep: Equatable { case notSeenWhole, excluded, skip, descend }
 
     private static func frame(_ rect: CGRect) -> [Double] {
         [Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height)]
@@ -65,26 +66,26 @@ enum SharedWalk {
         return try call(["look": ["read": read.rawValue, "found": found]], Reply.self).outcome
     }
 
-    private struct CensusReply: Decodable { var step: String; var children: Int? }
+    private struct CensusReply: Decodable { var step: String }
 
-    /// The look's first step, at the element looked inside: how many of its children to fetch.
+    /// The look's first step, at the element looked inside.
     static func censusStart(late: Bool) throws -> CensusStep {
         try censusStep(call(["census": ["start": true, "late": late]], CensusReply.self))
     }
 
     /// `page`: nil for an element that is no page, else whether its site is excluded.
-    static func census(visited: Int, queued: Int, late: Bool, page excluded: Bool?, intoPages: Bool) throws -> CensusStep {
-        struct Request: Encodable { var visited: Int; var queued: Int; var late: Bool; var page: String?; var intoPages: Bool }
-        return try censusStep(call(["census": Request(visited: visited, queued: queued, late: late,
+    static func census(visited: Int, late: Bool, page excluded: Bool?, intoPages: Bool) throws -> CensusStep {
+        struct Request: Encodable { var visited: Int; var late: Bool; var page: String?; var intoPages: Bool }
+        return try censusStep(call(["census": Request(visited: visited, late: late,
                                                page: excluded.map { $0 ? "excluded" : "allowed" }, intoPages: intoPages)], CensusReply.self))
     }
 
     private static func censusStep(_ reply: CensusReply) throws -> CensusStep {
-        switch (reply.step, reply.children) {
-        case ("notSeenWhole", _): return .notSeenWhole
-        case ("excluded", _): return .excluded
-        case ("skip", _): return .skip
-        case ("descend", let children?): return .descend(children: children)
+        switch reply.step {
+        case "notSeenWhole": return .notSeenWhole
+        case "excluded": return .excluded
+        case "skip": return .skip
+        case "descend": return .descend
         default: throw Redactor.Failure.refused
         }
     }

@@ -3757,7 +3757,9 @@ AT-SPI's collection census, `safeSubtree`, and maps its answer onto `look`). The
 Mac's, the most tested, so on Windows and Linux (overnight owner rule, 2026-10-05: the Mac is the
 reference for a behaviour difference, the more robust option for a conflict):
 - A field holding an excluded page is replaced by the marker; the window is no longer refused.
-- An element wholly outside the window is skipped with what it holds (Windows walked into it).
+- An element wholly outside the window is skipped with what it holds (Windows walked into it),
+  an excluded page there too (ADR-DESK-047's 2026-10-01 amendment); one the window may show, even
+  hidden or thin, still refuses it.
 - A piece of text, field, heading, link or row whose box shows nothing is skipped, not walked into
   (Linux walked into hidden text); containers and a page's list items are still walked into.
 - A heading, link or row is read as on the Mac: its own label is looked through when it is read,
@@ -3768,7 +3770,12 @@ reference for a behaviour difference, the more robust option for a conflict):
 - A look does not count the element it looks inside: up to 5,000 elements inside it are seen
   whole. Linux's census without a provider collection had missed what lay under the last
   elements it fetched at the budget's edge; it now fetches one more than fits, so it says when
-  it overflows.
+  it overflows. Only visits count, not what waits: a look goes deep first, the children last
+  fetched first, so each element fetches one more child than the visits left, and what waits past
+  the budget leaves the look not seen whole only once the budget's visits are spent. Giving up as
+  soon as the waiting outnumbered the budget missed an excluded page among a wide element's last
+  children that the Mac's look had found. The Mac takes AX's children whole (AX gives them at
+  once); Windows and Linux fetch the core's count.
 - The more robust choice where the Mac has no answer: a page's control on Windows and Linux is
   looked through before its caption is read, shown or not, so a hidden control holding an
   excluded page refuses the window (the Mac skips a hidden titled control unread).

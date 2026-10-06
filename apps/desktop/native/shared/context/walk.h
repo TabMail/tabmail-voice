@@ -77,8 +77,8 @@ inline std::optional<std::string> stop(size_t nodes, unsigned long long elapsedM
 }
 
 // A metadata-only look inside `root` for a page of an excluded website, each step the core's
-// census. The element itself is judged (a page, a password element) but not counted; a password
-// element's children are never asked for. The tree gives `withinBudget()`, `isPassword(node)`,
+// census, deep first with the children last fetched first. The element itself is judged (a page,
+// a password element) but not counted; a password element's children are never asked for. The tree gives `withinBudget()`, `isPassword(node)`,
 // `page(node)` and `children(node, limit)`, which may stop early when out of time, so a look that
 // ends out of time has not seen the element whole. Each caller decides what `notSeenWhole` means
 // for it (ADR-DESK-054): a part read whole is withheld, while the checks before the walk and
@@ -108,7 +108,7 @@ PageLook lookForExcludedPage(Tree& tree, typename Tree::Node root, const Exclusi
     while (!stack.empty()) {
         auto node = std::move(stack.back());
         stack.pop_back();
-        const JSON reply = step({{"visited", visited}, {"queued", stack.size()}}, node);
+        const JSON reply = step({{"visited", visited}}, node);
         ++visited;
         const auto taken = reply.at("step").get<std::string>();
         if (taken == "notSeenWhole") return PageLook::notSeenWhole;

@@ -19,30 +19,31 @@ fn shared_walk_cases() {
 }
 
 /// A census of a wide element sees exactly the node budget: the look starts from the element's
-/// children (fetching one more than the budget), and one child more than fits is a look that has
-/// not seen the element whole.
+/// children (fetching one more than the budget) and visits the last fetched first, so one child
+/// more than fits is a look that has not seen the element whole, unless it finds an excluded
+/// page among those it visits.
 #[test]
 fn a_census_sees_the_node_budget_whole() {
-    let look = |children: u64| {
-        let start: Value = serde_json::from_slice(
-            &process(json!({"census": {"start": true}}).to_string().as_bytes()).unwrap(),
+    let ask = |request: Value| -> Value {
+        serde_json::from_slice(
+            &process(json!({ "census": request }).to_string().as_bytes()).unwrap(),
         )
-        .unwrap();
-        let mut queued = children.min(start["children"].as_u64().unwrap());
+        .unwrap()
+    };
+    // `excluded`: the child, counted from the first, that is an excluded page.
+    let look = |children: u64, excluded: Option<u64>| {
+        let start = ask(json!({"start": true}));
+        let mut stack: Vec<u64> = (0..children.min(start["children"].as_u64().unwrap())).collect();
         let mut visited = 0u64;
-        while queued > 0 {
-            queued -= 1;
-            let reply: Value = serde_json::from_slice(
-                &process(
-                    json!({"census": {"visited": visited, "queued": queued}})
-                        .to_string()
-                        .as_bytes(),
-                )
-                .unwrap(),
-            )
-            .unwrap();
+        while let Some(child) = stack.pop() {
+            let mut request = json!({"visited": visited});
+            if excluded == Some(child) {
+                request["page"] = json!("excluded");
+            }
+            let reply = ask(request);
             match reply["step"].as_str().unwrap() {
                 "notSeenWhole" => return "notSeenWhole",
+                "excluded" => return "excluded",
                 "descend" => assert!(reply["children"].as_u64().unwrap() >= 1),
                 step => panic!("{step}"),
             }
@@ -50,7 +51,11 @@ fn a_census_sees_the_node_budget_whole() {
         }
         "none"
     };
-    assert_eq!(look(1), "none");
-    assert_eq!(look(5_000), "none");
-    assert_eq!(look(5_001), "notSeenWhole");
+    assert_eq!(look(1, None), "none");
+    assert_eq!(look(5_000, None), "none");
+    assert_eq!(look(5_001, None), "notSeenWhole");
+    // What waits beyond the budget does not hide an excluded page the look reaches.
+    assert_eq!(look(5_001, Some(5_000)), "excluded");
+    assert_eq!(look(5_001, Some(1)), "excluded");
+    assert_eq!(look(5_001, Some(0)), "notSeenWhole");
 }

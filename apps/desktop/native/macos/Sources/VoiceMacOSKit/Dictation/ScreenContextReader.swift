@@ -120,19 +120,21 @@ enum ScreenContextReader {
                                                       intoPages: Bool = true, within seconds: Double, since started: Date) -> PageLook {
         // Each step is the shared core's (ADR-DESK-054); one it refuses has not seen the element whole.
         func late() -> Bool { Date().timeIntervalSince(started) > seconds }
-        guard case .descend(let first)? = try? SharedWalk.censusStart(late: late()) else { return .notSeenWhole }
-        var stack = Array(tree.children(of: element).prefix(first))
+        // AX gives an element's children all at once, so each is taken whole: the core's budget
+        // counts visits, and what waits past it leaves the look not seen whole.
+        guard case .descend? = try? SharedWalk.censusStart(late: late()) else { return .notSeenWhole }
+        var stack = tree.children(of: element)
         var visited = 0
         while let next = stack.popLast() {
             let page = tree.string(next, kAXRoleAttribute) == "AXWebArea" ? exclusions.excludes(tree.page(of: next)) : nil
-            guard let step = try? SharedWalk.census(visited: visited, queued: stack.count, late: late(),
-                                                    page: page, intoPages: intoPages) else { return .notSeenWhole }
+            guard let step = try? SharedWalk.census(visited: visited, late: late(), page: page,
+                                                    intoPages: intoPages) else { return .notSeenWhole }
             visited += 1
             switch step {
             case .notSeenWhole: return .notSeenWhole
             case .excluded: return .excluded
             case .skip: continue
-            case .descend(let children): stack.append(contentsOf: tree.children(of: next).prefix(children))
+            case .descend: stack.append(contentsOf: tree.children(of: next))
             }
         }
         return .none

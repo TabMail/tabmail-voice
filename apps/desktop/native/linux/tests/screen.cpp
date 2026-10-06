@@ -350,6 +350,62 @@ int main() {
         wide.children.resize(budget - 2);
         wide.children.insert(wide.children.begin(), &holder);
         expect(!voice::safeSubtree(census, &wide, policy, true), "a password element under the budget's edge is still found");
+        // Only visits count: an element fetched while others wait gets the visits left, so an
+        // excluded page among its last children, visited first, is found.
+        Element excluded{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
+        Element deep{ATSPI_ROLE_PANEL, "", {}, {}};
+        for (size_t at = 0; at + 1 < budget; ++at) deep.children.push_back(&fillers[at]);
+        deep.children.push_back(&excluded);
+        Element side{ATSPI_ROLE_PANEL, "", {}, {}};
+        Element top{ATSPI_ROLE_PANEL, "", {}, {&side, &deep}};
+        bool found = false;
+        try { voice::safeSubtree(census, &top, policy, true); } catch (const voice::PrivacyHidden&) { found = true; }
+        expect(found, "what waits does not shrink a later element's fetch");
+    }
+    {
+        // The shared walk's rules, as this helper applies them (ADR-DESK-054).
+        Element focus{ATSPI_ROLE_ENTRY, "", {}, {}};
+        Element frame{ATSPI_ROLE_FRAME, "Synthetic", {}, {}};
+        const auto read = [&](std::vector<Element*> children, std::vector<Element*> path = {}) {
+            frame.children = std::move(children);
+            if (path.empty()) path = {&frame};
+            Tree walked;
+            return voice::gatherScreen(walked, &frame, &focus, path, app, policy);
+        };
+        const auto shows = [](const JSON& screen, const std::string& words) {
+            return screen.is_object() && screen["renderedText"].get<std::string>().find(words) != std::string::npos;
+        };
+        // A list's item outside a page is a row, read as one line.
+        Element sender{ATSPI_ROLE_STATIC, "Sender One", {}, {}};
+        Element subject{ATSPI_ROLE_STATIC, "Quarterly plan", {}, {}};
+        Element item{ATSPI_ROLE_LIST_ITEM, "", {}, {&sender, &subject}};
+        expect(shows(read({&focus, &item}), "Sender One | Quarterly plan"), "a list item outside a page is a row");
+        // A password element on the focus's path is walked into, its own text never read.
+        Element beside{ATSPI_ROLE_STATIC, "Beside words", {}, {}};
+        Element guard{ATSPI_ROLE_PASSWORD_TEXT, "must never be read", {}, {&focus, &beside}};
+        auto screen = read({&guard}, {&guard, &frame});
+        expect(shows(screen, "Beside words") && screen.dump().find("must never be read") == std::string::npos,
+            "a password element on the focus's path is walked into");
+        // Hidden text is not read, nor what it holds.
+        Element under{ATSPI_ROLE_STATIC, "Under hidden words", {}, {}};
+        Element hiddenText{ATSPI_ROLE_STATIC, "Hidden words", {}, {&under}};
+        hiddenText.visible = false;
+        screen = read({&focus, &hiddenText});
+        expect(screen.is_object() && !shows(screen, "Hidden words") && !shows(screen, "Under hidden words"),
+            "hidden text is not walked into");
+        // A page's hidden control with a caption is looked through: an excluded page in it refuses.
+        Element framed{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://secret.example/"), {}};
+        Element button{ATSPI_ROLE_PUSH_BUTTON, "Pay", {}, {&framed}};
+        button.bounds = voice::ContextFrame{10, 10, 1, 20};
+        Element allowed{ATSPI_ROLE_DOCUMENT_WEB, "", voice::hostOfAddress("https://allowed.example/"), {&focus, &button}};
+        expect(read({&allowed}, {&allowed, &frame}) == voice::hiddenScreen(), "a page's hidden control is looked through");
+        // A row's parts are judged one by one: a button is chrome outside a page, content in one.
+        Element archive{ATSPI_ROLE_PUSH_BUTTON, "Archive", {}, {}};
+        Element row{ATSPI_ROLE_TABLE_ROW, "", {}, {&subject, &archive}};
+        screen = read({&focus, &row});
+        expect(shows(screen, "Quarterly plan") && !shows(screen, "Archive"), "a row's button outside a page is chrome");
+        allowed.children = {&focus, &row};
+        expect(shows(read({&allowed}, {&allowed, &frame}), "Quarterly plan | Archive"), "a row's button in a page is its caption");
     }
     std::cout << "screen semantic layout and password/page access census passed\n";
 }
