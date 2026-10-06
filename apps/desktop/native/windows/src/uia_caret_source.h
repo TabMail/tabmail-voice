@@ -31,6 +31,7 @@ public:
         if (!selectionText) return CaretSource::unavailable();
         const auto before = reader.side(selected.Get(), document.Get(), true, sourceLimit);
         const auto after = reader.side(selected.Get(), document.Get(), false, sourceLimit);
+        const auto caretStarts = reader.starts(selected.Get());
         auto finalSelection = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> finalDocument;
         reader.check(); require(pattern->get_DocumentRange(&finalDocument)); reader.check();
@@ -40,9 +41,7 @@ public:
         require(document->Compare(finalDocument.Get(), &sameDocument));
         reader.check();
         if (!sameSelection || !sameDocument || reader.text(finalSelection.Get(), selectionLimit) != selectionText) return CaretSource::unavailable();
-        auto result = CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second);
-        if (!result.selectionUnavailable) result.parts[0] = CaretSource::beforeCaret(result.parts[0], reader.startsLine(selected.Get()));
-        return result;
+        return CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second, caretStarts);
     }
     // Caller proves privacy, visible provider identity and focus. Every GetText
     // stays inside an approved visible range. Do not constrain terminal ranges
@@ -324,21 +323,31 @@ private:
         }
         return result;
     }
-    // Whether the selection starts a line as the provider lays it out. Chromium gives an empty
-    // line no character, so the text before a caret there may not show the break.
-    bool startsLine(IUIAutomationTextRange* selected) const {
-        ComPtr<IUIAutomationTextRange> line;
-        check(); require(selected->Clone(&line)); check();
-        if (!line) throw std::runtime_error("provider range unavailable");
-        move(line.Get(), TextPatternRangeEndpoint_End, selected, TextPatternRangeEndpoint_Start);
-        // A provider without lines says nothing about them: no break is added.
-        if (FAILED(line->ExpandToEnclosingUnit(TextUnit_Line))) {
-            std::cerr << "debug caret line: lines unavailable\n";
-            return false;
+    // What starts at the selection: a paragraph, a line, and the first bytes of that line, for the
+    // core to tell an empty line (Chromium gives one no character: its caret sits where the
+    // paragraph above ends, on a line holding only that break) from a soft-wrapped one. None when
+    // the provider has no paragraphs or lines.
+    std::optional<CaretSource::CaretStarts> starts(IUIAutomationTextRange* selected) const {
+        const auto enclosing = [&](TextUnit unit) -> ComPtr<IUIAutomationTextRange> {
+            ComPtr<IUIAutomationTextRange> range;
+            check(); require(selected->Clone(&range)); check();
+            if (!range) throw std::runtime_error("provider range unavailable");
+            move(range.Get(), TextPatternRangeEndpoint_End, selected, TextPatternRangeEndpoint_Start);
+            if (FAILED(range->ExpandToEnclosingUnit(unit))) return nullptr;
+            check();
+            return range;
+        };
+        const auto paragraph = enclosing(TextUnit_Paragraph), line = enclosing(TextUnit_Line);
+        if (!paragraph || !line) {
+            std::cerr << "debug caret start: paragraphs or lines unavailable\n";
+            return std::nullopt;
         }
-        check();
-        const bool starts = compare(line.Get(), TextPatternRangeEndpoint_Start, selected, TextPatternRangeEndpoint_Start) == 0;
-        std::cerr << "debug caret line: starts " << starts << '\n';
+        const auto startsHere = [&](IUIAutomationTextRange* range) {
+            return compare(range, TextPatternRangeEndpoint_Start, selected, TextPatternRangeEndpoint_Start) == 0;
+        };
+        const auto lineBytes = core::request({{"limits", true}}, voice_core_context_json).at("caretLineBytes").get<size_t>();
+        CaretSource::CaretStarts starts{startsHere(paragraph.Get()), startsHere(line.Get()), text(line.Get(), lineBytes)};
+        std::cerr << "debug caret start: paragraph " << starts.paragraph << ", line " << starts.line << '\n';
         return starts;
     }
     std::pair<std::string, bool> side(IUIAutomationTextRange* selected, IUIAutomationTextRange* document, bool before, size_t limit) const {

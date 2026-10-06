@@ -16,12 +16,14 @@ struct CaretSource {
     static CaretSource fromJSON(const nlohmann::json& result) {
         return {result.at("parts").get<std::array<std::string, 3>>(), result.at("selectionUnavailable").get<bool>()};
     }
-    // The text before a caret, ending in a line break when the caret starts a line it doesn't show.
-    static std::string beforeCaret(const std::string& text, bool startsLine) {
-        return core::request({{"beforeCaret", {{"text", text}, {"startsLine", startsLine}}}}, voice_core_context_json).at("text").get<std::string>();
-    }
-    static CaretSource window(const std::array<std::string, 3>& parts, bool startKnown, bool endKnown) {
-        return fromJSON(core::request({{"caretWindow", {{"parts", parts}, {"startKnown", startKnown}, {"endKnown", endKnown}}}}, voice_core_context_json));
+    // What starts at the caret, as the provider lays the text out: from it the core tells whether the
+    // caret starts a paragraph or an empty line, whose break the text before it may not show.
+    // `lineText`: the line's first bytes, none when it holds more than the core's `caretLineBytes`.
+    struct CaretStarts { bool paragraph; bool line; std::optional<std::string> lineText; };
+    static CaretSource window(const std::array<std::string, 3>& parts, bool startKnown, bool endKnown, const std::optional<CaretStarts>& starts) {
+        nlohmann::json request{{"parts", parts}, {"startKnown", startKnown}, {"endKnown", endKnown}};
+        if (starts) request["caretStarts"] = {{"paragraph", starts->paragraph}, {"line", starts->line}, {"lineText", starts->lineText ? nlohmann::json(*starts->lineText) : nlohmann::json(nullptr)}};
+        return fromJSON(core::request({{"caretWindow", request}}, voice_core_context_json));
     }
 };
 // Scoped transport only. Rust decides every requested range and source budget.

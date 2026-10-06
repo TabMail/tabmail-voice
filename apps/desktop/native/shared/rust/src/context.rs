@@ -180,6 +180,9 @@ fn read_field(value: &Value) -> Result<Vec<String>, u32> {
 pub(crate) const SOURCE_WINDOW_BYTES: usize = crate::semantic::MAX_BYTES;
 pub(crate) const SELECTION_SOURCE_BYTES: usize = SCREEN_BYTES - 6;
 const CARET_SOURCE_BYTES: usize = SELECTION_SOURCE_BYTES + 2 * SOURCE_WINDOW_BYTES;
+// How much of the line at a caret an adapter reads to tell an empty line (a break) from words;
+// a longer line is sent as `null`.
+const CARET_LINE_BYTES: usize = 3;
 const CARET_SIDE_GRAPHEMES: usize = 2_000;
 
 fn caret_text(parts: &[String]) -> String {
@@ -313,26 +316,6 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         }
         return serde_json::to_vec(&json!({"amounts":probes})).map_err(|_| 3);
     }
-    // The text before a caret that starts a line, ending in a line break. Chromium gives an empty
-    // line no character and leaves out some paragraph breaks, so without it the text reads as if
-    // the caret followed the last word (ADR-DESK-007, 2026-10-06). `startsLine`: the caret's line,
-    // as the OS lays it out, starts at the caret. Text ending in whitespace or a break gets none.
-    if let Some(caret) = request.get("beforeCaret") {
-        let text = caret["text"].as_str().ok_or(1u32)?;
-        let starts_line = caret["startsLine"].as_bool().ok_or(1u32)?;
-        // A line that starts after whitespace is a soft wrap (Chromium reports it as a line
-        // start too), not a break the text left out.
-        let unbroken = text
-            .chars()
-            .last()
-            .is_some_and(|last| !last.is_whitespace());
-        let text = if starts_line && unbroken {
-            format!("{text}\n")
-        } else {
-            text.to_owned()
-        };
-        return serde_json::to_vec(&json!({"text": text})).map_err(|_| 3);
-    }
     // A rich editor's text, from the parts a helper read in order (ADR-DESK-007, 2026-10-06): AT-SPI
     // gives each paragraph or link of a Chromium contenteditable as an embedded object with text of
     // its own, so the helper sends each element's own text, where its caret and its part of the
@@ -399,9 +382,49 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if let Some(window) = request.get("caretWindow") {
-        let parts = read_caret(&window["parts"])?;
-        let start_known = window["startKnown"].as_bool().ok_or(1u32)?;
+        let mut parts = read_caret(&window["parts"])?;
+        let mut start_known = window["startKnown"].as_bool().ok_or(1u32)?;
         let end_known = window["endKnown"].as_bool().ok_or(1u32)?;
+        // A caret that starts a paragraph or an empty line, whose break the text before it doesn't
+        // show, gets the break: Chromium gives an empty line no character and leaves out some
+        // paragraph breaks, so without it the text reads as if the caret followed the last word
+        // (ADR-DESK-007, 2026-10-06). The adapter says what it measured (`caretStarts`, absent:
+        // nothing, no break): whether a paragraph starts at the caret, whether a line does, and the
+        // first few bytes of that line. A line holding only a break is an empty line (Chromium puts
+        // its caret where the paragraph above ends); a soft-wrapped line holds words and gets none.
+        // The break is counted in the before-part's budget: one at the limit gives up its first
+        // character, and its start.
+        let starts_paragraph = match window.get("caretStarts") {
+            None => false,
+            Some(starts) => {
+                let paragraph = starts["paragraph"].as_bool().ok_or(1u32)?;
+                let line = starts["line"].as_bool().ok_or(1u32)?;
+                // `null`: the line holds more than `CARET_LINE_BYTES`, so words.
+                let line_text = match starts.get("lineText").ok_or(1u32)? {
+                    Value::Null => None,
+                    text => Some(text.as_str().ok_or(1u32)?),
+                };
+                if line_text.is_some_and(|text| text.len() > CARET_LINE_BYTES) {
+                    return Err(1);
+                }
+                let only_break = line_text.is_some_and(|text| {
+                    matches!(text, "" | "\n" | "\r" | "\r\n" | "\u{2028}" | "\u{2029}")
+                });
+                paragraph || (line && only_break)
+            }
+        };
+        let unbroken = parts[0]
+            .chars()
+            .last()
+            .is_some_and(|last| !matches!(last, '\n' | '\r' | '\u{2028}' | '\u{2029}'));
+        if starts_paragraph && unbroken {
+            parts[0].push('\n');
+            if parts[0].len() > SOURCE_WINDOW_BYTES {
+                let first = parts[0].chars().next().map_or(0, char::len_utf8);
+                parts[0].drain(..first);
+                start_known = false;
+            }
+        }
         let text = parts.concat();
         let range = crate::source_window::recognition_range_with_limit(
             &text,
@@ -456,7 +479,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.
@@ -772,6 +795,10 @@ mod tests {
         for value in [
             json!({}),
             json!({"hypertext":{}}),
+            json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":1,"line":true,"lineText":""}}}),
+            json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true}}}),
+            json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":"abcd"}}}),
+            json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":7}}}),
             json!({"hypertext":{"parts":[{"text":1}]}}),
             json!({"hypertext":{"parts":[{"mark":"elsewhere"}]}}),
             json!({"hypertext":{"parts":[{}]}}),
@@ -848,6 +875,20 @@ mod budget_tests {
             json!({"caretWindow":{"parts":["unknown😀. Before ","選択"," after! unfinished"],"startKnown":false,"endKnown":false}}),
         );
         assert_eq!(reply["parts"], json!([". Before ", "選択", " after! "]));
+        assert_eq!(reply["selectionUnavailable"], false);
+    }
+    #[test]
+    fn a_left_out_break_is_counted_in_the_before_parts_budget() {
+        let before = "Why does it move. ".repeat(SOURCE_WINDOW_BYTES / 18 + 1)
+            [..SOURCE_WINDOW_BYTES - 1]
+            .to_owned()
+            + "x";
+        assert_eq!(before.len(), SOURCE_WINDOW_BYTES);
+        let reply = call(
+            json!({"caretWindow":{"parts":[before,"",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":"Wh"}}}),
+        );
+        let kept = reply["parts"][0].as_str().unwrap();
+        assert!(kept.ends_with("x\n") && kept.len() <= SOURCE_WINDOW_BYTES && !kept.is_empty());
         assert_eq!(reply["selectionUnavailable"], false);
     }
     #[test]
