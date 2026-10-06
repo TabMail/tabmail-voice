@@ -87,10 +87,12 @@ try {
         assert.ok(!context.renderedText.includes("Synthetic thin box text") && !context.renderedText.includes("Synthetic under thin text"), "a text box that shows nothing is skipped with what it holds");
       }
       if (mode === "large-text") assert.ok(context.renderedText.includes("[hidden for privacy]") && !context.renderedText.includes("Synthetic large text"), "text too large to look through whole is withheld behind the marker");
-      if (mode === "large-row" || mode === "large-link") {
-        assert.ok(context.renderedText.includes("[hidden for privacy]"), `${mode}: a part too large to look through whole is withheld behind the marker`);
-        assert.ok(!context.renderedText.includes("Synthetic large name") && !context.renderedText.includes("Synthetic cell text"), `${mode}: nothing of it is read`);
-      }
+      // A row is gathered from its parts, each looked through on its own; a link's name is read
+      // whole, so one too large to look through is withheld behind the marker (ADR-DESK-054).
+      if (mode === "large-row") assert.ok(context.renderedText.includes("| Synthetic cell text") && !context.renderedText.includes("Synthetic large name"),
+        "a large row reads its cells, each looked through, and not its own name");
+      if (mode === "large-link") assert.ok(context.renderedText.includes("[[hidden for privacy]]") && !context.renderedText.includes("Synthetic large name") &&
+        !context.renderedText.includes("Synthetic cell text"), "a link too large to look through whole is withheld behind the marker");
       if (mode === "large-field" || mode === "large-web-control") {
         const marker = mode === "large-field" ? "> [hidden for privacy]" : "[hidden for privacy]";
         assert.ok(context.renderedText.includes(marker) && !context.renderedText.includes("Synthetic large name"),

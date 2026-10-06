@@ -183,8 +183,8 @@ void configure(const std::string& mode) {
         nodes.at(large)->text = L"Synthetic large text";
         for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
     } else if (mode == "large-row" || mode == "large-link") {
-        // A row or link that holds more than the look takes in: withheld behind the marker, with
-        // its name and its cells.
+        // A row or link that holds more than the look takes in: a row's cells are each looked
+        // through and read; a link's name, read whole, is withheld behind the marker.
         const int large = add(0, mode == "large-row" ? UIA_DataItemControlTypeId : UIA_HyperlinkControlTypeId);
         nodes.at(large)->text = L"Synthetic large name";
         nodes.at(add(large, UIA_TextControlTypeId))->text = L"Synthetic cell text";
