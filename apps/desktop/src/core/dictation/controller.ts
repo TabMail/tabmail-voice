@@ -187,8 +187,10 @@ export class DictationController extends Observable {
    * hidden for privacy is no context either; agent mode's tools are told it is hidden. */
   captureContext: ((exclusions: ScreenExclusions) => Promise<ScreenRead | null> | null) | undefined;
   /** How long a dictation's upload waits for that read, which its cleanup variables travel with
-   * (agent mode waits for all of it, once its transcript is ready). Settable for tests. */
+   * (agent mode waits `agentScreenWait` for all of it, once its transcript is ready). Settable for
+   * tests. */
   contextWait = config.contextWait;
+  agentScreenWait = config.agentScreenWait;
   /** How long a hold goes on before the double-tap tip is due, and how long a tip shows. Settable
    * for tests. */
   doubleTapTipHoldDuration = config.doubleTapTipHoldDuration;
@@ -481,8 +483,8 @@ export class DictationController extends Observable {
       () => this.microphoneLost(current),
     );
     // Capture must be dispatched before optional accessibility work: the caret lookup arming makes
-    // and the screen read can each block a helper's request loop (on Linux, the one the microphone
-    // starts on), and nothing said before the microphone starts is recorded.
+    // can block a helper's request loop (on Linux, the one the microphone starts on), and nothing
+    // said before the microphone starts is recorded.
     if (this.generation !== current) return;
     this.setPhase({ kind: "arming" });
     this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
@@ -702,7 +704,7 @@ export class DictationController extends Observable {
         }
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
-        const screen = read ? await read : null;
+        const screen = read ? await withTimeout(this.agentScreenWait, () => read).catch(() => null) : null;
         context = screenShown(screen);
         const screenHidden = isScreenHidden(screen);
         if (!isCurrent()) return;

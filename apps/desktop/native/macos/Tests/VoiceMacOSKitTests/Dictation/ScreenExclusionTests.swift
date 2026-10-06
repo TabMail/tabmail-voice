@@ -54,6 +54,8 @@ struct ScreenExclusionTests {
             on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
             contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }), screen: screen
         )
+        // The screen read is the reader's (`voice-screen-reader`); one channel serves both here.
+        ScreenReaderService.register(on: channel, screen: screen)
         for request in requests { await channel.handle(line: Data(request.utf8)) }
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         withExtendedLifetime(service) {}

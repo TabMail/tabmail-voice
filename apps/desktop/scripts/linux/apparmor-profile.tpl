@@ -15,6 +15,8 @@ profile "${executable}" "/opt/${sanitizedProductName}/${executable}" flags=(enfo
   # peers, not children inheriting this named, otherwise unconfined profile.
   # Ux also requests the loader's secure-execution environment cleanup.
   "/opt/${sanitizedProductName}/resources/helpers/voice-linux" Ux,
+  # voice-screen-reader reads the screen through AT-SPI too (ADR-DESK-053).
+  "/opt/${sanitizedProductName}/resources/helpers/voice-screen-reader" Ux,
   # An update installs as root through pkexec (ADR-DESK-050): it and the package manager under it
   # leave this profile, which would otherwise refuse dpkg's links to the files it replaces.
   /usr/bin/pkexec Ux,

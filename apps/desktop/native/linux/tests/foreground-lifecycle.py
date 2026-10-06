@@ -1,7 +1,11 @@
 # This Source Code Form is subject to the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Drive the real native service through foreground callbacks and GLib timers."""
+"""Drive the real native service through foreground callbacks and GLib timers.
+
+Run once over the main helper, which serves the foreground and the field, and once (second argument
+`reader`) over voice-screen-reader, the program that reads the screen; the same fixture commands
+drive both."""
 import json
 import os
 import select
@@ -13,6 +17,8 @@ import time
 control_read, control_write = os.pipe()
 ack_read, ack_write = os.pipe()
 with tempfile.TemporaryFile(mode='w+t') as diagnostics:
+    reader = sys.argv[2:] == ['reader']
+    assert sys.argv[2:] in ([], ['reader'])
     child = subprocess.Popen([sys.argv[1]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=diagnostics, text=True, pass_fds=(control_read, ack_write), env={**os.environ,
         'VOICE_FIXTURE_CONTROL': str(control_read), 'VOICE_FIXTURE_ACK': str(ack_write)})
@@ -55,129 +61,174 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             time.sleep(0.03)
         raise AssertionError('activation did not recover within retry budget')
 
+    # Each check runs in the process that serves it: the screen in the reader, the rest in the helper.
+    def screen(params=None):
+        return request('readScreen', params) if reader else True
+
     def field():
+        if reader:
+            return None
         target = request('frontmostApp')
         assert target and target['window'] > 0
         return request('focusedFieldValue', {**policy, 'window': target['window'], 'maxLength': 20000})
 
+    def target():
+        return True if reader else request('frontmostApp')
+
     try:
-        assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
-        assert request('redactText', {'text': ''}) == {'text': ''}
-        for before, text, after, expected in [
-            ('token=', 'syntheticPrivate123. Public.', '', '[redacted] Public.'),
-            ('', 'Public. token=synthetic', 'Private123 later.', 'Public. token=[redacted]'),
-            ('Earlier.', '会議は金曜日です。', '次のページ', '会議は金曜日です。'),
-        ]:
-            assert request('redactText', {'before': before, 'text': text, 'after': after}) == {'text': expected}
-        request('redactText', {'text': 'Public.', 'before': None}, refused=True)
-        request('redactText', {'text': None}, refused=True)
-        request('redactText', {'text': '😀' * 32769}, refused=True)
-        request('frontmostApp')
+        if reader:
+            # Sent the moment the reader starts, as the app does after restarting it for a read that
+            # supersedes another: the read waits for the reader to find what has focus.
+            assert 'First synthetic app' in screen()['renderedText'], 'a read sent as the reader starts finds the app in front'
+            for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText'):
+                request(method, refused=True)
+        else:
+            assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
+            assert request('redactText', {'text': ''}) == {'text': ''}
+            for before, text, after, expected in [
+                ('token=', 'syntheticPrivate123. Public.', '', '[redacted] Public.'),
+                ('', 'Public. token=synthetic', 'Private123 later.', 'Public. token=[redacted]'),
+                ('Earlier.', '会議は金曜日です。', '次のページ', '会議は金曜日です。'),
+            ]:
+                assert request('redactText', {'before': before, 'text': text, 'after': after}) == {'text': expected}
+            request('redactText', {'text': 'Public.', 'before': None}, refused=True)
+            request('redactText', {'text': None}, refused=True)
+            request('redactText', {'text': '😀' * 32769}, refused=True)
+            request('readScreen', refused=True)
         wait_calls((1, 0))
-        assert 'First synthetic app' in request('readScreen')['renderedText'], 'startup activates the already-foreground app'
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText'], 'startup activates the already-foreground app'
         assert command('a') == (2, 0)
-        assert 'First synthetic app' in request('readScreen')['renderedText']
-        assert field() == {'value': 'Synthetic field content'}
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText']
+        else:
+            assert field() == {'value': 'Synthetic field content'}
         # The Shell holds the keyboard while the dictation key is down: the focus moves to the Shell
-        # and back, and the window in front stays the target, with the same token, throughout.
-        window = request('frontmostApp')['window']
+        # and back, and the window in front stays the target, with the same token, throughout. The
+        # reader asks the extension too, so a read at the key's press still reads that window.
+        window = None if reader else request('frontmostApp')['window']
         command('h')
-        assert request('frontmostApp') == {'window': window}, 'the target stays while the Shell holds the keyboard'
-        assert 'First synthetic app' in request('readScreen')['renderedText'], 'the screen is read while the Shell holds the keyboard'
-        # The overlay is placed at the target's caret during the hold too (its reply is geometry
-        # or null; the categorical diagnostic says whether the target was still the one in front).
-        diagnostics.seek(0, os.SEEK_END)
-        mark = diagnostics.tell()
-        request('caretAnchor', {})
-        diagnostics.seek(mark)
-        caret = diagnostics.read()
-        assert 'debug accessibility: caret ' in caret and 'stale target' not in caret and 'no target' not in caret, \
-            'the caret is read for the target while the Shell holds the keyboard'
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText'], 'the screen is read while the Shell holds the keyboard'
+        else:
+            assert request('frontmostApp') == {'window': window}, 'the target stays while the Shell holds the keyboard'
+            assert field() == {'value': 'Synthetic field content'}, 'the field is read while the Shell holds the keyboard'
+            # The overlay is placed at the target's caret during the hold too (its reply is geometry
+            # or null; the categorical diagnostic says whether the target was still the one in front).
+            diagnostics.seek(0, os.SEEK_END)
+            mark = diagnostics.tell()
+            request('caretAnchor', {})
+            diagnostics.seek(mark)
+            caret = diagnostics.read()
+            assert 'debug accessibility: caret ' in caret and 'stale target' not in caret and 'no target' not in caret, \
+                'the caret is read for the target while the Shell holds the keyboard'
         command('H')
-        assert request('frontmostApp') == {'window': window}, 'the target keeps its token after the hold'
+        if not reader:
+            assert request('frontmostApp') == {'window': window}, 'the target keeps its token after the hold'
         # Without a hold, the Shell's own window is no target, and the window it took the focus from
         # is no longer one either.
         command('S')
-        assert request('frontmostApp') is None, 'the Shell is never the target'
+        if reader:
+            assert screen() is None, 'the Shell is never read as the target'
+        else:
+            assert request('frontmostApp') is None, 'the Shell is never the target'
         command('H')
-        assert request('frontmostApp') == {'window': window}
+        if not reader:
+            assert request('frontmostApp') == {'window': window}
         for mode in ('l', 'v'):
             command(mode)
-            screen = request('readScreen')
-            assert screen['selectedText'] == 'x' * 20001, 'native acquisition preserves the entire long selection'
-            assert screen['selectionRedacted'] is False
-            assert len(screen['textBeforeCaret']) <= 2000 and len(screen['textAfterCaret']) <= 2000
+            if reader:
+                read = screen()
+                assert read['selectedText'] == 'x' * 20001, 'native acquisition preserves the entire long selection'
+                assert read['selectionRedacted'] is False
+                assert len(read['textBeforeCaret']) <= 2000 and len(read['textAfterCaret']) <= 2000
         command('t')
         for mode in ('l', 'v', 'c', 'q', 'U'):
             command(mode)
-            screen = request('readScreen')
-            expected = '[redacted]' if mode in ('q', 'U') else ('😀é' * 7000 if mode == 'c' else 'x' * 20001)
-            assert screen['selectedText'] == expected, 'terminal selection uses common complete-or-refuse policy'
-            assert screen['selectionRedacted'] is (mode in ('q', 'U'))
-            assert screen['textBeforeCaret'] == '' and screen['textAfterCaret'] == '', 'terminal selection never publishes adjacent source'
+            if reader:
+                read = screen()
+                expected = '[redacted]' if mode in ('q', 'U') else ('😀e\u0301' * 7000 if mode == 'c' else 'x' * 20001)
+                assert read['selectedText'] == expected, 'terminal selection uses common complete-or-refuse policy'
+                assert read['selectionRedacted'] is (mode in ('q', 'U'))
+                assert read['textBeforeCaret'] == '' and read['textAfterCaret'] == '', 'terminal selection never publishes adjacent source'
         command('l')
         command('m')
-        screen = request('readScreen')
-        # A terminal keeps what it read at key-down, even if the selection moves meanwhile (owner, 2026-10-05).
-        assert screen['selectionRedacted'] is False and screen['selectedText'] == 'x' * 20001, 'changed terminal selection keeps the key-down read'
+        if reader:
+            read = screen()
+            # A terminal keeps what it read at key-down, even if the selection moves meanwhile (owner, 2026-10-05).
+            assert read['selectionRedacted'] is False and read['selectedText'] == 'x' * 20001, 'changed terminal selection keeps the key-down read'
         command('z')
         command('c')
-        screen = request('readScreen')
-        assert screen['selectedText'] == '😀é' * 7000, 'native chunk boundaries preserve non-BMP and combining text'
-        assert screen['selectionRedacted'] is False
+        if reader:
+            read = screen()
+            assert read['selectedText'] == '😀e\u0301' * 7000, 'native chunk boundaries preserve non-BMP and combining text'
+            assert read['selectionRedacted'] is False
         command('m')
-        screen = request('readScreen')
-        assert screen['selectionRedacted'] is True and screen['selectedText'] == '[redacted]', 'changed selection uses the shared refusal marker and disables Edit'
+        if reader:
+            read = screen()
+            assert read['selectionRedacted'] is True and read['selectedText'] == '[redacted]', 'changed selection uses the shared refusal marker and disables Edit'
         for mode in ('q', 'U'):
             command(mode)
-            screen = request('readScreen')
-            assert screen['selectionRedacted'] is True and screen['selectedText'] == '[redacted]', 'scalar or UTF-8 oversized selection uses the shared refusal marker, never a prefix'
+            if reader:
+                read = screen()
+                assert read['selectionRedacted'] is True and read['selectedText'] == '[redacted]', 'scalar or UTF-8 oversized selection uses the shared refusal marker, never a prefix'
         command('z')
         command('f')
-        assert request('readScreen') is None, 'foreground change during text read refuses stale screen'
-        command('g')
-        command('f')
-        assert field() is None, 'foreground change during field read refuses stale correction text'
+        if reader:
+            assert screen() is None, 'foreground change during text read refuses stale screen'
+        else:
+            assert field() is None, 'foreground change during field read refuses stale correction text'
         command('g')
         # A different app gets its own activation request, without an identity allowlist.
         assert command('b') == (2, 1)
-        assert 'Second synthetic app' in request('readScreen')['renderedText']
+        if reader:
+            assert 'Second synthetic app' in screen()['renderedText']
         # Each real consumer must refresh children added after its cached preflight.
         command('p')
-        screen = request('readScreen')
-        assert screen['textBeforeCaret'] == '' and 'synthetic-private-password' not in json.dumps(screen)
+        if reader:
+            read = screen()
+            assert read['textBeforeCaret'] == '' and 'synthetic-private-password' not in json.dumps(read)
         command('u')
-        assert field() == {'value': 'Synthetic field content'}
-        command('p')
-        assert field() == {'value': None}
-        command('u')
-        assert field() == {'value': 'Synthetic field content'}
+        if not reader:
+            assert field() == {'value': 'Synthetic field content'}
+            command('p')
+            assert field() == {'value': None}
+            command('u')
+            assert field() == {'value': 'Synthetic field content'}
         excluded = {**policy, 'excludedHosts': ['synthetic.example']}
-        assert request('readScreen', excluded) == {'hidden': True}
-        target = request('frontmostApp')['window']
-        assert request('focusedFieldValue', {**excluded, 'window': target, 'maxLength': 20000}) == {'value': None}
+        if reader:
+            assert screen(excluded) == {'hidden': True}
+        else:
+            window = request('frontmostApp')['window']
+            assert request('focusedFieldValue', {**excluded, 'window': window, 'maxLength': 20000}) == {'value': None}
         # A failed request recovers via the actual one-second timer.
         assert command('r') == (3, 1)
-        assert request('readScreen') is None
+        assert (screen() if reader else target()) is None
         wait_calls((4, 1))
-        assert 'First synthetic app' in request('readScreen')['renderedText']
+        if reader:
+            assert 'First synthetic app' in screen()['renderedText']
+        else:
+            assert target()
         time.sleep(1.1)
         assert command('s') == (4, 1), 'successful activation must stop retries'
         # An unavailable provider gets five attempts, then a new visit can recover.
         assert command('e') == (5, 1)
         wait_calls((9, 1))
         time.sleep(1.1)
-        assert command('s') == (9, 1) and request('readScreen') is None
+        assert command('s') == (9, 1) and (screen() if reader else target()) is None
         assert command('a') == (10, 1)
-        assert field() == {'value': 'Synthetic field content'}
+        if not reader:
+            assert field() == {'value': 'Synthetic field content'}
         # An app that announces its field before its window, then a container around the field.
         assert command('o') == (10, 1), 'a field announced before its window needs no lookup'
-        assert request('frontmostApp'), 'the field, not its container, stays the target'
+        assert target(), 'the field, not its container, stays the target'
         assert command('e') == (11, 1)
         command('d')
         time.sleep(1.1)
-        assert command('s') == (11, 1) and request('frontmostApp') is None, 'departure cancels retries'
-        print('native foreground activation, two apps, retry recovery/exhaustion/cancellation and both read consumers passed')
+        assert command('s') == (11, 1)
+        if not reader:
+            assert request('frontmostApp') is None, 'departure cancels retries'
+        print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen' if reader else 'field'} reads passed")
     finally:
         child.stdin.close()
         try:

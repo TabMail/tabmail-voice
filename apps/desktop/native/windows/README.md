@@ -1,8 +1,8 @@
 # Windows native helpers
 
-These helpers use Win32 rather than Chromium for global key capture and microphone sessions. `voice-hotkey.exe` runs the push-to-talk gesture on a dedicated keyboard-hook thread. `voice-windows.exe` runs WASAPI microphone sessions, UI Automation context/caret queries, and target-checked clipboard insertion. Both speak the same newline JSON request/event protocol as the Mac helpers.
+These helpers use Win32 rather than Chromium for global key capture and microphone sessions. `voice-hotkey.exe` runs the push-to-talk gesture on a dedicated keyboard-hook thread. `voice-windows.exe` runs WASAPI microphone sessions, UI Automation caret and field queries, and target-checked clipboard insertion. `voice-screen-reader.exe`, a program of its own, reads the screen and nothing else (ADR-DESK-053). Both speak the same newline JSON request/event protocol as the Mac helpers.
 
-Overlay startup sends `caretAnchor` without a `window` parameter so the helper snapshots the foreground HWND when enqueueing the request. This avoids a foreground-query round trip that lets screen traversal get ahead of caret placement. Explicit window targets remain supported; a captured window that loses foreground ownership yields no geometry. The portable `voice-accessibility-worker` test compiles the actual worker with synthetic OS/provider boundaries and checks queued focus changes, fresh-request recovery, cancellation and malformed input.
+Overlay startup sends `caretAnchor` without a `window` parameter so the helper snapshots the foreground HWND when enqueueing the request. This avoids a foreground-query round trip before caret placement. Explicit window targets remain supported; a captured window that loses foreground ownership yields no geometry. The portable `voice-accessibility-worker` test compiles the actual worker with synthetic OS/provider boundaries and checks queued focus changes, fresh-request recovery, cancellation and malformed input.
 
 Install Node.js 24 and Visual Studio Build Tools 2022 with the C++ workload, Windows 11 SDK, CMake tools, and compiler tools for the target architecture. Run from a developer shell where `node` and `cmake` are on PATH:
 
@@ -135,7 +135,7 @@ bundled: `vendor/ia2` contains pinned BSD interface declarations and notices.
 Electron tests compare complete text and every insertion offset against the DOM,
 including mixed bidirectional text and wrapped lines.
 
-Screen context uses a bounded UI Automation walk of the foreground window, with visible text ranges for fields, separate field-scoped caret context, password/hidden-text exclusions and Mac-compatible reading-order rendering. The walk has the Mac reference budgets of 5,000 nodes / 1.5 seconds plus an aggregate text cap. The Electron regression checks real provider visibility and field boundaries; a portable renderer test checks line/column formatting and Unicode-safe limits.
+Screen context (in `voice-screen-reader.exe`) uses a bounded UI Automation walk of the foreground window, with visible text ranges for fields, separate field-scoped caret context, password/hidden-text exclusions and Mac-compatible reading-order rendering. The walk has the Mac reference budgets of 5,000 nodes / 1.5 seconds plus an aggregate text cap. The Electron regression checks real provider visibility and field boundaries; a portable renderer test checks line/column formatting and Unicode-safe limits.
 
 ## Start and Search placement
 

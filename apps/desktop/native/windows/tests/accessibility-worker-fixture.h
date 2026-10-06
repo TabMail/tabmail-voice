@@ -41,8 +41,7 @@ struct Output {
 std::mutex gateMutex;
 std::condition_variable gateChanged;
 bool blockNext = false, entered = false, released = false, providerFailure = false;
-std::atomic<int> caretCalls{0}, inserts{0}, fieldCalls{0}, screenCalls{0};
-std::atomic<int> screenDelayMs{0}; // How long a screen read's provider takes to answer.
+std::atomic<int> caretCalls{0}, inserts{0}, fieldCalls{0};
 void gate() {
  std::unique_lock lock(gateMutex);
  if (!blockNext) return;
@@ -59,7 +58,6 @@ void paste(HWND, std::wstring, unsigned, uint64_t, std::function<bool()> cancele
 template<class Name, class Read> JSON screenAccess(const JSON&, HWND w, Name, Read read, bool = false) { return read(w, ScreenExclusions{}); }
 struct Automation {
  JSON caret(HWND w) { ++caretCalls; gate(); if (providerFailure) throw std::runtime_error("synthetic provider failure"); if (!w || w != GetForegroundWindow()) return nullptr; return {{"x", reinterpret_cast<uintptr_t>(w)}, {"y", 20}, {"width", 1}, {"height", 20}}; }
- JSON readScreen(HWND w, const ScreenExclusions&) { ++screenCalls; gate(); Sleep(screenDelayMs.load()); return w ? JSON{{"syntheticWindow",reinterpret_cast<uintptr_t>(w)}} : JSON(nullptr); }
  JSON fieldValue(HWND w, unsigned, const ScreenExclusions&) { ++fieldCalls; return w ? JSON{{"value","synthetic"}} : JSON(nullptr); }
 };
 }

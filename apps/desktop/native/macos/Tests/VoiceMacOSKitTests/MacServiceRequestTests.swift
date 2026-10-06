@@ -89,4 +89,32 @@ struct MacServiceRequestTests {
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
         withExtendedLifetime(service) {}
     }
+
+    /// The screen is read only by `voice-screen-reader`, and that program does nothing else:
+    /// a read stuck in an app's Accessibility replies never shares a process with a paste.
+    @Test func theScreenIsReadOnlyByTheReaderAndTheReaderDoesNothingElse() async throws {
+        func replies(_ register: (HelperChannel) -> Void, _ requests: [String]) async throws -> [[String: Any]] {
+            let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+            let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+            register(channel)
+            for request in requests { await channel.handle(line: Data(request.utf8)) }
+            return try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        }
+        let read = #"{"id":1,"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":[]}}"#
+        var service: AnyObject?
+        let main = try await replies({ service = MacService.register(on: $0) }, [read])
+        #expect((main.first?["error"] as? [String: Any])?["message"] as? String == "unknown method readScreen")
+        withExtendedLifetime(service) {}
+
+        let nothing = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, read: { _, _, _, _ in nil }, focusedField: { _, _, _ in nil })
+        let others = ["frontmostApp", "caretAnchor", "focusedFieldValue", "insert", "keyboardLanguage", "startActivator"]
+        let reader = try await replies({ ScreenReaderService.register(on: $0, screen: nothing) },
+                                       [read] + others.enumerated().map { #"{"id":\#($0.offset + 2),"method":"\#($0.element)","params":{}}"# })
+        #expect(reader.count == others.count + 1)
+        guard reader.count == others.count + 1 else { return }
+        #expect(reader[0]["error"] == nil && reader[0]["result"] is NSNull)
+        for (index, method) in others.enumerated() {
+            #expect((reader[index + 1]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
+        }
+    }
 }

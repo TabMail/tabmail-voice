@@ -8,6 +8,7 @@ import { writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { dirname, join } from "node:path";
 
 assert.equal(process.platform, "win32", "requires the native Windows runtime");
 assert.ok(process.stdout.isTTY, "run directly in a focused Windows Terminal tab, without output redirection");
@@ -25,8 +26,6 @@ const persist = () => writeFileSync(process.argv[3], JSON.stringify(evidence, nu
 const rows = process.stdout.rows, columns = process.stdout.columns;
 assert.ok(Number.isInteger(rows) && rows > 3 && rows < 500);
 assert.ok(Number.isInteger(columns) && columns >= duplicate.length && columns < 500);
-const helper = spawn(process.argv[2], { stdio: ["pipe", "pipe", "pipe"] });
-const lines = createInterface({ input: helper.stdout });
 const pending = new Map();
 let nextID = 0;
 let helperFailed = false;
@@ -35,30 +34,38 @@ function fail(error) {
   for (const waiter of pending.values()) waiter.reject(error);
   pending.clear();
 }
-helper.on("error", fail);
-helper.on("exit", () => fail(new Error("helper exited before the request completed")));
-helper.stderr.on("data", () => {});
-lines.on("line", (line) => {
-  try {
-    const reply = JSON.parse(line);
-    const waiter = pending.get(reply.id);
-    if (!waiter) return;
-    pending.delete(reply.id);
-    if (reply.error) waiter.reject(new Error("native caret request failed"));
-    else waiter.resolve(reply.result);
-  } catch (error) { fail(error); }
-});
+function start(executable) {
+  const child = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"] });
+  const lines = createInterface({ input: child.stdout });
+  child.on("error", fail);
+  child.on("exit", () => fail(new Error("helper exited before the request completed")));
+  child.stderr.on("data", () => {});
+  lines.on("line", (line) => {
+    try {
+      const reply = JSON.parse(line);
+      const waiter = pending.get(reply.id);
+      if (!waiter) return;
+      pending.delete(reply.id);
+      if (reply.error) waiter.reject(new Error("native caret request failed"));
+      else waiter.resolve(reply.result);
+    } catch (error) { fail(error); }
+  });
+  return { child, lines };
+}
+const helper = start(process.argv[2]);
+// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+const reader = start(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
 function request(method, params = {}) {
   assert.equal(helperFailed, false, "helper remains alive");
   const id = ++nextID;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    helper.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    (method === "readScreen" ? reader : helper).child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
   });
 }
 const timeout = setTimeout(() => {
   fail(new Error("terminal split validation timed out"));
-  helper.kill();
+  helper.child.kill(); reader.child.kill();
 }, 90_000);
 const read = () => request("readScreen", { excludedAppIDs: [], excludedHosts: [] });
 const caretTarget = screen => {
@@ -159,9 +166,11 @@ try {
   process.exitCode = 1;
 } finally {
   clearTimeout(timeout);
-  helper.stdin.end();
-  helper.kill();
-  lines.close();
+  for (const { child, lines } of [helper, reader]) {
+    child.stdin.end();
+    child.kill();
+    lines.close();
+  }
   evidence.finished = new Date().toISOString();
   persist();
 }

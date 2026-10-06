@@ -21,7 +21,7 @@ describe("HelperClient", () => {
     for (const client of clients.splice(0)) client.stop();
   });
 
-  function helper(options: { requestTimeout?: number; restartDelay?: number; restartExitCode?: number } = {}): HelperClient {
+  function helper(options: { requestTimeout?: number; restartDelay?: number; restartExitCode?: number; stopEndsAtOnce?: boolean } = {}): HelperClient {
     const client = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper], ...options });
     clients.push(client);
     client.start();
@@ -267,5 +267,66 @@ describe("HelperClient", () => {
     expect(Date.now() - started).toBeLessThan(500);
     // Stopped when asked: no exit to report.
     expect(exits).toBe(0);
+  });
+
+  const running = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** A read no longer wanted (the screen reader's) ends its process at once, whatever it is doing,
+   * and a new one takes its place: the old one's requests fail, the new one answers. */
+  test("restart ends a busy helper at once and starts a new one, which answers", async () => {
+    const client = helper({ restartDelay: 60_000 });
+    let starts = 0;
+    let exits = 0;
+    client.onStart = () => {
+      starts += 1;
+    };
+    client.onExit = () => {
+      exits += 1;
+    };
+    const { pid } = await client.request<{ pid: number }>("pid");
+    const stuck = client.request("hang");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    client.restart();
+    expect((await failure(stuck)).kind).toBe("exited");
+    expect(await eventually(() => !running(pid))).toBe(true);
+    const restarted = await client.request<{ pid: number }>("pid");
+    expect(restarted.pid).not.toBe(pid);
+    // Started again at once (not after `restartDelay`); asked for, so no exit to report.
+    expect(starts).toBe(1);
+    expect(exits).toBe(0);
+  });
+
+  test("restart does nothing to a helper that isn't running", async () => {
+    const client = new HelperClient({ name: "fake-helper", executable: process.execPath, args: [fakeHelper] });
+    clients.push(client);
+    client.restart();
+    expect((await failure(client.request("echo"))).kind).toBe("exited");
+  });
+
+  /** A stuck helper never reads its closed stdin; one that holds nothing to clean up is killed
+   * instead, so it can't outlive the app. */
+  test.each([
+    [true, false],
+    [false, true],
+  ])("stop with stopEndsAtOnce=%s: a stuck helper still running afterwards is %s", async (stopEndsAtOnce, survives) => {
+    const client = helper({ stopEndsAtOnce });
+    const { pid } = await client.request<{ pid: number }>("pid");
+    void client.request("hang").catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    client.stop();
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(running(pid)).toBe(survives);
+    } finally {
+      if (running(pid)) process.kill(pid, "SIGKILL");
+    }
   });
 });

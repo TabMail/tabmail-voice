@@ -160,6 +160,10 @@ export const pasteHistoryChromeHeight = 44;
  * The read is best effort: not done by then, the cleanup runs without it (ADR-DESK-008). The read
  * started at key-down, so it is usually done. */
 export const contextWait = 500;
+/** How long agent mode waits for that read once its transcript is ready: it needs all of it (the
+ * selection decides between Edit and Compose), so longer than a dictation, but a read not done by
+ * then (a hung app) leaves the request without the screen rather than holding it up. */
+export const agentScreenWait = 5_000;
 /** The cleanup gets only the screen text around the caret, not the whole screen: this much before
  * the caret (about a paragraph) and after it, in UTF-16 code units, rounded to whole characters.
  * Owner, 2026-09-28: the whole screen (often 4k–13k characters) made the cleanup slow; agent mode
@@ -402,15 +406,16 @@ export const accessibilityPollInterval = 1_000;
 
 // MARK: Native helpers
 
-/** Longest a request to the macOS helper may take before it counts as failed. The screen read has
- * its own, longer budget (the helper's `HelperConfig.contextTimeBudget`) on top of this. */
+/** Longest a request to the macOS helper may take before it counts as failed. */
 export const helperRequestTimeout = 3_000;
 /** Allow IPC scheduling under load while staying inside the normal hold-reveal interval.
  * The native compositor call has its own shorter deadline; this bounds a stalled helper. */
 export const linuxCaretRequestTimeout = 200;
-/** Longest the helper's screen read may take: its own time budget for the Accessibility walk
- * (`HelperConfig.contextTimeBudget`, 1.5 s) and then some for a busy app's replies. */
-export const screenReadTimeout = 5_000;
+/** Longest a screen read may run in voice-screen-reader (`ScreenReader`) before that process is
+ * ended: past the longest dictation, nothing it reads is used. On Windows and Linux a terminal read
+ * has no time limit of its own; a dictation takes a read only if it is done in time (`contextWait`,
+ * agent mode `agentScreenWait`). */
+export const screenReaderTimeout = maxRecordingDuration;
 /** Longest a Calendar or Reminders request to the helper may take: the first one waits while
  * macOS asks the user for access. */
 export const eventStoreRequestTimeout = 120_000;

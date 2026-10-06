@@ -86,9 +86,9 @@ export class ScreenContextProbe {
 
   /** Null without the Accessibility grant. (Whether to read at all is the dictation's
    * screen-reading setting, `DictationSettings.readsScreen`.) The promise yields the screen of the
-   * app in front when this was called, even if a newer capture has started since; that it is hidden,
-   * with an app or a website the dictation excludes from screen reading (`exclusions`); null without
-   * an app in front, or when the read failed. */
+   * app in front when this was called; a newer capture ends this read, which then yields null. It
+   * yields that the screen is hidden with an app or a website the dictation excludes from screen
+   * reading (`exclusions`); null without an app in front, or when the read failed. */
   capture(exclusions: ScreenExclusions): Promise<ScreenRead | null> | null {
     if (!this.isTrusted()) return null;
     this.generation += 1;
