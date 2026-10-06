@@ -83,13 +83,9 @@ export class CompletionsClient {
     private readonly timeZone: () => string = () => Intl.DateTimeFormat().resolvedOptions().timeZone,
   ) {}
 
-  /** `availableTools`: the agent tools the backend may offer this request (`available_tools`), for
-   * the agent's choice; left out of the body for every other prompt. A prompt that calls no tools. */
-  async complete(message: CompletionsMessage, accessToken: string, signal?: AbortSignal, availableTools?: readonly string[]): Promise<string> {
-    const { reply, status } = await this.send(message, accessToken, signal, {
-      disable_tools: true,
-      ...(availableTools === undefined ? {} : { available_tools: availableTools }),
-    });
+  /** A prompt that calls no tools. */
+  async complete(message: CompletionsMessage, accessToken: string, signal?: AbortSignal): Promise<string> {
+    const { reply, status } = await this.send(message, accessToken, signal, { disable_tools: true });
     if (typeof reply.assistant !== "string") throw new BackendError("failed", status);
     return reply.assistant;
   }

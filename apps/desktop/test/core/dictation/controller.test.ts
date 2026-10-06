@@ -6,10 +6,9 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AccountModel } from "../../../src/core/backend/account.js";
-import { type AgentChat, chatTranscript, emptyChat } from "../../../src/core/agent/chat.js";
+import { type AgentChat, emptyChat } from "../../../src/core/agent/chat.js";
 import { type ConnectorID, connectorIDs } from "../../../src/core/agent/connectors/index.js";
 import type { ConnectorTool } from "../../../src/core/agent/connectors/contract.js";
-import { RelayError } from "../../../src/core/agent/connectors/thunderbird/relay.js";
 import { AgentError, type AgentToolID, agentToolIDs, screenHiddenNote } from "../../../src/core/agent/tools.js";
 import { AudioRecorder } from "../../../src/core/audio/recorder.js";
 import { BackendError } from "../../../src/core/backend/errors.js";
@@ -43,6 +42,8 @@ const cleanedStream = Fixtures.reply(cleaned);
 /** A dictation's transcription, cleaned up by the backend in the same request (backend ADR-027). */
 const cleanedReply = { text: transcript, cleaned_text: cleaned };
 const reply = Fixtures.reply;
+/** The loop's round that pastes `text` with the writing tool `tool`, ending the request. */
+const writes = (tool: "compose" | "edit", text: string) => Fixtures.toolCalls([{ id: "call_write", name: tool, arguments: JSON.stringify({ text }) }]);
 
 const idle: Phase = { kind: "idle" };
 const arming: Phase = { kind: "arming" };
@@ -506,7 +507,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     prefs.value = { ...defaultSettings(), dictionary, enabledTools: ["compose"] };
     const written = "Synthetic composed result.";
     transcription.enqueue(200, mode === "dictation" ? cleanedReply : { text: request });
-    if (mode === "agent") completions.enqueue(200, reply(written));
+    if (mode === "agent") completions.enqueue(200, writes("compose", written));
     const { controller, pastes, copies, history } = makeController({ capture: new CountingCapture(true) });
     let reads = 0;
     controller.captureContext = async () => {
@@ -743,7 +744,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["agent", 202],
     ])("a %s canceled while the app in front is read goes nowhere (app %i)", async (mode, pid) => {
       transcription.enqueue(200, mode === "agent" ? { text: request } : cleanedReply);
-      if (mode === "agent") completions.enqueue(200, reply("We ship on Friday."));
+      if (mode === "agent") completions.enqueue(200, writes("compose", "We ship on Friday."));
       const reading = deferred<number>();
       let reads = 0;
       const { controller, pastes, copies, history } = makeController({
@@ -792,7 +793,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** Agent mode's text is copied the same way: Edit's and Compose's. */
     test("agent text for another app is copied", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       completions.gate = async () => {
         front.pid = 202;
       };
@@ -917,7 +918,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("agent mode's paste is not watched", async () => {
       const { calls, corrections } = watcher();
       transcription.enqueue(200, { text: "make this friendlier" });
-      completions.enqueue(200, Fixtures.reply("We ship on Friday."));
+      completions.enqueue(200, writes("edit", "We ship on Friday."));
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
       controller.captureContext = async () => selectionScreen("We ship Friday.");
       await holdAndRelease(controller, "agent");
@@ -1692,7 +1693,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       const context = deferred<ScreenContext>();
       controller.captureContext = () => context.promise;
       transcription.enqueue(200, { text: "Write the result." });
-      completions.enqueue(200, reply("Final result."));
+      completions.enqueue(200, writes(selection ? "edit" : "compose", "Final result."));
       if (action === "reused") {
         controller.handle("start");
         controller.handle("finish");
@@ -1720,7 +1721,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual(["Final result."]);
       expect(copies).toEqual([]);
       expect(history.entries.map((entry) => entry.text)).toEqual(["Final result."]);
-      expect(completionsVars(0)?.content).toBe(`system_prompt_desktop_${tool}`);
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
       expect(completionsVars(0)?.user_request).toBe("Write the result.");
       expect(capture.starts).toBe(1);
       expect(capture.stops).toBeGreaterThan(0);
@@ -1737,7 +1738,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     controller.captureContext = async () => screen("STREAM");
     transcription.enqueue(200, { text: "raw first", cleaned_text: "Clean first." });
     transcription.enqueue(200, { text: "raw second", cleaned_text: "Clean second." });
-    completions.enqueue(200, Fixtures.reply("Final result."));
+    completions.enqueue(200, switchToDictation ? Fixtures.reply("Final result.") : writes("compose", "Final result."));
     try {
       if (action === "reused") { controller.handle("start"); controller.handle("finish"); controller.handle("startAgentHandsFree"); }
       else controller.handle(action);
@@ -1759,7 +1760,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.requests).toHaveLength(2); expect(completions.requests).toHaveLength(1);
       expect(completions.message(0)).toMatchObject(switchToDictation
         ? { content: "system_prompt_dictate_cleanup", dictation: "Clean first. Clean second." }
-        : { content: "system_prompt_desktop_compose", user_request: "raw first raw second" });
+        : { content: "system_prompt_desktop_agent", user_request: "raw first raw second" });
     } finally { controller.handle("cancel"); }
   });
 
@@ -1787,7 +1788,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * that was only not read says nothing. */
     test.each([true, false])("agent mode tells its tool the screen is hidden for privacy (hidden: %s)", async (hidden) => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
 
       const { controller, pastes } = await carryOut(hidden ? { hidden: true } : null, undefined, (controller) => {
         if (!hidden) controller.captureContext = async () => null;
@@ -1801,11 +1802,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.body(0).vocabulary).toBeUndefined();
     });
 
-    /** Without an email app there is nothing to choose: the selection's writing tool runs, with no
-     * agent call. */
+    /** With Answer off, the loop is offered the selection's writing tool alone, and pastes with it. */
     test("agent mode edits the selection in place", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("Could we ship on Friday?"));
+      completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
 
       const { controller, pastes, phases } = await carryOut(selectionScreen("Ship it Friday or else.\n"));
 
@@ -1816,7 +1816,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual(["edit"]);
       expect(phases).toContainEqual(running("edit"));
       expect(completions.requests).toHaveLength(1);
-      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_edit");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+      expect(completions.body(0).available_tools).toEqual(["edit"]);
       expect(completionsVars(0)?.user_request).toBe(request);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
     });
@@ -1824,7 +1825,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** Agent mode logs the request, the text its tool wrote (fitted to the selection) and the paste. */
     test("agent mode logs the request, the written text and the paste", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("Could we ship on Friday?"));
+      completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
 
       const entries = steps(await loggedContent(async () => {
         await carryOut(selectionScreen("Ship it Friday or else.\n"));
@@ -1834,23 +1835,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual([request, "Could we ship on Friday?\n", "Could we ship on Friday?\n"]);
     });
 
-    /** A mail request logs the chat message sent to Thunderbird, and no paste. */
-    test("a mail request logs the chat message sent", async () => {
-      transcription.enqueue(200, { text: "find sam's invoice from last week" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the invoice Sam sent last week."));
-
-      const entries = steps(await loggedContent(async () => {
-        await carryOut(selectionScreen(""), new FakeThunderbird());
-      }));
-
-      expect(entries.map((entry) => entry.label)).toEqual(["Transcript (agent)", "DesktopAgent: thunderbird wrote", "ThunderbirdRelay: sent"]);
-      expect(entries.map((entry) => entry.text)).toEqual(["find sam's invoice from last week", "Find the invoice Sam sent last week.", "Find the invoice Sam sent last week."]);
-    });
 
     test("agent mode composes at the caret with nothing selected", async () => {
       transcription.enqueue(200, { text: "write that we ship on Friday" });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
 
       let result: Awaited<ReturnType<typeof carryOut>> | undefined;
       const entries = steps(await loggedContent(async () => {
@@ -1865,37 +1853,38 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual(["write that we ship on Friday", "We ship on Friday.", "We ship on Friday."]);
       expect(controller.tools).toEqual(["compose"]);
       expect(phases).toContainEqual(running("compose"));
-      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_compose");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
       // The spoken request was transcribed with the dictionary too: its words count as used.
       expect(used).toEqual([["write that we ship on Friday"]]);
     });
 
     /** The selection alone decides between Edit and Compose, as the bubbles showed it: the other
-     * writing tool is not offered (`available_tools`), and an agent that names it anyway fails the
-     * request, pasting nothing. */
+     * writing tool is not offered (`available_tools`), and a call to it anyway is no tool the app has:
+     * it pastes nothing, and the loop goes on. */
     test.each<[string, string, AgentToolID]>([
       ["Ship it Friday or else.", "compose", "edit"],
       ["", "edit", "compose"],
-    ])("with the selection %j the agent's %s is not offered", async (selected, agentChoice, tool) => {
+    ])("with the selection %j the agent's %s is not offered", async (selected, other, tool) => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply(agentChoice));
+      completions.enqueue(200, Fixtures.toolCalls([{ id: "call_other", name: other, arguments: '{"text":"Elsewhere."}' }]));
+      completions.enqueue(200, writes(tool as "compose" | "edit", "Here."));
 
       const { controller, pastes } = await carryOut(selectionScreen(selected), new FakeThunderbird());
 
-      expect(controller.tools).toEqual([tool, "thunderbird"]);
-      expect(completions.body(0).available_tools).toEqual([tool, "thunderbird"]);
-      expect(completions.requests).toHaveLength(1);
-      expect(controller.phase).toEqual(failed(new AgentError("noTool").message));
-      expect(pastes).toEqual([]);
+      expect(controller.tools).toEqual([tool]);
+      expect(completions.body(0).available_tools).toEqual([tool]);
+      expect(completions.requests).toHaveLength(2);
+      expect(JSON.stringify(completions.body(1).conversation_state)).toContain(`there is no tool named ${other}`);
+      expect(pastes).toEqual([selected === "" ? "Here." : "Here."]);
+      expect(controller.phase).toEqual(idle);
     });
 
-    /** A selection that holds a secret reaches the app redacted (ADR-DESK-046). Edit's rewrite of it
-     * would replace the user's text, secret included, with the placeholder: nothing is written or
-     * pasted, and the overlay says why. */
+    /** A selection that holds a secret reaches the app redacted (ADR-DESK-046). An edit of it would
+     * replace the user's text, secret included, with the placeholder: nothing is pasted, and the
+     * overlay says why. */
     test("agent mode doesn't rewrite a selection the helper redacted", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("edit"));
-      completions.enqueue(200, reply("connect with postgres://app:[redacted]@db.example.com, please"));
+      completions.enqueue(200, writes("edit", "connect with postgres://app:[redacted]@db.example.com, please"));
 
       const { controller, pastes } = await carryOut({ ...selectionScreen("connect with postgres://app:[redacted]@db.example.com"), selectionRedacted: true }, new FakeThunderbird());
 
@@ -1906,9 +1895,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
     /** Whatever goes wrong, agent mode pastes nothing: the spoken request is not text for the document. */
     test.each<[[number, string][], string]>([
-      [[[200, "rewrite"]], new AgentError("noTool").message],
-      [[[200, "compose"], [200, ""]], new AgentError("noText").message],
-      [[[200, "compose"], [500, ""]], new BackendError("failed", 500).message],
+      // With Answer off, a reply has nowhere to go.
+      [[[200, "Could we ship on Friday?"]], new AgentError("noText").message],
+      [[[200, ""]], new AgentError("noText").message],
+      [[[500, ""]], new BackendError("failed", 500).message],
     ])("agent mode pastes nothing when it cannot carry out the request (%j)", async (replies, message) => {
       transcription.enqueue(200, { text: request });
       for (const [status, assistant] of replies) {
@@ -1925,65 +1915,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(completions.requests).toHaveLength(replies.length);
     });
 
-    /** A mail or calendar request is restated as a chat message and typed into TabMail's chat in
-     * Thunderbird; nothing is pasted where the user was. */
-    test("agent mode sends mail requests to Thunderbird", async () => {
-      transcription.enqueue(200, { text: "find sam's invoice from last week" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the invoice Sam sent last week."));
-      const thunderbird = new FakeThunderbird();
 
-      const { controller, pastes, phases } = await carryOut(selectionScreen(""), thunderbird);
 
-      expect(controller.tools).toEqual(["compose", "thunderbird"]);
-      expect(controller.emailAppPath).toBe(FakeThunderbird.path);
-      expect(thunderbird.pasted).toEqual(["Find the invoice Sam sent last week."]);
-      expect(thunderbird.events.at(-1)).toBe("return");
-      expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(idle);
-      expect(phases).toContainEqual(running("thunderbird"));
-      expect(completionsVars(1)?.content).toBe("system_prompt_desktop_thunderbird");
-      expect(completionsVars(1)?.user_request).toBe("find sam's invoice from last week");
-    });
-
-    /** Without Thunderbird its bubble isn't shown and the agent isn't asked: the request is written
-     * where the user is, and nothing is sent anywhere else. */
-    test("without Thunderbird its tool is not offered", async () => {
-      transcription.enqueue(200, { text: "find sam's invoice" });
-      completions.enqueue(200, reply("Sam's invoice"));
-      const thunderbird = new FakeThunderbird();
-      thunderbird.installed = false;
-
-      const { controller, pastes } = await carryOut(selectionScreen(""), thunderbird);
-
-      expect(controller.tools).toEqual(["compose"]);
-      expect(controller.emailAppPath).toBeNull();
-      expect(controller.phase).toEqual(idle);
-      expect(completions.requests).toHaveLength(1);
-      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_compose");
-      expect(thunderbird.events).toEqual([]);
-      expect(pastes).toEqual(["Sam's invoice"]);
-    });
-
-    test("a chat that does not open fails the request", async () => {
-      transcription.enqueue(200, { text: "find sam's invoice" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the invoice Sam sent."));
-      const thunderbird = new FakeThunderbird();
-      thunderbird.shortcutOpensChat = false;
-
-      const { controller, pastes } = await carryOut(selectionScreen(""), thunderbird);
-
-      expect(controller.phase).toEqual(failed(new RelayError("chatNotFocused").message));
-      expect(thunderbird.pasted).toEqual([]);
-      expect(pastes).toEqual([]);
-    });
 
     /** Agent mode waits for the whole screen read, up to `agentScreenWait`, and offers no writing tool
      * until it is done: the selection it carries decides between Edit and Compose. */
     test("agent mode waits for the whole screen read", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("Could we ship on Friday?"));
+      completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       const read = deferred<ScreenContext | null>();
       controller.captureContext = () => read.promise;
@@ -2006,7 +1945,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * log, and no debug line carries the request or the reply. */
     test("the debug log times agent mode's waits, without its text", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("Could we ship on Friday?"));
+      completions.enqueue(200, writes("edit", "Could we ship on Friday?"));
       const debug = await debugLines(async () => {
         const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
         controller.captureContext = async () => selectionScreen("Ship it Friday or else.");
@@ -2026,7 +1965,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * answers) does not hold the request up: it goes on without the screen. */
     test("agent mode goes on without a screen read that never ends", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.captureContext = () => new Promise<ScreenContext | null>(() => {});
       controller.contextWait = 0;
@@ -2052,8 +1991,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual([]);
       controller.handle("toggleMode");
       expect(controller.mode).toBe("agent");
-      expect(await eventually(() => controller.tools.length === 2)).toBe(true);
-      expect(controller.tools).toEqual(["compose", "thunderbird"]);
+      expect(await eventually(() => controller.tools.length === 1)).toBe(true);
+      expect(controller.tools).toEqual(["compose"]);
       controller.handle("toggleMode");
       expect(controller.mode).toBe("dictation");
       expect(controller.tools).toEqual([]);
@@ -2093,7 +2032,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["", "compose"],
     ])("agent text is not pasted into another app (selection %j)", async (selected, tool) => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("Could we ship on Friday?"));
+      completions.enqueue(200, writes(tool as "compose" | "edit", "Could we ship on Friday?"));
       completions.gate = async () => {
         front.pid = 202;
       };
@@ -2113,7 +2052,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       ["", "compose"],
     ])("agent text canceled during the last wait is not pasted (selection %j)", async (selected, tool) => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("Could we ship on Friday?"));
+      completions.enqueue(200, writes(tool as "compose" | "edit", "Could we ship on Friday?"));
       const kept = deferred<number>();
       let reads = 0;
       // The second read is this request's paste; key-downs answer at once.
@@ -2143,7 +2082,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * agent's text is still pasted. */
     test("a double tap while agent mode writes leaves nothing hands-free", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       const pasting = deferred<void>();
       const reached = deferred<void>();
       const pastes: string[] = [];
@@ -2179,7 +2118,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * being transcribed is caught too. */
     test("agent text is not pasted after a switch during the transcription", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       transcription.gate = async () => {
         front.pid = 202;
       };
@@ -2195,7 +2134,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * key is still held is caught too. */
     test("agent text is not pasted after a switch during the hold", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       const { controller, pastes } = makeController({ capture: new CountingCapture(true) });
       controller.captureContext = async () => selectionScreen("");
 
@@ -2215,9 +2154,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * next, made in another, is pasted there. */
     test("each hold takes the app in front at its key-down", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Monday."));
+      completions.enqueue(200, writes("compose", "We ship on Monday."));
       const { controller, pastes } = await carryOut(selectionScreen(""));
       expect(pastes).toEqual(["We ship on Friday."]);
 
@@ -2228,17 +2167,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual(["We ship on Friday.", "We ship on Monday."]);
     });
 
-    /** Settings are read once, as a hold starts: changing the server, the email app, screen reading
-     * and the user's name while it runs changes nothing for it, and the change applies from the next
-     * hold. */
+    /** Settings are read once, as a hold starts: changing the server, screen reading and the user's
+     * name while it runs changes nothing for it, and the change applies from the next hold. */
     test("settings changed during a hold apply from the next one", async () => {
-      const thunderbird = new FakeThunderbird();
       let reads = 0;
-      transcription.enqueue(200, { text: "find sam's invoice" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the invoice Sam sent."));
+      transcription.enqueue(200, { text: "write we ship friday" });
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
 
-      const { controller } = await carryOut(selectionScreen(""), thunderbird, (controller) => {
+      const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
           prefs.value = { hasConsented: true, hotkey: "rightOption", backendURL: "https://dev.example.com", readsScreen: false, enabledTools: toolsWithoutAnswer, enabledConnectors: [...connectorIDs], emailClient: "org.example.othermail", hasTabMail: true, userName: "Sam Example", dictionary: ["Xyvora"], learnsWords: false, excludedApps: [], excludedSites: [], smartDictation: true };
@@ -2250,37 +2186,32 @@ describe("DictationController", { timeout: 20_000 }, () => {
         };
       });
 
-      expect(thunderbird.pasted).toEqual(["Find the invoice Sam sent."]);
-      expect(thunderbird.apps).toEqual([FakeThunderbird.app]);
+      expect(pastes).toEqual(["We ship on Friday."]);
       expect(new Set([...hosts(transcription), ...hosts(completions)])).toEqual(new Set(["api.example.com"]));
       expect(reads).toBe(1);
-      expect(completionsVars(1)?.user_name).toBe("Alex Example");
+      expect(completionsVars(0)?.user_name).toBe("Alex Example");
       expect(transcription.body(0).vocabulary).toBeUndefined();
 
       controller.onPhaseChange = undefined;
-      transcription.enqueue(200, { text: "find sam's receipt" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the receipt Sam sent."));
+      transcription.enqueue(200, { text: "write we ship monday" });
+      completions.enqueue(200, writes("compose", "We ship on Monday."));
       await holdAndRelease(controller, "agent");
 
-      expect(await eventually(() => thunderbird.pasted.length === 2)).toBe(true);
-      expect(thunderbird.apps).toEqual([FakeThunderbird.app, "org.example.othermail"]);
-      expect([...hosts(transcription), ...hosts(completions)].filter((host) => host === "dev.example.com")).toHaveLength(3);
+      expect(await eventually(() => pastes.length === 2)).toBe(true);
+      expect([...hosts(transcription), ...hosts(completions)].filter((host) => host === "dev.example.com")).toHaveLength(2);
       expect(reads).toBe(1);
-      expect(completionsVars(3)?.user_name).toBe("Sam Example");
+      expect(completionsVars(1)?.user_name).toBe("Sam Example");
       expect(transcription.body(1).vocabulary).toEqual(["Xyvora"]);
     });
 
     /** The bubbles show the tools switched on at key-down, the ones the request is offered: a tool
      * switched off during the hold stays until the next. */
     test("the bubbles keep the tools switched on at key-down", async () => {
-      const thunderbird = new FakeThunderbird();
       const shown: AgentToolID[][] = [];
-      transcription.enqueue(200, { text: "find sam's invoice" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the invoice Sam sent."));
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
 
-      await carryOut(selectionScreen(""), thunderbird, (controller) => {
+      const { pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
         controller.onPhaseChange = (phase) => {
           if (phase.kind !== "listening") return;
           shown.push(controller.tools);
@@ -2292,11 +2223,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
         };
       });
 
-      expect(shown).toEqual([
-        ["compose", "thunderbird"],
-        ["compose", "thunderbird"],
-      ]);
-      expect(thunderbird.pasted).toEqual(["Find the invoice Sam sent."]);
+      expect(shown).toEqual([["compose"], ["compose"]]);
+      expect(pastes).toEqual(["We ship on Friday."]);
     });
 
     /** A hold is transcribed in the keyboard's language at its key-down, which the overlay shows from
@@ -2318,7 +2246,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           transcription.enqueue(200, { text: words, cleaned_text: written });
         } else {
           transcription.enqueue(200, { text: words });
-          completions.enqueue(200, reply(written));
+          completions.enqueue(200, writes("compose", written));
         }
       }
       transcription.gate = async () => {
@@ -2386,35 +2314,18 @@ describe("DictationController", { timeout: 20_000 }, () => {
       prefs.value = { ...prefs.value, emailClient: changedTo };
       controller.handle("toggleMode");
 
-      const offered: AgentToolID[] = atKeyDown === null ? ["compose"] : ["compose", "thunderbird"];
-      expect(await eventually(() => JSON.stringify(controller.tools) === JSON.stringify(offered))).toBe(true);
+      expect(await eventually(() => controller.tools.length === 1)).toBe(true);
+      expect(controller.tools).toEqual(["compose"]);
       expect(controller.emailAppPath).toBe(atKeyDown === null ? null : FakeThunderbird.path);
       controller.handle("cancel");
       expect(await eventually(() => controller.phase.kind === "idle")).toBe(true);
-    });
-
-    /** Thunderbird comes to the front to take the chat message: that is no reason to drop it. */
-    test("a mail request is sent whatever app is in front", async () => {
-      transcription.enqueue(200, { text: "find sam's invoice" });
-      completions.enqueue(200, reply("thunderbird"));
-      completions.enqueue(200, reply("Find the invoice Sam sent."));
-      completions.gate = async () => {
-        front.pid = 202;
-      };
-      const thunderbird = new FakeThunderbird();
-
-      const { controller, pastes } = await carryOut(selectionScreen(""), thunderbird);
-
-      expect(thunderbird.pasted).toEqual(["Find the invoice Sam sent."]);
-      expect(pastes).toEqual([]);
-      expect(controller.phase).toEqual(idle);
     });
 
     /** While a request runs, the hotkey neither starts another dictation nor switches its mode: the
      * request carries on and its text is pasted. */
     test("a running request ignores the hotkey", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       const seen: { phase: Phase; mode: DictationMode }[] = [];
 
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
@@ -2433,7 +2344,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** Canceled while the tool writes: nothing is pasted, then or when the text arrives. */
     test("a request canceled while running pastes nothing", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       const seen: Phase[] = [];
 
       const { controller, pastes } = await carryOut(selectionScreen(""), undefined, (controller) => {
@@ -2509,7 +2420,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     /** A dictation after agent mode is a dictation again: cleaned up and pasted. */
     test("a hold after agent mode dictates again", async () => {
       transcription.enqueue(200, { text: request });
-      completions.enqueue(200, reply("We ship on Friday."));
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
       transcription.enqueue(200, cleanedReply);
       const { controller, pastes } = await carryOut(null);
 
@@ -2543,11 +2454,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
         prefs.value = { ...prefs.value, enabledTools: tools };
       }
 
-      /** Queues a request the agent gives `tool`, which writes `text`. */
+      /** Queues a request the agent ends with `tool` and `text`: a chat reply for Answer, else a paste. */
       function queue(spoken: string, tool: AgentToolID, text: string): void {
         transcription.enqueue(200, { text: spoken });
-        completions.enqueue(200, reply(tool));
-        completions.enqueue(200, reply(text));
+        completions.enqueue(200, tool === "answer" ? reply(text) : writes(tool as "compose" | "edit", text));
       }
 
       /** Asks `question` with nothing selected, which the agent answers: the chat window opens. With no
@@ -2591,14 +2501,12 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns).toEqual([{ id: 0, request: question, tool: "answer", reply: answer }]);
         expect(controller.chat?.closesAt).not.toBeNull();
         expect(chatChanges).toEqual([true]);
-        expect(completions.requests).toHaveLength(2);
-        expect(completions.body(0).available_tools).toEqual(["compose", "answer"]);
+        expect(completions.requests).toHaveLength(1);
+        expect(completions.body(0).available_tools).toEqual(expect.arrayContaining(["compose"]));
         expect(completionsVars(0)?.conversation).toBe("");
-        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_answer");
-        expect(completionsVars(1)?.user_request).toBe(question);
-        // The user's name goes with the tool's request, not with the choice of tool.
-        expect(completionsVars(0)?.user_name).toBeUndefined();
-        expect(completionsVars(1)?.user_name).toBe("Alex Example");
+        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(0)?.user_request).toBe(question);
+        expect(completionsVars(0)?.user_name).toBe("Alex Example");
       });
 
       /** The answer goes with the name set at key-down: a name changed while the hold runs applies
@@ -2609,14 +2517,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
             if (phase.kind === "listening") prefs.value = { ...prefs.value, userName: "Sam Example" };
           };
         });
-        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_answer");
-        expect(completionsVars(1)?.user_name).toBe("Alex Example");
+        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(0)?.user_name).toBe("Alex Example");
 
         controller.onPhaseChange = undefined;
         queue("and how do I fix it", "answer", "Define it before the call.");
         await followUp(controller);
-        expect(completionsVars(3)?.content).toBe("system_prompt_desktop_answer");
-        expect(completionsVars(3)?.user_name).toBe("Sam Example");
+        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(1)?.user_name).toBe("Sam Example");
       });
 
       /** With the chat window open, the hotkey asks a follow-up: always in agent mode (Space switches
@@ -2635,43 +2543,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(await eventually(() => controller.phase.kind === "idle" && controller.chat?.turns.length === 2)).toBe(true);
 
         const conversation = `User: ${question}\nTabMail: ${answer}`;
-        expect(completionsVars(2)?.conversation).toBe(conversation);
-        expect(completionsVars(2)?.user_request).toBe("and how do I fix it");
-        expect(completionsVars(3)?.conversation).toBe(conversation);
+        expect(completionsVars(1)?.conversation).toBe(conversation);
+        expect(completionsVars(1)?.user_request).toBe("and how do I fix it");
         expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Define it before the call."]);
         expect(controller.chat?.closesAt).toBeNull();
       });
 
-      /** A follow-up another tool carries out is listed in the chat with what it did, so a later
-       * follow-up can refer to it. */
-      test("a follow-up's other tool is listed in the chat", async () => {
-        const { controller, pastes } = await openChat();
+      /** A follow-up the agent writes into the app with Compose ends the conversation: the chat window
+       * closes, then the text is pasted (owner, 2026-10-05). */
+      test("a follow-up written into the app closes the chat and pastes", async () => {
+        const { controller, pastes, chatChanges } = await openChat();
         queue("write the fix here", "compose", "Define it first.");
 
         await followUp(controller);
 
         expect(pastes).toEqual(["Define it first."]);
-        expect(controller.chat?.turns.map((turn) => turn.tool)).toEqual(["answer", "compose"]);
-        expect(chatTranscript(controller.chat ?? emptyChat)).toMatch(/User: write the fix here\nTabMail \[Pasted at the cursor\]: Define it first\.$/);
-      });
-
-      /** A follow-up can hand the email app a request, which gets exactly the words the chat lists and
-       * pastes nothing in the app in front. */
-      test("a follow-up offers the email app", async () => {
-        const thunderbird = new FakeThunderbird();
-        const { controller, pastes } = await openChat(() => {}, thunderbird);
-        expect(controller.chat).not.toBeNull();
-        queue("find the invoice from last week", "thunderbird", "Find the invoice from last week.");
-
-        await followUp(controller);
-
-        expect(controller.tools).toContain("thunderbird");
-        expect(completions.requests).toHaveLength(4);
-        expect(completions.body(2).available_tools).toContain("thunderbird");
-        expect(controller.chat?.turns.map((turn) => turn.tool)).toEqual(["answer", "thunderbird"]);
-        expect(controller.chat?.turns.at(-1)?.reply).toBe("Find the invoice from last week.");
-        expect(thunderbird.pasted).toEqual(["Find the invoice from last week."]);
-        expect(pastes).toEqual([]);
+        expect(controller.chat).toBeNull();
+        expect(chatChanges).toEqual([true, false]);
+        expect(completionsVars(1)?.conversation).toBe(`User: ${question}\nTabMail: ${answer}`);
       });
 
       /** While a follow-up is under way its words show in the chat as a pending request; once it is
@@ -2691,16 +2580,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual([question, "and how do I fix it"]);
       });
 
-      /** A follow-up no tool can carry out fails in the pill: the chat stays open, with its turns as
-       * they were and nothing left pending. */
+      /** A follow-up that fails fails in the pill: the chat stays open, with its turns as they were
+       * and nothing left pending. */
       test("a failed follow-up leaves the chat as it was", async () => {
         const { controller, pastes } = await openChat();
         transcription.enqueue(200, { text: "make it shorter" });
-        completions.enqueue(200, reply("rewrite"));
+        completions.enqueue(500, "");
 
         await followUp(controller);
 
-        expect(controller.phase).toEqual(failed(new AgentError("noTool").message));
+        expect(controller.phase).toEqual(failed(new BackendError("failed", 500).message));
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual([question]);
         expect(controller.chat?.pendingRequest).toBeNull();
         expect(pastes).toEqual([]);
@@ -2711,7 +2600,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       test("closing the chat window ends a failure showing", async () => {
         const { controller } = await openChat();
         transcription.enqueue(200, { text: "make it shorter" });
-        completions.enqueue(200, reply("rewrite"));
+        completions.enqueue(500, "");
         await followUp(controller);
         expect(controller.phase.kind).toBe("failed");
 
@@ -2826,7 +2715,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat).toBeNull();
         expect(chatChanges).toEqual([true, false]);
         expect(controller.phase).toEqual(idle);
-        expect(completions.requests).toHaveLength(3);
+        expect(completions.requests).toHaveLength(2);
         expect(pastes).toEqual([]);
       });
 
@@ -2851,7 +2740,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         queue("follow up", "answer", "late answer");
         let closedAtAnswer = false;
         completions.gate = async () => {
-          if (completions.requests.length !== 4) return;
+          if (completions.requests.length !== 2) return;
           closedAtAnswer = true;
           controller.closeChat();
         };
@@ -2870,11 +2759,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
         const { controller } = await openChat(() => {});
         queue("and how do I fix it", "answer", "Define it before the call.");
         // The follow-up's answer is held back until the chat has closed.
-        completions.gate = () => (completions.requests.length === 4 ? answering.promise : Promise.resolve());
+        completions.gate = () => (completions.requests.length === 2 ? answering.promise : Promise.resolve());
         controller.handle("start");
         expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
         controller.handle("finish");
-        expect(await eventually(() => completions.requests.length === 4 && controller.phase.kind === "running")).toBe(true);
+        expect(await eventually(() => completions.requests.length === 2 && controller.phase.kind === "running")).toBe(true);
         await sleep(100);
 
         controller.closeChat();
@@ -2888,43 +2777,47 @@ describe("DictationController", { timeout: 20_000 }, () => {
       /** A follow-up offers its tools from the moment it listens, as a hold switched to agent mode
        * does: the bubbles need not wait for the transcript. */
       test("a follow-up's tools are known while it listens", async () => {
-        const { controller } = await openChat(() => {}, new FakeThunderbird());
+        const { controller } = await openChat();
 
         controller.handle("start");
         expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
 
-        expect(await eventually(() => controller.tools.length === 3)).toBe(true);
-        expect(controller.tools).toEqual(["compose", "thunderbird", "answer"]);
+        expect(await eventually(() => controller.tools.length === 2)).toBe(true);
+        expect(controller.tools).toEqual(["compose", "answer"]);
         controller.handle("cancel");
       });
 
-      /** A follow-up pasting when its window closed, and a new conversation opened, stays out of it. */
-      test("a late delivery cannot join a newer conversation", async () => {
+      /** A follow-up written into the app closes the chat window first, then pastes: the window is
+       * gone before the text arrives, and the paste does not bring it back (owner, 2026-10-05). */
+      test("a follow-up's paste comes after its chat window closed", async () => {
         const delivery = deferred<void>();
-        let pasteReached = false;
-        const { controller } = await openChat(() => {}, undefined, {
-          paste: async () => {
-            pasteReached = true;
-            await delivery.promise;
+        const chatAtPaste: (AgentChat | null)[] = [];
+        let controllerRef: DictationController | undefined;
+        const { controller } = await openChat(
+          (controller) => {
+            controllerRef = controller;
           },
-        });
+          undefined,
+          {
+            paste: async () => {
+              chatAtPaste.push(controllerRef?.chat ?? null);
+              await delivery.promise;
+            },
+          },
+        );
         queue("old follow up", "compose", "old pasted words");
         controller.handle("start");
         expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
         controller.handle("finish");
-        expect(await eventually(() => pasteReached)).toBe(true);
+        expect(await eventually(() => chatAtPaste.length === 1)).toBe(true);
+
+        expect(chatAtPaste).toEqual([null]);
         expect(controller.phase).toEqual(running("compose"));
-        controller.closeChat();
-        queue("new conversation", "answer", "new reply");
-        await holdAndRelease(controller, "agent");
-        expect(await eventually(() => settled(controller))).toBe(true);
-        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["new conversation"]);
 
         delivery.resolve();
-        await sleep(200);
+        expect(await eventually(() => settled(controller))).toBe(true);
 
-        expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["new conversation"]);
-        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["new reply"]);
+        expect(controller.chat).toBeNull();
         expect(controller.phase).toEqual(idle);
       });
 
@@ -2941,10 +2834,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
         await account.verify(Fixtures.email, "123456");
         queue("second account question", "answer", "second account reply");
         await holdAndRelease(controller, "agent");
-        expect(await eventually(() => settled(controller) && completions.requests.length === 4)).toBe(true);
-        expect(completions.authorizations[2]).toBe("Bearer access-b");
-        expect(completionsVars(2)?.conversation).toBe("");
-        expect(completionsVars(3)?.conversation).toBe("");
+        expect(await eventually(() => settled(controller) && completions.requests.length === 2)).toBe(true);
+        expect(completions.authorizations[1]).toBe("Bearer access-b");
+        expect(completionsVars(1)?.conversation).toBe("");
         expect(controller.chat?.turns.map((turn) => turn.request)).toEqual(["second account question"]);
       });
 
@@ -2952,13 +2844,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
       test("signing out during an answer opens no chat", async () => {
         const account = signedIn(auth);
         completions.gate = async () => {
-          if (completions.requests.length === 2) account.signOut();
+          if (completions.requests.length === 1) account.signOut();
         };
 
         const { controller } = await openChat(() => {}, undefined, { account });
         await sleep(100);
 
-        expect(completions.requests).toHaveLength(2);
+        expect(completions.requests).toHaveLength(1);
         expect(account.session).toBeNull();
         expect(controller.chat).toBeNull();
         expect(controller.phase).toEqual(idle);
@@ -3065,28 +2957,21 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["next answer"]);
       });
 
-      /** The only tool switched on does its own job unasked: Answer replies in the chat window, the
-       * email app's tool sends to it; neither pastes in the app in front. */
-      test.each<AgentToolID>(["answer", "thunderbird"])("the only tool on (%s) does its own job", async (tool) => {
-        setTools([tool]);
+      /** Answer, the only tool switched on, replies in the chat window and pastes nothing. */
+      test("Answer alone replies in the chat window", async () => {
+        setTools(["answer"]);
         transcription.enqueue(200, { text: "the request" });
         completions.enqueue(200, reply("the reply"));
-        const thunderbird = new FakeThunderbird();
 
-        const { controller, pastes } = await carryOut(selectionScreen(""), thunderbird);
+        const { controller, pastes } = await carryOut(selectionScreen(""));
         opened.push(controller);
 
         expect(completions.requests).toHaveLength(1);
+        expect(completions.body(0).available_tools).not.toContain("compose");
         expect(controller.phase).toEqual(idle);
-        expect(completionsVars(0)?.content).toBe(tool === "answer" ? "system_prompt_desktop_answer" : "system_prompt_desktop_thunderbird");
+        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
         expect(pastes).toEqual([]);
-        if (tool === "answer") {
-          expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["the reply"]);
-          expect(thunderbird.events).toEqual([]);
-        } else {
-          expect(controller.chat).toBeNull();
-          expect(thunderbird.pasted).toEqual(["the reply"]);
-        }
+        expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["the reply"]);
       });
 
       /** The tools the answer's model calls that run on this computer (ADR-DESK-023). */
@@ -4549,7 +4434,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
           };
           const { controller } = await openChat(() => {}, undefined, { connectorTools: [tool] });
           transcription.enqueue(200, { text: toolRequest });
-          completions.enqueue(200, reply("answer"));
           completions.enqueue(200, calling(["example_create", "{}"]));
           controller.handle("start");
           expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
@@ -4566,7 +4450,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat).toEqual({ ...emptyChat, turns: [{ id: 0, request: question, tool: "answer", reply: answer }], touched: true });
           expect(controller.phase).toEqual(idle);
           expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
-          expect(completions.requests).toHaveLength(4);
+          expect(completions.requests).toHaveLength(2);
         });
 
         /** A tool runs with its request's signal, which aborts when the request is canceled or its
@@ -4710,7 +4594,6 @@ describe("DictationController", { timeout: 20_000 }, () => {
             { connectorTools: [tool] },
           );
           transcription.enqueue(200, { text: toolRequest });
-          completions.enqueue(200, reply("answer"));
           completions.enqueue(200, calling(["example_create", "{}"]));
           completions.enqueue(200, reply("Added it."));
 
@@ -4722,7 +4605,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual([answer, "Added it."]);
           expect(controller.chat?.closesAt).toBeNull();
           expect(chatChanges).toEqual([true]);
-          expect(completions.body(3).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create"]);
+          expect(completions.body(2).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create", "compose"]);
         });
 
         /** A chat window touched and then closed leaves the next one untouched: it times out. */
@@ -5583,7 +5466,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * mode too); the next dictation's paste is its own. */
     test.each(["dictation", "agent"] as const)("a %s canceled while its paste waits calls the paste off", async (mode) => {
       transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
+      completions.enqueue(200, mode === "agent" ? writes("compose", "We ship on Friday.") : cleanedStream);
       const signals: AbortSignal[] = [];
       const { controller } = makeController({
         capture: new CountingCapture(true),
@@ -5601,7 +5484,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(signals[0]?.aborted).toBe(true);
 
       transcription.enqueue(200, { text: transcript });
-      completions.enqueue(200, mode === "agent" ? reply("We ship on Friday.") : cleanedStream);
+      completions.enqueue(200, mode === "agent" ? writes("compose", "We ship on Friday.") : cleanedStream);
       await holdAndRelease(controller, mode);
       expect(await eventually(() => signals.length === 2)).toBe(true);
       expect(signals[1]?.aborted).toBe(false);

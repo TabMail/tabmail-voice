@@ -8,96 +8,61 @@ import { type CompletionsClient, type CompletionsMessage, type ServerToolEvent, 
 import * as config from "../config.js";
 import { elapsed, log } from "../log.js";
 import type { ScreenContext } from "../dictation/screenContext.js";
-import { charCount, trimWhitespace } from "../util/text.js";
+import { trimWhitespace } from "../util/text.js";
 import { connectors } from "./connectors/index.js";
-import type { ConnectorTool } from "./connectors/contract.js";
-import { AgentError, type AgentToolID, isAgentToolID, selection, selectedTextVariable, agentTools } from "./tools.js";
+import { type ConnectorTool, isJSONObject, parsedJSON } from "./connectors/contract.js";
+import { AgentError, type AgentToolID, agentTools, screenVariables, selection } from "./tools.js";
+
+/** How a request ended: text pasted with a writing tool (`compose` or `edit`), or a reply for the chat
+ * window (`answer`). */
+export interface AgentOutcome {
+  tool: AgentToolID;
+  text: string;
+}
 
 /**
- * Agent mode on the backend: the tool for the spoken request is chosen (`tool`), then has the
- * backend write the text the app inserts, sends to Thunderbird, or shows in the chat window. The
- * instructions live in the
- * backend prompts, shared by every desktop platform. No call has a deadline of its own: the request
- * takes as long as the model does (owner, 2026-09-26: agent mode has no timeout).
+ * Agent mode on the backend: one tool loop (`run`), as the Thunderbird add-on's and the iOS app's
+ * agents are. The model calls the tools it needs, here and on the backend, and ends either by calling
+ * the writing tool, Compose or Edit, whose text is pasted, or with a reply for the chat window. The
+ * instructions live in the backend prompt, shared by every desktop platform. No call has a deadline of
+ * its own: the request takes as long as the model does (owner, 2026-09-26: agent mode has no timeout).
  */
 export const DesktopAgent = {
   /** The tools agent mode offers for the screen read at key-down, among those the user has on
-   * (`enabled`): Edit when text is selected, Compose when not (never the other: its paste would land
-   * on the selection or the caret wrongly), Thunderbird when an email app is set up for it, and
-   * Answer. */
-  tools(context: ScreenContext | null, enabled: readonly AgentToolID[], emailAppAvailable: boolean): AgentToolID[] {
-    const candidates: AgentToolID[] = [DesktopAgent.writingTool(context), "thunderbird", "answer"];
-    return candidates.filter((tool) => enabled.includes(tool) && (tool !== "thunderbird" || emailAppAvailable));
+   * (`enabled`): the writing tool, Edit when text is selected and Compose when not (never the other:
+   * its paste would land on the selection or the caret wrongly), and Answer, the chat window. */
+  tools(context: ScreenContext | null, enabled: readonly AgentToolID[]): AgentToolID[] {
+    const candidates: AgentToolID[] = [DesktopAgent.writingTool(context), "answer"];
+    return candidates.filter((tool) => enabled.includes(tool));
   },
 
   /** Edit when text is selected, Compose when not. */
-  writingTool(context: ScreenContext | null): AgentToolID {
+  writingTool(context: ScreenContext | null): "edit" | "compose" {
     return selection(context) === "" ? "compose" : "edit";
   },
 
-  /** The tool for `request`, among the `offered` ones: the only one without asking, else the one
-   * the agent, asked under the account `userID` and told which it may choose (`available_tools`),
-   * picks. */
-  async tool(
-    request: string,
-    offered: readonly AgentToolID[],
-    context: ScreenContext | null,
-    conversation: string,
-    client: CompletionsClient,
-    account: AccountModel,
-    userID: string | null,
-    signal?: AbortSignal,
-  ): Promise<AgentToolID> {
-    const [first] = offered;
-    if (first === undefined) throw new AgentError("noToolEnabled");
-    if (offered.length === 1) return first;
-    const reply = await complete(DesktopAgent.chooseMessage(request, context, conversation), client, account, userID, signal, offered);
-    if (!isAgentToolID(reply) || !offered.includes(reply)) {
-      log.error(`DesktopAgent: reply named no offered tool (${charCount(reply)} chars)`);
-      throw new AgentError("noTool");
-    }
-    return reply;
-  },
-
-  /** The text `tool` writes for `request`, ready to insert (for Thunderbird, to send): for an edit,
-   * with the selection's own leading and trailing blank space, so replacing a whole line keeps its
-   * line break. `screenHidden`: the screen was not read for the user's privacy, which the tool is told. */
-  async write(
-    tool: AgentToolID,
-    request: string,
-    context: ScreenContext | null,
-    screenHidden: boolean,
-    conversation: string,
-    userName: string,
-    client: CompletionsClient,
-    account: AccountModel,
-    userID: string | null,
-    signal?: AbortSignal,
-  ): Promise<string> {
-    // The selection as read is not the user's text: nothing is asked for, and nothing replaces it.
-    if (tool === "edit" && context?.selectionRedacted === true) throw new AgentError("secretInSelection");
-    const text = await complete(DesktopAgent.toolMessage(tool, request, context, screenHidden, conversation, userName), client, account, userID, signal);
-    if (text === "") throw new AgentError("noText");
-    const written = agentTools[tool].fitted(text, context);
-    log.content(`DesktopAgent: ${tool} wrote`, written);
-    return written;
-  },
-
-  /** The tools the Answer prompt's model may call (`available_tools`): the backend's date tools, the
-   * backend tools their apps bring (web search), and `connectorTools`, those of the apps switched on that
-   * run on this computer, with the tool that answers their questions for the user (`confirmationTool`)
-   * when there are any. An app with no tools here (none off macOS) brings no backend tools either. */
-  answerTools(connectorTools: readonly ConnectorTool[]): string[] {
+  /** The tools the loop's model may call (`available_tools`): the writing tool among the `offered`
+   * ones and, with Answer offered, the backend's date tools, the backend tools their apps bring (web
+   * search), and `connectorTools`, those of the apps switched on that run on this computer, with the
+   * tool that answers their questions for the user (`confirmationTool`) when there are any. An app with
+   * no tools here (none off macOS) brings no backend tools either. */
+  loopTools(offered: readonly AgentToolID[], connectorTools: readonly ConnectorTool[]): string[] {
+    const writing = offered.filter(isWritingTool);
+    if (!offered.includes("answer")) return writing;
     const serverTools = connectors.filter((connector) => connectorTools.some((tool) => tool.connector === connector.id)).flatMap((connector) => connector.serverTools ?? []);
     const answering = connectorTools.length > 0 ? [config.confirmationTool] : [];
-    return [...config.answerServerTools, ...serverTools, ...answering, ...connectorTools.map((tool) => tool.name)];
+    return [...config.answerServerTools, ...serverTools, ...answering, ...connectorTools.map((tool) => tool.name), ...writing];
   },
 
-  /** The answer to `request`, from the backend's tool loop: each round either replies, or calls
-   * tools, which `runTool` runs here (told which round called them, counted from 0) (the backend runs its own, which `onServerTool` hears of as they
-   * start and end); their results go back with the loop's state for the next round. The backend ends the loop at its round limit, counting the
-   * rounds the app sends back (`current_round`), as the iOS app's `BackendClient` does. */
-  async answer(
+  /** Carries out `request` in the backend's tool loop: each round either replies, or calls tools,
+   * which `runTool` runs here (told which round called them, counted from 0) (the backend runs its
+   * own, which `onServerTool` hears of as they start and end); their results go back with the loop's
+   * state for the next round. A call to the writing tool among `tools` ends the request (owner,
+   * 2026-10-05): its text is what is pasted, and the round's other calls and any text are ignored. A
+   * reply ends it too, for the chat window. The backend ends the loop at its round limit, counting
+   * the rounds the app sends back (`current_round`), as the iOS app's `BackendClient` does.
+   * `screenHidden`: the screen was not read for the user's privacy, which the model is told. */
+  async run(
     request: string,
     context: ScreenContext | null,
     screenHidden: boolean,
@@ -110,8 +75,8 @@ export const DesktopAgent = {
     runTool: (call: ToolCall, round: number) => Promise<string>,
     onServerTool: (event: ServerToolEvent) => void,
     signal?: AbortSignal,
-  ): Promise<string> {
-    const message = DesktopAgent.toolMessage("answer", request, context, screenHidden, conversation, userName);
+  ): Promise<AgentOutcome> {
+    const message = DesktopAgent.message(request, context, screenHidden, conversation, userName);
     let state: unknown;
     let round = 0;
     for (;;) {
@@ -119,13 +84,15 @@ export const DesktopAgent = {
       signal?.throwIfAborted();
       const started = performance.now();
       const result = await withFreshToken(account, userID, (token) => client.round(message, tools, state, token, signal, onServerTool));
-      log.debug(() => `DesktopAgent: ${message.content} round ${round} answered in ${elapsed(started)}`);
+      log.debug(() => `DesktopAgent: round ${round} answered in ${elapsed(started)}`);
       if (result.kind === "reply") {
         const text = trimWhitespace(result.text);
         if (text === "") throw new AgentError("noText");
         log.content("DesktopAgent: answer wrote", text);
-        return text;
+        return { tool: "answer", text };
       }
+      const writing = result.calls.find((call) => isWritingTool(call.function.name) && tools.includes(call.function.name));
+      if (writing !== undefined) return DesktopAgent.written(writing, context);
       const called = round;
       round += 1;
       // The state is JSON the round checked is there; its history must be a list to add to.
@@ -141,45 +108,38 @@ export const DesktopAgent = {
     }
   },
 
-  /** The agent's prompt and its variables. Every variable is sent, empty when unknown: the backend
-   * leaves a missing one in the prompt as written. `conversation` is the chat window's
-   * (`chatTranscript`), empty outside a follow-up. */
-  chooseMessage(request: string, context: ScreenContext | null, conversation: string): CompletionsMessage {
+  /** The text a writing tool's `call` gives, ready to paste: for an edit, with the selection's own
+   * leading and trailing blank space, so replacing a whole line keeps its line break. */
+  written(call: ToolCall, context: ScreenContext | null): AgentOutcome {
+    const tool = call.function.name as "edit" | "compose";
+    // The selection as read is not the user's text: nothing replaces it.
+    if (tool === "edit" && context?.selectionRedacted === true) throw new AgentError("secretInSelection");
+    const args = parsedJSON(call.function.arguments);
+    const text = isJSONObject(args) && typeof args.text === "string" ? trimWhitespace(args.text) : "";
+    if (text === "") {
+      log.error(`DesktopAgent: ${tool} called without text`);
+      throw new AgentError("noText");
+    }
+    const fitted = agentTools[tool].fitted(text, context);
+    log.content(`DesktopAgent: ${tool} wrote`, fitted);
+    return { tool, text: fitted };
+  },
+
+  /** The agent's prompt and its variables, with the chat window's `conversation` (`chatTranscript`,
+   * empty outside a follow-up) and the user's name (`userName`, empty when none is set), by which the
+   * backend tells the user's own messages on screen from other people's. Every variable is sent, empty
+   * when unknown: the backend leaves a missing one in the prompt as written. With `screenHidden` (no
+   * `context` then) the screen's text says that the screen is hidden for privacy; the program running
+   * in a terminal lets a command come out as that program takes it. */
+  message(request: string, context: ScreenContext | null, screenHidden: boolean, conversation: string, userName: string): CompletionsMessage {
     return {
       role: "system",
       content: config.agentPrompt,
-      vars: {
-        app_name: context?.appName ?? "",
-        web_host: context?.host ?? "",
-        window_title: context?.windowTitle ?? "",
-        selected_text: selectedTextVariable(context),
-        user_request: request,
-        conversation,
-      },
+      vars: { ...screenVariables(request, context, screenHidden), terminal_program: context?.terminalProgram ?? "", conversation, user_name: userName },
     };
-  },
-
-  /** A tool's prompt and its variables, with the chat window's `conversation` and the user's name
-   * (`userName`, empty when none is set), by which the backend tells the user's own messages on screen
-   * from other people's. With `screenHidden` (no `context` then) the screen's text says that the
-   * screen is hidden for privacy. */
-  toolMessage(tool: AgentToolID, request: string, context: ScreenContext | null, screenHidden: boolean, conversation: string, userName: string): CompletionsMessage {
-    const implementation = agentTools[tool];
-    return { role: "system", content: implementation.prompt, vars: { ...implementation.variables(request, context, screenHidden), conversation, user_name: userName } };
   },
 };
 
-async function complete(
-  message: CompletionsMessage,
-  client: CompletionsClient,
-  account: AccountModel,
-  userID: string | null,
-  signal: AbortSignal | undefined,
-  /** The agent tools the backend may offer this request, for the agent's choice. */
-  availableTools?: readonly AgentToolID[],
-): Promise<string> {
-  const started = performance.now();
-  const reply = await withFreshToken(account, userID, (token) => client.complete(message, token, signal, availableTools));
-  log.debug(() => `DesktopAgent: ${message.content} answered in ${elapsed(started)} (${charCount(reply)} chars)`);
-  return trimWhitespace(reply);
+function isWritingTool(name: string): name is "edit" | "compose" {
+  return name === "edit" || name === "compose";
 }

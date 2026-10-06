@@ -252,15 +252,11 @@ export const correctionCommonWords: ReadonlySet<string> = new Set(
 
 // MARK: Agent mode (Space during the hold)
 
-/** The backend prompt that chooses the tool for a spoken request. */
+/** The backend prompt of agent mode's tool loop (`DesktopAgent.run`). */
 export const agentPrompt = "system_prompt_desktop_agent";
-/** The backend prompts behind the agent's tools. */
-export const agentEditPrompt = "system_prompt_desktop_edit";
-export const agentComposePrompt = "system_prompt_desktop_compose";
-export const agentThunderbirdPrompt = "system_prompt_desktop_thunderbird";
-export const agentAnswerPrompt = "system_prompt_desktop_answer";
-/** The backend's own tools the Answer prompt may call, always listed in its `available_tools`: they
- * run on the server, read nothing of the user's, and answer "what day is next Friday" right. */
+/** The backend's own tools the loop may call while Answer is on, always listed in its
+ * `available_tools`: they run on the server, read nothing of the user's, and answer "what day is next
+ * Friday" right. */
 export const answerServerTools: readonly string[] = ["date_to_day", "time_delta"];
 /** What the model reads for a tool call the user declined in the chat window. */
 export const connectorToolDeclined = "The user declined, so nothing was done.";

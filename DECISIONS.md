@@ -752,6 +752,8 @@ grants. The privacy policy tells users they can switch screen reading off.
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
+> The two calls (choose, then write) are superseded by one tool loop (ADR-DESK-054, 2026-10-05).
+
 > **Amended 2026-09-26 (owner):** the double tap is replaced by **Space during the hold**, the
 > selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
 > timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
@@ -1425,6 +1427,8 @@ one that ships.
   hand; the tests drive the page's events and the window's calls.
 
 ## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
+
+> The loop is now agent mode's only call, and Compose and Edit are tools in it (ADR-DESK-054, 2026-10-05).
 
 **Context:** Owner, 2026-09-26: agent mode gains tools that run on the user's computer (calendar,
 reminders, contacts, file search, email prefill, notes, messages, shortcuts, web), "the tool JSON
@@ -4013,3 +4017,44 @@ protected census's count: the block walk is
 checked against the Mac's former walk on random fields (`blocks/tests.rs`), and the other ops by
 their shared cases (`context-cases.json`, `surface-cases.json`, `walk-cases.json`), which every
 helper runs.
+
+## ADR-DESK-055: Agent mode is one tool loop; Compose and Edit end it by pasting
+
+**Context:** Owner, 2026-10-05: agent mode chose Answer too often, and a request such as "check my
+calendar and write when I'm free" needs a lookup, then text in the app, which the choose-then-write
+split could not do in one request. The owner: all tools are equal, as in TabMail's Thunderbird and
+iOS loops; the agent runs the calendar tool, then the compose tool, which pastes. Compose and Edit
+are one tool, offered by whether text is selected, and the only way to paste; calling one ends the
+request, closing the chat window if one is open, and whatever the agent writes beside the call is
+ignored. A plain reply goes to the chat window. The change is breaking, with no compatibility path
+for earlier builds (owner: "we don't really have previous users").
+
+**Decision:**
+- One backend prompt, `system_prompt_desktop_agent` (backend ADR-023 amendment "one tool loop"), run
+  by `DesktopAgent.run`. Its `available_tools` (`DesktopAgent.loopTools`) are, with Answer on, the
+  backend's date tools, its web search while the Web switch is on, `confirmation_answer` when an app is on, every connector's name, and
+  the writing tool; with Answer off, the writing tool alone. The writing tool is Edit when text is
+  selected, Compose when not (`DesktopAgent.writingTool`); the other is never offered.
+- `compose` and `edit` take `{text}`: the agent writes the final text itself. A round that calls the
+  offered writing tool ends the loop with that text (`DesktopAgent.written`, fitted to the selection
+  for Edit); no other call of that round runs. A round's assistant text beside a call is never read
+  (`CompletionsClient.round` prefers `tool_calls`). A call to a writing tool not offered is answered
+  as a tool the app does not have.
+- The controller closes the chat window (`dropChat`) before it pastes, so the window is gone before
+  the text arrives. A reply opens or continues the chat window, as Answer did; with Answer off, a
+  reply has nowhere to go and the request fails with "no text".
+- An Edit of a selection the helper redacted (ADR-DESK-046) is refused when the agent writes it
+  (`secretInSelection`), not before the loop: the selection is still the request's context.
+- The thinking bubble while the loop runs is Answer's, or the writing tool's when Answer is off; it
+  becomes the writing tool's when the agent writes.
+- Removed: the chooser, the per-tool prompts (`agentEditPrompt`, `agentComposePrompt`,
+  `agentThunderbirdPrompt`, `agentAnswerPrompt`), each `AgentTool`'s prompt and variables, and the
+  `noTool` failure. The Thunderbird tool stays off (ADR-DESK-037); bringing it back is offering it as
+  a loop tool, and its controller tests went with the chooser.
+
+**Consequences:**
+- Lookups and writing happen in one request; the bubbles still show one running tool at a time.
+- Text planted on screen could try to steer what the agent pastes. The owner accepts the risk; the
+  backend fences the context as content, not instructions, before and after it (backend ADR-023
+  amendment).
+- Builds before this one stop working against the backend that carries this change.

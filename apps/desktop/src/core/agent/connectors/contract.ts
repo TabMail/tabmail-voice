@@ -81,6 +81,15 @@ export const Arguments = {
   },
 };
 
+/** `json` parsed; undefined when it isn't JSON. */
+export function parsedJSON(json: string): unknown {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Whether `value`, parsed JSON, is an object (not an array or null). */
 export function isJSONObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

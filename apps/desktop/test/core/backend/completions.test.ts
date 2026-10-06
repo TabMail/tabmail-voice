@@ -56,15 +56,15 @@ describe("CompletionsClient", () => {
     expect(body).not.toHaveProperty("available_tools");
   });
 
-  /** The agent's choice lists the tools on offer beside the messages, for the backend to choose
-   * among. */
-  test("sends the tools on offer", async () => {
+  /** A prompt that calls no tools offers none. */
+  test("sends no tools on offer", async () => {
     const stub = new StubTransport();
     stub.enqueue(200, Fixtures.reply("answer"));
 
-    await makeClient(stub).complete(message, "token-abc", undefined, ["compose", "answer"]);
+    await makeClient(stub).complete(message, "token-abc");
 
-    expect(stub.body(0).available_tools).toEqual(["compose", "answer"]);
+    expect(stub.body(0).disable_tools).toBe(true);
+    expect(stub.body(0)).not.toHaveProperty("available_tools");
   });
 
   test("the time zone is the system's by default", async () => {

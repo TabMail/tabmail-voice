@@ -8,9 +8,9 @@ import { type BubbleKey, ranNow, serverToolConnector } from "../agent/bubbleOrde
 import { type ConnectorID, connectorIDs } from "../agent/connectors/index.js";
 import { DesktopAgent } from "../agent/requests.js";
 import { EmailClient } from "../agent/connectors/thunderbird/emailClient.js";
-import { isJSONObject, type ConnectorTool } from "../agent/connectors/contract.js";
+import { isJSONObject, parsedJSON, type ConnectorTool } from "../agent/connectors/contract.js";
 import type { ThunderbirdRelay } from "../agent/connectors/thunderbird/relay.js";
-import { type AgentToolID, agentTools } from "../agent/tools.js";
+import { AgentError, type AgentToolID, agentTools } from "../agent/tools.js";
 import { type AudioCapture, AudioRecorder, type RecordedChunk, recordingDuration } from "../audio/recorder.js";
 import { LevelSampler } from "../audio/levelSampler.js";
 import { BackendError } from "../backend/errors.js";
@@ -736,36 +736,43 @@ export class DictationController extends Observable {
         log.debug(() => `DictationController: email app known after ${elapsed(looking)}`);
         if (!isCurrent()) return;
         const client = this.deps.makeCompletionsClient(settings.backendURL);
-        // The tools the bubbles show: the same read, settings and email app.
-        const offered = DesktopAgent.tools(context, settings.enabledTools, email.path !== null);
+        // The tools the bubbles show: the same read and settings.
+        const offered = DesktopAgent.tools(context, settings.enabledTools);
+        const [thinking] = offered.includes("answer") ? ["answer" as const] : offered;
+        if (thinking === undefined) throw new AgentError("noToolEnabled");
         const chat = this.currentChat;
         const conversation = chat ? chatTranscript(chat) : "";
         if (chat) this.setChat({ ...chat, pendingRequest: transcript });
-        const tool = await DesktopAgent.tool(transcript, offered, context, conversation, client, account, userID, signal);
-        if (!isCurrent()) return;
-        log.debug(`DictationController: agent chose ${tool}`);
-        this.recent = ranNow(this.recent, tool);
-        this.setPhase({ kind: "running", tool });
+        // The loop runs under Answer's bubble, the writing tool's when Answer is off.
+        this.recent = ranNow(this.recent, thinking);
+        this.setPhase({ kind: "running", tool: thinking });
         // Only the tools of apps switched on at key-down are offered, and only those run.
         const connectorTools = this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector));
-        const text =
-          tool === "answer"
-            ? await DesktopAgent.answer(
-                transcript,
-                context,
-                screenHidden,
-                conversation,
-                settings.userName,
-                DesktopAgent.answerTools(connectorTools),
-                client,
-                account,
-                userID,
-                (call, round) => this.runConnectorTool(call, round, connectorTools, transcript, isCurrent, signal),
-                (event) => this.serverToolRan(event, isCurrent),
-                signal,
-              )
-            : await DesktopAgent.write(tool, transcript, context, screenHidden, conversation, settings.userName, client, account, userID, signal);
+        const { tool, text } = await DesktopAgent.run(
+          transcript,
+          context,
+          screenHidden,
+          conversation,
+          settings.userName,
+          DesktopAgent.loopTools(offered, connectorTools),
+          client,
+          account,
+          userID,
+          (call, round) => this.runConnectorTool(call, round, connectorTools, transcript, isCurrent, signal),
+          (event) => this.serverToolRan(event, isCurrent),
+          signal,
+        );
         if (!isCurrent()) return;
+        log.debug(`DictationController: agent ended with ${tool}`);
+        // With Answer off, a reply has nowhere to go.
+        if (!offered.includes(tool)) throw new AgentError("noText");
+        if (tool !== "answer") {
+          // Writing ends the request, and the conversation: the chat window closes, then the text is
+          // pasted (owner, 2026-10-05).
+          this.dropChat();
+          this.recent = ranNow(this.recent, tool);
+          this.setPhase({ kind: "running", tool });
+        }
         await agentTools[tool].deliver(text, {
           emailApp: email.app,
           paste: (text) => this.paste(text, targetApp, signal),
@@ -776,10 +783,6 @@ export class DictationController extends Observable {
           },
           signal,
         });
-        // Closed, canceled or superseded while it delivered: the chat now open may be a newer one.
-        if (!isCurrent()) return;
-        // A follow-up's other tools are listed in the chat too, so a later follow-up can refer to them.
-        if (tool !== "answer" && this.currentChat !== null) this.showInChat(transcript, tool, text);
       }
       if (this.generation !== generation) return;
       this.teardown();
@@ -1368,7 +1371,7 @@ export class DictationController extends Observable {
 
   private updateTools(): void {
     this.currentTools = this.currentMode === "agent" && this.isScreenReadDone && this.emailApp !== null
-      ? DesktopAgent.tools(this.screenRead, this.dictationSettings.enabledTools, this.emailApp.path !== null)
+      ? DesktopAgent.tools(this.screenRead, this.dictationSettings.enabledTools)
       : [];
     this.changed();
   }
@@ -1690,15 +1693,6 @@ export class DictationController extends Observable {
 /** Nothing under way: idle, or a message showing, which the next hold replaces. */
 export function isResting(phase: Phase): boolean {
   return phase.kind === "idle" || phase.kind === "failed" || phase.kind === "copied";
-}
-
-/** `json` parsed; undefined when it isn't JSON. */
-function parsedJSON(json: string): unknown {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return undefined;
-  }
 }
 
 type Timer = ReturnType<typeof setTimeout>;
