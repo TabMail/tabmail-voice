@@ -409,6 +409,21 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   *Every read logs where the caret was placed (offsets and lengths, never text), and why a read
   became unavailable. Windows (UIA) and Linux (AT-SPI) read the caret through other interfaces and
   are not changed.)*
+- *(Amended 2026-10-06: a Chromium rich editor (a `contenteditable`, Gmail's compose) is read
+  around its caret on Windows and Ubuntu, as on the Mac. AT-SPI gives each paragraph or link as an
+  embedded object (U+FFFC) with text of its own; Linux walks them in order (`hypertext.h`) and the
+  core's `hypertext` op joins them, a block on a line of its own. Windows reads the field through
+  UIA's TextPattern, which leaves out the break of an empty line: measured on Electron's
+  Chromium, a caret on an empty line sits at the end of the paragraph above, its line starts at
+  the caret and holds only the break, and its paragraph starts before it. So the helper sends what
+  starts at the caret (`caretStarts`: whether a paragraph does, whether a line does, and the line's
+  first bytes, at most `caretLineBytes`), and the core's `caretWindow` adds the break left out
+  when the caret starts a paragraph, or a line holding only a break, and the text before it ends
+  in none. A line a soft wrap starts gets no break: a long link wrapped at the caret stays one
+  line. The break counts within the before-part's budget. Owner, 2026-10-06: the paragraph rule
+  is the stricter one and holds on every platform; the Mac's own rule (`MarkerCaretSource`) moves
+  to the core's after the Chrome caret change lands. Left: a soft wrap inside a long word, and a
+  break Chromium leaves out further back than the caret's line.)*
 
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
