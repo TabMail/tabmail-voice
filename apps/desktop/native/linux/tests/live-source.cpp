@@ -143,9 +143,9 @@ int main() {
     reset("private selected suffix"); selectionOnly = mutate = true; selectedStart = 8; selectedEnd = 16;
     voice::LiveScreenTree tree(node);
     expect(tree.selection(node)->selectionUnavailable, "changed selection refuses");
-    const auto viewport=[&] {
+    const auto viewport=[&](size_t budget = 262144) {
         voice::LiveScreenTree tree(node);
-        return tree.viewportSurface(node,1,{10,20,80,60},true,262144);
+        return tree.viewportSurface(node,1,{10,20,80,60},true,budget);
     };
     reset("HIDDEN!first line\n> hello world\nstatus bar\n  HIDDEN!");
     viewportOnly=true;visible={{7,static_cast<int>(content.size())-7}};caretScalar=7+18;
@@ -181,5 +181,21 @@ int main() {
     reset("hidden history\nfirst line\n> hello\nstatus\nnewer output below");viewportOnly=true;noBoundedRanges=true;
     visible={{15,41}};pointTop=17;pointBottom=-1;pointRows={{63,36}};caretScalar=0;selectedStart=selectedEnd=0;
     expect(viewport()["surface"]["runs"][0]["text"]=="first line\n> hello\nstatus\n","text below a scrolled-back viewport is never read as the screen");
+    // The budget is in UTF-8 bytes and at most that many scalars are read: ASCII text exactly at the
+    // budget is read, and text whose scalars fit but whose bytes don't is refused by the core.
+    reset("HIDDEN!first line\n> hello world\nstatus bar\n  HIDDEN!");viewportOnly=true;
+    visible={{7,static_cast<int>(content.size())-7}};caretScalar=7+18;selectedStart=selectedEnd=0;
+    expect(viewport(38)["surface"]["runs"][0]["text"]=="first line\n> hello world\nstatus bar\n  ","ASCII text at the byte budget is read whole");
+    reset("HIDDEN!界界界界界HIDDEN!");viewportOnly=true;visible={{7,12}};caretScalar=9;selectedStart=selectedEnd=0;
+    bool refused=false;
+    try { viewport(10); } catch (const std::exception&) { refused=true; }
+    expect(refused,"text whose scalars fit the budget but whose bytes don't is refused");
+    // A malformed selection is withheld, and the surface kept.
+    for (const auto& [start, end] : std::vector<std::pair<int,int>>{{6,3},{2,50}}) {
+        reset("left right");viewportOnly=true;visible={{0,10}};caretScalar=2;selectedStart=start;selectedEnd=end;
+        projected=viewport();
+        expect(projected["surface"]["runs"][0]["text"]=="left right" && projected["surface"]["selection"]==nlohmann::json{{"complete",false},{"ranges",nlohmann::json::array()}},
+            "a malformed selection is withheld and the surface kept");
+    }
     std::cout << "Live AT-SPI field and selection source tests passed\n";
 }

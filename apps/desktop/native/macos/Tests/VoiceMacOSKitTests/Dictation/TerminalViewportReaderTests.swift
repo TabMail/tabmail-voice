@@ -214,9 +214,9 @@ private final class TerminalAXFixture {
                           y: line * 10, width: range.length * 10, height: 10)
         })
     }
-    func capture(focused: Bool = true) -> TerminalViewportReader.Surface? {
+    func capture(focused: Bool = true, byteBudget: Int = Int.max) -> TerminalViewportReader.Surface? {
         TerminalViewportReader.surface(source, id: 0, clip: CGRect(x: 0, y: 10, width: 400, height: 20),
-                                       focused: focused, startKnown: false, endKnown: false, valid: { true })
+                                       focused: focused, startKnown: false, endKnown: false, byteBudget: byteBudget, valid: { true })
     }
     func wire() throws -> JSON {
         let captured = try #require(capture())
@@ -228,6 +228,22 @@ private final class TerminalAXFixture {
 }
 
 struct TerminalAXAdapterTests {
+
+    // The budget is in UTF-8 bytes and the helper reads at most that many UTF-16 units: visible
+    // ASCII text exactly at the budget is read, and text whose units fit but whose bytes don't is
+    // refused by the core.
+    @Test func theByteBudgetBoundsTheReadInUnitsAndTheTextInBytes() throws {
+        let ascii = TerminalAXFixture()
+        let visible = "> hello world\nstatus bar\n"
+        let read = try #require(ascii.capture(byteBudget: visible.utf8.count))
+        #expect(read.source["runs"]?.array?.compactMap { $0["text"]?.string }.joined() == visible)
+        let wide = TerminalAXFixture()
+        wide.lines[1] = "> \u{20AC}\u{20AC}\u{20AC}\u{20AC}\u{20AC}\n"
+        let wideVisible = wide.lines[1] + wide.lines[2]
+        #expect((wideVisible as NSString).length <= visible.utf8.count && wideVisible.utf8.count > visible.utf8.count)
+        #expect(wide.capture(byteBudget: visible.utf8.count) == nil)
+        #expect(wide.forbidden.isEmpty)
+    }
 
     @Test func visibleCaptureDoesNotRebuildProviderLineRanges() throws {
         let provider = TerminalAXFixture()

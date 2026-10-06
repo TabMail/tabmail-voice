@@ -755,6 +755,139 @@
       }
     },
     {
+      "name": "a caret drawn on the clip's left edge is inside",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            10,
+            0,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              10,
+              10,
+              0,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            10,
+            0,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 5
+        }
+      }
+    },
+    {
+      "name": "a caret whose bottom touches the clip's top is outside",
+      "request": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            10,
+            100,
+            50
+          ],
+          "offsetUnit": "utf16",
+          "count": 20,
+          "startKnown": false,
+          "endKnown": false,
+          "bytes": 1000,
+          "spans": [
+            [
+              0,
+              11
+            ]
+          ],
+          "texts": [
+            "hello world"
+          ],
+          "selections": [],
+          "caret": {
+            "offset": 5,
+            "frame": [
+              50,
+              -6,
+              0,
+              16
+            ]
+          }
+        }
+      },
+      "expected": {
+        "surface": {
+          "id": 0,
+          "frame": [
+            0,
+            10,
+            100,
+            50
+          ],
+          "runs": [
+            {
+              "id": 0,
+              "text": "hello world",
+              "connected": false,
+              "startKnown": false,
+              "endKnown": false
+            }
+          ],
+          "selection": {
+            "complete": true,
+            "ranges": []
+          }
+        },
+        "caret": {
+          "status": "outsideViewport"
+        }
+      }
+    },
+    {
       "name": "a caret drawn past the clip's right edge",
       "request": {
         "surface": {
