@@ -6,7 +6,7 @@
 import * as config from "../config.js";
 import { BackendError, errorCode } from "./errors.js";
 import { BackendLog, type HTTPRequest, type HTTPTransport, joinURL, requestHeaders } from "./http.js";
-import { log } from "../log.js";
+import { elapsed, log } from "../log.js";
 import { charCount } from "../util/text.js";
 
 /** A message naming a backend prompt: `content` is the prompt's name and `vars` its template
@@ -157,7 +157,9 @@ export class CompletionsClient {
     };
     log.content(`Completions ${message.content} request`, () => BackendLog.request(request));
     log.content(`Completions ${message.content} variables`, () => CompletionsClient.describe(message));
+    const sent = performance.now();
     const response = await this.transport(request);
+    log.debug(() => `Completions: HTTP ${response.status} in ${elapsed(sent)}`);
     log.content(`Completions ${message.content} response`, () => BackendLog.response(response));
     if (response.status !== 200) throw BackendError.fromStatus(response.status, errorCode(response.body));
     const events = CompletionsClient.events(response.body);

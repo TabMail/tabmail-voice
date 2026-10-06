@@ -23,6 +23,7 @@ class Inserter {
         std::vector<int> chordKeys, pressedKeys;
         bool terminal = false;
         guint timer = 0;
+        std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
         bool canceled = false, published = false, publishComplete = false, sawOwner = false,
             foreignOwner = false, injectionStarted = false,
             successful = false, cleaning = false;
@@ -32,6 +33,11 @@ class Inserter {
     std::function<bool()> terminalTarget;
     std::shared_ptr<Transaction> current;
     bool active(const std::shared_ptr<Transaction>& item) const { return current == item; }
+    // Debug log of the paste's progress: the stage and the milliseconds since the request.
+    static void stage(const std::shared_ptr<Transaction>& item, const char* name) {
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - item->started).count();
+        std::cerr << "debug paste stage: " << name << " after " << ms << "ms\n";
+    }
     bool valid(const std::shared_ptr<Transaction>& item) const {
         if (!active(item) || item->canceled || !input.ready() || std::chrono::steady_clock::now() >= item->deadline) return false;
         try { return targetMatches(item->target) && terminalTarget() == item->terminal; } catch (...) { return false; }
@@ -43,6 +49,7 @@ class Inserter {
         if (item->timer && g_main_context_find_source_by_id(nullptr, item->timer)) g_source_remove(item->timer);
         item->timer = 0;
         g_cancellable_cancel(item->cancel.get());
+        stage(item, item->successful && !item->canceled ? "complete" : "not pasted");
         current.reset(); item->reply(nlohmann::json::object(), item->successful && !item->canceled);
     }
     void release(const std::shared_ptr<Transaction>& item) {
@@ -79,19 +86,21 @@ class Inserter {
     void maybeInject(const std::shared_ptr<Transaction>& item) {
         if (!active(item) || !item->publishComplete || !item->sawOwner || item->injectionStarted) return;
         if (!valid(item) || item->foreignOwner || !input.state->selection.ours) { clean(item); return; }
-        item->injectionStarted = true; chord(item);
+        item->injectionStarted = true; stage(item, "send-keys"); chord(item);
     }
     void publish(const std::shared_ptr<Transaction>& item) {
         if (!valid(item)) { complete(item); return; }
         auto bytes = std::make_shared<const std::vector<unsigned char>>(item->text.begin(), item->text.end());
         InputSession::Offer offer{{"text/plain;charset=utf-8", bytes}, {"text/plain", bytes}, {"UTF8_STRING", bytes}};
         item->published = true;
+        stage(item, "clipboard-write");
         // Keep this call independent of the transaction cancellable. A
         // submitted SetSelection may still commit after cancellation;
         // observe its completion before ending the transaction.
         input.state->publish(std::move(offer), nullptr, [this, item](bool success) {
             if (!active(item)) return;
             item->publishComplete = true;
+            stage(item, "clipboard-written");
             if (!success || !valid(item)) { clean(item); return; }
             maybeInject(item);
         });

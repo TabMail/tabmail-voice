@@ -28,13 +28,20 @@ struct TextInserter {
     }
 
     func insert(_ text: String) async {
+        let started = ContinuousClock.now
         pasteboard.clearContents()
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
         item.setString("", forType: Self.transientType)
         item.setString("", forType: Self.concealedType)
         pasteboard.writeObjects([item])
+        HelperLog.debug("TextInserter: clipboard written after \(Self.milliseconds(since: started))ms")
         await pasteKeystroke()
+        HelperLog.debug("TextInserter: paste keystroke sent after \(Self.milliseconds(since: started))ms")
+    }
+
+    private static func milliseconds(since start: ContinuousClock.Instant) -> Int {
+        Int((start.duration(to: .now) / .milliseconds(1)).rounded())
     }
 
     static func postCommandV() async {

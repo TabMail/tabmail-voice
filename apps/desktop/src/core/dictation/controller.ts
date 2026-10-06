@@ -199,6 +199,8 @@ export class DictationController extends Observable {
   // Per-dictation state. `generation` invalidates callbacks from a superseded dictation.
   private generation = 0;
   private startedAt: number | null = null;
+  /** When the key was released (or hands-free listening ended), for the debug log's step timings. */
+  private releasedAt: number | null = null;
   /** The settings this dictation started with; it reads no others. */
   private dictationSettings: DictationSettings;
   /** Cancels this dictation's requests when it is discarded. */
@@ -448,6 +450,7 @@ export class DictationController extends Observable {
     this.envelope = new LevelEnvelope();
     this.hearing = false;
     this.startedAt = performance.now();
+    this.releasedAt = null;
     this.targetApp = this.deps.frontmostApp().catch(() => null);
     this.currentLanguage = null;
     this.languageRead = this.deps.keyboardLanguage().catch(() => null);
@@ -490,8 +493,10 @@ export class DictationController extends Observable {
     this.contextRead = settings.readsScreen ? (this.captureContext?.({ apps: settings.excludedApps, sites: settings.excludedSites }) ?? null) : null;
     const read = this.contextRead;
     if (read) {
+      const reading = performance.now();
       void read.then((context) => {
         if (this.generation !== current) return;
+        log.debug(() => `DictationController: screen read answered in ${elapsed(reading)}${this.sinceRelease()}`);
         this.screenRead = screenShown(context);
         this.isScreenReadDone = true;
         this.updateTools();
@@ -580,6 +585,8 @@ export class DictationController extends Observable {
     const current = this.generation;
     this.currentLevel = 0;
     this.setPhase({ kind: "transcribing" });
+    this.releasedAt = performance.now();
+    log.debug(() => `DictationController: released after ${this.startedAt === null ? "?" : elapsed(this.startedAt)}; recording ${config.releaseTailDuration}ms more`);
     this.releaseTailTimer = after(config.releaseTailDuration, () => {
       if (this.generation !== current) return;
       void this.completeRecording(current);
@@ -637,12 +644,22 @@ export class DictationController extends Observable {
     const settings = this.dictationSettings;
     // Smart Dictation off (Settings, the default): no cleanup, so no screen to wait for.
     const cleans = settings.smartDictation && (forChunks || this.currentMode === "dictation");
+    const preparing = performance.now();
     const language = await this.languageRead;
+    log.debug(() => `DictationController: keyboard language read after ${elapsed(preparing)}`);
     let context: ScreenContext | null = null;
     if (cleans) {
       const read = this.contextRead;
-      context = read ? await withTimeout(this.contextWait, () => read.then(screenShown)).catch(() => null) : null;
-      if (read && context === null) log.debug("DictationController: screen read not done in time; continuing without it");
+      const waiting = performance.now();
+      let late = false;
+      context = read
+        ? await withTimeout(this.contextWait, () => read.then(screenShown)).catch(() => {
+            late = true;
+            return null;
+          })
+        : null;
+      if (late) log.debug(`DictationController: screen read not done in time (waited ${elapsed(waiting)}); continuing without it`);
+      else if (read) log.debug(() => `DictationController: waited ${elapsed(waiting)} for the screen read`);
     }
     const cleanup = cleans ? DictationCleanup.variables(context, settings.dictionary) : undefined;
     const client = this.deps.makeTranscriptionClient(settings.backendURL);
@@ -685,7 +702,7 @@ export class DictationController extends Observable {
       const heard = texts.filter((part) => part.text !== "");
       const transcript = joinChunkTexts(texts);
       if (lost !== null && (transcript === "" || mode !== "dictation")) throw lost;
-      log.debug(() => `DictationController: transcript ready in ${elapsed(started)} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
+      log.debug(() => `DictationController: transcript ready in ${elapsed(started)}${this.sinceRelease()} (${charCount(transcript)} chars${parts.length > 1 ? `, ${parts.length} chunks` : ""})`);
       log.content(`Transcript (${mode})`, transcript);
       if (transcript === "") {
         this.teardown();
@@ -705,11 +722,15 @@ export class DictationController extends Observable {
         }
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
+        const waiting = performance.now();
         const screen = read ? await withTimeout(this.agentScreenWait, () => read).catch(() => null) : null;
+        if (read) log.debug(() => `DictationController: agent waited ${elapsed(waiting)} for the screen read`);
         context = screenShown(screen);
         const screenHidden = isScreenHidden(screen);
         if (!isCurrent()) return;
+        const looking = performance.now();
         const email = await this.lookUpEmailApp();
+        log.debug(() => `DictationController: email app known after ${elapsed(looking)}`);
         if (!isCurrent()) return;
         const client = this.deps.makeCompletionsClient(settings.backendURL);
         // The tools the bubbles show: the same read, settings and email app.
@@ -791,7 +812,7 @@ export class DictationController extends Observable {
         log.debug("DictationController: polish came back empty; pasting the chunks' cleanups");
         return text;
       }
-      log.debug(() => `DictationController: polished in ${elapsed(started)} (${charCount(text)} → ${charCount(polishedText)} chars)`);
+      log.debug(() => `DictationController: polished in ${elapsed(started)}${this.sinceRelease()} (${charCount(text)} → ${charCount(polishedText)} chars)`);
       return polishedText;
     } catch (error) {
       if (signal.aborted) throw error;
@@ -821,14 +842,16 @@ export class DictationController extends Observable {
     const notice = this.retryNotice(isCurrent, signal);
     try {
       for (let retry = 0; ; retry += 1) {
+        const sent = performance.now();
         try {
           const transcription = await request();
+          log.debug(() => `DictationController: transcription answered in ${elapsed(sent)}`);
           notice.answered();
           return transcription;
         } catch (error) {
           const delay = this.transcriptionRetryDelays[retry];
           if (delay === undefined || !isServerError(error) || !isCurrent()) throw error;
-          log.debug(`DictationController: transcription failed (${errorName(error)}); retrying in ${delay}ms`);
+          log.debug(`DictationController: transcription failed (${errorName(error)}) after ${elapsed(sent)}; retrying in ${delay}ms`);
           notice.failed();
           await sleep(delay, signal);
         }
@@ -892,7 +915,10 @@ export class DictationController extends Observable {
       const upload = await this.preparedUpload(true);
       if (!isCurrent()) throw new CancellationError();
       log.debug(`DictationController: uploading chunk ${chunk.index} (${chunk.flac.length} bytes)`);
-      return { transcription: await this.transcribeChunk(() => upload.send(chunk.flac, signal), isCurrent, signal, release) };
+      const sent = performance.now();
+      const transcription = await this.transcribeChunk(() => upload.send(chunk.flac, signal), isCurrent, signal, release);
+      log.debug(() => `DictationController: chunk ${chunk.index} transcribed in ${elapsed(sent)}`);
+      return { transcription };
     } catch (error) {
       if (isCurrent()) log.error(`DictationController: chunk ${chunk.index} failed for good: ${errorName(error)}`);
       return { error };
@@ -1265,7 +1291,9 @@ export class DictationController extends Observable {
    * instead, and the dictation ends saying so (`NotPastedError`, ADR-DESK-042). */
   private readonly paste = async (text: string, targetApp: Promise<number | null>, signal: AbortSignal): Promise<void> => {
     log.content("DictationController: pasting", text);
+    const checking = performance.now();
     const changed = await this.focusChanged(targetApp);
+    log.debug(() => `DictationController: app in front checked in ${elapsed(checking)}`);
     // Canceled while the app in front was read: the text is no longer wanted anywhere, not even on
     // the clipboard, whose contents it would replace unseen.
     if (signal.aborted) throw new CancellationError();
@@ -1279,8 +1307,15 @@ export class DictationController extends Observable {
     if (signal.aborted) throw new CancellationError();
     // focusChanged requires a positive identity; pass it through for the native final check.
     if (target === null) throw new NotPastedError();
+    const pasting = performance.now();
     await this.deps.paste(text, signal, target);
+    log.debug(() => `DictationController: pasted in ${elapsed(pasting)}${this.sinceRelease()}`);
   };
+
+  /** ", N ms after the release" once the key is released, for the debug log's step timings. */
+  private sinceRelease(): string {
+    return this.releasedAt === null ? "" : `, ${elapsed(this.releasedAt)} after the release`;
+  }
 
   /** Whether the app in front now is not `targetApp`, the one at key-down (null for none, or one that
    * couldn't be read). */
@@ -1371,7 +1406,9 @@ export class DictationController extends Observable {
     this.deps.capture.stop();
     const recorder = this.recorder;
     if (!recorder) return;
+    const encoding = performance.now();
     const recording = recorder.finish();
+    log.debug(() => `DictationController: recording encoded in ${elapsed(encoding)}${this.sinceRelease()}`);
     const startedAt = this.startedAt ?? 0;
     const micDelay = recording.firstChunkAt === null ? "no audio" : `${Math.round(recording.firstChunkAt - startedAt)}ms`;
     log.debug(() => `DictationController: recorded ${recordingDuration(recording).toFixed(2)}s, peak ${recording.peakLevel.toFixed(3)}, gain ${(20 * Math.log10(recording.gain)).toFixed(1)} dB, waveform peak ${this.peakMeterLevel.toFixed(3)}, first audio after ${micDelay}`);

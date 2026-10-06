@@ -5,6 +5,7 @@
 import * as config from "../../core/config.js";
 import type { ScreenExclusions } from "../../core/dictation/excludedSites.js";
 import type { ScreenRead } from "../../core/dictation/screenContext.js";
+import { elapsed, errorName, log } from "../../core/log.js";
 import { type HelperClient, HelperError } from "./helperClient.js";
 
 /**
@@ -20,8 +21,16 @@ export class ScreenReader {
   constructor(private readonly helper: HelperClient) {}
 
   read(exclusions: ScreenExclusions): Promise<ScreenRead | null> {
-    if (this.reading) this.helper.restart();
+    if (this.reading) {
+      log.debug("ScreenReader: the last read is still going; restarting the reader");
+      this.helper.restart();
+    }
+    const started = performance.now();
     const read = this.helper.request<ScreenRead | null>("readScreen", { excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }, config.screenReaderTimeout);
+    read.then(
+      () => log.debug(() => `ScreenReader: read answered in ${elapsed(started)}`),
+      (error: unknown) => log.debug(() => `ScreenReader: read failed (${errorName(error)}) after ${elapsed(started)}`),
+    );
     this.reading = read;
     const done = () => {
       if (this.reading === read) this.reading = null;

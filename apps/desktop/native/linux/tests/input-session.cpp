@@ -6,7 +6,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <iostream>
+#include <regex>
 #include <source_location>
+#include <sstream>
 
 using namespace voice;
 static void require(bool value, std::source_location where = std::source_location::current()) { if (!value) { std::cerr << "check failed at line " << where.line() << "\n"; std::_Exit(1); } }
@@ -181,9 +183,25 @@ int main() {
     const auto text = parameters()["text"].get<std::string>();
     fixture.expected.assign(text.begin(), text.end());
     const auto offered = [&] { return *input.state->offer.at("text/plain;charset=utf-8") == fixture.expected; };
+    // The paste's stages, as its debug log (stderr) says them, with nothing of the text.
+    const auto stages = [&](int64_t id, bool expectedSuccess) {
+        std::ostringstream log;
+        auto* saved = std::cerr.rdbuf(log.rdbuf());
+        run(id, expectedSuccess);
+        std::cerr.rdbuf(saved);
+        std::vector<std::string> names;
+        std::istringstream lines(log.str());
+        const std::regex line("debug paste stage: ([a-z -]+) after [0-9]+ms");
+        for (std::string entry; std::getline(lines, entry);) {
+            std::smatch match;
+            require(std::regex_match(entry, match, line) && entry.find(text) == std::string::npos);
+            names.push_back(match[1]);
+        }
+        return names;
+    };
     // A clipboard whose state was never announced (GNOME's silent startup) is written all the same.
     fixture.publications = 0;
-    run(91, true);
+    require(stages(91, true) == std::vector<std::string>{"clipboard-write", "clipboard-written", "send-keys", "complete"});
     require(fixture.publications == 1 && offered() && fixture.keys.size() == 4);
     reset();
     fixture.onKey = [&](int key, unsigned down) {
@@ -217,7 +235,7 @@ int main() {
     run(78, false);
     require(fixture.keys == std::vector<std::pair<int, unsigned>>{{0xffe3, 1}, {0xffe3, 0}} && fixture.publications == 1);
     require(offered());
-    reset(); focused = false; run(2, false); require(fixture.publications == 0 && fixture.keys.empty()); focused = true;
+    reset(); focused = false; require(stages(2, false) == std::vector<std::string>{"not pasted"}); require(fixture.publications == 0 && fixture.keys.empty()); focused = true;
     reset();
     bool canceledReply = false;
     inserter.insert(3, parameters(), [&](auto, bool success) { require(!success); canceledReply = true; g_main_loop_quit(loop); });

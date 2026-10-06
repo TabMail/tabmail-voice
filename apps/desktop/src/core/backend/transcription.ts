@@ -6,7 +6,7 @@
 import * as config from "../config.js";
 import { BackendError, errorCode } from "./errors.js";
 import { BackendLog, type HTTPRequest, type HTTPTransport, joinURL, requestHeaders } from "./http.js";
-import { log } from "../log.js";
+import { elapsed, log } from "../log.js";
 import { base64 } from "../util/text.js";
 
 /** The variables of the backend's cleanup prompt other than the transcript, which the backend fills in
@@ -56,7 +56,9 @@ export class TranscriptionClient {
       signal,
     };
     log.content("Transcription request", () => BackendLog.request(request, TranscriptionClient.loggedBody(flac.length, language, vocabulary, cleanup)));
+    const sent = performance.now();
     const response = await this.transport(request);
+    log.debug(() => `Transcription: HTTP ${response.status} in ${elapsed(sent)}`);
     log.content("Transcription response", () => BackendLog.response(response));
     if (response.status !== 200) throw BackendError.fromStatus(response.status, errorCode(response.body));
     let result: unknown;

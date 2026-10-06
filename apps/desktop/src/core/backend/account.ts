@@ -5,7 +5,7 @@
 import { BackendError } from "./errors.js";
 import * as config from "../config.js";
 import type { HTTPTransport } from "./http.js";
-import { errorName, log } from "../log.js";
+import { elapsed, errorName, log } from "../log.js";
 import { Observable } from "../util/observable.js";
 import { trimWhitespace } from "../util/text.js";
 
@@ -217,13 +217,18 @@ export class AccountModel extends Observable {
    * sign-out, or a sign-in afresh (even as the same user), while it refreshed leaves this refresh's
    * answer, token or rejection, to the session it was for. */
   private async refresh(session: TabMailSession): Promise<string | null> {
+    // A round trip a dictation can wait on (a request answered 401, or a refresh still running when it
+    // uploads): timed so the debug log shows where the time went.
+    const started = performance.now();
     try {
       const refreshed = await this.client.refresh(session);
+      log.debug(`AccountModel: token refreshed in ${elapsed(started)}`);
       if (this.current !== session) return null;
       this.store.save(refreshed);
       this.set(refreshed);
       return refreshed.accessToken;
     } catch (error) {
+      log.debug(`AccountModel: token refresh failed (${errorName(error)}) after ${elapsed(started)}`);
       if (this.current !== session) return null;
       if (error instanceof AuthError && error.kind === "refreshRejected") {
         log.debug("AccountModel: refresh rejected; signing out");
