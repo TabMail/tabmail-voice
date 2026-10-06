@@ -3463,9 +3463,7 @@ Wayland. The 20 ms read runs only while the key is held, so an idle desktop pays
 **Consequences:**
 - After a fresh install, GNOME loads the extension only after a log-out and in; until then the
   keyboard permission is not granted, and the welcome guide and Settings say to log out and back in.
-  GNOME releases the extension does not support (`unsupported`) go without it, as before. Right Alt
-  can never be held there, so it isn't offered: the dictation key is F8 (F9 the alternative), and a
-  stored Right Alt choice returns once GNOME integration is supported (owner, 2026-10-05).
+  GNOME releases the extension does not support (`unsupported`) go without it, as before.
 - On GNOME, Space switches to agent mode while dictating, so the welcome guide no longer names a
   Shift shortcut there; Shift with the dictation key still starts agent mode on every platform.
 - Right Alt is taken by TabMail Voice while it is the dictation key, so it no longer acts as Alt in
@@ -3504,6 +3502,11 @@ on a layout where Right Alt is AltGr the grab silently failed. Owner: "grab the 
 Rationale: a modal grab is the Shell's own way to own the keyboard for a moment, so no GNOME shortcut sees
 Space or Escape and the release comes from the key itself, with or without Sticky Keys. Consequence:
 during a hold no other key reaches any app, and a click goes nowhere until Right Alt is released.
+
+**Amendment (owner, 2026-10-05) — F8 on a GNOME the extension doesn't support.** There Right Alt can
+never be held, so Settings doesn't offer it: the dictation key is F8 (F9 the alternative), as on other
+Linux desktops, and the welcome guide names Shift+F8 for agent mode and no GNOME integration to turn on.
+A stored Right Alt choice is kept and returns once GNOME integration is supported.
 
 ---
 

@@ -419,6 +419,7 @@ vi.mock("../../src/main/windows.js", () => ({
       return app.openWindows.includes(name);
     }
     showWelcome() {}
+    showSettings() {}
     showHistory(bounds: { x: number; y: number; width: number; height: number }, onBlur: () => void) {
       app.historyBlur = onBlur;
       app.historyWindow.push(`show ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`);
@@ -2106,23 +2107,37 @@ test("outside GNOME, Linux offers F8 and F9, with Shift for agent mode", async (
  * (owner, 2026-10-05). */
 test("on a GNOME the integration doesn't support, the dictation key is F8 and Right Alt isn't offered", async () => {
   vi.stubEnv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME");
+  let shell = "GNOME Shell 49.2";
   vi.doMock("../../src/main/native/linux/gnomeIntegration.js", async (original) => {
     const { GnomeIntegration } = await original<typeof import("../../src/main/native/linux/gnomeIntegration.js")>();
     return { GnomeIntegration: class extends GnomeIntegration {
       constructor(helper: ConstructorParameters<typeof GnomeIntegration>[0]) {
-        super(helper, async () => "GNOME Shell 49.2");
+        super(helper, async () => shell);
       }
     } };
   });
   try {
+    app.stored.set("dictationHotkey", "rightAlt");
     await launch("linux");
     const state = (name: string) => app.handlers.get(channels.getState)?.({}, name);
+    const configured = () => app.helpers.get("voice-hotkey")!.requests.filter((request) => request.method === "configure");
     await vi.waitFor(() => expect(state("settings")).toMatchObject({ gnomeIntegration: "unsupported" }));
     expect(state("settings")).toMatchObject({ hotkey: "F8", availableHotkeys: ["F8", "F9"] });
-    const configured = app.helpers.get("voice-hotkey")!.requests.filter((request) => request.method === "configure");
-    expect(configured.at(-1)).toMatchObject({ params: expect.objectContaining({ hotkey: "F8" }) });
+    expect(configured().at(-1)).toMatchObject({ params: expect.objectContaining({ hotkey: "F8" }) });
+    // The welcome guide says what holds here: no GNOME integration to turn on, Shift for agent mode.
+    expect((state("welcome") as { keyboardPermission: unknown }).keyboardPermission).toMatchObject({
+      agentShortcut: "Shift+F8",
+      description: "Allows the dictation shortcut and pasting.",
+      instructions: "Approve the dictation shortcut, then allow keyboard interaction in the next system prompt.",
+    });
     await send({ type: "setHotkey", hotkey: "rightAlt" });
     expect(state("settings")).toMatchObject({ hotkey: "F8" });
+    expect(app.stored.get("dictationHotkey")).toBe("rightAlt");
+    // Once GNOME integration is supported, the stored Right Alt is the key again.
+    shell = "GNOME Shell 50.1";
+    app.appEvents.get("second-instance")?.();
+    await vi.waitFor(() => expect(state("settings")).toMatchObject({ hotkey: "rightAlt", availableHotkeys: ["rightAlt", "F8", "F9"] }));
+    expect(configured().at(-1)).toMatchObject({ params: expect.objectContaining({ hotkey: "rightAlt" }) });
   } finally {
     vi.unstubAllEnvs();
     vi.doUnmock("../../src/main/native/linux/gnomeIntegration.js");

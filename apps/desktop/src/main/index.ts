@@ -403,14 +403,16 @@ function launch(): void {
    * keyboard interaction. */
   function linuxKeyboardPermission(): NonNullable<WelcomeState["keyboardPermission"]> {
     const steps = settings.hotkey === "rightAlt" ? "allow keyboard interaction in the next system prompt" : "approve the dictation shortcut, then allow keyboard interaction in the next system prompt";
+    // A GNOME the integration doesn't support goes without it, as other desktops do.
+    const integration = gnomeIntegration?.state === "unsupported" ? null : gnomeIntegration;
     return {
       title: "Shortcut and keyboard control",
       // Without GNOME integration, Space does not switch modes while dictating.
-      ...(gnomeIntegration ? {} : { agentShortcut: `Shift+${hotkeyNames[settings.hotkey].keycap}` }),
-      description: gnomeIntegration ? "Turns on GNOME integration and allows the dictation key and pasting." : "Allows the dictation shortcut and pasting.",
+      ...(integration ? {} : { agentShortcut: `Shift+${hotkeyNames[settings.hotkey].keycap}` }),
+      description: integration ? "Turns on GNOME integration and allows the dictation key and pasting." : "Allows the dictation shortcut and pasting.",
       button: "Allow Keyboard Control",
-      instructions: gnomeIntegration?.state === "restart" ? "Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here."
-        : gnomeIntegration ? `This turns on GNOME integration; then ${steps}.`
+      instructions: integration?.state === "restart" ? "Log out of Ubuntu and back in to finish turning on GNOME integration, then allow keyboard control here."
+        : integration ? `This turns on GNOME integration; then ${steps}.`
           : `${steps.charAt(0).toUpperCase()}${steps.slice(1)}.`,
     };
   }
