@@ -417,7 +417,17 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .chars()
             .last()
             .is_some_and(|last| !matches!(last, '\n' | '\r' | '\u{2028}' | '\u{2029}'));
-        if starts_paragraph && unbroken {
+        // Never inside a secret: the joined parts are redacted with nothing between them, and a
+        // break there would split what the redactor has to see whole (a key soft-wrapped at the
+        // caret). A caret the redactor places inside a match, or a redaction that fails, gets none.
+        let outside_secret = || {
+            let caret = parts[0].encode_utf16().count();
+            matches!(
+                privacy::redact_anchored(&vec![vec![parts.concat()]], &[caret]),
+                Ok((_, anchors)) if anchors.first().is_some_and(Option::is_some)
+            )
+        };
+        if starts_paragraph && unbroken && outside_secret() {
             parts[0].push('\n');
             if parts[0].len() > SOURCE_WINDOW_BYTES {
                 let first = parts[0].chars().next().map_or(0, char::len_utf8);
@@ -890,6 +900,22 @@ mod budget_tests {
         let kept = reply["parts"][0].as_str().unwrap();
         assert!(kept.ends_with("x\n") && kept.len() <= SOURCE_WINDOW_BYTES && !kept.is_empty());
         assert_eq!(reply["selectionUnavailable"], false);
+    }
+    /// A key soft-wrapped at a caret said to start a paragraph leaves the helper redacted whole:
+    /// the break that would split it is not added, so neither half reaches the reply.
+    #[test]
+    fn a_secret_wrapped_at_the_caret_is_redacted_whole() {
+        let (head, tail) = ("Key ghp_0123456789", "abcdefghijKLMNOP rest");
+        let window = call(
+            json!({"caretWindow":{"parts":[head,"",tail],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
+        );
+        let reply = call(json!({"blocks":[],"caret":window["parts"]}));
+        let text = reply.to_string();
+        assert!(
+            !text.contains("0123456789") && !text.contains("abcdefghij"),
+            "{text}"
+        );
+        assert!(text.contains(privacy::PLACEHOLDER), "{text}");
     }
     #[test]
     fn caret_window_never_returns_a_partial_selection_at_an_open_edge() {

@@ -948,6 +948,60 @@
       }
     },
     {
+      "name": "a caret inside a secret gets no break, so the secret is redacted whole",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Reply. password=synthetic",
+            "",
+            "Secret123 after"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "caretStarts": {
+            "paragraph": true,
+            "line": true,
+            "lineText": null
+          }
+        }
+      },
+      "expected": {
+        "parts": [
+          "Reply. password=synthetic",
+          "",
+          "Secret123 after"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a caret just after a secret still gets the break",
+      "request": {
+        "caretWindow": {
+          "parts": [
+            "Reply. password=syntheticSecret123",
+            "",
+            " then more"
+          ],
+          "startKnown": true,
+          "endKnown": true,
+          "caretStarts": {
+            "paragraph": true,
+            "line": true,
+            "lineText": null
+          }
+        }
+      },
+      "expected": {
+        "parts": [
+          "Reply. password=syntheticSecret123\n",
+          "",
+          " then more"
+        ],
+        "selectionUnavailable": false
+      }
+    },
+    {
       "name": "a rich editor's caret on the empty line after a paragraph ends the text before it in that line's break",
       "request": {
         "hypertext": {
