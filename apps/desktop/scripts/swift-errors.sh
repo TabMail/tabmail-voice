@@ -12,6 +12,13 @@ case "$(uname -m)" in
   *) exit 1 ;;
 esac
 (cd ../shared/rust && cargo build --release --locked --target "$rust_target") || exit 1
+# `test` runs the shared core's own suite first, as CTest does on Windows and Linux.
+if [ "$1" = test ]; then
+  rust_out=$(cd ../shared/rust && cargo test --release --locked --target "$rust_target" 2>&1)
+  rust_status=$?
+  printf '%s\n' "$rust_out" | grep -E '^test result:|FAILED|panicked|^error' | head -40
+  [ "$rust_status" -eq 0 ] || exit "$rust_status"
+fi
 out=$(swift "$@" 2>&1)
 status=$?
 printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^/.*(error|warning): |✘|Test run with|passed after|failed after|^error: ' | awk '!/passed after/ || /Test run with/' | sort -u | head -60

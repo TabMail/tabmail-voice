@@ -6,7 +6,7 @@ The existing Swift and C++ helpers link this Rust static library. No new daemon 
 
 Install Rust through rustup; `rust-toolchain.toml` pins the compiler and components. Run `cargo test --release --locked` and `cargo clippy --all-targets --locked -- -D warnings` in this directory. Release mode is the shipped profile used by the hostile-input timing gate.
 
-The macOS build script and `scripts/swift-errors.sh` build the Rust target before SwiftPM. For a direct SwiftPM invocation, first run `cargo build --release --locked --target aarch64-apple-darwin` here (or `x86_64-apple-darwin` on Intel), then run SwiftPM in `native/macos`. CMake builds and links the matching Rust target for Linux and Windows, and adds `voice-rust-core` to CTest. Cross-compilation requires the selected rustup target and native linker toolchain.
+The macOS build script and `scripts/swift-errors.sh` build the Rust target before SwiftPM, and `scripts/swift-errors.sh test` runs `cargo test --release --locked` before the Swift suites. For a direct SwiftPM invocation, first run `cargo build --release --locked --target aarch64-apple-darwin` here (or `x86_64-apple-darwin` on Intel), then run SwiftPM in `native/macos`. CMake builds and links the matching Rust target for Linux and Windows, and adds `voice-rust-core` to CTest. Cross-compilation requires the selected rustup target and native linker toolchain.
 
 ## Redaction contract
 

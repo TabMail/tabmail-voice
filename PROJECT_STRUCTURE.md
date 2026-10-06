@@ -25,11 +25,11 @@ apps/desktop/
 ├── scripts/
 │   ├── build-native.mts         Shared dispatcher; macos/build-native.mts (SwiftPM) and windows/build-native.mts (CMake/MSVC) copy helpers into dist/helpers
 │   ├── gen-registries.mts       Writes src/core/agent/connectors/registry.ts from each connector's `defineConnector` (run before build, typecheck and test)
-│   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries
+│   ├── swift-errors.sh          Runs a SwiftPM command in native/macos, printing only diagnostics and summaries; `test` runs the shared Rust core's `cargo test` first
 │   └── preview/                 `npm run preview`: renders the overlay, Settings and welcome windows with sample states offscreen, saved as PNGs
-├── native/shared/rust/      Shared static library: redaction, context normalization/rendering, exclusion/address policy and gesture transitions; Swift/C++ C ABI adapters; locked toolchain and conformance tests
+├── native/shared/rust/      Shared static library, the ONE home of logic the helpers share (ADR-DESK-054; native code is thin OS adapters): redaction, context normalization/rendering, exclusion/address policy, terminal viewport and gesture transitions; Swift/C++ C ABI adapters; locked toolchain and conformance tests
 ├── native/shared/context/   Screen context types and cross-platform context fixtures
-├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046; `host-exclusion-cases.json` (host matching) and `address-cases.json` (shared URL classification): ADR-DESK-047
+├── native/shared/privacy/   What every platform's helper shares: `redactors.json` (what looks like a secret in text read off the screen) and `redaction-cases.json` (what each helper must do with it): ADR-DESK-046; `host-exclusion-cases.json` (host matching) and `address-cases.json` (shared URL classification): ADR-DESK-047; `policy-cases.json` (app/host/page exclusion decisions and their refusals), run by Rust and every helper (`windows/tests/policy.cpp`, built on Linux too; Swift `ScreenExclusionTests`): ADR-DESK-054
 ├── native/macos/            SwiftPM package: the macOS helpers and their tests (ADR-DESK-044)
 │   ├── Package.swift            Products `voice-hotkey`, `voice-macos`, `voice-microphone` and `voice-screen-reader`, the executables the app spawns
 │   ├── Sources/

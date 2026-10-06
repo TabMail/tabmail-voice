@@ -10,8 +10,6 @@ namespace voice::HelperConfig {
 inline constexpr uint32_t accessibilityRequestTimeoutMs = 1000;
 inline constexpr uint32_t accessibilityRetryIntervalMs = 1000;
 inline constexpr unsigned accessibilityMaxAttempts = 5;
-// Longest visible text kept from one text field or terminal (UTF-16 units).
-// Longest text gathered for one heading, link or table row (bytes of UTF-8).
 // Longest the look through what holds a selection, before its text is asked for (ms).
 inline constexpr unsigned long long contextSelectionScanMs = 200;
 // A terminal read has no deadline (ms): it runs while the user speaks, in voice-screen-reader.exe,
