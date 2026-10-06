@@ -15,7 +15,7 @@ import type { ConnectorID } from "./registry.js";
 import type { WebFetch, WebOpener } from "./web.js";
 
 /**
- * A tool the Answer prompt's model can call that runs on this computer (a calendar read, a reminder
+ * A tool agent mode's model can call that runs on this computer (a calendar read, a reminder
  * created, a file found), as the iOS app's `ToolRegistry` tools are. Its definition, the JSON the
  * model sees, lives in the backend's tool registry for this client under the same `name`; the app
  * lists the names it can run in each Answer request's `available_tools` (ADR-DESK-023).

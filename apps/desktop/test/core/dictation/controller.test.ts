@@ -1875,7 +1875,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(completions.body(0).available_tools).toEqual([tool]);
       expect(completions.requests).toHaveLength(2);
       expect(JSON.stringify(completions.body(1).conversation_state)).toContain(`there is no tool named ${other}`);
-      expect(pastes).toEqual([selected === "" ? "Here." : "Here."]);
+      expect(pastes).toEqual(["Here."]);
       expect(controller.phase).toEqual(idle);
     });
 
@@ -4575,6 +4575,39 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat).toBeNull();
           expect(chatChanges).toEqual([true, false]);
           expect(controller.phase).toEqual(failed(new BackendError("failed", 500).message));
+        });
+
+        /** A lookup, then Compose ("check my calendar and write when I'm free"): Answer's bubble runs
+         * while the loop does, the tool shows in the chat window it opens, and the write closes that
+         * window before the text is pasted, Compose's bubble now first (ADR-DESK-054). */
+        test("a lookup then a write closes the chat the tool opened before pasting", async () => {
+          const tool = new FakeLoopTool();
+          let controllerRef: DictationController | undefined;
+          const chatAtPaste: (AgentChat | null)[] = [];
+          const recentAtPaste: string[][] = [];
+          const { controller, done, chatChanges } = await ask(
+            [tool],
+            [calling(["example_create", "{}"]), writes("compose", "I'm free at 3.")],
+            (controller) => {
+              controllerRef = controller;
+              setTools(["compose", "answer"]);
+            },
+            {
+              paste: async () => {
+                chatAtPaste.push(controllerRef?.chat ?? null);
+                recentAtPaste.push([...(controllerRef?.recentBubbles ?? [])]);
+              },
+            },
+          );
+          const { phases } = await done;
+
+          expect(tool.runs).toHaveLength(1);
+          expect(chatAtPaste).toEqual([null]);
+          expect(chatChanges).toEqual([true, false]);
+          expect(phases.find((phase) => phase.kind === "running")).toEqual(running("answer"));
+          expect(phases.at(-2)).toEqual(running("compose"));
+          expect(recentAtPaste[0]?.[0]).toBe("compose");
+          expect(controller.chat).toBeNull();
         });
 
         /** A follow-up's tool runs in the open chat window, under the conversation so far, and the

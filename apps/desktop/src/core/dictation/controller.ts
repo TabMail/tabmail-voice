@@ -45,7 +45,7 @@ export type Phase =
   | { kind: "transcribing" }
   /** The transcription failed on the server's side and has been tried again for a while (`transcribeRetrying`). */
   | { kind: "retrying"; message: string }
-  /** Agent mode: the agent chose this tool, which is writing its text. */
+  /** Agent mode: this tool's bubble runs, Answer's or the writing tool's while the loop runs, the writing tool's once it writes. */
   | { kind: "running"; tool: AgentToolID }
   | { kind: "failed"; message: string }
   /** The user went to another app before the paste: the text is on the clipboard and in the paste
@@ -95,7 +95,7 @@ export interface DictationDependencies {
   /** Warms the backend for the transcription to come (`TranscriptionClient.warmUp`). */
   warmUp: (baseURL: string, accessToken: string) => Promise<void>;
   makeCompletionsClient: (baseURL: string) => CompletionsClient;
-  /** The tools the Answer prompt's model can call that run on this computer. */
+  /** The tools agent mode's model can call that run on this computer. */
   connectorTools: readonly ConnectorTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
@@ -1015,7 +1015,7 @@ export class DictationController extends Observable {
     }
   }
 
-  /** Runs a tool the Answer prompt's model called, and returns what the model reads next: the tool's
+  /** Runs a tool agent mode's model called, and returns what the model reads next: the tool's
    * result, that the user declined, what the user answered aloud, or why it could not run. The chat
    * window opens (if the request was not a follow-up) to show which tool runs and, for one that
    * sends or creates, to ask first. An answer spoken to the question goes to the model, which reads

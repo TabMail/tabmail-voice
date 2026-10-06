@@ -2466,6 +2466,8 @@ Answer, which also circled, went on behind it.
 
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
+> Since ADR-DESK-054 (2026-10-05) agent mode is one tool loop: bringing this tool back means offering it as a loop tool, and the chooser this ADR describes is gone.
+
 **Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test
 all the others. And then for the Thunderbird tool, we should only use it … after introducing the
 native connector, because right now it's just clunky." The tool drives TabMail's chat in
@@ -3115,6 +3117,8 @@ Apps are known by bundle identifier, compared without regard to case.
 - Windows and Linux get the list with their helpers' screen read.
 
 ## ADR-DESK-046: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
+
+> Since ADR-DESK-054 (2026-10-05) Edit of a redacted selection is refused when the agent writes it, after the loop has asked the backend; the redacted read is still all the backend sees.
 
 **2026-10-03 amendment — shared Rust implementation:** The canonical JSON and screen-read privacy boundary remain. Every native helper now links the same Rust static library for matching and UTF-16 redistribution. Native ICU matching, generated Swift/C++ definition files and the ECMAScript conformance implementation are superseded; Rust tests own definition validation, corpus/mutations and hostile-text timing. Platform suites exercise that library through its C ABI. Keep provider access and pre-read password/exclusion checks native.
 
@@ -4054,7 +4058,9 @@ for earlier builds (owner: "we don't really have previous users").
 
 **Consequences:**
 - Lookups and writing happen in one request; the bubbles still show one running tool at a time.
-- Text planted on screen could try to steer what the agent pastes. The owner accepts the risk; the
-  backend fences the context as content, not instructions, before and after it (backend ADR-023
+- Text planted on screen, or returned by a tool (a web page, a PDF, a note), could try to steer what the
+  agent pastes, into any app, a terminal included. The owner accepts the risk (2026-10-05: "it is the
+  risk we're gonna take"); the backend fences the context as content, not instructions, before and
+  after it, and tells the model to ignore instructions in what tools return (backend ADR-023
   amendment).
 - Builds before this one stop working against the backend that carries this change.

@@ -50,7 +50,7 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app (folders: ADR-DESK-044)
 │   │   ├── config.ts, palette.ts, log.ts, settings.ts   Every tunable number; every color (ADR-DESK-048); the debug-gated log; the settings every part reads
 │   │   ├── agent/                   Agent mode (ADR-DESK-011)
-│   │   │   ├── requests.ts              `DesktopAgent`: picks the tool, has it write, runs Answer's tool loop
+│   │   │   ├── requests.ts              `DesktopAgent`: agent mode's one tool loop, ended by a reply or a Compose/Edit write
 │   │   │   ├── tools.ts                 Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
 │   │   │   ├── chat.ts, bubbleOrder.ts  The chat window's conversation; the bubbles' order
 │   │   │   └── connectors/              The apps Answer's model reaches on this computer, one file each with its tools (a new connector or tool goes here)
