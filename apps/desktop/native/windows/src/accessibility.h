@@ -392,14 +392,16 @@ private:
             require(tree.walker->GetParentElement(node.Get(), &parent));
             node = parent;
         }
-        if (privacy::holdsExcludedPage(tree, ComPtr<IUIAutomationElement>(focus), exclusions, true)) {
+        // A look that ran out of budget lets the read go on (ADR-DESK-047): each part the walk
+        // reads whole is looked through again first, and the focused field by `safeTextSubtree`.
+        if (privacy::lookForExcludedPage(tree, ComPtr<IUIAutomationElement>(focus), exclusions, true) == privacy::PageLook::excluded) {
             std::cerr << "debug screen access: excluded or unknown page not read\n";
             return true;
         }
         if (field) {
             ComPtr<IUIAutomationElement> root;
             require(automation->ElementFromHandle(window, &root));
-            if (root && privacy::holdsExcludedPage(tree, root, exclusions, false)) {
+            if (root && privacy::lookForExcludedPage(tree, root, exclusions, false) == privacy::PageLook::excluded) {
                 std::cerr << "debug screen access: excluded or unknown page not read\n";
                 return true;
             }
@@ -484,7 +486,7 @@ private:
         try {
             PageTree tree{this, {}, GetTickCount64(), HelperConfig::contextSelectionScanMs};
             require(automation->get_RawViewWalker(&tree.walker));
-            if (privacy::holdsExcludedPage(tree, enclosing, exclusions, true)) return {};
+            if (privacy::lookForExcludedPage(tree, enclosing, exclusions, true) != privacy::PageLook::none) return {};
             if (!privacy::safeTextSubtree(tree, enclosing)) return {};
             const auto value = UiaCaretSource::selectedText(pattern.Get(), selected.Get(), whole.Get(), started);
             if (value) return *value;
@@ -531,7 +533,7 @@ private:
     // A box at most a pixel thin shows nothing (screen-reader-only text, a list item
     // scrolled out of view); one that reports no size says nothing and counts as shown.
     struct Placement {
-        bool shown;
+        bool shown, inWindow;
         std::optional<ContextFrame> geometry;
         RECT frame;
     };
@@ -548,7 +550,7 @@ private:
             ((width == 0 && height == 0) || std::min(width, height) > hiddenThickness);
         const std::optional<ContextFrame> geometry = sized ?
             std::optional<ContextFrame>{{static_cast<double>(frame.left), static_cast<double>(frame.top), width, height}} : std::nullopt;
-        return Placement{shown, geometry, frame};
+        return Placement{shown, inWindow, geometry, frame};
     }
     // An element's children in the provider's order: no more than the walk could still
     // visit, and none past its time.
@@ -593,8 +595,20 @@ private:
             CONTROLTYPEID type = 0;
             if (FAILED(node->get_CurrentControlType(&type)) || isChrome(type, web)) continue;
             const auto place = placement(node, within.window, within.hiddenThickness);
-            // A box that shows nothing is not gone into, as in the walk itself.
+            // A box that shows nothing is not gone into here, as in the Mac's.
             if (!place || !place->shown) continue;
+            // What is read in one piece is looked through whole first: one that holds an
+            // excluded page refuses the window, and one too large to look through gives the
+            // marker in its place (ADR-DESK-054).
+            if ((web && isControl(type)) || type == UIA_TextControlTypeId || type == UIA_EditControlTypeId) {
+                PageTree tree{this, ComPtr<IUIAutomationTreeWalker>(walker), started, 1500};
+                const auto held = privacy::lookForExcludedPage(tree, element, exclusions, true);
+                if (held == privacy::PageLook::excluded) return false;
+                if (held == privacy::PageLook::notSeenWhole) {
+                    reducer.offer(SemanticText::Event::descendant, VisibleContext::hiddenMarker());
+                    continue;
+                }
+            }
             std::string piece;
             bool read = false;
             if (web && isControl(type)) {
@@ -648,7 +662,12 @@ private:
                 ((focus && current && same(focus,current.Get())) || (!focus && !current));
         };
         PageTree privacyTree{this,walker,started,HelperConfig::terminalReadBudgetMs};
-        if (privacy::holdsExcludedPage(privacyTree,root,exclusions,true)) return hiddenScreen();
+        // The surfaces are read whole: a window not looked through whole is not read (ADR-DESK-054).
+        switch (privacy::lookForExcludedPage(privacyTree,root,exclusions,true)) {
+            case privacy::PageLook::excluded: return hiddenScreen();
+            case privacy::PageLook::notSeenWhole: return nullptr;
+            case privacy::PageLook::none: break;
+        }
         std::vector<ComPtr<IUIAutomationElement>> focusPath;
         ComPtr<IUIAutomationElement> ancestor=focus;
         while (ancestor && focusPath.size()<200 && valid()) {
@@ -705,7 +724,11 @@ private:
             for(auto child=children.rbegin();child!=children.rend();++child) stack.push_back({*child,clip});
         }
         if(!valid()) return nullptr;
-        if(privacy::holdsExcludedPage(privacyTree,root,exclusions,true)) return hiddenScreen();
+        switch (privacy::lookForExcludedPage(privacyTree,root,exclusions,true)) {
+            case privacy::PageLook::excluded: return hiddenScreen();
+            case privacy::PageLook::notSeenWhole: return nullptr;
+            case privacy::PageLook::none: break;
+        }
         for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),started,HelperConfig::terminalReadBudgetMs)) return nullptr;
         wchar_t title[513]{};GetWindowTextW(window,title,513);
         if(!valid()) return nullptr;
@@ -724,10 +747,10 @@ private:
     // the window are skipped, each piece of text keeps its frame, and the focused element
     // field becomes the caret block at its place (a page in focus is walked into, after its
     // selection). The focused element's ancestors are always walked into and never read.
-    // Two rules differ from the Mac. A box that shows nothing is not walked into here: on
-    // Windows a clipped one-pixel box's children report their full size, so walking in would
-    // read text that is not on screen. And a focused element that is no field is read like
-    // any other, where the Mac leaves it out.
+    // A box that shows nothing in the window is walked into, as on every platform (owner, 2026-10-05; Slack
+    // keeps its message list in one), though Chromium reports its children's frames unclipped
+    // here, so a screen-reader-only label's text can be read (ADR-DESK-054). A focused element
+    // that is no field is read like any other, where the Mac leaves it out.
     bool readVisible(HWND window, const FocusRead& target, const std::string& caretText,
                      ULONGLONG started, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
                      std::optional<std::wstring>& walkedHost) {
@@ -785,10 +808,8 @@ private:
             }
             const auto place = placement(node, within.window, within.hiddenThickness);
             if (!place) continue;
-            // Hidden containers can still expose children with large text bounds (for
-            // example a 1px clipped accessibility-only label). Never descend into
-            // their subtree just because a child claims to be visible.
-            if (!place->shown && !onPath) continue;
+            // A box wholly outside the window is skipped with what it holds, as on the Mac and Linux.
+            if (!place->inWindow && !onPath) continue;
             const auto& geometry = place->geometry;
             if (isFocus && target.field) {
                 context.append(ContextKind::caret, caretText, geometry);
@@ -816,8 +837,15 @@ private:
             if (place->shown && !onFocusPath) {
                 const bool row = isRow(type, web);
                 if ((web && control) || row || type == UIA_EditControlTypeId || type == UIA_TextControlTypeId || type == UIA_HyperlinkControlTypeId) {
+                    // Read in one piece, so looked through whole first: one too large to look
+                    // through is withheld, and the marker stands in its place (ADR-DESK-054).
                     PageTree tree{this, walker, started, 1500};
-                    if (privacy::holdsExcludedPage(tree, entry.element, exclusions, true)) return refuse();
+                    const auto held = privacy::lookForExcludedPage(tree, entry.element, exclusions, true);
+                    if (held == privacy::PageLook::excluded) return refuse();
+                    if (held == privacy::PageLook::notSeenWhole) {
+                        context.append(type == UIA_EditControlTypeId ? ContextKind::field : ContextKind::text, VisibleContext::hiddenMarker(), geometry);
+                        continue;
+                    }
                 }
                 if (web && control) {
                     const auto caption = safeTextSubtree(node, started, 1500) ? controlText(entry.document.Get(), node, place->frame, started) : "";

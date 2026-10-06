@@ -97,6 +97,9 @@ int main() {
         expect(rowText(voice::ContextFrame{0, 0, 100, 100}) == "same" && tree.counts == 2, "off-window semantic descendants are not read");
         last.bounds = voice::ContextFrame{0, 0, 20, 1}; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2, "clipped semantic descendants are not read");
+        last.bounds = voice::ContextFrame{0, 0, 0, 0}; tree = Tree{};
+        expect(rowText() == "same | must not be read after refusal", "a 0x0 cell in a row counts as shown");
+        last.bounds = voice::ContextFrame{0, 0, 20, 1};
         row.label = "Root label"; tree = Tree{};
         expect(rowText() == "same" && tree.counts == 2 && tree.values == 2, "rows prefer approved cells without reading their generic root label");
         tree = Tree{}; visited = 0;
@@ -241,6 +244,35 @@ int main() {
     result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
     expect(result.dump().find("outside window") == std::string::npos, "off-window text is skipped");
     window.bounds.reset();
+    // The hidden-box rule every platform shares (ADR-DESK-054): a box at most a pixel thin
+    // either way shows nothing, a 0×0 frame says nothing and counts as shown, and a hidden
+    // box is still walked into (Slack keeps its message list in a 1×2 one).
+    {
+        Element unsized{ATSPI_ROLE_STATIC, "Unsized words", {}, {}};
+        unsized.bounds = voice::ContextFrame{10, 10, 0, 0};
+        Element thin{ATSPI_ROLE_STATIC, "Thin words", {}, {}};
+        thin.bounds = voice::ContextFrame{10, 30, 1, 20};
+        Element message{ATSPI_ROLE_STATIC, "Listed message", {}, {}};
+        message.bounds = voice::ContextFrame{10, 50, 80, 20};
+        Element messages{ATSPI_ROLE_LIST, "", {}, {&message}};
+        messages.bounds = voice::ContextFrame{10, 50, 1, 2};
+        window.children = {&field, &unsized, &thin, &messages}; tree = Tree{};
+        result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
+        const auto text = result["renderedText"].get<std::string>();
+        expect(text.find("Unsized words") != std::string::npos, "a 0x0 box counts as shown");
+        expect(text.find("Thin words") == std::string::npos, "a box a pixel thin shows nothing");
+        expect(text.find("Listed message") != std::string::npos, "a hidden box is walked into");
+        // A row's cells count toward the walk's 5000 nodes: one that uses them up stops the walk.
+        std::vector<Element> cells(4997, Element{ATSPI_ROLE_PANEL, "", {}, {}});
+        Element wide{ATSPI_ROLE_TABLE_ROW, "", {}, {}};
+        for (auto& cell : cells) wide.children.push_back(&cell);
+        Element after{ATSPI_ROLE_STATIC, "Unreached words", {}, {}};
+        window.children = {&field, &wide, &after}; tree = Tree{};
+        result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
+        expect(result["summary"].get<std::string>().find("stopped: node budget") != std::string::npos &&
+            result["renderedText"].get<std::string>().find("Unreached words") == std::string::npos,
+            "a walk out of nodes says so in the words every platform uses");
+    }
     Element checkbox{ATSPI_ROLE_CHECK_BOX, "Include replies", {}, {}};
     page.page = voice::hostOfAddress("https://allowed.example/"); page.children = {&field, &checkbox}; window.children = {&page}; tree = Tree{};
     result = voice::gatherScreen(tree, &window, &field, {&page, &window}, app, policy);
@@ -250,6 +282,21 @@ int main() {
     result = voice::gatherScreen(tree, &window, &field, {&window}, app, policy);
     expect(result.is_object() && result["renderedText"].get<std::string>().find("Conversation") != std::string::npos,
         "budget stop retains collected text without a final provider query");
+    expect(result["summary"].get<std::string>().find("stopped: time budget") != std::string::npos,
+        "a read out of time says so in the words every platform uses");
+    {
+        // A provider call that runs out of time inside an element stops the read the same way.
+        struct Expiring : Tree {
+            Node expireAt = nullptr;
+            AtspiRole role(Node node) { if (node == expireAt) throw voice::ScreenBudgetExceeded(); return Tree::role(node); }
+        };
+        Expiring expiring; expiring.expireAt = &checkbox;
+        window.children = {&heading, &checkbox, &field};
+        result = voice::gatherScreen(expiring, &window, &field, {&window}, app, policy);
+        expect(result.is_object() && result["renderedText"].get<std::string>().find("Conversation") != std::string::npos &&
+            result["summary"].get<std::string>().find("stopped: time budget") != std::string::npos,
+            "a provider call out of time says so too, keeping what was read");
+    }
     // Provider-side metadata search must enforce the same policy without
     // visiting every ordinary descendant (large focused browser documents).
     CollectionTree bulk;

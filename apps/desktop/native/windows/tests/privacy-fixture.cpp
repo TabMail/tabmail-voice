@@ -34,7 +34,7 @@ std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
     int id, parent = -1;
     CONTROLTYPEID type = UIA_TextControlTypeId;
-    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false;
+    bool password = false, forbidden = false, unknownAddress = false, readOnly = false, thin = false, rawOnly = false, outside = false;
     std::wstring text = L"Synthetic safe label", address;
     std::vector<int> children;
     explicit Node(int index) : id(index) {}
@@ -117,8 +117,10 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     }
     HRESULT STDMETHODCALLTYPE get_BoundingRectangle(UiaRect* result) override {
         RECT frame{}; GetWindowRect(window, &frame);
-        // A thin box shows nothing; what is under it still reports its full size.
-        *result = {static_cast<double>(frame.left + 20), static_cast<double>(frame.top + 40 + id * 25), thin ? 1.0 : 400.0, thin ? 1.0 : 24.0};
+        // A thin box shows nothing; what is under it still reports its full size. A box outside
+        // sits above the window.
+        const double top = outside ? frame.top - 1000.0 : static_cast<double>(frame.top + 40 + id * 25);
+        *result = {static_cast<double>(frame.left + 20), top, thin ? 1.0 : 400.0, thin ? 1.0 : 24.0};
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE GetEmbeddedFragmentRoots(SAFEARRAY** result) override { *result = nullptr; return S_OK; }
@@ -162,6 +164,58 @@ void configure(const std::string& mode) {
         const int box = add(row, UIA_GroupControlTypeId);
         nodes.at(box)->thin = true;
         nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden text";
+    } else if (mode == "hidden-box") {
+        // A text box that shows nothing, with a child reporting a full size: walked into, its own
+        // text left out (ADR-DESK-054).
+        const int box = add(0, UIA_TextControlTypeId);
+        nodes.at(box)->thin = true;
+        nodes.at(box)->text = L"Synthetic thin box text";
+        nodes.at(add(box, UIA_TextControlTypeId))->text = L"Synthetic hidden-box text";
+    } else if (mode == "terminal-wide") {
+        // Run under a terminal's name: a window wider than the look's node budget.
+        for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
+    } else if (mode == "large-text") {
+        // Text read in one piece that holds more than the look takes in: withheld behind the marker.
+        const int large = add(0, UIA_TextControlTypeId);
+        nodes.at(large)->text = L"Synthetic large text";
+        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+    } else if (mode == "large-row" || mode == "large-link") {
+        // A row or link that holds more than the look takes in: withheld behind the marker, with
+        // its name and its cells.
+        const int large = add(0, mode == "large-row" ? UIA_DataItemControlTypeId : UIA_HyperlinkControlTypeId);
+        nodes.at(large)->text = L"Synthetic large name";
+        nodes.at(add(large, UIA_TextControlTypeId))->text = L"Synthetic cell text";
+        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+    } else if (mode == "large-field" || mode == "large-web-control") {
+        // A field, and a page's control, that hold more than the look takes in: withheld behind
+        // the marker, the field's as a field.
+        int parent = 0;
+        if (mode == "large-web-control") {
+            parent = add(0, UIA_DocumentControlTypeId);
+            nodes.at(parent)->address = L"https://open.example/synthetic";
+        }
+        const int large = add(parent, mode == "large-field" ? UIA_EditControlTypeId : UIA_ButtonControlTypeId);
+        nodes.at(large)->text = L"Synthetic large name";
+        for (int i = 0; i < 5000; ++i) add(large, UIA_GroupControlTypeId);
+    } else if (mode == "large-focus") {
+        // A focus that holds more than the look takes in: the window is still read, not hidden,
+        // and the focus itself is not (its look uses up the read's time here).
+        nodes.at(1)->text = L"Synthetic large text";
+        for (int i = 0; i < 5000; ++i) add(1, UIA_GroupControlTypeId);
+    } else if (mode == "large-window-field") {
+        // A field in a window that holds more than the look takes in: not refused for corrections.
+        nodes.at(1)->type = UIA_EditControlTypeId;
+        for (int i = 0; i < 5000; ++i) add(0, UIA_GroupControlTypeId);
+    } else if (mode == "outside-window") {
+        // A container wholly outside the window, holding more than the walk's node budget,
+        // before text in view: skipped with what it holds, so the text is read.
+        const int text = add(0, UIA_TextControlTypeId);
+        nodes.at(text)->text = L"Synthetic visible text";
+        const int outside = add(0, UIA_GroupControlTypeId);
+        nodes.at(outside)->outside = true;
+        for (int i = 0; i < 5000; ++i) add(outside, UIA_GroupControlTypeId);
+        auto& order = nodes.front()->children;
+        std::swap(order[1], order[2]);
     } else if (mode.starts_with("password-")) {
         int container = 0;
         if (mode == "password-row") container = add(0, UIA_DataItemControlTypeId);

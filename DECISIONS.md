@@ -350,7 +350,8 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
     its message list in such a box (ADR-DESK-016), and can, because a Mac element's frame is what
     is left of it after clipping. Chromium on Windows reports frames unclipped
     (`AXPlatformNodeWin::get_BoundingRectangle`), so the text of a screen-reader-only label looks
-    full-sized there and walking in would read text that is not on screen.*
+    full-sized there and walking in would read text that is not on screen. (Settled 2026-10-05 in
+    ADR-DESK-054: Windows walks in too, by the owner's choice made knowing this.)*
   - *A focused element that is neither a field nor a page (a list, a button) is read like any
     other on Windows; the Mac puts an empty caret block in its place and reads nothing under it.
     Matching the Mac would make Windows read less: left for the owner. (Settled the same day, in
@@ -3156,6 +3157,15 @@ whenever the engine gave no framework. This keeps
 the Mac's rule (a web area is a page, in an app or a browser alike) instead of a list of browser
 names, which would read an excluded site in any browser not on the list.
 
+*(Amended 2026-10-05, owner, through ADR-DESK-054: the Windows helper now answers a look that runs out
+of budget as the Mac helper does. An element it reads in one piece (a piece of text, a field, a
+titled web control, a row, a heading or a link, in the walk and in a row's text) that it could not
+look through whole is withheld and the marker stands in its place; a selection in a page and a
+terminal window it could not look through whole are not read. It used to treat such a look as
+"no excluded page" and read the element. The two cases kept above stand: the walk keeps what it
+gathered when its own budget runs out, and the 0.2 s look before a field is read for corrections
+does not stop that read.)*
+
 ## ADR-DESK-048: Every color in one palette file; one time for every color change
 
 **Context:** Owner, 2026-10-03: the retry's shift toward purple on the thinking circle
@@ -3676,7 +3686,12 @@ design explicit.
     scan before the read stays). A request's `maxLength` is 1 to 20,000, Windows's range (macOS took
     any length from 0, Linux 0 to 20,000).
   - A box thinner than 1 point (scaled for the display) either way is hidden; a 0×0 frame (none
-    reported) counts as shown; a hidden box's children are still walked.
+    reported) counts as shown; a hidden box's children are still walked. Asked again with the
+    trade-off that ADR-DESK-007 recorded (Chromium on Windows reports a child's frame unclipped,
+    so walking into a screen-reader-only label reads its text as though it were drawn), the owner
+    kept this rule: Slack is an Electron app that works the same on every platform and keeps its
+    message list in a 1×2 box, and screen-reader-only text is useful context to make good use of,
+    not to hide. Windows walks in from then on; Linux counts a 0×0 frame as shown.
 - **And two that need no owner call, being wording or strictly more private:** stop reasons are
   `node budget` and `time budget` on every platform, and the host of the page a read came from is
   checked against the excluded sites after every read, not only on macOS.
@@ -3697,8 +3712,12 @@ design explicit.
   OS work only. Every new rule starts in the core with its cases, not in a helper.
 - The C ABI carries more calls per read (one per walked node once the walk policy moves), each a
   small JSON or handle exchange; the walk's budgets bound how many.
-- Until the last step lands, the walk's per-node decisions are still per platform, and the
-  disagreements above stand where they live (the Windows marker and scan budget among them).
+- Until the walk-policy step lands, the walk's per-node decisions are still per platform. The
+  decisions above were applied in each helper first, one step before that move: Windows looks
+  through a part read whole and withholds it behind the marker (served by the core's `limits`)
+  when the look runs out, reads no terminal window it could not look through whole, and walks into
+  hidden boxes; Linux counts a 0×0 frame as shown and names its stops `node budget` and
+  `time budget`.
 - The helpers' own `HelperConfig` keeps only OS numbers (timeouts of an OS call, retry intervals);
   a number the helpers share comes from the core.
 

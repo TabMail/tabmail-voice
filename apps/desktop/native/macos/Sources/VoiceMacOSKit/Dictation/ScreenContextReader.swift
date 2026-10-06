@@ -281,7 +281,7 @@ enum ScreenContextReader {
     /// walked into like any of its ancestors; no app is known to focus inside one).
     /// False when the window shows a page of an excluded website, in focus or not: the walk stops
     /// there, and what it gathered must not be used. A field that frames such a page (a field is read
-    /// by its value, never walked into) is not read, and `contextHiddenMarker` stands in its place.
+    /// by its value, never walked into) is not read, and the shared core's hidden marker stands in its place.
     /// An element read in one piece by a label of its own and not walked into (a piece of text, a
     /// heading, a link, a row, a web control with its title) is looked through for such a page
     /// (`lookForExcludedPage`): its label can be made of what it holds. One that holds such a page
@@ -333,7 +333,7 @@ enum ScreenContextReader {
                 if shown {
                     let held = look()
                     if held == .excluded { return false }
-                    context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker
+                    context.append(.text, held == .notSeenWhole ? context.hiddenMarker
                         : tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree) ?? "", frame: frame)
                 }
                 continue
@@ -346,7 +346,7 @@ enum ScreenContextReader {
                         func rootLabel() -> String? {
                             let held = look()
                             if held == .excluded { return nil }
-                            return held == .notSeenWhole ? HelperConfig.contextHiddenMarker : label(of: element, in: tree) ?? ""
+                            return held == .notSeenWhole ? context.hiddenMarker : label(of: element, in: tree) ?? ""
                         }
                         if try reducer.decision == .root {
                             guard let root = rootLabel() else { return false }
@@ -375,7 +375,7 @@ enum ScreenContextReader {
                     let hidden = holdsExcludedPage(element, in: tree, excluding: exclusions, unlessSeenWhole: true,
                                                    within: HelperConfig.contextTimeBudget, since: started)
                     if hidden {
-                        context.append(.field, HelperConfig.contextHiddenMarker, frame: frame)
+                        context.append(.field, context.hiddenMarker, frame: frame)
                     } else if let source = tree.fieldSource(of: element, windowFrame: windowFrame) {
                         context.appendField(source, frame: frame)
                     }
@@ -386,7 +386,7 @@ enum ScreenContextReader {
                     if shown {
                         let held = look()
                         if held == .excluded { return false }
-                        context.append(.text, held == .notSeenWhole ? HelperConfig.contextHiddenMarker : title, frame: frame)
+                        context.append(.text, held == .notSeenWhole ? context.hiddenMarker : title, frame: frame)
                     }
                     continue
                 }
@@ -469,7 +469,7 @@ enum ScreenContextReader {
                         try reducer.offer(.descendant, label)
                     }
                 } else {
-                    let text = hidden ? HelperConfig.contextHiddenMarker
+                    let text = hidden ? context.hiddenMarker
                         : (title ?? tree.sourceString(element, kAXValueAttribute) ?? label(of: element, in: tree)) ?? ""
                     try reducer.offer(.descendant, text)
                 }
