@@ -573,6 +573,33 @@ pub unsafe extern "C" fn voice_core_source_utf8_offer(
         }
     }
 }
+/// What starts at the caret (`caretStarts` JSON), for a caret source before it finishes. A
+/// refusal fails the source.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn voice_core_source_caret_starts(
+    state: *mut crate::source::Source,
+    data: *const u8,
+    length: usize,
+) -> u32 {
+    if state.is_null() {
+        return 1;
+    }
+    let state = unsafe { &mut *state };
+    let result = guarded(|| {
+        if length == 0 || length > crate::source::CARET_STARTS_BYTES || data.is_null() {
+            return Err(1);
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(data, length) };
+        state.set_caret_starts(serde_json::from_slice(bytes).map_err(|_| 1u32)?)
+    });
+    match result {
+        Ok(()) => 0,
+        Err(status) => {
+            state.refuse();
+            status
+        }
+    }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn voice_core_source_finish(
     state: *const crate::source::Source,
@@ -1077,6 +1104,121 @@ mod source_abi_tests {
             assert_eq!(value["parts"], serde_json::json!(["", text, ""]));
             voice_core_buffer_free(output);
             voice_core_source_free(state);
+        }
+    }
+    #[test]
+    fn caret_starts_reach_the_caret_window_and_bad_ones_poison() {
+        let text: Vec<u16> = "Is it ready?".encode_utf16().collect();
+        // A caret source at the end of the text, given `starts`; the finished window's text
+        // before the caret, or the status that refused.
+        let read = |starts: Option<&[u8]>, twice: bool| -> Result<String, u32> {
+            let mut state = std::ptr::null_mut();
+            unsafe {
+                assert_eq!(
+                    voice_core_source_utf16_new(text.len(), text.len(), text.len(), &mut state),
+                    0
+                );
+                for _ in 0..if twice { 2 } else { 1 } {
+                    if let Some(starts) = starts {
+                        let status =
+                            voice_core_source_caret_starts(state, starts.as_ptr(), starts.len());
+                        if status != 0 {
+                            let (mut start, mut length) = (0, 0);
+                            assert_eq!(
+                                voice_core_source_next(state, &mut start, &mut length),
+                                1,
+                                "a refusal poisons"
+                            );
+                            voice_core_source_free(state);
+                            return Err(status);
+                        }
+                    }
+                }
+                loop {
+                    let (mut start, mut length) = (0, 0);
+                    assert_eq!(voice_core_source_next(state, &mut start, &mut length), 0);
+                    if length == 0 {
+                        break;
+                    }
+                    assert_eq!(
+                        voice_core_source_utf16_offer(state, text[start..].as_ptr(), length),
+                        0
+                    );
+                }
+                let mut output = Buffer::empty();
+                let status = voice_core_source_finish(state, &mut output);
+                let result = if status == 0 {
+                    let value: serde_json::Value = serde_json::from_slice(
+                        std::slice::from_raw_parts(output.data, output.length),
+                    )
+                    .unwrap();
+                    Ok(value["parts"][0].as_str().unwrap().to_owned())
+                } else {
+                    Err(status)
+                };
+                voice_core_buffer_free(output);
+                voice_core_source_free(state);
+                result
+            }
+        };
+        let paragraph = br#"{"paragraph":true,"line":false,"lineText":null}"#;
+        assert_eq!(
+            read(Some(paragraph), false),
+            Ok("Is it ready?\n".to_owned())
+        );
+        assert_eq!(read(None, false), Ok("Is it ready?".to_owned()));
+        assert_eq!(
+            read(
+                Some(br#"{"paragraph":false,"line":false,"lineText":null}"#),
+                false
+            ),
+            Ok("Is it ready?".to_owned())
+        );
+        // Checked by the caret window: a shape it refuses fails the finish.
+        assert_eq!(
+            read(
+                Some(br#"{"paragraph":1,"line":false,"lineText":null}"#),
+                false
+            ),
+            Err(1)
+        );
+        assert_eq!(read(Some(paragraph), true), Err(1), "once only");
+        for bad in [
+            &b"[]"[..],
+            b"{",
+            &[b' '; crate::source::CARET_STARTS_BYTES + 1],
+        ] {
+            assert_eq!(read(Some(bad), false), Err(1));
+        }
+        unsafe {
+            let mut state = std::ptr::null_mut();
+            assert_eq!(voice_core_source_utf16_new(1, 1, 1, &mut state), 0);
+            assert_eq!(
+                voice_core_source_caret_starts(state, std::ptr::null(), 4),
+                1
+            );
+            voice_core_source_free(state);
+            assert_eq!(voice_core_source_utf16_new(1, 1, 1, &mut state), 0);
+            assert_eq!(
+                voice_core_source_caret_starts(state, paragraph.as_ptr(), 0),
+                1
+            );
+            voice_core_source_free(state);
+            // A field source has no caret.
+            assert_eq!(voice_core_field_utf16_new(1, 0, 1, &mut state), 0);
+            assert_eq!(
+                voice_core_source_caret_starts(state, paragraph.as_ptr(), paragraph.len()),
+                1
+            );
+            voice_core_source_free(state);
+            assert_eq!(
+                voice_core_source_caret_starts(
+                    std::ptr::null_mut(),
+                    paragraph.as_ptr(),
+                    paragraph.len()
+                ),
+                1
+            );
         }
     }
     #[test]

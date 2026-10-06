@@ -56,8 +56,12 @@ enum MarkerCaretSource {
     /// near the end then stays inside the text the ranges hold.
     /// A selection made backward has its markers in the order it was made (Chromium's anchor, then
     /// focus), so the earlier one starts it.
+    /// `startsParagraph`: whether the paragraph holding that start begins there
+    /// (`AXParagraphTextMarkerRangeForTextMarker`), nil when not told. An empty line is a paragraph
+    /// of its own whose break the string ranges leave out, so the shared core puts it back before
+    /// the caret (ADR-DESK-007, 2026-10-06).
     static func selection(selection: CFTypeRef, whole: CFTypeRef,
-                          parameterized: (String, CFTypeRef) -> CFTypeRef?) -> (count: Int, range: NSRange)? {
+                          parameterized: (String, CFTypeRef) -> CFTypeRef?) -> (count: Int, range: NSRange, startsParagraph: Bool?)? {
         guard CFGetTypeID(selection) == AXTextMarkerRangeGetTypeID(), CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID() else { return nil }
         func length(_ range: CFTypeRef?) -> Int? {
             guard let range, let value = parameterized("AXLengthForTextMarkerRange", range) as? NSNumber, value.intValue >= 0 else { return nil }
@@ -69,6 +73,10 @@ enum MarkerCaretSource {
         }
         let ends = [AXTextMarkerRangeCopyStartMarker(selection as! AXTextMarkerRange), AXTextMarkerRangeCopyEndMarker(selection as! AXTextMarkerRange)]
         guard let count = length(whole), let anchor = offset(ends[0]), let focus = offset(ends[1]), max(anchor, focus) <= count else { return nil }
-        return (count, NSRange(location: min(anchor, focus), length: abs(focus - anchor)))
+        let start = min(anchor, focus)
+        let startsParagraph = parameterized("AXParagraphTextMarkerRangeForTextMarker", ends[anchor <= focus ? 0 : 1]).flatMap { paragraph in
+            CFGetTypeID(paragraph) == AXTextMarkerRangeGetTypeID() ? offset(AXTextMarkerRangeCopyStartMarker(paragraph as! AXTextMarkerRange)) : nil
+        }.map { $0 == start }
+        return (count, NSRange(location: start, length: abs(focus - anchor)), startsParagraph)
     }
 }

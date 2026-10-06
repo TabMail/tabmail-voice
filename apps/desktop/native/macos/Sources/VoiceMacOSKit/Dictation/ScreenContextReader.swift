@@ -213,11 +213,13 @@ enum ScreenContextReader {
         })
     }
 
-    /// A field's length and selection, and whether its markers counted them.
+    /// A field's length and selection, whether its markers counted them, and whether a paragraph
+    /// starts at the selection (markers only; nil when not told).
     struct ValueSnapshot: Equatable {
         let count: Int
         let range: NSRange
         let markers: Bool
+        var startsParagraph: Bool? = nil
     }
 
     /// A field with text markers but no public marker-index conversion (Chromium; WebKit, which
@@ -235,7 +237,7 @@ enum ScreenContextReader {
            let selection = MarkerCaretSource.selection(selection: state.selection, whole: state.whole, parameterized: parameterized),
            selection.count == 0 || string(NSRange(location: selection.count - 1, length: 1))?.length == 1,
            (string(NSRange(location: selection.count, length: 1))?.length ?? 0) == 0 {
-            return ValueSnapshot(count: selection.count, range: selection.range, markers: true)
+            return ValueSnapshot(count: selection.count, range: selection.range, markers: true, startsParagraph: selection.startsParagraph)
         }
         return characters.map { ValueSnapshot(count: $0.count, range: $0.range, markers: false) }
     }
@@ -247,7 +249,7 @@ enum ScreenContextReader {
         HelperLog.debug("ScreenContext: caret \(initial.range.location)+\(initial.range.length) of \(initial.count) chars, from the \(initial.markers ? "text markers" : "character range")")
         let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
         do {
-            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range) { requested in
+            let result = try BoundedCaretSource.read(count: initial.count, selection: initial.range, startsParagraph: initial.startsParagraph) { requested in
                 let value = string(requested)
                 if let value, value.length != requested.length {
                     HelperLog.debug("ScreenContext: \(value.length) characters for \(requested.location)+\(requested.length)")

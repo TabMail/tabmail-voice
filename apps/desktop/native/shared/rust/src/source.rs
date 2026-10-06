@@ -5,6 +5,9 @@ use serde_json::json;
 use std::collections::VecDeque;
 
 pub const CHUNK_UNITS: usize = 4096;
+/// The most a caret source's `caretStarts` may take as JSON: two flags and a line's first
+/// `CARET_LINE_BYTES`, escaped.
+pub const CARET_STARTS_BYTES: usize = 256;
 /// One bounded acquisition policy for exact UTF-16 or Unicode-scalar offsets.
 /// Native adapters supply only requested spans and recheck provider identity.
 #[derive(Clone, Copy, PartialEq)]
@@ -27,6 +30,7 @@ pub struct Source {
     edges: [bool; 2],
     unavailable: bool,
     failed: bool,
+    caret_starts: Option<serde_json::Value>,
 }
 fn high(unit: u16) -> bool {
     (0xd800..=0xdbff).contains(&unit)
@@ -67,6 +71,7 @@ impl Source {
             edges: [false; 2],
             unavailable: false,
             failed: false,
+            caret_starts: None,
         };
         if !field && end - start > crate::context::SELECTION_SOURCE_BYTES {
             state.unavailable = true;
@@ -105,6 +110,16 @@ impl Source {
         let mut state = Self::visible_field(count, start, end)?;
         state.offset_unit = OffsetUnit::Scalar;
         Ok(state)
+    }
+    /// What starts at the caret, as the provider lays the text out (the caret window's
+    /// `caretStarts`, ADR-DESK-007), which the caret window checks: only a caret source takes it,
+    /// once.
+    pub fn set_caret_starts(&mut self, starts: serde_json::Value) -> Result<(), u32> {
+        if self.field_edges.is_some() || self.caret_starts.is_some() || !starts.is_object() {
+            return Err(1);
+        }
+        self.caret_starts = Some(starts);
+        Ok(())
     }
     pub fn refuse(&mut self) {
         self.failed = true;
@@ -262,7 +277,12 @@ impl Source {
             )
             .map_err(|_| 3);
         }
-        let request = serde_json::to_vec(&json!({"caretWindow":{"parts":self.parts,"startKnown":self.edges[0],"endKnown":self.edges[1]}})).map_err(|_|3u32)?;
+        let mut window =
+            json!({"parts":self.parts,"startKnown":self.edges[0],"endKnown":self.edges[1]});
+        if let Some(starts) = &self.caret_starts {
+            window["caretStarts"] = starts.clone();
+        }
+        let request = serde_json::to_vec(&json!({ "caretWindow": window })).map_err(|_| 3u32)?;
         crate::context::process(&request)
     }
 }

@@ -230,14 +230,37 @@ struct MarkerCaretSourceTests {
         #expect(result.parts == ["", "", ""])
     }
 
+    /// A caret on an empty line under "?" starts a paragraph whose break Chromium's string ranges
+    /// leave out: the text before it ends in that break, not right after the "?" (ADR-DESK-007).
+    @Test func aCaretStartingAParagraphGetsTheBreakItsTextLeavesOut() throws {
+        let result = try #require(read(MarkerField(paragraphs: [0, 96]), anchor: 96, focus: 96))
+        #expect(result.parts == [Self.text.substring(to: 96) + "\n", "", Self.text.substring(from: 96)])
+    }
+
+    @Test func aCaretInsideAParagraphGetsNoBreak() throws {
+        let result = try #require(read(MarkerField(paragraphs: [0, 90]), anchor: 96, focus: 96))
+        #expect(result.parts == [Self.text.substring(to: 96), "", Self.text.substring(from: 96)])
+    }
+
+    /// A selection made backward starts at its focus: that is where the paragraph must start.
+    @Test func aBackwardSelectionStartingAParagraphGetsTheBreak() throws {
+        let field = MarkerField(paragraphs: [0, 96, 105])
+        let result = try #require(read(field, anchor: 110, focus: 96))
+        #expect(result.parts == [Self.text.substring(to: 96) + "\n", Self.text.substring(with: NSRange(location: 96, length: 14)), Self.text.substring(from: 110)])
+        #expect(read(MarkerField(paragraphs: [0, 90, 105]), anchor: 110, focus: 96)?.parts[0] == Self.text.substring(to: 96))
+    }
+
     /// A secret the caret sits inside, at the start of a line it wrapped onto, is read as one text
     /// and redacted whole (ADR-DESK-007, ADR-DESK-046): nothing is put between the texts around
     /// the caret.
-    @Test func aSecretWrappedAtTheCaretIsRedactedWhole() throws {
+    /// The same when the provider says a paragraph starts at the caret: the break it adds there is
+    /// one the screen's render won't let split the secret, so the text around the caret is withheld.
+    @Test(arguments: [false, true])
+    func aSecretWrappedAtTheCaretIsRedactedWhole(paragraphAtTheCaret: Bool) throws {
         let head = "sk" + "-" + "a1B2c3D4e", tail = "5F6g7H8i9J0k1L2"
         let text = ("Key " + head + tail + " end") as NSString
         let caret = 4 + head.utf16.count
-        let field = MarkerField()
+        let field = MarkerField(paragraphs: paragraphAtTheCaret ? [0, caret] : [])
         let read = ScreenContextReader.valueCaretWindow(snapshot: {
             ScreenContextReader.valueSnapshot(markers: { (field.range(caret, caret), field.range(0, text.length)) }, parameterized: field.answer,
                                               characters: { (text.length, NSRange(location: 0, length: 0)) }, string: { range in
@@ -245,7 +268,7 @@ struct MarkerCaretSourceTests {
             })
         }, string: { text.substring(with: $0) as NSString }, focused: { true })
         let window = try #require(read)
-        #expect(window.parts == ["Key " + head, "", tail + " end"])
+        #expect(window.parts == ["Key " + head + (paragraphAtTheCaret ? "\n" : ""), "", tail + " end"])
         var context = ScreenContext(appName: "Example Browser", bundleID: "org.example.browser")
         context.textBeforeCaret = window.parts[0]
         context.selectedText = window.parts[1]
@@ -262,6 +285,8 @@ struct MarkerCaretSourceTests {
     /// ranges, no index conversion. A range keeps its markers in the order given, as a selection made
     /// backward does.
     private struct MarkerField {
+        /// Where its paragraphs start; none: it answers no paragraph.
+        var paragraphs: [Int] = []
         func marker(_ offset: Int) -> AXTextMarker {
             var value = offset
             return withUnsafeBytes(of: &value) { AXTextMarkerCreate(nil, $0.bindMemory(to: UInt8.self).baseAddress!, $0.count) }
@@ -279,6 +304,10 @@ struct MarkerCaretSourceTests {
             case "AXTextMarkerRangeForUnorderedTextMarkers":
                 let pair = (value as! NSArray).map { Self.offset($0 as! AXTextMarker) }
                 return range(pair.min()!, pair.max()!)
+            case "AXParagraphTextMarkerRangeForTextMarker":
+                let at = Self.offset(value as! AXTextMarker)
+                guard let start = paragraphs.last(where: { $0 <= at }) else { return nil }
+                return range(start, paragraphs.first(where: { $0 > at }) ?? at)
             default: return nil
             }
         }
