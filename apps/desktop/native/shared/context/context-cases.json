@@ -948,7 +948,7 @@
       }
     },
     {
-      "name": "a caret inside a secret gets no break, so the secret is redacted whole",
+      "name": "a caret starting a paragraph gets the break, wherever it is; the render takes it out where it splits a secret",
       "request": {
         "caretWindow": {
           "parts": [
@@ -967,7 +967,7 @@
       },
       "expected": {
         "parts": [
-          "Reply. password=synthetic",
+          "Reply. password=synthetic\n",
           "",
           "Secret123 after"
         ],
@@ -999,6 +999,80 @@
           " then more"
         ],
         "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a break before a caret inside a secret is taken out, so the secret is redacted whole",
+      "request": {
+        "blocks": [],
+        "caret": [
+          "Reply. password=synthetic\n",
+          "",
+          "Secret123 after"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "Reply. password=[redacted]",
+          "",
+          " after"
+        ]
+      }
+    },
+    {
+      "name": "a break before a caret inside a secret that starts in the block above is taken out",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Authorization: Bearer"
+          },
+          {
+            "kind": "caret",
+            "text": "ignored"
+          }
+        ],
+        "caret": [
+          "a\n",
+          "",
+          "1B2c3D4e5F6g7H8i9J0k1L2 thanks"
+        ]
+      },
+      "expected": {
+        "rendered": "Authorization: Bearer\n» [redacted]‸ thanks",
+        "caret": [
+          "[redacted]",
+          "",
+          " thanks"
+        ]
+      }
+    },
+    {
+      "name": "a break before a caret outside every secret stays",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Authorization: Bearer"
+          },
+          {
+            "kind": "caret",
+            "text": "ignored"
+          }
+        ],
+        "caret": [
+          "Reply. password=syntheticSecret123\n",
+          "",
+          " then more"
+        ]
+      },
+      "expected": {
+        "rendered": "Authorization: Bearer\n» Reply. password=[redacted]\n» ‸ then more",
+        "caret": [
+          "Reply. password=[redacted]\n",
+          "",
+          " then more"
+        ]
       }
     },
     {

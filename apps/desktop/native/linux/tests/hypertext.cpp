@@ -70,6 +70,13 @@ int main() {
             flat = flattenHypertext(sentenceEnd, 0, 100, 1000);
             expect(flat.caret && before(flat) == "Hi All,\n\nWhy does it move?", "a caret at a sentence's end stays on its line");
         }
+        // Chromium also puts the editor's own caret on the paragraph's embedded object; the caret
+        // is where the paragraph's element says, inside it.
+        auto bothCarets = paragraphs(false);
+        bothCarets.elements[0].caret = 2;
+        bothCarets.elements[3].caret = 4;
+        auto inner = flattenHypertext(bothCarets, 0, 100, 1000);
+        expect(inner.caret && before(inner) == "Hi All,\n\nWhy ", "a caret inside a paragraph is placed by the paragraph, not its object");
         auto selected = paragraphs(false);
         selected.elements[0].selection = std::pair{0, 3};
         selected.elements[1].selection = std::pair{3, 7};

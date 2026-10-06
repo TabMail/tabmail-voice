@@ -417,17 +417,8 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .chars()
             .last()
             .is_some_and(|last| !matches!(last, '\n' | '\r' | '\u{2028}' | '\u{2029}'));
-        // Never inside a secret: the joined parts are redacted with nothing between them, and a
-        // break there would split what the redactor has to see whole (a key soft-wrapped at the
-        // caret). A caret the redactor places inside a match, or a redaction that fails, gets none.
-        let outside_secret = || {
-            let caret = parts[0].encode_utf16().count();
-            matches!(
-                privacy::redact_anchored(&vec![vec![parts.concat()]], &[caret]),
-                Ok((_, anchors)) if anchors.first().is_some_and(Option::is_some)
-            )
-        };
-        if starts_paragraph && unbroken && outside_secret() {
+        // The render, which redacts the whole screen, takes it out again where it splits a secret.
+        if starts_paragraph && unbroken {
             parts[0].push('\n');
             if parts[0].len() > SOURCE_WINDOW_BYTES {
                 let first = parts[0].chars().next().map_or(0, char::len_utf8);
@@ -674,7 +665,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         return Err(1);
     }
     if let Some(caret_value) = request.get("caret").or(projected.then_some(&empty_caret)) {
-        let caret = read_caret(caret_value)?;
+        let mut caret = read_caret(caret_value)?;
         let block_source_bytes = blocks
             .iter()
             .filter(|b| b.kind != "caret")
@@ -706,6 +697,32 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .collect();
         if caret_index == blocks.len() {
             lines.push(caret.clone());
+        }
+        // A break just before the caret (the left-out one a caret window added, or the text's own)
+        // stays only where the caret, without it, is outside every secret on the screen: a break
+        // there would split what the redactor has to see whole, a key soft-wrapped at the caret or
+        // one in a field under its label's block. A caret the redactor places inside a match, or a
+        // redaction that fails, loses it (ADR-DESK-007, 2026-10-06).
+        if caret[0].ends_with('\n') {
+            let mut joined = lines.clone();
+            joined[caret_index][0].pop();
+            let anchor = joined[..caret_index]
+                .iter()
+                .map(|line| {
+                    line.iter()
+                        .map(|part| part.encode_utf16().count())
+                        .sum::<usize>()
+                        + 1
+                })
+                .sum::<usize>()
+                + joined[caret_index][0].encode_utf16().count();
+            if !matches!(
+                privacy::redact_anchored(&joined, &[anchor]),
+                Ok((_, anchors)) if anchors.first().is_some_and(Option::is_some)
+            ) {
+                caret[0].pop();
+                lines = joined;
+            }
         }
         let redacted = privacy::redact(&lines).map_err(|_| 3u32)?;
         let mut around = redacted[caret_index].clone();
@@ -901,6 +918,24 @@ mod budget_tests {
         assert!(kept.ends_with("x\n") && kept.len() <= SOURCE_WINDOW_BYTES && !kept.is_empty());
         assert_eq!(reply["selectionUnavailable"], false);
     }
+    /// The break at the limit costs the before-part its first character, so its start is no longer
+    /// known: a key there, its prefix cut off, must not reach the reply as plain text. The rest is
+    /// a few large graphemes, so all of it is shown.
+    #[test]
+    fn a_key_whose_prefix_the_break_cuts_off_is_not_shown() {
+        let head = "sk-A1b2C3d4E5f6G7h8I9j0K1. ";
+        let mark = format!("a{}", "\u{301}".repeat(99));
+        let mut before =
+            head.to_owned() + &mark.repeat((SOURCE_WINDOW_BYTES - head.len()) / mark.len());
+        before += &"b".repeat(SOURCE_WINDOW_BYTES - before.len());
+        assert_eq!(before.len(), SOURCE_WINDOW_BYTES);
+        let window = call(
+            json!({"caretWindow":{"parts":[before,""," after"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":true,"lineText":null}}}),
+        );
+        let reply = call(json!({"blocks":[],"caret":window["parts"]}));
+        assert!(reply["caret"][0].as_str().unwrap().ends_with("bbb\n"));
+        assert!(!reply.to_string().contains("G7h8I9j0"));
+    }
     /// A key soft-wrapped at a caret said to start a paragraph leaves the helper redacted whole:
     /// the break that would split it is not added, so neither half reaches the reply.
     #[test]
@@ -915,6 +950,21 @@ mod budget_tests {
             !text.contains("0123456789") && !text.contains("abcdefghij"),
             "{text}"
         );
+        assert!(text.contains(privacy::PLACEHOLDER), "{text}");
+    }
+    /// A key in a field under its label's block, with the caret said to start a paragraph inside
+    /// it: the caret's own text holds no secret, so only the whole screen shows that the break
+    /// would split one, and the render takes it out.
+    #[test]
+    fn a_secret_under_its_label_block_is_not_split_by_the_break() {
+        let window = call(
+            json!({"caretWindow":{"parts":["a","","1B2c3D4e5F6g7H8i9J0k1L2 thanks"],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":true,"line":false,"lineText":null}}}),
+        );
+        let reply = call(
+            json!({"blocks":[{"kind":"text","text":"Authorization: Bearer"},{"kind":"caret","text":"ignored"}],"caret":window["parts"]}),
+        );
+        let text = reply.to_string();
+        assert!(!text.contains("1B2c3D4"), "{text}");
         assert!(text.contains(privacy::PLACEHOLDER), "{text}");
     }
     #[test]

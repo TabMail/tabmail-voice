@@ -424,11 +424,13 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   first bytes, at most `caretLineBytes`), and the core's `caretWindow` adds the break left out
   when the caret starts a paragraph, or a line holding only a break, and the text before it ends
   in none. A line a soft wrap starts gets no break: a long link wrapped at the caret stays one
-  line. The break counts within the before-part's budget, and is never added at a caret inside a
-  secret: the caret parts are redacted joined, so a break inside a key wrapped at the caret would
-  split it into halves no pattern matches (a reviewer of the Mac's first version showed both halves
-  leaving unredacted); the core asks the redactor whether the caret is inside a match first, and a
-  failed redaction adds none. Owner, 2026-10-06: the paragraph rule
+  line. The break counts within the before-part's budget (one at the limit gives up the part's first
+  character, and its start is then unknown), and never stays at a caret inside a secret: a break
+  inside a key wrapped at the caret would split it into halves no pattern matches (a reviewer of the
+  Mac's first version showed both halves leaving unredacted), and so would one between a field's
+  key and its label in the block above. Only the whole screen shows the second, so the render
+  decides: it redacts the screen without a break just before the caret, and takes the break out
+  where the redactor places the caret inside a match, or the redaction fails. Owner, 2026-10-06: the paragraph rule
   is the stricter one and holds on every platform; the Mac's own rule (`MarkerCaretSource`) moves
   to the core's after the Chrome caret change lands. Left: a soft wrap inside a long word, and a
   break Chromium leaves out further back than the caret's line.)*
