@@ -18,8 +18,6 @@ use serde_json::{Value, json};
 
 /// The most elements one walk, or one look inside an element, visits.
 const NODE_BUDGET: u64 = 5_000;
-/// How long a screen read may walk, in milliseconds. It runs while the user speaks.
-const TIME_BUDGET_MILLISECONDS: u64 = 1_500;
 /// The most parents followed from the focused element up to its window (deep pages are ≈ 40).
 const FOCUS_DEPTH: u64 = 200;
 
@@ -257,15 +255,14 @@ fn census(request: &Value) -> Result<Value, u32> {
     })
 }
 
-/// `{"stop": {"nodes": n, "elapsed": ms, "textFull": bool}}`: why the walk stops before the next
-/// element, or null to go on: `text budget` (the screen's text is full), `node budget`, `time budget`.
+/// `{"stop": {"nodes": n, "textFull": bool}}`: why the walk stops before the next element, or null
+/// to go on: `text budget` (the screen's text is full) or `node budget`. A walk has no time limit:
+/// it runs while the user speaks, and the app takes a read only if it is done in time.
 fn stop(request: &Value) -> Result<Value, u32> {
     let reason = if flag(request, "textFull")? {
         Some("text budget")
     } else if number(request, "nodes")? >= NODE_BUDGET {
         Some("node budget")
-    } else if number(request, "elapsed")? > TIME_BUDGET_MILLISECONDS {
-        Some("time budget")
     } else {
         None
     };
@@ -281,7 +278,6 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
     let reply = match object.iter().next().ok_or(1u32)? {
         (name, Value::Bool(true)) if name == "limits" => json!({
             "nodeBudget": NODE_BUDGET,
-            "timeBudgetMilliseconds": TIME_BUDGET_MILLISECONDS,
             "focusDepth": FOCUS_DEPTH,
         }),
         (name, value) if name == "node" => node(value)?,

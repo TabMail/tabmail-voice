@@ -220,7 +220,7 @@ struct ScreenContextTests {
     private func walk(_ window: FakeElement, focused: FakeElement? = nil, focusPath: [FakeElement] = []) -> ScreenContext {
         var context = ScreenContext(appName: "Example")
         let read = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: window.frame, focused: focused,
-                                            focusPath: focusPath, excluding: ScreenExclusions(), started: Date(), into: &context)
+                                            focusPath: focusPath, excluding: ScreenExclusions(), into: &context)
         #expect(read)
         return context
     }
@@ -294,7 +294,7 @@ struct ScreenContextTests {
         var context = ScreenContext(appName: "Example")
         ScreenContextReader.readCaret(of: field, in: FakeScreenTree(), into: &context)
         #expect(ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: field, focusPath: [],
-                                         excluding: ScreenExclusions(), started: Date(), into: &context))
+                                         excluding: ScreenExclusions(), into: &context))
         #expect(context.textBeforeCaret.isEmpty && context.selectedText.isEmpty && context.textAfterCaret.isEmpty)
         #expect(try context.renderedText() == "Password\n» ‸")
         #expect(try !context.logDescription.contains("placeholder"))
@@ -465,7 +465,7 @@ struct ScreenContextTests {
         let window = FakeElement("AXWindow", children: [large, late])
         var context = ScreenContext(appName: "Synthetic")
         context.textBeforeCaret = "left"; context.selectedText = "chosen"; context.textAfterCaret = "right"
-        #expect(ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: nil, focusPath: [], excluding: ScreenExclusions(), started: Date(), into: &context))
+        #expect(ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: nil, focusPath: [], excluding: ScreenExclusions(), into: &context))
         #expect(context.textBudgetFull && late.textReads == 0)
         let shown = context.json
         #expect(shown["selectedText"]?.string == "chosen")
@@ -504,13 +504,13 @@ struct ScreenContextTests {
         context.textBeforeCaret = "Dear Alex,"
         context.selectedText = "draft"
         context.textAfterCaret = "Thanks"
-        context.stoppedEarly = "time budget"
+        context.stoppedEarly = "node budget"
         context.append(.heading, "Inbox")
         context.appendCaret()
 
         let text = try context.logDescription
 
-        #expect(text.hasPrefix("app Example (com.example.app), window title Inbox, host mail.example.com, terminal program vim, focused AXTextArea, stopped: time budget\n"))
+        #expect(text.hasPrefix("app Example (com.example.app), window title Inbox, host mail.example.com, terminal program vim, focused AXTextArea, stopped: node budget\n"))
         #expect(text.contains("--- text before the caret ---\nDear Alex,\n"))
         #expect(text.contains("--- selected text ---\ndraft\n"))
         #expect(text.contains("--- text after the caret ---\nThanks\n"))

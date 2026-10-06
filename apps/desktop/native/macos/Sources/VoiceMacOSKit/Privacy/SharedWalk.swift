@@ -41,7 +41,6 @@ enum SharedWalk {
     enum Outcome: String, Decodable { case read, refuse, marker }
     struct Limits: Decodable {
         var nodeBudget: Int
-        var timeBudgetMilliseconds: Int
         var focusDepth: Int
     }
     /// One step of a look inside an element for an excluded page. The core's `children` cap is
@@ -94,10 +93,9 @@ enum SharedWalk {
     }
 
     /// Why the walk stops before its next element, or nil to go on.
-    static func stop(nodes: Int, since started: Date, textFull: Bool) throws -> String? {
-        struct Request: Encodable { var nodes: Int; var elapsed: Int; var textFull: Bool }
+    static func stop(nodes: Int, textFull: Bool) throws -> String? {
+        struct Request: Encodable { var nodes: Int; var textFull: Bool }
         struct Reply: Decodable { var stopped: String? }
-        let elapsed = Int(max(0, Date().timeIntervalSince(started)) * 1000)
-        return try call(["stop": Request(nodes: nodes, elapsed: elapsed, textFull: textFull)], Reply.self).stopped
+        return try call(["stop": Request(nodes: nodes, textFull: textFull)], Reply.self).stopped
     }
 }

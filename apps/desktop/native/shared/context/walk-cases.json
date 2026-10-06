@@ -8,7 +8,6 @@
       },
       "expected": {
         "nodeBudget": 5000,
-        "timeBudgetMilliseconds": 1500,
         "focusDepth": 200
       }
     },
@@ -1535,11 +1534,10 @@
       "refused": true
     },
     {
-      "name": "a walk goes on within its budgets",
+      "name": "a walk goes on within its budget, however long it has run",
       "request": {
         "stop": {
-          "nodes": 4999,
-          "elapsed": 1500
+          "nodes": 4999
         }
       },
       "expected": {
@@ -1550,8 +1548,7 @@
       "name": "a walk stops at the node budget",
       "request": {
         "stop": {
-          "nodes": 5000,
-          "elapsed": 0
+          "nodes": 5000
         }
       },
       "expected": {
@@ -1559,23 +1556,10 @@
       }
     },
     {
-      "name": "a walk stops past its time",
-      "request": {
-        "stop": {
-          "nodes": 0,
-          "elapsed": 1501
-        }
-      },
-      "expected": {
-        "stopped": "time budget"
-      }
-    },
-    {
       "name": "a full text budget stops the walk first",
       "request": {
         "stop": {
           "nodes": 5000,
-          "elapsed": 1501,
           "textFull": true
         }
       },
@@ -1584,10 +1568,10 @@
       }
     },
     {
-      "name": "a stop without the time is refused",
+      "name": "a stop without the count is refused",
       "request": {
         "stop": {
-          "nodes": 0
+          "textFull": false
         }
       },
       "refused": true
@@ -1597,8 +1581,7 @@
       "request": {
         "limits": true,
         "stop": {
-          "nodes": 0,
-          "elapsed": 0
+          "nodes": 0
         }
       },
       "refused": true

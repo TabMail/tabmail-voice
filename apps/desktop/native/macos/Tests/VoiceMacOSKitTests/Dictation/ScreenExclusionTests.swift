@@ -242,7 +242,7 @@ struct ScreenExclusionTests {
                       excluding hosts: [String]) -> (read: Bool, text: String) {
         var context = ScreenContext(appName: "Example")
         let read = ScreenContextReader.walk(window, in: FakeScreenTree(), frame: nil, focused: focused, focusPath: focusPath,
-                                            excluding: ScreenExclusions(hosts: hosts), started: Date(), into: &context)
+                                            excluding: ScreenExclusions(hosts: hosts), into: &context)
         return (read, try! context.renderedText())
     }
 
@@ -315,33 +315,25 @@ struct ScreenExclusionTests {
 
     private static let caret = ["caretBefore": "account 1234 ", "caretSelected": "balance", "caretAfter": " 99"]
 
-    private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement], excluding hosts: [String],
-                        started: Date = Date()) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
+    private func gather(_ window: FakeElement?, focused: FakeElement?, focusPath: [FakeElement],
+                        excluding hosts: [String]) -> (read: Bool, context: ScreenContext, asked: RecordingTree.Asked) {
         let start = ScreenContext(appName: "Example")
         let tree = RecordingTree()
         let context = ScreenContextReader.gather(window: window, focused: focused, focusPath: focusPath, in: tree,
-                                                 excluding: ScreenExclusions(hosts: hosts), started: started, from: start)
+                                                 excluding: ScreenExclusions(hosts: hosts), from: start)
         return (context != nil, context ?? start, tree.asked)
     }
 
-    /// A window too large or too slow to walk to its end keeps what was read: only a page of an
-    /// excluded website refuses a read, not the budget.
+    /// A window too large to walk to its end keeps what was read: only a page of an excluded
+    /// website refuses a read, not the budget. The walk has no time limit.
     @Test func aReadStoppedByItsBudgetIsKept() throws {
         let texts = (0 ..< HelperConfig.contextNodeBudget + 10).map { FakeElement("AXStaticText", [kAXValueAttribute: "line \($0)"]) }
-        // Started in the future, so a loaded test machine never runs out of time before the nodes.
         let large = gather(FakeElement("AXWindow", [kAXTitleAttribute: "Large"], children: texts), focused: nil, focusPath: [],
-                           excluding: ["example.com"], started: .distantFuture)
+                           excluding: ["example.com"])
         #expect(large.read)
         #expect(large.context.stoppedEarly == "node budget")
         #expect(large.context.windowTitle == "Large")
         #expect(large.context.nodesVisited == HelperConfig.contextNodeBudget)
-
-        let window = FakeElement("AXWindow", [kAXTitleAttribute: "Slow"], children: [FakeElement("AXStaticText", [kAXValueAttribute: "line"])])
-        let slow = gather(window, focused: nil, focusPath: [], excluding: ["example.com"], started: .distantPast)
-        #expect(slow.read)
-        #expect(slow.context.stoppedEarly == "time budget")
-        #expect(slow.context.windowTitle == "Slow")
-        #expect(gather(window, focused: nil, focusPath: [], excluding: ["example.com"]).context.stoppedEarly == nil)
     }
 
     /// With the caret in a page of an excluded website, nothing is asked of the app: not the text
@@ -866,13 +858,13 @@ struct ScreenExclusionTests {
         #expect(gather(other, focused: group, focusPath: [page, other], excluding: ["example.net"]).read)
     }
 
-    /// Past the walk's budgets the focused element is taken to hold no excluded page, as a walk
-    /// stopped by them keeps its read.
+    /// Past the walk's node budget, or the time a look is given (the screen read gives it none),
+    /// the focused element is taken to hold no excluded page, as a walk stopped by them keeps its read.
     @Test func theLookInsideTheFocusedElementKeepsToTheBudgets() throws {
         let frame = FakeElement("AXWebArea", ["host": "pay.example.com"])
-        func holds(_ element: FakeElement, intoPages: Bool = true, since started: Date = Date()) -> Bool {
+        func holds(_ element: FakeElement, intoPages: Bool = true, within seconds: Double = .infinity, since started: Date = Date()) -> Bool {
             ScreenContextReader.holdsExcludedPage(element, in: FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
-                                                  intoPages: intoPages, within: HelperConfig.contextTimeBudget, since: started)
+                                                  intoPages: intoPages, within: seconds, since: started)
         }
         // The last child is looked at first: the page is reached after every other child.
         let fillers = (0 ..< HelperConfig.contextNodeBudget).map { _ in FakeElement("AXGroup") }
@@ -881,8 +873,9 @@ struct ScreenExclusionTests {
         // Only visits count: children waiting past the budget do not hide a page the look reaches.
         #expect(holds(FakeElement("AXGroup", children: fillers + [frame])))
         #expect(holds(FakeElement("AXGroup", children: fillers + [FakeElement("AXGroup"), frame])))
-        #expect(!holds(FakeElement("AXGroup", children: [frame]), since: .distantPast))
-        #expect(holds(FakeElement("AXGroup", children: [frame])))
+        #expect(!holds(FakeElement("AXGroup", children: [frame]), within: HelperConfig.focusedFieldPageScanBudget, since: .distantPast))
+        #expect(holds(FakeElement("AXGroup", children: [frame]), within: HelperConfig.focusedFieldPageScanBudget))
+        #expect(holds(FakeElement("AXGroup", children: [frame]), since: .distantPast))
         #expect(!holds(frame))
         // A page framed in one that is not excluded is found, unless pages are not looked into.
         let outer = FakeElement("AXGroup", children: [FakeElement("AXWebArea", ["host": "example.org"], children: [frame])])
@@ -891,11 +884,11 @@ struct ScreenExclusionTests {
         #expect(holds(FakeElement("AXGroup", children: [FakeElement("AXGroup", children: [frame])]), intoPages: false))
         // A field is read only when all of it was looked through: out of time or of elements, with a
         // page behind them or none, it is taken to hold one.
-        func fieldHolds(_ element: FakeElement, since started: Date = Date()) -> Bool {
+        func fieldHolds(_ element: FakeElement, within seconds: Double = .infinity, since started: Date = Date()) -> Bool {
             ScreenContextReader.lookForExcludedPage(in: element, FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
-                                                    within: HelperConfig.contextTimeBudget, since: started) != ScreenContextReader.PageLook.none
+                                                    within: seconds, since: started) != ScreenContextReader.PageLook.none
         }
-        #expect(fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")]), since: .distantPast))
+        #expect(fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")]), within: HelperConfig.focusedFieldPageScanBudget, since: .distantPast))
         #expect(!fieldHolds(FakeElement("AXTextArea", children: [FakeElement("AXGroup")])))
         #expect(fieldHolds(FakeElement("AXTextArea", children: fillers + [FakeElement("AXGroup")])))
         #expect(!fieldHolds(FakeElement("AXTextArea", children: fillers)))

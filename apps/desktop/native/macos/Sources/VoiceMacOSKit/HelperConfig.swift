@@ -20,11 +20,10 @@ enum HelperConfig {
     /// context (seconds). macOS applies it to that element only; the elements reached from it
     /// (focused field, window, children) wait up to the system-wide timeout.
     static let contextLookupTimeout: Float = 0.25
-    /// The walk of the focused window stops after this many elements…
+    /// The walk of the focused window stops after this many elements, the shared core's
+    /// (ADR-DESK-054). It has no time limit: it runs in voice-screen-reader while the user speaks,
+    /// and the app takes the read only if it is done in time.
     static var contextNodeBudget: Int { SharedWalk.limits.nodeBudget }
-    /// …or after this long (seconds). It runs in the background while the user speaks. Both are
-    /// the shared core's (ADR-DESK-054).
-    static var contextTimeBudget: Double { Double(SharedWalk.limits.timeBudgetMilliseconds) / 1000 }
     /// Most parents followed from the focused element up to its window (deep web pages ≈ 40).
     static var contextMaxFocusDepth: Int { SharedWalk.limits.focusDepth }
     /// Each AX role as one of the shared core's roles, which decide how the walk reads it
