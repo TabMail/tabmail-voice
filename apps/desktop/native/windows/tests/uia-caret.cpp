@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "uia_caret_source.h"
 #include "edit_caret_source.h"
+#include "accessible_text.h"
 #include <memory>
 #include <iostream>
 
@@ -56,7 +57,7 @@ struct Selection final : IUIAutomationTextRangeArray {
     Provider& owner;
     explicit Selection(Provider& p) : owner(p) {}
     UNKNOWN_INTERFACE(IUIAutomationTextRangeArray)
-    HRESULT STDMETHODCALLTYPE get_Length(int* count) override { *count = 1; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_Length(int* count) override;
     HRESULT STDMETHODCALLTYPE GetElement(int index, IUIAutomationTextRange** range) override;
 };
 struct Visible final : IUIAutomationTextRangeArray {
@@ -72,6 +73,8 @@ struct Provider final : IUIAutomationTextPattern2 {
     unsigned reads = 0, outsideReads = 0, documentReads = 0;
     std::optional<int> reportedDocumentEnd;
     bool changeSelection = false, changeText = false;
+    // The provider gives no selection once the field has been read.
+    bool loseSelection = false, selectionLost = false;
     bool pattern2 = false, caretActive = true, changeCaret = false;
     int caretPosition = 0, caretWidth = 0, caretReads = 0;
     HRESULT caretStatus = S_OK;
@@ -149,6 +152,7 @@ HRESULT Range::CompareEndpoints(TextPatternRangeEndpoint a, IUIAutomationTextRan
     return S_OK;
 }
 HRESULT Range::Clone(IUIAutomationTextRange** result) { *result = owner.range(start, end); return S_OK; }
+HRESULT Selection::get_Length(int* count) { *count = owner.selectionLost ? 0 : 1; return S_OK; }
 HRESULT Selection::GetElement(int index, IUIAutomationTextRange** result) {
     if (index != 0) return E_INVALIDARG;
     *result = owner.range(owner.selectedStart, owner.selectedEnd); return S_OK;
@@ -181,6 +185,7 @@ HRESULT Range::GetText(int maximum, BSTR* result) {
     *result = SysAllocStringLen(owner.text.data() + start, count);
     if (owner.misread == std::array<int,2>{start, end} && count) (*result)[0] = L'Z';
     if (owner.changeSelection) { ++owner.selectedStart; ++owner.selectedEnd; owner.changeSelection = false; }
+    if (owner.loseSelection) owner.selectionLost = true;
     if (owner.changeText) { owner.text.at(static_cast<size_t>(owner.selectedStart)) = L'Z'; owner.changeText = false; }
     return *result || count == 0 ? S_OK : E_OUTOFMEMORY;
 }
@@ -191,6 +196,8 @@ struct EditFixture {
     WNDPROC original = nullptr;
     int reads = 0;
     bool moveSelection = false, replaceText = false;
+    // A selection the control reports in place of its own (a provider giving an invalid one).
+    std::optional<std::pair<DWORD, DWORD>> reportedSelection;
     EditFixture(const std::wstring& value, DWORD start, DWORD end, DWORD extraStyle = 0) {
         window = CreateWindowExW(0, L"Edit", L"", WS_POPUP | ES_MULTILINE | ES_AUTOHSCROLL | extraStyle,
             0, 0, 400, 200, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
@@ -204,6 +211,12 @@ struct EditFixture {
     ~EditFixture() { DestroyWindow(window); }
     static LRESULT CALLBACK dispatch(HWND window, UINT message, WPARAM wp, LPARAM lp) {
         auto& fixture = *reinterpret_cast<EditFixture*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == EM_GETSEL && fixture.reportedSelection) {
+            const auto [start, end] = *fixture.reportedSelection;
+            if (wp) *reinterpret_cast<DWORD*>(wp) = start;
+            if (lp) *reinterpret_cast<DWORD*>(lp) = end;
+            return MAKELRESULT(start, end);
+        }
         const auto result = CallWindowProcW(fixture.original, window, message, wp, lp);
         if (message == WM_GETTEXT) {
             ++fixture.reads;
@@ -236,6 +249,10 @@ static void editContracts() {
     EditFixture huge(std::wstring(limit + 1, L'x'), 0, 1);
     result = huge.read();
     expect(result && result->selectionUnavailable && huge.reads == 0, "Edit whole-transfer overflow refused before text allocation");
+    EditFixture hugeCaret(std::wstring(limit + 1, L'x'), 0, 0);
+    result = hugeCaret.read();
+    expect(result && !result->selectionUnavailable && result->parts == std::array<std::string, 3>{"", "", ""} && hugeCaret.reads == 0,
+        "Edit whole-transfer overflow at a caret is an empty window, never read");
     EditFixture password(L"synthetic", 0, 9, ES_PASSWORD);
     expect(!password.read() && password.reads == 0, "Edit password never read");
     EditFixture moved(L"before chosen after", 7, 13); moved.moveSelection = true;
@@ -244,7 +261,86 @@ static void editContracts() {
     EditFixture changed(L"before chosen after", 7, 13); changed.replaceText = true;
     result = changed.read();
     expect(result && result->selectionUnavailable, "Edit same-length content change refused");
+    // A caret selects nothing: one whose field changed while read is an empty window, not a withheld
+    // selection, so agent mode writes at it rather than refuse a selection there is none of.
+    EditFixture caretMoved(L"before chosen after", 7, 7); caretMoved.moveSelection = true;
+    result = caretMoved.read();
+    expect(result && !result->selectionUnavailable && result->parts == std::array<std::string, 3>{"", "", ""}, "Edit changed caret is an empty window");
+    // A selection the control reports outside its text, or backward, is not known: withheld, never read.
+    for (const auto reported : {std::pair<DWORD, DWORD>{9, 12}, std::pair<DWORD, DWORD>{3, 1}}) {
+        EditFixture invalid(L"plain", 0, 0); invalid.reportedSelection = reported;
+        result = invalid.read();
+        expect(result && result->selectionUnavailable && result->parts[1] == "[redacted]" && invalid.reads == 0, "Edit invalid selection withheld");
+    }
     expect(GetForegroundWindow() == foreground, "hidden Edit tests preserve foreground");
+}
+// An IA2 field (Firefox, Chromium): a caret, or one selection, that may move while it is read.
+struct Ia2Text final : IAccessibleText {
+    std::wstring text;
+    long caret = 0, selections = 0, start = 0, end = 0;
+    bool moveWhileRead = false;
+    unsigned reads = 0;
+    Ia2Text(std::wstring value, long from, long to) : text(std::move(value)), caret(to), selections(from == to ? 0 : 1), start(from), end(to) {}
+    UNKNOWN_INTERFACE(IAccessibleText)
+    HRESULT STDMETHODCALLTYPE get_nCharacters(long* count) override { *count = static_cast<long>(text.size()); return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_nSelections(long* count) override { *count = selections; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_caretOffset(long* offset) override { *offset = caret; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_selection(long index, long* from, long* to) override {
+        if (index < 0 || index >= selections) return E_INVALIDARG;
+        *from = start; *to = end; return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_text(long from, long to, BSTR* result) override {
+        ++reads;
+        if (from < 0 || to < from || to > static_cast<long>(text.size())) return E_INVALIDARG;
+        *result = SysAllocStringLen(text.data() + from, static_cast<UINT>(to - from));
+        if (moveWhileRead) { ++caret; ++start; ++end; moveWhileRead = false; }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE addSelection(long, long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_attributes(long, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_characterExtents(long, enum IA2CoordinateType, long*, long*, long*, long*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_offsetAtPoint(long, long, enum IA2CoordinateType, long*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_textBeforeOffset(long, enum IA2TextBoundaryType, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_textAfterOffset(long, enum IA2TextBoundaryType, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_textAtOffset(long, enum IA2TextBoundaryType, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE removeSelection(long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE setCaretOffset(long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE setSelection(long, long, long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE scrollSubstringTo(long, long, enum IA2ScrollType) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE scrollSubstringToPoint(long, long, enum IA2CoordinateType, long, long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_newText(IA2TextSegment*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_oldText(IA2TextSegment*) override { return E_NOTIMPL; }
+    CaretSource read(bool stillValid = true) { return AccessibleText::read(this, [&] { return stillValid; }); }
+};
+static void accessibleTextContracts() {
+    const std::array<std::string, 3> empty{"", "", ""};
+    Ia2Text caret(L"before after", 7, 7);
+    auto result = caret.read();
+    expect(!result.selectionUnavailable && result.parts[1].empty() && result.parts[0] + result.parts[2] == "before after", "IA2 caret read");
+    Ia2Text selected(L"before chosen after", 7, 13);
+    result = selected.read();
+    expect(!result.selectionUnavailable && result.parts[1] == "chosen", "IA2 selection read");
+    // A field that changed while read: a caret selects nothing, so its window is empty, not a withheld selection.
+    Ia2Text caretMoved(L"before after", 7, 7); caretMoved.moveWhileRead = true;
+    result = caretMoved.read();
+    expect(!result.selectionUnavailable && result.parts == empty, "IA2 changed caret is an empty window");
+    Ia2Text selectionMoved(L"before chosen after", 7, 13); selectionMoved.moveWhileRead = true;
+    result = selectionMoved.read();
+    expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "IA2 changed selection withheld");
+    // Focus that left the field while it was read is the same: nothing kept, a selection withheld.
+    Ia2Text caretLeft(L"before after", 7, 7);
+    result = caretLeft.read(false);
+    expect(!result.selectionUnavailable && result.parts == empty, "IA2 caret of a field no longer focused is an empty window");
+    Ia2Text selectionLeft(L"before chosen after", 7, 13);
+    result = selectionLeft.read(false);
+    expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "IA2 selection of a field no longer focused withheld");
+    // A selection that is not known (several, outside the text, backward, a caret past the end): withheld, never read.
+    Ia2Text several(L"before chosen after", 7, 13); several.selections = 2;
+    Ia2Text outside(L"plain", 9, 12), backward(L"plain", 3, 1), pastEnd(L"plain", 9, 9);
+    for (auto* unknown : {&several, &outside, &backward, &pastEnd}) {
+        result = unknown->read();
+        expect(result.selectionUnavailable && result.parts[1] == "[redacted]" && unknown->reads == 0, "IA2 unknown selection withheld");
+    }
 }
 static void viewportContracts() {
     const auto capture = [](Provider& p, bool focused = true, size_t budget = 262144) {
@@ -440,6 +536,20 @@ int main() {
         expect(moved.read().selectionUnavailable, "changed selection refused");
         Provider changed(L"before chosen after", 7, 13); changed.changeText = true;
         expect(changed.read().selectionUnavailable, "same-length selected text change refused");
+        Provider caretMoved(L"before chosen after", 7, 7); caretMoved.changeSelection = true;
+        result = caretMoved.read();
+        expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"", "", ""}, "changed caret is an empty window");
+        // A selection moved out of the field, or one the provider no longer gives, is withheld; a caret
+        // the provider no longer gives is an empty window.
+        Provider movedOut(L"before chosen after", 13, 19); movedOut.changeSelection = true;
+        result = movedOut.read();
+        expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "selection moved out of the field withheld");
+        Provider selectionLost(L"before chosen after", 7, 13); selectionLost.loseSelection = true;
+        result = selectionLost.read();
+        expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "selection the provider no longer gives withheld");
+        Provider caretLost(L"before chosen after", 7, 7); caretLost.loseSelection = true;
+        result = caretLost.read();
+        expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"", "", ""}, "caret the provider no longer gives is an empty window");
         Provider page(L"outside " + selection + L" outside", 8, 8 + static_cast<int>(selection.size()));
         expect(page.readPage() == std::optional<std::string>(std::string(20001, 's')), "page selection remains complete beyond old limit");
         expect(page.reads == 2 && std::all_of(page.ranges.begin(), page.ranges.end(), [&](const auto& range) {
@@ -559,6 +669,7 @@ int main() {
             "only the block starts near the caret are looked at");
         viewportContracts();
         editContracts();
+        accessibleTextContracts();
         std::cout << "UIA and Edit caret acquisition contracts passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

@@ -391,6 +391,26 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
     Ok(changed)
 }
 
+/// What stands for the text around a caret that is withheld, or that the adapter could not read
+/// (`caretUnread`). With text selected, the selection is withheld (the placeholder,
+/// `selectionUnavailable`), so agent mode's Edit refuses rather than paste a rewrite of text it never
+/// saw. With nothing selected the window is empty: a placeholder there made the app take the caret
+/// for a hidden selection, so agent mode chose Edit and refused to write at a caret a dictation
+/// pastes at (Firefox on the Mac, 2026-10-06).
+pub(crate) fn unread_caret(selects_text: bool) -> Result<Vec<u8>, u32> {
+    serde_json::to_vec(&json!({
+        "parts": unread_parts(selects_text),
+        "selectionUnavailable": selects_text,
+    }))
+    .map_err(|_| 3)
+}
+
+/// The three parts of a caret window that is unread or withheld (`unread_caret`); the render's own
+/// withheld caret uses them too.
+pub(crate) fn unread_parts(selects_text: bool) -> [String; 3] {
+    [String::new(), if selects_text { privacy::PLACEHOLDER } else { "" }.to_owned(), String::new()]
+}
+
 /// Inputs have already passed the native provider's pre-read privacy checks.
 /// With caret supplied, redact the combined screen before adding layout markers.
 pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
@@ -505,6 +525,11 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         }))
         .map_err(|_| 3);
     }
+    // The adapter could not read the text around the caret; it says whether text is selected (true
+    // when it doesn't know).
+    if let Some(unread) = request.get("caretUnread") {
+        return unread_caret(unread["selectsText"].as_bool().ok_or(1u32)?);
+    }
     if let Some(window) = request.get("caretWindow") {
         let mut parts = read_caret(&window["parts"])?;
         let mut start_known = window["startKnown"].as_bool().ok_or(1u32)?;
@@ -597,10 +622,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         // for an adjacent side. Refuse the whole caret window in this case;
         // other independently approved screen blocks remain available.
         if caret_withheld {
-            return serde_json::to_vec(
-                &json!({"parts":["",if unavailable { privacy::PLACEHOLDER } else { "" },""],"selectionUnavailable":unavailable}),
-            )
-            .map_err(|_| 3);
+            return unread_caret(unavailable);
         }
         let mut offset = 0;
         let mut retained: Vec<String> = parts
@@ -916,12 +938,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             }
         }
         let mut around = if withheld {
-            let selected = if caret[1].is_empty() {
-                ""
-            } else {
-                privacy::PLACEHOLDER
-            };
-            vec![String::new(), selected.to_owned(), String::new()]
+            unread_parts(!caret[1].is_empty()).to_vec()
         } else {
             redacted[caret_index].clone()
         };
@@ -1097,6 +1114,12 @@ mod budget_tests {
     const SCREEN: usize = 256 * 1024;
     fn call(value: Value) -> Value {
         serde_json::from_slice(&process(&serde_json::to_vec(&value).unwrap()).unwrap()).unwrap()
+    }
+    #[test]
+    fn an_unread_caret_must_say_whether_text_is_selected() {
+        for request in [json!({"caretUnread":{}}), json!({"caretUnread":{"selectsText":"yes"}}), json!({"caretUnread":true})] {
+            assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(1), "{request}");
+        }
     }
     #[test]
     fn caret_window_keeps_complete_selection_and_maps_unicode_source_edges() {

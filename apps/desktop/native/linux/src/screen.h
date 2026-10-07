@@ -374,7 +374,7 @@ public:
             return std::array<int, 4>{count, selections, selected->start_offset, selected->end_offset};
         };
         const auto initial = snapshot();
-        if (!initial) return CaretText::unavailable();
+        if (!initial) return CaretText::unread(true);
         const auto from = (*initial)[2], to = (*initial)[3];
         // The selected interval is the entire source domain: Rust cannot request
         // adjacent terminal text. Native code only translates scalar offsets.
@@ -385,10 +385,10 @@ public:
                 return range(text, from + static_cast<int>(begin), from + static_cast<int>(end));
             });
         } catch (const ScreenBudgetExceeded&) { throw; }
-        catch (const std::exception&) { return CaretText::unavailable(); }
+        catch (const std::exception&) { return CaretText::unread(from < to); }
         const auto final = snapshot();
         check();
-        if (final != initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unavailable();
+        if (final != initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unread(from < to);
         check();
         return result;
     }
@@ -396,7 +396,6 @@ public:
         check();
         auto text = own(atspi_accessible_get_text_iface(node.get()));
         if (!text) return {};
-        const auto unavailable = [] { return CaretText::unavailable(); };
         const auto snapshot = [&]() -> std::optional<std::array<int, 5>> {
             Error error; check();
             const auto count = atspi_text_get_character_count(text.get(), &error.value); error.check(); check();
@@ -416,26 +415,28 @@ public:
             return std::array<int, 5>{count, offset, selections, from, to};
         };
         const auto initial = snapshot();
-        if (!initial) return unavailable();
+        if (!initial) return CaretText::unread(true);
+        // A caret (no selection, or an empty one) selects nothing.
+        const bool selectsText = (*initial)[3] < (*initial)[4];
         // Only a rich editor's caret is read through its elements: a page in focus (Chromium gives its
         // document hypertext too) is read by its own text, as any element, not walked element by element.
         if (hasLinks(node) && editable(node)) {
             const auto rich = hypertext(node);
-            if (!rich || !rich->complete) return unavailable();
+            if (!rich || !rich->complete) return CaretText::unread(selectsText);
             const auto [count, offset, selections, from, to] = *initial;
             (void)count; (void)offset;
             // A selection the elements' parts lost is not read as none.
-            if (selections && from < to && rich->selection && rich->selection->first == rich->selection->second) return unavailable();
+            if (selections && from < to && rich->selection && rich->selection->first == rich->selection->second) return CaretText::unread(true);
             // The root's selection is in its own offsets; the elements' own parts place it.
             std::optional<std::pair<size_t, size_t>> range;
             if (selections && rich->selection) range = rich->selection;
             else if (!selections && rich->caret) range = std::pair{*rich->caret, *rich->caret};
-            if (!range) return unavailable();
+            if (!range) return CaretText::unread(selectsText);
             const auto result = readScalarCaret(rich->length, range->first, range->second,
                 [&](size_t begin, size_t end) { return scalarSlice(rich->text, begin, end); });
             const auto final = snapshot();
             check();
-            if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return unavailable();
+            if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unread(selectsText);
             return result;
         }
         const auto [count, offset, selections, from, to] = *initial;
@@ -446,7 +447,7 @@ public:
         });
         const auto final = snapshot();
         check();
-        if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return unavailable();
+        if (!final || *final != *initial || !state(node, ATSPI_STATE_FOCUSED)) return CaretText::unread(selectsText);
         check();
         return result;
     }

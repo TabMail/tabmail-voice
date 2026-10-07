@@ -15,7 +15,8 @@ enum BoundedCaretSource {
                      caretEndsLine: Bool = false, range: (NSRange) -> NSString?) throws -> SharedContext.CaretWindow {
         guard count >= 0, selection.location >= 0, selection.length >= 0,
               selection.location <= count, selection.length <= count - selection.location else {
-            return SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
+            // A selection outside the field: what is selected is not known.
+            return try .unread(selectsText: true)
         }
         let starts = try startsParagraph.map { paragraph in
             try JSONSerialization.data(withJSONObject: ["paragraph": paragraph, "line": false, "lineText": NSNull()])

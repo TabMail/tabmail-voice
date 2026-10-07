@@ -111,13 +111,46 @@ int main() {
             expect(caret && caret->parts[1] == "All," + added + "\nWhy", "a selection across paragraphs is read as selected");
         }
         {
-            // A rich editor whose caret moves while it is read is unavailable.
+            // A rich editor whose caret moves while it is read: a caret selects nothing, so the
+            // window is empty rather than a withheld selection, and agent mode writes at it.
             auto [root, lines] = editor(0, 2);
             voice::LiveScreenTree tree(root);
             changed = root.get(); readsBeforeChange = 0;
             const auto caret = tree.caret(root);
             readsBeforeChange = -1;
-            expect(caret && caret->selectionUnavailable, "a caret that moved while read is unavailable");
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret that moved while read is an empty window");
+        }
+        {
+            // A selection that moves while it is read is withheld: Edit must not rewrite text it never saw.
+            auto [root, lines] = editor(2, 3);
+            at(root.get()).selection = std::array{0, 3};
+            at(lines[0]).selection = std::array{3, 7};
+            at(lines[1]).selection = std::array{0, 1};
+            at(lines[2]).selection = std::array{0, 3};
+            voice::LiveScreenTree tree(root);
+            changed = root.get(); readsBeforeChange = 0;
+            const auto caret = tree.caret(root);
+            readsBeforeChange = -1;
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a selection that moved while read is withheld");
+        }
+        {
+            // A caret no element places (the line it is in reports one past its own text) is not
+            // read, and selects nothing: an empty window.
+            auto [root, lines] = editor(1, 5);
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret no element places is an empty window");
+        }
+        {
+            // A selection no element places (each line reports its part outside its own text) is withheld.
+            auto [root, lines] = editor(2, 3);
+            at(root.get()).selection = std::array{0, 3};
+            at(lines[0]).selection = std::array{10, 12};
+            at(lines[1]).selection = std::array{5, 6};
+            at(lines[2]).selection = std::array{30, 31};
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a selection no element places is withheld");
         }
         {
             // A link in a paragraph joins its line; one whose text is inline is read as it is.
@@ -141,7 +174,7 @@ int main() {
         }
         {
             // An element holding more than the read may take is not asked for its text: the walk
-            // reads nothing of it, and a caret in it is unavailable.
+            // reads nothing of it, and a caret in it, selecting nothing, is an empty window.
             const auto bytes = voice::core::request({{"limits", true}}, voice_core_context_json).at("caretSourceBytes").get<size_t>();
             auto large = element({std::string(bytes + 1, 'x'), 5, std::nullopt, {}, "block"});
             auto root = voice::own(element({object, 0, std::nullopt, {{0, large}}, "block"}));
@@ -150,10 +183,20 @@ int main() {
             expect(!tree.screenText(root) && largestRead <= 1, "a rich text too large is not read");
             expect(!tree.field(root, std::numeric_limits<int>::max()) && largestRead <= 1, "a rich field too large is not read by its value");
             const auto caret = tree.caret(root);
-            expect(caret && caret->selectionUnavailable && largestRead <= 1, "a caret in a rich text too large is unavailable");
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""} && largestRead <= 1, "a caret in a rich text too large is an empty window");
             voice::VisibleContext context;
             tree.appendFieldSource(root, voice::ContextFrame{0, 0, 90, 80}, context, voice::ContextFrame{10, 20, 100, 100});
             expect(context.render().find("xxxx") == std::string::npos && largestRead <= 1, "a rich field too large is not read");
+        }
+        {
+            // The same rich text too large to read, with text selected: the selection is withheld.
+            const auto bytes = voice::core::request({{"limits", true}}, voice_core_context_json).at("caretSourceBytes").get<size_t>();
+            auto large = element({std::string(bytes + 1, 'x'), -1, std::nullopt, {}, "block"});
+            auto root = voice::own(element({object, 0, std::array{0, 1}, {{0, large}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            largestRead = 0;
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]" && largestRead <= 1, "a selection in a rich text too large is withheld");
         }
         {
             // A rich field within the read's bytes but holding more than a field is read whole up
@@ -184,7 +227,7 @@ int main() {
             linkFetches = 0;
             expect(!tree.screenText(root) && !tree.field(root, std::numeric_limits<int>::max()), "a rich text with too many elements is not read");
             const auto caret = tree.caret(root);
-            expect(caret && caret->selectionUnavailable, "a caret in a rich text with too many elements is unavailable");
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret in a rich text with too many elements is an empty window");
             expect(linkFetches == 0, "the links of a rich text with too many elements are never fetched");
         }
         {
@@ -194,7 +237,15 @@ int main() {
             voice::LiveScreenTree tree(root);
             expect(!tree.screenText(root) && !tree.field(root, 100), "a malformed rich text is not read");
             const auto caret = tree.caret(root);
-            expect(caret && caret->selectionUnavailable, "a caret in a malformed rich text is unavailable");
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret in a malformed rich text is an empty window");
+        }
+        {
+            // A malformed rich text with text selected: the selection is withheld.
+            auto child = element({"x", -1, std::nullopt, {}, "inline"});
+            auto root = voice::own(element({"ab", 0, std::array{0, 1}, {{5, child}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a selection in a malformed rich text is withheld");
         }
         {
             // A selection the elements' parts leave empty, while the editor reports one, is not
@@ -204,6 +255,25 @@ int main() {
             voice::LiveScreenTree tree(root);
             const auto caret = tree.caret(root);
             expect(caret && caret->selectionUnavailable, "a selection the elements lost is unavailable");
+        }
+        {
+            // A plain field (no elements) whose caret moves while it is read: an empty window, as a
+            // rich editor's, so agent mode writes at it.
+            auto root = voice::own(element({"Hello there", 5, std::nullopt, {}, "block"}));
+            voice::LiveScreenTree tree(root);
+            changed = root.get(); readsBeforeChange = 0;
+            const auto caret = tree.caret(root);
+            readsBeforeChange = -1;
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a plain caret that moved while read is an empty window");
+        }
+        {
+            // A plain field whose selection moves while it is read: the selection is withheld.
+            auto root = voice::own(element({"Hello there", 5, std::array{0, 5}, {}, "block"}));
+            voice::LiveScreenTree tree(root);
+            changed = root.get(); readsBeforeChange = 0;
+            const auto caret = tree.caret(root);
+            readsBeforeChange = -1;
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a plain selection that moved while read is withheld");
         }
         {
             // A page in focus that is no editor is read by its own text, not element by element.

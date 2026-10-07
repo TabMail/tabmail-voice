@@ -33,12 +33,12 @@ public:
         auto selected = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> document;
         require(pattern->get_DocumentRange(&document));
-        if (!selected || !document || !reader.containSelection(selected.Get(), document.Get())) return CaretSource::unavailable();
+        if (!selected || !document || !reader.containSelection(selected.Get(), document.Get())) return CaretSource::unread(true);
         const auto limits = core::request({{"limits", true}}, voice_core_context_json);
         const auto selectionLimit = limits.at("selectionSourceBytes").get<size_t>();
         const auto sourceLimit = limits.at("sourceWindowBytes").get<size_t>();
         const auto selectionText = reader.text(selected.Get(), selectionLimit);
-        if (!selectionText) return CaretSource::unavailable();
+        if (!selectionText) return CaretSource::unread(true);
         const auto before = reader.side(selected.Get(), document.Get(), true, sourceLimit);
         const auto after = reader.side(selected.Get(), document.Get(), false, sourceLimit);
         std::optional<CaretSource::ParagraphStarts> paragraphs;
@@ -57,11 +57,11 @@ public:
         auto finalSelection = reader.selection(pattern);
         ComPtr<IUIAutomationTextRange> finalDocument;
         require(pattern->get_DocumentRange(&finalDocument));
-        if (!finalSelection || !finalDocument || !reader.containSelection(finalSelection.Get(), finalDocument.Get())) return CaretSource::unavailable();
+        if (!finalSelection || !finalDocument || !reader.containSelection(finalSelection.Get(), finalDocument.Get())) return CaretSource::unread(!selectionText->empty());
         BOOL sameSelection = FALSE, sameDocument = FALSE;
         require(selected->Compare(finalSelection.Get(), &sameSelection));
         require(document->Compare(finalDocument.Get(), &sameDocument));
-        if (!sameSelection || !sameDocument || reader.text(finalSelection.Get(), selectionLimit) != selectionText) return CaretSource::unavailable();
+        if (!sameSelection || !sameDocument || reader.text(finalSelection.Get(), selectionLimit) != selectionText) return CaretSource::unread(!selectionText->empty());
         return CaretSource::window({before.first, *selectionText, after.first}, before.second, after.second, caretStarts, paragraphs);
     }
     // The field's blocks, from its own tree: which children are blocks, and where each child's text

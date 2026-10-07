@@ -148,7 +148,7 @@ int main() {
         terminal.selected="hello";terminalTree=Tree{};
         screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
         expect(screen["selectedText"]=="hello" && screen["textBeforeCaret"]=="" && screen["textAfterCaret"]=="", "selection remains independent on wire");
-        terminalTree=Tree{};terminalTree.caretOverride=voice::CaretText::unavailable();
+        terminalTree=Tree{};terminalTree.caretOverride=voice::CaretText::unread(true);
         screen=voice::gatherScreen(terminalTree,&terminalWindow,&terminal,{&terminalWindow},app,policy);
         expect(screen["selectedText"]=="[redacted]" && screen["selectionRedacted"]==true,"incomplete terminal selection disables edit");
         terminal.selected.clear();terminal.label="build passed\ntoken=syntheticSecret123";terminalTree=Tree{};

@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 import ApplicationServices
 import Foundation
+import VoiceHelperSupport
 
 /// Converts opaque provider markers to bounded native ranges. Marker indices can be
 /// document-relative, so the focused element's start is retained as an explicit origin.
@@ -27,7 +28,8 @@ enum MarkerCaretSource {
             return result
         }
         guard let initial = snapshot(), let positions = endpoints(initial) else { return nil }
-        let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
+        HelperLog.debug("ScreenContext: caret \(positions[2] - positions[0])+\(positions[3] - positions[2]) of \(positions[1] - positions[0]) chars, from the marker indices")
+        guard let unavailable = try? SharedContext.CaretWindow.unread(selectsText: positions[3] > positions[2]) else { return nil }
         do {
             let origin = positions[0]
             let result = try BoundedCaretSource.read(count: positions[1] - origin,
@@ -40,10 +42,19 @@ enum MarkerCaretSource {
                       let range = parameterized("AXTextMarkerRangeForUnorderedTextMarkers", [first, last] as CFArray) else { return nil }
                 return parameterized("AXStringForTextMarkerRange", range) as? NSString
             }
-            guard let final = snapshot(), endpoints(final) == positions,
-                  CFEqual(initial.selection, final.selection), CFEqual(initial.whole, final.whole), focused() else { return unavailable }
+            let final = snapshot()
+            let finalPositions = final.flatMap(endpoints)
+            let isFocused = focused()
+            guard let final, finalPositions == positions,
+                  CFEqual(initial.selection, final.selection), CFEqual(initial.whole, final.whole), isFocused else {
+                HelperLog.debug("ScreenContext: the field changed while it was read (now \(finalPositions.map { "\($0[2] - $0[0])+\($0[3] - $0[2]) of \($0[1] - $0[0])" } ?? "unreadable"), focused \(isFocused)); selection \(unavailable.selectionUnavailable ? "unavailable" : "empty, its text unread")")
+                return unavailable
+            }
             return result
-        } catch { return unavailable }
+        } catch {
+            HelperLog.debug("ScreenContext: the field's text could not be read around the caret by its markers; selection \(unavailable.selectionUnavailable ? "unavailable" : "empty, its text unread")")
+            return unavailable
+        }
     }
 
     /// The field's length and its selection, counted in its text markers: the length of the text

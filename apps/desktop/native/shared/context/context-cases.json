@@ -1989,6 +1989,38 @@
         "caret": 2,
         "selection": null
       }
+    },
+    {
+      "name": "an unread caret with text selected withholds the selection",
+      "request": {
+        "caretUnread": {
+          "selectsText": true
+        }
+      },
+      "expected": {
+        "parts": [
+          "",
+          "[redacted]",
+          ""
+        ],
+        "selectionUnavailable": true
+      }
+    },
+    {
+      "name": "an unread caret with nothing selected is an empty window",
+      "request": {
+        "caretUnread": {
+          "selectsText": false
+        }
+      },
+      "expected": {
+        "parts": [
+          "",
+          "",
+          ""
+        ],
+        "selectionUnavailable": false
+      }
     }
   ]
 }

@@ -273,7 +273,7 @@ function PillLayout({
   return (
     <div ref={exitRef} className="layer" style={layerStyle}>
       <div ref={pillRef} className="pill-anchor" style={{ left: anchor.x, top: anchor.y }}>
-        <Pill mode={mode} level={state.level} hasVoice={state.hasVoice} isRetrying={state.isRetrying} language={state.language} isAgent={state.mode === "agent" || keepsBubbles} />
+        <Pill mode={mode} level={state.level} hasVoice={state.hasVoice} isRetrying={state.isRetrying} language={state.language} isAgent={state.mode === "agent" || keepsBubbles} maxWidth={canvas.width - 2 * config.pillGlowReach} />
       </div>
       {bubbles.map((item, index) => {
         const center = centers[index];
@@ -631,7 +631,8 @@ function TimeoutBar({ closesAt, timeout }: { closesAt: number; timeout: number }
   );
 }
 
-function Pill({ mode, level, hasVoice, isRetrying, language, isAgent }: { mode: Mode; level: number; hasVoice: boolean; isRetrying: boolean; language: string | null; isAgent: boolean }) {
+/** The pill, at most `maxWidth` wide: a long message wraps rather than reach the window's edge. */
+function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }: { mode: Mode; level: number; hasVoice: boolean; isRetrying: boolean; language: string | null; isAgent: boolean; maxWidth: number }) {
   const isCircle = mode.kind === "transcribing" || mode.kind === "running" || mode.kind === "resting";
   const leadingPadding = isCircle ? 0 : mode.kind === "message" || mode.kind === "copied" || mode.kind === "retrying" || language === null ? config.pillHorizontalPadding : config.languageBadgeInset;
   const ref = useAppear<HTMLDivElement>(appearKeyframes, config.pillSpringResponseSeconds * 1000);
@@ -642,6 +643,7 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent }: { mode: 
     paddingTop: isCircle ? 0 : config.pillVerticalPadding,
     paddingBottom: isCircle ? 0 : config.pillVerticalPadding,
     minHeight: config.pillHeight,
+    maxWidth,
     borderRadius: config.pillHeight / 2,
     borderWidth: config.pillBorderWidth,
     // A light pill in light and dark mode alike, in a gradient border.
@@ -777,9 +779,12 @@ function barHeight(index: number, time: number, level: number): number {
   return minHeight + amount * (config.overlayMeterMaxBarHeight - minHeight);
 }
 
-/** A ring `width` thick around its box, masked out of a conic gradient. */
+/** A ring `width` thick around its box, masked out of a conic gradient. Its inner edge fades over
+ * `ringEdgeSoftness`: a hard edge is stair-stepped, and the steps of the circling arc's edge,
+ * turning over the still track's, show as dots running around the ring. */
 function ringMask(width: number): string {
-  return `radial-gradient(farthest-side, transparent calc(100% - ${width}px), #000 calc(100% - ${width}px))`;
+  const soft = config.ringEdgeSoftness / 2;
+  return `radial-gradient(farthest-side, transparent calc(100% - ${width + soft}px), #000 calc(100% - ${width - soft}px))`;
 }
 
 /** Loading indicator on the thinking circle's rim: a blue → violet arc with a fading tail, circling

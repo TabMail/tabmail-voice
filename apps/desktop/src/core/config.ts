@@ -499,6 +499,10 @@ export const agentPillGlowInnerRadius = 4;
 export const agentPillGlowInnerOpacity = 0.9;
 export const agentPillGlowOuterRadius = 16;
 export const agentPillGlowOuterOpacity = 0.75;
+/** How far the pill's glow reaches past its edge, in either mode. The pill is never wider than the
+ * window it is drawn in less this on each side, so the glow is never cut off at the window's edge (a
+ * long message under the chat window was as wide as the window). */
+export const pillGlowReach = Math.max(pillGlowRadius, agentPillGlowOuterRadius);
 /** The pill grows out of the swirl from this fraction of its size. */
 export const pillAppearScale = 0.2;
 export const pillSpringResponseSeconds = 0.25;
@@ -551,6 +555,9 @@ export const waveformRipplePhase = 0.7;
 export const waveformRippleDepth = 0.25;
 /** While transcribing, the pill is a circle with a gradient arc circling its rim. */
 export const thinkingRimWidth = 2.5;
+/** How far, in points, a circling rim's inner edge fades from clear to drawn (the thinking circle's,
+ * the working pill's and a running bubble's): wide enough to blur its edge's pixel steps. */
+export const ringEdgeSoftness = 1;
 export const thinkingArcFraction = 0.7;
 export const thinkingRevolutionsPerSecond = 1.2;
 export const thinkingTrackOpacity = 0.2;

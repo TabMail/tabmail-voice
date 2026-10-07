@@ -595,6 +595,24 @@ describe("the chat window", () => {
 
   const texts = (selector: string) => [...document.querySelectorAll(selector)].map((element) => element.textContent);
 
+  /** A long message under the chat window wraps before the pill's glow reaches the window's edge,
+   * where it was cut off (owner, 2026-10-06): the pill, centered in the window, is no wider than
+   * the window less the glow on each side; and so is it with the chat window closed. */
+  test("a long message's glow stays inside the window", async () => {
+    const page = await overlayPage();
+    const message = "The selection holds what looks like a password or key, so it wasn't rewritten.";
+    const pillWidthLimit = () => parseFloat(document.querySelector<HTMLElement>(".pill")?.style.maxWidth ?? "");
+    const glow = Math.max(config.pillGlowRadius, config.agentPillGlowOuterRadius);
+    await page.show({ ...idle, phase: { kind: "failed", message }, mode: "agent", tools: ["answer"], chat: chat(null), chatPlacement: above });
+    const window = config.chatWidth + 2 * config.chatShadowMargin;
+    expect(pillWidthLimit()).toBeGreaterThan(0);
+    expect(above.pillX - pillWidthLimit() / 2 - glow).toBeGreaterThanOrEqual(0);
+    expect(above.pillX + pillWidthLimit() / 2 + glow).toBeLessThanOrEqual(window);
+
+    await page.show({ ...listening, phase: { kind: "failed", message }, mode: "agent" });
+    expect(pillWidthLimit() + 2 * glow).toBeLessThanOrEqual(config.overlayCanvasSize.width);
+  });
+
   /** Each request and its reply, a request under way with the answer still thinking, and the pill
    * under them all, resting while nothing runs and listening for a follow-up; an Edit reply carries
    * its caption, the answer none. */
@@ -794,6 +812,26 @@ describe("the chat window", () => {
     await page.show({ ...idle, ...agent });
     expect(pillCircles()).toBe(false);
     expect(circling()).toEqual([]);
+  });
+
+  /** A circling rim's inner edge fades rather than stops: a hard edge is stair-stepped, and the steps
+   * of the arc turning over the still track's showed as dots running around the ring (owner,
+   * 2026-10-06). Every rim: the thinking circle's, the working pill's and the running bubble's. */
+  test("a circling rim's inner edge is soft", async () => {
+    const page = await overlayPage();
+    const agent = { mode: "agent" as const, tools: ["answer" as const], chat: chat(null), chatPlacement: above };
+    const innerEdges = () =>
+      [...document.querySelectorAll<HTMLElement>(".rim")].map((rim) => {
+        const stops = [...(rim.getAttribute("style") ?? "").matchAll(/calc\(100% - ([\d.]+)px\)/g)].map(([, length = ""]) => parseFloat(length));
+        expect(stops).toHaveLength(2);
+        return stops;
+      });
+    for (const phase of [{ kind: "transcribing" as const }, running.phase]) {
+      await page.show({ ...listening, ...agent, phase });
+      const edges = innerEdges();
+      expect(edges.length).toBeGreaterThan(0);
+      for (const [clear = 0, drawn = 0] of edges) expect(clear - drawn).toBeGreaterThanOrEqual(1);
+    }
   });
 
   /** The waveform is a washed-out grey-blue until a voice is heard, then a vivid blue, a sign the dictation is

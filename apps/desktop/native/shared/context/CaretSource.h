@@ -12,7 +12,12 @@ namespace voice {
 struct CaretSource {
     std::array<std::string, 3> parts;
     bool selectionUnavailable = false;
-    static CaretSource unavailable() { return {{"", "[redacted]", ""}, true}; }
+    // What stands for the text around a caret that could not be read, as the shared core gives it
+    // (`caretUnread`): the selection withheld when text is selected, else an empty window.
+    // `selectsText` true when it isn't known.
+    static CaretSource unread(bool selectsText) {
+        return fromJSON(core::request({{"caretUnread", {{"selectsText", selectsText}}}}, voice_core_context_json));
+    }
     static CaretSource fromJSON(const nlohmann::json& result) {
         return {result.at("parts").get<std::array<std::string, 3>>(), result.at("selectionUnavailable").get<bool>()};
     }

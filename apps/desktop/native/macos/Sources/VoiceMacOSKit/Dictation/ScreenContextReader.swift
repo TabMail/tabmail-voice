@@ -270,8 +270,9 @@ enum ScreenContextReader {
         return characters.map { ValueSnapshot(count: $0.count, range: $0.range, markers: false) }
     }
 
-    /// The text around a field's selection, read by its string ranges; unavailable when the field
-    /// changed or lost the focus while it was read, or a range gave no text of its length.
+    /// The text around a field's selection, read by its string ranges; unread
+    /// (`CaretWindow.unread`) when the field changed or lost the focus while it was read, or a range
+    /// gave no text of its length.
     /// `paragraphStarts`: where the provider starts paragraphs near the selection, and whether the
     /// selection starts at the end of the line above one at its offset, asked once, so the shared
     /// core puts back the breaks its text leaves out.
@@ -281,7 +282,7 @@ enum ScreenContextReader {
         guard let initial = snapshot() else { return nil }
         let starts = paragraphStarts(initial)
         HelperLog.debug("ScreenContext: caret \(initial.range.location)+\(initial.range.length) of \(initial.count) chars, from the \(initial.markers ? "text markers" : "character range")")
-        let unavailable = SharedContext.CaretWindow(parts: ["", Redactor.placeholder, ""], selectionUnavailable: true)
+        guard let unavailable = try? SharedContext.CaretWindow.unread(selectsText: initial.range.length > 0) else { return nil }
         do {
             // With the field's block starts, Chromium's own answer to whether a paragraph starts at
             // the caret is not asked: every break its text leaves out is at a block start, and that
@@ -298,12 +299,12 @@ enum ScreenContextReader {
             let final = snapshot()
             let isFocused = focused()
             guard let final, final == initial, isFocused else {
-                HelperLog.debug("ScreenContext: the field changed while it was read (now \(final.map { "\($0.range.location)+\($0.range.length) of \($0.count)" } ?? "unreadable"), focused \(isFocused)); selection unavailable")
+                HelperLog.debug("ScreenContext: the field changed while it was read (now \(final.map { "\($0.range.location)+\($0.range.length) of \($0.count)" } ?? "unreadable"), focused \(isFocused)); selection \(unavailable.selectionUnavailable ? "unavailable" : "empty, its text unread")")
                 return unavailable
             }
             return result
         } catch {
-            HelperLog.debug("ScreenContext: the field's text could not be read around the caret; selection unavailable")
+            HelperLog.debug("ScreenContext: the field's text could not be read around the caret; selection \(unavailable.selectionUnavailable ? "unavailable" : "empty, its text unread")")
             return unavailable
         }
     }
