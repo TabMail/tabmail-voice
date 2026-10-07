@@ -5328,6 +5328,82 @@
    ]
   },
   {
+   "name": "a key's body whose lines are separated by U+2029, as a Qt editor gives its paragraphs goes",
+   "text": [
+    "Notes:\u2029",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2029",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2029end"
+   ],
+   "expected": [
+    "Notes:\u2029",
+    "{redacted}",
+    "\u2029end"
+   ]
+  },
+  {
+   "name": "a key's body whose lines are separated by U+2028 goes",
+   "text": [
+    "Notes:\u2028",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2028",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2028end"
+   ],
+   "expected": [
+    "Notes:\u2028",
+    "{redacted}",
+    "\u2028end"
+   ]
+  },
+  {
+   "name": "a key's body whose lines are separated by a carriage return alone goes",
+   "text": [
+    "Notes:\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\rend"
+   ],
+   "expected": [
+    "Notes:\r",
+    "{redacted}",
+    "\rend"
+   ]
+  },
+  {
+   "name": "a key's body separated by U+2029 goes through its end line",
+   "text": [
+    "Notes:\u2029",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2029",
+    "a1B2c3D4e5F6==",
+    "\u2029",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "Notes:\u2029",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text that starts inside a key's body separated by U+2029 goes",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0",
+    "\u2029",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2029",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2029- end"
+   ],
+   "expected": [
+    "{redacted}",
+    "\u2029- end"
+   ]
+  },
+  {
    "name": "a list of long hashes goes, as a key's body would",
    "text": [
     "Checksums:\n",

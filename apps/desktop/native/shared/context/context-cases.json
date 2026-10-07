@@ -435,6 +435,35 @@
       }
     },
     {
+      "name": "a key's body before the caret, its lines separated by U+2029, is redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              20,
+              0,
+              400,
+              60
+            ]
+          }
+        ],
+        "caret": [
+          "Notes:\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029",
+          "",
+          "end"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "Notes:\u2029[redacted]\u2029",
+          "",
+          "end"
+        ]
+      }
+    },
+    {
       "name": "pieces a pixel apart abut, and three apart are two words",
       "request": {
         "blocks": [

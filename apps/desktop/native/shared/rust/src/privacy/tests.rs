@@ -105,6 +105,16 @@ fn hostile_text_stays_under_two_seconds() {
         ("a", ""),
         ("PRIVATE KEY ", "-----BEGIN "),
         ("PRIVATE KEY ", "-----BEGIN PRIVATE KEY-----\n-----END "),
+        // Short lines, and lines of base64 a label or an indent puts after a space or a tab, as a
+        // key's body may start (a log, a message's base64 part, indented YAML).
+        ("A\n", ""),
+        ("A\u{2029}", ""),
+        (" AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n", ""),
+        ("\tAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \n", ""),
+        (
+            "  QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\r\n",
+            "",
+        ),
     ];
     // Compile before timing; cold startup has a separate helper latency gate.
     scalar("");

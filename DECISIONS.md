@@ -576,6 +576,13 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   beside a block of base64) is one line with the label now, so its first base64 line follows a space:
   `private-key-lines`, and `private-key-end` before a full line of base64, start a body after a
   space or a tab as well as at a line, which also redacts one plain piece holding the same text.
+  The patterns for a header-less body take a line break as the core does (`\n`, `\r`, U+2028,
+  U+2029): a Qt editor gives U+2029 between its paragraphs, which the core's old second reading
+  turned into `\n`, so a body read from one was shown once that reading was gone. A field's own
+  U+2029 is given as `\n`, so in the field read U+2029 is only ever a terminal's row break. The end
+  line's pattern takes the space it starts after instead of looking ahead for the base64 after it:
+  a lookahead runs in the regex library's backtracking engine, which took 21 s on 200 KB of short
+  lines; the hostile-text test now has those shapes.
   Each platform's real-Chromium test (`macos/Tests/electron.mjs`,
   `windows/tests/electron.mjs`, `linux/tests/electron.mjs`) reads a key split by bold and a link
   between words, a link holding the space after it and a key that is a link's text; the Mac and
@@ -3349,7 +3356,10 @@ well-structured place for the redactors.
   dictation over it replaces it as always.
 - Texts that sit side by side on screen are still joined by a line break here, so a name and its
   value in two elements are found together, and so are two elements that only look like one (a
-  label ending in `token:` above an unrelated word with a digit).
+  label ending in `token:` above an unrelated word with a digit). *(Amended 2026-10-07: the pieces
+  of one line on screen, text and links, are joined as the screen shows them, with a space or with
+  nothing where they abut (ADR-DESK-007's 2026-10-07 amendment); other texts side by side still are
+  joined by a line break.)*
 - A private key written on one line with its line breaks escaped (`\n` as two characters, as a JSON
   file or a quoted value holds it) is taken whole: the key's body may hold a backslash. One with
   header lines after its first (an encrypted PEM key, a PGP key with a `Version:` line) keeps its

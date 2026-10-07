@@ -150,6 +150,30 @@
       }
     },
     {
+      "name": "a field's own paragraph separator (U+2029, as a Qt editor gives) is a line break",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Dear team\u2029thanks"
+        }
+      },
+      "expected": {
+        "value": "Dear team\nthanks"
+      }
+    },
+    {
+      "name": "a field holding a key's body whose lines are separated by U+2029, redacted",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Notes:\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\u2029end"
+        }
+      },
+      "expected": {
+        "value": "Notes:\n[redacted]\nend"
+      }
+    },
+    {
       "name": "a terminal's field with a key on a row of its pane, redacted",
       "request": {
         "field": {

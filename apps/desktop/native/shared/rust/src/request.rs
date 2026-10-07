@@ -25,6 +25,8 @@ const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
 /// 2026-10-07), then each row break given as U+2029 so the app can tell a row the terminal wrapped
 /// from the user's own line break: a terminal's whole text is its scrollback, and its other panes
 /// and programs' lines are not the text the dictation went into. None without an exact caret.
+/// Another field's U+2029 (a Qt editor gives one between its paragraphs) is given as the line break
+/// it is, so U+2029 in the value is only ever a terminal's row break.
 fn field(request: &Value) -> Result<Value, u32> {
     let bound = request
         .get("maxLength")
@@ -58,7 +60,12 @@ fn field(request: &Value) -> Result<Value, u32> {
             json!({"value": null})
         }
         Some(Value::String(text)) => {
-            let redacted = crate::privacy::redact(&vec![vec![text.clone()]]).map_err(|_| 3u32)?;
+            let text = if terminal {
+                text.clone()
+            } else {
+                text.replace(ROW_BREAK, "\n")
+            };
+            let redacted = crate::privacy::redact(&vec![vec![text]]).map_err(|_| 3u32)?;
             if terminal {
                 // A box's rows hold no line break of their own: after the redaction, every one
                 // left is a row break.

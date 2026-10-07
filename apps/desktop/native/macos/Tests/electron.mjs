@@ -51,6 +51,7 @@ const page = `
   <p>Visit <a href="#v">example</a> now</p>
   <p>Read <a href="#r">more </a>now</p>
   <p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p>
+  <p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p>
   <input id="empty" placeholder="Subject">
   <input id="filled" value="Synthetic subject line">
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
@@ -102,9 +103,9 @@ const timeout = setTimeout(() => {
 async function expectInlineLines() {
   await delay(300);
   const rendered = (await request("readScreen", { excludedAppIDs: [], excludedHosts: [] }))?.renderedText ?? "";
-  for (const line of ["Key [redacted] here", "Visit [example] now", "Read [more] now", "Paste [[redacted]]"])
+  for (const line of ["Key [redacted] here", "Visit [example] now", "Read [more] now", "Paste [[redacted]]", "Code [redacted] end"])
     if (!rendered.split("\n").includes(line)) failures.push(`inline pieces: no line ${JSON.stringify(line)} in the read`);
-  for (const piece of ["sk-Review", "Fixture1234567890", "Link1234567890abcd"])
+  for (const piece of ["sk-Review", "Fixture1234567890", "Link1234567890abcd", "Snippet1234567890"])
     if (rendered.includes(piece)) failures.push(`inline pieces: a piece of the key split by bold is in the read`);
 }
 async function main() {
