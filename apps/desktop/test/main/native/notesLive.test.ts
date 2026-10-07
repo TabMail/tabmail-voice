@@ -39,9 +39,40 @@ const addNoteInSubfolder = `on run argv
     end tell
 end run`;
 
+/** The title and folder of the first unlocked, titled note in each account other than the default one
+ * whose title no note in the default account holds (so only a search of that account finds it), read
+ * only: one record per account that has one. */
+const firstNoteOfOtherAccounts = `on run argv
+    set found to {}
+    tell application "Notes"
+        set defaultName to name of default account
+        repeat with theAccount in accounts
+            if name of theAccount is not defaultName then
+                set picked to false
+                repeat with theFolder in folders of theAccount
+                    if not picked then
+                        repeat with theNote in (notes of theFolder whose password protected is false and name is not "")
+                            if not picked then
+                                set theName to name of theNote
+                                if (count of (notes of default account whose name contains theName or plaintext contains theName)) is 0 then
+                                    set end of found to theName & (character id 31) & (name of theFolder)
+                                    set picked to true
+                                end if
+                            end if
+                        end repeat
+                    end if
+                end repeat
+            end if
+        end repeat
+    end tell
+    set AppleScript's text item delimiters to character id 30
+    return found as text
+end run`;
+
 /** The notes tools run for real, through osascript, against the Notes app: the note `notes_create`
  * adds is the one `notes_search` finds, with its folder, last change and text; a note in a subfolder
- * is found once, with that folder; and a search that matches a deleted note still reads. Every note
+ * is found once, with that folder; a note in another account is found; and a search that matches a
+ * deleted note reads it and the others. Every note
  * and folder is named with one run's marker, and deleted after. On macOS 27 Notes can't name a note's
  * own folder (`container`), which failed every search and every note added, after adding it. */
 describe.runIf(live)("the notes tools against Notes", () => {
@@ -88,6 +119,24 @@ describe.runIf(live)("the notes tools against Notes", () => {
     liveTimeout,
   );
 
+  /** Every account is searched, not just the default one, read only: the first note of each other
+   * account is found by its title, with its folder. Nothing is added to another account, which may
+   * sync somewhere else; with one account, or none of the others holding a note, there is nothing to
+   * check. */
+  test(
+    "a note in another account is found, with its folder",
+    async () => {
+      const others = (await osascript.run(firstNoteOfOtherAccounts, [], signal)).split(NotesScripts.noteSeparator).filter((record) => record !== "");
+
+      for (const record of others) {
+        const [title = "", folder = ""] = record.split(NotesScripts.fieldSeparator);
+        const found = (await store.search(title, signal)).filter((note) => note.title === title && note.folder === folder);
+        expect(found.length, "the first note of another account").toBeGreaterThan(0);
+      }
+    },
+    liveTimeout,
+  );
+
   /** A deleted note waits in Recently Deleted, which a search can still match: the search reads it,
    * and the other matches, rather than failing on it. */
   test(
@@ -101,6 +150,8 @@ describe.runIf(live)("the notes tools against Notes", () => {
 
       expect(result).toContain(`"${marker} kept"`);
       expect(result).toContain("Kept text");
+      expect(result).toContain(`"${marker} deleted"`);
+      expect(result).toContain("Deleted text");
     },
     liveTimeout,
   );

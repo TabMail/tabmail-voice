@@ -39,13 +39,15 @@ export const NotesScripts = {
 end run`,
 
   /** Makes a note in the default account's default folder with the HTML body `argv[1]`; returns its
-   * title and that folder's name (the note's own `container` can't be named, as for `search`). */
+   * title and that folder's name (the note's own `container` can't be named, as for `search`), read
+   * before the note is made so nothing read after can fail a note already added. */
   create: `on run argv
     with timeout of ${config.appleScriptTimeoutSeconds} seconds
         tell application "Notes"
             set theFolder to default folder of default account
+            set folderName to name of theFolder
             set theNote to make new note at theFolder with properties {body:item 1 of argv}
-            return (name of theNote) & (character id 31) & (name of theFolder)
+            return (name of theNote) & (character id 31) & folderName
         end tell
     end timeout
 end run`,

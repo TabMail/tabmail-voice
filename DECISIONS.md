@@ -1797,7 +1797,11 @@ too, and a folder's `notes` are only its own, so each note is read once, with it
 against the real Notes app (`test/main/native/notesLive.test.ts`, macOS only, opt-in with
 `TABMAIL_VOICE_LIVE_NOTES=1` as it adds and deletes notes and folders named with one run's marker). It
 answers the earlier unverified point: a search does match notes in "Recently Deleted", which it reads
-as that folder. How long a search over a large library takes stays unmeasured.
+as that folder. That `folders of` an account lists its subfolders is observed on macOS 27 only:
+Notes' scripting dictionary does not say. Measured on macOS 27 (a library of about 640 notes in four
+accounts): a search matching 20 notes takes about 2 s, faster than the earlier whole-library
+`notes whose` (about 13 s); one matching several hundred notes runs for minutes, as it did before, bounded
+only by a cancel.
 
 ## ADR-DESK-029: Shortcuts, listed and run through the `shortcuts` command
 
