@@ -4579,7 +4579,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         /** A lookup, then Compose ("check my calendar and write when I'm free"): Answer's bubble runs
          * while the loop does, the tool shows in the chat window it opens, and the write closes that
-         * window before the text is pasted, Compose's bubble now first (ADR-DESK-054). */
+         * window before the text is pasted, Compose's bubble now first (ADR-DESK-055). */
         test("a lookup then a write closes the chat the tool opened before pasting", async () => {
           const tool = new FakeLoopTool();
           let controllerRef: DictationController | undefined;

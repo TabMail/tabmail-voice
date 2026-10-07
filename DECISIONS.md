@@ -752,7 +752,7 @@ grants. The privacy policy tells users they can switch screen reading off.
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
-> The two calls (choose, then write) are superseded by one tool loop (ADR-DESK-054, 2026-10-05).
+> The two calls (choose, then write) are superseded by one tool loop (ADR-DESK-055, 2026-10-05).
 
 > **Amended 2026-09-26 (owner):** the double tap is replaced by **Space during the hold**, the
 > selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
@@ -1428,7 +1428,7 @@ one that ships.
 
 ## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
 
-> The loop is now agent mode's only call, and Compose and Edit are tools in it (ADR-DESK-054, 2026-10-05).
+> The loop is now agent mode's only call, and Compose and Edit are tools in it (ADR-DESK-055, 2026-10-05).
 
 **Context:** Owner, 2026-09-26: agent mode gains tools that run on the user's computer (calendar,
 reminders, contacts, file search, email prefill, notes, messages, shortcuts, web), "the tool JSON
@@ -2466,7 +2466,7 @@ Answer, which also circled, went on behind it.
 
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
-> Since ADR-DESK-054 (2026-10-05) agent mode is one tool loop: bringing this tool back means offering it as a loop tool, and the chooser this ADR describes is gone.
+> Since ADR-DESK-055 (2026-10-05) agent mode is one tool loop: bringing this tool back means offering it as a loop tool, and the chooser this ADR describes is gone.
 
 **Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test
 all the others. And then for the Thunderbird tool, we should only use it … after introducing the
@@ -3118,7 +3118,7 @@ Apps are known by bundle identifier, compared without regard to case.
 
 ## ADR-DESK-046: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
 
-> Since ADR-DESK-054 (2026-10-05) Edit of a redacted selection is refused when the agent writes it, after the loop has asked the backend; the redacted read is still all the backend sees.
+> Since ADR-DESK-055 (2026-10-05) Edit of a redacted selection is refused when the agent writes it, after the loop has asked the backend; the redacted read is still all the backend sees.
 
 **2026-10-03 amendment — shared Rust implementation:** The canonical JSON and screen-read privacy boundary remain. Every native helper now links the same Rust static library for matching and UTF-16 redistribution. Native ICU matching, generated Swift/C++ definition files and the ECMAScript conformance implementation are superseded; Rust tests own definition validation, corpus/mutations and hostile-text timing. Platform suites exercise that library through its C ABI. Keep provider access and pre-read password/exclusion checks native.
 
