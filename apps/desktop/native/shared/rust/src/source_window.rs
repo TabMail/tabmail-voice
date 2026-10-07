@@ -30,14 +30,16 @@ pub(crate) fn recognition_range_with_limit(
     // continuations can span an arbitrarily long whitespace run.
     // Keep the delimiter itself so concatenating approved source windows
     // cannot erase the evidence that closed the preceding recognition state.
+    // A break this core added (a rich editor's, between blocks) is not the
+    // text's own: a `.` before one may be inside a token (a JWT's header).
     let mut characters = text.char_indices().peekable();
     let mut first = None;
     let mut last = None;
     while let Some((start, ch)) = characters.next() {
         if !matches!(ch, '.' | ',' | ';' | '!' | '?')
-            || !characters
-                .peek()
-                .is_some_and(|(_, next)| next.is_whitespace())
+            || !characters.peek().is_some_and(|&(_, next)| {
+                next.is_whitespace() && next != crate::context::ADDED_BREAK
+            })
         {
             continue;
         }

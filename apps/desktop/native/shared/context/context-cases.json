@@ -1402,7 +1402,7 @@
         }
       },
       "expected": {
-        "text": "para\ntail",
+        "text": "para\u2029tail",
         "length": 9,
         "caret": 7,
         "selection": null
@@ -1441,7 +1441,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\nWhy",
+        "text": "Hi All,\u2029Why",
         "length": 11,
         "caret": null,
         "selection": [
@@ -1507,7 +1507,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
         "length": 30,
         "caret": 27,
         "selection": null
@@ -1570,7 +1570,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
         "length": 30,
         "caret": 8,
         "selection": null
@@ -1633,7 +1633,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
         "length": 30,
         "caret": 26,
         "selection": null
@@ -1690,7 +1690,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
         "length": 30,
         "caret": 27,
         "selection": null
@@ -1777,7 +1777,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\n\nWhy does it move?\n\n--",
+        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
         "length": 30,
         "caret": 12,
         "selection": [
@@ -1834,7 +1834,7 @@
         }
       },
       "expected": {
-        "text": "A\nB",
+        "text": "A\u2029B",
         "length": 3,
         "caret": null,
         "selection": null
@@ -1864,7 +1864,7 @@
         }
       },
       "expected": {
-        "text": "A\nB",
+        "text": "A\u2029B",
         "length": 3,
         "caret": 2,
         "selection": null
@@ -1903,7 +1903,7 @@
         }
       },
       "expected": {
-        "text": "A\nB",
+        "text": "A\u2029B",
         "length": 3,
         "caret": null,
         "selection": null
@@ -1957,7 +1957,7 @@
         }
       },
       "expected": {
-        "text": "Grüße 😀\nx",
+        "text": "Grüße 😀\u2029x",
         "length": 9,
         "caret": 8,
         "selection": null

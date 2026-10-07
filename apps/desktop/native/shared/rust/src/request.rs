@@ -6,7 +6,6 @@
 //! correction learning and its reply, and a paste's text and deadline. The helper reads the field
 //! and checks it is no password field itself; the core decides what of it is sent.
 
-use crate::privacy;
 use serde_json::{Value, json};
 
 /// The longest focused field a request may ask to read, in UTF-16 code units.
@@ -18,7 +17,8 @@ const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
 
 /// `{"field": {"maxLength": n}}` → `{"maxLength": n}` when n is 1 to 20,000; with `"text"` (the
 /// field's text as read, or null for none) → `{"value": …}`: null for none or one longer than n
-/// UTF-16 units, else the text with secret-looking text taken out.
+/// UTF-16 units, or one a break the core added could split a secret in, else the text with
+/// secret-looking text taken out.
 fn field(request: &Value) -> Result<Value, u32> {
     let bound = request
         .get("maxLength")
@@ -31,9 +31,15 @@ fn field(request: &Value) -> Result<Value, u32> {
         Some(Value::String(text)) if text.encode_utf16().count() as u64 > bound => {
             json!({"value": null})
         }
+        // A rich editor's breaks are the core's (`hypertext`): a value one of them could split a
+        // secret in is withheld, as the render withholds it.
         Some(Value::String(text)) => {
-            let redacted = privacy::redact(&vec![vec![text.clone()]]).map_err(|_| 3u32)?;
-            json!({"value": redacted[0][0]})
+            let (redacted, withheld) = crate::context::redact_added(&vec![vec![text.clone()]])?;
+            if withheld[0] {
+                json!({"value": null})
+            } else {
+                json!({"value": redacted[0][0]})
+            }
         }
         Some(_) => return Err(1),
     })

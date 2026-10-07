@@ -168,8 +168,13 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         reply["selectedText"] = caret[1].clone();
         reply["textAfterCaret"] = caret[2].clone();
         // The selection as sent is not the user's text (redacted, or cut to the budget): the app
-        // must not paste a rewrite of it over the real one.
-        reply["selectionRedacted"] = json!(unavailable || caret[1] != sent[1]);
+        // must not paste a rewrite of it over the real one. The breaks this core added are shown
+        // as line breaks, which is no change to the user's text.
+        let selected = sent[1]
+            .as_str()
+            .ok_or(1u32)?
+            .replace(crate::context::ADDED_BREAK, "\n");
+        reply["selectionRedacted"] = json!(unavailable || caret[1] != selected.as_str());
         reply["renderedText"] = finished["rendered"].clone();
         (
             finished["blocks"].as_array().cloned().unwrap_or_default(),

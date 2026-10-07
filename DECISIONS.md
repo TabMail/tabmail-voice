@@ -428,7 +428,21 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   screen read's time) is
   not read at all (an element is not asked for its text past the bytes left, nor for its links when it
   has more than the elements left); nor is one the core refuses to join. Neither
-  fails the rest of the screen read. A selection the editor reports that the elements' parts leave
+  fails the rest of the screen read. The breaks the core puts between blocks are its own, not the
+  provider's (amended 2026-10-06, after the train's tier-2 review): the joined text marks them
+  U+2029, as the caret window marks its put-back breaks, and wherever it goes (the caret's read, a
+  text block, a field's text or its recognition context, the field read for corrections) the core
+  shows each as a line break and checks it as it checks the caret window's, over the whole screen:
+  the screen is redacted without them too, and where one falls inside a match there, every line
+  holding one is withheld (the field read gives none), and every other line must read the same
+  either way, or nothing is read. A key split across blocks is whole only without them, and a
+  token whose label is in the block above is seen only with the screen around it; two tokens on
+  consecutive blocks are both hidden only with them. Before, a key split across two blocks, or one
+  under its label, reached the reply in unrecognised pieces. An open edge is never cut at a `.`
+  before an added break, which is no sentence's end (a JWT's header). A selection over added breaks with nothing
+  redacted in it keeps Edit on, on every platform: the breaks shown as line breaks are no change
+  to the user's text. A key opening a block after a sentence's `.`, a `:` or a space is withheld
+  with every line holding an added break (more withheld than needed, never less). A selection the editor reports that the elements' parts leave
   empty makes the caret unavailable rather than a caret with none. Windows reads the field through
   UIA's TextPattern, which leaves out the break of an empty line: measured on Electron's
   Chromium, a caret on an empty line sits at the end of the paragraph above, its line starts at

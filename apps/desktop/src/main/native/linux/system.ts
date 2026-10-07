@@ -55,13 +55,15 @@ export class LinuxSystem {
    * terminal the caret before its last output). Both are asked at once. */
   async caretAnchor(): Promise<Rect | null> {
     const accessible = this.helper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);
-    const compositor = this.geometryHelper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout);
+    // Settled at once: a compositor failing while the accessible caret is still pending must not
+    // be an unhandled rejection; its failure counts only where its rectangle is needed.
+    const compositor = this.geometryHelper.request<Rect | null>("caretAnchor", {}, config.linuxCaretRequestTimeout)
+      .then((rect) => ({ rect }), (error: unknown) => ({ error }));
     const caret = usable(await accessible.catch(() => null));
-    if (caret) {
-      void compositor.catch(() => undefined);
-      return caret;
-    }
-    return usable(await compositor);
+    if (caret) return caret;
+    const answer = await compositor;
+    if ("error" in answer) throw answer.error;
+    return usable(answer.rect);
   }
 
   readonly microphone = (report: (report: AudioReport) => void): (command: AudioCommand) => void =>
