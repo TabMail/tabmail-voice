@@ -408,7 +408,16 @@ pub(crate) fn unread_caret(selects_text: bool) -> Result<Vec<u8>, u32> {
 /// The three parts of a caret window that is unread or withheld (`unread_caret`); the render's own
 /// withheld caret uses them too.
 pub(crate) fn unread_parts(selects_text: bool) -> [String; 3] {
-    [String::new(), if selects_text { privacy::PLACEHOLDER } else { "" }.to_owned(), String::new()]
+    [
+        String::new(),
+        if selects_text {
+            privacy::PLACEHOLDER
+        } else {
+            ""
+        }
+        .to_owned(),
+        String::new(),
+    ]
 }
 
 /// Why a screen read stopped taking text, once an admission fills its budget.
@@ -632,16 +641,12 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     // a field read check them against the redaction of the text without them, over everything read
     // with them (a label in the block before can make a key split across two blocks a secret).
     if let Some(hypertext) = request.get("hypertext") {
-        // The helper sends its `elements`; the join takes the `parts` they give.
-        let given;
-        let parts = match (hypertext.get("elements"), hypertext.get("parts")) {
-            (Some(elements), None) => {
-                given = hypertext_parts(elements.as_array().ok_or(1u32)?)?;
-                &given
-            }
-            (None, Some(parts)) => parts.as_array().ok_or(1u32)?,
-            _ => return Err(1),
-        };
+        let parts = hypertext_parts(
+            hypertext
+                .get("elements")
+                .and_then(Value::as_array)
+                .ok_or(1u32)?,
+        )?;
         let mut text = String::new();
         let mut length = 0usize;
         let mut after_block = false;
@@ -653,7 +658,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 *length += 1;
             }
         };
-        for part in parts {
+        for part in &parts {
             if let Some(run) = part.get("text") {
                 let run = run.as_str().ok_or(1u32)?;
                 if after_block && !run.is_empty() {
@@ -1226,11 +1231,9 @@ mod tests {
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":"abcd"}}}),
             json!({"caretWindow":{"parts":["","",""],"startKnown":true,"endKnown":true,"caretStarts":{"paragraph":false,"line":true,"lineText":7}}}),
             json!({"caretWindow":{"parts":["a","",""],"startKnown":true,"endKnown":true,"paragraphStarts":[1],"caretEndsLine":1}}),
-            json!({"hypertext":{"parts":[{"text":1}]}}),
-            json!({"hypertext":{"parts":[{"mark":"elsewhere"}]}}),
-            json!({"hypertext":{"parts":[{}]}}),
-            json!({"hypertext":{"parts":[{"mark":"selectionEnd"}]}}),
-            json!({"hypertext":{"parts":[{"text":"x".repeat(CARET_SOURCE_BYTES + 1)}]}}),
+            json!({"hypertext":{"parts":[{"text":"x"}]}}),
+            json!({"hypertext":{"elements":[{"text":1,"caret":null,"selection":null,"block":false,"links":[]}]}}),
+            json!({"hypertext":{"elements":[{}]}}),
             json!({"blocks":[{"kind":"unknown","text":"x"}]}),
             json!({"blocks":[],"caret":["x"]}),
         ] {
@@ -1298,8 +1301,16 @@ mod budget_tests {
     }
     #[test]
     fn an_unread_caret_must_say_whether_text_is_selected() {
-        for request in [json!({"caretUnread":{}}), json!({"caretUnread":{"selectsText":"yes"}}), json!({"caretUnread":true})] {
-            assert_eq!(process(&serde_json::to_vec(&request).unwrap()), Err(1), "{request}");
+        for request in [
+            json!({"caretUnread":{}}),
+            json!({"caretUnread":{"selectsText":"yes"}}),
+            json!({"caretUnread":true}),
+        ] {
+            assert_eq!(
+                process(&serde_json::to_vec(&request).unwrap()),
+                Err(1),
+                "{request}"
+            );
         }
     }
     #[test]
@@ -1571,25 +1582,26 @@ mod budget_tests {
         };
         let mut replies = Vec::new();
         for mode in ["before", "selected", "after", "block"] {
-            let mut parts = vec![json!({"text":opening})];
-            if mode == "after" {
-                parts.push(json!({"mark":"caret"}));
-            }
-            if mode == "selected" {
-                parts.push(json!({"mark":"selectionStart"}));
-            }
+            // The editor's own text, then an object for each block, each a block element; the
+            // caret at the first block's object, or at the editor's end, or each block selected.
+            let first = opening.chars().count();
+            let caret = match mode {
+                "after" => json!(first),
+                "before" => json!(first + secret.len()),
+                _ => Value::Null,
+            };
+            let links: Vec<Value> = (0..secret.len())
+                .map(|i| json!([first + i, i + 1]))
+                .collect();
+            let mut elements = vec![
+                json!({"text":format!("{opening}{}", "\u{FFFC}".repeat(secret.len())),
+                "caret":caret,"selection":null,"block":true,"links":links}),
+            ];
             for piece in secret {
-                parts.push(json!({"mark":"blockStart"}));
-                parts.push(json!({"text":piece}));
-                parts.push(json!({"mark":"blockEnd"}));
+                let selection = (mode == "selected").then(|| json!([0, piece.chars().count()]));
+                elements.push(json!({"text":piece,"caret":null,"selection":selection,"block":true,"links":[]}));
             }
-            if mode == "selected" {
-                parts.push(json!({"mark":"selectionEnd"}));
-            }
-            if mode == "before" {
-                parts.push(json!({"mark":"caret"}));
-            }
-            let flat = call(process, json!({"hypertext":{"parts":parts}}));
+            let flat = call(process, json!({"hypertext":{"elements":elements}}));
             let text = flat["text"].as_str().unwrap();
             if mode == "block" {
                 replies.push((
@@ -2003,6 +2015,14 @@ mod budget_tests {
         assert_eq!(field["stop"], "text budget");
         let open = call(json!({"admitField":["a","b","c"],"used":0}));
         assert_eq!(open["stop"], Value::Null);
+        // The budget is full, and the read stops, at exactly its last byte.
+        let last = call(json!({"admit":"a","used":SCREEN - 1}));
+        assert_eq!(
+            (last["used"].as_u64(), &last["stop"]),
+            (Some(SCREEN as u64), &json!("text budget"))
+        );
+        let short = call(json!({"admit":"a","used":SCREEN - 2}));
+        assert_eq!(short["stop"], Value::Null);
     }
     /// The refusal a helper sends for a caret it could not read with text selected is the core's:
     /// no text around the caret and the redaction marker as the selection, which disables Edit.
@@ -2558,10 +2578,33 @@ mod hypertext_tests {
             )]),
             Err(1)
         );
-        // Both forms at once, or neither.
-        let both =
-            json!({"hypertext": {"elements": [element("a", false, json!([]))], "parts": []}});
-        assert_eq!(process(&serde_json::to_vec(&both).unwrap()), Err(1));
         assert_eq!(process(br#"{"hypertext":{}}"#), Err(1));
+    }
+    /// The elements' text, objects included, is held to the budget, though the joined text,
+    /// without the objects, fits it.
+    #[test]
+    fn the_elements_text_is_held_to_the_budget() {
+        let children = 299;
+        let elements = |total: usize| {
+            let own = OBJECT.len() * children;
+            let each = (total - own) / children;
+            let links: Vec<Value> = (0..children).map(|i| json!([i, i + 1])).collect();
+            let mut elements = vec![element(&OBJECT.repeat(children), false, json!(links))];
+            for i in 0..children {
+                let size = if i + 1 == children {
+                    total - own - each * (children - 1)
+                } else {
+                    each
+                };
+                elements.push(element(&"a".repeat(size), false, json!([])));
+            }
+            elements
+        };
+        let fits = join(&elements(CARET_SOURCE_BYTES)).unwrap();
+        assert_eq!(
+            fits["text"].as_str().unwrap().len(),
+            CARET_SOURCE_BYTES - OBJECT.len() * children
+        );
+        assert_eq!(join(&elements(CARET_SOURCE_BYTES + 1)), Err(1));
     }
 }

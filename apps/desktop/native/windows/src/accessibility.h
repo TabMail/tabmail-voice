@@ -243,13 +243,12 @@ public:
         const std::string selection = parts ? (*parts)[1] : pageSelection;
         const std::string right = parts ? (*parts)[2] : "";
         VisibleContext context({left, selection, right});
-        const std::string caretText = left + "‸" + selection + (selection.empty() ? "" : "‸") + right;
         // Only a page that is excluded, or whose address is unknown, is reported as hidden;
         // a read that stopped because the window lost the foreground is no context.
         bool hiddenPage = false;
         std::optional<std::wstring> walkedHost;
         const FocusRead focus{element.Get(), !terminal && (protectedFocus || parts.has_value()), !pageSelection.empty()};
-        if (!readVisible(window, focus, caretText, context, exclusions, hiddenPage, walkedHost)) {
+        if (!readVisible(window, focus, context, exclusions, hiddenPage, walkedHost)) {
             return hiddenPage ? hiddenScreen() : JSON(nullptr);
         }
         wchar_t title[513]{};
@@ -826,8 +825,7 @@ private:
     // keeps its message list in one), though Chromium reports its children's frames unclipped
     // here, so a screen-reader-only label's text can be read (ADR-DESK-054). A focused element
     // that is no field is read like any other, where the Mac leaves it out.
-    bool readVisible(HWND window, const FocusRead& target, const std::string& caretText,
-                     VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
+    bool readVisible(HWND window, const FocusRead& target, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
                      std::optional<std::wstring>& walkedHost) {
         auto* const focus = target.element;
         const auto& limits = walk::limits();
@@ -884,11 +882,11 @@ private:
             if (step.action == "refuse") return refuse();
             const std::optional<ContextFrame> geometry = place ? place->geometry : std::nullopt;
             // A page in focus with a selection: the selection, then the page like any page.
-            if (step.caretFirst) context.append(ContextKind::caret, caretText, geometry);
+            // The caret's block is where the core puts the text around the caret: it sends none.
+            if (step.caretFirst) context.append(ContextKind::caret, "", geometry);
             if (step.action == "caret") {
                 // A protected field gives only the caret, and nothing of where it is.
-                if (facts->password) context.append(ContextKind::caret, "‸");
-                else context.append(ContextKind::caret, caretText, geometry);
+                context.append(ContextKind::caret, "", facts->password ? std::optional<ContextFrame>{} : geometry);
                 continue;
             }
             if (step.action == "skip") {
@@ -957,7 +955,7 @@ private:
         }
         // A provider may omit the focus node from its tree. Retain the independently
         // bounded caret context rather than dropping it from a partial screen read.
-        if ((target.field || target.pageSelected) && !context.hasCaret) context.append(ContextKind::caret, caretText);
+        if ((target.field || target.pageSelected) && !context.hasCaret) context.append(ContextKind::caret, "");
         return true;
     }
     static JSON rectangle(double x, double y, double width, double height) {

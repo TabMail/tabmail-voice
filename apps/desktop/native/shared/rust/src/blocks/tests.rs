@@ -278,6 +278,26 @@ fn answers_out_of_turn_are_refused() {
     let mut forged = children["state"].clone();
     forged["stack"][0]["lower"] = json!(3);
     assert_eq!(process(&json!({"state": forged, "placed": null})), Err(1));
+    // A halving past its element's children, a walk deeper than its elements, and a place sent
+    // while the element's children were asked for.
+    let mut forged = children["state"].clone();
+    forged["stack"][0]["upper"] = json!(3);
+    assert_eq!(
+        process(&json!({"state": forged, "placed": {"block": false, "endsBefore": true}})),
+        Err(1)
+    );
+    let mut forged = children["state"].clone();
+    forged["stack"] = json!(vec![children["state"]["stack"][0].clone(); 7]);
+    assert_eq!(
+        process(&json!({"state": forged, "placed": {"block": false, "endsBefore": true}})),
+        Err(1)
+    );
+    let mut forged = children["state"].clone();
+    forged["asked"]["children"] = json!(true);
+    assert_eq!(
+        process(&json!({"state": forged, "placed": {"block": false, "endsBefore": true}})),
+        Err(1)
+    );
     // A place for another child than the one asked for, once the halving is done.
     let one = process(&json!({"state": start["state"], "children": 1})).unwrap();
     let scan =
@@ -286,6 +306,16 @@ fn answers_out_of_turn_are_refused() {
     assert_eq!(scan["ask"]["place"]["child"], 0);
     let mut forged = scan["state"].clone();
     forged["asked"]["child"] = json!(1);
+    assert_eq!(
+        process(
+            &json!({"state": forged, "placed": {"block": false, "endsBefore": false, "startsPast": false, "startsWithin": true}})
+        ),
+        Err(1)
+    );
+    // A scan past its element's children.
+    let mut forged = scan["state"].clone();
+    forged["stack"][0]["scan"] = json!(2);
+    forged["asked"]["child"] = json!(2);
     assert_eq!(
         process(
             &json!({"state": forged, "placed": {"block": false, "endsBefore": false, "startsPast": false, "startsWithin": true}})

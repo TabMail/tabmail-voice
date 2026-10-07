@@ -306,10 +306,11 @@ int main() {
     bulk.census = std::vector<Element*>{&page}; bulk.budget = false;
     expect(!voice::safeSubtree(bulk, &page, policy, true), "bulk query cannot bypass time budget");
     {
-        // Without a provider collection the census walks the tree, fetching at most what the
-        // node budget still allows. The element looked inside is not
-        // counted: as many elements inside it as the budget are seen whole, one more is not, and
-        // what lies under the elements fetched at the budget's edge is still looked at.
+        // Without a provider collection the census is the core's, fetching at most what the
+        // node budget still allows. The protected census (passwords refused) counts the element
+        // looked inside, the other does not: as many elements as the budget are seen whole, one
+        // more is not, and what lies under the elements fetched at the budget's edge is still
+        // looked at.
         struct Truncating : Tree {
             std::vector<Node> children(Node node, size_t limit) {
                 auto result = node->children;
@@ -324,10 +325,14 @@ int main() {
         Element wide{ATSPI_ROLE_PANEL, "", {}, {}};
         for (auto& filler : fillers) wide.children.push_back(&filler);
         Truncating census;
-        expect(voice::safeSubtree(census, &wide, policy, true), "the budget's worth of elements inside is seen whole");
+        expect(voice::safeSubtree(census, &wide, policy, false), "the budget's worth of elements inside is seen whole");
+        expect(!voice::safeSubtree(census, &wide, policy, true), "the protected census counts the element itself");
+        wide.children.pop_back();
+        expect(voice::safeSubtree(census, &wide, policy, true), "the budget's worth, the element included, is seen whole protected");
         Element extra{ATSPI_ROLE_PANEL, "", {}, {}};
+        wide.children.push_back(&fillers.back());
         wide.children.push_back(&extra);
-        expect(!voice::safeSubtree(census, &wide, policy, true), "one element more than the budget is not seen whole");
+        expect(!voice::safeSubtree(census, &wide, policy, false), "one element more than the budget is not seen whole");
         wide.children.resize(budget - 2);
         wide.children.insert(wide.children.begin(), &holder);
         expect(!voice::safeSubtree(census, &wide, policy, true), "a password element under the budget's edge is still found");
