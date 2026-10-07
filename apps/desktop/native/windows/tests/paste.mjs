@@ -148,6 +148,10 @@ try {
   assert.equal((await command("value")).text, "Before selected after.", "expired request never sends input");
   assert.deepEqual(await command("clipboard"), original, "expired request leaves the clipboard intact");
   assert.equal((await request("frontmostApp").result).result.window, window, "helper remains available after a refused late insertion");
+  // A classic multi-line edit takes the paste in place of its selection.
+  await command("multiline");
+  assert.equal((await request("insert", params()).result).error, undefined, "a multi-line edit takes the paste");
+  await until("multi-line edit: the text is pasted", "First line\r\nSecond Synthetic inserted text line.");
   const exits = [once(fixture, "exit"), once(helper, "exit")];
   fixture.stdin.end(); helper.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);

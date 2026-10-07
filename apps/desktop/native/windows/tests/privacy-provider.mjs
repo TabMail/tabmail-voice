@@ -54,7 +54,7 @@ async function request(method, params = {}) {
 }
 const exclusions = { excludedAppIDs: [], excludedHosts: ["blocked.example"] };
 let fixture;
-const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 80_000);
+const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 120_000);
 let checks = 0;
 try {
   for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row", "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
@@ -141,6 +141,30 @@ try {
     }
     const exit = once(fixture.child, "exit"); fixture.child.stdin.end();
     assert.deepEqual(await exit, [0, null]); fixture.lines.close(); fixture = undefined;
+    ++checks;
+  }
+  // A provider that stops answering when asked for its focus fails the helper's request and never
+  // ends the helper, which holds the microphone: one UI Automation call gives up well before the
+  // watchdog would. A caret lookup, a field read and a paste each.
+  for (const mode of ["stalled-focus"]) {
+    fixture = client(process.argv[3], [mode]);
+    const stalled = await fixture.next();
+    assert.deepEqual(await request("frontmostApp"), { window: stalled.window }, `${mode}: fixture owns foreground`);
+    for (const [method, params] of [["caretAnchor", {}], ["focusedFieldValue", { ...exclusions, maxLength: 20000 }],
+      ["insert", { text: "Synthetic inserted text" }]]) {
+      const deadline = method === "insert" ? { deadline: Date.now() + 2500 } : {};
+      helper.child.stdin.write(`${JSON.stringify({ id: ++id, method, params: { ...params, ...deadline, window: stalled.window } })}\n`);
+      const refusal = await helper.next();
+      // Refused: an error, or (a field read) no value.
+      assert.ok(refusal.id === id && (refusal.error || refusal.result === null || refusal.result?.value === null),
+        `${mode}: a ${method} in a provider that stops answering is refused: ${JSON.stringify(refusal)}`);
+      assert.deepEqual(await request("frontmostApp"), { window: stalled.window }, `${mode}: the helper outlives a ${method} that stops answering`);
+    }
+    // The screen reader, restarted by its caller rather than by a watchdog, waits for the provider.
+    const slowRead = await request("readScreen", exclusions);
+    assert.ok(slowRead?.renderedText.includes("Synthetic safe label"), `${mode}: the screen reader waits for a slow provider`);
+    const stalledExit = once(fixture.child, "exit"); fixture.child.stdin.end();
+    assert.deepEqual(await stalledExit, [0, null]); fixture.lines.close(); fixture = undefined;
     ++checks;
   }
   const exits = [once(helper.child, "exit"), once(reader.child, "exit")]; helper.child.stdin.end(); reader.child.stdin.end();
