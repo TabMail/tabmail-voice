@@ -761,6 +761,18 @@ wording; the details are in the Terms of Service and the Privacy Policy. The ite
 agent mode, your request, the text you've selected, and whatever its tools need to do it.", which
 new tools fit without another change; the closing item is back to its original wording, without
 the search-provider sentence.
+Later again (owner): the wording should invite, showing the value rather than a privacy scare, and
+reassure with "may use" language (nothing is grabbed and sent all the time; secrets are redacted);
+nothing sent this way is stored. The consent page now opens "To get your words right, TabMail
+Voice may use:", one short line per item: the voice only while the key is held; the text in the
+window being dictated into, with passwords and secrets left out and a switch to turn it off; the
+dictionary, learned from corrections on this computer; agent mode's request, selection and
+whatever its tools need to help; and "Only when you dictate, and only to help with it. Nothing it
+sends is stored." The screen-reading captions in the Features step and Settings, and the
+recording note in Settings, take the same tone. Dropped from the page, left to the Terms of Service
+and the Privacy Policy: the app name, window title and website address the screen read carries,
+that a long dictation is sent in parts (ADR-DESK-049's consent-page line), and that the data goes
+to TabMail and its AI providers.
 
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
