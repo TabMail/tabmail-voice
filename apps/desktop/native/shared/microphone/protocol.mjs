@@ -6,7 +6,9 @@
 // requests and goes on, ends itself with the restart code once its one capture is over (its session
 // stopped, its start failed, a newer start came), and EOF ends it at once. Run directly:
 // `node protocol.mjs <voice-microphone> [--capture]`; `--capture` requires a working default input
-// (Linux's test gives it a synthetic one), which a machine without one can't give.
+// (Linux's test gives it a synthetic one), which a machine without one can't give. A start that
+// fails and a capture lost mid-session also end it (`microphoneFailedStart`, `microphoneLost`): the
+// platform's test takes its input away, as only it can.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -70,7 +72,7 @@ export async function microphoneProtocol(executable, { env, capture = false } = 
       assert.ok((await idle.request("microphoneStop", params)).error, `a stop needs a positive session: ${JSON.stringify(params)}`);
       assert.ok((await idle.request("microphoneStart", { ...params, sampleRate: 16000 })).error, `a start needs a positive session: ${JSON.stringify(params)}`);
     }
-    for (const sampleRate of [undefined, 0, -1, 7999, 192001, "16000", 16000.5]) {
+    for (const sampleRate of [undefined, 0, -1, 7999, 96001, "16000", 16000.5]) {
       assert.ok((await idle.request("microphoneStart", { session: 1, sampleRate })).error, `a start needs a recording rate: ${sampleRate}`);
     }
     assert.ok((await idle.request("readScreen")).error, "voice-microphone does nothing but the microphone");
@@ -126,6 +128,49 @@ export async function microphoneProtocol(executable, { env, capture = false } = 
     clearTimeout(timeout);
     for (const helper of helpers) { helper.child.kill(); helper.lines.close(); }
   }
+}
+
+/** Runs `check` on a helper started with `env`, bounded, and kills the helper after. */
+async function withHelper(executable, env, name, check) {
+  const helper = start(executable, env);
+  const timeout = setTimeout(() => {
+    process.stderr.write(`voice-microphone ${name} timed out\n`);
+    process.exitCode = 1;
+    helper.child.kill();
+  }, 20_000);
+  try {
+    return await check(helper);
+  } finally {
+    clearTimeout(timeout);
+    helper.child.kill();
+    helper.lines.close();
+  }
+}
+
+/** A start that fails (`env` gives the helper no working input) is answered with an error, and
+ * the helper then ends itself with the restart code, having sent nothing. */
+export async function microphoneFailedStart(executable, { env } = {}) {
+  await withHelper(executable, env, "failed start", async (helper) => {
+    assert.ok((await helper.request("microphoneStart", { session: 1, sampleRate: 16000 })).error, "a start with no working input fails");
+    assert.deepEqual(await helper.closed, [restartExitCode, null], "a failed start ends the helper to be started afresh");
+    assert.equal(helper.chunks.length, 0, "nothing is heard from a start that failed");
+    assert.deepEqual(helper.stderr().split("\n").filter(Boolean), ["debug microphone: ending, to be started afresh"], "it says it ends, and nothing else");
+  });
+}
+
+/** A capture lost mid-session (`cut` takes away the input `env` gives the helper) ends the helper
+ * with the restart code with no stop sent, after the chunks heard before: the app's only sign of
+ * the loss is that exit. */
+export async function microphoneLost(executable, { env, cut }) {
+  await withHelper(executable, env, "lost capture", async (helper) => {
+    assert.deepEqual((await helper.request("microphoneStart", { session: 1, sampleRate: 16000 })).result, {}, "a working input starts");
+    for (const by = Date.now() + 3000; helper.chunks.length < 5 && Date.now() < by;) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(helper.chunks.length >= 5, "a running capture sends chunks");
+    await cut();
+    assert.deepEqual(await helper.closed, [restartExitCode, null], "a lost capture ends the helper to be started afresh");
+    assert.ok(helper.chunks.every((chunk) => chunk.session === 1), "every chunk is the running session's");
+    assert.deepEqual(helper.stderr().split("\n").filter(Boolean), ["debug microphone: capture lost; ending"], "it says the capture was lost, and nothing else");
+  });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

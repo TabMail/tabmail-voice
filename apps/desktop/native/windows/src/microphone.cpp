@@ -20,22 +20,6 @@
 #include "../../shared/microphone/sessions.h"
 
 using JSON = nlohmann::json;
-namespace {
-int64_t session(const JSON& params) {
-    if (!params.is_object() || !params.contains("session") || !params["session"].is_number_integer()) {
-        throw std::runtime_error("invalid microphone session");
-    }
-    const auto value = params["session"].get<int64_t>();
-    if (value <= 0) throw std::runtime_error("invalid microphone session");
-    return value;
-}
-unsigned sampleRate(const JSON& params) {
-    if (!params.contains("sampleRate") || !params["sampleRate"].is_number_integer()) throw std::runtime_error("invalid recording rate");
-    const auto rate = params["sampleRate"].get<int64_t>();
-    if (rate < 8000 || rate > 192000) throw std::runtime_error("invalid recording rate");
-    return static_cast<unsigned>(rate);
-}
-}
 int main(int argc, char**) {
     if (argc != 1) return 1;
     voice::Output output;
@@ -65,8 +49,8 @@ int main(int argc, char**) {
             if (method == "microphonePrepare") {
                 if (sessions.mayPrepare()) microphone.prepare();
             } else if (method == "microphoneStart") {
-                const auto started = session(params);
-                const auto rate = sampleRate(params);
+                const auto request = voice::microphoneRequest(method, params);
+                const auto started = request.session;
                 switch (sessions.start(started)) {
                 case voice::MicrophoneSessions::Start::skipped:
                     break;
@@ -76,7 +60,7 @@ int main(int argc, char**) {
                     microphone.stop();
                     throw std::runtime_error("microphone already used");
                 case voice::MicrophoneSessions::Start::runs:
-                    try { microphone.start(started, rate); }
+                    try { microphone.start(started, request.sampleRate); }
                     catch (...) {
                         sessions.failed(started);
                         ends = true;
@@ -84,7 +68,7 @@ int main(int argc, char**) {
                     }
                 }
             } else if (method == "microphoneStop") {
-                if (sessions.stop(session(params))) {
+                if (sessions.stop(voice::microphoneRequest(method, params).session)) {
                     microphone.stop();
                     ends = true;
                 }

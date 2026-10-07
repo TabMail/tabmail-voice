@@ -130,7 +130,7 @@ mod tests {
     fn shared_session_cases() {
         let cases: serde_json::Value =
             serde_json::from_str(include_str!("../../microphone/session-cases.json")).unwrap();
-        assert_eq!(cases.as_array().unwrap().len(), 9);
+        assert_eq!(cases.as_array().unwrap().len(), 10);
         for case in cases.as_array().unwrap() {
             let mut state = MicrophoneSessions::default();
             let name = case["name"].as_str().unwrap();

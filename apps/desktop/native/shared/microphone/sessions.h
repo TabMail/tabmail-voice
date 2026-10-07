@@ -5,7 +5,8 @@
 #pragma once
 #include <cstdint>
 #include <optional>
-#include "../rust/include/voice_core.h"
+#include <string>
+#include "../rust/VoiceCore.h"
 
 namespace voice {
 // Which of the app's numbered sessions voice-microphone runs, and when its process ends: the shared
@@ -28,4 +29,16 @@ public:
         return session ? std::optional<int64_t>(session) : std::nullopt;
     }
 };
+
+// A `microphoneStart` or `microphoneStop` request's session and, for a start, its recording rate
+// (Hz), as the shared core accepts them (`../rust/src/request.rs`, its cases in
+// `../context/request-cases.json`); throws when the core refuses them.
+struct MicrophoneRequest {
+    int64_t session;
+    unsigned sampleRate;
+};
+inline MicrophoneRequest microphoneRequest(const std::string& method, const nlohmann::json& params) {
+    const auto checked = core::request(nlohmann::json{{method, params}}, voice_core_request_json);
+    return {checked.at("session").get<int64_t>(), checked.value("sampleRate", 0u)};
+}
 }

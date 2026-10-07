@@ -250,5 +250,31 @@
         "mayPrepare": false
       }
     ]
+  },
+  {
+    "name": "a stop for a session that never ran here does not keep a newer start off",
+    "steps": [
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": true
+      },
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "runs",
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 2,
+        "stopped": true,
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
   }
 ]

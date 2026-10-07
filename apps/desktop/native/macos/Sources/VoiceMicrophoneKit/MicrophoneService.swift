@@ -31,6 +31,23 @@ public enum MicrophoneService {
         return ["session": .number(Double(session)), "samples": .string(data.base64EncodedString())]
     }
 
+    /// A `microphoneStart` or `microphoneStop` request's session and, for a start, its recording
+    /// rate, as the shared core accepts them (`voice_core_request_json`, its cases in
+    /// `shared/context/request-cases.json`); nil when the core refuses them.
+    static func checked(_ method: String, _ params: [String: JSON?]) -> (session: Int, sampleRate: Double)? {
+        let fields = params.mapValues { $0 ?? .null }
+        guard voice_core_abi_version() == 1, let input = try? JSONEncoder().encode(JSON.object([method: .object(fields)])) else { return nil }
+        var output = VoiceCoreBuffer(data: nil, length: 0)
+        let status = input.withUnsafeBytes { bytes in
+            voice_core_request_json(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, &output)
+        }
+        defer { voice_core_buffer_free(output) }
+        guard status == 0, let data = output.data,
+              let reply = try? JSONDecoder().decode(JSON.self, from: Data(bytes: data, count: output.length)),
+              let session = reply["session"]?.integer else { return nil }
+        return (session, reply["sampleRate"]?.number ?? 0)
+    }
+
     /// Ends the process after the chunks already queued on `chunkQueue`, so the app has all that
     /// was heard.
     static func ending(after chunkQueue: DispatchQueue, end: @escaping @Sendable () -> Void) -> @Sendable () -> Void {
@@ -66,8 +83,8 @@ public enum MicrophoneService {
             return [:]
         }
         channel.on("microphoneStart") { params in
-            guard let session = params["session"]?.integer, let sampleRate = params["sampleRate"]?.number, sampleRate > 0 else {
-                throw HelperError("microphoneStart needs session and sampleRate")
+            guard let (session, sampleRate) = checked("microphoneStart", ["session": params["session"], "sampleRate": params["sampleRate"]]) else {
+                throw HelperError("microphoneStart needs a session and sampleRate the shared core accepts")
             }
             do {
                 try await microphone.start(session: session, sampleRate: sampleRate)
@@ -77,7 +94,9 @@ public enum MicrophoneService {
             return [:]
         }
         channel.on("microphoneStop") { params in
-            guard let session = params["session"]?.integer else { throw HelperError("microphoneStop needs session") }
+            guard let (session, _) = checked("microphoneStop", ["session": params["session"]]) else {
+                throw HelperError("microphoneStop needs a session the shared core accepts")
+            }
             await microphone.stop(session: session)
             return [:]
         }

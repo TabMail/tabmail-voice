@@ -2282,12 +2282,19 @@ narrowed the window: a provider slow on each of a request's later calls still re
   (`native/shared/rust/src/microphone.rs`, a C value state like the gesture's; ADR-DESK-054), with
   its cases in `native/shared/microphone/session-cases.json`, run by Rust, Swift
   (`MicrophoneSessions`, now a thin wrapper) and C++ (`sessions.h`, Windows and Linux). The rules
-  are macOS's, unchanged.
+  are macOS's, unchanged. What a start or stop may ask for is decided there too (`request.rs`,
+  `microphoneStart`/`microphoneStop`, cases in `native/shared/context/request-cases.json`): a session
+  that is a whole number from 1 and a rate in whole hertz from 8,000 to 96,000, so the three helpers
+  refuse the same requests (they had three hand-written checks with three answers; macOS accepted
+  any session and any positive rate).
 - On Linux PulseAudio now runs on the helper's own GLib main loop with its requests (no AT-SPI in the
   process), so the worker thread and context that kept AT-SPI from starving capture are gone.
 - `native/shared/microphone/protocol.mjs` checks the Windows and Linux helpers' wire against the built
   helper (refusals, one capture per process, the restart exit, EOF); on Linux with a synthetic tone
-  through a private null sink, on Windows without needing an input.
+  through a private null sink, on Windows without needing an input. A failed start and a lost capture
+  are checked too: on Linux with no sound server, and with the helper's connection to it cut through
+  a relay; on Windows by stopping Windows Audio, in an elevated run in the test VM
+  (`tests/microphone-loss.mjs`), since stopping a service is no CTest step.
 - Not done here (issue #98): preparing a Windows capture client ahead of the key press and measuring
   first-audio time on built-in and Bluetooth inputs. This amendment supersedes the line above that
   Windows keeps its microphone in `voice-windows`.

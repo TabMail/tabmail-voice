@@ -41,7 +41,9 @@ Native tests additionally need Python GObject introspection with the TinySPARQL
 3.0 typelib (`python3-gi`, `gir1.2-tinysparql-3.0`) and `pulseaudio-utils`.
 The microphone test creates a temporary null sink, feeds it a synthetic tone,
 and selects its monitor only for `voice-microphone`, which it runs through the shared
-protocol checks (`../shared/microphone/protocol.mjs`). It removes the sink afterward;
+protocol checks (`../shared/microphone/protocol.mjs`), then checks that a start with no sound
+server, and a capture whose connection to the sound server is cut (through a relay to a TCP
+listener the test loads), each end it with the restart code. It removes the sink and the listener afterward;
 it does not change the desktop's default audio devices.
 
 For native tests, from the repository root:

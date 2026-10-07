@@ -96,7 +96,7 @@ struct MicrophoneSessionsTests {
         let native = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
         let cases = try JSONDecoder().decode([Case].self, from: Data(contentsOf: native.appendingPathComponent("shared/microphone/session-cases.json")))
-        #expect(cases.count == 9)
+        #expect(cases.count == 10)
         for test in cases {
             var sessions = MicrophoneSessions()
             for step in test.steps {
