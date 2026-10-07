@@ -8,7 +8,8 @@
 // sends an event, `log` writes a debug and an error line to stderr, `ids` answers its process id,
 // `hang` blocks forever without reading its stdin again (a read stuck in a provider), `breaks` answers text
 // holding U+2028 and U+2029 (a terminal's box joins its rows with U+2029), which JSON leaves unescaped,
-// `crlf` answers its params on a line ended by CRLF, as the Windows helpers write, and logs a CRLF line.
+// `crlf` answers its params on a line ended by CRLF, as the Windows helpers write, and logs a CRLF line,
+// `big` answers `params.rows` rows joined by U+2029, a reply longer than one pipe read.
 import { createInterface } from "node:readline";
 
 const deferred = new Map();
@@ -49,6 +50,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "crlf":
       process.stderr.write("error windows line\r\n");
       return process.stdout.write(`${JSON.stringify({ id, result: params })}\r\n`);
+    case "big":
+      return send({ id, result: { value: Array.from({ length: params.rows }, (_, row) => `row ${row}`).join("\u2029") } });
     case "pid":
       return send({ id, result: { pid: process.pid } });
     case "hang":

@@ -83,6 +83,20 @@ describe("CorrectionWatch", () => {
     expect(shell.learned).toEqual([["Xyvora"]]);
   });
 
+  /** The whole-row rule is a terminal's: a field without rows learns what it teaches though it is not
+   * in the field as written (the words of a respelling, read apart by two spaces). */
+  test("a field without rows learns a respelling not written as one", async () => {
+    const dictated = "Please forward the zivora corp contract today.";
+    const { field, learned, watch } = setup(dictated);
+    watch.watch(pid, dictated, none);
+    await poll();
+    field.value = "Please forward the Xyvora  Corp contract today.";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([["Xyvora Corp"]]);
+  });
+
   /** A shell wraps its line at a column, and an edit that changes a word's length moves every wrap
    * after it: a word the terminal split, or two words a wrap at a blank runs together, is never
    * learned. While the field has rows, only a word read whole on one row is (the core's breaks

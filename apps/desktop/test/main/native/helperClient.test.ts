@@ -50,6 +50,16 @@ describe("HelperClient", () => {
     expect(await client.request("echo", { after: true })).toEqual({ after: true });
   });
 
+  test("a reply longer than one pipe read is put together whole", async () => {
+    const client = helper();
+    const rows = 20_000;
+    const reply = (await client.request("big", { rows })) as { value: string };
+    expect(reply.value.length).toBeGreaterThan(128 * 1024);
+    expect(reply.value.split("\u2029")).toHaveLength(rows);
+    expect(reply.value.endsWith(`row ${rows - 1}`)).toBe(true);
+    expect(await client.request("echo", { after: true })).toEqual({ after: true });
+  });
+
   test("a line ended by CRLF, as the Windows helpers write, is read without its carriage return", async () => {
     const errors: string[] = [];
     configureLog({ isDebugBuild: true, sinks: { file: () => {}, error: (text) => errors.push(text) } });

@@ -108,6 +108,16 @@ fn the_cursor_row_keeps_what_was_typed_before_the_cursor() {
         boxed(&["a\r", "b‸c\r", "d\r"]),
         caret(&["a"], "b", "c", &["d"])
     );
+    // A caret at the end of a CRLF row: the carriage return is not text typed before it.
+    assert_eq!(boxed(&["a\r", "b\r‸", "c"]), caret(&["a"], "b", "", &["c"]));
+}
+
+/// A border right beside the cursor is its box's border: the box starts after one just before the
+/// cursor and ends at one just after it.
+#[test]
+fn a_border_beside_the_cursor_bounds_its_box() {
+    assert_eq!(boxed(&["left │‸x │ right"]), caret(&[], "", "x", &[]));
+    assert_eq!(boxed(&["left │ x‸│ right"]), caret(&[], " x", "", &[]));
 }
 
 /// Only an exact caret gets a box; one the runs do not hold, or inside a character, gets none.
