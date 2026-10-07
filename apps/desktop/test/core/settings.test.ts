@@ -641,6 +641,18 @@ describe("dictionary", () => {
     expect(app.dictation(null).dictionary).toEqual(["xyvora", "TabMail", "Brevalle", "Zorblax", "Kaelthorne Draszek"]);
   });
 
+  /** Words used at once (learned in one correction, or in one dictation's text) keep their stored
+   * order when sent, whichever way round they were stored. */
+  test.each([
+    [["Brevalle", "Zorblax"], ["Xyvora", "Brevalle", "Zorblax"]],
+    [["Zorblax", "Brevalle"], ["Xyvora", "Zorblax", "Brevalle"]],
+  ])("sends words used at once in their stored order: learned %j", (learned, sent) => {
+    const app = settings();
+    app.learnWords(learned);
+    app.addWord("Xyvora");
+    expect(app.dictation(null).dictionary).toEqual(sent);
+  });
+
   /** Owner, 2026-10-02: of the 200 words the backend takes with a dictation, the dictionary's come
    * first, at most 150, at most 100 of them typed; learned words fill the rest, all 150 when none is
    * typed; the screen's terms fill what the dictionary leaves. */
