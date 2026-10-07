@@ -5,6 +5,7 @@
 import type { CleanupVariables } from "../backend/transcription.js";
 import * as config from "../config.js";
 import { log } from "../log.js";
+import { unspacedScript } from "./chunkJoin.js";
 import type { ScreenContext, TerminalViewport } from "./screenContext.js";
 import { charCount, trimWhitespace } from "../util/text.js";
 
@@ -49,6 +50,47 @@ export const DictationCleanup = {
     return text;
   },
 };
+
+/** What a dictation is spaced from when the caret is right after it (owner, 2026-10-05): a delimiter, or
+ * a closing bracket. Not an opening one: what is dictated there goes inside it. */
+const spacedDelimiter = /[,;:.…!?\p{Pe}]$/u;
+/** Quotes that close a quotation: a run of them after a word or a mark ('hi'│, “Done.”│, students'│,
+ * "he said 'no'"│), not after a space, a line's start or an opening bracket (said "│, (“│, said "'│),
+ * where they open one. Which way a quote is drawn doesn't count (owner, 2026-10-05): „Hallo“│ closes,
+ * and so does a quote typed the wrong way round. */
+const closingQuote = /[^\s\p{Ps}"'\p{Pi}\p{Pf}]["'\p{Pi}\p{Pf}]+$/u;
+/** What a dictation starts with to be spaced from one: a letter, a digit, a currency sign, an opening
+ * bracket, Spanish ¿ ¡, or quotes that open a quotation, told as at the caret by what is next to them
+ * rather than how they are drawn: followed by one of those (”Hej”, »Hallo«, "hi"), not by a space or
+ * punctuation (" and left). */
+const spacedStart = /^["'\p{Pi}\p{Pf}]*[\p{L}\p{N}\p{Sc}\p{Ps}¿¡]/u;
+/** The last letter or digit of a text, and the first: the script on each side of the caret (a bracket,
+ * a quote or a digit belongs to none). */
+const lastLetter = /[\p{L}\p{N}](?=[^\p{L}\p{N}]*$)/u;
+const firstLetter = /[\p{L}\p{N}]/u;
+
+/** `text` as pasted at a caret between `textBeforeCaret` and `textAfterCaret` (the focused field's,
+ * read at key-down): with a space ahead of it when the text before ends with a delimiter, a closing
+ * bracket or a closing quote, so "Note:" and "buy milk" give "Note: buy milk", and a space after it
+ * when it ends with one and a word follows (owner, 2026-10-06), so "Done." before "Next" gives
+ * "Done. Next". Unchanged otherwise: next to a space, a word, an opening bracket or an opening quote,
+ * with no field read, before punctuation, or in a script written without spaces. */
+export function spacedFromCaret(textBeforeCaret: string, text: string, textAfterCaret = ""): string {
+  const before = spacedBetween(textBeforeCaret, text) ? " " : "";
+  const after = spacedBetween(text, textAfterCaret) ? " " : "";
+  if (before !== "") log.debug("DictationCleanup: a space added after the delimiter or closing mark before the caret");
+  if (after !== "") log.debug("DictationCleanup: a space added before the word after the caret");
+  return `${before}${text}${after}`;
+}
+
+/** Whether `left` and `right`, side by side, are spaced: `left` ends with a delimiter, a closing
+ * bracket or a closing quote, and `right` starts with a word or an opening mark. */
+function spacedBetween(left: string, right: string): boolean {
+  const closes = spacedDelimiter.test(left) || closingQuote.test(left);
+  // No space where either side is written without spaces, as where a long dictation's chunks meet.
+  const sides = [lastLetter.exec(left)?.[0] ?? "", firstLetter.exec(right)?.[0] ?? ""];
+  return closes && spacedStart.test(right) && !sides.some((letter) => unspacedScript.test(letter));
+}
 
 /** `value` within the backend's limit on a cleanup field (`config.cleanupFieldMaxLength`), its start
  * kept, cut between characters. Bounds the cleanup model's input only. */

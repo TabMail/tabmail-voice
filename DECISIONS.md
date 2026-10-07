@@ -621,6 +621,42 @@ as before. Released builds keep sending the cleanup; the backend has it switched
 amendment, 2026-10-05) until clients with this switch ship, then turns it back on. As the iOS app's
 Smart Dictation (ADR-IOS-085 amendment).
 
+**Amendment 2026-10-05 — a space after a delimiter.** Owner: dictating with the caret right after a
+delimiter ("Note:") pasted the text flush against it. The pasted text is still trimmed, so the space
+is the app's to add: when the focused field's text before the caret, as read at key-down, ends with
+`,` `;` `:` `.` `…` `!` or `?`, or a closing bracket or quote, and the text starts with a letter, a digit, a currency sign or an opening
+bracket, `¿` `¡`, or quotes followed by one of those (a quote at the dictation's start, too, is told by
+what is next to it, not how it is drawn: `”Hej”` and `»Hallo«` open, `" and left` closes), and neither the last letter before the caret
+nor the dictation's first is in a script written without spaces (as where a long dictation's chunks
+meet: a bracket, a quote or a digit belongs to no script), the
+dictation is pasted with one space ahead (`spacedFromCaret`). Only the paste gets it (and so the
+clipboard the paste leaves behind): the paste history, the clipboard when the user switched apps, and
+agent mode's text are as written. Owner: after an opening quote "we want no space because we're going
+to be saying something inside the quote", after a closed one we do; a straight `"` or `'` is told
+apart by what is before it (a run of them, `'no'"`, by what is before the run): after a space, a
+line's start or an opening bracket it opens (no space), after anything else it closes (a space), so an apostrophe (`students'`) reads as closing too, and a
+caret inside a word after one (`don'│t`) is not dictated at (owner: "very unlikely"). The read is
+the helper's, secrets already taken out: a secret right before the caret reads as its placeholder,
+which ends in `]`, and is spaced from. Owner: curly quotes follow the same rule, whichever way they
+are drawn ("isn't it all just working fine if somebody just mistakenly does it the other way?"), so
+German `„Hallo“│` is spaced and `sagte „│` is not; brackets go by their shape (`foo(│` is not spaced).
+No field read (screen reading off, an excluded app or
+site, a read not done by the paste, a terminal read as a viewport) adds no space; nothing is read
+again at the paste, which would cost it time.
+
+**Amendment 2026-10-06 — a space before a word after the caret.** Owner: a dictation dropped in
+front of existing text ("Done." with the caret before "Next") should be spaced from it too. The same
+rule, mirrored: when the dictation ends with a delimiter or a closing bracket or quote and the
+field's text after the caret, as read at key-down, starts with a letter, a digit, a currency sign,
+an opening bracket, `¿` `¡` or opening quotes, and neither side is in a script written without
+spaces, one space is pasted after it (`spacedFromCaret`, both sides at once). Nothing is added
+after a dictation that ends with a word (a caret inside a word is the user's to space), before a
+space, a line break, punctuation or the field's end. As before the caret, a secret right after it
+reads as its placeholder, which starts with `[`, and is spaced from. Only the paste gets it.
+Chromium rich-text fields read the caret's line ends right since the restored paragraph breaks
+(ADR-DESK-007 amendment, 2026-10-06), so a caret at the end of a line is followed by its break,
+not the next paragraph's first word, and gets no trailing space.
+
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
 **Context:** Owner, 2026-09-25: the platform the Mac app reports should be called macOS, and the

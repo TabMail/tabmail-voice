@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "vitest";
 import { screenVariables } from "../../../src/core/agent/tools.js";
-import { DictationCleanup, textAroundCaret } from "../../../src/core/dictation/cleanup.js";
+import { DictationCleanup, spacedFromCaret, textAroundCaret } from "../../../src/core/dictation/cleanup.js";
 import * as config from "../../../src/core/config.js";
 import type { ScreenContext } from "../../../src/core/dictation/screenContext.js";
 import { CancellationError, sleep, TimeoutError, withTimeout } from "../../../src/core/util/timeout.js";
@@ -255,6 +255,147 @@ describe("DictationCleanup.pasted", () => {
    * transcription request). */
   test("no cleanup returned pastes the transcript as heard", () => {
     expect(DictationCleanup.pasted(transcript, null)).toBe(transcript);
+  });
+});
+
+/** A dictation pasted right after a delimiter is spaced from it (owner, 2026-10-05). */
+describe("spacedFromCaret", () => {
+  test.each([",", ";", ":", ".", "\u2026", "!", "?"])("spaces a dictation from %j before the caret", (delimiter) => {
+    expect(spacedFromCaret(`Note${delimiter}`, "buy milk")).toBe(" buy milk");
+  });
+
+  test.each([
+    ["Note:", "42 eggs", " 42 eggs"],
+    ["Note:", "(optional)", " (optional)"],
+    ["Note:", "\u201cquoted\u201d", " \u201cquoted\u201d"],
+    ["Note:", "Émile", " Émile"],
+    ["He said,", "\"I'll be there.\"", " \"I'll be there.\""],
+    ["Note:", "'quoted'", " 'quoted'"],
+    ["Hola Juan,", "¿cómo estás?", " ¿cómo estás?"],
+    ["¡Hola!", "¡Qué bien!", " ¡Qué bien!"],
+    ["Total:", "$50", " $50"],
+    ["Note:", "«Bonjour»", " «Bonjour»"],
+    // A quote opens by what follows it, whichever way it is drawn.
+    ["Han sa:", "\u201dHej\u201d", " \u201dHej\u201d"],
+    ["Er sagte:", "\u00bbHallo\u00ab", " \u00bbHallo\u00ab"],
+    ["Note:", "\"'quoted'\"", " \"'quoted'\""],
+    ["Note:", "\u201c(aside)\u201d", " \u201c(aside)\u201d"],
+    // The first character as a reader sees it, not its first UTF-16 unit; the first letter decides the dictation's script.
+    ["Note:", "𝐀lpha", " 𝐀lpha"],
+    ["Note:", "OK 牛乳", " OK 牛乳"],
+    // The last letter before the caret decides that side's script.
+    ["牛乳 Note:", "buy milk", " buy milk"],
+    // A digit belongs to no script: the letter before it, or the dictation itself, decides.
+    ["東京2024:", "buy milk", " buy milk"],
+    ["Note:", "2025年に行く", " 2025年に行く"],
+  ])("after %j, %j starts with a word or an opening mark: %j", (before, text, expected) => {
+    expect(spacedFromCaret(before, text)).toBe(expected);
+  });
+
+  /** A closing bracket or quote ends what was before; an opening one has the dictation go inside it. */
+  test.each([
+    ["(see above)"],
+    ["see [1]"],
+    ["He said \u201chi\u201d"],
+    ["\u00abBonjour\u00bb"],
+    ["He said \"hi\""],
+    ["He said \"Done.\""],
+    ["(\"hi\")"],
+    ["I don't know 'hi'"],
+    ["the students'"],
+    ["She said \"he said 'no'\""],
+    ["She said 'he said \"no\"'"],
+    ["It\u2019s \u2018hi\u2019"],
+    // Which way a quote is drawn doesn't count: German, and quotes typed the wrong way round.
+    ["Er sagte \u201eHallo\u201c"],
+    ["Er sagte \u201aja\u2018"],
+    ["\u00bbHallo\u00ab"],
+    ["He said \u201chi\u201c"],
+    ["He said \u201dhi\u201d"],
+  ])("spaces a dictation from the closing mark of %j", (before) => {
+    expect(spacedFromCaret(before, "buy milk")).toBe(" buy milk");
+  });
+
+  test.each([
+    ["He said \""],
+    ["He said '"],
+    ["\""],
+    ["Note:\n'"],
+    ["(\""],
+    ["\u201c'"],
+    ["He said \"'"],
+    ["He said '\""],
+    ["He said \u201c"],
+    ["He said \u00ab"],
+    ["see ("],
+    ["see ["],
+    ["call("],
+    ["Er sagte \u201e"],
+    ["Er sagte \u201a"],
+    ["Er sagte \u00bb"],
+    ["He said \u201d"],
+    ["He said \u201d'"],
+    ["\u201d"],
+    ["(\u2018"],
+  ])("leaves a dictation inside the opening mark of %j", (before) => {
+    expect(spacedFromCaret(before, "buy milk")).toBe("buy milk");
+  });
+
+  test.each([
+    ["after a space", "Note: ", "buy milk"],
+    ["after a line break", "Note:\n", "buy milk"],
+    ["after a word", "Note", "buy milk"],
+    ["after a word after a closing quote", "He said \"hi\" to", "buy milk"],
+    ["after a word after a delimiter", "Note: milk", "and eggs"],
+    ["with no field read", "", "buy milk"],
+    ["before punctuation", "Note:", ", and milk"],
+    ["before a closing bracket", "Note:", ") and milk"],
+    ["before a closing quote", "Note:", "\u201d and milk"],
+    ["before a straight closing quote", "He said \"Done.", "\" and left"],
+    ["before a closing quote run", "Note:", "'\" and left"],
+    ["before a quote then a delimiter", "Note:", "\","],
+    ["before a delimiter", "Note:", "; and milk"],
+    ["before a script written without spaces", "Note:", "牛乳を買う"],
+    ["before a bracket in a script written without spaces", "Note:", "「はい」"],
+    ["after a closing bracket in a script written without spaces", "「はい」", "「いいえ」と言った"],
+    ["after a closing quote in a script written without spaces", "他说：“好的。”", "“明天见。”她回答。"],
+    ["before a number after a script written without spaces", "（注）", "2024年に"],
+    ["after a script written without spaces last", "Note 牛乳:", "buy milk"],
+    ["for nothing", "Note:", ""],
+  ])("leaves the text as it is %s", (_name, before, text) => {
+    expect(spacedFromCaret(before, text)).toBe(text);
+  });
+
+  /** A dictation ending with a delimiter or a closing mark is spaced from a word after the caret
+   * (owner, 2026-10-06), by the same rules as the space before it. */
+  test.each([
+    ["Done.", "Next step", "Done. "],
+    ["Milk, eggs,", "and bread", "Milk, eggs, "],
+    ["Wait!", "(aside)", "Wait! "],
+    ["(see above)", "and more", "(see above) "],
+    ["He said \"hi\"", "to me", "He said \"hi\" "],
+    ["Done.", "\u201cquoted\u201d", "Done. "],
+  ])("pastes %j before %j as %j", (text, after, expected) => {
+    expect(spacedFromCaret("", text, after)).toBe(expected);
+  });
+
+  test("spaces a dictation on both sides at once", () => {
+    expect(spacedFromCaret("Note:", "buy milk.", "Then eggs")).toBe(" buy milk. ");
+  });
+
+  test.each([
+    ["ending with a word", "buy milk", "Then"],
+    ["before a space", "Done.", " Next"],
+    ["before a line break", "Done.", "\nNext"],
+    ["at the field's end", "Done.", ""],
+    ["before punctuation", "Done.", ", next"],
+    ["before a closing bracket", "Done.", ") next"],
+    ["before a script written without spaces", "Done.", "牛乳を買う"],
+    ["ending in a script written without spaces before a number", "（注）", "2024年に"],
+    ["ending in a closing quote in a script written without spaces", "他说“好的”", "OK"],
+    ["ending inside an opening quote", "He said \"", "hi"],
+  ])("adds no space after a dictation %s", (_name, text, after) => {
+    expect(spacedFromCaret("", text, after)).toBe(text);
   });
 });
 
