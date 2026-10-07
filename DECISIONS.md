@@ -567,9 +567,19 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   no split. A piece that touches a key with no space on screen (a label laid against a `ghp_` key)
   reads as a key glued to a word, which the redactors do not match, so the whole key is shown:
   accepted by the owner as rare (2026-10-07), tracked as #175 (P3). The base redacted it only
-  because each piece was a line of its own; one plain piece holding the same text never was. Each platform's real-Chromium test (`macos/Tests/electron.mjs`,
+  because each piece was a line of its own; one plain piece holding the same text never was. A
+  link's box holds the space the screen shows before or after it inside the link (`Read <a>more
+  </a>now`), and every platform gives a link's text through `SemanticText`, which trims it: it now
+  gives such a space as a hidden run at the block's edge, which counts for the join and the redactor
+  and is never shown, so the read is "Read [more] now" and a key that is a link's text, or follows
+  one, is redacted. A private key's body with no header beside a label on its first line (`Key:`
+  beside a block of base64) is one line with the label now, so its first base64 line follows a space:
+  `private-key-lines`, and `private-key-end` before a full line of base64, start a body after a
+  space or a tab as well as at a line, which also redacts one plain piece holding the same text.
+  Each platform's real-Chromium test (`macos/Tests/electron.mjs`,
   `windows/tests/electron.mjs`, `linux/tests/electron.mjs`) reads a key split by bold and a link
-  between words; the Mac and Windows runs fail on the old per-piece lines.)*
+  between words, a link holding the space after it and a key that is a link's text; the Mac and
+  Windows runs fail on the old per-piece lines.)*
 
 **Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
 (issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the
@@ -3808,7 +3818,8 @@ approves the exact file. `src/main/documents/`:
   inside its body. And two or more full lines of base64 one after another go wherever they are
   (`private-key-lines`): a page of a printed key between a running header and a footer starts with
   neither a header nor its body, and whatever pages are read, with whatever layout, no line of a key
-  comes back. The owner's cost: any such run goes, a list of long hashes or a base64 blob included;
+  comes back (amended 2026-10-07: a body's first line may follow a label on its line, after a space
+  or a tab, as when the screen read joins a label and the block beside it). The owner's cost: any such run goes, a list of long hashes or a base64 blob included;
   one such line alone stays.
 
 **Rationale:** The sandbox bounds what a malicious PDF can do to time, memory and a refusal; it

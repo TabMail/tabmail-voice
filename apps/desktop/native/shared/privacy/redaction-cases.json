@@ -5271,6 +5271,63 @@
    ]
   },
   {
+   "name": "a key's body beside a label on its first line goes, its first line too",
+   "text": [
+    "Key: ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
+   ],
+   "expected": [
+    "Key: ",
+    "{redacted}",
+    "\nend"
+   ]
+  },
+  {
+   "name": "a key's body beside a label after a tab goes, its first line too",
+   "text": [
+    "Key:\t",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "Key:\t",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body beside a label on its first line goes through its end line",
+   "text": [
+    "Key: ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6==",
+    "\n",
+    "-----END OPENSSH ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "Key: ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "one long line of base64 beside a label stays",
+   "text": [
+    "Checksum: ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
+   ],
+   "expected": [
+    "Checksum: ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nend"
+   ]
+  },
+  {
    "name": "a list of long hashes goes, as a key's body would",
    "text": [
     "Checksums:\n",

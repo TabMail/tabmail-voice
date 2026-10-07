@@ -195,6 +195,51 @@
       }
     },
     {
+      "name": "a terminal's field with a key over two rows of its pane, redacted as the lines the screen shows",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "log one    │QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog two    │QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nlog three  │$ ",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 168
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": "[redacted]\u2029$ "
+      }
+    },
+    {
       "name": "a terminal's field with no exact caret",
       "request": {
         "field": {

@@ -255,6 +255,186 @@
       }
     },
     {
+      "name": "a link whose box holds the space after it is a word of its own, as the screen shows it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Read ",
+            "frame": [
+              20,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "more",
+            "runs": [
+              [
+                "more",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              60,
+              0,
+              45,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "now",
+            "frame": [
+              105,
+              0,
+              30,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Read [more] now"
+      }
+    },
+    {
+      "name": "a key that is a link's text, after the space its box holds, is redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Paste",
+            "frame": [
+              20,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "sk-ReviewLink1234567890abcd",
+            "runs": [
+              [
+                " ",
+                false
+              ],
+              [
+                "sk-ReviewLink1234567890abcd",
+                true
+              ]
+            ],
+            "frame": [
+              60,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Paste [[redacted]]"
+      }
+    },
+    {
+      "name": "a key right after a link whose box holds the space after it is redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Token",
+            "runs": [
+              [
+                "Token",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              20,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "sk-ReviewLink1234567890abcd here",
+            "frame": [
+              70,
+              0,
+              240,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Token] [redacted] here"
+      }
+    },
+    {
+      "name": "a key's body beside a label on its first line is redacted, its first line too",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key:",
+            "frame": [
+              20,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              55,
+              0,
+              400,
+              60
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key: [redacted]"
+      }
+    },
+    {
       "name": "pieces a pixel apart abut, and three apart are two words",
       "request": {
         "blocks": [

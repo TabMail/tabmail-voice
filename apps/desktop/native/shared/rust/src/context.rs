@@ -14,7 +14,8 @@ struct Block {
     source: Option<Vec<String>>,
     runs: Option<Vec<(String, bool)>>,
     /// Whether the text the screen shows starts or ends with a space (`admit` keeps one at each
-    /// edge that had any): the block's text is read without them.
+    /// edge that had any, and `SemanticText` gives it as a hidden run): the block's text is read
+    /// without them.
     spaced: [bool; 2],
 }
 impl Block {
@@ -48,6 +49,10 @@ impl Block {
         if !matches!(kind, "field" | "caret") && runs.is_none() {
             text = text.trim_matches(whitespace).to_owned();
         }
+        let spaced = match &runs {
+            Some(runs) => [runs.first(), runs.last()].map(|run| run.is_some_and(edge_space)),
+            None => spaced,
+        };
         let frame = if value["frame"].is_null() {
             None
         } else {
@@ -167,6 +172,11 @@ pub(crate) const BLOCK_SOURCE_BYTES: usize = 2 * SCREEN_BYTES + 3;
 const FIELD_SOURCE_BYTES: usize = 3 * SOURCE_WINDOW_BYTES;
 pub(crate) const SEMANTIC_SOURCE_BYTES: usize = SCREEN_BYTES + FIELD_SOURCE_BYTES + 3;
 const ALL_BLOCK_SOURCE_BYTES: usize = SCREEN_BYTES + SEMANTIC_SOURCE_BYTES;
+/// A hidden run of spaces only: it hides nothing (`SemanticText` gives a space the screen shows at
+/// a block's edge as one).
+fn edge_space((text, shown): &(String, bool)) -> bool {
+    !shown && !text.is_empty() && text.chars().all(whitespace)
+}
 fn read_runs(value: &Value) -> Result<Vec<(String, bool)>, u32> {
     let input = value
         .as_array()
@@ -893,23 +903,22 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             .as_u64()
             .filter(|n| *n <= ALL_BLOCK_SOURCE_BYTES as u64)
             .ok_or(1u32)? as usize;
-        let duplicate = if let Some(previous) = request.get("previous").filter(|p| !p.is_null()) {
-            let previous = Block::read(previous)?;
-            previous.kind != "caret"
-                && previous.text.nfd().eq(block.text.nfd())
-                && (previous.runs == block.runs
-                    || (previous.source.is_none()
-                        && previous
-                            .runs
-                            .as_ref()
-                            .is_none_or(|runs| runs.iter().all(|(_, shown)| *shown))
-                        && block
-                            .runs
-                            .as_ref()
-                            .is_some_and(|runs| runs.iter().all(|(_, shown)| *shown))))
-        } else {
-            false
-        };
+        let duplicate =
+            if let Some(previous) = request.get("previous").filter(|p| !p.is_null()) {
+                let previous = Block::read(previous)?;
+                previous.kind != "caret"
+                    && previous.text.nfd().eq(block.text.nfd())
+                    && (previous.runs == block.runs
+                        || (previous.source.is_none()
+                            && previous.runs.as_ref().is_none_or(|runs| {
+                                runs.iter().all(|run| run.1 || edge_space(run))
+                            })
+                            && block.runs.as_ref().is_some_and(|runs| {
+                                runs.iter().all(|run| run.1 || edge_space(run))
+                            })))
+            } else {
+                false
+            };
         if used >= SCREEN_BYTES || block.text.is_empty() || duplicate {
             block.text.clear();
             block.runs = Some(Vec::new());
@@ -1909,6 +1918,32 @@ mod budget_tests {
         let plain = json!({"kind":"row","text":"same","runs":[["same",true]]});
         let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":{"kind":"text","text":"same"}})).unwrap()).unwrap()).unwrap();
         assert_eq!(result["text"], "");
+        // A text admitted with the screen's edge spaces, and a link holding them as hidden runs,
+        // still repeat the same words.
+        let spaced =
+            json!({"kind":"link","text":"same","runs":[[" ",false],["same",true],[" ",false]]});
+        for previous in [
+            json!({"kind":"text","text":" same "}),
+            json!({"kind":"text","text":"same"}),
+        ] {
+            let result: Value = serde_json::from_slice(
+                &process(
+                    &serde_json::to_vec(
+                        &json!({"admitSemantic":spaced,"used":10,"previous":previous}),
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(result["text"], "");
+        }
+        let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":{"kind":"text","text":" same "}})).unwrap()).unwrap()).unwrap();
+        assert_eq!(result["text"], "");
+        // A hidden run that is more than spaces is private source, not a repeat.
+        let private = json!({"kind":"link","text":"same","runs":[[" x",false],["same",true]]});
+        let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":private,"used":10,"previous":{"kind":"text","text":"same"}})).unwrap()).unwrap()).unwrap();
+        assert_eq!(result["text"], "same");
     }
     #[test]
     fn semantic_admission_charges_private_bytes_and_stops_further_sources() {

@@ -57,6 +57,8 @@ const page = `
   </style>
   <p>Key sk-Review<b>Fixture1234567890</b> here</p>
   <p>Visit <a href="#v">example</a> now</p>
+  <p>Read <a href="#r">more </a>now</p>
+  <p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p>
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
   <div id="rich" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
   <div id="gmail" contenteditable="true">Synthetic opening line<div><br></div><div>Synthetic <b>line</b> to <i>dictate</i> under.</div><div><br><br>--<br>Synthetic signature</div></div>
@@ -82,9 +84,9 @@ async function expectRead(name, before, after) {
 async function expectInlineLines() {
   await delay(300);
   const rendered = (await request("readScreen", { excludedAppIDs: [], excludedHosts: [] }))?.renderedText ?? "";
-  for (const line of ["Key [redacted] here", "Visit [example] now"])
+  for (const line of ["Key [redacted] here", "Visit [example] now", "Read [more] now", "Paste [[redacted]]"])
     if (!rendered.split("\n").includes(line)) failures.push(`inline pieces: no line ${JSON.stringify(line)} in the read`);
-  for (const piece of ["sk-Review", "Fixture1234567890"])
+  for (const piece of ["sk-Review", "Fixture1234567890", "Link1234567890abcd"])
     if (rendered.includes(piece)) failures.push(`inline pieces: a piece of the key split by bold is in the read`);
 }
 async function main() {

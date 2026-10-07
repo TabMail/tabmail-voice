@@ -116,7 +116,7 @@ async function main() {
       <div style="position:absolute;width:1px;height:1px;overflow:hidden">Screen-reader-only label</div>
       <a href="https://example.com">Visible link</a>
       <!-- Pieces of one line (a run of bold, a link), in the window's corner so nothing above moves. -->
-      <div style="position:fixed;right:10px;bottom:10px;background:#fff"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p></div>
+      <div style="position:fixed;right:10px;bottom:10px;background:#fff"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p></div>
       <!-- Below the window's height, so the checks of what the window shows above are not moved. -->
       <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
       <div id="richParagraphs" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
@@ -159,9 +159,9 @@ async function main() {
     assert.ok(context.renderedText.includes("Non-text"), "a labeled web control retains its visible caption");
     // Pieces of one line on screen (a run of bold, a link) are read as that one line, with the
     // screen's spaces and none where they abut: a key split by bold is redacted whole.
-    for (const line of ["Key [redacted] here", "Visit [example] now"])
+    for (const line of ["Key [redacted] here", "Visit [example] now", "Read [more] now", "Paste [[redacted]]"])
       assert.ok(context.renderedText.split("\n").includes(line), `inline pieces are read as one line: ${line}`);
-    assert.ok(!context.renderedText.includes("sk-Review") && !context.renderedText.includes("Fixture1234567890"), "a key split by bold is redacted whole");
+    assert.ok(!context.renderedText.includes("sk-Review") && !context.renderedText.includes("Fixture1234567890") && !context.renderedText.includes("Link1234567890abcd"), "a key split by bold, or in a link, is redacted whole");
     // A box that shows nothing is walked into on every platform (owner, 2026-10-05; ADR-DESK-054), and
     // Chromium gives the text in it its own unclipped frame here, so a screen-reader-only label is read.
     assert.ok(context.renderedText.includes("Screen-reader-only label"), "a screen-reader-only label is read, as decided");
