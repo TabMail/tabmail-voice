@@ -714,9 +714,11 @@ while text is selected (a terminal's selection is not at its cursor), the window
 space is added, as before. The cut was by character column at first, so a row holding a double-width
 character had its borders a column early and ended the box. Owner, 2026-10-07: fix that. The cut is now
 by the column on screen, each character (a grapheme) as wide as Unicode says (`unicode-width`: two for
-CJK and emoji). A terminal set to draw a character otherwise (iTerm2's ambiguous-width letters, some
-emoji sequences) still has that row's borders a column off, and the box ends there, never reaching
-another pane.
+CJK and emoji), and the cursor's column is taken from the same graphemes, so a ligature Unicode
+gives one width for two graphemes (Arabic lam-alef), which a terminal draws in two columns, moves
+neither. A terminal set to draw a character otherwise (iTerm2's ambiguous-width letters, some emoji
+sequences) still has that row's borders a column off: a row whose borders are not at the cursor's
+border columns ends the box.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 

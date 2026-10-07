@@ -13,7 +13,7 @@
 //! placed exactly gets a box. The cut is by the column on screen: a double-width character (CJK, an
 //! emoji) takes two, by Unicode's widths. A terminal set to draw a character wider or narrower than
 //! that (iTerm2's ambiguous-width letters, some emoji sequences) has its borders a column off on that
-//! row, which stops the box there rather than reading another pane.
+//! row: a row whose borders are not at the cursor's border columns ends the box.
 
 use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
@@ -24,25 +24,32 @@ fn is_border(character: char) -> bool {
     ('\u{2500}'..='\u{257F}').contains(&character)
 }
 
-/// One character as drawn, a grapheme, and the column on screen it starts at.
+/// One character as drawn, a grapheme: the column on screen it starts at, and where it starts in its
+/// row's text.
 struct Cell<'a> {
     column: usize,
+    start: usize,
     text: &'a str,
 }
 
 impl Cell<'_> {
     fn is_border(&self) -> bool {
-        let mut characters = self.text.chars();
-        characters.next().is_some_and(is_border) && characters.next().is_none()
+        self.text.chars().next().is_some_and(is_border)
     }
 }
 
-/// `row`'s characters, each at its column.
+/// `row`'s characters, each at its column: the widths of the graphemes before it. A ligature
+/// Unicode gives one width for two graphemes (Arabic lam-alef) still takes a column for each, as a
+/// terminal draws it.
 fn cells(row: &str) -> Vec<Cell<'_>> {
     let mut column = 0;
-    row.graphemes(true)
-        .map(|text| {
-            let cell = Cell { column, text };
+    row.grapheme_indices(true)
+        .map(|(start, text)| {
+            let cell = Cell {
+                column,
+                start,
+                text,
+            };
             column += text.width();
             cell
         })
@@ -113,7 +120,13 @@ pub(crate) fn caret_box(projected: &Value) -> Option<CaretBox> {
     let row_start = text[..at].rfind('\n').map_or(0, |found| found + 1);
     let caret_row = text[..row_start].matches('\n').count();
     let row = &rows[caret_row];
-    let column = text[row_start..at].width();
+    // The cursor's column is that of the character it is before (the row's end past its last), from
+    // the same cells the borders are found in; a cursor inside a grapheme is after it.
+    let offset = at - row_start;
+    let column = row.iter().find(|cell| cell.start >= offset).map_or_else(
+        || row.last().map_or(0, |cell| cell.column + cell.text.width()),
+        |cell| cell.column,
+    );
     let left = row
         .iter()
         .rev()
@@ -151,10 +164,17 @@ pub(crate) fn caret_box(projected: &Value) -> Option<CaretBox> {
     let mut above: Vec<String> = rows[..caret_row].iter().rev().map_while(boxed).collect();
     above.reverse();
     let below = rows[caret_row + 1..].iter().map_while(boxed).collect();
+    // The cursor's row splits at the cursor in the text, so a character of no width just before it
+    // stays before it.
+    let (before, after): (Vec<&Cell>, Vec<&Cell>) = row
+        .iter()
+        .filter(|cell| cell.column >= from && right.is_none_or(|right| cell.column < right))
+        .partition(|cell| cell.start < offset);
+    let joined = |cells: Vec<&Cell>| cells.iter().map(|cell| cell.text).collect::<String>();
     Some(CaretBox {
         above,
-        before: part(row, from, Some(column)),
-        after: part(row, column, right).trim_end().to_owned(),
+        before: joined(before),
+        after: joined(after).trim_end().to_owned(),
         below,
     })
 }
