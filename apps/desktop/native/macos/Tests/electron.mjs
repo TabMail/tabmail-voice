@@ -47,11 +47,7 @@ const page = `
     [contenteditable] div { margin: 0; }
     p { font: 14px/20px Arial; margin: 0 0 10px; }
   </style>
-  <p>Key sk-Review<b>Fixture1234567890</b> here</p>
-  <p>Visit <a href="#v">example</a> now</p>
-  <p>Read <a href="#r">more </a>now</p>
-  <p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p>
-  <p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p>
+  <div style="position:fixed;left:560px;top:20px"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p><p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p></div>
   <input id="empty" placeholder="Subject">
   <input id="filled" value="Synthetic subject line">
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
@@ -123,7 +119,7 @@ async function main() {
       pending.get(message.id)?.(message);
       pending.delete(message.id);
     });
-    window = new BrowserWindow({ x: 40, y: 80, width: 640, height: 900, show: false, title: "Caret anchor integration test" });
+    window = new BrowserWindow({ x: 40, y: 80, width: 1100, height: 900, show: false, title: "Caret anchor integration test" });
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`);
     window.show(); app.focus({ steal: true }); window.focus();
     await delay(500);
