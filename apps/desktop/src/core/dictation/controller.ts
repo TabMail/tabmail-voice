@@ -100,9 +100,9 @@ export interface DictationDependencies {
   connectorTools: readonly ConnectorTool[];
   /** Debug builds only: keeps the latest recording for "Play Last Recording". */
   keepRecording?: (wav: Uint8Array) => void;
-  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`); none where the field
-   * can't be read (no helper on Windows and Linux yet). */
-  corrections?: { watch(pid: number, pasted: string, exclusions: ScreenExclusions): void; stop(): void };
+  /** Learns the user's corrections of a pasted dictation (`CorrectionWatch`), the field read by
+   * voice-field-reader; none without the native microphone path. */
+  corrections?: { watch(pasted: string, exclusions: ScreenExclusions): void; stop(): void };
   /** Marks the dictionary's words in a dictation's transcript and cleaned text used
    * (`AppSettings.useWords`), so a full dictionary keeps them (ADR-DESK-038). */
   useWords: (texts: readonly string[]) => void;
@@ -721,10 +721,7 @@ export class DictationController extends Observable {
         if (!isCurrent()) return;
         await this.paste(text, targetApp, signal, this.screenRead);
         const corrections = this.deps.corrections;
-        if (settings.learnsWords && corrections) {
-          const pid = await targetApp;
-          if (pid !== null && isCurrent()) corrections.watch(pid, text, { apps: settings.excludedApps, sites: settings.excludedSites });
-        }
+        if (settings.learnsWords && corrections && isCurrent()) corrections.watch(text, { apps: settings.excludedApps, sites: settings.excludedSites });
       } else {
         // All of it: its selection decides between Edit and Compose, as the bubbles showed.
         const waiting = performance.now();

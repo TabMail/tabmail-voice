@@ -31,7 +31,6 @@ void Sleep(int milliseconds) { std::this_thread::sleep_for(std::chrono::millisec
 [[noreturn]] void ExitProcess(int code) { std::_Exit(code); }
 namespace voice {
 struct COM { COM() {} ~COM() {} };
-struct ScreenExclusions {};
 struct Output {
  mutable std::mutex mutex;
  mutable std::condition_variable changed;
@@ -44,7 +43,7 @@ struct Output {
 std::mutex gateMutex;
 std::condition_variable gateChanged;
 bool blockNext = false, entered = false, released = false, providerFailure = false;
-std::atomic<int> caretCalls{0}, inserts{0}, fieldCalls{0};
+std::atomic<int> caretCalls{0}, inserts{0};
 void gate() {
  std::unique_lock lock(gateMutex);
  if (!blockNext) return;
@@ -56,11 +55,8 @@ void waitEntered() { std::unique_lock lock(gateMutex); if (!gateChanged.wait_for
 void releaseGate() { std::lock_guard lock(gateMutex); released = true; gateChanged.notify_all(); }
 uint64_t unixMilliseconds() { return 1000; }
 std::wstring utf16(std::string s) { return std::wstring(s.begin(), s.end()); }
-std::wstring executableName(HWND) { return L"Synthetic.exe"; }
 void paste(HWND, std::wstring, uint64_t, std::function<bool()> canceled) { if (!canceled()) ++inserts; }
-template<class Name, class Read> JSON screenAccess(const JSON&, HWND w, Name, Read read, bool = false) { return read(w, ScreenExclusions{}); }
 struct Automation {
  JSON caret(HWND w) { ++caretCalls; gate(); if (providerFailure) throw std::runtime_error("synthetic provider failure"); if (!w || w != GetForegroundWindow()) return nullptr; return {{"x", reinterpret_cast<uintptr_t>(w)}, {"y", 20}, {"width", 1}, {"height", 20}}; }
- JSON fieldValue(HWND w, unsigned, const ScreenExclusions&) { ++fieldCalls; return w ? JSON{{"value","synthetic"}} : JSON(nullptr); }
 };
 }

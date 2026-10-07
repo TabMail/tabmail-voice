@@ -15,6 +15,7 @@ import { type HelperClient, HelperError } from "../../../src/main/native/helperC
 import { NativeTextRedactor } from "../../../src/main/native/textRedactor.js";
 import { MacSystem } from "../../../src/main/native/macos/system.js";
 import { decodeSamples, NativeMicrophone } from "../../../src/main/native/microphone.js";
+import { FieldReader } from "../../../src/main/native/fieldReader.js";
 import { ScreenReader } from "../../../src/main/native/screenReader.js";
 import type { AudioReport } from "../../../src/shared/ipc.js";
 
@@ -77,7 +78,6 @@ describe("helper wire contract", () => {
     await mac.appInfo("/Applications/Example.app");
     await mac.appIcon("/Applications/Example.app", config.agentBubbleAppIconSize);
     await mac.caretAnchor(1);
-    await mac.focusedFieldValue(1, { apps: [app], sites: ["example.com"] });
     await mac.startActivator();
     await mac.globeKey.read();
     await mac.globeKey.update(0);
@@ -119,6 +119,22 @@ describe("helper wire contract", () => {
     for (const { method, params } of requests) {
       expect(Object.keys(params).sort(), method).toEqual([...(handlers.get(method) ?? [])].sort());
     }
+  });
+
+  /** The focused field for correction learning is read by voice-field-reader, a program of its own. */
+  test("every request FieldReader sends is one voice-field-reader handles, with the params it reads", async () => {
+    const { helper, requests } = recordingHelper();
+    const reader = new FieldReader(helper, "darwin");
+    await reader.target();
+    await reader.value(42, { apps: ["org.example.app"], sites: ["example.com"] });
+
+    const handlers = registered("native/macos/Sources/VoiceMacOSKit/FieldReaderService.swift");
+    expect(requests.map((request) => request.method)).toEqual([...handlers.keys()]);
+    for (const { method, params } of requests) {
+      expect(Object.keys(params).sort(), method).toEqual([...(handlers.get(method) ?? [])].sort());
+    }
+    // voice-macos no longer serves the field read.
+    expect(registered("native/macos/Sources/VoiceMacOSKit/MacService.swift").has("focusedFieldValue")).toBe(false);
   });
 
   /** Values, not only names: the paste carries its text and nothing else (no restore delay), and the
@@ -486,20 +502,13 @@ describe("helper wire contract", () => {
   });
 });
 
-/** The field's text for the correction watch (ADR-DESK-038): asked with the length cap, and read back
- * as text or nothing. */
-describe("MacSystem.focusedFieldValue", () => {
+/** What the Mac helpers are asked for by name: the excluded apps and websites, and an app by its path. */
+describe("MacSystem and ScreenReader requests", () => {
   function replying(reply: unknown): { mac: MacSystem; params: Record<string, unknown>[] } {
     const params: Record<string, unknown>[] = [];
     const helper = { request: async (_method: string, sent: Record<string, unknown> = {}) => (params.push(sent), reply), on() {} } as unknown as HelperClient;
     return { mac: new MacSystem(helper), params };
   }
-
-  test("asks for the app's field, capped, and returns its text", async () => {
-    const { mac, params } = replying({ value: "Meet Xyvora." });
-    expect(await mac.focusedFieldValue(42, { apps: ["org.example.vault"], sites: ["example.com"] })).toBe("Meet Xyvora.");
-    expect(params).toStrictEqual([{ pid: 42, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] }]);
-  });
 
   /** The apps and websites excluded from screen reading go to the helper as given, which reads none
    * of them (ADR-DESK-045, ADR-DESK-047). */
@@ -512,9 +521,5 @@ describe("MacSystem.focusedFieldValue", () => {
     const picked = replying({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
     expect(await picked.mac.appInfo("/Applications/Example Bank.app")).toEqual({ bundleIdentifier: "org.example.bank", name: "Example Bank", path: "/Applications/Example Bank.app" });
     expect(picked.params).toStrictEqual([{ path: "/Applications/Example Bank.app" }]);
-  });
-
-  test.each([{ value: null }, {}, null, { value: 3 }])("no text in %j is none", async (reply) => {
-    expect(await replying(reply).mac.focusedFieldValue(42, { apps: [], sites: [] })).toBeNull();
   });
 });

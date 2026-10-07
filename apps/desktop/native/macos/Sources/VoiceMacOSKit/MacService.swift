@@ -11,13 +11,9 @@ import VoiceHelperSupport
 ///
 /// - `frontmostApp` → `{pid, name, bundleIdentifier, path}` or null.
 /// The screen read (`readScreen`) is not here: `voice-screen-reader`, a program of its own, serves
-/// it (`ScreenReaderService`).
+/// it (`ScreenReaderService`); nor is the field read for correction learning (`focusedFieldValue`),
+/// which `voice-field-reader` serves (`FieldReaderService`).
 /// - `caretAnchor {pid}` → the caret's (or the focused field's) rect, or null.
-/// - `focusedFieldValue {pid, maxLength, excludedAppIDs, excludedHosts}` → `{value}`: the text of
-///   the app's focused field, null for none, a password field (`FocusedField`), or one in an app or
-///   on a website the user excludes from screen reading, which is not read. The shared core
-///   (`SharedRequest`) checks `maxLength`, sends null for a field longer than it in UTF-16 code
-///   units, and takes secret-looking text out of the rest.
 /// - `insert {text}` → `{}`: pastes `text` into the focused field once the shared core accepts it;
 ///   the clipboard keeps it.
 /// - `keyboardLanguage` → `{code}`: the active input source's raw locale, or null; the app normalizes it.
@@ -59,7 +55,7 @@ public enum MacService {
     static func register(
         on channel: HelperChannel, eventStore: EventKitStore, contactStore: ContactsFrameworkStore,
         fileSearch: @escaping @Sendable (SpotlightQuery, Int) async throws -> [FoundItem] = Files.search, fileOpener: FileOpener = .workspace,
-        screen: ScreenAccess = .accessibility, paste: @escaping @MainActor @Sendable (String) async -> Void = { await TextInserter().insert($0) }
+        paste: @escaping @MainActor @Sendable (String) async -> Void = { await TextInserter().insert($0) }
     ) -> AnyObject {
         let activator = AccessibilityActivator()
         channel.on("frontmostApp") { _ in await MainActor.run { Apps.frontmost() } }
@@ -75,18 +71,6 @@ public enum MacService {
                 // The flip is its own inverse: back to Accessibility's top-left coordinates.
                 return .rect(CaretLocator.cocoaRect(fromAccessibility: cocoa, primaryScreenHeight: primaryHeight))
             }.value
-        }
-        channel.on("focusedFieldValue") { params in
-            guard let pid = params["pid"]?.integer.flatMap({ pid_t(exactly: $0) }) else {
-                throw HelperError("focusedFieldValue needs pid and maxLength")
-            }
-            let maxLength = try SharedRequest.fieldBound(params["maxLength"])
-            let exclusions = try ScreenExclusions(params: params, method: "focusedFieldValue")
-            if exclusions.excludesApp(screen.bundleIdentifier(pid)) {
-                HelperLog.debug("FocusedField: the app is excluded from screen reading; not read")
-                return ["value": .null]
-            }
-            return await Task.detached { (try? SharedRequest.fieldValue(screen.focusedField(pid, exclusions), maxLength: maxLength)) ?? ["value": .null] }.value
         }
         channel.on("insert") { params in
             guard let text = params["text"]?.string else { throw HelperError("insert needs text") }

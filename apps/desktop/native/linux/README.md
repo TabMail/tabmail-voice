@@ -15,14 +15,16 @@ The helper reports installation only after the portal accepts every binding.
 GNOME's AT-SPI keyboard monitor is restricted, so no raw keyboard watcher is used.
 Unrelated typing does not cancel a held dictation on this portal backend.
 `voice-linux`
-provides focused-window identity, correction learning and clipboard
+provides focused-window identity and clipboard
 insertion through the common newline JSON helper protocol. `voice-microphone`, a program of its
 own as on macOS and Windows, captures the microphone through PulseAudio and nothing else
 (ADR-DESK-032), so no AT-SPI call can hold up a recording. It captures once: it ends itself with
 the shared restart code once its session stops, its start fails, a newer start comes or the
 running capture fails, and the app starts it afresh; which session runs is the shared core's
 decision (`../shared/microphone`). `voice-screen-reader`, a program of
-its own, reads the screen and nothing else (ADR-DESK-053).
+its own, reads the screen and nothing else, and `voice-field-reader`, another, reads the focused
+field that correction learning watches after a paste and nothing else; each keeps its own record of
+what has focus, so its window tokens are its own (ADR-DESK-053).
 
 Install Node.js 24, CMake, Ninja, a C++20 compiler and the development packages for
 AT-SPI (2.56 or later), GLib/GIO, PulseAudio, IBus (`libibus-1.0-dev`), ICU and nlohmann-json. From the app:
@@ -121,7 +123,7 @@ other assistive clients may depend on it.
 
 The Debian package uses electron-builder's custom AppArmor profile option. It
 uses a named profile with explicit `allow all` and Electron's user-namespace allowance, and
-executes only `voice-linux` and `voice-screen-reader` with the ordinary unconfined desktop label
+executes only `voice-linux`, `voice-screen-reader` and `voice-field-reader` with the ordinary unconfined desktop label
 (`Ux`, with loader environment cleanup). Otherwise a helper inherits the Electron label,
 which Snap's AT-SPI peer rules reject even though the parent profile itself is
 unconfined. The explicit allow-all form honors this transition on the target kernel; its

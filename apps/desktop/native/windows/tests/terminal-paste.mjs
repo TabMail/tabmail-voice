@@ -7,11 +7,11 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 assert.equal(process.platform, "win32");
 assert.ok(process.stdin.isTTY && process.stdout.isTTY, "requires a disposable focused terminal tab");
 assert.ok(process.argv[2], "pass the native helper executable");
-const helper = spawn(process.argv[2], { stdio: ["pipe", "pipe", "pipe"] });
 const pending = new Map();
 let nextID = 0;
 let received = "";
@@ -21,18 +21,25 @@ function fail(error) {
   for (const waiter of pending.values()) waiter.reject(error);
   pending.clear();
 }
-helper.on("error", () => fail(new Error("helper start failed")));
-helper.on("exit", () => fail(new Error("helper exited")));
-helper.stderr.on("data", () => {});
-// One reply per line feed: the field's text holds U+2029 (the box's rows), which `node:readline`
-// would also end a line at.
-let unread = "";
-helper.stdout.setEncoding("utf8");
-helper.stdout.on("data", (chunk) => {
-  const lines = (unread + chunk).split("\n");
-  unread = lines.pop();
-  for (const line of lines) receive(line);
-});
+function start(executable) {
+  const child = spawn(executable, { stdio: ["pipe", "pipe", "pipe"] });
+  child.on("error", () => fail(new Error("helper start failed")));
+  child.on("exit", () => fail(new Error("helper exited")));
+  child.stderr.on("data", () => {});
+  // One reply per line feed: the field's text holds U+2029 (the box's rows), which `node:readline`
+  // would also end a line at.
+  let unread = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    const lines = (unread + chunk).split("\n");
+    unread = lines.pop();
+    for (const line of lines) receive(line);
+  });
+  return child;
+}
+const helper = start(process.argv[2]);
+// The focused field is read by voice-field-reader.exe, a program of its own beside the helper.
+const fieldReader = start(join(dirname(process.argv[2]), "voice-field-reader.exe"));
 function receive(line) {
   const reply = JSON.parse(line);
   const waiter = pending.get(reply.id);
@@ -45,13 +52,13 @@ function request(method, params = {}) {
   const id = ++nextID;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    helper.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    (method === "focusedFieldValue" ? fieldReader : helper).stdin.write(`${JSON.stringify({ id, method, params })}\n`);
   });
 }
 const wasRaw = process.stdin.isRaw;
 const consume = (chunk) => { received += chunk; };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const timeout = setTimeout(() => { fail(new Error("fixture timed out")); helper.kill(); }, 15_000);
+const timeout = setTimeout(() => { fail(new Error("fixture timed out")); helper.kill(); fieldReader.kill(); }, 15_000);
 try {
   process.stdin.setEncoding("utf8");
   process.stdin.setRawMode(true);
@@ -93,7 +100,9 @@ try {
   process.stdin.off("data", consume);
   process.stdin.setRawMode(wasRaw);
   process.stdin.pause();
-  helper.stdin.end();
-  helper.kill();
+  for (const child of [helper, fieldReader]) {
+    child.stdin.end();
+    child.kill();
+  }
   if (process.argv[3]) writeFileSync(process.argv[3], JSON.stringify(result));
 }

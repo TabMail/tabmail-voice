@@ -18,11 +18,12 @@ let rustLibrary = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 /// stdin/stdout, one JSON object a line (ADR-DESK-032). `voice-hotkey` owns the keyboard event tap;
 /// `voice-microphone` owns the microphone, in a process of its own that is started afresh when the
 /// input device changes; `voice-screen-reader` reads the screen, and nothing else (ADR-DESK-053);
+/// `voice-field-reader` reads the focused field for correction learning, and nothing else;
 /// `voice-macos` does everything else that needs AppKit or Accessibility.
 /// Each helper is an executable target (`VoiceHotkey`, `VoiceMacOS`, `VoiceMicrophone`,
-/// `VoiceScreenReader`: its `main.swift`) over a library target (`…Kit`) its tests import; the
-/// products keep the helpers' executable names. The screen reader's code lives in `VoiceMacOSKit`
-/// beside the Accessibility code it shares.
+/// `VoiceScreenReader`, `VoiceFieldReader`: its `main.swift`) over a library target (`…Kit`) its
+/// tests import; the products keep the helpers' executable names. The two readers' code lives in
+/// `VoiceMacOSKit` beside the Accessibility code they share.
 let package = Package(
     name: "VoiceNative",
     platforms: [.macOS(.v15)],
@@ -31,6 +32,7 @@ let package = Package(
         .executable(name: "voice-macos", targets: ["VoiceMacOS"]),
         .executable(name: "voice-microphone", targets: ["VoiceMicrophone"]),
         .executable(name: "voice-screen-reader", targets: ["VoiceScreenReader"]),
+        .executable(name: "voice-field-reader", targets: ["VoiceFieldReader"]),
     ],
     targets: [
         .systemLibrary(name: "CVoiceCore"),
@@ -40,6 +42,7 @@ let package = Package(
         .target(name: "VoiceMacOSKit", dependencies: ["VoiceHelperSupport", "CVoiceCore"], swiftSettings: strict, linkerSettings: [.unsafeFlags(["-L", rustLibrary]), .linkedLibrary("tabmail_voice_core")]),
         .executableTarget(name: "VoiceMacOS", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .executableTarget(name: "VoiceScreenReader", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
+        .executableTarget(name: "VoiceFieldReader", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .target(name: "VoiceMicrophoneKit", dependencies: ["VoiceHelperSupport", "CVoiceCore"], swiftSettings: strict, linkerSettings: [.unsafeFlags(["-L", rustLibrary]), .linkedLibrary("tabmail_voice_core")]),
         .executableTarget(name: "VoiceMicrophone", dependencies: ["VoiceMicrophoneKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceHotkeyKitTests", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
