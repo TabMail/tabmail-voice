@@ -101,13 +101,18 @@ describe("welcome wizard", () => {
   test("the consent step says what dictation sends", async () => {
     await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false });
     const sent = [...document.querySelectorAll(".sends li")].map((item) => item.textContent ?? "");
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(5);
     expect(sent[0]).toContain("Your voice");
     expect(sent[1]).toContain("The text in the window in front");
     expect(sent[2]).toContain("The words in your dictionary");
     expect(sent[2]).toContain("That text stays on this computer.");
     expect(sent[2]).toContain("Learning is on unless you switch it off in Settings.");
-    expect(sent[3]).toBe("All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.");
+    // Agent mode's request, selection, apps' results and web pages (#170).
+    expect(sent[3]).toContain("In agent mode, your request and the text you’ve selected");
+    expect(sent[3]).toContain("what the apps you switch on in the Features step or in Settings return");
+    expect(sent[3]).toContain("the text of the web pages it reads");
+    expect(sent[4]).toContain("All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.");
+    expect(sent[4]).toContain("When agent mode searches the web, the search goes to a search provider too.");
   });
 
   /** The name step offers the computer account's name while none is stored, filling it in when it
