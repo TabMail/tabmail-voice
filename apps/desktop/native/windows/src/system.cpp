@@ -194,7 +194,10 @@ public:
     void cancel(int64_t id) {
         std::lock_guard lock(mutex);
         if (active && id == activeID) canceled = true;
-        std::erase_if(queue, [id](const Request& request) { return request.input["id"] == id; });
+        // A request canceled before its turn is still answered: every request gets its one reply.
+        if (std::erase_if(queue, [id](const Request& request) { return request.input["id"] == id; })) {
+            this->output.send({{"id", id}, {"error", {{"message", "Windows accessibility request canceled"}}}});
+        }
     }
 private:
     const voice::Output& output;
