@@ -1,5 +1,5 @@
 {
-  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer, else redacted), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer or when a break the core added (U+2029, a rich editor's block break) could split a secret, else redacted, with those breaks as line breaks), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
   "cases": [
     {
       "name": "a field bound at the most a request may ask",
@@ -45,6 +45,30 @@
       },
       "expected": {
         "value": "Draft reply. password: [redacted]"
+      }
+    },
+    {
+      "name": "a rich editor's text, the breaks the core added (U+2029) given as line breaks",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Hi All,\u2029Why does it move?\u2029\n--"
+        }
+      },
+      "expected": {
+        "value": "Hi All,\nWhy does it move?\n\n--"
+      }
+    },
+    {
+      "name": "a rich editor's text with a key split by a break the core added, withheld",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "Public words.\u2029sk-Review\u2029Fixture1234567890"
+        }
+      },
+      "expected": {
+        "value": null
       }
     },
     {

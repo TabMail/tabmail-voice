@@ -89,3 +89,32 @@ test("a compositor failing after the caret was found is ignored", async () => {
     process.off("unhandledRejection", listener);
   }
 });
+
+/** A compositor failing while the accessible caret is still pending leaves no unhandled rejection
+ * in the main process, and its failure reaches the caller only where its rectangle is needed. */
+test.each([
+  ["the caret is found", caret, caret],
+  ["no caret is found", null, "fails"],
+] as const)("a compositor failing before the accessible answer, when %s", async (_name, reply, expected) => {
+  let answer!: (value: typeof caret | null) => void;
+  // Plain functions: a mock would watch the promise it returns, and so handle the rejection itself.
+  const accessible = new Promise<typeof caret | null>((resolve) => { answer = resolve; });
+  const failure = new HelperError("failed", "caretAnchor", "synthetic exit");
+  const unhandled: unknown[] = [];
+  const listener = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", listener);
+  try {
+    const system = new LinuxSystem({ request: () => accessible } as unknown as HelperClient,
+      { request: () => Promise.reject(failure) } as unknown as HelperClient);
+    const read = system.caretAnchor();
+    // A turn of the event loop with the compositor failed and the accessible answer pending.
+    await new Promise((resolve) => setImmediate(resolve));
+    answer(reply);
+    if (expected === "fails") await expect(read).rejects.toBe(failure);
+    else expect(await read).toEqual(expected);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
+});

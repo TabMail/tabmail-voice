@@ -9,6 +9,8 @@
 #include <map>
 namespace {
 void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+// The break the core puts between blocks (U+2029), told apart from the text's own.
+const std::string added = "\xE2\x80\xA9";
 struct Element {
     std::string text;
     int caret = -1;
@@ -89,9 +91,9 @@ int main() {
             auto [root, lines] = editor(1, 0);
             voice::LiveScreenTree tree(root);
             const auto caret = tree.caret(root);
-            expect(caret && !caret->selectionUnavailable && caret->parts[0] == "Hi All,\n" && caret->parts[2] == "\nWhy does it move?",
+            expect(caret && !caret->selectionUnavailable && caret->parts[0] == "Hi All," + added && caret->parts[2] == "\nWhy does it move?",
                 "a caret on an empty line is placed after the paragraph before it");
-            expect(tree.field(root, 100) == "Hi All,\n\nWhy does it move?", "a rich field is read whole");
+            expect(tree.field(root, 100) == "Hi All," + added + "\nWhy does it move?", "a rich field is read whole");
             expect(!tree.field(root, 10), "a rich field longer than the limit is not read");
             voice::VisibleContext context;
             tree.appendFieldSource(root, voice::ContextFrame{0, 0, 90, 80}, context, voice::ContextFrame{10, 20, 100, 100});
@@ -106,7 +108,7 @@ int main() {
             at(lines[2]).selection = std::array{0, 3};
             voice::LiveScreenTree tree(root);
             const auto caret = tree.caret(root);
-            expect(caret && caret->parts[1] == "All,\n\nWhy", "a selection across paragraphs is read as selected");
+            expect(caret && caret->parts[1] == "All," + added + "\nWhy", "a selection across paragraphs is read as selected");
         }
         {
             // A rich editor whose caret moves while it is read is unavailable.
@@ -135,7 +137,7 @@ int main() {
             auto next = element({"Next", -1, std::nullopt, {}, "", true, ATSPI_ROLE_PARAGRAPH});
             const auto bare = voice::own(element({"See " + object + " and" + object + " now" + object, -1, std::nullopt,
                                                   {{4, link}, {9, image}, {14, next}}, ""}));
-            expect(tree.screenText(bare) == "See docs and now\nNext", "without display, a link or image joins its line and another element starts one");
+            expect(tree.screenText(bare) == "See docs and now" + added + "Next", "without display, a link or image joins its line and another element starts one");
         }
         {
             // An element holding more than the read may take is not asked for its text: the walk

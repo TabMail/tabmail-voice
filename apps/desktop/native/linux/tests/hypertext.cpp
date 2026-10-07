@@ -39,6 +39,8 @@ struct Fake {
     bool block(int node) { return elements.at(node).block; }
 };
 static const std::string object = "\xEF\xBF\xBC";
+// The break the core puts between blocks (U+2029), told apart from the text's own.
+static const std::string added = "\xE2\x80\xA9";
 static Fake paragraphs(bool leadingText) {
     Fake fake;
     const std::vector<std::string> lines{"Hi All,", "\n", "Why does it move?", "\n", "--"};
@@ -57,21 +59,21 @@ static std::string before(const Hypertext& flat) { return scalarSlice(flat.text,
 
 int main() {
     try {
-        const std::string whole = "Hi All,\n\nWhy does it move?\n\n--";
+        const std::string whole = "Hi All," + added + "\nWhy does it move?" + added + "\n--";
         for (const bool leading : {false, true}) {
             auto onEmptyLine = paragraphs(leading);
             onEmptyLine.elements[4].caret = 0;
             auto flat = flattenHypertext(onEmptyLine, 0, 100, 1000);
-            expect(flat.text == whole && flat.caret && before(flat) == "Hi All,\n\nWhy does it move?\n",
+            expect(flat.text == whole && flat.caret && before(flat) == "Hi All," + added + "\nWhy does it move?" + added,
                 "a caret on the empty line after a paragraph follows that paragraph's break");
             auto firstEmpty = paragraphs(leading);
             firstEmpty.elements[2].caret = 0;
             flat = flattenHypertext(firstEmpty, 0, 100, 1000);
-            expect(flat.caret && before(flat) == "Hi All,\n", "a caret on the first empty line follows the first paragraph's break");
+            expect(flat.caret && before(flat) == "Hi All," + added, "a caret on the first empty line follows the first paragraph's break");
             auto sentenceEnd = paragraphs(leading);
             sentenceEnd.elements[3].caret = 17;
             flat = flattenHypertext(sentenceEnd, 0, 100, 1000);
-            expect(flat.caret && before(flat) == "Hi All,\n\nWhy does it move?", "a caret at a sentence's end stays on its line");
+            expect(flat.caret && before(flat) == "Hi All," + added + "\nWhy does it move?", "a caret at a sentence's end stays on its line");
         }
         // Chromium also puts the editor's own caret on the paragraph's embedded object; the caret
         // is where the paragraph's element says, inside it.
@@ -79,7 +81,7 @@ int main() {
         bothCarets.elements[0].caret = 2;
         bothCarets.elements[3].caret = 4;
         auto inner = flattenHypertext(bothCarets, 0, 100, 1000);
-        expect(inner.caret && before(inner) == "Hi All,\n\nWhy ", "a caret inside a paragraph is placed by the paragraph, not its object");
+        expect(inner.caret && before(inner) == "Hi All," + added + "\nWhy ", "a caret inside a paragraph is placed by the paragraph, not its object");
         // A caret just before an element its text holds is the text's, at the element's object, when
         // the element reports none: before a link's text, and at the start of a paragraph's line.
         Fake beforeLink;
@@ -90,7 +92,7 @@ int main() {
         auto beforeParagraph = paragraphs(false);
         beforeParagraph.elements[0].caret = 2;
         atLink = flattenHypertext(beforeParagraph, 0, 100, 1000);
-        expect(atLink.caret && before(atLink) == "Hi All,\n\n", "a caret before a paragraph that reports none starts its line");
+        expect(atLink.caret && before(atLink) == "Hi All," + added + "\n", "a caret before a paragraph that reports none starts its line");
         // A selection starting or ending at an element with no part of its own (an image) keeps
         // that edge: the text holding the element marks it.
         Fake image;
@@ -120,21 +122,21 @@ int main() {
         };
         auto fromEnd = twoParagraphs({0, 2});
         fromEnd.elements[2].selection = std::pair{0, 3};
-        expect(selectedText(flattenHypertext(fromEnd, 0, 100, 1000)) == "\nWhy", "a selection from a paragraph's end starts there");
+        expect(selectedText(flattenHypertext(fromEnd, 0, 100, 1000)) == added + "Why", "a selection from a paragraph's end starts there");
         fromEnd.elements[1].selection = std::pair{7, 7};
-        expect(selectedText(flattenHypertext(fromEnd, 0, 100, 1000)) == "\nWhy", "a paragraph reporting an empty part at its end starts the selection there");
+        expect(selectedText(flattenHypertext(fromEnd, 0, 100, 1000)) == added + "Why", "a paragraph reporting an empty part at its end starts the selection there");
         auto onlyBreak = twoParagraphs({0, 1});
-        expect(selectedText(flattenHypertext(onlyBreak, 0, 100, 1000)) == "\n", "a selection of the break between paragraphs is the break");
+        expect(selectedText(flattenHypertext(onlyBreak, 0, 100, 1000)) == added, "a selection of the break between paragraphs is the break");
         auto toStart = twoParagraphs({0, 2});
         toStart.elements[1].selection = std::pair{3, 7};
         toStart.elements[2].selection = std::pair{0, 17};
         const auto upTo = selectedText(flattenHypertext(toStart, 0, 100, 1000));
-        expect(upTo.rfind("All,\nWhy does it move?", 0) == 0 && upTo.find("--") == std::string::npos, "a selection ending at a paragraph's start leaves that paragraph out");
+        expect(upTo.rfind("All," + added + "Why does it move?", 0) == 0 && upTo.find("--") == std::string::npos, "a selection ending at a paragraph's start leaves that paragraph out");
         // A line selected down to the next one's start (Shift+Down), the caret there, holds its break.
         auto lineDown = twoParagraphs({1, 2});
         lineDown.elements[2].selection = std::pair{0, 17};
         lineDown.elements[3].caret = 0;
-        expect(selectedText(flattenHypertext(lineDown, 0, 100, 1000)) == "Why does it move?\n", "a line selected to the next one's start holds its break");
+        expect(selectedText(flattenHypertext(lineDown, 0, 100, 1000)) == "Why does it move?" + added, "a line selected to the next one's start holds its break");
         lineDown.elements[3].caret = -1;
         lineDown.elements[2].caret = 17;
         expect(selectedText(flattenHypertext(lineDown, 0, 100, 1000)) == "Why does it move?", "a line selected to its own end does not");
@@ -154,7 +156,7 @@ int main() {
         Fake after;
         after.elements[0] = Element{object + "tail", -1, std::nullopt, {{0, 1}}, true};
         after.elements[1] = Element{"para", -1, std::nullopt, {}, true};
-        expect(flattenHypertext(after, 0, 100, 1000).text == "para\ntail", "text after a paragraph starts its own line");
+        expect(flattenHypertext(after, 0, 100, 1000).text == "para" + added + "tail", "text after a paragraph starts its own line");
         // The budget counts bytes: four two-byte scalars take eight.
         Fake wide;
         wide.elements[0] = Element{object, -1, std::nullopt, {{0, 1}}, true};
@@ -167,7 +169,7 @@ int main() {
         selected.elements[3].selection = std::pair{0, 3};
         selected.elements[3].caret = 3;
         auto flat = flattenHypertext(selected, 0, 100, 1000);
-        expect(flat.selection && scalarSlice(flat.text, flat.selection->first, flat.selection->second) == "All,\n\nWhy",
+        expect(flat.selection && scalarSlice(flat.text, flat.selection->first, flat.selection->second) == "All," + added + "\nWhy",
             "a selection across paragraphs is placed by each element's own part");
         Fake inlineLink;
         inlineLink.elements[0] = Element{"See " + object + " now", 9, std::nullopt, {{4, 1}}};
