@@ -16,14 +16,21 @@ export const NotesScripts = {
   fieldSeparator: "\u{1F}",
 
   /** Notes whose title or text contains `argv[1]` (ignoring case), locked ones left out: each note's
-   * title, folder, last change (`2025-01-15T09:00:00`, local time) and plain text. */
+   * title, folder, last change (`2025-01-15T09:00:00`, local time) and plain text. Each note is read
+   * from its folder, every account's folders in turn (subfolders among them, each note in one): Notes
+   * cannot name a note's own folder (`container` fails with -1700, on every note in macOS 27). */
   search: `on run argv
     set query to item 1 of argv
     set found to {}
     with timeout of ${config.appleScriptTimeoutSeconds} seconds
         tell application "Notes"
-            repeat with theNote in (notes whose password protected is false and (name contains query or plaintext contains query))
-                set end of found to (name of theNote) & (character id 31) & (name of container of theNote) & (character id 31) & ((modification date of theNote) as «class isot» as string) & (character id 31) & (plaintext of theNote)
+            repeat with theAccount in accounts
+                repeat with theFolder in folders of theAccount
+                    set folderName to name of theFolder
+                    repeat with theNote in (notes of theFolder whose password protected is false and (name contains query or plaintext contains query))
+                        set end of found to (name of theNote) & (character id 31) & folderName & (character id 31) & ((modification date of theNote) as «class isot» as string) & (character id 31) & (plaintext of theNote)
+                    end repeat
+                end repeat
             end repeat
         end tell
     end timeout
@@ -32,12 +39,13 @@ export const NotesScripts = {
 end run`,
 
   /** Makes a note in the default account's default folder with the HTML body `argv[1]`; returns its
-   * title and folder. */
+   * title and that folder's name (the note's own `container` can't be named, as for `search`). */
   create: `on run argv
     with timeout of ${config.appleScriptTimeoutSeconds} seconds
         tell application "Notes"
-            set theNote to make new note at default folder of default account with properties {body:item 1 of argv}
-            return (name of theNote) & (character id 31) & (name of container of theNote)
+            set theFolder to default folder of default account
+            set theNote to make new note at theFolder with properties {body:item 1 of argv}
+            return (name of theNote) & (character id 31) & (name of theFolder)
         end tell
     end timeout
 end run`,

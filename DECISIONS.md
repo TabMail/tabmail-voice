@@ -1788,6 +1788,17 @@ text}` (`src/tools/macos/`). First built in the Swift app; built here in the Ele
   (`osacompile`), and the runner is tested on scripts that tell no app.
 - Offered on macOS only, with the other connectors.
 
+**Amendment 2026-10-07 (live Notes):** on macOS 27 Notes cannot name a note's own folder: `name of
+container` fails with -1700 on every note, so every search failed, and every `notes_create` failed
+after adding its note (the owner's smoke test of 0.2.0). The scripts no longer ask a note for its
+`container`: `search` walks every account's folders (`folders of` an account lists its subfolders
+too, and a folder's `notes` are only its own, so each note is read once, with its folder's name), and
+`create` returns the name of the default folder it adds the note to. A live suite now runs the tools
+against the real Notes app (`test/main/native/notesLive.test.ts`, macOS only, opt-in with
+`TABMAIL_VOICE_LIVE_NOTES=1` as it adds and deletes notes and folders named with one run's marker). It
+answers the earlier unverified point: a search does match notes in "Recently Deleted", which it reads
+as that folder. How long a search over a large library takes stays unmeasured.
+
 ## ADR-DESK-029: Shortcuts, listed and run through the `shortcuts` command
 
 **Retired 2026-09-28, before the first release** (owner: "Let's not support shortcuts for the first
