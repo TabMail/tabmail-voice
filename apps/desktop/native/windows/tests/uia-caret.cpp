@@ -191,6 +191,8 @@ struct EditFixture {
     WNDPROC original = nullptr;
     int reads = 0;
     bool moveSelection = false, replaceText = false;
+    // A selection the control reports in place of its own (a provider giving an invalid one).
+    std::optional<std::pair<DWORD, DWORD>> reportedSelection;
     EditFixture(const std::wstring& value, DWORD start, DWORD end, DWORD extraStyle = 0) {
         window = CreateWindowExW(0, L"Edit", L"", WS_POPUP | ES_MULTILINE | ES_AUTOHSCROLL | extraStyle,
             0, 0, 400, 200, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
@@ -204,6 +206,12 @@ struct EditFixture {
     ~EditFixture() { DestroyWindow(window); }
     static LRESULT CALLBACK dispatch(HWND window, UINT message, WPARAM wp, LPARAM lp) {
         auto& fixture = *reinterpret_cast<EditFixture*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == EM_GETSEL && fixture.reportedSelection) {
+            const auto [start, end] = *fixture.reportedSelection;
+            if (wp) *reinterpret_cast<DWORD*>(wp) = start;
+            if (lp) *reinterpret_cast<DWORD*>(lp) = end;
+            return MAKELRESULT(start, end);
+        }
         const auto result = CallWindowProcW(fixture.original, window, message, wp, lp);
         if (message == WM_GETTEXT) {
             ++fixture.reads;
@@ -253,6 +261,12 @@ static void editContracts() {
     EditFixture caretMoved(L"before chosen after", 7, 7); caretMoved.moveSelection = true;
     result = caretMoved.read();
     expect(result && !result->selectionUnavailable && result->parts == std::array<std::string, 3>{"", "", ""}, "Edit changed caret is an empty window");
+    // A selection the control reports outside its text, or backward, is not known: withheld, never read.
+    for (const auto reported : {std::pair<DWORD, DWORD>{9, 12}, std::pair<DWORD, DWORD>{3, 1}}) {
+        EditFixture invalid(L"plain", 0, 0); invalid.reportedSelection = reported;
+        result = invalid.read();
+        expect(result && result->selectionUnavailable && result->parts[1] == "[redacted]" && invalid.reads == 0, "Edit invalid selection withheld");
+    }
     expect(GetForegroundWindow() == foreground, "hidden Edit tests preserve foreground");
 }
 static void viewportContracts() {

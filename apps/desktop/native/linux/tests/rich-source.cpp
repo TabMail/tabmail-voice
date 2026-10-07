@@ -168,6 +168,16 @@ int main() {
             expect(context.render().find("xxxx") == std::string::npos && largestRead <= 1, "a rich field too large is not read");
         }
         {
+            // The same rich text too large to read, with text selected: the selection is withheld.
+            const auto bytes = voice::core::request({{"limits", true}}, voice_core_context_json).at("caretSourceBytes").get<size_t>();
+            auto large = element({std::string(bytes + 1, 'x'), -1, std::nullopt, {}, "block"});
+            auto root = voice::own(element({object, 0, std::array{0, 1}, {{0, large}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            largestRead = 0;
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]" && largestRead <= 1, "a selection in a rich text too large is withheld");
+        }
+        {
             // A rich field within the read's bytes but holding more than a field is read whole up
             // to: its text is read, but not shown, and the rest of the screen still is.
             const auto graphemes = voice::core::request({{"limits", true}}, voice_core_context_json).at("semanticGraphemes").get<size_t>();
@@ -207,6 +217,14 @@ int main() {
             expect(!tree.screenText(root) && !tree.field(root, 100), "a malformed rich text is not read");
             const auto caret = tree.caret(root);
             expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret in a malformed rich text is an empty window");
+        }
+        {
+            // A malformed rich text with text selected: the selection is withheld.
+            auto child = element({"x", -1, std::nullopt, {}, "inline"});
+            auto root = voice::own(element({"ab", 0, std::array{0, 1}, {{5, child}}, "block"}));
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a selection in a malformed rich text is withheld");
         }
         {
             // A selection the elements' parts leave empty, while the editor reports one, is not

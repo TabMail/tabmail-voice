@@ -41,6 +41,20 @@ struct BoundedCaretSourceTests {
         #expect(result.parts == ["", Redactor.placeholder, ""])
     }
 
+    /// A selection the provider reports past the field's end is not known: it is withheld, and
+    /// nothing of the field is read.
+    @Test(arguments: [NSRange(location: 3, length: 6), NSRange(location: 9, length: 0)])
+    func selectionOutsideTheFieldIsWithheld(selection: NSRange) throws {
+        var reads = 0
+        let result = try BoundedCaretSource.read(count: 5, selection: selection) { _ in
+            reads += 1
+            return "plain" as NSString
+        }
+        #expect(result.selectionUnavailable)
+        #expect(result.parts == ["", Redactor.placeholder, ""])
+        #expect(reads == 0)
+    }
+
     @Test func shortProviderRangeIsRefused() throws {
         #expect(throws: (any Error).self) {
             try BoundedCaretSource.read(count: 10, selection: NSRange(location: 0, length: 10)) { _ in "short" as NSString }
