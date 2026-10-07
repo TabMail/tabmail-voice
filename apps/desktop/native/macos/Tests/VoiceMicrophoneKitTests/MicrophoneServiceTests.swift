@@ -10,13 +10,23 @@ import VoiceHelperSupport
 
 /// A request whose number is no whole number in range (a fraction, 1e100) is refused with an
 /// error, not converted: a trapping conversion would crash the helper, and with it the dictation.
+/// What the shared core refuses (`request-cases.json`) is refused here as on Windows and Linux.
 struct MicrophoneServiceRequestTests {
     @Test func aMalformedNumberIsRefusedNotTrappedOn() async throws {
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
         let service = MicrophoneService.register(on: channel, end: {})
+        // Session 10 stopped first: a start this test lets through would be skipped, never run.
+        await channel.handle(line: Data(#"{"id":0,"method":"microphoneStop","params":{"session":10}}"#.utf8))
+        lines.withLock { $0.removeAll() }
         let requests = [
             #"{"id":1,"method":"microphoneStop","params":{"session":1e100}}"#,
+            #"{"id":5,"method":"microphoneStop","params":{"session":0}}"#,
+            #"{"id":6,"method":"microphoneStart","params":{"session":0,"sampleRate":16000}}"#,
+            #"{"id":7,"method":"microphoneStart","params":{"session":-1,"sampleRate":16000}}"#,
+            #"{"id":8,"method":"microphoneStart","params":{"session":5,"sampleRate":7999}}"#,
+            #"{"id":9,"method":"microphoneStart","params":{"session":5,"sampleRate":96001}}"#,
+            #"{"id":10,"method":"microphoneStart","params":{"session":5,"sampleRate":16000.5}}"#,
             #"{"id":2,"method":"microphoneStart","params":{"session":1.5,"sampleRate":16000}}"#,
             #"{"id":3,"method":"microphoneStart","params":{"session":1,"sampleRate":0}}"#,
             #"{"id":4,"method":"microphoneStart","params":{"session":1}}"#,
@@ -27,6 +37,15 @@ struct MicrophoneServiceRequestTests {
         #expect(replies.count == requests.count)
         #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
         withExtendedLifetime(service) {}
+    }
+
+    /// What the shared core accepts reaches the microphone as the app sent it: a start's session and
+    /// its rate, a stop's session. No engine is started here.
+    @Test func anAcceptedRequestKeepsItsSessionAndRate() throws {
+        let start = try #require(MicrophoneService.checked("microphoneStart", ["session": .number(1), "sampleRate": .number(16000)]))
+        #expect(start.session == 1 && start.sampleRate == 16000)
+        let stop = try #require(MicrophoneService.checked("microphoneStop", ["session": .number(7)]))
+        #expect(stop.session == 7)
     }
 
     /// A stop for a session that is not running (the app's stop reaching the helper started afresh

@@ -355,15 +355,20 @@ describe("helper wire contract", () => {
     for (const { method, params } of requests) {
       expect(new Set(Object.keys(params)), method).toEqual(handlers.get(method));
     }
-    const exitCode = /restartExitCode: Int32 = (\d+)/.exec(readFileSync(join(root, microphoneService), "utf8"))?.[1];
+    // Every voice-microphone ends itself with the code the shared core's header defines.
+    expect(readFileSync(join(root, microphoneService), "utf8")).toContain("restartExitCode = Int32(VoiceMicrophoneRestartExitCode)");
+    const exitCode = /VoiceMicrophoneRestartExitCode = (\d+)/.exec(readFileSync(join(root, "native/shared/rust/include/voice_core.h"), "utf8"))?.[1];
     expect(Number(exitCode)).toBe(config.microphoneHelperRestartExitCode);
+    for (const helper of ["native/windows/src/microphone.cpp", "native/linux/src/microphone.cpp"]) {
+      expect(readFileSync(join(root, helper), "utf8"), helper).toContain("output.end(VoiceMicrophoneRestartExitCode)");
+    }
   });
 
   /** The microphone's start carries the recording rate and waits the microphone's own start timeout;
    * its answer, or its failure, is that session's report; each chunk event the helper sends (named
    * as `MicrophoneService.microphoneChunkEvent`, its fields as `MicrophoneChunkEventTests` pins
-   * them) becomes that session's samples, and a malformed one is dropped. A lost event is
-   * `voice-windows`'s: `voice-microphone` ends itself instead. */
+   * them) becomes that session's samples, and a malformed one is dropped. A capture that ends is
+   * no event: `voice-microphone` ends itself, on every platform. */
   test("the microphone's commands and events cross the wire as the helper sends and reads them", async () => {
     const calls: { method: string; params: unknown; timeout: unknown }[] = [];
     const events = new Map<string, (message: Record<string, unknown>) => void>();
@@ -387,9 +392,7 @@ describe("helper wire contract", () => {
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from(samples.buffer).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: 3, samples: Buffer.from([1, 2, 3]).toString("base64") });
     chunkEvent?.({ event: emitted?.[1], session: "3", samples: Buffer.from(samples.buffer).toString("base64") });
-    const lostName = /\{"event", "(microphoneLost)"\}/.exec(readFileSync(join(root, "native/windows/src/microphone.h"), "utf8"))?.[1] ?? "";
-    events.get(lostName)?.({ event: lostName, session: "3" });
-    events.get(lostName)?.({ event: lostName, session: 3 });
+    expect([...events.keys()]).toEqual([emitted?.[1]]);
     refuse = true;
     microphone({ type: "start", session: 4 });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -403,7 +406,6 @@ describe("helper wire contract", () => {
     expect(reports).toEqual([
       { type: "started", session: 3 },
       { type: "chunk", session: 3, samples },
-      { type: "lost", session: 3 },
       { type: "failed", session: 4, error: "Error" },
     ]);
   });

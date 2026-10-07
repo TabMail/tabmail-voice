@@ -7,6 +7,7 @@ mod blocks;
 mod context;
 mod ffi;
 mod gesture;
+mod microphone;
 mod policy;
 pub mod privacy;
 mod request;

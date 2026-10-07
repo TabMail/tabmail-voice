@@ -1,0 +1,280 @@
+[
+  {
+    "name": "a start runs until its stop, which ends the process",
+    "steps": [
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "runs",
+        "running": 1,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": true,
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a stop before its start keeps the microphone off, and the engine may still be prepared",
+    "steps": [
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": true
+      },
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "skipped",
+        "running": null,
+        "mayPrepare": true
+      }
+    ]
+  },
+  {
+    "name": "a newer start before the running session's stop ends the process; the late stop is nothing more",
+    "steps": [
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "runs",
+        "running": 1,
+        "mayPrepare": false
+      },
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "endsProcess",
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a newer start after the stop ends the process too: it runs one engine",
+    "steps": [
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "runs",
+        "running": 1,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": true,
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "endsProcess",
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a late start does not take over from a newer session, which runs until its own stop",
+    "steps": [
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "runs",
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "skipped",
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": false,
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 2,
+        "stopped": true,
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "repeated stops change nothing, and a start after its own stop does not run",
+    "steps": [
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "runs",
+        "running": 1,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": true,
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "skipped",
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a failed start runs nothing, and no other start runs in the process",
+    "steps": [
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "runs",
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "failed",
+        "session": 2,
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 2,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "start",
+        "session": 3,
+        "decision": "endsProcess",
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a failed start keeps older sessions off",
+    "steps": [
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "runs",
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "failed",
+        "session": 2,
+        "running": null,
+        "mayPrepare": false
+      },
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "skipped",
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a session that is not a positive number changes nothing",
+    "steps": [
+      {
+        "event": "start",
+        "session": 0,
+        "decision": "skipped",
+        "running": null,
+        "mayPrepare": true
+      },
+      {
+        "event": "stop",
+        "session": -1,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": true
+      },
+      {
+        "event": "failed",
+        "session": 0,
+        "running": null,
+        "mayPrepare": true
+      },
+      {
+        "event": "start",
+        "session": 1,
+        "decision": "runs",
+        "running": 1,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 0,
+        "stopped": false,
+        "running": 1,
+        "mayPrepare": false
+      }
+    ]
+  },
+  {
+    "name": "a stop for a session that never ran here does not keep a newer start off",
+    "steps": [
+      {
+        "event": "stop",
+        "session": 1,
+        "stopped": false,
+        "running": null,
+        "mayPrepare": true
+      },
+      {
+        "event": "start",
+        "session": 2,
+        "decision": "runs",
+        "running": 2,
+        "mayPrepare": false
+      },
+      {
+        "event": "stop",
+        "session": 2,
+        "stopped": true,
+        "running": null,
+        "mayPrepare": false
+      }
+    ]
+  }
+]

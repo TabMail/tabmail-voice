@@ -1,5 +1,5 @@
 {
-  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer or when a break the core added (U+2029, a rich editor's block break) could split a secret, else redacted, with those breaks as line breaks), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
+  "description": "Request rules every helper shares, decided by the shared core (ADR-DESK-054): a focused field read's bound (1 to 20,000 UTF-16 units) and its reply (null when longer or when a break the core added (U+2029, a rich editor's block break) could split a secret, else redacted, with those breaks as line breaks), and a paste's text (not empty, at most 512 KiB, no NUL) and deadline (later than now, at most 5 s ahead), and a microphone start's or stop's session (a whole number from 1) and a start's recording rate (whole hertz, 8,000 to 96,000). Each helper's suite runs every case through the C ABI it ships with; `refused: true` cases are refused.",
   "cases": [
     {
       "name": "a field bound at the most a request may ask",
@@ -643,6 +643,151 @@
       "request": [
         "field"
       ],
+      "refused": true
+    },
+    {
+      "name": "a microphone start's session and rate",
+      "request": {
+        "microphoneStart": {
+          "session": 1,
+          "sampleRate": 16000
+        }
+      },
+      "expected": {
+        "session": 1,
+        "sampleRate": 16000
+      }
+    },
+    {
+      "name": "a microphone start at the lowest rate",
+      "request": {
+        "microphoneStart": {
+          "session": 7,
+          "sampleRate": 8000
+        }
+      },
+      "expected": {
+        "session": 7,
+        "sampleRate": 8000
+      }
+    },
+    {
+      "name": "a microphone start at the highest rate",
+      "request": {
+        "microphoneStart": {
+          "session": 7,
+          "sampleRate": 96000
+        }
+      },
+      "expected": {
+        "session": 7,
+        "sampleRate": 96000
+      }
+    },
+    {
+      "name": "a microphone start below the lowest rate",
+      "request": {
+        "microphoneStart": {
+          "session": 1,
+          "sampleRate": 7999
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start above the highest rate",
+      "request": {
+        "microphoneStart": {
+          "session": 1,
+          "sampleRate": 96001
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start at a fractional rate",
+      "request": {
+        "microphoneStart": {
+          "session": 1,
+          "sampleRate": 16000.5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start with no rate",
+      "request": {
+        "microphoneStart": {
+          "session": 1
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start for session 0",
+      "request": {
+        "microphoneStart": {
+          "session": 0,
+          "sampleRate": 16000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start for a negative session",
+      "request": {
+        "microphoneStart": {
+          "session": -1,
+          "sampleRate": 16000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start for a fractional session",
+      "request": {
+        "microphoneStart": {
+          "session": 1.5,
+          "sampleRate": 16000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone start for a session given as text",
+      "request": {
+        "microphoneStart": {
+          "session": "1",
+          "sampleRate": 16000
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone stop's session",
+      "request": {
+        "microphoneStop": {
+          "session": 3
+        }
+      },
+      "expected": {
+        "session": 3
+      }
+    },
+    {
+      "name": "a microphone stop for session 0",
+      "request": {
+        "microphoneStop": {
+          "session": 0
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a microphone stop with no session",
+      "request": {
+        "microphoneStop": {}
+      },
       "refused": true
     }
   ]

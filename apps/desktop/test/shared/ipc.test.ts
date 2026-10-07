@@ -125,8 +125,7 @@ describe("IPC", () => {
     expect(isAudioReport({ type: "started", session: 1 })).toBe(true);
     expect(isAudioReport({ type: "failed", session: 1, error: "NotAllowedError" })).toBe(true);
     expect(isAudioReport({ type: "chunk", session: 1, samples: new Float32Array(4) })).toBe(true);
-    expect(isAudioReport({ type: "lost", session: 1 })).toBe(true);
-    expect(isAudioReport({ type: "lost", session: "1" })).toBe(false);
+    expect(isAudioReport({ type: "lost", session: 1 })).toBe(false);
     expect(isAudioReport({ type: "chunk", session: 1, samples: [0, 0] })).toBe(false);
     expect(isAudioReport({ type: "started" })).toBe(false);
     expect(isAudioReport({ type: "failed", session: 1 })).toBe(false);

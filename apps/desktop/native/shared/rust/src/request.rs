@@ -3,8 +3,9 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Request rules every helper shares (ADR-DESK-054): the bound of a focused field's read for
-//! correction learning and its reply, and a paste's text and deadline. The helper reads the field
-//! and checks it is no password field itself; the core decides what of it is sent.
+//! correction learning and its reply, a paste's text and deadline, and a microphone start's or
+//! stop's session and rate. The helper reads the field and checks it is no password field itself;
+//! the core decides what of it is sent.
 
 use serde_json::{Value, json};
 
@@ -14,6 +15,8 @@ const FIELD_MAX_LENGTH: u64 = 20_000;
 const INSERT_TEXT_BYTES: usize = 512 * 1024;
 /// How far past the helper's clock a paste's deadline may be, in milliseconds.
 const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
+/// The recording rates a microphone start may ask for, in whole hertz.
+const MICROPHONE_SAMPLE_RATES: std::ops::RangeInclusive<u64> = 8_000..=96_000;
 
 /// `{"field": {"maxLength": n}}` → `{"maxLength": n}` when n is 1 to 20,000; with `"text"` (the
 /// field's text as read, or null for none) → `{"value": …}`: null for none or one longer than n
@@ -95,6 +98,26 @@ fn insert(request: &Value) -> Result<Value, u32> {
     }
 }
 
+/// `{"microphoneStop": {"session": s}}` → `{"session": s}` when s is a whole number from 1;
+/// `{"microphoneStart": {"session": s, "sampleRate": r}}` → `{"session": s, "sampleRate": r}` when r
+/// is also a whole number of hertz from 8,000 to 96,000. The session's order is `microphone`'s.
+fn microphone(request: &Value, start: bool) -> Result<Value, u32> {
+    let session = request
+        .get("session")
+        .and_then(Value::as_i64)
+        .filter(|session| *session > 0)
+        .ok_or(1u32)?;
+    if !start {
+        return Ok(json!({"session": session}));
+    }
+    let rate = request
+        .get("sampleRate")
+        .and_then(Value::as_u64)
+        .filter(|rate| MICROPHONE_SAMPLE_RATES.contains(rate))
+        .ok_or(1u32)?;
+    Ok(json!({"session": session, "sampleRate": rate}))
+}
+
 pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
     let input: Value = serde_json::from_slice(bytes).map_err(|_| 1u32)?;
     let object = input
@@ -104,6 +127,8 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
     let reply = match object.iter().next() {
         Some((key, request)) if key == "field" => field(request)?,
         Some((key, request)) if key == "insert" => insert(request)?,
+        Some((key, request)) if key == "microphoneStart" => microphone(request, true)?,
+        Some((key, request)) if key == "microphoneStop" => microphone(request, false)?,
         _ => return Err(1),
     };
     serde_json::to_vec(&reply).map_err(|_| 3)

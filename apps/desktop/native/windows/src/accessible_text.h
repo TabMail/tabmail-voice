@@ -6,7 +6,7 @@
 #include <servprov.h>
 #include <UIAutomation.h>
 #include "../vendor/ia2/AccessibleText.h"
-#include "microphone.h"
+#include "com.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
 #include "../../shared/context/walk.h"

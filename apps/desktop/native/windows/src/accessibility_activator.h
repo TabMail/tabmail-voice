@@ -15,7 +15,7 @@
 
 namespace voice {
 // Run in an isolated mode of the helper: a slow third-party UIA provider must not
-// occupy the caret/context queue or terminate the process that owns microphone capture.
+// occupy the caret/context queue or end voice-windows, which answers them.
 class AccessibilityActivator {
 public:
     void foreground(HWND window) {

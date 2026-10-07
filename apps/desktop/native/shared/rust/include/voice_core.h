@@ -126,6 +126,28 @@ uint32_t voice_core_gesture_key(VoiceGestureState *state, uint32_t key, uint32_t
 uint32_t voice_core_gesture_owns(const VoiceGestureState *state, uint32_t key);
 void voice_core_gesture_ended(VoiceGestureState *state);
 
+/* Microphone sessions ABI (voice-microphone, ADR-DESK-032): zero-initialize one state per helper
+ * process; its fields are reserved to the core. Caller holds exclusive access during mutation. No
+ * allocation, callbacks, or retained pointers. Sessions are positive; any other number changes
+ * nothing. A stop returns 1 when it stopped the running session (`session` or an older one), which
+ * ends the process; so do a failed start (report it with `failed`) and VoiceMicrophoneEndsProcess.
+ * `running` is the running session, 0 for none. */
+typedef struct {
+    int64_t running, lastStopped;
+    uint32_t started;
+} VoiceMicrophoneSessions;
+enum VoiceMicrophoneStart {
+    VoiceMicrophoneRuns = 1, VoiceMicrophoneSkipped = 2, VoiceMicrophoneEndsProcess = 3
+};
+/* The exit code voice-microphone ends itself with to be started afresh: the app's
+ * `microphoneHelperRestartExitCode`. */
+enum { VoiceMicrophoneRestartExitCode = 75 };
+uint32_t voice_core_microphone_start(VoiceMicrophoneSessions *state, int64_t session);
+uint32_t voice_core_microphone_stop(VoiceMicrophoneSessions *state, int64_t session);
+void voice_core_microphone_failed(VoiceMicrophoneSessions *state, int64_t session);
+uint32_t voice_core_microphone_may_prepare(const VoiceMicrophoneSessions *state);
+int64_t voice_core_microphone_running(const VoiceMicrophoneSessions *state);
+
 #ifdef __cplusplus
 }
 #endif

@@ -85,41 +85,6 @@ describe("SessionAudioCapture", () => {
     expect(losses).toBe(1);
   });
 
-  /** The microphone stopped by itself (its input's format changed): its started session is told
-   * once, as when the helper exits; one still starting fails through its start; an earlier or a
-   * stopped session's report reaches nothing. */
-  test("a microphone lost mid-session is reported to that session only", () => {
-    const { microphone } = capture();
-    let losses = 0;
-    const onLost = () => {
-      losses += 1;
-    };
-    const first = recording();
-    microphone.start(first.onChunk, first.completion, onLost);
-    microphone.receive({ type: "started", session: 1 });
-    microphone.receive({ type: "lost", session: 1 });
-    microphone.receive({ type: "lost", session: 1 });
-    expect([losses, first.completions]).toEqual([1, [null]]);
-
-    const second = recording();
-    microphone.stop();
-    microphone.start(second.onChunk, second.completion, onLost);
-    microphone.receive({ type: "lost", session: 1 });
-    expect([losses, second.completions]).toEqual([1, []]);
-    microphone.receive({ type: "lost", session: 2 });
-    microphone.receive({ type: "started", session: 2 });
-    expect(losses).toBe(1);
-    expect(second.completions).toHaveLength(1);
-    expect((second.completions[0] as MicrophoneError).description).toBe("MicrophoneError(lost)");
-
-    const third = recording();
-    microphone.start(third.onChunk, third.completion, onLost);
-    microphone.receive({ type: "started", session: 3 });
-    microphone.stop();
-    microphone.receive({ type: "lost", session: 3 });
-    expect(losses).toBe(1);
-  });
-
   test("a microphone that fails to start says why, once", () => {
     const { microphone } = capture();
     const current = recording();
@@ -150,8 +115,8 @@ describe("SessionAudioCapture", () => {
     await sleep(60);
     expect(sent).toEqual([{ type: "start", session: 1 }, { type: "start", session: 2 }]);
 
-    // Lost before its start was answered (Windows can send them in that order): it did not start.
-    microphone.receive({ type: "lost", session: 2 });
+    // The retry fails too (its helper exited before answering): it did not start.
+    microphone.receive({ type: "failed", session: 2, error: "HelperError" });
     microphone.receive({ type: "started", session: 2 });
     expect(current.completions).toEqual([]);
     await sleep(60);

@@ -15,8 +15,13 @@ The helper reports installation only after the portal accepts every binding.
 GNOME's AT-SPI keyboard monitor is restricted, so no raw keyboard watcher is used.
 Unrelated typing does not cancel a held dictation on this portal backend.
 `voice-linux`
-provides microphone capture, focused-window identity, correction learning and clipboard
-insertion through the common newline JSON helper protocol. `voice-screen-reader`, a program of
+provides focused-window identity, correction learning and clipboard
+insertion through the common newline JSON helper protocol. `voice-microphone`, a program of its
+own as on macOS and Windows, captures the microphone through PulseAudio and nothing else
+(ADR-DESK-032), so no AT-SPI call can hold up a recording. It captures once: it ends itself with
+the shared restart code once its session stops, its start fails, a newer start comes or the
+running capture fails, and the app starts it afresh; which session runs is the shared core's
+decision (`../shared/microphone`). `voice-screen-reader`, a program of
 its own, reads the screen and nothing else (ADR-DESK-053).
 
 Install Node.js 24, CMake, Ninja, a C++20 compiler and the development packages for
@@ -34,8 +39,11 @@ The packaged desktop launcher and login launcher include this option. A late
 
 Native tests additionally need Python GObject introspection with the TinySPARQL
 3.0 typelib (`python3-gi`, `gir1.2-tinysparql-3.0`) and `pulseaudio-utils`.
-The microphone fixture creates a temporary null sink, feeds it a synthetic tone,
-and selects its monitor only for the test child. It removes the sink afterward;
+The microphone test creates a temporary null sink, feeds it a synthetic tone,
+and selects its monitor only for `voice-microphone`, which it runs through the shared
+protocol checks (`../shared/microphone/protocol.mjs`), then checks that a start with no sound
+server, and a capture whose connection to the sound server is cut (through a relay to a TCP
+listener the test loads), each end it with the restart code. It removes the sink and the listener afterward;
 it does not change the desktop's default audio devices.
 
 For native tests, from the repository root:
