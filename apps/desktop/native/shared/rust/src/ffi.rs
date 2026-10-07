@@ -1295,7 +1295,7 @@ mod source_abi_tests {
             let value: serde_json::Value =
                 serde_json::from_slice(std::slice::from_raw_parts(output.data, output.length))
                     .unwrap();
-            assert_eq!(value["parts"][0], "First line.\u{2029}Second");
+            assert_eq!(value["parts"][0], "First line.\nSecond");
             voice_core_buffer_free(output);
             voice_core_source_free(state);
 
@@ -1326,7 +1326,7 @@ mod source_abi_tests {
                     .unwrap();
             assert_eq!(
                 value["parts"],
-                serde_json::json!(["First line.", "", "\u{2029}Second"])
+                serde_json::json!(["First line.", "", "\nSecond"])
             );
             voice_core_buffer_free(output);
             voice_core_source_free(state);

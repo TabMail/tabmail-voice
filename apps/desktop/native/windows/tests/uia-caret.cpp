@@ -618,7 +618,7 @@ int main() {
                 return UiaCaretSource::Layout{std::move(*starts), UiaCaretSource::endsLine(caretNode ? place(*caretNode).Get() : nullptr, selected)};
             });
         };
-        const std::string added = "\xE2\x80\xA9";
+        const std::string blockBreak = "\n";
         // Measured in Electron: a line, an empty paragraph, the line dictated under in runs of text,
         // then the signature block, which starts with two empty lines.
         const std::wstring gmail = L"Synthetic opening line\nSynthetic line to dictate under.\n\n--\nSynthetic signature";
@@ -626,12 +626,12 @@ int main() {
                                           {23, 55, true, {5, 6}}, {55, 79, true, {}}, {23, 33, false, {}}, {33, 55, false, {}}};
         Provider signatureStart(gmail, 55, 55);
         result = signatureStart.read(layout(signatureStart, gmailTree, 4));
-        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + added + "\nSynthetic line to dictate under." + added &&
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + blockBreak + "\nSynthetic line to dictate under." + blockBreak &&
             result.parts[2] == "\n\n--\nSynthetic signature", "each block start after text gets its break back, the caret's before it");
         Provider lineEnd(gmail, 55, 55); lineEnd.breakAtCaret = true;
         result = lineEnd.read(layout(lineEnd, gmailTree, 3));
-        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + added + "\nSynthetic line to dictate under." &&
-            result.parts[2] == added + "\n\n--\nSynthetic signature", "a caret ending the line above a block gets that block's break after it");
+        expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line" + blockBreak + "\nSynthetic line to dictate under." &&
+            result.parts[2] == blockBreak + "\n\n--\nSynthetic signature", "a caret ending the line above a block gets that block's break after it");
         Provider tooMany(gmail, 55, 55);
         result = tooMany.read(layout(tooMany, gmailTree, 4, 3));
         expect(!result.selectionUnavailable && result.parts[0] == "Synthetic opening line\nSynthetic line to dictate under.",
@@ -643,8 +643,8 @@ int main() {
         // A block start in a selection gets its break there; one after it, in the text after it.
         Provider inSelection(L"First paragraphSecondThird", 10, 18);
         result = inSelection.read(layout(inSelection, {{0, 26, false, {1, 2, 3}}, {0, 15, true, {}}, {15, 21, true, {}}, {21, 26, true, {}}}, 1));
-        expect(!result.selectionUnavailable && result.parts[0] == "First para" && result.parts[1] == "graph" + added + "Sec" &&
-            result.parts[2] == "ond" + added + "Third", "block starts in and after a selection get their breaks");
+        expect(!result.selectionUnavailable && result.parts[0] == "First para" && result.parts[1] == "graph" + blockBreak + "Sec" &&
+            result.parts[2] == "ond" + blockBreak + "Third", "block starts in and after a selection get their breaks");
         // Only blocks within the core's paragraph-start stretch of the caret are looked at: halving
         // past the many before it, stopping at the first past it.
         const int units = core::request({{"limits", true}}, voice_core_context_json).at("paragraphStartUnits").get<int>();
@@ -664,8 +664,8 @@ int main() {
         farTree[0].end = static_cast<int>(longText.size());
         Provider distant(longText, caret, caret);
         result = distant.read(layout(distant, farTree, 402));
-        expect(!result.selectionUnavailable && result.parts[0] == std::string(400, 'a') + std::string(static_cast<size_t>(units) + 1000, 'b') + added + "cc" &&
-            result.parts[2] == "ccc" + added + std::string(static_cast<size_t>(units) + 100, 'd') + std::string(400, 'e'),
+        expect(!result.selectionUnavailable && result.parts[0] == std::string(400, 'a') + std::string(static_cast<size_t>(units) + 1000, 'b') + blockBreak + "cc" &&
+            result.parts[2] == "ccc" + blockBreak + std::string(static_cast<size_t>(units) + 100, 'd') + std::string(400, 'e'),
             "only the block starts near the caret are looked at");
         viewportContracts();
         editContracts();

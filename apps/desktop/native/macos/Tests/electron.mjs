@@ -45,7 +45,10 @@ const page = `
     [contenteditable], input { font: 14px/${lineHeight}px Arial; width: 500px; padding: 0; border: 0; margin: 0 0 30px; outline: 1px solid #ccc; }
     [contenteditable] { min-height: ${12 * lineHeight}px; }
     [contenteditable] div { margin: 0; }
+    p { font: 14px/20px Arial; margin: 0 0 10px; }
   </style>
+  <p>Key sk-Review<b>Fixture1234567890</b> here</p>
+  <p>Visit <a href="#v">example</a> now</p>
   <input id="empty" placeholder="Subject">
   <input id="filled" value="Synthetic subject line">
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
@@ -92,6 +95,16 @@ const timeout = setTimeout(() => {
   process.stderr.write(`macOS Electron caret test timed out after ${id} requests\n`);
   helper?.kill(); app.exit(1);
 }, 60_000);
+// Pieces of one line on screen (a run of bold, a link) are read as that one line, with the screen's
+// spaces and none where they abut: a key split by bold is redacted whole.
+async function expectInlineLines() {
+  await delay(300);
+  const rendered = (await request("readScreen", { excludedAppIDs: [], excludedHosts: [] }))?.renderedText ?? "";
+  for (const line of ["Key [redacted] here", "Visit [example] now"])
+    if (!rendered.split("\n").includes(line)) failures.push(`inline pieces: no line ${JSON.stringify(line)} in the read`);
+  for (const piece of ["sk-Review", "Fixture1234567890"])
+    if (rendered.includes(piece)) failures.push(`inline pieces: a piece of the key split by bold is in the read`);
+}
 async function main() {
   try {
     await app.whenReady();
@@ -135,6 +148,7 @@ async function main() {
     expectOnLine(await anchor("plain text, line after the empty ones", frame, 4));
 
     frame = await place("plain", plainCaret(5));
+    await expectInlineLines();
     await expectRead("plain text, second empty line", "Synthetic first line\nSynthetic second line\n\n",
                      "\nSynthetic fifth line\nSynthetic sixth line");
 

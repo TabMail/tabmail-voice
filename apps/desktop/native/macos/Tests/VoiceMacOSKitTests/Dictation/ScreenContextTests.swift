@@ -18,7 +18,8 @@ struct ScreenContextTests {
         context.append(.text, "Inbox")
         context.append(.text, "  ")
         context.append(.text, " Drafts\n")
-        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: "Drafts")])
+        // An edge that had space keeps one, so the render can tell two words from pieces that abut.
+        #expect(context.blocks == [.init(kind: .link, text: "Inbox"), .init(kind: .text, text: " Drafts ")])
     }
 
     @Test func renderedTextMarksStructure() throws {

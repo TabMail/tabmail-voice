@@ -65,6 +65,151 @@
       }
     },
     {
+      "name": "a key split by a run of bold on one line is redacted whole",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              20,
+              0,
+              92.5,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Fixture1234567890",
+            "frame": [
+              112.5,
+              0,
+              124.5,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": " here",
+            "frame": [
+              237,
+              0,
+              32,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "the pieces of one line keep the screen's spaces, and none where they abut",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Visit ",
+            "frame": [
+              20,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "example",
+            "frame": [
+              50,
+              0,
+              53,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": " now",
+            "frame": [
+              103,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Plain ",
+            "frame": [
+              20,
+              30,
+              35,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "italic",
+            "frame": [
+              55,
+              30,
+              28,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "words",
+            "frame": [
+              83,
+              30,
+              40,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "Visit [example] now\nPlain italicwords"
+      }
+    },
+    {
+      "name": "a piece wrapped onto two lines and the piece after it on its last line are two words",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "The draft is ready for review",
+            "frame": [
+              868,
+              900,
+              590,
+              45
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Let me know what you think",
+            "frame": [
+              940,
+              925,
+              278,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "The draft is ready for review Let me know what you think"
+      }
+    },
+    {
       "name": "sliver overlap",
       "request": {
         "blocks": [
@@ -280,6 +425,18 @@
       "expected": {
         "text": "",
         "used": 17,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "admission keeps one space at each edge that had any",
+      "request": {
+        "admit": "  Visit\t",
+        "used": 0
+      },
+      "expected": {
+        "text": " Visit ",
+        "used": 7,
         "budgetFull": false
       }
     },
@@ -1004,7 +1161,7 @@
       }
     },
     {
-      "name": "a caret starting a paragraph gets the break, wherever it is; the render takes it out where it splits a secret",
+      "name": "a caret starting a paragraph gets the break, wherever it is",
       "request": {
         "caretWindow": {
           "parts": [
@@ -1077,7 +1234,7 @@
       },
       "expected": {
         "parts": [
-          "Synthetic opening line\u2029\nSynthetic line to dictate under.\u2029",
+          "Synthetic opening line\n\nSynthetic line to dictate under.\n",
           "",
           "\n\n--\nSynthetic signature"
         ],
@@ -1105,7 +1262,7 @@
         "parts": [
           "First paragraph\n",
           "Second",
-          "\u2029Third"
+          "\nThird"
         ],
         "selectionUnavailable": false
       }
@@ -1131,7 +1288,7 @@
         "parts": [
           "Line dictated under.",
           "",
-          "\u2029Signature"
+          "\nSignature"
         ],
         "selectionUnavailable": false
       }
@@ -1155,7 +1312,7 @@
       "expected": {
         "parts": [
           "Intro ",
-          "First paragraph\u2029Second",
+          "First paragraph\nSecond",
           " paragraph"
         ],
         "selectionUnavailable": false
@@ -1231,13 +1388,13 @@
         "parts": [
           "First",
           "",
-          "Second\u2029"
+          "Second\n"
         ],
         "selectionUnavailable": false
       }
     },
     {
-      "name": "put-back breaks are shown as line breaks",
+      "name": "put-back breaks reach the render as the line breaks they are",
       "request": {
         "blocks": [
           {
@@ -1250,7 +1407,7 @@
           }
         ],
         "caret": [
-          "Synthetic opening line\u2029\nSynthetic line to dictate under.\u2029",
+          "Synthetic opening line\n\nSynthetic line to dictate under.\n",
           "",
           "\n\n--\nSynthetic signature"
         ]
@@ -1264,54 +1421,7 @@
       }
     },
     {
-      "name": "a caret inside a secret once the break before it is taken out is withheld",
-      "request": {
-        "blocks": [],
-        "caret": [
-          "Reply. password=synthetic\n",
-          "",
-          "Secret123 after"
-        ]
-      },
-      "expected": {
-        "caret": [
-          "",
-          "",
-          ""
-        ],
-        "selectionRedacted": false
-      }
-    },
-    {
-      "name": "a caret inside a secret that starts in the block above, once the break before it is taken out, is withheld",
-      "request": {
-        "blocks": [
-          {
-            "kind": "text",
-            "text": "Authorization: Bearer"
-          },
-          {
-            "kind": "caret",
-            "text": "ignored"
-          }
-        ],
-        "caret": [
-          "a\n",
-          "",
-          "1B2c3D4e5F6g7H8i9J0k1L2 thanks"
-        ]
-      },
-      "expected": {
-        "rendered": "Authorization: Bearer\n» ‸",
-        "caret": [
-          "",
-          "",
-          ""
-        ]
-      }
-    },
-    {
-      "name": "a break of the text's own that two keys would be joined across withholds the caret, so neither key is shown in part",
+      "name": "two keys on lines of their own around the caret are each redacted",
       "request": {
         "blocks": [],
         "caret": [
@@ -1322,14 +1432,14 @@
       },
       "expected": {
         "caret": [
+          "[redacted]\n",
           "",
-          "",
-          ""
+          "[redacted]"
         ]
       }
     },
     {
-      "name": "a selection after a break withheld with the caret is the refusal marker",
+      "name": "a selected key under a key on the line above is redacted on its own",
       "request": {
         "blocks": [],
         "caret": [
@@ -1340,9 +1450,9 @@
       },
       "expected": {
         "caret": [
-          "",
+          "[redacted]\n",
           "[redacted]",
-          ""
+          " after"
         ],
         "selectionRedacted": true
       }
@@ -1403,7 +1513,7 @@
         }
       },
       "expected": {
-        "text": "para\u2029tail",
+        "text": "para\ntail",
         "length": 9,
         "caret": 7,
         "selection": null
@@ -1451,7 +1561,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029Why",
+        "text": "Hi All,\nWhy",
         "length": 11,
         "caret": null,
         "selection": [
@@ -1532,7 +1642,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 27,
         "selection": null
@@ -1610,7 +1720,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 8,
         "selection": null
@@ -1688,7 +1798,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 26,
         "selection": null
@@ -1755,7 +1865,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 27,
         "selection": null
@@ -1842,7 +1952,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy does it move?\u2029\n--",
+        "text": "Hi All,\n\nWhy does it move?\n\n--",
         "length": 30,
         "caret": 12,
         "selection": [
@@ -1913,7 +2023,7 @@
         }
       },
       "expected": {
-        "text": "A\u2029B",
+        "text": "A\nB",
         "length": 3,
         "caret": null,
         "selection": null
@@ -1947,7 +2057,7 @@
         }
       },
       "expected": {
-        "text": "A\u2029B",
+        "text": "A\nB",
         "length": 3,
         "caret": 2,
         "selection": null
@@ -2003,7 +2113,7 @@
         }
       },
       "expected": {
-        "text": "A\u2029B",
+        "text": "A\nB",
         "length": 3,
         "caret": null,
         "selection": null
@@ -2070,7 +2180,7 @@
         }
       },
       "expected": {
-        "text": "Gr\u00fc\u00dfe \ud83d\ude00\u2029x",
+        "text": "Gr\u00fc\u00dfe \ud83d\ude00\nx",
         "length": 9,
         "caret": 8,
         "selection": null
@@ -2203,7 +2313,7 @@
         }
       },
       "expected": {
-        "text": "Hi All,\u2029\nWhy",
+        "text": "Hi All,\n\nWhy",
         "length": 12,
         "caret": 8,
         "selection": null
@@ -2259,7 +2369,7 @@
         }
       },
       "expected": {
-        "text": "Visit \ufffc now\u2029Why",
+        "text": "Visit \ufffc now\nWhy",
         "length": 15,
         "caret": null,
         "selection": [

@@ -400,11 +400,11 @@ mod tests {
     fn paragraph_starts_map_from_provider_offsets_into_the_parts() {
         assert_eq!(
             read_with_starts("Ab😀cd", 6, &[0, 1, 3, 4, 6, 9], false, false),
-            json!(["A\u{2029}b😀\u{2029}cd\u{2029}", "", ""])
+            json!(["A\nb😀\ncd\n", "", ""])
         );
         assert_eq!(
             read_with_starts("Ab😀cdef", 4, &[0, 3, 5], true, false),
-            json!(["Ab😀\u{2029}c", "", "d\u{2029}ef"])
+            json!(["Ab😀\nc", "", "d\nef"])
         );
         assert_eq!(
             read_with_starts("Ab\ncd", 3, &[3], false, false),
@@ -413,11 +413,11 @@ mod tests {
         // The caret ends the line above the paragraph starting at its offset: the break follows it.
         assert_eq!(
             read_with_starts("Abcd", 2, &[2], false, true),
-            json!(["Ab", "", "\u{2029}cd"])
+            json!(["Ab", "", "\ncd"])
         );
         assert_eq!(
             read_with_starts("Abcd", 2, &[2], false, false),
-            json!(["Ab\u{2029}", "", "cd"])
+            json!(["Ab\n", "", "cd"])
         );
     }
     #[test]

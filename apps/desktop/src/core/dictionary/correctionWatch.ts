@@ -15,9 +15,9 @@ const rowBreak = "\u2029";
 /** The ways a field may hold the pasted text, in order: as read; with the rows a terminal wrapped
  * inside a word joined (its breaks dropped); and with the rows a program wrapped at its words joined
  * by a space (each break and the blanks around it, as a full-screen program indents its next row).
- * Only the core's breaks are joined, never the user's own line breaks. (The core checked its text for
- * secrets with its breaks and with them dropped; the text joined by spaces stays on this computer,
- * and only the words learned reach the debug log.) */
+ * Only the core's breaks are joined, never the user's own line breaks. (The core redacted the rows as
+ * the lines the screen shows, before marking their breaks; the text joined stays on this computer, and
+ * only the words learned reach the debug log.) */
 const joins: ((field: string) => string)[] = [
   (field) => field,
   (field) => field.replaceAll(rowBreak, ""),

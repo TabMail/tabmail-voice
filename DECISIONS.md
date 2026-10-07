@@ -538,6 +538,35 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   (the hypertext walk), whose block marks put every break back already. Both run the Mac's seven
   cases in real Chromium (`windows/tests/electron.mjs`; `linux/tests/electron.mjs`, which runs on
   Wayland, as GNOME reads only the active window and does not activate a new X11 one).)*
+- *(Amended 2026-10-07, owner: the screen is read exactly as it is laid out, and redacted as it
+  is, with heuristics only for what the screen shows.) The core no longer puts its own breaks into
+  the text as U+2029 and reads it two ways: the breaks a rich editor's blocks show (the `hypertext`
+  join, the caret window's put-back breaks) are line breaks, and the text is redacted once, as
+  read. The withholding that compared the two readings (every line holding an added break, the
+  field read's refusal) is gone with them. A secret the screen shows over two lines is read in two
+  and can reach the reply in unrecognised pieces: accepted by the owner as rare in real use and
+  never the whole secret. The helpers' fallbacks for where a line starts (the Mac's
+  `startsParagraph`, found in the Gmail smoke; Windows' paragraph units and merged text) stay.*
+
+  *The pieces of one line on screen are now redacted as that one line. Chromium gives a run of bold,
+  a link or code inside a paragraph as a piece of its own (Mac `AXStaticText`, UIA text elements),
+  and each block was a line of its own to the redactor, so a key split by a bold run was read in
+  its pieces. Text and link blocks the render puts on one line (`separator`: inline, at or right of
+  the one before, overlapping it by half the lower one's height) are joined for the redactor as the
+  screen shows them, and each block takes back its own redacted parts. Between them goes a space
+  where the screen has one, and nothing where they abut. Measured in Electron's Chromium on the Mac
+  (2026-10-07): a bold run inside a word starts exactly where the text before it ends, and a space
+  the screen shows is inside its piece's box (`Visit ` ends where the link starts), so geometry
+  alone can't tell the two apart. `admit` now keeps one space at each edge of a piece that had any
+  (the core trims every block but a field and the caret when it reads the blocks back), and two
+  pieces abut only with no space at that edge and a gap under a tenth of the lower box's height
+  (`ABUTTING_GAP`) either way. A piece whose box ends well past the next one's start wrapped onto
+  more lines (a Slack message) and gets a space. The render uses the same joiner, so the read shows
+  "Visit [example] now" and a word split by italics stays one word. A soft wrap between two pieces
+  is still a line break. AT-SPI gives Chromium's paragraph as one text with its runs, so Linux had
+  no split. Each platform's real-Chromium test (`macos/Tests/electron.mjs`,
+  `windows/tests/electron.mjs`, `linux/tests/electron.mjs`) reads a key split by bold and a link
+  between words; the Mac and Windows runs fail on the old per-piece lines.)*
 
 **Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
 (issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the
@@ -2707,7 +2736,10 @@ and below it between the same borders, up to a horizontal rule (tmux's border be
 the other; the rules above and below Claude Code's input), so other panes and a program's spinner or
 status line are not the field. Its rows are joined by the core's own breaks (U+2029), which the core
 checks for secrets with and without them, as a rich editor's (ADR-DESK-007, 2026-10-06), withholding
-the field where one splits a secret. `CorrectionWatch` finds the pasted text as read, else with those
+the field where one splits a secret. *(Superseded the same day by ADR-DESK-007's 2026-10-07 amendment: the
+rows are lines as the screen shows them, redacted once, and U+2029 marks each row break only after the
+redaction; a key the terminal wraps over two rows reaches this field read, which stays on this computer,
+in its pieces.)* `CorrectionWatch` finds the pasted text as read, else with those
 breaks dropped (a shell wraps a long line inside a word), else with each break and the blanks around
 it read as one space (a full-screen program wraps at a word and indents its next row), and reads the
 field the same way until the watch ends; a user's own line break is never joined. A box whose other
