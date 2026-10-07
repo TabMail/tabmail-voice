@@ -173,6 +173,11 @@ a single blank cell right after a non-ASCII character reads as nothing. Request
 caret and selection offsets count the native text, NULs included; the result's
 offsets count the cleaned text.
 
+The box around a terminal's cursor (`src/terminal_box.rs`) is cut from this
+redacted result by the column on screen: pinned `unicode-width` gives each
+grapheme its width (two for CJK and emoji), so the borders of a row holding one
+line up with the cursor's.
+
 The result preserves surface/run identity and whitespace, returns only redacted
 text, and gives `renderedText`, per-run `renderedOffset`, exact caret
 `renderedOffset` when available, and per-selection `renderedStart`/`renderedEnd`.

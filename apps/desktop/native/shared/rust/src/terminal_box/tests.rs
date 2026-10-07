@@ -189,3 +189,29 @@ fn a_connected_run_after_the_carets_continues_its_row() {
             {"id": 3, "text": "other pane", "connected": false}]}]});
     assert_eq!(caret_box(&value), caret(&[], "> No", "te: hi", &["next"]));
 }
+
+/// A double-width character (CJK, an emoji) takes two columns on screen: rows holding them, in the
+/// cursor's pane or the pane beside it, still have their borders under the cursor's.
+#[test]
+fn double_width_characters_take_two_columns() {
+    // The left pane's rows hold CJK and an emoji; each border is at column 13.
+    let rows = [
+        "日本語 build │ $ echo 你好",
+        "👍 done.     │ 你好",
+        "tests:       │ $ Note:‸",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&[" $ echo 你好", " 你好"], " $ Note:", "", &[])
+    );
+    // The cursor in the left pane, after CJK, its border on the right.
+    let rows = [
+        "左 one     │ right",
+        "日本語 x‸   │ more",
+        "ok         │ end",
+    ];
+    assert_eq!(boxed(&rows), caret(&["左 one"], "日本語 x", "", &["ok"]));
+    // A program's input box around a CJK line.
+    let rows = ["╭──────────╮", "│ > 你好‸   │", "╰──────────╯"];
+    assert_eq!(boxed(&rows), caret(&[], " > 你好", "", &[]));
+}

@@ -711,8 +711,12 @@ or a closing mark, before a word after a closing one), not a space after any cha
 from the viewport's text after it was redacted, so nothing is put into text the redactor sees. Without
 an exact caret (a caret iTerm2 draws on another line than its offset's, VTE's at a text's ends), or
 while text is selected (a terminal's selection is not at its cursor), the window stays empty and no
-space is added, as before. The cut is by character column: a row holding a double-width character has
-its borders a column early.
+space is added, as before. The cut was by character column at first, so a row holding a double-width
+character had its borders a column early and ended the box. Owner, 2026-10-07: fix that. The cut is now
+by the column on screen, each character (a grapheme) as wide as Unicode says (`unicode-width`: two for
+CJK and emoji). A terminal set to draw a character otherwise (iTerm2's ambiguous-width letters, some
+emoji sequences) still has that row's borders a column off, and the box ends there, never reaching
+another pane.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
