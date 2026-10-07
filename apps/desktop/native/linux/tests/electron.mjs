@@ -55,11 +55,7 @@ const page = `
     [contenteditable] div { margin: 0; }
     p { font: 14px/20px Arial; margin: 0 0 10px; }
   </style>
-  <p>Key sk-Review<b>Fixture1234567890</b> here</p>
-  <p>Visit <a href="#v">example</a> now</p>
-  <p>Read <a href="#r">more </a>now</p>
-  <p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p>
-  <p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p>
+  <div style="position:fixed;left:560px;top:20px"><p>Key sk-Review<b>Fixture1234567890</b> here</p><p>Visit <a href="#v">example</a> now</p><p>Read <a href="#r">more </a>now</p><p>Paste<a href="#k"> sk-ReviewLink1234567890abcd</a></p><p>Code sk-ReviewCode<code>Snippet1234567890</code> end</p></div>
   <div id="plain" contenteditable="true">Synthetic first line<br>Synthetic second line<br><br><br>Synthetic fifth line<br>Synthetic sixth line</div>
   <div id="rich" contenteditable="true"><div>Synthetic first paragraph</div><div><br></div><div>Synthetic third paragraph</div><div>Synthetic fourth paragraph</div><div><br></div><div><br></div><div>Synthetic seventh paragraph</div></div>
   <div id="gmail" contenteditable="true">Synthetic opening line<div><br></div><div>Synthetic <b>line</b> to <i>dictate</i> under.</div><div><br><br>--<br>Synthetic signature</div></div>
@@ -107,7 +103,7 @@ async function main() {
       pending.get(message.id)?.(message);
       pending.delete(message.id);
     });
-    window = new BrowserWindow({ width: 640, height: 900, title: "Caret read integration test" });
+    window = new BrowserWindow({ width: 1100, height: 900, title: "Caret read integration test" });
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`);
     await delay(1000);
 
