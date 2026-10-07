@@ -789,6 +789,8 @@ describe("the chat window", () => {
     const page = await overlayPage();
     const pillCircles = () => document.querySelector(".chat-canvas .pill .spinning") !== null;
     const circling = () => [...document.querySelectorAll(".chat-canvas .bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
+    /** The working pill shows nothing in its circle: no icon, waveform or badge. */
+    const pillEmpty = () => document.querySelector(".chat-canvas .pill :is(svg, .waveform, .badge)") === null;
     const agent = { mode: "agent" as const, tools: ["answer" as const, "compose" as const], connectors: ["web" as const, "calendar" as const], chat: chat(null), chatPlacement: above };
 
     await page.show({ ...idle, ...agent });
@@ -797,16 +799,17 @@ describe("the chat window", () => {
 
     await page.show({ ...listening, ...agent, phase: { kind: "transcribing" } });
     expect(pillCircles()).toBe(true);
+    expect(pillEmpty()).toBe(true);
     expect(circling()).toEqual([]);
 
     await page.show({ ...running, ...agent, phase: { kind: "running", tool: null }, runningBubble: null });
     expect(pillCircles()).toBe(true);
-    expect(document.querySelector(".chat-canvas .pill svg")).toBeNull();
+    expect(pillEmpty()).toBe(true);
     expect(circling()).toEqual([]);
 
     await page.show({ ...running, ...agent });
     expect(pillCircles()).toBe(true);
-    expect(document.querySelector(".chat-canvas .pill svg")).toBeNull();
+    expect(pillEmpty()).toBe(true);
     expect(circling()).toEqual(["answer"]);
 
     await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningBubble: "web" });
