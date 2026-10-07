@@ -751,6 +751,12 @@ grants. The privacy policy tells users they can switch screen reading off.
   *(Superseded by ADR-DESK-030, owner 2026-09-26: one Web switch, on by default, in the Features
   step and Settings, covers searching, reading and opening pages.)*
 
+**Amendment 2026-10-07 (owner, #170): the consent step covers agent mode.** It listed only what
+plain dictation sends. It now also lists what agent mode sends: the request and the selected text,
+what the apps switched on return (events, contacts, notes, files), and the text of the web pages it
+reads; and it says a web search also goes to a search provider (ADR-DESK-030). The page is
+reworded, not re-asked, and no tip is shown: the app has no existing users (owner).
+
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
