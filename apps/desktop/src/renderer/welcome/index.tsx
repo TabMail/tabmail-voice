@@ -145,17 +145,11 @@ function ConsentPage({ state }: { state: WelcomeState }) {
         </li>
         <li>
           <SparklesLineIcon size={config.welcomeLabelIconSize} />
-          <span>
-            In agent mode, your request and the text you’ve selected, with what the agent looks up for you: what the apps you switch on in the Features step or in
-            Settings return, such as events, contacts, notes and files, and the text of the web pages it reads.
-          </span>
+          <span>In agent mode, your request, the text you’ve selected, and whatever its tools need to do it.</span>
         </li>
         <li>
           <LockShieldIcon size={config.welcomeLabelIconSize} />
-          <span>
-            All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored. When agent mode searches the web, the search
-            goes to a search provider too.
-          </span>
+          <span>All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.</span>
         </li>
       </ul>
       <label className="check">
