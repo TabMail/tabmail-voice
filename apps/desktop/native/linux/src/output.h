@@ -16,7 +16,9 @@ namespace voice {
 // Keyboard callbacks enqueue actions; JSON encoding and pipe writes belong to this thread.
 // A stalled parent cannot retain an unbounded queue or leave us owning desktop shortcuts.
 class Output {
-    using Item = std::variant<Action, nlohmann::json>;
+    // Ends the process with its code once everything enqueued before it has been written.
+    struct End { int code; };
+    using Item = std::variant<Action, nlohmann::json, End>;
     std::mutex mutex;
     std::condition_variable ready;
     std::deque<Item> queue;
@@ -40,6 +42,7 @@ public:
                     item = std::move(queue.front());
                     queue.pop_front();
                 }
+                if (const auto end = std::get_if<End>(&item)) std::_Exit(end->code);
                 try {
                     auto value = std::holds_alternative<Action>(item)
                         ? nlohmann::json{{"event", "action"}, {"action", actionName(std::get<Action>(item))}}
@@ -58,5 +61,6 @@ public:
     Output& operator=(const Output&) = delete;
     void action(Action value) { enqueue(value); }
     void send(nlohmann::json value) { enqueue(std::move(value)); }
+    void end(int code) { enqueue(End{code}); }
 };
 }

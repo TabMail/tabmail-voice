@@ -13,7 +13,7 @@ test("Windows packages every helper the main process can launch", () => {
   const source = readFileSync(join(root, "src/main/index.ts"), "utf8");
   const launched = [...new Set([...source.matchAll(/"(voice-[a-z-]+\.exe)"/g)].map(match => match[1]))].sort();
   const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { win: { extraResources: { from: string; filter?: string[] }[] } };
-  expect(launched).toEqual(["voice-hotkey.exe", "voice-productivity.exe", "voice-screen-reader.exe", "voice-windows.exe"]);
+  expect(launched).toEqual(["voice-hotkey.exe", "voice-microphone.exe", "voice-productivity.exe", "voice-screen-reader.exe", "voice-windows.exe"]);
   expect(builder.win.extraResources.find(resource => resource.from === "dist/helpers")?.filter?.slice().sort()).toEqual(launched);
 });
 
@@ -52,7 +52,7 @@ describe("the Mac app's packaging", () => {
     const linuxBuild = readFileSync(join(root, "scripts/linux/build-native.mts"), "utf8");
     const linux = JSON.parse(/for \(const helper of (\[[^\]]*\])\)/.exec(linuxBuild)?.[1] ?? "null") as string[];
     const builder = JSON.parse(readFileSync(join(root, "electron-builder.json"), "utf8")) as { linux: { extraResources: { from: string; filter: string[] }[] } };
-    expect(linux).toEqual(["voice-hotkey", "voice-linux", "voice-screen-reader", "voice-files", "voice-productivity"]);
+    expect(linux).toEqual(["voice-hotkey", "voice-linux", "voice-microphone", "voice-screen-reader", "voice-files", "voice-productivity"]);
     expect(builder.linux.extraResources.find(({ from }) => from === "dist/helpers")?.filter).toEqual(linux);
     expect([...new Set(spawned)].sort()).toEqual([...new Set([...products, ...linux])].sort());
     expect([...copied].sort()).toEqual([...products].sort());

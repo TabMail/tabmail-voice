@@ -17,14 +17,16 @@
 #include <optional>
 #include <iostream>
 #include <cmath>
-#include "microphone.h"
+#include "com.h"
 #include "text.h"
 #include "screen_context.h"
 #include "../../shared/context/SemanticText.h"
 #include "helper_config.h"
 #include <vector>
+#include <nlohmann/json.hpp>
 
 namespace voice {
+using JSON = nlohmann::json;
 class Automation {
 public:
     Automation() { require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation))); }

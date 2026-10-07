@@ -5,7 +5,6 @@
 #include <gio/gdesktopappinfo.h>
 #include <pwd.h>
 #include "channel.h"
-#include "microphone.h"
 #include "foreground.h"
 #include "focused_read.h"
 #include "input_session.h"
@@ -36,7 +35,6 @@ int main() {
     if (atspi_init() != 0) return 1;
     atspi_set_timeout(250, 1000);
     voice::Output output;
-    voice::Microphone microphone(output);
     voice::KeyboardLanguage keyboardLanguage;
     voice::GnomeCaret gnomeCaret;
     voice::Foreground foreground([&] { return gnomeCaret.holding(); });
@@ -61,21 +59,6 @@ int main() {
             input.restore([reply](bool granted) { reply({{"granted", granted}}, true); });
         } else if (method == "insertionPermission") {
             reply({{"granted", input.ready()}}, true);
-        } else if (method == "microphonePrepare") {
-            microphone.prepare([reply](bool success) { reply(JSON::object(), success); });
-        } else if (method == "microphoneStart") {
-            if (!params.is_object() || !params.contains("session") || !params["session"].is_number_integer() ||
-                !params.contains("sampleRate") || !params["sampleRate"].is_number_unsigned())
-                throw std::runtime_error("invalid audio parameters");
-            const auto session = params["session"].get<int>();
-            const auto rate = params["sampleRate"].get<unsigned>();
-            if (params["session"] != session || params["sampleRate"] != rate)
-                throw std::runtime_error("audio parameters out of range");
-            microphone.start(session, rate, [reply](bool success) { reply(JSON::object(), success); });
-        } else if (method == "microphoneStop") {
-            if (!params.is_object() || !params.contains("session") || !params["session"].is_number_integer())
-                throw std::runtime_error("invalid audio session");
-            microphone.stop(params["session"].get<int>(), [reply](bool success) { reply(JSON::object(), success); });
         } else if (method == "fullUserName") {
             const auto user = getpwuid(getuid());
             const std::string name = user && user->pw_gecos ? user->pw_gecos : "";

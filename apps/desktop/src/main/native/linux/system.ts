@@ -2,12 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
 import * as config from "../../../core/config.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
-import { NativeMicrophone } from "../microphone.js";
 import { keyboardLanguageCode } from "../keyboardLanguage.js";
 
 /** Native Ubuntu device and focused-field operations, through voice-linux. */
@@ -65,9 +63,6 @@ export class LinuxSystem {
     if ("error" in answer) throw answer.error;
     return usable(answer.rect);
   }
-
-  readonly microphone = (report: (report: AudioReport) => void): (command: AudioCommand) => void =>
-    new NativeMicrophone(this.helper, "LinuxSystem").microphone(report);
 }
 
 function usable(rect: Rect | null): Rect | null {

@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+import CVoiceCore
 import Foundation
 import VoiceHelperSupport
 
@@ -22,7 +23,7 @@ public enum MicrophoneService {
     static let microphoneChunkEvent = "microphoneChunk"
     /// The process's exit code when it ends itself to be started afresh: the app's
     /// `microphoneHelperRestartExitCode`.
-    static let restartExitCode: Int32 = 75
+    static let restartExitCode = Int32(VoiceMicrophoneRestartExitCode)
 
     /// A chunk event's fields: its session, and its samples as base64 of little-endian 32-bit floats.
     static func microphoneChunk(session: Int, samples: [Float]) -> [String: JSON] {

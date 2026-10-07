@@ -8,8 +8,9 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <vector>
 #include "helper_config.h"
-#include "microphone.h"
+#include "com.h"
 #include "text.h"
 #include "../../shared/context/CaretSource.h"
 #include "../../shared/context/screen_context.h"

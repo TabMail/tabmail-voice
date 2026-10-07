@@ -2254,6 +2254,44 @@ the first engine of a fresh process always worked. So a process runs one engine.
 - Not closed: what the audio system itself takes to start a Bluetooth headset's microphone; and a
   prepare that now and then takes seconds with no device change seen (issue #101).
 
+### Amendment 2026-10-07: `voice-microphone` on Windows and Linux too
+
+Owner, 2026-10-07: *"all audio helpers should be separate in the same way"*, as the screen reader is,
+so that nothing the platform helper waits on can block a recording. Until now the Windows microphone
+was in `voice-windows`, which ends itself (`ExitProcess`) when one UI Automation request outlives
+`accessibilityWatchdogMs` (2.5 s): a provider that stopped answering took the recording with it
+(seen as a lost caret lookup on a freshly activated Chromium window in the Windows VM's cold test),
+and on Linux the microphone shared `voice-linux`'s process with AT-SPI calls that can wait on a
+provider. Per-call UI Automation timeouts were tried first (TabMail/tabmail-voice#168) and only
+narrowed the window: a provider slow on each of a request's later calls still reached the watchdog.
+
+- Every platform runs `voice-microphone` (`voice-microphone.exe` on Windows), speaking the same
+  wire (`microphonePrepare`, `microphoneStart {session, sampleRate}`, `microphoneStop {session}`,
+  the `microphoneChunk` event). `voice-windows` and `voice-linux` no longer answer the microphone.
+  The app wires it the same way everywhere (`HelperOptions.restartExitCode`, its `onStart`
+  preparing, its `onExit` ending a running dictation as lost).
+- It captures once per process, as on macOS: it ends itself with `VoiceMicrophoneRestartExitCode`
+  (75, defined once in the shared core's header, the app's `microphoneHelperRestartExitCode`) once
+  its session stops, its start fails, a newer start comes before the stop, or the running capture
+  fails (a Windows endpoint that goes away, a PulseAudio stream that fails); its replies and chunks
+  already sent are written first. That last replaces the `microphoneLost` event, which no helper
+  sends now. Windows and Linux open the default input afresh at each start and prepare nothing
+  ahead (prepare only checks there is an input), so they need no listener for a changed input: the
+  next dictation's fresh process opens the new default.
+- Which session runs, and when the process ends, is decided once, in the shared Rust core
+  (`native/shared/rust/src/microphone.rs`, a C value state like the gesture's; ADR-DESK-054), with
+  its cases in `native/shared/microphone/session-cases.json`, run by Rust, Swift
+  (`MicrophoneSessions`, now a thin wrapper) and C++ (`sessions.h`, Windows and Linux). The rules
+  are macOS's, unchanged.
+- On Linux PulseAudio now runs on the helper's own GLib main loop with its requests (no AT-SPI in the
+  process), so the worker thread and context that kept AT-SPI from starving capture are gone.
+- `native/shared/microphone/protocol.mjs` checks the Windows and Linux helpers' wire against the built
+  helper (refusals, one capture per process, the restart exit, EOF); on Linux with a synthetic tone
+  through a private null sink, on Windows without needing an input.
+- Not done here (issue #98): preparing a Windows capture client ahead of the key press and measuring
+  first-audio time on built-in and Bluetooth inputs. This amendment supersedes the line above that
+  Windows keeps its microphone in `voice-windows`.
+
 ### Amendment 2026-10-03: one native gesture algorithm
 
 The Rust static library now owns the push-to-talk, double/triple-tap, agent-intent, cancellation and semantic key-ownership transitions. Swift and C++ use an allocation-free C value-state interface, preserving value-copy/reset behavior and caller-supplied monotonic time. Native adapters keep key codes, Globe/AltGr filtering, event taps/hooks/portal lifecycle and swallowed key-up ledgers; reconfiguration still follows each monitor's existing contract. Shared traces were run against both prior implementations before their duplicate transition bodies were removed. This avoids a second state-machine implementation without adding per-key JSON, threads, callbacks or a daemon.

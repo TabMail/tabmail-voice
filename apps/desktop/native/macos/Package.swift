@@ -40,7 +40,7 @@ let package = Package(
         .target(name: "VoiceMacOSKit", dependencies: ["VoiceHelperSupport", "CVoiceCore"], swiftSettings: strict, linkerSettings: [.unsafeFlags(["-L", rustLibrary]), .linkedLibrary("tabmail_voice_core")]),
         .executableTarget(name: "VoiceMacOS", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
         .executableTarget(name: "VoiceScreenReader", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),
-        .target(name: "VoiceMicrophoneKit", dependencies: ["VoiceHelperSupport"], swiftSettings: strict),
+        .target(name: "VoiceMicrophoneKit", dependencies: ["VoiceHelperSupport", "CVoiceCore"], swiftSettings: strict, linkerSettings: [.unsafeFlags(["-L", rustLibrary]), .linkedLibrary("tabmail_voice_core")]),
         .executableTarget(name: "VoiceMicrophone", dependencies: ["VoiceMicrophoneKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceHotkeyKitTests", dependencies: ["VoiceHotkeyKit", "VoiceHelperSupport"], swiftSettings: strict),
         .testTarget(name: "VoiceMacOSKitTests", dependencies: ["VoiceMacOSKit", "VoiceHelperSupport"], swiftSettings: strict),

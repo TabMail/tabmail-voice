@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import AVFoundation
+import CVoiceCore
 import CoreAudio
 import os
 import VoiceHelperSupport
@@ -324,13 +325,9 @@ final class MicrophoneCapture: @unchecked Sendable {
     }
 }
 
-/// Which of the app's numbered sessions the microphone runs for, and when the process ends: it
-/// runs one engine (`MicrophoneCapture`), so the first start that runs is the only one, and the
-/// process ends once that session stops or its start fails. The app stops each session before it
-/// starts the next, but the helper handles each request in its own task, so they can arrive in any
-/// order: a stop stops its own session or an older one, never a newer; a start the app has already
-/// stopped, or older than the one running, does not start; and a newer start that comes before the
-/// running session's stop ends the process, so the app's retry starts it in a fresh one.
+/// Which of the app's numbered sessions the microphone runs for, and when the process ends: the
+/// shared core's decision (`native/shared/rust/src/microphone.rs`, its cases in
+/// `native/shared/microphone/session-cases.json`), the same in every `voice-microphone`.
 struct MicrophoneSessions {
     enum Start: Equatable {
         /// The engine starts for the session.
@@ -341,38 +338,36 @@ struct MicrophoneSessions {
         case endsProcess
     }
 
+    private var state = VoiceMicrophoneSessions()
+
     /// The session the microphone runs for.
-    private(set) var running: Int?
-    private var lastStopped = 0
-    /// Whether this process's engine has started, run or failed.
-    private var engineStarted = false
+    var running: Int? {
+        var state = state
+        let session = voice_core_microphone_running(&state)
+        return session == 0 ? nil : Int(session)
+    }
 
     /// Whether the engine may be prepared: it has not started.
-    var mayPrepare: Bool { !engineStarted }
+    var mayPrepare: Bool {
+        var state = state
+        return voice_core_microphone_may_prepare(&state) != 0
+    }
 
     mutating func start(_ session: Int) -> Start {
-        guard session > lastStopped, session > (running ?? 0) else { return .skipped }
-        guard !engineStarted else {
-            lastStopped = session
-            running = nil
-            return .endsProcess
+        switch voice_core_microphone_start(&state, Int64(session)) {
+        case UInt32(VoiceMicrophoneRuns.rawValue): .runs
+        case UInt32(VoiceMicrophoneEndsProcess.rawValue): .endsProcess
+        default: .skipped
         }
-        engineStarted = true
-        running = session
-        return .runs
     }
 
     /// Whether the running session stops, `session` itself or an older one, which ends the process.
     mutating func stop(_ session: Int) -> Bool {
-        lastStopped = max(lastStopped, session)
-        guard let current = running, current <= session else { return false }
-        running = nil
-        return true
+        voice_core_microphone_stop(&state, Int64(session)) != 0
     }
 
     /// `session`'s start failed: nothing runs, no older session starts, and the process ends.
     mutating func failed(_ session: Int) {
-        lastStopped = max(lastStopped, session)
-        if running == session { running = nil }
+        voice_core_microphone_failed(&state, Int64(session))
     }
 }

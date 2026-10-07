@@ -3,12 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { screen } from "electron";
-import type { AudioCommand, AudioReport } from "../../../shared/ipc.js";
 import * as config from "../../../core/config.js";
 import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
-import { NativeMicrophone } from "../microphone.js";
 import { keyboardLanguageCode } from "../keyboardLanguage.js";
 
 /** Native Windows device and foreground-window operations, through voice-windows.exe. */
@@ -70,7 +68,4 @@ export class WindowsSystem {
     if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width < 0 || rect.height <= 0) return null;
     return screen.screenToDipRect(null, rect);
   }
-
-  readonly microphone = (report: (report: AudioReport) => void): (command: AudioCommand) => void =>
-    new NativeMicrophone(this.helper, "WindowsSystem").microphone(report);
 }
