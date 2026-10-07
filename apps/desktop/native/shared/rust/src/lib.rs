@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 mod address;
+mod blocks;
 mod context;
 mod ffi;
 mod gesture;

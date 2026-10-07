@@ -15,7 +15,7 @@ enum SharedContext {
             frame = block.frame.map { [Double($0.minX), Double($0.minY), Double($0.width), Double($0.height)] }
         }
     }
-    struct Admission: Decodable { var text: String; var used: Int; var budgetFull: Bool }
+    struct Admission: Decodable { var text: String; var used: Int; var budgetFull: Bool; var stop: String? }
     /// Private recognition source; combined redaction must run before use.
     struct SourceLimits: Decodable {
         var sourceWindowBytes: Int
@@ -74,14 +74,14 @@ enum SharedContext {
         let input = try JSONSerialization.data(withJSONObject: ["fieldPlan": value])
         return try JSONDecoder().decode(FieldPlan.self, from: Redactor.request(input, operation: .context))
     }
-    struct SemanticAdmission: Decodable { var text: String; var runs: [SharedSemanticText.Run]; var used: Int; var budgetFull: Bool }
+    struct SemanticAdmission: Decodable { var text: String; var runs: [SharedSemanticText.Run]; var used: Int; var budgetFull: Bool; var stop: String? }
     static func admitSemantic(_ source: SharedSemanticText.Projection, kind: ScreenContext.Block.Kind, used: Int, previous: ScreenContext.Block?) throws -> SemanticAdmission {
         struct Value: Encodable { var kind: String; var text: String; var runs: [SharedSemanticText.Run] }
         struct Request: Encodable { var admitSemantic: Value; var used: Int; var previous: Block? }
         let input = try JSONEncoder().encode(Request(admitSemantic: Value(kind: kind.rawValue, text: source.text, runs: source.runs), used: used, previous: previous.map(Block.init)))
         return try JSONDecoder().decode(SemanticAdmission.self, from: Redactor.request(input, operation: .context))
     }
-    struct FieldAdmission: Decodable { var parts: [String]; var used: Int; var budgetFull: Bool }
+    struct FieldAdmission: Decodable { var parts: [String]; var used: Int; var budgetFull: Bool; var stop: String? }
     static func admitField(_ parts: [String], used: Int) throws -> FieldAdmission {
         let input = try JSONSerialization.data(withJSONObject: ["admitField": parts, "used": used])
         let result = try JSONDecoder().decode(FieldAdmission.self, from: Redactor.request(input, operation: .context))

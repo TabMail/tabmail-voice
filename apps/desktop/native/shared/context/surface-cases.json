@@ -1,5 +1,5 @@
 {
-  "description": "One terminal surface built from what a helper read of it as one document (ADR-DESK-054): its visible spans and their text, the selections and where the caret is drawn, in the helper's offset unit. The shared core builds the surface's runs (connected when spans meet), the selection (complete only when every selection is wholly inside the visible spans; withheld when unreadable or not fitting the document) and the caret (exact when it is in a span and drawn inside the clip, its leading edge on the clip's edges included; outside the viewport otherwise; unavailable when the helper has none), and refuses text over the byte budget. Run by Rust and every helper that reads a terminal as one document (macOS, Linux); `refused: true` cases are refused.",
+  "description": "One terminal surface built from what a helper read of it as one document (ADR-DESK-054): its visible spans and their text, the selections and where the caret is drawn, in the helper's offset unit. The shared core builds the surface's runs (connected when spans meet), the selection (complete only when every selection is wholly inside the visible spans; withheld when unreadable or not fitting the document) and the caret (exact when it is in a span and drawn inside the clip, its leading edge on the clip's edges included; outside the viewport otherwise; unavailable when the helper has none), and refuses text over the byte budget. Run by Rust and every helper that reads a terminal as one document (macOS, Linux); `refused: true` cases are refused. The `collect` cases gather one terminal window's surfaces into its viewport for every helper that reads a terminal (macOS, Linux, Windows): whether to read another surface and with how many bytes, each surface taken against the bytes left, the caret from the focused surface, the viewport complete only when the walk saw everything and found a surface; and whether planned spans may be read at all.",
   "cases": [
     {
       "name": "one visible line with the caret drawn inside it",
@@ -2010,6 +2010,730 @@
           "caret": null
         },
         "limits": true
+      },
+      "refused": true
+    },
+    {
+      "name": "a terminal window's collection starts with no surface, the whole budget left and no caret",
+      "request": {
+        "collect": {
+          "start": true
+        }
+      },
+      "expected": {
+        "surfaces": [],
+        "focusedSurface": null,
+        "caret": {
+          "status": "unavailable"
+        },
+        "remaining": 262144
+      }
+    },
+    {
+      "name": "the first surface is read with the whole budget",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 262144
+          },
+          "next": true
+        }
+      },
+      "expected": {
+        "read": true,
+        "id": 0,
+        "bytes": 262144
+      }
+    },
+    {
+      "name": "a focused surface taken counts its text's UTF-8 bytes and gives the viewport its caret",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 262144
+          },
+          "take": {
+            "surface": {
+              "id": 0,
+              "frame": [
+                0,
+                0,
+                100,
+                50
+              ],
+              "runs": [
+                {
+                  "id": 0,
+                  "text": "héllo",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": []
+              }
+            },
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            }
+          },
+          "focused": true
+        }
+      },
+      "expected": {
+        "surfaces": [
+          {
+            "id": 0,
+            "frame": [
+              0,
+              0,
+              100,
+              50
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "héllo",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": []
+            }
+          }
+        ],
+        "focusedSurface": 0,
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 2
+        },
+        "remaining": 262138
+      }
+    },
+    {
+      "name": "a surface not focused leaves the caret as it was",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [
+              {
+                "id": 0,
+                "frame": [
+                  0,
+                  0,
+                  100,
+                  50
+                ],
+                "runs": [
+                  {
+                    "id": 0,
+                    "text": "héllo",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 0,
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            },
+            "remaining": 262138
+          },
+          "take": {
+            "surface": {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                100,
+                50
+              ],
+              "runs": [
+                {
+                  "id": 0,
+                  "text": "ab",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                },
+                {
+                  "id": 1,
+                  "text": "c",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": []
+              }
+            },
+            "caret": {
+              "status": "outsideViewport"
+            }
+          },
+          "focused": false
+        }
+      },
+      "expected": {
+        "surfaces": [
+          {
+            "id": 0,
+            "frame": [
+              0,
+              0,
+              100,
+              50
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "héllo",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": []
+            }
+          },
+          {
+            "id": 1,
+            "frame": [
+              0,
+              0,
+              100,
+              50
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "ab",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              },
+              {
+                "id": 1,
+                "text": "c",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": []
+            }
+          }
+        ],
+        "focusedSurface": 0,
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 2
+        },
+        "remaining": 262135
+      }
+    },
+    {
+      "name": "no surface is read once the budget is spent",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 0
+          },
+          "next": true
+        }
+      },
+      "expected": {
+        "read": false,
+        "id": 0,
+        "bytes": 0
+      }
+    },
+    {
+      "name": "a surface over the bytes left refuses the read",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 5
+          },
+          "take": {
+            "surface": {
+              "id": 0,
+              "frame": [
+                0,
+                0,
+                100,
+                50
+              ],
+              "runs": [
+                {
+                  "id": 0,
+                  "text": "héllo",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": []
+              }
+            },
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            }
+          },
+          "focused": true
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a surface that is not the next one refuses the read",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 262144
+          },
+          "take": {
+            "surface": {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                100,
+                50
+              ],
+              "runs": [
+                {
+                  "id": 0,
+                  "text": "a",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": []
+              }
+            },
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            }
+          },
+          "focused": false
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a state with more bytes left than the budget is refused",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 262145
+          },
+          "next": true
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a finished collection is complete only when the walk saw everything and found a surface",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [
+              {
+                "id": 0,
+                "frame": [
+                  0,
+                  0,
+                  100,
+                  50
+                ],
+                "runs": [
+                  {
+                    "id": 0,
+                    "text": "héllo",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 0,
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            },
+            "remaining": 262138
+          },
+          "finish": {
+            "complete": true,
+            "offsetUnit": "scalar"
+          }
+        }
+      },
+      "expected": {
+        "surfaces": [
+          {
+            "id": 0,
+            "frame": [
+              0,
+              0,
+              100,
+              50
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "héllo",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": []
+            }
+          }
+        ],
+        "focusedSurface": 0,
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 2
+        },
+        "complete": true,
+        "offsetUnit": "scalar"
+      }
+    },
+    {
+      "name": "a finished collection with no surface is not complete",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [],
+            "focusedSurface": null,
+            "caret": {
+              "status": "unavailable"
+            },
+            "remaining": 262144
+          },
+          "finish": {
+            "complete": true
+          }
+        }
+      },
+      "expected": {
+        "surfaces": [],
+        "focusedSurface": null,
+        "caret": {
+          "status": "unavailable"
+        },
+        "complete": false
+      }
+    },
+    {
+      "name": "a finished collection the walk did not see whole is not complete",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [
+              {
+                "id": 0,
+                "frame": [
+                  0,
+                  0,
+                  100,
+                  50
+                ],
+                "runs": [
+                  {
+                    "id": 0,
+                    "text": "héllo",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 0,
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            },
+            "remaining": 262138
+          },
+          "finish": {
+            "complete": false
+          }
+        }
+      },
+      "expected": {
+        "surfaces": [
+          {
+            "id": 0,
+            "frame": [
+              0,
+              0,
+              100,
+              50
+            ],
+            "runs": [
+              {
+                "id": 0,
+                "text": "héllo",
+                "connected": false,
+                "startKnown": false,
+                "endKnown": false
+              }
+            ],
+            "selection": {
+              "complete": true,
+              "ranges": []
+            }
+          }
+        ],
+        "focusedSurface": 0,
+        "caret": {
+          "status": "exact",
+          "surface": 0,
+          "run": 0,
+          "offset": 2
+        },
+        "complete": false
+      }
+    },
+    {
+      "name": "an unknown offset unit is refused",
+      "request": {
+        "collect": {
+          "state": {
+            "surfaces": [
+              {
+                "id": 0,
+                "frame": [
+                  0,
+                  0,
+                  100,
+                  50
+                ],
+                "runs": [
+                  {
+                    "id": 0,
+                    "text": "héllo",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 0,
+            "caret": {
+              "status": "exact",
+              "surface": 0,
+              "run": 0,
+              "offset": 2
+            },
+            "remaining": 262138
+          },
+          "finish": {
+            "complete": true,
+            "offsetUnit": "bytes"
+          }
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "planned spans in order and within the budget may be read",
+      "request": {
+        "collect": {
+          "plan": {
+            "count": 20,
+            "spans": [
+              [
+                0,
+                5
+              ],
+              [
+                5,
+                8
+              ],
+              [
+                10,
+                20
+              ]
+            ],
+            "bytes": 18
+          }
+        }
+      },
+      "expected": {
+        "admit": true
+      }
+    },
+    {
+      "name": "planned spans over the budget are not read",
+      "request": {
+        "collect": {
+          "plan": {
+            "count": 20,
+            "spans": [
+              [
+                0,
+                5
+              ],
+              [
+                10,
+                20
+              ]
+            ],
+            "bytes": 14
+          }
+        }
+      },
+      "expected": {
+        "admit": false
+      }
+    },
+    {
+      "name": "overlapping planned spans are not read",
+      "request": {
+        "collect": {
+          "plan": {
+            "count": 20,
+            "spans": [
+              [
+                0,
+                5
+              ],
+              [
+                4,
+                8
+              ]
+            ],
+            "bytes": 100
+          }
+        }
+      },
+      "expected": {
+        "admit": false
+      }
+    },
+    {
+      "name": "a planned span past the document is not read",
+      "request": {
+        "collect": {
+          "plan": {
+            "count": 20,
+            "spans": [
+              [
+                10,
+                21
+              ]
+            ],
+            "bytes": 100
+          }
+        }
+      },
+      "expected": {
+        "admit": false
+      }
+    },
+    {
+      "name": "a collection request with anything else is refused",
+      "request": {
+        "collect": {
+          "start": true,
+          "next": true
+        }
       },
       "refused": true
     }

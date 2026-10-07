@@ -749,10 +749,9 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         if (!safeSubtree(tree,window,exclusions,false)) return nullptr;
         const auto windowFrame=tree.frame(window);
         if(!windowFrame || windowFrame->width<=0 || windowFrame->height<=0) return nullptr;
-        const auto limits=core::request({{"limits",true}},voice_core_viewport_json);
-        size_t remaining=limits.at("bytes").get<size_t>(),visited=0;
-        const size_t maxSurfaces=limits.at("surfaces").get<size_t>();
-        JSON surfaces=JSON::array(),focusedID=nullptr,caret={{"status","unavailable"}};
+        // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
+        JSON collected=core::request({{"collect",{{"start",true}}}},voice_core_viewport_json);
+        size_t visited=0;
         bool complete=true;
         using Node=typename Tree::Node;
         std::vector<std::pair<Node,ContextFrame>> stack{{window,*windowFrame}};
@@ -774,24 +773,18 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
             }
             if(tree.role(node)==ATSPI_ROLE_TERMINAL) {
                 if(!frame || !safeSubtree(tree,node,exclusions,true)) {complete=false;continue;}
-                if(surfaces.size()>=maxSurfaces || remaining==0) {complete=false;break;}
+                const JSON next=core::request({{"collect",{{"state",collected},{"next",true}}}},voice_core_viewport_json);
+                if(!next.at("read").get<bool>()) {complete=false;break;}
                 const bool ownsFocus=tree.same(node,focus) || std::any_of(path.begin(),path.end(),[&](const auto& parent){return tree.same(parent,node);});
-                const size_t id=surfaces.size();
                 JSON value;
-                try { value=tree.viewportSurface(node,id,clip,ownsFocus,remaining); }
+                try { value=tree.viewportSurface(node,next.at("id").get<size_t>(),clip,ownsFocus,next.at("bytes").get<size_t>()); }
                 catch(const std::exception& error) {
                     // A fixed reason, never text.
                     std::cerr << "debug screen: terminal surface refused: " << error.what() << "\n";
                     complete=false;continue;
                 }
-                const auto& surface=value.at("surface");
-                for(const auto& run:surface.at("runs")) {
-                    const auto bytes=run.at("text").template get_ref<const std::string&>().size();
-                    if(bytes>remaining) throw std::runtime_error("terminal aggregate budget");
-                    remaining-=bytes;
-                }
-                surfaces.push_back(surface);read.push_back(node);
-                if(ownsFocus) {focusedID=id;caret=value.at("caret");}
+                collected=core::request({{"collect",{{"state",collected},{"take",value},{"focused",ownsFocus}}}},voice_core_viewport_json);
+                read.push_back(node);
                 continue;
             }
             if(stack.size()>=walk::limits().nodeBudget-visited) {complete=false;break;}
@@ -801,8 +794,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         // Privacy is checked again at the end; the text is not read again.
         for(const auto& node:read) if(!safeSubtree(tree,node,exclusions,true)) return nullptr;
         if(!safeSubtree(tree,window,exclusions,false)) return nullptr;
-        const JSON viewport{{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"offsetUnit","scalar"},
-            {"complete",complete && !surfaces.empty()}};
+        const JSON viewport=core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete},{"offsetUnit","scalar"}}}}}},voice_core_viewport_json);
         const auto title=tree.label(window);
         return screenReply({{"appName",app.name},{"bundleID",app.id},{"windowTitle",title},{"host",nullptr},{"terminalProgram",nullptr},
             {"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,elapsedMilliseconds(started),"");

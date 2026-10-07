@@ -411,10 +411,182 @@ pub(crate) fn unread_parts(selects_text: bool) -> [String; 3] {
     [String::new(), if selects_text { privacy::PLACEHOLDER } else { "" }.to_owned(), String::new()]
 }
 
+/// Why a screen read stopped taking text, once an admission fills its budget.
+fn budget_stop(used: usize) -> Option<&'static str> {
+    (used >= SCREEN_BYTES).then_some("text budget")
+}
+
+/// A rich editor's elements as a helper read them (`hypertext`'s `elements`, in the order it went
+/// into them, the root first): each one's own text, its caret (a Unicode-scalar offset, or null),
+/// its part of the selection (or null), whether it starts a line of its own, and its links in order,
+/// each `[offset, element]`, the element null for a link the helper did not go into (its text is no
+/// embedded object, U+FFFC, or it leads back into the read). Gives the parts the join takes: each
+/// element's text in order, with its caret, its selection's ends and its blocks marked where
+/// Chromium means them (ADR-DESK-007, 2026-10-06).
+fn hypertext_parts(elements: &[Value]) -> Result<Vec<Value>, u32> {
+    struct Element<'a> {
+        text: &'a str,
+        caret: Option<usize>,
+        selection: Option<(usize, usize)>,
+        block: bool,
+        links: Vec<(usize, Option<usize>)>,
+    }
+    fn offset(value: &Value) -> Result<usize, u32> {
+        value
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok())
+            .ok_or(1)
+    }
+    fn mark(parts: &mut Vec<Value>, name: &str) {
+        parts.push(json!({ "mark": name }));
+    }
+    fn flush(parts: &mut Vec<Value>, run: &mut String) {
+        if !run.is_empty() {
+            parts.push(json!({ "text": std::mem::take(run) }));
+        }
+    }
+    // An element and, in order, every element its links go into; `next` is the element the read
+    // goes into next, so the elements sent are in the order the text holds them, each once.
+    fn emit(
+        read: &[Element],
+        id: usize,
+        next: &mut usize,
+        parts: &mut Vec<Value>,
+    ) -> Result<(), u32> {
+        let element = &read[id];
+        let selected = element.selection;
+        let within =
+            |index: usize| selected.is_some_and(|(start, end)| index >= start && index < end);
+        let mut run = String::new();
+        let mut link = 0;
+        let mut index = 0;
+        for character in element.text.chars() {
+            while link < element.links.len()
+                && element.links[link].0 == index
+                && element.links[link].1.is_none()
+            {
+                link += 1;
+            }
+            if link < element.links.len() && element.links[link].0 == index {
+                let child = element.links[link].1.ok_or(1u32)?;
+                link += 1;
+                // Only an embedded object stands for an element of its own.
+                if character != '\u{FFFC}' || child != *next {
+                    return Err(1);
+                }
+                *next += 1;
+                flush(parts, &mut run);
+                let inner = read.get(child).ok_or(1u32)?;
+                // A selection ending at an element's start, the caret there (a forward selection's
+                // focus, as Shift+Down from a line's start leaves it), holds the break before it.
+                if selected.is_some_and(|(start, end)| index == end && index > start)
+                    && inner.caret == Some(0)
+                {
+                    mark(parts, "selectionEnd");
+                }
+                if inner.block {
+                    mark(parts, "blockStart");
+                }
+                // A caret before the element: Chromium gives the caret at the end of the text
+                // before a link to the text holding it, at the link's object, and none to the link.
+                if element.caret == Some(index) && inner.caret.is_none() {
+                    mark(parts, "caret");
+                }
+                // A selection's start or end at an element with no part of its own, or an empty
+                // one, is at the element's end: Chromium gives an end inside an element at the
+                // element's object, and a start or end anywhere else in it a part of its own. A
+                // start there is before the break after a paragraph, and an end after it.
+                let own = within(index) && inner.selection.is_some_and(|(start, end)| start < end);
+                emit(read, child, next, parts)?;
+                if selected.is_some_and(|(start, _)| index == start) && !own {
+                    mark(parts, "selectionStart");
+                }
+                if inner.block {
+                    mark(parts, "blockEnd");
+                }
+                if selected.is_some_and(|(_, end)| index + 1 == end) && !own {
+                    mark(parts, "selectionEnd");
+                }
+                index += 1;
+                continue;
+            }
+            if element.caret == Some(index) {
+                flush(parts, &mut run);
+                mark(parts, "caret");
+            }
+            if within(index) && selected.is_some_and(|(start, _)| index == start) {
+                flush(parts, &mut run);
+                mark(parts, "selectionStart");
+            }
+            run.push(character);
+            if within(index) && selected.is_some_and(|(_, end)| index + 1 == end) {
+                flush(parts, &mut run);
+                mark(parts, "selectionEnd");
+            }
+            index += 1;
+        }
+        flush(parts, &mut run);
+        // Every link is inside its element's text.
+        if link != element.links.len() {
+            return Err(1);
+        }
+        if element.caret == Some(index) {
+            mark(parts, "caret");
+        }
+        Ok(())
+    }
+    let mut read = Vec::with_capacity(elements.len());
+    let mut bytes = 0usize;
+    for element in elements {
+        let text = element["text"].as_str().ok_or(1u32)?;
+        bytes += text.len();
+        let mut links = Vec::new();
+        for link in element["links"].as_array().ok_or(1u32)? {
+            let pair = link.as_array().filter(|pair| pair.len() == 2).ok_or(1u32)?;
+            let child = match &pair[1] {
+                Value::Null => None,
+                value => Some(offset(value)?),
+            };
+            links.push((offset(&pair[0])?, child));
+        }
+        read.push(Element {
+            text,
+            caret: match &element["caret"] {
+                Value::Null => None,
+                value => Some(offset(value)?),
+            },
+            selection: match &element["selection"] {
+                Value::Null => None,
+                Value::Array(pair) if pair.len() == 2 => {
+                    Some((offset(&pair[0])?, offset(&pair[1])?))
+                }
+                _ => return Err(1),
+            },
+            block: element["block"].as_bool().ok_or(1u32)?,
+            links,
+        });
+    }
+    // The helper reads no more elements or text than these; more is no read of this core's.
+    if read.is_empty() || read.len() > CARET_SOURCE_ELEMENTS || bytes > CARET_SOURCE_BYTES {
+        return Err(1);
+    }
+    let mut parts = Vec::new();
+    let mut next = 1;
+    emit(&read, 0, &mut next, &mut parts)?;
+    // Every element sent is in the text.
+    if next != read.len() {
+        return Err(1);
+    }
+    Ok(parts)
+}
+
 /// Inputs have already passed the native provider's pre-read privacy checks.
 /// With caret supplied, redact the combined screen before adding layout markers.
 pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     let request: Value = serde_json::from_slice(input).map_err(|_| 1u32)?;
+    if let Some(blocks) = request.get("blockStarts") {
+        return serde_json::to_vec(&crate::blocks::process(blocks)?).map_err(|_| 3);
+    }
     if let Some(window) = request.get("blockWindow") {
         let text = window["text"].as_str().ok_or(1u32)?;
         let start = window["startKnown"].as_bool().ok_or(1u32)?;
@@ -460,7 +632,16 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
     // a field read check them against the redaction of the text without them, over everything read
     // with them (a label in the block before can make a key split across two blocks a secret).
     if let Some(hypertext) = request.get("hypertext") {
-        let parts = hypertext["parts"].as_array().ok_or(1u32)?;
+        // The helper sends its `elements`; the join takes the `parts` they give.
+        let given;
+        let parts = match (hypertext.get("elements"), hypertext.get("parts")) {
+            (Some(elements), None) => {
+                given = hypertext_parts(elements.as_array().ok_or(1u32)?)?;
+                &given
+            }
+            (None, Some(parts)) => parts.as_array().ok_or(1u32)?,
+            _ => return Err(1),
+        };
         let mut text = String::new();
         let mut length = 0usize;
         let mut after_block = false;
@@ -671,7 +852,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         .map_err(|_| 3);
     }
     if request.get("limits") == Some(&Value::Bool(true)) {
-        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"screenBytes":SCREEN_BYTES,"blockSourceBytes":BLOCK_SOURCE_BYTES,"semanticGraphemes":crate::semantic::MAX_GRAPHEMES,"caretSideGraphemes":CARET_SIDE_GRAPHEMES,"paragraphStartUnits":PARAGRAPH_START_UNITS,"sourceWindowBytes":SOURCE_WINDOW_BYTES,"selectionSourceBytes":SELECTION_SOURCE_BYTES,"caretSourceBytes":CARET_SOURCE_BYTES,"caretLineBytes":CARET_LINE_BYTES,"caretSourceElements":CARET_SOURCE_ELEMENTS,"sourceChunkUnits":crate::source::CHUNK_UNITS,"fieldRangeCount":64,"hiddenMarker":HIDDEN_MARKER,"redactedMarker":privacy::PLACEHOLDER})).map_err(|_|3);
     }
     if let Some(value) = request.get("reserveCaret") {
         // This copy computes only the prospective presentation reservation.
@@ -766,7 +947,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             block.runs = Some(Vec::new());
         }
         let used = used + block.source_bytes();
-        return serde_json::to_vec(&json!({"text":block.text,"runs":block.runs,"used":used,"budgetFull":used >= SCREEN_BYTES})).map_err(|_|3);
+        return serde_json::to_vec(&json!({"text":block.text,"runs":block.runs,"used":used,"budgetFull":used >= SCREEN_BYTES,"stop":budget_stop(used)})).map_err(|_|3);
     }
     if let Some(value) = request.get("admitField") {
         let mut parts = read_field(value)?;
@@ -781,7 +962,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         }
         let used = used + parts.iter().map(String::len).sum::<usize>();
         return serde_json::to_vec(
-            &json!({"parts":parts,"used":used,"budgetFull":used >= SCREEN_BYTES}),
+            &json!({"parts":parts,"used":used,"budgetFull":used >= SCREEN_BYTES,"stop":budget_stop(used)}),
         )
         .map_err(|_| 3);
     }
@@ -810,7 +991,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         };
         let used = used + text.len();
         return serde_json::to_vec(
-            &json!({"text":text,"used":used,"budgetFull":used >= SCREEN_BYTES}),
+            &json!({"text":text,"used":used,"budgetFull":used >= SCREEN_BYTES,"stop":budget_stop(used)}),
         )
         .map_err(|_| 3);
     }
@@ -1813,14 +1994,45 @@ mod budget_tests {
         let reply = call(json!({"admit":input,"used":reserved["used"]}));
         assert_eq!(reply["text"], input);
         assert_eq!(reply["budgetFull"], true);
+        assert_eq!(reply["stop"], "text budget");
         let next = call(json!({"admit":"must not be admitted","used":reply["used"]}));
         assert_eq!(next["text"], "");
         assert_eq!(next["budgetFull"], true);
+        assert_eq!(next["stop"], "text budget");
+        let field = call(json!({"admitField":["a","b","c"],"used":SCREEN - 1}));
+        assert_eq!(field["stop"], "text budget");
+        let open = call(json!({"admitField":["a","b","c"],"used":0}));
+        assert_eq!(open["stop"], Value::Null);
+    }
+    /// The refusal a helper sends for a caret it could not read with text selected is the core's:
+    /// no text around the caret and the redaction marker as the selection, which disables Edit.
+    #[test]
+    fn an_unavailable_caret_is_the_cores_refusal() {
+        let reply = call(json!({"caretUnread":{"selectsText":true}}));
+        let limits = call(json!({"limits":true}));
+        assert_eq!(limits["redactedMarker"], privacy::PLACEHOLDER);
+        assert_eq!(
+            reply,
+            json!({"parts":["",limits["redactedMarker"],""],"selectionUnavailable":true})
+        );
+        let request = json!({
+            "appName":"Synthetic editor","exclusions":{"excludedAppIDs":[],"excludedHosts":[]},
+            "nodes":1,"milliseconds":1,"selectionUnavailable":reply["selectionUnavailable"],
+            "blocks":[{"kind":"caret","text":""}],"caret":reply["parts"]
+        });
+        let rendered: Value = serde_json::from_slice(
+            &crate::screen::process(&serde_json::to_vec(&request).unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(rendered["selectionRedacted"], true);
     }
     #[test]
     fn admission_skips_canonical_adjacent_duplicates_without_spending_budget() {
         let reply = call(json!({"admit":" e\u{301} ","previous":"é","used":17}));
-        assert_eq!(reply, json!({"text":"","used":17,"budgetFull":false}));
+        assert_eq!(
+            reply,
+            json!({"text":"","used":17,"budgetFull":false,"stop":null})
+        );
     }
     #[test]
     fn caret_is_reserved_once_even_when_its_block_is_late() {
@@ -2135,5 +2347,221 @@ mod budget_tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod hypertext_tests {
+    use super::*;
+
+    const OBJECT: &str = "\u{FFFC}";
+    const BREAK: char = ADDED_BREAK;
+
+    fn element(text: &str, block: bool, links: Value) -> Value {
+        json!({"text": text, "caret": null, "selection": null, "block": block, "links": links})
+    }
+    fn join(elements: &[Value]) -> Result<Value, u32> {
+        process(&serde_json::to_vec(&json!({"hypertext": {"elements": elements}})).unwrap())
+            .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+    }
+    fn before(reply: &Value) -> String {
+        let caret = reply["caret"].as_u64().unwrap() as usize;
+        reply["text"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .take(caret)
+            .collect()
+    }
+    fn selected(reply: &Value) -> String {
+        let range = &reply["selection"];
+        let (start, end) = (
+            range[0].as_u64().unwrap() as usize,
+            range[1].as_u64().unwrap() as usize,
+        );
+        reply["text"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .skip(start)
+            .take(end - start)
+            .collect()
+    }
+    /// Chromium's paragraphs: each a block element at an object of the editor's text, an empty
+    /// line one whose text is the `<br>`'s `\n`.
+    fn paragraphs() -> Vec<Value> {
+        let lines = ["Hi All,", "\n", "Why does it move?", "\n", "--"];
+        let links: Vec<Value> = (0..lines.len()).map(|i| json!([i, i + 1])).collect();
+        let mut elements = vec![element(&OBJECT.repeat(lines.len()), true, json!(links))];
+        elements.extend(lines.iter().map(|line| element(line, true, json!([]))));
+        elements
+    }
+
+    #[test]
+    fn paragraphs_join_with_the_cores_breaks() {
+        let reply = join(&paragraphs()).unwrap();
+        assert_eq!(
+            reply["text"],
+            format!("Hi All,{BREAK}\nWhy does it move?{BREAK}\n--")
+        );
+        assert_eq!(reply["caret"], Value::Null);
+        assert_eq!(reply["selection"], Value::Null);
+    }
+
+    /// A caret on the empty line follows the paragraph's break; inside a paragraph it is placed by
+    /// the paragraph, not by the editor's caret at its object.
+    #[test]
+    fn a_paragraphs_own_caret_places_it() {
+        let mut empty = paragraphs();
+        empty[4]["caret"] = json!(0);
+        assert_eq!(
+            before(&join(&empty).unwrap()),
+            format!("Hi All,{BREAK}\nWhy does it move?{BREAK}")
+        );
+        let mut inner = paragraphs();
+        inner[0]["caret"] = json!(2);
+        inner[3]["caret"] = json!(4);
+        assert_eq!(
+            before(&join(&inner).unwrap()),
+            format!("Hi All,{BREAK}\nWhy ")
+        );
+    }
+
+    /// A caret at an object whose element reports none is before that element: a link's text, and
+    /// a paragraph's line.
+    #[test]
+    fn a_caret_at_an_object_with_none_of_its_own_is_before_it() {
+        let link = [
+            json!({"text": format!("ab{OBJECT}cd"), "caret": 2, "selection": null, "block": true, "links": [[2, 1]]}),
+            element("link", false, json!([])),
+        ];
+        let reply = join(&link).unwrap();
+        assert_eq!(reply["text"], "ablinkcd");
+        assert_eq!(before(&reply), "ab");
+        let mut paragraph = paragraphs();
+        paragraph[0]["caret"] = json!(2);
+        assert_eq!(
+            before(&join(&paragraph).unwrap()),
+            format!("Hi All,{BREAK}\n")
+        );
+    }
+
+    /// A selection from a paragraph's end (Chromium gives that paragraph no part, or an empty one,
+    /// and the editor the paragraph's object) starts there; one down to the next paragraph's start,
+    /// the caret there, holds the break.
+    #[test]
+    fn a_selection_at_a_paragraphs_edge_keeps_the_break_chromium_means() {
+        let two = |range: [usize; 2]| {
+            vec![
+                json!({"text": OBJECT.repeat(3), "caret": null, "selection": range, "block": true,
+                    "links": [[0, 1], [1, 2], [2, 3]]}),
+                element("Hi All,", true, json!([])),
+                element("Why does it move?", true, json!([])),
+                element("--", true, json!([])),
+            ]
+        };
+        let mut from_end = two([0, 2]);
+        from_end[2]["selection"] = json!([0, 3]);
+        assert_eq!(selected(&join(&from_end).unwrap()), format!("{BREAK}Why"));
+        from_end[1]["selection"] = json!([7, 7]);
+        assert_eq!(selected(&join(&from_end).unwrap()), format!("{BREAK}Why"));
+        assert_eq!(selected(&join(&two([0, 1])).unwrap()), BREAK.to_string());
+        let mut down = two([1, 2]);
+        down[2]["selection"] = json!([0, 17]);
+        down[3]["caret"] = json!(0);
+        assert_eq!(
+            selected(&join(&down).unwrap()),
+            format!("Why does it move?{BREAK}")
+        );
+        // Only the caret at the next paragraph's start: elsewhere in it, the break is not selected.
+        down[3]["caret"] = json!(1);
+        assert_eq!(selected(&join(&down).unwrap()), "Why does it move?");
+        down[3]["caret"] = Value::Null;
+        down[2]["caret"] = json!(17);
+        assert_eq!(selected(&join(&down).unwrap()), "Why does it move?");
+    }
+
+    /// A link the helper did not go into is read as the text it is: a label's inline link, and an
+    /// object leading back into the read.
+    #[test]
+    fn a_link_not_gone_into_is_its_text() {
+        let label = [element("Visit example.com now", false, json!([[6, null]]))];
+        assert_eq!(join(&label).unwrap()["text"], "Visit example.com now");
+        let back = [
+            element(&format!("a{OBJECT}b"), false, json!([[1, 1]])),
+            element(&format!("c{OBJECT}"), false, json!([[1, null]])),
+        ];
+        assert_eq!(join(&back).unwrap()["text"], format!("ac{OBJECT}b"));
+    }
+
+    /// The elements must be the ones the text holds, each once, in its order, within the budgets.
+    #[test]
+    fn elements_the_text_does_not_hold_are_refused() {
+        // A link outside its element's text.
+        assert_eq!(join(&[element("ab", false, json!([[5, null]]))]), Err(1));
+        // An element at a character that is no object.
+        assert_eq!(
+            join(&[
+                element("ab", false, json!([[0, 1]])),
+                element("x", true, json!([]))
+            ]),
+            Err(1)
+        );
+        // Two links to one element, out of order, or one never reached.
+        let twice = [
+            element(&OBJECT.repeat(2), false, json!([[0, 1], [1, 1]])),
+            element("x", true, json!([])),
+        ];
+        assert_eq!(join(&twice), Err(1));
+        let swapped = [
+            element(&OBJECT.repeat(2), false, json!([[0, 2], [1, 1]])),
+            element("x", true, json!([])),
+            element("y", true, json!([])),
+        ];
+        assert_eq!(join(&swapped), Err(1));
+        let unread = [
+            element("ab", false, json!([])),
+            element("x", true, json!([])),
+        ];
+        assert_eq!(join(&unread), Err(1));
+        assert_eq!(join(&[]), Err(1));
+        // More elements or text than a helper may read.
+        let many: Vec<Value> = std::iter::once(element(
+            &OBJECT.repeat(CARET_SOURCE_ELEMENTS),
+            false,
+            json!(
+                (0..CARET_SOURCE_ELEMENTS)
+                    .map(|i| json!([i, i + 1]))
+                    .collect::<Vec<_>>()
+            ),
+        ))
+        .chain((0..CARET_SOURCE_ELEMENTS).map(|_| element("x", true, json!([]))))
+        .collect();
+        assert_eq!(join(&many), Err(1));
+        let fits: Vec<Value> = std::iter::once(element(
+            &OBJECT.repeat(CARET_SOURCE_ELEMENTS - 1),
+            false,
+            json!(
+                (0..CARET_SOURCE_ELEMENTS - 1)
+                    .map(|i| json!([i, i + 1]))
+                    .collect::<Vec<_>>()
+            ),
+        ))
+        .chain((0..CARET_SOURCE_ELEMENTS - 1).map(|_| element("x", true, json!([]))))
+        .collect();
+        assert!(join(&fits).is_ok());
+        assert_eq!(
+            join(&[element(
+                &"a".repeat(CARET_SOURCE_BYTES + 1),
+                false,
+                json!([])
+            )]),
+            Err(1)
+        );
+        // Both forms at once, or neither.
+        let both =
+            json!({"hypertext": {"elements": [element("a", false, json!([]))], "parts": []}});
+        assert_eq!(process(&serde_json::to_vec(&both).unwrap()), Err(1));
+        assert_eq!(process(br#"{"hypertext":{}}"#), Err(1));
     }
 }

@@ -125,53 +125,70 @@ public:
         };
     }
     // The ranges of the blocks near the selection, and of the nodes right after a block, as the Mac
-    // finds them (`MarkerCaretSource.blockStarts`): in each node's children, the first that ends at or
-    // after `low`'s start (by halving), then each in turn until one starts past `high`'s end, into
-    // each block. Only starts at or after `low`'s start count. None when more than `elements` nodes
-    // would be placed, or one can't be.
+    // finds them: the shared core walks the field (`blockStarts`, ADR-DESK-054) and decides which
+    // node to place, which start a line and when the walk ends; this says how each placed node's
+    // range compares with the window (`low`'s start to `high`'s end) and whether it is a block.
+    // None when more than `elements` nodes would be placed, or one can't be.
     template <class Node, class Children, class IsBlock, class Place>
     static std::optional<std::vector<ComPtr<IUIAutomationTextRange>>> blockStarts(const Node& field, IUIAutomationTextRange* low, IUIAutomationTextRange* high,
         size_t elements, const Children& children, const IsBlock& isBlock, const Place& place) {
         const UiaCaretSource reader;
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
+        const auto ask = [](const nlohmann::json& request) { return core::request({{"blockStarts", request}}, voice_core_context_json); };
         std::vector<ComPtr<IUIAutomationTextRange>> starts;
-        size_t looks = 0;
-        const auto at = [&](const Node& node) -> ComPtr<IUIAutomationTextRange> {
-            if (++looks > elements) return nullptr;
-            return place(node);
+        ComPtr<IUIAutomationTextRange> placed;
+        // The children of each node the walk is in, the field's first.
+        std::vector<std::vector<Node>> path;
+        const auto node = [&](const nlohmann::json& asked) -> Node {
+            const auto depth = asked.at("depth").get<size_t>(), child = asked.at("child").get<size_t>();
+            if (depth >= path.size() || child >= path[depth].size()) throw std::runtime_error("block walk asked for no node");
+            path.resize(depth + 1);
+            return path[depth][child];
         };
-        std::function<bool(const Node&)> walk = [&](const Node& node) {
-            const auto nodes = children(node);
-            size_t lower = 0, upper = nodes.size();
-            while (lower < upper) {
-                const auto middle = (lower + upper) / 2;
-                const auto span = at(nodes[middle]);
-                if (!span) return false;
-                if (reader.compare(span.Get(), end, low, start) < 0) lower = middle + 1; else upper = middle;
+        auto reply = ask({{"start", {{"elements", elements}}}});
+        while (true) {
+            if (reply.value("start", false) && placed) starts.push_back(placed);
+            if (reply.contains("done")) {
+                if (!reply.at("done").get<bool>()) return std::nullopt;
+                return starts;
             }
-            bool afterBlock = lower > 0 && isBlock(nodes[lower - 1]);
-            for (auto index = lower; index < nodes.size(); ++index) {
-                const auto span = at(nodes[index]);
-                if (!span) return false;
-                if (reader.compare(span.Get(), start, high, end) > 0) break;
-                const bool block = isBlock(nodes[index]);
-                if ((block || afterBlock) && reader.compare(span.Get(), start, low, start) >= 0) starts.push_back(span);
-                if (block && !walk(nodes[index])) return false;
-                afterBlock = block;
+            const auto& asked = reply.at("ask");
+            if (asked.contains("children")) {
+                const auto& wanted = asked.at("children");
+                Node parent = field;
+                if (wanted.at("depth").is_null()) path.clear();
+                else parent = node(wanted);
+                path.push_back(children(parent));
+                reply = ask({{"state", reply.at("state")}, {"children", path.back().size()}});
+                continue;
             }
-            return true;
-        };
-        if (!walk(field)) return std::nullopt;
-        return starts;
+            const auto& wanted = asked.at("place");
+            const auto element = node(wanted);
+            placed = place(element);
+            if (!placed) {
+                reply = ask({{"state", reply.at("state")}, {"placed", nullptr}});
+                continue;
+            }
+            // Each comparison is a call across processes: only those the walk's phase needs.
+            nlohmann::json facts{{"block", isBlock(element)}};
+            if (wanted.at("phase") == "halve") facts["endsBefore"] = reader.compare(placed.Get(), end, low, start) < 0;
+            else {
+                facts["startsPast"] = reader.compare(placed.Get(), start, high, end) > 0;
+                facts["startsWithin"] = reader.compare(placed.Get(), start, low, start) >= 0;
+            }
+            reply = ask({{"state", reply.at("state")}, {"placed", facts}});
+        }
     }
     // Whether a selection is at the end of the line its start's element (`span`) ends, not at the
     // start of the block after it: the text gives both places one offset (measured in Chromium,
-    // 2026-10-06, as on the Mac). No element: it starts its text.
+    // 2026-10-06, as on the Mac). No element: it starts its text. The shared core decides.
     static bool endsLine(IUIAutomationTextRange* span, IUIAutomationTextRange* selected) {
         if (!span) return false;
         const UiaCaretSource reader;
         const auto start = TextPatternRangeEndpoint_Start, end = TextPatternRangeEndpoint_End;
-        return reader.compare(span, start, selected, start) < 0 && reader.compare(span, end, selected, start) >= 0;
+        return core::request({{"blockStarts", {{"endsLine", {
+            {"startsBefore", reader.compare(span, start, selected, start) < 0},
+            {"reachesSelection", reader.compare(span, end, selected, start) >= 0}}}}}}, voice_core_context_json).at("endsLine").get<bool>();
     }
     // Caller proves privacy, visible provider identity and focus. Every GetText
     // stays inside an approved visible range. Do not constrain terminal ranges

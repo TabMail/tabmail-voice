@@ -2021,6 +2021,121 @@
         ],
         "selectionUnavailable": false
       }
+    },
+    {
+      "name": "a rich editor's elements as the helper read them: paragraphs, the caret on the empty line after one",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ]
+              ]
+            },
+            {
+              "text": "Hi All,",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
+            },
+            {
+              "text": "\n",
+              "caret": 0,
+              "selection": null,
+              "block": true,
+              "links": []
+            },
+            {
+              "text": "Why",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\u2029\nWhy",
+        "length": 12,
+        "caret": 8,
+        "selection": null
+      }
+    },
+    {
+      "name": "a rich editor's elements: a link the helper did not go into is its text, a selection from a paragraph's end starts before its break",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "\ufffc\ufffc",
+              "caret": null,
+              "selection": [
+                0,
+                2
+              ],
+              "block": true,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ]
+              ]
+            },
+            {
+              "text": "Visit \ufffc now",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": [
+                [
+                  6,
+                  null
+                ]
+              ]
+            },
+            {
+              "text": "Why",
+              "caret": null,
+              "selection": [
+                0,
+                3
+              ],
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Visit \ufffc now\u2029Why",
+        "length": 15,
+        "caret": null,
+        "selection": [
+          11,
+          15
+        ]
+      }
     }
   ]
 }

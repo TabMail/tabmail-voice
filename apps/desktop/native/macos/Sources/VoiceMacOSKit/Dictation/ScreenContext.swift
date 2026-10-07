@@ -11,7 +11,7 @@ import VoiceHelperSupport
 struct ScreenContext: Sendable, Equatable {
     struct Block: Sendable, Equatable {
         enum Kind: String, Sendable {
-            /// The focused field, where the dictation goes: its text with `caretMarker` at the caret.
+            /// The focused field, where the dictation goes: the core renders it from the caret's parts.
             case heading, text, link, row, field, caret
         }
         var kind: Kind
@@ -21,9 +21,6 @@ struct ScreenContext: Sendable, Equatable {
         /// Private contiguous recognition source; removed by shared finalization.
         var source: [String]? = nil
         var runs: [SharedSemanticText.Run]? = nil
-
-        /// Text that flows within a line; headings, rows, fields and the caret block start their own.
-        var isInline: Bool { kind == .text || kind == .link }
     }
 
     /// A terminal's viewport source, as acquired: private until the shared core projects and redacts
@@ -63,16 +60,12 @@ struct ScreenContext: Sendable, Equatable {
     var stoppedEarly: String?
     var seconds: Double = 0
 
-    /// Marks the caret in rendered text.
-    static let caretMarker = "‸"
-
-    /// Places the focused field at its spot in the reading order: the text around the caret with
-    /// the caret marked (a selection is bracketed by markers).
+    /// Places the focused field at its spot in the reading order; the core renders it from the
+    /// text around the caret.
     mutating func appendCaret(frame: CGRect? = nil) {
         prepareTextBudget()
         guard !coreFailed else { return }
-        let caret = selectedText.isEmpty ? Self.caretMarker : Self.caretMarker + selectedText + Self.caretMarker
-        blocks.append(Block(kind: .caret, text: textBeforeCaret + caret + textAfterCaret, frame: frame))
+        blocks.append(Block(kind: .caret, text: "", frame: frame))
     }
 
     /// Adds visible text, skipping blanks and the repeats accessibility trees are full of (a link
@@ -83,7 +76,7 @@ struct ScreenContext: Sendable, Equatable {
         do {
             let result = try SharedContext.admit(text, previous: blocks.last?.kind == .caret ? nil : blocks.last?.text, used: used)
             sourceBytes = result.used; textBudgetFull = result.budgetFull
-            if textBudgetFull { stoppedEarly = "text budget" }
+            if let stop = result.stop { stoppedEarly = stop }
             if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame)) }
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
@@ -94,7 +87,7 @@ struct ScreenContext: Sendable, Equatable {
         do {
             let result = try SharedContext.admitSemantic(source, kind: kind, used: used, previous: blocks.last)
             sourceBytes = result.used; textBudgetFull = result.budgetFull
-            if textBudgetFull { stoppedEarly = "text budget" }
+            if let stop = result.stop { stoppedEarly = stop }
             if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame, runs: result.runs)) }
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
@@ -105,7 +98,7 @@ struct ScreenContext: Sendable, Equatable {
         do {
             let result = try SharedContext.admitField(parts, used: used)
             sourceBytes = result.used; textBudgetFull = result.budgetFull
-            if textBudgetFull { stoppedEarly = "text budget" }
+            if let stop = result.stop { stoppedEarly = stop }
             if !result.parts[1].isEmpty {
                 blocks.append(Block(kind: .field, text: result.parts[1], frame: frame, source: result.parts))
             }

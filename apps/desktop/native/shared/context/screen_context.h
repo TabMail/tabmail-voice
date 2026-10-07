@@ -60,7 +60,7 @@ public:
             text = result.at("text").get<std::string>();
             bytes = result.at("used").get<size_t>();
             textBudgetFull = result.at("budgetFull").get<bool>();
-            if (textBudgetFull) stopped = "text budget";
+            if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
             if (text.empty()) return;
         }
         if (kind == ContextKind::caret) hasCaret = true;
@@ -71,7 +71,7 @@ public:
         const auto source = result.at("parts").get<std::array<std::string, 3>>();
         bytes = result.at("used").get<size_t>();
         textBudgetFull = result.at("budgetFull").get<bool>();
-        if (textBudgetFull) stopped = "text budget";
+        if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
         if (!source[1].empty()) blocks.push_back({ContextKind::field, source[1], frame, source});
     }
     void appendSemantic(ContextKind kind, const nlohmann::json& source, std::optional<ContextFrame> frame = {}) {
@@ -79,7 +79,7 @@ public:
         const auto previous = blocks.empty() ? nlohmann::json(nullptr) : blockJSON(blocks.back());
         const auto result = core::request({{"admitSemantic", block}, {"used", bytes}, {"previous", previous}}, voice_core_context_json);
         bytes = result.at("used").get<size_t>(); textBudgetFull = result.at("budgetFull").get<bool>();
-        if (textBudgetFull) stopped = "text budget";
+        if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
         const auto text = result.at("text").get<std::string>();
         if (!text.empty()) blocks.push_back({kind, text, frame, {}, std::optional<nlohmann::json>(std::in_place, result.at("runs"))});
     }

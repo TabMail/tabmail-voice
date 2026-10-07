@@ -7,6 +7,15 @@ import Testing
 import VoiceHelperSupport
 @testable import VoiceMacOSKit
 
+extension Redactor {
+    /// The core's redaction marker (`limits`), which the helper never spells itself.
+    static var placeholder: String {
+        struct Limits: Decodable { var redactedMarker: String }
+        let input = try! JSONSerialization.data(withJSONObject: ["limits": true])
+        return try! JSONDecoder().decode(Limits.self, from: Redactor.request(input, operation: .context)).redactedMarker
+    }
+}
+
 /// What looks like a secret is taken out of text read off the screen, and everything around it, and
 /// everything that only resembles one, stays (ADR-DESK-046). The cases are the ones every platform's
 /// helper must pass: `native/shared/privacy/redaction-cases.json`.

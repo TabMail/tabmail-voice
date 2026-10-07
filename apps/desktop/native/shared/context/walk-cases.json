@@ -16,7 +16,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -29,7 +29,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -43,7 +43,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -57,7 +57,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -71,7 +71,7 @@
       "request": {
         "node": {
           "role": "control",
-          "thin": 1,
+          "scale": 1,
           "inPage": true,
           "part": true
         }
@@ -87,7 +87,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -101,7 +101,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "pageExcluded": true
         }
       },
@@ -114,7 +114,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "pageExcluded": true,
           "hidden": true,
           "frame": [
@@ -140,7 +140,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "pageExcluded": true,
           "frame": [
             10,
@@ -165,7 +165,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "pageExcluded": true,
           "frame": [
             800,
@@ -190,7 +190,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "pageExcluded": true,
           "frame": [
             900,
@@ -215,7 +215,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "pageExcluded": true
         }
       },
@@ -229,7 +229,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "focus": "self",
           "focusedField": true
         }
@@ -243,7 +243,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "focus": "self",
           "focusedField": true,
           "password": true
@@ -258,7 +258,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "focus": "self",
           "pageExcluded": true,
           "focusedField": true
@@ -273,7 +273,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "focus": "self"
         }
       },
@@ -287,7 +287,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "focus": "self",
           "selection": true
         }
@@ -303,7 +303,7 @@
       "request": {
         "node": {
           "role": "chrome",
-          "thin": 1,
+          "scale": 1,
           "focus": "self",
           "selection": true
         }
@@ -318,7 +318,7 @@
       "request": {
         "node": {
           "role": "chrome",
-          "thin": 1,
+          "scale": 1,
           "focus": "path",
           "password": true,
           "hidden": true,
@@ -346,7 +346,7 @@
       "request": {
         "node": {
           "role": "heading",
-          "thin": 1,
+          "scale": 1,
           "focus": "path"
         }
       },
@@ -360,7 +360,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "focus": "path"
         }
       },
@@ -374,7 +374,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "focus": "path",
           "pageExcluded": true
         }
@@ -388,7 +388,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "password": true
         }
       },
@@ -401,7 +401,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             800,
             0,
@@ -425,7 +425,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             790,
             590,
@@ -450,7 +450,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             -10,
@@ -474,7 +474,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             -10,
             0,
@@ -498,7 +498,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             600,
@@ -522,7 +522,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             900,
             900,
@@ -547,7 +547,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             900,
             900,
@@ -566,7 +566,7 @@
       "request": {
         "node": {
           "role": "chrome",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -578,7 +578,7 @@
       "request": {
         "node": {
           "role": "chrome",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -591,7 +591,7 @@
       "request": {
         "node": {
           "role": "control",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -603,7 +603,7 @@
       "request": {
         "node": {
           "role": "toolbar",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -615,7 +615,7 @@
       "request": {
         "node": {
           "role": "control",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -630,7 +630,7 @@
       "request": {
         "node": {
           "role": "control",
-          "thin": 1,
+          "scale": 1,
           "inPage": true,
           "frame": [
             0,
@@ -651,7 +651,7 @@
       "request": {
         "node": {
           "role": "toolbar",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -665,7 +665,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -678,7 +678,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -691,7 +691,7 @@
       "request": {
         "node": {
           "role": "heading",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -704,7 +704,7 @@
       "request": {
         "node": {
           "role": "link",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -717,7 +717,7 @@
       "request": {
         "node": {
           "role": "row",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -730,7 +730,7 @@
       "request": {
         "node": {
           "role": "listItem",
-          "thin": 1
+          "scale": 1
         }
       },
       "expected": {
@@ -743,7 +743,7 @@
       "request": {
         "node": {
           "role": "listItem",
-          "thin": 1,
+          "scale": 1,
           "inPage": true
         }
       },
@@ -757,7 +757,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             0,
@@ -776,7 +776,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             0,
@@ -795,7 +795,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             0,
@@ -814,7 +814,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             10,
             10,
@@ -833,7 +833,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             10,
             10,
@@ -852,7 +852,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 2,
+          "scale": 2,
           "frame": [
             0,
             0,
@@ -871,7 +871,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -885,7 +885,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -899,7 +899,7 @@
       "request": {
         "node": {
           "role": "heading",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -913,7 +913,7 @@
       "request": {
         "node": {
           "role": "link",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -927,7 +927,7 @@
       "request": {
         "node": {
           "role": "row",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -941,7 +941,7 @@
       "request": {
         "node": {
           "role": "listItem",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -955,7 +955,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             0,
@@ -974,7 +974,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "hidden": true
         }
       },
@@ -988,7 +988,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "part": true
         }
       },
@@ -1002,7 +1002,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "part": true
         }
       },
@@ -1016,7 +1016,7 @@
       "request": {
         "node": {
           "role": "control",
-          "thin": 1,
+          "scale": 1,
           "part": true,
           "inPage": true
         }
@@ -1032,7 +1032,7 @@
       "request": {
         "node": {
           "role": "control",
-          "thin": 1,
+          "scale": 1,
           "part": true
         }
       },
@@ -1045,7 +1045,7 @@
       "request": {
         "node": {
           "role": "heading",
-          "thin": 1,
+          "scale": 1,
           "part": true
         }
       },
@@ -1059,7 +1059,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "part": true,
           "frame": [
             0,
@@ -1079,7 +1079,7 @@
       "request": {
         "node": {
           "role": "field",
-          "thin": 1,
+          "scale": 1,
           "part": true,
           "password": true
         }
@@ -1093,7 +1093,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "part": true,
           "pageExcluded": true
         }
@@ -1107,7 +1107,7 @@
       "request": {
         "node": {
           "role": "page",
-          "thin": 1,
+          "scale": 1,
           "part": true
         }
       },
@@ -1121,7 +1121,7 @@
       "request": {
         "node": {
           "role": "window",
-          "thin": 1
+          "scale": 1
         }
       },
       "refused": true
@@ -1131,7 +1131,7 @@
       "request": {
         "node": {
           "role": "text",
-          "thin": 1,
+          "scale": 1,
           "part": true,
           "focus": "self"
         }
@@ -1143,7 +1143,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "focus": "near"
         }
       },
@@ -1154,7 +1154,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "hidden": 1
         }
       },
@@ -1165,7 +1165,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": 1,
+          "scale": 1,
           "frame": [
             0,
             0,
@@ -1180,7 +1180,7 @@
       "request": {
         "node": {
           "role": "other",
-          "thin": -1
+          "scale": -1
         }
       },
       "refused": true
@@ -1592,6 +1592,96 @@
         "walk": true
       },
       "refused": true
+    },
+    {
+      "name": "a protected look refuses a password element under the part",
+      "request": {
+        "census": {
+          "visited": 3,
+          "password": true,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "protected"
+      }
+    },
+    {
+      "name": "a protected look refuses a part that is a password element itself",
+      "request": {
+        "census": {
+          "start": true,
+          "password": true,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "protected"
+      }
+    },
+    {
+      "name": "a protected look goes on through what is no password element, the part itself counted",
+      "request": {
+        "census": {
+          "visited": 3,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 4996
+      }
+    },
+    {
+      "name": "a protected look's part counts against the budget: one more child than the visits left after it",
+      "request": {
+        "census": {
+          "start": true,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "descend",
+        "children": 5000
+      }
+    },
+    {
+      "name": "a protected look has not seen the part whole at its budget's last element, the part counted",
+      "request": {
+        "census": {
+          "visited": 4999,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a protected look past its budget has not seen the part whole",
+      "request": {
+        "census": {
+          "visited": 5000,
+          "password": true,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
+    },
+    {
+      "name": "a protected look out of time has not seen the part whole",
+      "request": {
+        "census": {
+          "visited": 3,
+          "late": true,
+          "protect": true
+        }
+      },
+      "expected": {
+        "step": "notSeenWhole"
+      }
     }
   ]
 }

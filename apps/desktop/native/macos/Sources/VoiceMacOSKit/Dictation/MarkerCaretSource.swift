@@ -94,50 +94,73 @@ enum MarkerCaretSource {
     /// Where a Chromium rich editor starts its blocks from `units` before the selection to `units`
     /// after it, ascending: its text leaves out the break before a block that starts right after
     /// text (each <div>), and the shared core puts those back where the text has none
-    /// (ADR-DESK-007, 2026-10-06). A block is an element `isBlock` says is one (a <div> is a
-    /// group; inline formatting and links are not), and text after a block starts a line too.
-    /// `span` is an element's place in the field's text. Chromium's own paragraph answers can't be
-    /// used: walked from a break they give each run of text (a word edited apart) as a paragraph.
-    /// Siblings are searched by halves for the first that reaches the window, so a long field costs
-    /// a few looks. Nil when an element has no place, or past `elements` looks.
+    /// (ADR-DESK-007, 2026-10-06). The core walks the field (`blockStarts`, ADR-DESK-054): which
+    /// element to place, which start a line, and when the walk ends; this says what AX gives.
+    /// A block is an element `isBlock` says is one (a <div> is a group; inline formatting and links
+    /// are not). `span` is an element's place in the field's text. Chromium's own paragraph answers
+    /// can't be used: walked from a break they give each run of text (a word edited apart) as a
+    /// paragraph. Nil when an element has no place, or past `elements` looks.
     static func blockStarts<Node>(in field: Node, around range: NSRange, within units: Int, elements: Int,
                                   children: (Node) -> [Node], isBlock: (Node) -> Bool, span: (Node) -> NSRange?) -> [Int]? {
         let low = range.location - units, high = NSMaxRange(range) + units
-        var starts = Set<Int>(), looks = 0
-        func place(_ node: Node) -> NSRange? {
-            looks += 1
-            return looks <= elements ? span(node) : nil
+        // The children of each element the walk is in, the field's first.
+        var path: [[Node]] = []
+        var starts = Set<Int>(), placed: Int?
+        func node(_ asked: [String: Any]) -> Node? {
+            guard let depth = asked["depth"] as? Int, let child = asked["child"] as? Int,
+                  depth >= 0, depth < path.count, child >= 0, child < path[depth].count else { return nil }
+            path.removeSubrange((depth + 1)...)
+            return path[depth][child]
         }
-        func walk(_ node: Node) -> Bool {
-            let nodes = children(node)
-            // The first child that ends at or after the window's start.
-            var lower = 0, upper = nodes.count
-            while lower < upper {
-                let middle = (lower + upper) / 2
-                guard let span = place(nodes[middle]) else { return false }
-                if NSMaxRange(span) < low { lower = middle + 1 } else { upper = middle }
+        var reply = blocks(["start": ["elements": elements]])
+        while let current = reply {
+            if current["start"] as? Bool == true, let placed { starts.insert(placed) }
+            if let done = current["done"] as? Bool { return done ? starts.sorted() : nil }
+            guard let state = current["state"], let asked = current["ask"] as? [String: Any] else { return nil }
+            if let wanted = asked["children"] as? [String: Any] {
+                let parent: Node
+                if wanted["depth"] is NSNull {
+                    path = []
+                    parent = field
+                } else {
+                    guard let found = node(wanted) else { return nil }
+                    parent = found
+                }
+                let nodes = children(parent)
+                path.append(nodes)
+                reply = blocks(["state": state, "children": nodes.count])
+            } else if let wanted = asked["place"] as? [String: Any], let element = node(wanted) {
+                guard let place = span(element) else {
+                    reply = blocks(["state": state, "placed": NSNull()])
+                    continue
+                }
+                placed = place.location
+                let facts: [String: Any] = wanted["phase"] as? String == "halve"
+                    ? ["block": isBlock(element), "endsBefore": NSMaxRange(place) < low]
+                    : ["block": isBlock(element), "startsPast": place.location > high, "startsWithin": place.location >= low]
+                reply = blocks(["state": state, "placed": facts])
+            } else {
+                return nil
             }
-            var afterBlock = lower > 0 && isBlock(nodes[lower - 1])
-            for node in nodes[lower...] {
-                guard let span = place(node) else { return false }
-                if span.location > high { break }
-                let block = isBlock(node)
-                if block || afterBlock, span.location >= low { starts.insert(span.location) }
-                if block, !walk(node) { return false }
-                afterBlock = block
-            }
-            return true
         }
-        return walk(field) ? starts.sorted() : nil
+        return nil
     }
 
     /// Whether a selection starting at `location` is at the end of the line above a block that
     /// starts there, not at that block's start: the text gives both places one offset, and
     /// Chromium tells them apart by the element its start marker is in (`span`, its place in the
     /// field's text), the line's text or block ending there or the block starting there (measured
-    /// 2026-10-06). The shared core then puts that block's break after the caret.
+    /// 2026-10-06). The shared core decides; it then puts that block's break after the caret.
     static func endsLine(caretElement span: NSRange?, at location: Int) -> Bool {
         guard let span else { return false }
-        return span.location < location && NSMaxRange(span) >= location
+        let reply = blocks(["endsLine": ["startsBefore": span.location < location, "reachesSelection": NSMaxRange(span) >= location]])
+        return reply?["endsLine"] as? Bool ?? false
+    }
+
+    /// One step of the core's block walk (`blockStarts`); nil when the core refuses it.
+    private static func blocks(_ request: [String: Any]) -> [String: Any]? {
+        guard let input = try? JSONSerialization.data(withJSONObject: ["blockStarts": request]),
+              let output = try? Redactor.request(input, operation: .context) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: output)) as? [String: Any]
     }
 }

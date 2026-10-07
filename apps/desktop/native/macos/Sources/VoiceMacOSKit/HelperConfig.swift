@@ -46,9 +46,6 @@ enum HelperConfig {
     /// or heading its own role), each starting a line of its own: the caret's read puts back the
     /// break Chromium's text leaves out before one. Inline formatting and links are never these.
     static let blockRoles: Set<String> = ["AXGroup", "AXList", "AXHeading", "AXTable"]
-    /// Elements at most this thin (points) show nothing: web apps keep screen-reader-only text,
-    /// list items scrolled out of view and hover-only actions in 1-point boxes.
-    static let contextHiddenMaxThickness: CGFloat = 1
     /// Terminal apps use native visible-range and caret acquisition.
     static let terminalBundleIDs: Set<String> = [
         "com.googlecode.iterm2", "com.apple.Terminal", "com.mitchellh.ghostty", "com.github.wez.wezterm",

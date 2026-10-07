@@ -7,7 +7,6 @@ import CVoiceCore
 
 /// Native values cross the ABI; all matching and redistribution lives in Rust.
 enum Redactor {
-    static let placeholder = "[redacted]"
     enum Failure: Error { case refused }
     static func redact(_ text: String) throws -> String { try redact([[text]])[0][0] }
     static func redact(_ lines: [[String]]) throws -> [[String]] {
