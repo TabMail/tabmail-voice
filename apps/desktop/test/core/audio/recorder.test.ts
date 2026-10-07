@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { AudioRecorder, decibels, level, normalizePeak, type RecordedChunk, recordingDuration } from "../../../src/core/audio/recorder.js";
 import * as config from "../../../src/core/config.js";
 import { LevelEnvelope } from "../../../src/core/audio/levelEnvelope.js";
@@ -10,6 +10,10 @@ import { encodeWAV, wavHeaderSize } from "../../../src/core/audio/wav.js";
 import { decodeFLAC } from "../../support/flacDecoder.js";
 import { concat, random, room, speech } from "../../support/speech.js";
 import { tone } from "../../support/stubs.js";
+
+// These tests use short dictations cut at their pauses, to exercise the chunks' samples; the pause cut itself is
+// off as shipped (owner, 2026-10-07) and kept for a later look, tested on in `chunker.test.ts`.
+vi.mock("../../../src/core/config.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../../src/core/config.js")>()), chunkCutsAtPauses: true }));
 
 /** The 16-bit samples of little-endian PCM. */
 function samplesOf(pcm: Uint8Array): number[] {

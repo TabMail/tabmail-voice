@@ -34,6 +34,9 @@ import { CountingCapture, deferred, eventually, Fixtures, loggedContent, signedI
 import { concat, random, room, speech } from "../../support/speech.js";
 
 vi.mock("electron", () => ({ screen: {} }));
+// These tests use short dictations cut at their pauses, to exercise a long dictation's chunks; the pause cut itself is
+// off as shipped (owner, 2026-10-07) and kept for a later look, tested on in `chunker.test.ts`.
+vi.mock("../../../src/core/config.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../../src/core/config.js")>()), chunkCutsAtPauses: true }));
 
 const transcript = "ask jordan about the road map";
 const cleaned = "Ask Jordan about the roadmap.";

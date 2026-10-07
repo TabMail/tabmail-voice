@@ -2,10 +2,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { type ChunkCut, Chunker } from "../../../src/core/audio/chunker.js";
 import * as config from "../../../src/core/config.js";
 import { pcm16, random, room as roomAudio, speech as speechAudio } from "../../support/speech.js";
+
+/** Pause cuts are off as shipped (owner, 2026-10-07) and kept for a later look: `on` turns them on
+ * for the tests of that rule; unset, the chunker runs as shipped. */
+const pauses = vi.hoisted(() => ({ on: undefined as boolean | undefined }));
+vi.mock("../../../src/core/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/core/config.js")>();
+  return {
+    ...actual,
+    get chunkCutsAtPauses() {
+      return pauses.on ?? actual.chunkCutsAtPauses;
+    },
+  };
+});
 
 const rate = config.recordingSampleRate;
 const seconds = (samples: number) => samples / rate;
@@ -37,6 +50,22 @@ function chunk(audio: Int16Array, step = config.audioChunkFrames): { cuts: Chunk
   return { cuts, last: chunker.finish(audio.length) };
 }
 
+/** A seeded random dictation of one to ten minutes: speech, breaths, pauses and long silences at
+ * random lengths and loudness. */
+function randomDictation(seed: number): Int16Array {
+  const rand = random(seed);
+  const parts: Int16Array[] = [];
+  let total = 0;
+  const target = (60 + rand() * 540) * rate;
+  while (total < target) {
+    const kind = rand();
+    const part = kind < 0.6 ? speech(1 + rand() * (rand() < 0.1 ? 140 : 15), rand, 0.05 + rand() * 0.3) : kind < 0.85 ? room(0.2 + rand() * 0.8, rand) : room(1 + rand() * (rand() < 0.2 ? 60 : 3), rand);
+    parts.push(part);
+    total += part.length;
+  }
+  return concat(...parts);
+}
+
 /** What every cutting must hold: the chunks cover the recording in order from its first sample to
  * its last, each starting where the one before ended unless it overlaps it (and then within
  * `chunkMaxOverlap` of its end), each within `chunkMaxDuration`, so within what the backend
@@ -65,7 +94,46 @@ function expectCovers(audio: Int16Array, cuts: readonly ChunkCut[], last: ChunkC
   }
 }
 
-describe("Chunker", () => {
+describe("Chunker as shipped: cut only at the maximum length (owner, 2026-10-07)", () => {
+  /** People pause between words and sentences: a pause after ten seconds of speech is not cut at. */
+  test("a dictation with pauses after ten seconds of speech is never cut short of the maximum length", () => {
+    const rand = random(20);
+    const audio = concat(speech(12, rand), room(1.5, rand), speech(30, rand), room(1.2, rand), speech(11, rand), room(1.1, rand), speech(2, rand));
+    const { cuts, last } = chunk(audio);
+    expect(cuts).toEqual([]);
+    expect(last).toBeNull();
+  });
+
+  test("a long dictation with pauses is cut only at the maximum length, each chunk overlapping the one before", { timeout: 30_000 }, () => {
+    const rand = random(21);
+    const audio = concat(...Array.from({ length: 18 }, () => concat(speech(12, rand), room(1.5, rand))));
+    const { cuts, last } = chunk(audio);
+    expect(cuts.length).toBeGreaterThan(1);
+    for (const cut of cuts) {
+      expect(seconds(cut.end - cut.start)).toBeGreaterThan((config.chunkMaxDuration - config.chunkForcedCutSearch) / 1000);
+    }
+    expect([...cuts, last].slice(1).every((cut) => cut?.overlapped === true)).toBe(true);
+    expectCovers(audio, cuts, last);
+  });
+
+  test("random dictations are always covered within the maximum length", { timeout: 60_000 }, () => {
+    for (let seed = 200; seed < 206; seed += 1) {
+      const audio = randomDictation(seed);
+      const { cuts, last } = chunk(audio);
+      expectCovers(audio, cuts, last);
+      expect([...cuts, last].slice(1).every((cut) => cut?.overlapped === true)).toBe(true);
+    }
+  });
+});
+
+describe("Chunker cutting at pauses (off as shipped, kept for a later look)", () => {
+  beforeEach(() => {
+    pauses.on = true;
+  });
+  afterEach(() => {
+    pauses.on = undefined;
+  });
+
   test("a short dictation is never cut: one upload, as before chunking", () => {
     const rand = random(1);
     const audio = concat(speech(6, rand), room(2, rand), speech(5, rand));
@@ -250,17 +318,7 @@ describe("Chunker", () => {
    * and a pause cut always falls in quiet. */
   test("random dictations are always covered within the maximum length", { timeout: 60_000 }, () => {
     for (let seed = 100; seed < 112; seed += 1) {
-      const rand = random(seed);
-      const parts: Int16Array[] = [];
-      let total = 0;
-      const target = (60 + rand() * 540) * rate;
-      while (total < target) {
-        const kind = rand();
-        const part = kind < 0.6 ? speech(1 + rand() * (rand() < 0.1 ? 140 : 15), rand, 0.05 + rand() * 0.3) : kind < 0.85 ? room(0.2 + rand() * 0.8, rand) : room(1 + rand() * (rand() < 0.2 ? 60 : 3), rand);
-        parts.push(part);
-        total += part.length;
-      }
-      const audio = concat(...parts);
+      const audio = randomDictation(seed);
       const { cuts, last } = chunk(audio);
       expectCovers(audio, cuts, last);
     }
