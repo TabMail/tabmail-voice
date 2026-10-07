@@ -2742,7 +2742,9 @@ checks for secrets with and without them, as a rich editor's (ADR-DESK-007, 2026
 the field where one splits a secret. *(Superseded the same day by ADR-DESK-007's 2026-10-07 amendment: the
 rows are lines as the screen shows them, redacted once, and U+2029 marks each row break only after the
 redaction; a key the terminal wraps over two rows reaches this field read, which stays on this computer,
-in its pieces.)* `CorrectionWatch` finds the pasted text as read, else with those
+in its pieces: accepted by the owner (2026-10-07), since the read never leaves this computer
+and so shows nothing the terminal itself does not, and the case is rare, the box being mostly the
+line dictated into.)* `CorrectionWatch` finds the pasted text as read, else with those
 breaks dropped (a shell wraps a long line inside a word), else with each break and the blanks around
 it read as one space (a full-screen program wraps at a word and indents its next row), and reads the
 field the same way until the watch ends; a user's own line break is never joined. A box whose other
