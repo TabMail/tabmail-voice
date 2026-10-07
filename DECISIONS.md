@@ -748,6 +748,8 @@ grants. The privacy policy tells users they can switch screen reading off.
   the first dictation. An Accessibility grant re-installs the hotkey.
 - **Open (owner):** per-app exclusion. It could be a denylist in the Features step or a built-in
   skip list. Web search and web reading get their own toggles in Features once they exist.
+  *(Superseded by ADR-DESK-030, owner 2026-09-26: one Web switch, on by default, in the Features
+  step and Settings, covers searching, reading and opening pages.)*
 
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
