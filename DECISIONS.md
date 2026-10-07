@@ -2691,7 +2691,10 @@ field the same way until the watch ends; a user's own line break is never joined
 text changes while the user edits (output in the same pane) teaches nothing that time, as any edit
 outside the pasted text; without an exact caret (one iTerm2 draws on another line, after typed
 spaces) the read gives none and the watch ends. Each read is a viewport read (about 0.2 s in iTerm2),
-every `correctionPollInterval` for `correctionWatchDuration`.
+every `correctionPollInterval` for `correctionWatchDuration`. The app reads a helper's replies one
+per line feed (`HelperClient`'s `onLines`): `node:readline`, which it used before, also ends a line
+at U+2028 and U+2029, which JSON leaves unescaped, and cut the box's reply apart (found in the
+Windows VM's terminal run); the same held for any screen text holding either character.
 
 ## ADR-DESK-039: A shorter wait between the release and the text
 

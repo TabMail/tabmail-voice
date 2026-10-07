@@ -44,6 +44,12 @@ describe("HelperClient", () => {
     expect(results).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
   });
 
+  test("a reply is one line up to its line feed, whatever line separators its text holds", async () => {
+    const client = helper();
+    expect(await client.request("breaks")).toEqual({ value: "row one\u2029row two\u2028end" });
+    expect(await client.request("echo", { after: true })).toEqual({ after: true });
+  });
+
   test("a helper's error is a failure naming it, for the log", async () => {
     const error = await failure(helper().request("fail"));
     expect(error.kind).toBe("failed");

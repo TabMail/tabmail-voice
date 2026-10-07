@@ -3,10 +3,27 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
 import * as config from "../../core/config.js";
 import { log } from "../../core/log.js";
 import { CancellationError } from "../../core/util/timeout.js";
+
+/** Calls `onLine` with each line `stream` writes, the last one too when it has no line feed. A
+ * helper ends a line with a line feed only: `node:readline` also ends one at U+2028 and U+2029,
+ * which a reply's text holds unescaped (a terminal's box joins its rows with U+2029), and would cut
+ * the reply apart. */
+export function onLines(stream: Readable, onLine: (line: string) => void): void {
+  let rest = "";
+  stream.setEncoding("utf8");
+  stream.on("data", (chunk: string) => {
+    const lines = (rest + chunk).split("\n");
+    rest = lines.pop() ?? "";
+    for (const line of lines) onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
+  });
+  stream.on("end", () => {
+    if (rest) onLine(rest);
+  });
+}
 
 export type HelperErrorKind = "timeout" | "exited" | "failed";
 
@@ -164,8 +181,8 @@ export class HelperClient {
     // under plain Node too (the native test scripts).
     const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     this.child = child;
-    createInterface({ input: child.stdout }).on("line", (line) => this.receive(line));
-    createInterface({ input: child.stderr }).on("line", (line) => {
+    onLines(child.stdout, (line) => this.receive(line));
+    onLines(child.stderr, (line) => {
       if (line.startsWith("error ")) log.error(`${name}: ${line.slice("error ".length)}`);
       else log.debug(`${name}: ${line.startsWith("debug ") ? line.slice("debug ".length) : line}`);
     });
