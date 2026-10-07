@@ -561,7 +561,10 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   (the core trims every block but a field, the caret and one given with its runs when it reads the blocks back), and two
   pieces abut only with no space at that edge and a gap under a tenth of the lower box's height
   (`ABUTTING_GAP`) either way. A piece whose box ends well past the next one's start wrapped onto
-  more lines (a Slack message) and gets a space. The render uses the same joiner, so the read shows
+  more lines (a Slack message) and gets a space. A helper gives a wrapped piece one box over all its
+  lines, so where it meets the piece beside it is not known: a key split by styling where either
+  piece wraps is read in its pieces, as the base read it, accepted by the owner as rare
+  (2026-10-07), tracked as #178 (P3). The render uses the same joiner, so the read shows
   "Visit [example] now" and a word split by italics stays one word. A soft wrap between two pieces
   is still a line break. AT-SPI gives Chromium's paragraph as one text with its runs, so Linux had
   no split. A piece that touches a key with no space on screen (a label laid against a `ghp_` key)
