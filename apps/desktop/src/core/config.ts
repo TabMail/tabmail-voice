@@ -96,12 +96,16 @@ export const chunkSpeechGap = 300;
  * plosive's burst, shorter than any vowel, as a cut must be in a pause for sure (owner, 2026-10-03:
  * "really high precision, even if some recall could be lower"). */
 export const chunkPauseBlip = 40;
+/** Whether a chunk is cut at a pause at all. Off (owner, 2026-10-07): cutting at pauses barely
+ * sped up a long dictation's text and cost words, as people pause between words and sentences, so
+ * a chunk is cut only at `chunkMaxDuration`. The pause rules below are kept for a later look. */
+export const chunkCutsAtPauses = false;
 /** A chunk is cut at a pause this long (ms; owner, 2026-10-03: "a second pause")… */
 export const chunkPauseDuration = 1_000;
 /** …once it holds this much speech (ms; owner, 2026-10-03: "only after 10s+"). */
 export const chunkMinimumSpeech = 10_000;
-/** With no such pause, a chunk is cut at this length (ms), so it and the overlap the next one starts
- * with stay within the backend model's 120 s. */
+/** With no such pause (every chunk while `chunkCutsAtPauses` is off), a chunk is cut at this length
+ * (ms), so it and the overlap the next one starts with stay within the backend model's 120 s. */
 export const chunkMaxDuration = 105_000;
 /** That cut lands on the quietest window this long (ms) in the chunk's last `chunkForcedCutSearch`
  * (ms)… */

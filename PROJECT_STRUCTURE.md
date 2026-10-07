@@ -132,7 +132,7 @@ process, which hands it to `DictationController` (`src/core/dictation/controller
    (`focusChanged`), nothing is pasted and the text is left on the clipboard, with a note at the mouse
    pointer (phase `copied`). Either way the text joins the paste history. If the cleanup failed for any reason, the transcript
    is pasted as heard (`DictationCleanup`). A long dictation (up to `maxRecordingDuration`, 10 min) is
-   cut into chunks at pauses as it is recorded (`Chunker`), each sent with its cleanup while the user
+   cut into chunks of up to 105 s, each overlapping the one before, as it is recorded (`Chunker`; cuts at pauses are off since 2026-10-07), each sent with its cleanup while the user
    goes on and retried in the background; at the release the last chunk is sent and the texts are
    joined in order (`joinChunkTexts`), up to the first chunk that gave up (ADR-DESK-049).
 3. **cancel** (another key pressed during the hold): recording or upload is discarded; nothing

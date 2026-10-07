@@ -3652,6 +3652,23 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
 - The model's real limit is unmeasured past the 120 s cap: `chunkMaxDuration` stays under it.
 - iOS does the same (`tabmail-ios` ADR-IOS-087), from the same rules and numbers.
 
+### Amendment 2026-10-07: no cuts at pauses; a chunk is cut only at `chunkMaxDuration`
+
+Owner, 2026-10-07: cutting at pauses barely sped up a long dictation's text, and it made the
+dictation worse, since people pause between words and sentences and a chunk's cleanup sees only its
+own half of the sentence around the cut. `chunkCutsAtPauses` (`config.ts`) is now false: every cut is
+the forced one, at the quietest `chunkForcedCutWindow` near `chunkMaxDuration` (105 s), with the next
+chunk overlapping it by `chunkOverlapSpeech`, joined on their shared words as above. A dictation
+under 105 s is one upload. The pause rule's code, numbers and tests are kept, switched off, for a
+later look (owner: "don't remove code because we might revisit this later"); its tests turn it on
+through a config mock. Retries, the join, the polish and what is pasted are unchanged. iOS: the same
+switch (ADR-IOS-087 amendment 2026-10-07).
+
+- Tests: `chunker.test.ts` › "Chunker as shipped" (a dictation with pauses after 10 s of speech is
+  not cut; a long one is cut only near the maximum length, each chunk overlapping the one before;
+  random dictations covered), red with the switch on; the pause rule's own tests, and the
+  controller's and recorder's long-dictation tests, run with it on.
+
 ## ADR-DESK-050: Windows and Linux update themselves too, from signed packages proven by the app
 
 **Context:** ADR-DESK-041 gave macOS automatic updates; Windows and Linux had none (`publish: null`).
