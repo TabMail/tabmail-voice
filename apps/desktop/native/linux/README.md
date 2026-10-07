@@ -68,8 +68,9 @@ python3 apps/desktop/native/linux/tests/terminal-viewport.py \
 ```
 
 It checks duplicate split panes, focused-pane identity, exact Unicode caret
-offsets, explicit selection with an independent caret, and exclusion of hidden
-panes and old scrollback. Each stage emits JSON evidence. It does not prove other
+offsets, explicit selection with an independent caret, exclusion of hidden
+panes and old scrollback, the caret window's text around the cursor, and that the
+helper's field read in a terminal is the box around its cursor. Each stage emits JSON evidence. It does not prove other
 terminal providers or all concurrent focus races. This test is separate from
 CTest because it needs a configured desktop compositor and changes focus.
 

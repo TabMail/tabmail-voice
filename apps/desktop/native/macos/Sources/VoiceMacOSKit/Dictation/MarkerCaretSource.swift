@@ -14,7 +14,7 @@ enum MarkerCaretSource {
     /// changed while it was read is unread.
     static func read(snapshot: () -> (selection: CFTypeRef, whole: CFTypeRef)?,
                      parameterized: (String, CFTypeRef) -> CFTypeRef?, focused: () -> Bool,
-                     otherwise: () -> SharedContext.CaretWindow? = { nil }) -> SharedContext.CaretWindow? {
+                     otherwise: () -> SharedContext.CaretWindow?) -> SharedContext.CaretWindow? {
         func index(_ marker: CFTypeRef) -> Int? {
             guard let result = parameterized("AXIndexForTextMarker", marker) as? NSNumber else { return nil }
             let value = result.intValue

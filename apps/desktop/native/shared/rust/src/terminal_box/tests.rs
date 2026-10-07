@@ -134,3 +134,48 @@ fn connected_runs_are_read_as_one_text() {
             {"id": 1, "text": ": hi", "connected": true}]}]});
     assert_eq!(caret_box(&value), caret(&[], "> Note: h", "i", &[]));
 }
+
+/// A row that does not have the cursor's borders where the cursor's row has them ends the box:
+/// tmux's status line under its panes, and a row too short to reach the border.
+#[test]
+fn a_row_without_the_cursors_borders_ends_the_box() {
+    let rows = [
+        "build ok.  │ $ echo one",
+        "Done.      │ $ Note:‸",
+        "[0] 0:zsh*  \"host\" 12:00",
+    ];
+    assert_eq!(boxed(&rows), caret(&[" $ echo one"], " $ Note:", "", &[]));
+    let rows = ["left one   │ right", "Note:‸      │ more", "[0] 0:zsh"];
+    assert_eq!(boxed(&rows), caret(&["left one"], "Note:", "", &[]));
+    let rows = ["log", "left one   │ right", "Note:‸      │ more"];
+    assert_eq!(boxed(&rows), caret(&["left one"], "Note:", "", &[]));
+}
+
+/// A rule may be drawn with gaps: a row of box-drawing characters and blanks only ends the box too.
+#[test]
+fn a_dashed_rule_ends_the_box() {
+    let rows = ["> fix it‸", "─ ─ ─ ─ ─ ─", "  ? for shortcuts"];
+    assert_eq!(boxed(&rows), caret(&[], "> fix it", "", &[]));
+}
+
+/// Only Unicode's box-drawing block borders a box: its last character does, an ASCII bar or a block
+/// element just past it does not.
+#[test]
+fn only_box_drawing_characters_are_borders() {
+    assert_eq!(boxed(&["a ╿ Note:‸"]), caret(&[], " Note:", "", &[]));
+    assert_eq!(boxed(&["a | Note:‸"]), caret(&[], "a | Note:", "", &[]));
+    assert_eq!(boxed(&["a ▀ Note:‸"]), caret(&[], "a ▀ Note:", "", &[]));
+    assert_eq!(boxed(&["a ─ Note:‸"]), caret(&[], " Note:", "", &[]));
+}
+
+/// The runs read in one piece after the caret's are part of its text: the row goes on into the
+/// next run, and so do the rows below it.
+#[test]
+fn a_connected_run_after_the_carets_continues_its_row() {
+    let value = json!({"caret": {"status": "exact", "surface": 1, "run": 1, "offset": 4},
+        "surfaces": [{"id": 1, "runs": [
+            {"id": 1, "text": "> No", "connected": false},
+            {"id": 2, "text": "te: hi\nnext", "connected": true},
+            {"id": 3, "text": "other pane", "connected": false}]}]});
+    assert_eq!(caret_box(&value), caret(&[], "> No", "te: hi", &["next"]));
+}

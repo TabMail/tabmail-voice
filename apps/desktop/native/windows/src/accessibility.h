@@ -149,7 +149,7 @@ public:
         // cursor, which the shared core cuts from the viewport the screen read takes (`terminal_box`).
         if (isTerminal(window)) {
             size_t visited=0;
-            const JSON viewport=terminalViewport(window,element.Get(),exclusions,GetTickCount64(),visited);
+            const JSON viewport=terminalViewport(window,element.Get(),exclusions,GetTickCount64(),visited,HelperConfig::terminalFieldReadMs);
             if (viewport.is_null() || viewport==hiddenScreen() || GetForegroundWindow()!=window) return {{"value", nullptr}};
             return core::request({{"field", {{"maxLength", maxLength}, {"viewport", viewport}}}}, voice_core_request_json);
         }
@@ -750,9 +750,11 @@ private:
     }
     // A terminal window's viewport as the shared core's `collect` finishes it, the source of the
     // screen read's projection and of the field read's box around the cursor; nullptr when it can't
-    // be read, `hiddenScreen()` when it shows an excluded page.
+    // be read, `hiddenScreen()` when it shows an excluded page. `budget`: none for the screen read,
+    // which runs in voice-screen-reader; a field read runs in this helper, under its watchdog, and
+    // gives nothing once its budget is spent.
     JSON terminalViewport(HWND window, IUIAutomationElement* focus, const ScreenExclusions& exclusions,
-                          ULONGLONG started, size_t& visited) {
+                          ULONGLONG started, size_t& visited, std::optional<ULONGLONG> budget = std::nullopt) {
         ComPtr<IUIAutomationElement> root;
         require(automation->ElementFromHandle(window, &root));
         ComPtr<IUIAutomationTreeWalker> walker;
@@ -766,7 +768,13 @@ private:
             return GetForegroundWindow()==window &&
                 ((focus && current && same(focus,current.Get())) || (!focus && !current));
         };
-        PageTree privacyTree{this,walker,started,std::nullopt};
+        PageTree privacyTree{this,walker,started,budget};
+        // What is left of the budget, for the looks through each surface.
+        const auto left=[&]() -> std::optional<ULONGLONG> {
+            if (!budget) return std::nullopt;
+            const ULONGLONG spent=GetTickCount64()-started;
+            return spent<*budget ? *budget-spent : 0;
+        };
         // The surfaces are read whole: a window not looked through whole is not read (ADR-DESK-054).
         switch (walk::lookForExcludedPage(privacyTree,root,exclusions,true)) {
             case walk::PageLook::excluded: return hiddenScreen();
@@ -791,6 +799,7 @@ private:
         std::vector<Capture> captures;
         bool complete=true;
         while (!stack.empty()) {
+            if (!privacyTree.withinBudget()) return nullptr;
             if (!valid() || visited>=walk::limits().nodeBudget) { complete=false;break; }
             auto entry=std::move(stack.back()); stack.pop_back();
             if (std::any_of(seen.begin(),seen.end(),[&](const auto& prior){return same(prior.Get(),entry.node.Get());})) continue;
@@ -806,7 +815,7 @@ private:
             if (SUCCEEDED(entry.node->GetCurrentPatternAs(UIA_TextPatternId,IID_PPV_ARGS(&pattern))) && pattern) {
                 // A clipped ancestor cannot be trusted solely from GetVisibleRanges.
                 // Refuse this aggregate until a provider-specific range clip is proven.
-                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get())) {complete=false;continue;}
+                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get(),left())) {complete=false;continue;}
                 const JSON next=core::request({{"collect",{{"state",collected},{"next",true}}}},voice_core_viewport_json);
                 if (!next.at("read").get<bool>()) {complete=false;break;}
                 if (!valid()) return nullptr;
@@ -830,8 +839,8 @@ private:
             case walk::PageLook::notSeenWhole: return nullptr;
             case walk::PageLook::none: break;
         }
-        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get())) return nullptr;
-        if(!valid()) return nullptr;
+        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),left())) return nullptr;
+        if(!valid() || !privacyTree.withinBudget()) return nullptr;
         return core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete}}}}}},voice_core_viewport_json);
     }
     // The focused element as the walk treats it. `element` is null when the window has none.

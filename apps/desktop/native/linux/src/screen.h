@@ -778,6 +778,7 @@ nlohmann::json terminalViewport(Tree& tree, typename Tree::Node window, typename
                 const bool ownsFocus=tree.same(node,focus) || std::any_of(path.begin(),path.end(),[&](const auto& parent){return tree.same(parent,node);});
                 JSON value;
                 try { value=tree.viewportSurface(node,next.at("id").get<size_t>(),clip,ownsFocus,next.at("bytes").get<size_t>()); }
+                catch(const ScreenBudgetExceeded&) { throw; }
                 catch(const std::exception& error) {
                     // A fixed reason, never text.
                     std::cerr << "debug screen: terminal surface refused: " << error.what() << "\n";

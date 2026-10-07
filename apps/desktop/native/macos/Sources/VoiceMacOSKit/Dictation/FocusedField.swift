@@ -21,10 +21,16 @@ enum FocusedField {
     /// viewport when the app is a terminal (`HelperConfig.terminalBundleIDs`, as the screen read
     /// decides): nil when there is none to read.
     static func read(inApp pid: pid_t, bundleID: String?, excluding exclusions: ScreenExclusions) -> Read? {
-        guard let bundleID, HelperConfig.terminalBundleIDs.contains(bundleID) else {
-            return value(inApp: pid, excluding: exclusions).map(Read.text)
-        }
-        guard let viewport = ScreenContextReader.read(pid: pid, appName: "", bundleID: bundleID, excluding: exclusions)?.terminalSource else {
+        read(bundleID: bundleID, text: { value(inApp: pid, excluding: exclusions) }, viewport: {
+            ScreenContextReader.read(pid: pid, appName: "", bundleID: bundleID, excluding: exclusions)?.terminalSource
+        })
+    }
+
+    /// A terminal's field is read by its `viewport` only, never by its whole `text`; any other app's
+    /// by its `text`.
+    static func read(bundleID: String?, text: () -> String?, viewport: () -> JSON?) -> Read? {
+        guard let bundleID, HelperConfig.terminalBundleIDs.contains(bundleID) else { return text().map(Read.text) }
+        guard let viewport = viewport() else {
             HelperLog.debug("FocusedField: the terminal's viewport could not be read")
             return nil
         }

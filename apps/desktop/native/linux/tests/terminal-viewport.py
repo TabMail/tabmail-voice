@@ -42,18 +42,26 @@ helper=args.helper
 with tempfile.TemporaryFile(mode='w+t') as diagnostic:
  # The screen is read by voice-screen-reader, a program of its own beside the helper.
  native=subprocess.Popen([os.path.join(os.path.dirname(helper),'voice-screen-reader')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
+ # The field read for correction learning is the helper's own.
+ voice=subprocess.Popen([helper],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  fixture=subprocess.Popen([sys.executable,__file__,'--fixture'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  seq=0
  try:
-  def request():
+  # One reply per line feed (Python's readline ends a line only there and at CR; a box's rows are
+  # joined with U+2029).
+  def ask(process,method,params):
    global seq
-   seq+=1;native.stdin.write(json.dumps({'id':seq,'method':'readScreen','params':{'excludedAppIDs':[],'excludedHosts':[]}})+'\n');native.stdin.flush()
+   seq+=1;process.stdin.write(json.dumps({'id':seq,'method':method,'params':params})+'\n');process.stdin.flush()
    deadline=time.monotonic()+5
    while time.monotonic()<deadline:
-    if not select.select([native.stdout],[],[],max(0,deadline-time.monotonic()))[0]:break
-    reply=json.loads(native.stdout.readline())
+    if not select.select([process.stdout],[],[],max(0,deadline-time.monotonic()))[0]:break
+    reply=json.loads(process.stdout.readline())
     if reply.get('id')==seq:return reply
    raise RuntimeError('helper request timeout')
+  def request():return ask(native,'readScreen',{'excludedAppIDs':[],'excludedHosts':[]})
+  def field():
+   window=ask(voice,'frontmostApp',{})['result']['window']
+   return ask(voice,'focusedFieldValue',{'excludedAppIDs':[],'excludedHosts':[],'window':window,'maxLength':20000})['result']['value']
   deadline=time.monotonic()+15;screen=None
   while time.monotonic()<deadline:
    time.sleep(.3);reply=request();screen=reply.get('result')
@@ -100,6 +108,12 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostic:
   assert 'hidden-history-sentinel' not in json.dumps(screen),screen
   left,before=target(screen);assert before.endswith('> hello'),before
   assert left['frame'][0]==min(s['frame'][0] for s in viewport(screen)['surfaces']),screen
+  # The caret window is the cursor's row (no borders here: the pane is the box), so a dictation is
+  # spaced from what is before the cursor; the field is the box, its rows joined by U+2029.
+  assert screen['textBeforeCaret']=='> hello' and screen['textAfterCaret']==' world',screen
+  box=field();assert isinstance(box,str) and box.split('\u2029')[:len(BASE_LINES)]==BASE_LINES,box
+  assert 'hidden-history-sentinel' not in box and '\n' not in box,box
+  print(json.dumps({'stage':'terminal-field','rows':box.count('\u2029')+1}),flush=True)
   send('right')
   screen=capture_until(lambda s:viewport(s)['caret']['status']=='exact' and target(s)[0]['frame'][0]>left['frame'][0])
   right,before=target(screen);assert before.endswith('> hello'),before
@@ -138,10 +152,10 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostic:
   assert 'changed-right-sentinel' in screen['renderedText'],screen
   assert target(screen)[1].endswith('界😀 e\u0301 > hello'),screen
   assert screen['selectedText']==viewport(screen)['selectedText']==changed_text[:-1],screen
-  print(json.dumps({'passed':True,'test':'installed VTE splits selection and focus','duplicateSplits':True,'focusIdentity':True,'unicodeCaret':True,'selection':True,'hiddenSurfaceExcluded':True}),flush=True)
+  print(json.dumps({'passed':True,'test':'installed VTE splits selection and focus','duplicateSplits':True,'focusIdentity':True,'unicodeCaret':True,'selection':True,'hiddenSurfaceExcluded':True,'terminalField':True}),flush=True)
  finally:
-  fixture.terminate();native.terminate()
-  for child in (fixture,native):
+  fixture.terminate();native.terminate();voice.terminate()
+  for child in (fixture,native,voice):
    try:child.wait(timeout=3)
    except subprocess.TimeoutExpired:child.kill();child.wait()
   diagnostic.seek(0)
