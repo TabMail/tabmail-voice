@@ -44,7 +44,7 @@ int main(int argc, char**) {
         try {
             output.send({{"id", id}, {"result", voice::screenAccess(input.value("params", JSON::object()), window, voice::executableName,
                 [](HWND target, const voice::ScreenExclusions& exclusions) {
-                    voice::Automation automation;
+                    voice::Automation automation(false);
                     return automation.readScreen(target, exclusions);
                 })}});
         } catch (...) {

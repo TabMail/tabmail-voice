@@ -32,6 +32,9 @@ bool frameworkFails = false;
 // How long after each reset GetFocus names the root, a container that says it has no keyboard
 // focus, before the focused field (ms): a provider whose tree is not connected yet.
 ULONGLONG unsettledMs = 0, unsettledUntil = 0;
+// A provider that stops answering: asked for its focus, it holds the call past the helper's watchdog (ms).
+bool stalled = false;
+constexpr DWORD stallMs = 4000;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
@@ -132,6 +135,7 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     HRESULT STDMETHODCALLTYPE get_FragmentRoot(IRawElementProviderFragmentRoot** result) override { *result = nodes.front().get(); (*result)->AddRef(); return S_OK; }
     HRESULT STDMETHODCALLTYPE ElementProviderFromPoint(double, double, IRawElementProviderFragment** result) override { *result = nodes.at(focus).get(); (*result)->AddRef(); return S_OK; }
     HRESULT STDMETHODCALLTYPE GetFocus(IRawElementProviderFragment** result) override {
+        if (stalled) Sleep(stallMs);
         *result = nodes.at(GetTickCount64() < unsettledUntil ? 0 : focus).get(); (*result)->AddRef(); return S_OK;
     }
     HRESULT STDMETHODCALLTYPE SetValue(LPCWSTR) override { return E_NOTIMPL; }
@@ -160,6 +164,8 @@ void configure(const std::string& mode) {
     if (mode == "settled-field" || mode == "unsettled-focus") {
         nodes.at(1)->type = UIA_EditControlTypeId; nodes.at(1)->text = L"Synthetic field text";
         if (mode == "unsettled-focus") unsettledMs = 400;
+    } else if (mode == "stalled-focus") {
+        stalled = true;
     } else if (mode == "paste-focus") {
         pasteMode = true; add(0, UIA_TextControlTypeId);
     } else if (mode == "password-focus") {

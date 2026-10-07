@@ -29,7 +29,21 @@ namespace voice {
 using JSON = nlohmann::json;
 class Automation {
 public:
-    Automation() { require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation))); }
+    // A bounded automation's every UI Automation call gives up after accessibilityRequestTimeoutMs,
+    // so a provider that stops answering fails the request instead of holding it until the watchdog
+    // ends the helper. The screen reader, a process its caller restarts,
+    // waits on its provider instead (a terminal's read has no time limit).
+    explicit Automation(bool bounded = true) {
+        if (!bounded) {
+            require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation)));
+            return;
+        }
+        ComPtr<IUIAutomation2> client;
+        require(CoCreateInstance(CLSID_CUIAutomation8, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&client)));
+        require(client->put_ConnectionTimeout(HelperConfig::accessibilityRequestTimeoutMs));
+        require(client->put_TransactionTimeout(HelperConfig::accessibilityRequestTimeoutMs));
+        automation = client;
+    }
     // `settle`: an operation's first look, which waits for the focus to settle (`settledFocus`).
     // A look that checks the focus has not moved since takes it as it is.
     ComPtr<IUIAutomationElement> ownedFocus(HWND expected, const char** refusal = nullptr, bool settle = false) {
