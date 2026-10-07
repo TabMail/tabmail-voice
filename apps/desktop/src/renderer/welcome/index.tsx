@@ -75,7 +75,7 @@ function Page({ state }: { state: WelcomeState }) {
             <span className="stack-text">
               <span>Read the screen while dictating</span>
               <span className="caption">
-                When you start dictating, TabMail Voice reads the text in the window in front and sends it with your dictation, so names and terms are spelled as they appear there.
+                Uses the text in the window you’re dictating into, so names and terms come out right. Passwords and secrets are left out, and nothing is stored.
               </span>
             </span>
           </label>
@@ -122,34 +122,30 @@ function ConsentPage({ state }: { state: WelcomeState }) {
           <span className="secondary">Hold a key, speak, and TabMail Voice types what you said.</span>
         </div>
       </div>
-      <span>To do that, TabMail Voice sends:</span>
+      <span>To get your words right, TabMail Voice may use:</span>
       <ul className="sends">
         <li>
           <MicrophoneIcon size={config.welcomeLabelIconSize} />
-          <span>Your voice, while you hold the dictation key, to turn it into text. A long dictation is sent in parts while you speak, so its text is ready as soon as you finish.</span>
+          <span>Your voice, only while you hold the dictation key.</span>
         </li>
         <li>
           <ViewfinderIcon size={config.welcomeLabelIconSize} />
-          <span>
-            The text in the window in front, with the app’s name, the window’s title and the website’s address, so names and terms are spelled as they appear there.
-            This is screen reading: it’s on unless you switch it off in the Features step or in Settings.
-          </span>
+          <span>The text in the window you’re dictating into, so names and terms come out right. Passwords and secrets are left out, and you can switch this off.</span>
         </li>
         <li>
           <BookIcon size={config.welcomeLabelIconSize} />
           <span>
-            The words in your dictionary, so they’re spelled your way. You add them in Settings.
-            {state.canLearnWords && <> TabMail Voice also learns them: when you correct a name or term it typed, it reads the text field for a short while to see
-              the new spelling. That text stays on this computer. Learning is on unless you switch it off in Settings.</>}
+            Your dictionary, so words are spelled your way.
+            {state.canLearnWords && <> It learns from your corrections, right on this computer.</>}
           </span>
         </li>
         <li>
           <SparklesLineIcon size={config.welcomeLabelIconSize} />
-          <span>In agent mode, your request, the text you’ve selected, and whatever its tools need to do it.</span>
+          <span>In agent mode, your request, the text you’ve selected, and whatever its tools need to help.</span>
         </li>
         <li>
           <LockShieldIcon size={config.welcomeLabelIconSize} />
-          <span>All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.</span>
+          <span>Only when you dictate, and only to help with it. Nothing it sends is stored.</span>
         </li>
       </ul>
       <label className="check">

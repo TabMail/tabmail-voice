@@ -706,7 +706,7 @@ describe("Settings page", () => {
   test("the hotkey's notes", async () => {
     const globe = "While fn is the hotkey";
     const directAgent = "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.";
-    const recording = "Your recording is sent to TabMail for transcription and isn’t stored.";
+    const recording = "Your recording is used only to transcribe it, and is never stored.";
     const notes = () => [...document.querySelectorAll("main > div:not([hidden]) .card-section")].find((card) => card.textContent?.includes("Hold to dictate"))?.querySelectorAll(".group-caption");
 
     await settingsPage({ error: null }, signedIn, { ...signedIn, hotkey: "function" });
@@ -803,9 +803,9 @@ describe("Settings page", () => {
       // Owner-requested direct agent shortcut extends the original Swift UI.
       "Hold Shift with your dictation key to start agent mode directly. Press Space while dictating to switch modes.",
       "While fn is the hotkey, the 🌐 key’s own action in Keyboard settings is set to “Do Nothing”. Your choice comes back when you pick another key or quit.",
-      "Your recording is sent to TabMail for transcription and isn’t stored.",
+      "Your recording is used only to transcribe it, and is never stored.",
       "Lets AI clean up your dictation: names and terms spelled as on screen, filler words removed, grammar fixed. Adds a delay of a second or more to each dictation.",
-      "Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.",
+      "Uses the text in the window you’re dictating into, so names and terms come out right. Passwords and secrets are left out, and nothing is stored.",
       "Uses the development server and shows debug items in the menu.",
       "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
       "Writes new text where your cursor is: a reply, a message, a note, a command.",

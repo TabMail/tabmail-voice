@@ -129,7 +129,7 @@ function DictationPane({ state }: { state: SettingsState }) {
           // Ubuntu: the portal cannot bind a lone modifier, so GNOME integration holds Right Alt.
           state.hotkey === "rightAlt" && state.gnomeIntegration !== undefined && state.gnomeIntegration !== "ready" && "Right Alt works once GNOME integration is enabled in Permissions.",
           state.hotkey === "rightAlt" && state.hotkeyUnavailable === true && "Right Alt types characters with this keyboard layout (AltGr), so it can’t be the dictation key. Choose F8 or F9.",
-          "Your recording is sent to TabMail for transcription and isn’t stored.",
+          "Your recording is used only to transcribe it, and is never stored.",
         ]}
       >
         <div className="row">
@@ -155,7 +155,7 @@ function DictationPane({ state }: { state: SettingsState }) {
       </Group>
       <Group>
         <Toggle label="Read the screen while dictating" checked={state.readsScreen} onChange={(value) => send({ type: "setReadsScreen", value })}>
-          Sends the text in the window in front with your dictation, so names and terms are spelled as they appear there. It isn’t stored.
+          Uses the text in the window you’re dictating into, so names and terms come out right. Passwords and secrets are left out, and nothing is stored.
         </Toggle>
       </Group>
     </>

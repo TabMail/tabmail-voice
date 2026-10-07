@@ -78,10 +78,9 @@ describe("welcome wizard", () => {
    * learning them reads the field on this computer only (ADR-DESK-038). */
   test("consent describes local learning only when the platform supports it", async () => {
     const { push } = await welcomePage({ ...features, step: "consent", canLearnWords: false });
-    expect(document.querySelector(".sends")?.textContent).not.toContain("also learns");
+    expect(document.querySelector(".sends")?.textContent).not.toContain("learns from your corrections");
     await push({ ...features, step: "consent", canLearnWords: true });
-    expect(document.querySelector(".sends")?.textContent).toContain("also learns");
-    expect(document.querySelector(".sends")?.textContent).toContain("That text stays on this computer.");
+    expect(document.querySelector(".sends")?.textContent).toContain("It learns from your corrections, right on this computer.");
   });
 
   test("Ubuntu offers keyboard control with the portal instructions", async () => {
@@ -98,17 +97,17 @@ describe("welcome wizard", () => {
     expect(commands).toContainEqual({ type: "requestAccessibility" });
   });
 
-  test("the consent step says what dictation sends", async () => {
+  test("the consent step says what dictation may use", async () => {
     await welcomePage({ ...features, step: "consent", index: 0, isFirstStep: true, hasConsented: false });
     const sent = [...document.querySelectorAll(".sends li")].map((item) => item.textContent ?? "");
     expect(sent).toHaveLength(5);
-    expect(sent[0]).toContain("Your voice");
-    expect(sent[1]).toContain("The text in the window in front");
-    expect(sent[2]).toContain("The words in your dictionary");
-    expect(sent[2]).toContain("That text stays on this computer.");
-    expect(sent[2]).toContain("Learning is on unless you switch it off in Settings.");
-    expect(sent[3]).toBe("In agent mode, your request, the text you’ve selected, and whatever its tools need to do it.");
-    expect(sent[4]).toBe("All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.");
+    expect(sent[0]).toBe("Your voice, only while you hold the dictation key.");
+    // Screen reading says secrets are left out and that it can be switched off.
+    expect(sent[1]).toContain("The text in the window you’re dictating into");
+    expect(sent[1]).toContain("Passwords and secrets are left out, and you can switch this off.");
+    expect(sent[2]).toContain("Your dictionary, so words are spelled your way.");
+    expect(sent[3]).toBe("In agent mode, your request, the text you’ve selected, and whatever its tools need to help.");
+    expect(sent[4]).toBe("Only when you dictate, and only to help with it. Nothing it sends is stored.");
   });
 
   /** The name step offers the computer account's name while none is stored, filling it in when it
