@@ -504,7 +504,7 @@ private:
             const auto value = UiaCaretSource::selectedText(pattern.Get(), selected.Get(), whole.Get());
             if (value) return *value;
             selectionUnavailable = true;
-            return CaretSource::unavailable().parts[1];
+            return CaretSource::unread(true).parts[1];
         } catch (const std::exception&) {
             return {};
         }

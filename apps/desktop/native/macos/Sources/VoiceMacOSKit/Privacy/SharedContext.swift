@@ -37,6 +37,15 @@ enum SharedContext {
     struct CaretWindow: Decodable {
         var parts: [String]
         var selectionUnavailable: Bool
+
+        /// What stands for the text around a caret that could not be read, as the shared core gives
+        /// it (`caretUnread`): the selection withheld when text is selected, else an empty window.
+        static func unread(selectsText: Bool) throws -> CaretWindow {
+            let input = try JSONSerialization.data(withJSONObject: ["caretUnread": ["selectsText": selectsText]])
+            let result = try JSONDecoder().decode(CaretWindow.self, from: Redactor.request(input, operation: .context))
+            guard result.parts.count == 3 else { throw Redactor.Failure.refused }
+            return result
+        }
     }
     static func caretWindow(_ parts: [String], startKnown: Bool, endKnown: Bool) throws -> CaretWindow {
         let input = try JSONSerialization.data(withJSONObject: ["caretWindow": [

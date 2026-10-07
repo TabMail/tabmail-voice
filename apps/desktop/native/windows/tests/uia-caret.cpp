@@ -236,6 +236,10 @@ static void editContracts() {
     EditFixture huge(std::wstring(limit + 1, L'x'), 0, 1);
     result = huge.read();
     expect(result && result->selectionUnavailable && huge.reads == 0, "Edit whole-transfer overflow refused before text allocation");
+    EditFixture hugeCaret(std::wstring(limit + 1, L'x'), 0, 0);
+    result = hugeCaret.read();
+    expect(result && !result->selectionUnavailable && result->parts == std::array<std::string, 3>{"", "", ""} && hugeCaret.reads == 0,
+        "Edit whole-transfer overflow at a caret is an empty window, never read");
     EditFixture password(L"synthetic", 0, 9, ES_PASSWORD);
     expect(!password.read() && password.reads == 0, "Edit password never read");
     EditFixture moved(L"before chosen after", 7, 13); moved.moveSelection = true;
@@ -244,6 +248,11 @@ static void editContracts() {
     EditFixture changed(L"before chosen after", 7, 13); changed.replaceText = true;
     result = changed.read();
     expect(result && result->selectionUnavailable, "Edit same-length content change refused");
+    // A caret selects nothing: one whose field changed while read is an empty window, not a withheld
+    // selection, so agent mode writes at it rather than refuse a selection there is none of.
+    EditFixture caretMoved(L"before chosen after", 7, 7); caretMoved.moveSelection = true;
+    result = caretMoved.read();
+    expect(result && !result->selectionUnavailable && result->parts == std::array<std::string, 3>{"", "", ""}, "Edit changed caret is an empty window");
     expect(GetForegroundWindow() == foreground, "hidden Edit tests preserve foreground");
 }
 static void viewportContracts() {
@@ -440,6 +449,9 @@ int main() {
         expect(moved.read().selectionUnavailable, "changed selection refused");
         Provider changed(L"before chosen after", 7, 13); changed.changeText = true;
         expect(changed.read().selectionUnavailable, "same-length selected text change refused");
+        Provider caretMoved(L"before chosen after", 7, 7); caretMoved.changeSelection = true;
+        result = caretMoved.read();
+        expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"", "", ""}, "changed caret is an empty window");
         Provider page(L"outside " + selection + L" outside", 8, 8 + static_cast<int>(selection.size()));
         expect(page.readPage() == std::optional<std::string>(std::string(20001, 's')), "page selection remains complete beyond old limit");
         expect(page.reads == 2 && std::all_of(page.ranges.begin(), page.ranges.end(), [&](const auto& range) {

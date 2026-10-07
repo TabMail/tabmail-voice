@@ -31,9 +31,9 @@ public:
         // Standard Edit has no offset-range text message. Bound its whole UTF-16
         // transfer by the shared aggregate source allowance before allocating.
         const auto limit = core::request({{"limits", true}}, voice_core_context_json).at("caretSourceBytes").get<size_t>();
-        if (length > limit) return CaretSource::unavailable();
         const auto selected = selection();
-        if (selected.first > selected.second || selected.second > length) return CaretSource::unavailable();
+        if (selected.first > selected.second || selected.second > length) return CaretSource::unread(true);
+        if (length > limit) return CaretSource::unread(selected.first != selected.second);
         const auto text = [&]() -> std::optional<std::wstring> {
             if (!permitted(edit)) return std::nullopt;
             std::wstring value(static_cast<size_t>(length) + 1, L'\0');
@@ -43,7 +43,7 @@ public:
         };
         const auto original = text();
         if (!original || send(WM_GETTEXTLENGTH, 0, 0) != length || selection() != selected || text() != original ||
-            send(WM_GETTEXTLENGTH, 0, 0) != length || selection() != selected || !permitted(edit)) return CaretSource::unavailable();
+            send(WM_GETTEXTLENGTH, 0, 0) != length || selection() != selected || !permitted(edit)) return CaretSource::unread(selected.first != selected.second);
         const auto result = readUtf16Caret(original->size(), selected.first, selected.second, [&](size_t start, size_t end) {
             return std::wstring_view(*original).substr(start, end - start);
         });

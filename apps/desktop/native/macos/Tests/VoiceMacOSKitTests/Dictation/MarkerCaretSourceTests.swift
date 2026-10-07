@@ -43,6 +43,26 @@ struct MarkerCaretSourceTests {
         #expect(result.parts == ["", Redactor.placeholder, ""])
     }
 
+    /// A caret selects nothing, so one whose text could not be read is an empty window, not a
+    /// withheld selection: a placeholder there made agent mode choose Edit and refuse to write at a
+    /// caret a dictation pastes at (Firefox, 2026-10-06).
+    @Test func aCaretMovingDuringAcquisitionIsAnEmptyWindow() throws {
+        let provider = Provider(text: "before chosen after", selection: NSRange(location: 7, length: 0))
+        provider.changeOnRead = true
+        let result = try #require(provider.read())
+        #expect(!result.selectionUnavailable)
+        #expect(result.parts == ["", "", ""])
+    }
+
+    @Test(arguments: [0, 6])
+    func aFieldWhoseMarkersGiveNoTextWithholdsOnlyASelection(length: Int) throws {
+        let provider = Provider(text: "before chosen after", selection: NSRange(location: 7, length: length))
+        provider.wrongMarker = true
+        let result = try #require(provider.read())
+        #expect(result.selectionUnavailable == (length > 0))
+        #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
+    }
+
     /// Chromium: text markers but no marker-index conversion, and a character range that is wrong on
     /// an empty line; the selection comes from the lengths between the markers.
     @Test(arguments: [(96, 0), (9, 0), (0, 0), (120, 0), (90, 6), (0, 120)])
@@ -156,22 +176,26 @@ struct MarkerCaretSourceTests {
         #expect(backward.parts == read(anchor: 96, focus: 110)?.parts)
     }
 
-    @Test(arguments: [(true, true), (false, false)])
-    func aFieldChangedOrLeftWhileReadIsUnavailable(changes: Bool, focused: Bool) throws {
-        let result = try #require(read(anchor: 100, focus: 100, changes: changes, focused: focused))
-        #expect(result.selectionUnavailable)
-        #expect(result.parts == ["", Redactor.placeholder, ""])
+    /// A field changed or left while it was read withholds its selection; a caret, which selects
+    /// nothing, is an empty window (`CaretWindow.unread`).
+    @Test(arguments: [(true, true, 0), (false, false, 0), (true, true, 6), (false, false, 6)])
+    func aFieldChangedOrLeftWhileReadWithholdsOnlyASelection(changes: Bool, focused: Bool, length: Int) throws {
+        let result = try #require(read(anchor: 100, focus: 100 + length, changes: changes, focused: focused))
+        #expect(result.selectionUnavailable == (length > 0))
+        #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
     }
 
-    /// A field that stops answering while it is read is unavailable, though it keeps the focus.
-    @Test func aFieldUnreadableAfterItsReadIsUnavailable() throws {
+    /// A field that stops answering while it is read withholds its selection, though it keeps the
+    /// focus; a caret there is an empty window.
+    @Test(arguments: [0, 6])
+    func aFieldUnreadableAfterItsReadWithholdsOnlyASelection(length: Int) throws {
         var snapshots = 0
         let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
             snapshots += 1
-            return snapshots > 1 ? nil : ScreenContextReader.ValueSnapshot(count: 140, range: NSRange(location: 9, length: 0), markers: false)
+            return snapshots > 1 ? nil : ScreenContextReader.ValueSnapshot(count: 140, range: NSRange(location: 9, length: length), markers: false)
         }, string: Self.string, focused: { true }))
-        #expect(result.selectionUnavailable)
-        #expect(result.parts == ["", Redactor.placeholder, ""])
+        #expect(result.selectionUnavailable == (length > 0))
+        #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
     }
 
     /// A field without text markers is read by its character count and range.
@@ -198,14 +222,16 @@ struct MarkerCaretSourceTests {
         #expect(result.parts == [Self.text.substring(to: 9), "", Self.text.substring(from: 9)])
     }
 
-    /// A field whose text can't be read around the caret is unavailable, not unread.
-    @Test func aFieldWhoseTextCantBeReadIsUnavailable() throws {
+    /// A field whose text can't be read around the caret still gives a caret window, not none: its
+    /// selection withheld, or empty for a caret.
+    @Test(arguments: [0, 6])
+    func aFieldWhoseTextCantBeReadWithholdsOnlyASelection(length: Int) throws {
         let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
-            ScreenContextReader.valueSnapshot(markers: { nil }, parameterized: { _, _ in nil }, characters: { (140, NSRange(location: 9, length: 0)) },
+            ScreenContextReader.valueSnapshot(markers: { nil }, parameterized: { _, _ in nil }, characters: { (140, NSRange(location: 9, length: length)) },
                                               string: Self.string)
         }, string: { _ in nil }, focused: { true }))
-        #expect(result.selectionUnavailable)
-        #expect(result.parts == ["", Redactor.placeholder, ""])
+        #expect(result.selectionUnavailable == (length > 0))
+        #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
     }
 
     /// Chromium counts an image as a character in its markers but not in its string ranges: the
@@ -267,17 +293,19 @@ struct MarkerCaretSourceTests {
             Self.text.substring(to: 96), "", "\u{2029}" + Self.text.substring(from: 96)])
     }
 
-    /// A field whose paragraph changes while it is read is unavailable, like one whose text does.
-    @Test func aFieldWhoseParagraphChangesWhileReadIsUnavailable() throws {
+    /// A field whose paragraph changes while it is read is unread, like one whose text does: a
+    /// selection is withheld, and a caret is an empty window.
+    @Test(arguments: [0, 4])
+    func aFieldWhoseParagraphChangesWhileReadWithholdsOnlyASelection(length: Int) throws {
         var snapshots = 0
         let result = try #require(ScreenContextReader.valueCaretWindow(snapshot: {
             snapshots += 1
             let field = MarkerField(paragraphs: snapshots > 1 ? [0, 90] : [0, 96])
-            return ScreenContextReader.valueSnapshot(markers: { (field.range(96, 96), field.range(0, 140)) }, parameterized: field.answer,
-                                                     characters: { (141, NSRange(location: 9, length: 0)) }, string: Self.string)
+            return ScreenContextReader.valueSnapshot(markers: { (field.range(96, 96 + length), field.range(0, 140)) }, parameterized: field.answer,
+                                                     characters: { (141, NSRange(location: 9, length: length)) }, string: Self.string)
         }, string: Self.string, focused: { true }))
-        #expect(result.selectionUnavailable)
-        #expect(result.parts == ["", Redactor.placeholder, ""])
+        #expect(result.selectionUnavailable == (length > 0))
+        #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
     }
 
     /// A secret the caret sits inside, at the start of a line it wrapped onto, is read as one text

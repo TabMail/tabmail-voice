@@ -409,6 +409,25 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   *Every read logs where the caret was placed (offsets and lengths, never text), and why a read
   became unavailable. Windows (UIA) and Linux (AT-SPI) read the caret through other interfaces and
   are not changed.)*
+- *(Amended 2026-10-06: a caret whose surrounding text could not be read is an empty caret
+  window, not a withheld selection. Every helper stood the redaction placeholder in for the
+  selection whenever a caret window could not be read (the field changed or lost the focus while it
+  was read, a range gave no text, a marker did not round-trip), a caret with nothing selected
+  included. The app then took the caret for a hidden selection: agent mode chose Edit, which refuses
+  a selection that reached it redacted (ADR-DESK-046), and said "The selection holds what looks like
+  a password or key" at a caret in a web form's comment box in Firefox (`caret 0/10/0`, the
+  placeholder's ten characters) where a dictation pastes. With text selected the selection is still withheld, so
+  Edit never rewrites text it did not see; with nothing selected the window is empty and unflagged,
+  as the shared core already gives a caret it withholds (`caretWindow`), so Compose writes at the
+  caret. The shared core makes the choice (`caretUnread`, with whether text is selected; its cases
+  in `context/context-cases.json`), and its own withheld caret window gives the same answer;
+  `SharedContext.CaretWindow.unread` on the Mac and `CaretSource::unread` for Windows and Linux only
+  ask it (ADR-DESK-054). Where the selection is not known (it could not be read at all) it is
+  withheld, as before. The Mac's marker read (Gecko, WebKit) now logs where
+  it placed the caret and why a read failed, as the value read already did. Measured with it in
+  that web form, in an empty single-line field: Firefox counts the field as one character long,
+  the caret at its start, and gives no text for that character, so the read around the caret
+  fails; a field holding text is read in full. Which call refuses the character is not logged.)*
 - *(Amended 2026-10-06: a Chromium rich editor (a `contenteditable`, Gmail's compose) is read
   around its caret on Windows and Ubuntu, as on the Mac. AT-SPI gives each paragraph or link as an
   embedded object (U+FFFC) with text of its own; Linux walks them in order (`hypertext.h`) and the
@@ -2290,6 +2309,19 @@ the stream was read whole and named its tools only in development builds.
   dictation's own blue and purple glow and, from eight colors rendered side by side and then seen
   live, chose red-pink: a tight `#FF2D55` glow in a wide `#FF006E` one (`agentPillGlowInnerColor`,
   `agentPillGlowOuterColor`), the one color in the overlay outside the brand's.
+  *Amended 2026-10-06:* the owner saw a long message under the chat window ("The selection holds
+  what looks like a password or key…") cut off at the left and right, its neon glow clipped: the pill
+  was as wide as the window (`pillMaxTextWidth` and the pill's padding, about 410 points, in a
+  window of `chatWidth` and its shadow margin, 412). The pill is now never wider than the window it
+  is drawn in less its glow on each side (`pillGlowReach`, the wider of the two glows), so a long
+  message wraps to another line rather than reach the window's edge; with the chat window closed the
+  canvas leaves the same room. A window placed against a screen's edge, with the pill off its
+  center, can still clip the glow on that side, where it is off the screen anyway.
+  *Amended 2026-10-06:* the owner saw "something like dots circling" in the working pill's ring. A
+  circling rim is a conic gradient masked to a ring with a hard inner edge, which the rasterizer draws
+  stair-stepped, and the steps of the spinning arc turning over the still track's read as dots
+  running around the ring (the thinking circle's and a running bubble's too). The mask's inner edge
+  now fades over `ringEdgeSoftness` (1 point, about the edge's center, keeping the ring's width).
 - **Server tools as they run.** `HTTPRequest.onChunk` hands the completions stream to `SSEParser` as
   it arrives (a piece may end anywhere, a CRLF split across two included), and `Completions.round`
   reports each `tool_started`, `tool_completed` and `tool_failed` event that names its tool

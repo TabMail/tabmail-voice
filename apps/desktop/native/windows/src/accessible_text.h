@@ -80,11 +80,11 @@ public:
 
     std::optional<std::array<std::string, 3>> parts(bool& selectionUnavailable) const {
         const auto before = selection();
-        if (!before) { selectionUnavailable = true; return CaretSource::unavailable().parts; }
+        if (!before) { selectionUnavailable = true; return CaretSource::unread(true).parts; }
         const auto [length, start, end] = *before;
         auto result = readUtf16Caret(static_cast<size_t>(length), static_cast<size_t>(start), static_cast<size_t>(end),
             [&](size_t from, size_t to) { return range(static_cast<long>(from), static_cast<long>(to)); });
-        if (selection() != before || !valid()) result = CaretSource::unavailable();
+        if (selection() != before || !valid()) result = CaretSource::unread(start != end);
         selectionUnavailable = result.selectionUnavailable;
         return result.parts;
     }
