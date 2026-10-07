@@ -1721,7 +1721,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual(["Final result."]);
       expect(copies).toEqual([]);
       expect(history.entries.map((entry) => entry.text)).toEqual(["Final result."]);
-      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
       expect(completionsVars(0)?.user_request).toBe("Write the result.");
       expect(capture.starts).toBe(1);
       expect(capture.stops).toBeGreaterThan(0);
@@ -1760,7 +1760,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(transcription.requests).toHaveLength(2); expect(completions.requests).toHaveLength(1);
       expect(completions.message(0)).toMatchObject(switchToDictation
         ? { content: "system_prompt_dictate_cleanup", dictation: "Clean first. Clean second." }
-        : { content: "system_prompt_desktop_agent", user_request: "raw first raw second" });
+        : { content: "system_prompt_desktop_agent_loop", user_request: "raw first raw second" });
     } finally { controller.handle("cancel"); }
   });
 
@@ -1816,7 +1816,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.tools).toEqual(["edit"]);
       expect(phases).toContainEqual(running("edit"));
       expect(completions.requests).toHaveLength(1);
-      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
       expect(completions.body(0).available_tools).toEqual(["edit"]);
       expect(completionsVars(0)?.user_request).toBe(request);
       expect(completionsVars(0)?.selected_text).toBe("Ship it Friday or else.\n");
@@ -1853,7 +1853,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(entries.map((entry) => entry.text)).toEqual(["write that we ship on Friday", "We ship on Friday.", "We ship on Friday."]);
       expect(controller.tools).toEqual(["compose"]);
       expect(phases).toContainEqual(running("compose"));
-      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+      expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
       // The spoken request was transcribed with the dictionary too: its words count as used.
       expect(used).toEqual([["write that we ship on Friday"]]);
     });
@@ -2504,7 +2504,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(completions.requests).toHaveLength(1);
         expect(completions.body(0).available_tools).toEqual(expect.arrayContaining(["compose"]));
         expect(completionsVars(0)?.conversation).toBe("");
-        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
         expect(completionsVars(0)?.user_request).toBe(question);
         expect(completionsVars(0)?.user_name).toBe("Alex Example");
       });
@@ -2517,13 +2517,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
             if (phase.kind === "listening") prefs.value = { ...prefs.value, userName: "Sam Example" };
           };
         });
-        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
         expect(completionsVars(0)?.user_name).toBe("Alex Example");
 
         controller.onPhaseChange = undefined;
         queue("and how do I fix it", "answer", "Define it before the call.");
         await followUp(controller);
-        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(1)?.content).toBe("system_prompt_desktop_agent_loop");
         expect(completionsVars(1)?.user_name).toBe("Sam Example");
       });
 
@@ -2969,7 +2969,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         expect(completions.requests).toHaveLength(1);
         expect(completions.body(0).available_tools).not.toContain("compose");
         expect(controller.phase).toEqual(idle);
-        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent");
+        expect(completionsVars(0)?.content).toBe("system_prompt_desktop_agent_loop");
         expect(pastes).toEqual([]);
         expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["the reply"]);
       });

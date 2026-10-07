@@ -4030,12 +4030,14 @@ split could not do in one request. The owner: all tools are equal, as in TabMail
 iOS loops; the agent runs the calendar tool, then the compose tool, which pastes. Compose and Edit
 are one tool, offered by whether text is selected, and the only way to paste; calling one ends the
 request, closing the chat window if one is open, and whatever the agent writes beside the call is
-ignored. A plain reply goes to the chat window. The change is breaking, with no compatibility path
-for earlier builds (owner: "we don't really have previous users").
+ignored. A plain reply goes to the chat window. The owner first approved a breaking change, then asked
+for it versioned instead: the app becomes 0.2.0, and the backend serves the loop only to 0.2.0 and
+later, so earlier builds keep the chooser and the backend can ship first.
 
 **Decision:**
-- One backend prompt, `system_prompt_desktop_agent` (backend ADR-023 amendment "one tool loop"), run
-  by `DesktopAgent.run`. Its `available_tools` (`DesktopAgent.loopTools`) are, with Answer on, the
+- One backend prompt, `system_prompt_desktop_agent_loop` (backend ADR-023 amendment "one tool loop"),
+  run by `DesktopAgent.run`. The backend versions it, and the `compose`/`edit` tools, at `v0.2.0`, and
+  the app is 0.2.0 (`X-Client-Version`), which is what makes them resolve. Its `available_tools` (`DesktopAgent.loopTools`) are, with Answer on, the
   backend's date tools, its web search while the Web switch is on, `confirmation_answer` when an app is on, every connector's name, and
   the writing tool; with Answer off, the writing tool alone. The writing tool is Edit when text is
   selected, Compose when not (`DesktopAgent.writingTool`); the other is never offered.
@@ -4063,4 +4065,5 @@ for earlier builds (owner: "we don't really have previous users").
   risk we're gonna take"); the backend fences the context as content, not instructions, before and
   after it, and tells the model to ignore instructions in what tools return (backend ADR-023
   amendment).
-- Builds before this one stop working against the backend that carries this change.
+- Builds before 0.2.0 keep the chooser; the backend carries both until no 0.1.x build is in use. This
+  build needs the backend that carries the loop, so the backend deploys first.

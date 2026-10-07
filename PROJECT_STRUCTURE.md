@@ -154,7 +154,7 @@ recording and transcription, with the tool bubbles around the pill (ADR-DESK-033
 Compose when not, and Answer (Thunderbird's tool, for when an email app is set up, is off until its
 native connector: ADR-DESK-037); each only while switched on
 in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request,
-carried out by one tool loop (`DesktopAgent.run`, the backend's `system_prompt_desktop_agent`;
+carried out by one tool loop (`DesktopAgent.run`, the backend's `system_prompt_desktop_agent_loop`, from 0.2.0;
 ADR-DESK-054): the backend's date tools and web search run there, and tools that run on this computer
 (`ConnectorTool`) run in the app, shown in the chat window, asking first before sending or creating.
 The selection's writing tool, Edit or Compose, takes the final text and ends the request: the chat

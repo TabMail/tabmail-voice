@@ -49,7 +49,7 @@ describe("DesktopAgent", () => {
    * missing one in the prompt as written. */
   test("without a screen every variable is sent empty", () => {
     const message = DesktopAgent.message(request, null, false, "", "");
-    expect(message.content).toBe("system_prompt_desktop_agent");
+    expect(message.content).toBe("system_prompt_desktop_agent_loop");
     expect(message.vars).toEqual({ app_name: "", web_host: "", window_title: "", screen_text: "", selected_text: "", terminal_program: "", user_request: request, conversation: "", user_name: "" });
   });
 
@@ -313,7 +313,7 @@ describe("the agent's tool loop", () => {
 
     expect(answer).toEqual({ tool: "answer", text: "Friday is the 3rd." });
     expect(calls).toEqual([]);
-    expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent");
+    expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent_loop");
     expect(completions.message(0)?.conversation).toBe("User: hi\nTabMail: Hello.");
     expect(completions.body(0).available_tools).toEqual(tools);
     expect(completions.body(0).disable_tools).toBe(false);
@@ -499,7 +499,7 @@ describe("terminal selection writing boundary", () => {
     if (expected.selectionComplete) {
       await writeAndDeliver();
       expect(completions.requests).toHaveLength(1);
-      expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent");
+      expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent_loop");
       expect(pastes).toEqual(["friendlier text"]);
     } else {
       const error = await thrown(writeAndDeliver());
