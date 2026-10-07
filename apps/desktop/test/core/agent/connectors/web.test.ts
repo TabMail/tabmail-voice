@@ -74,60 +74,23 @@ describe("a web URL", () => {
 });
 
 describe("web_read", () => {
-  test("a page is read after its site's robots.txt, both as TabMail", async () => {
-    web.page("https://example.com/robots.txt", "User-agent: *\nDisallow: /private/");
-    web.page("https://example.com/docs/page", "Plain words.", "text/plain; charset=utf-8");
+  /** robots.txt is for crawlers: a page the user asked for is read alone, as a browser reads it
+   * (ADR-DESK-030 amendment), even one a site's robots.txt disallows. */
+  test("a page is read alone, as TabMail, without asking robots.txt", async () => {
+    web.page("https://example.com/robots.txt", "User-agent: *\nDisallow: /");
+    web.page("https://example.com/private/page", "Plain words.", "text/plain; charset=utf-8");
 
-    const result = await new WebReadTool(reader).run({ url: "https://example.com/docs/page" }, signal);
+    const result = await new WebReadTool(reader).run({ url: "https://example.com/private/page" }, signal);
 
-    expect(result).toBe("URL: https://example.com/docs/page\nContent-Type: text/plain; charset=utf-8\nContent-Length: 12 characters\n\nContent:\nPlain words.");
+    expect(result).toBe("URL: https://example.com/private/page\nContent-Type: text/plain; charset=utf-8\nContent-Length: 12 characters\n\nContent:\nPlain words.");
     expect(web.requests.map((request) => [request.url, request.headers["User-Agent"], request.timeout, request.signal])).toEqual([
-      ["https://example.com/robots.txt", config.webUserAgent, config.webReadRobotsTimeout, signal],
-      ["https://example.com/docs/page", config.webUserAgent, config.webReadTimeout, signal],
+      ["https://example.com/private/page", config.webUserAgent, config.webReadTimeout, signal],
     ]);
   });
 
-  /** robots.txt is asked of the page's own site, port included. */
-  test("robots.txt is the site's, port included", async () => {
-    await reader.read(new URL("http://example.com:8080/a/b?c=d"), signal).catch(() => {});
-
-    expect(web.requests[0]?.url).toBe("http://example.com:8080/robots.txt");
-  });
-
-  test("a page robots.txt disallows is not read", async () => {
-    web.page("https://example.com/robots.txt", "User-agent: *\nDisallow: /private/");
-    web.page("https://example.com/private/page", "Secret.");
-
-    await expect(reader.read(new URL("https://example.com/private/page"), signal)).rejects.toEqual(new WebReadError("Access to this URL is disallowed by the site's robots.txt"));
-    expect(web.requests.map((request) => request.url)).toEqual(["https://example.com/robots.txt"]);
-  });
-
-  /** Only the path is matched, as in the add-on: a rule naming a query refuses no page. */
-  test("robots.txt rules are matched against the path, not the query", async () => {
-    web.page("https://example.com/robots.txt", "User-agent: *\nDisallow: /page?x");
-    web.page("https://example.com/page?x=1", "Words.");
-
-    expect(await reader.read(new URL("https://example.com/page?x=1"), signal)).toContain("Content:\nWords.");
-  });
-
-  /** A site without a robots.txt, or one that can't be read, allows. */
-  test.each<[string, Partial<WebResponse> | Error | undefined]>([
-    ["missing", undefined],
-    ["a server error", { status: 500, statusText: "Server Error", body: encoder.encode("User-agent: *\nDisallow: /") }],
-    // Only a 200 is read as rules, as in the add-on.
-    ["a partial answer", { status: 206, statusText: "Partial Content", body: encoder.encode("User-agent: *\nDisallow: /") }],
-    ["unreachable", new Error("connection refused")],
-  ])("a robots.txt %s allows", async (_name, robots) => {
-    if (robots !== undefined) web.pages.set("https://example.com/robots.txt", robots);
-    web.page("https://example.com/page", "Words.");
-
-    expect(await reader.read(new URL("https://example.com/page"), signal)).toContain("Content:\nWords.");
-  });
-
-  /** A canceled request ends the read, robots.txt's included, rather than reading on or failing. */
-  test.each(["https://example.com/robots.txt", "https://example.com/page"])("a cancel while %s is read ends it", async (url) => {
-    web.page("https://example.com/page", "Words.");
-    web.pages.set(url, new CancellationError());
+  /** A canceled request ends the read rather than reading on or failing. */
+  test("a cancel while the page is read ends it", async () => {
+    web.pages.set("https://example.com/page", new CancellationError());
 
     await expect(reader.read(new URL("https://example.com/page"), signal)).rejects.toBeInstanceOf(CancellationError);
   });
@@ -183,55 +146,6 @@ describe("web_read", () => {
 
     expect((await reader.read(new URL("https://example.com/long"), signal)).split("Content:\n")[1]).toBe("x".repeat(most));
     expect((await reader.read(new URL("https://example.com/exact"), signal)).split("Content:\n")[1]).toBe("y".repeat(most));
-  });
-});
-
-describe("robots.txt", () => {
-  const agent = config.webUserAgent;
-  const allowed = (robots: string, path: string, userAgent = agent) => WebPageReader.isPathAllowed(robots, path, userAgent);
-
-  test("nothing, or only comments, allows all", () => {
-    expect(allowed("", "/anything")).toBe(true);
-    expect(allowed("# User-agent: *\n# Disallow: /", "/anything")).toBe(true);
-  });
-
-  test("a disallowed prefix is refused, and case matters in paths but not in directives", () => {
-    const robots = "USER-AGENT: *\nDISALLOW: /secret/\nDisallow: /api";
-    expect(allowed(robots, "/secret/page")).toBe(false);
-    expect(allowed(robots, "/secret/")).toBe(false);
-    expect(allowed(robots, "/api-docs")).toBe(false);
-    expect(allowed(robots, "/Secret/page")).toBe(true);
-    expect(allowed(robots, "/public/")).toBe(true);
-    expect(allowed(robots, "/")).toBe(true);
-  });
-
-  test("Disallow: / refuses all, and an empty Disallow allows all", () => {
-    expect(allowed("User-agent: *\nDisallow: /", "/")).toBe(false);
-    expect(allowed("User-agent: *\nDisallow: /", "/deep/path")).toBe(false);
-    expect(allowed("User-agent: *\nDisallow:", "/anything")).toBe(true);
-  });
-
-  test("an Allow prefix wins over a Disallow one, and an empty Allow allows nothing", () => {
-    const robots = "User-agent: *\nDisallow: /secret/\nAllow: /secret/public";
-    expect(allowed(robots, "/secret/public")).toBe(true);
-    expect(allowed(robots, "/secret/private")).toBe(false);
-    expect(allowed("User-agent: *\nDisallow: /\nAllow:", "/page")).toBe(false);
-  });
-
-  /** Only the `*` group and this app's own apply: another agent's group sets aside the rules read so
-   * far, and its own are not read. */
-  test("another agent's rules don't apply", () => {
-    expect(allowed("User-agent: OtherBot\nDisallow: /", "/page")).toBe(true);
-    expect(allowed(`User-agent: ${agent}\nDisallow: /mine/`, "/mine/page")).toBe(false);
-    expect(allowed("User-agent: *\nDisallow: /a/\nUser-agent: OtherBot\nDisallow: /b/", "/a/page")).toBe(true);
-    expect(allowed("User-agent: OtherBot\nDisallow: /b/\nUser-agent: *\nDisallow: /a/", "/b/page")).toBe(true);
-    expect(allowed("User-agent: OtherBot\nDisallow: /b/\nUser-agent: *\nDisallow: /a/", "/a/page")).toBe(false);
-  });
-
-  test("Windows line ends, blank lines and stray spaces are read", () => {
-    const robots = "User-agent: *\r\n\r\n   Disallow:   /blocked/   \r\nAllow: /open/\r\n";
-    expect(allowed(robots, "/blocked/page")).toBe(false);
-    expect(allowed(robots, "/open/")).toBe(true);
   });
 });
 
