@@ -4039,7 +4039,9 @@ later, so earlier builds keep the chooser and the backend can ship first.
   run by `DesktopAgent.run`. The backend versions it, and the `compose`/`edit` tools, at `v0.2.0`, and
   the app is 0.2.0 (`X-Client-Version`), which is what makes them resolve. Its `available_tools` (`DesktopAgent.loopTools`) are, with Answer on, the
   backend's date tools, its web search while the Web switch is on, `confirmation_answer` when an app is on, every connector's name, and
-  the writing tool; with Answer off, the writing tool alone. The writing tool is Edit when text is
+  the writing tool; with Answer off, the writing tool alone, and no app's tool runs even when the
+  model calls one anyway (the backend passes on every call it makes, so the app is the only gate;
+  found in review). The writing tool is Edit when text is
   selected, Compose when not (`DesktopAgent.writingTool`); the other is never offered.
 - `compose` and `edit` take `{text}`: the agent writes the final text itself. A round that calls the
   offered writing tool ends the loop with that text (`DesktopAgent.written`, fitted to the selection

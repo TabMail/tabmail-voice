@@ -747,8 +747,9 @@ export class DictationController extends Observable {
         // The loop thinks under no tool's bubble: only an app whose tool runs, until the agent answers
         // or writes.
         this.setPhase({ kind: "running", tool: null });
-        // Only the tools of apps switched on at key-down are offered, and only those run.
-        const connectorTools = this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector));
+        // Only the tools of apps switched on at key-down are offered, and only those run; with Answer off
+        // none is offered (`loopTools`), and none runs: the backend passes on whatever the model calls.
+        const connectorTools = offered.includes("answer") ? this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector)) : [];
         const { tool, text } = await DesktopAgent.run(
           transcript,
           context,

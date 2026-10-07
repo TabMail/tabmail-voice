@@ -628,6 +628,7 @@ describe("the chat window", () => {
     const pill = document.querySelector<HTMLElement>(".chat-canvas .pill");
     expect(pill).not.toBeNull();
     expect(document.querySelector<HTMLElement>(".chat-canvas .pill .center-content")?.style.opacity).toBe(String(config.agentRestingSymbolOpacity));
+    expect(document.querySelector(".chat-canvas .pill .center-content svg")).not.toBeNull();
     expect(document.querySelector(".swirl")).toBeNull();
 
     await page.show({ ...listening, chatPlacement: above, chat: chat(null) });

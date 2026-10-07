@@ -161,9 +161,11 @@ The selection's writing tool, Edit or Compose, takes the final text and ends the
 window closes and the text is pasted (Edit over the selection, Compose at the caret). A plain reply
 opens a chat window over the pill, which rests there (ADR-DESK-036), and while it is open the hotkey
 asks a follow-up carrying the conversation, until Escape, its X or 30 untouched seconds close it. The
-phase is `running(tool)` (that bubble moves to the front of the row under the pill and its border
-circles, as the pill's does; while one of Answer's apps runs a tool, that app's bubble is the one in
-front and circling: one bubble runs at a time). A failure shows a
+phase is `running(null)` while the loop thinks (no bubble circles; the pill's rim does), then
+`running(tool)` once the agent answers or writes (that bubble moves to the front of the row under the
+pill and its border circles, as the pill's does; while one of Answer's apps runs a tool, that app's
+bubble is the one in front and circling: one bubble runs at a time). The chat window opens only for a
+reply or a tool's question (ADR-DESK-055 amendment 2026-10-07). A failure shows a
 message and pastes nothing. No agent call has a deadline.
 
 ## Relationships

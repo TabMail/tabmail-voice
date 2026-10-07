@@ -3304,6 +3304,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Error: there is no tool named example_add.", "Added."]);
         });
 
+        /** With Answer off the loop is offered the writing tool alone, and an app's tool the model calls
+         * anyway does not run, its app switched on or not: the backend passes on whatever the model calls,
+         * so the app is the only gate (ADR-DESK-055). The model is told there is no such tool. */
+        test("with Answer off, an app's tool the model calls does not run", async () => {
+          const calendar = new FakeLoopTool("example_read", "Checking your calendar", "calendar");
+          const pasted: string[] = [];
+
+          const { done } = await ask([calendar], [calling(["example_read", "{}"]), writes("compose", "I'm free at 3.")], () => setTools(["compose"]), {
+            paste: async (text) => {
+              pasted.push(text);
+            },
+          });
+          await done;
+
+          expect(completions.body(0).available_tools).toEqual(["compose"]);
+          expect(calendar.runs).toEqual([]);
+          expect(told(1)).toEqual(["Error: there is no tool named example_read."]);
+          expect(pasted).toEqual(["I'm free at 3."]);
+        });
+
         /** Web on at key-down (the default) brings the backend's search with the web's tools, and the
          * request says so; switched off, neither, and the backend refuses the web. */
         test.each([true, false])("the web's search comes with its tools while Web is on (%s)", async (webOn) => {
@@ -4637,6 +4657,39 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(chatChanges).toEqual([]);
           expect(phases.filter((phase) => phase.kind === "running")).toEqual([running(null), running("compose")]);
           expect(recentAtPaste).toEqual([["compose", "calendar"]]);
+          expect(controller.chat).toBeNull();
+        });
+
+        /** A tool's question opens the chat window, and the write that follows closes it before the
+         * text is pasted: writing ends the conversation, whichever window is open (owner, 2026-10-05). */
+        test("a write after a tool's question closes the chat window it opened before pasting", async () => {
+          const tool = Object.assign(new FakeLoopTool(), { question: confirmationQuestion });
+          let controllerRef: DictationController | undefined;
+          const chatAtPaste: (AgentChat | null)[] = [];
+          const pasted: string[] = [];
+          const { controller, done, chatChanges } = await ask(
+            [tool],
+            [calling(["example_create", "{}"]), writes("compose", "Added it.")],
+            (controller) => {
+              controllerRef = controller;
+              setTools(["compose", "answer"]);
+            },
+            {
+              paste: async (text) => {
+                chatAtPaste.push(controllerRef?.chat ?? null);
+                pasted.push(text);
+              },
+            },
+          );
+          expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+
+          controller.answerConfirmation(true);
+          await done;
+
+          expect(tool.runs).toEqual([{}]);
+          expect(pasted).toEqual(["Added it."]);
+          expect(chatAtPaste).toEqual([null]);
+          expect(chatChanges).toEqual([true, false]);
           expect(controller.chat).toBeNull();
         });
 
