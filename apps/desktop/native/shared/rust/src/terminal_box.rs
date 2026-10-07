@@ -42,7 +42,8 @@ impl Cell<'_> {
 /// Unicode gives one width for two graphemes (Arabic lam-alef) still takes a column for each, as a
 /// terminal draws it. Legacy graphemes: an extended one joins a mark that comes before what it marks
 /// (Arabic's number sign) to the next character, a border too, which would then be missed; the
-/// columns are the same either way.
+/// columns are the same either way, but for a Khmer subscript (coeng and consonant), which legacy
+/// graphemes measure as a terminal that draws each character does.
 fn cells(row: &str) -> Vec<Cell<'_>> {
     let mut column = 0;
     row.grapheme_indices(false)
