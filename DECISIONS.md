@@ -2633,6 +2633,14 @@ dictionary holds: all 200 from the screen with no dictionary, at least 50 beside
 - Consequence: a screen read with many names sends a longer list than before; the measured 200 real
   words or names did not blunt the speech model, and fewer terms on screen send just those.
 
+**Amendment 2026-10-07 — the words go out most important first.** Owner: the transcriber behind a
+language will keep changing and each takes a different number of words, so the backend cuts the list
+to what the model takes, keeping the first ones (backend ADR-025 amendment 2026-10-07; AssemblyAI
+takes 100). The order sent is now: the typed words, then the learned, each most recently used first
+(`prioritizedWords`; the stored order for a tie), then the screen's terms, most frequent first, as
+before. This supersedes "the words are sent in the order stored" above; the cleanup's `dictionary`
+gets the same order. Settings' list and the stored order are unchanged.
+
 ## ADR-DESK-039: A shorter wait between the release and the text
 
 **Context:** Owner, 2026-09-29: two to three seconds passed between letting go of the key and the
