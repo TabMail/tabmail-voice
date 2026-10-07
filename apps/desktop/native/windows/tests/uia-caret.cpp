@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #include "uia_caret_source.h"
 #include "edit_caret_source.h"
+#include "accessible_text.h"
 #include <memory>
 #include <iostream>
 
@@ -268,6 +269,74 @@ static void editContracts() {
         expect(result && result->selectionUnavailable && result->parts[1] == "[redacted]" && invalid.reads == 0, "Edit invalid selection withheld");
     }
     expect(GetForegroundWindow() == foreground, "hidden Edit tests preserve foreground");
+}
+// An IA2 field (Firefox, Chromium): a caret, or one selection, that may move while it is read.
+struct Ia2Text final : IAccessibleText {
+    std::wstring text;
+    long caret = 0, selections = 0, start = 0, end = 0;
+    bool moveWhileRead = false;
+    unsigned reads = 0;
+    Ia2Text(std::wstring value, long from, long to) : text(std::move(value)), caret(to), selections(from == to ? 0 : 1), start(from), end(to) {}
+    UNKNOWN_INTERFACE(IAccessibleText)
+    HRESULT STDMETHODCALLTYPE get_nCharacters(long* count) override { *count = static_cast<long>(text.size()); return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_nSelections(long* count) override { *count = selections; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_caretOffset(long* offset) override { *offset = caret; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_selection(long index, long* from, long* to) override {
+        if (index < 0 || index >= selections) return E_INVALIDARG;
+        *from = start; *to = end; return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_text(long from, long to, BSTR* result) override {
+        ++reads;
+        if (from < 0 || to < from || to > static_cast<long>(text.size())) return E_INVALIDARG;
+        *result = SysAllocStringLen(text.data() + from, static_cast<UINT>(to - from));
+        if (moveWhileRead) { ++caret; ++start; ++end; moveWhileRead = false; }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE addSelection(long, long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_attributes(long, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_characterExtents(long, enum IA2CoordinateType, long*, long*, long*, long*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_offsetAtPoint(long, long, enum IA2CoordinateType, long*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_textBeforeOffset(long, enum IA2TextBoundaryType, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_textAfterOffset(long, enum IA2TextBoundaryType, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_textAtOffset(long, enum IA2TextBoundaryType, long*, long*, BSTR*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE removeSelection(long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE setCaretOffset(long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE setSelection(long, long, long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE scrollSubstringTo(long, long, enum IA2ScrollType) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE scrollSubstringToPoint(long, long, enum IA2CoordinateType, long, long) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_newText(IA2TextSegment*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE get_oldText(IA2TextSegment*) override { return E_NOTIMPL; }
+    CaretSource read(bool stillValid = true) { return AccessibleText::read(this, [&] { return stillValid; }); }
+};
+static void accessibleTextContracts() {
+    const std::array<std::string, 3> empty{"", "", ""};
+    Ia2Text caret(L"before after", 7, 7);
+    auto result = caret.read();
+    expect(!result.selectionUnavailable && result.parts[1].empty() && result.parts[0] + result.parts[2] == "before after", "IA2 caret read");
+    Ia2Text selected(L"before chosen after", 7, 13);
+    result = selected.read();
+    expect(!result.selectionUnavailable && result.parts[1] == "chosen", "IA2 selection read");
+    // A field that changed while read: a caret selects nothing, so its window is empty, not a withheld selection.
+    Ia2Text caretMoved(L"before after", 7, 7); caretMoved.moveWhileRead = true;
+    result = caretMoved.read();
+    expect(!result.selectionUnavailable && result.parts == empty, "IA2 changed caret is an empty window");
+    Ia2Text selectionMoved(L"before chosen after", 7, 13); selectionMoved.moveWhileRead = true;
+    result = selectionMoved.read();
+    expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "IA2 changed selection withheld");
+    // Focus that left the field while it was read is the same: nothing kept, a selection withheld.
+    Ia2Text caretLeft(L"before after", 7, 7);
+    result = caretLeft.read(false);
+    expect(!result.selectionUnavailable && result.parts == empty, "IA2 caret of a field no longer focused is an empty window");
+    Ia2Text selectionLeft(L"before chosen after", 7, 13);
+    result = selectionLeft.read(false);
+    expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "IA2 selection of a field no longer focused withheld");
+    // A selection that is not known (several, outside the text, backward, a caret past the end): withheld, never read.
+    Ia2Text several(L"before chosen after", 7, 13); several.selections = 2;
+    Ia2Text outside(L"plain", 9, 12), backward(L"plain", 3, 1), pastEnd(L"plain", 9, 9);
+    for (auto* unknown : {&several, &outside, &backward, &pastEnd}) {
+        result = unknown->read();
+        expect(result.selectionUnavailable && result.parts[1] == "[redacted]" && unknown->reads == 0, "IA2 unknown selection withheld");
+    }
 }
 static void viewportContracts() {
     const auto capture = [](Provider& p, bool focused = true, size_t budget = 262144) {
@@ -585,6 +654,7 @@ int main() {
             "only the block starts near the caret are looked at");
         viewportContracts();
         editContracts();
+        accessibleTextContracts();
         std::cout << "UIA and Edit caret acquisition contracts passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

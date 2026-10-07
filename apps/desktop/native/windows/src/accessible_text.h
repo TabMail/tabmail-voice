@@ -71,7 +71,7 @@ public:
         long length = 0;
         require(text->get_nCharacters(&length));
         if (length < 0 || static_cast<unsigned long>(length) > limit) return std::nullopt;
-        auto result = range(0, length);
+        auto result = range(text.Get(), 0, length);
         long after = 0;
         require(text->get_nCharacters(&after));
         if (after != length || !valid()) return std::nullopt;
@@ -79,14 +79,20 @@ public:
     }
 
     std::optional<std::array<std::string, 3>> parts(bool& selectionUnavailable) const {
-        const auto before = selection();
-        if (!before) { selectionUnavailable = true; return CaretSource::unread(true).parts; }
-        const auto [length, start, end] = *before;
-        auto result = readUtf16Caret(static_cast<size_t>(length), static_cast<size_t>(start), static_cast<size_t>(end),
-            [&](size_t from, size_t to) { return range(static_cast<long>(from), static_cast<long>(to)); });
-        if (selection() != before || !valid()) result = CaretSource::unread(start != end);
+        const auto result = read(text.Get(), [this] { return valid(); });
         selectionUnavailable = result.selectionUnavailable;
         return result.parts;
+    }
+
+    // The caret window of any IA2 text; stillValid says whether it is still the focused field read.
+    template<class StillValid> static CaretSource read(IAccessibleText* text, StillValid&& stillValid) {
+        const auto before = selection(text);
+        if (!before) return CaretSource::unread(true);
+        const auto [length, start, end] = *before;
+        auto result = readUtf16Caret(static_cast<size_t>(length), static_cast<size_t>(start), static_cast<size_t>(end),
+            [&](size_t from, size_t to) { return range(text, static_cast<long>(from), static_cast<long>(to)); });
+        if (selection(text) != before || !stillValid()) return CaretSource::unread(start != end);
+        return result;
     }
 
 private:
@@ -125,7 +131,7 @@ private:
         }
         return {};
     }
-    std::optional<std::array<long, 3>> selection() const {
+    static std::optional<std::array<long, 3>> selection(IAccessibleText* text) {
         long length = 0, count = 0, start = -1, end = -1;
         require(text->get_nCharacters(&length));
         require(text->get_nSelections(&count));
@@ -135,7 +141,7 @@ private:
         if (length < 0 || start < 0 || end < start || end > length) return std::nullopt;
         return std::array<long, 3>{length, start, end};
     }
-    std::wstring range(long start, long end) const {
+    static std::wstring range(IAccessibleText* text, long start, long end) {
         if (start == end) return {};
         BSTR value = nullptr;
         const HRESULT status = text->get_text(start, end, &value);
