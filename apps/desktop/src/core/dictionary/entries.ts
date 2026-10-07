@@ -38,6 +38,13 @@ export function nextUse(entries: readonly DictionaryEntry[]): number {
   return entries.reduce((latest, entry) => Math.max(latest, entry.lastUsed), 0) + 1;
 }
 
+/** The words in the order a dictation sends them, most important first: the typed ones, then the
+ * learned, each most recently used first (the stored order for a tie). The backend gives a model that
+ * takes fewer words the first ones (its ADR-025), so the cut keeps what matters most. */
+export function prioritizedWords(entries: readonly DictionaryEntry[]): string[] {
+  return [...entries].sort((a, b) => Number(a.learned) - Number(b.learned) || b.lastUsed - a.lastUsed).map((entry) => entry.word);
+}
+
 /** The index of the learned entry used least recently before `use` (the earliest added of a tie): the
  * one a full dictionary drops for a new word; -1 when there is none. */
 export function leastRecentlyUsedLearned(entries: readonly DictionaryEntry[], use: number): number {
