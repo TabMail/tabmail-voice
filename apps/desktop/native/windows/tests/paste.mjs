@@ -111,6 +111,17 @@ try {
   assert.ok((await canceled.result).error, "cancel before mutation refused");
   assert.equal((await command("value")).text, "Before selected after.");
   assert.deepEqual(await command("clipboard"), original);
+  // A request canceled while it still waits its turn is answered too: every request gets its reply.
+  // The held clipboard keeps the one ahead of it running until both are canceled or refused.
+  await command("lock");
+  const ahead = request("insert", params());
+  const queued = request("insert", params());
+  helper.stdin.write(`${JSON.stringify({ method: "cancel", params: { id: queued.id } })}\n`);
+  assert.ok((await ahead.result).error, "a clipboard held open past the wait is refused");
+  assert.ok((await queued.result).error, "a request canceled while queued is refused");
+  await command("unlock");
+  assert.equal((await command("value")).text, "Before selected after.");
+  assert.deepEqual(await command("clipboard"), original);
   // An app that hands its clipboard over late (a busy app, a VM's clipboard agent) never holds the
   // paste up: the helper never asks it for anything.
   await command("delayed");

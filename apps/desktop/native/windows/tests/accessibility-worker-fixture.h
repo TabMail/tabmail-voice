@@ -36,7 +36,9 @@ struct Output {
  mutable std::mutex mutex;
  mutable std::condition_variable changed;
  mutable std::map<int64_t, JSON> replies;
- void send(JSON reply) const { std::lock_guard lock(mutex); replies.emplace(reply["id"].get<int64_t>(), std::move(reply)); changed.notify_all(); }
+ mutable std::map<int64_t, int> sends; // Every reply counted: a request is answered once.
+ void send(JSON reply) const { std::lock_guard lock(mutex); const auto id = reply["id"].get<int64_t>(); ++sends[id]; replies.emplace(id, std::move(reply)); changed.notify_all(); }
+ int sent(int64_t id) const { std::lock_guard lock(mutex); return sends.contains(id) ? sends.at(id) : 0; }
  JSON take(int64_t id, std::chrono::milliseconds wait = std::chrono::seconds(2)) const { std::unique_lock lock(mutex); if (!changed.wait_for(lock, wait, [&]{return replies.contains(id);})) throw std::runtime_error("missing reply"); return replies.at(id); }
 };
 std::mutex gateMutex;

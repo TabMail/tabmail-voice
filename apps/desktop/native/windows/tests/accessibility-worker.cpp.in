@@ -48,7 +48,13 @@ int main() {
  voice::releaseGate(); output->take(blocking);
  auto barrier=request("caretAnchor",JSON::object());
  check("canceled queued lookup never executes",voice::caretCalls==before+1 && barrier["result"].is_object());
- bool noReply; {std::lock_guard lock(output->mutex);noReply=!output->replies.contains(canceled);} check("canceled queued lookup has no reply",noReply);
+ check("canceled queued lookup is answered with an error",output->take(canceled).contains("error"));
+ voice::armGate(); auto running=enqueue("caretAnchor",JSON::object()); voice::waitEntered();
+ worker->cancel(running); voice::releaseGate(); output->take(running); request("caretAnchor",JSON::object());
+ check("canceled queued lookup is answered once",output->sent(canceled)==1);
+ check("canceled running lookup is answered once, by the lookup",output->sent(running)==1);
+ worker->cancel(running); auto after=request("caretAnchor",JSON::object());
+ check("canceling an answered request sends nothing",output->sent(running)==1 && after["result"].is_object());
  voice::armGate(); blocking=enqueue("caretAnchor",JSON::object()); voice::waitEntered();
  std::vector<int64_t> queued; for(int i=0;i<4;++i)queued.push_back(enqueue("caretAnchor",JSON::object()));
  auto overflow=enqueue("caretAnchor",JSON::object());check("queue remains bounded",output->take(overflow).contains("error"));
