@@ -756,6 +756,11 @@ plain dictation sends. It now also lists what agent mode sends: the request and 
 what the apps switched on return (events, contacts, notes, files), and the text of the web pages it
 reads; and it says a web search also goes to a search provider (ADR-DESK-030). The page is
 reworded, not re-asked, and no tip is shown: the app has no existing users (owner).
+Later the same day, the owner: cover what the tools send too, and keep it short, with no legal
+wording; the details are in the Terms of Service and the Privacy Policy. The item is one line, "In
+agent mode, your request, the text you've selected, and whatever its tools need to do it.", which
+new tools fit without another change; the closing item is back to its original wording, without
+the search-provider sentence.
 
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text

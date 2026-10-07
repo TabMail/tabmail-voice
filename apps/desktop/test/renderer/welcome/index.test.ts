@@ -107,12 +107,8 @@ describe("welcome wizard", () => {
     expect(sent[2]).toContain("The words in your dictionary");
     expect(sent[2]).toContain("That text stays on this computer.");
     expect(sent[2]).toContain("Learning is on unless you switch it off in Settings.");
-    // Agent mode's request, selection, apps' results and web pages (#170).
-    expect(sent[3]).toContain("In agent mode, your request and the text you’ve selected");
-    expect(sent[3]).toContain("what the apps you switch on in the Features step or in Settings return");
-    expect(sent[3]).toContain("the text of the web pages it reads");
-    expect(sent[4]).toContain("All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.");
-    expect(sent[4]).toContain("When agent mode searches the web, the search goes to a search provider too.");
+    expect(sent[3]).toBe("In agent mode, your request, the text you’ve selected, and whatever its tools need to do it.");
+    expect(sent[4]).toBe("All of it goes to TabMail and the AI providers it uses, only to process that dictation, and isn’t stored.");
   });
 
   /** The name step offers the computer account's name while none is stored, filling it in when it
