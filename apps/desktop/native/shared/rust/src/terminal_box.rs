@@ -40,10 +40,12 @@ impl Cell<'_> {
 
 /// `row`'s characters, each at its column: the widths of the graphemes before it. A ligature
 /// Unicode gives one width for two graphemes (Arabic lam-alef) still takes a column for each, as a
-/// terminal draws it.
+/// terminal draws it. Legacy graphemes: an extended one joins a mark that comes before what it marks
+/// (Arabic's number sign) to the next character, a border too, which would then be missed; the
+/// columns are the same either way.
 fn cells(row: &str) -> Vec<Cell<'_>> {
     let mut column = 0;
-    row.grapheme_indices(true)
+    row.grapheme_indices(false)
         .map(|(start, text)| {
             let cell = Cell {
                 column,
@@ -165,16 +167,22 @@ pub(crate) fn caret_box(projected: &Value) -> Option<CaretBox> {
     above.reverse();
     let below = rows[caret_row + 1..].iter().map_while(boxed).collect();
     // The cursor's row splits at the cursor in the text, so a character of no width just before it
-    // stays before it.
-    let (before, after): (Vec<&Cell>, Vec<&Cell>) = row
+    // stays before it, a border at its column right after it too. Every border on that row before the
+    // cursor is left of it (one has a width).
+    let before = row
         .iter()
-        .filter(|cell| cell.column >= from && right.is_none_or(|right| cell.column < right))
-        .partition(|cell| cell.start < offset);
-    let joined = |cells: Vec<&Cell>| cells.iter().map(|cell| cell.text).collect::<String>();
+        .filter(|cell| cell.start < offset && cell.column >= from)
+        .map(|cell| cell.text)
+        .collect();
+    let after: String = row
+        .iter()
+        .filter(|cell| cell.start >= offset && right.is_none_or(|right| cell.column < right))
+        .map(|cell| cell.text)
+        .collect();
     Some(CaretBox {
         above,
-        before: joined(before),
-        after: joined(after).trim_end().to_owned(),
+        before,
+        after: after.trim_end().to_owned(),
         below,
     })
 }

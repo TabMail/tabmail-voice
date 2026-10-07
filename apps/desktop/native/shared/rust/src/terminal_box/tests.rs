@@ -288,8 +288,42 @@ fn zero_width_characters_stay_where_they_are() {
         boxed(&["$ echo one\u{200B}‸ two"]),
         caret(&[], "$ echo one\u{200B}", " two", &[])
     );
+    // At the border's column, right before it.
+    assert_eq!(
+        boxed(&["│ end.\u{2060}‸│ other"]),
+        caret(&[], " end.\u{2060}", "", &[])
+    );
     let rows = ["left pane   │$ echo one", "left text   │\u{301}$ ‸"];
     assert_eq!(boxed(&rows), caret(&["$ echo one"], "$ ", "", &[]));
+}
+
+/// Symbols Unicode leaves ambiguous (box drawing, a bullet, an arrow) take one column, as a terminal
+/// outside an East Asian setting draws them; an emoji made so by its presentation selector takes two.
+#[test]
+fn ambiguous_symbols_take_one_column_and_emoji_presentation_two() {
+    let rows = [
+        "├── src    │ $ ls",
+        "• one      │ src",
+        "a → b      │ docs",
+        "status     │ $ ‸",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&[" $ ls", " src", " docs"], " $ ", "", &[])
+    );
+    let rows = ["\u{26A0}\u{FE0F} 2 warnings│ out", "status       │ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[" out"], " $ ", "", &[]));
+}
+
+/// A mark that comes before what it marks (Arabic's number sign, end of ayah) right before a border
+/// leaves the border a border, on the cursor's row and on the others.
+#[test]
+fn a_mark_before_a_border_leaves_it_a_border() {
+    let rows = ["left \u{600}│ $ echo one", "abcde\u{600}│ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[" $ echo one"], " $ ", "", &[]));
+    assert_eq!(boxed(&["left two\u{6DD}│‸"]), caret(&[], "", "", &[]));
+    let rows = ["left \u{600}│ above", "status│ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[" above"], " $ ", "", &[]));
 }
 
 /// A row whose borders are not at the cursor's border columns ends the box: a terminal that draws a
