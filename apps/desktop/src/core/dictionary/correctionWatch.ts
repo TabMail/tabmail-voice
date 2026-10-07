@@ -8,6 +8,22 @@ import { learnedCorrections } from "./corrections.js";
 import { errorName, log } from "../log.js";
 import { sleep } from "../util/timeout.js";
 
+/** The shared core's own breaks between a terminal's rows (U+2029): a terminal's field is the box around
+ * its cursor, and a row ending at one may be one the terminal wrapped. */
+const rowBreak = "\u2029";
+
+/** The ways a field may hold the pasted text, in order: as read; with the rows a terminal wrapped
+ * inside a word joined (its breaks dropped); and with the rows a program wrapped at its words joined
+ * by a space (each break and the blanks around it, as a full-screen program indents its next row).
+ * Only the core's breaks are joined, never the user's own line breaks. (The core checked its text for
+ * secrets with its breaks and with them dropped; the text joined by spaces stays on this computer,
+ * and only the words learned reach the debug log.) */
+const joins: ((field: string) => string)[] = [
+  (field) => field,
+  (field) => field.replaceAll(rowBreak, ""),
+  (field) => field.replace(/[^\S\u2029]*\u2029[^\S\u2029]*/gu, " "),
+];
+
 /**
  * Watches the field a dictation was pasted into and learns the user's corrections of it
  * (ADR-DESK-038). Every `interval` for `duration`, it reads the field of the app pasted into: the first
@@ -56,34 +72,43 @@ export class CorrectionWatch {
     const isCurrent = () => this.generation === generation;
     let before: string | null = null;
     let previous: string | null = null;
+    // How the field holds the pasted text, found with it, and every later read joined the same way.
+    let join = joins[0]!;
     for (let elapsed = this.interval; elapsed <= this.duration; elapsed += this.interval) {
       await sleep(this.interval);
       if (!isCurrent()) return;
-      const field = await this.readField(pid, exclusions).catch((error: unknown) => {
+      const read = await this.readField(pid, exclusions).catch((error: unknown) => {
         log.debug(`CorrectionWatch: read failed: ${errorName(error)}`);
         return null;
       });
       if (!isCurrent()) return;
-      if (field === null) {
+      if (read === null) {
         log.debug("CorrectionWatch: no field to read; stopped");
         this.stop();
         return;
       }
       if (before === null) {
-        if (field.includes(pasted)) {
-          before = field;
-          log.debug("CorrectionWatch: found the pasted text in the field");
+        const found = joins.findIndex((candidate) => candidate(read).includes(pasted));
+        if (found !== -1) {
+          join = joins[found]!;
+          before = join(read);
+          log.debug(`CorrectionWatch: found the pasted text in the field${found === 0 ? "" : ", its wrapped rows joined"}`);
         }
-      } else {
-        // A read that respells something new, or has the pasted text back as it was (an undo), replaces
-        // the correction pending: with what it teaches once the field has held since the last read, with
-        // nothing while it is still changing, so a spelling paused on and then changed is never learned.
-        // A read that respells nothing (the message sent and the field emptied, focus moved on, a word
-        // half retyped) leaves it.
-        const words = learnedCorrections(pasted, before, field);
-        if ((words.length > 0 || field.includes(pasted)) && words.join("\n") !== this.pending.join("\n")) {
-          this.pending = field === previous ? words : [];
-        }
+        previous = join(read);
+        continue;
+      }
+      const field = join(read);
+      // A read that respells something new, or has the pasted text back as it was (an undo), replaces
+      // the correction pending: with what it teaches once the field has held since the last read, with
+      // nothing while it is still changing, so a spelling paused on and then changed is never learned.
+      // A read that respells nothing (the message sent and the field emptied, focus moved on, a word
+      // half retyped) leaves it.
+      // A terminal rewraps its rows after an edit that changes a word's length, so the join found
+      // with the pasted text can run two words together, or split one, in a later read: while the
+      // field has rows, only a word read whole on one of them is learned.
+      const words = learnedCorrections(pasted, before, field).filter((word) => !read.includes(rowBreak) || read.includes(word));
+      if ((words.length > 0 || field.includes(pasted)) && words.join("\n") !== this.pending.join("\n")) {
+        this.pending = field === previous ? words : [];
       }
       previous = field;
     }

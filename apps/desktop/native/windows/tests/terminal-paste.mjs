@@ -6,14 +6,12 @@
 // synthetic paste itself in raw mode; nothing is submitted to a command shell.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { writeFileSync } from "node:fs";
 
 assert.equal(process.platform, "win32");
 assert.ok(process.stdin.isTTY && process.stdout.isTTY, "requires a disposable focused terminal tab");
 assert.ok(process.argv[2], "pass the native helper executable");
 const helper = spawn(process.argv[2], { stdio: ["pipe", "pipe", "pipe"] });
-const lines = createInterface({ input: helper.stdout });
 const pending = new Map();
 let nextID = 0;
 let received = "";
@@ -26,14 +24,23 @@ function fail(error) {
 helper.on("error", () => fail(new Error("helper start failed")));
 helper.on("exit", () => fail(new Error("helper exited")));
 helper.stderr.on("data", () => {});
-lines.on("line", (line) => {
+// One reply per line feed: the field's text holds U+2029 (the box's rows), which `node:readline`
+// would also end a line at.
+let unread = "";
+helper.stdout.setEncoding("utf8");
+helper.stdout.on("data", (chunk) => {
+  const lines = (unread + chunk).split("\n");
+  unread = lines.pop();
+  for (const line of lines) receive(line);
+});
+function receive(line) {
   const reply = JSON.parse(line);
   const waiter = pending.get(reply.id);
   if (!waiter) return;
   pending.delete(reply.id);
   if (reply.error) waiter.reject(new Error("native insertion refused"));
   else waiter.resolve(reply.result);
-});
+}
 function request(method, params = {}) {
   const id = ++nextID;
   return new Promise((resolve, reject) => {
@@ -67,8 +74,11 @@ try {
     while (received.length < text.length && Date.now() < until) await pause(10);
     assert.ok(received === text, "terminal receives exactly the synthetic payload");
     assert.deepEqual(await request("frontmostApp"), target, "insertion preserves focus");
-    assert.ok(await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] }) === null,
-      "terminal insertion does not authorize whole-output correction learning");
+    // A terminal's field for correction learning is the box around its cursor (its visible rows,
+    // with no borders here), never its whole output.
+    const field = await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] });
+    assert.ok(typeof field?.value === "string" && field.value.includes("Synthetic terminal insertion test (no shell commands)"),
+      "a terminal's field is the box around its cursor");
     result.stages.push(name);
   }
   result.passed = true;
@@ -85,6 +95,5 @@ try {
   process.stdin.pause();
   helper.stdin.end();
   helper.kill();
-  lines.close();
   if (process.argv[3]) writeFileSync(process.argv[3], JSON.stringify(result));
 }

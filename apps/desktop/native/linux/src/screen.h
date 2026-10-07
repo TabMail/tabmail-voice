@@ -730,11 +730,19 @@ std::string semanticLabel(Tree& tree, typename Tree::Node root, SemanticText::Ki
                           const ScreenExclusions& exclusions, const std::optional<ContextFrame>& window = {}) {
     return semanticSource(tree, root, kind, visited, exclusions, false, window).at("text").template get<std::string>();
 }
+// Whether the focus is a terminal's: the terminal itself, or a child of it.
 template<class Tree>
-nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, typename Tree::Node focus,
-    const std::vector<typename Tree::Node>& path, const AppIdentity& app, const ScreenExclusions& exclusions) {
+bool terminalInFocus(Tree& tree, typename Tree::Node focus, const std::vector<typename Tree::Node>& path) {
+    return tree.role(focus) == ATSPI_ROLE_TERMINAL ||
+        std::any_of(path.begin(), path.end(), [&](const auto& parent) { return tree.role(parent) == ATSPI_ROLE_TERMINAL; });
+}
+// A terminal window's viewport as the shared core's `collect` finishes it, the source of the screen
+// read's projection and of the field read's box around the cursor; nullptr when it can't be read.
+// Throws `PrivacyHidden` when it shows an excluded page.
+template<class Tree>
+nlohmann::json terminalViewport(Tree& tree, typename Tree::Node window, typename Tree::Node focus,
+    const std::vector<typename Tree::Node>& path, const ScreenExclusions& exclusions, size_t& visited) {
     using JSON=nlohmann::json;
-    const auto started = std::chrono::steady_clock::now();
     if constexpr (!requires { tree.viewportSurface(focus, size_t{}, ContextFrame{}, true, size_t{}); }) {
         return nullptr;
     } else {
@@ -743,7 +751,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         if(!windowFrame || windowFrame->width<=0 || windowFrame->height<=0) return nullptr;
         // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
         JSON collected=core::request({{"collect",{{"start",true}}}},voice_core_viewport_json);
-        size_t visited=0;
+        visited=0;
         bool complete=true;
         using Node=typename Tree::Node;
         std::vector<std::pair<Node,ContextFrame>> stack{{window,*windowFrame}};
@@ -770,6 +778,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
                 const bool ownsFocus=tree.same(node,focus) || std::any_of(path.begin(),path.end(),[&](const auto& parent){return tree.same(parent,node);});
                 JSON value;
                 try { value=tree.viewportSurface(node,next.at("id").get<size_t>(),clip,ownsFocus,next.at("bytes").get<size_t>()); }
+                catch(const ScreenBudgetExceeded&) { throw; }
                 catch(const std::exception& error) {
                     // A fixed reason, never text.
                     std::cerr << "debug screen: terminal surface refused: " << error.what() << "\n";
@@ -786,11 +795,19 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         // Privacy is checked again at the end; the text is not read again.
         for(const auto& node:read) if(!safeSubtree(tree,node,exclusions,true)) return nullptr;
         if(!safeSubtree(tree,window,exclusions,false)) return nullptr;
-        const JSON viewport=core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete},{"offsetUnit","scalar"}}}}}},voice_core_viewport_json);
-        const auto title=tree.label(window);
-        return screenReply({{"appName",app.name},{"bundleID",app.id},{"windowTitle",title},{"host",nullptr},{"terminalProgram",nullptr},
-            {"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,elapsedMilliseconds(started),"");
+        return core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete},{"offsetUnit","scalar"}}}}}},voice_core_viewport_json);
     }
+}
+template<class Tree>
+nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, typename Tree::Node focus,
+    const std::vector<typename Tree::Node>& path, const AppIdentity& app, const ScreenExclusions& exclusions) {
+    const auto started = std::chrono::steady_clock::now();
+    size_t visited=0;
+    const auto viewport=terminalViewport(tree,window,focus,path,exclusions,visited);
+    if (viewport.is_null()) return nullptr;
+    const auto title=tree.label(window);
+    return screenReply({{"appName",app.name},{"bundleID",app.id},{"windowTitle",title},{"host",nullptr},{"terminalProgram",nullptr},
+        {"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,elapsedMilliseconds(started),"");
 }
 
 template<class Tree>
@@ -815,10 +832,8 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
     const auto focusRole = tree.role(focus);
     // A terminal's cursor belongs to its running program, not an editable form.
     // Read the bounded terminal field instead, including when focus is a child.
-    const bool terminalInFocus = focusRole == ATSPI_ROLE_TERMINAL ||
-        std::any_of(path.begin(), path.end(), [&](const auto& parent) { return tree.role(parent) == ATSPI_ROLE_TERMINAL; });
-    if (terminalInFocus) return gatherTerminalScreen(tree,window,focus,path,app,exclusions);
-    const bool fieldInFocus = !terminalInFocus && (focusRole == ATSPI_ROLE_ENTRY || focusRole == ATSPI_ROLE_TEXT ||
+    if (terminalInFocus(tree, focus, path)) return gatherTerminalScreen(tree,window,focus,path,app,exclusions);
+    const bool fieldInFocus = (focusRole == ATSPI_ROLE_ENTRY || focusRole == ATSPI_ROLE_TEXT ||
         focusRole == ATSPI_ROLE_PASSWORD_TEXT || focusRole == ATSPI_ROLE_COMBO_BOX || tree.editable(focus));
     const bool readableFocus = !protectedFocus && safeSubtree(tree, focus, exclusions, true);
     if (readableFocus) {

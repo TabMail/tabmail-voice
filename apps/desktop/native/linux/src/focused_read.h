@@ -38,6 +38,22 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
                 voice::LiveScreenTree tree(*window);
                 return voice::gatherScreen(tree, *window, target->focus, path, target->app.value_or(voice::AppIdentity{"", "Unknown"}), policy);
             }
+            // A terminal's text is its scrollback: its field is the box around its cursor, which the
+            // shared core cuts from the viewport the screen read takes (`terminal_box`), read as it is,
+            // within a field read's time: this helper also places the caret and pastes.
+            if (voice::LiveScreenTree screen(*window, voice::LiveScreenTree::fieldReadMilliseconds);
+                voice::terminalInFocus(screen, target->focus, path)) {
+                try {
+                    size_t visited = 0;
+                    const auto viewport = voice::terminalViewport(screen, *window, target->focus, path, policy, visited);
+                    if (viewport.is_null()) return JSON{{"value", nullptr}};
+                    return voice::core::request({{"field", {{"maxLength", *limit}, {"viewport", viewport}}}}, voice_core_request_json);
+                } catch (const voice::PrivacyHidden&) { return JSON{{"value", nullptr}}; }
+                catch (const voice::ScreenBudgetExceeded&) {
+                    std::cerr << "debug screen: terminal field read out of time\n";
+                    return JSON{{"value", nullptr}};
+                }
+            }
             voice::LiveScreenTree tree(*window, voice::LiveScreenTree::fieldReadMilliseconds);
             try {
                 if (!voice::safeSubtree(tree, *window, policy, false) || !voice::safeSubtree(tree, target->focus, policy, true)) return JSON{{"value", nullptr}};

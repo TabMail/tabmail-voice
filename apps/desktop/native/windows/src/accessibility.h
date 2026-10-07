@@ -145,6 +145,14 @@ public:
         if (!element && refusal && std::string_view(refusal) == "protected-field") return {{"value", nullptr}};
         if (!element) return nullptr;
         if (refusedPages(window, element.Get(), exclusions, 200, true)) return {{"value", nullptr}};
+        // A terminal's text is its scrollback and no editable field: its field is the box around its
+        // cursor, which the shared core cuts from the viewport the screen read takes (`terminal_box`).
+        if (isTerminal(window)) {
+            size_t visited=0;
+            const JSON viewport=terminalViewport(window,element.Get(),exclusions,GetTickCount64(),visited,HelperConfig::terminalFieldReadMs);
+            if (viewport.is_null() || viewport==hiddenScreen() || GetForegroundWindow()!=window) return {{"value", nullptr}};
+            return core::request({{"field", {{"maxLength", maxLength}, {"viewport", viewport}}}}, voice_core_request_json);
+        }
         if (!editable(element.Get())) return nullptr;
         if (!safeTextSubtree(element.Get(), 200)) return {{"value", nullptr}};
         std::optional<std::wstring> value;
@@ -199,8 +207,7 @@ public:
         }
         const auto started = GetTickCount64();
         const std::wstring app = executableName(window);
-        const bool terminal = std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
-            [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
+        const bool terminal = isTerminal(window);
         std::optional<PageHost> focusedPage;
         if (element && refusedPages(window, element.Get(), exclusions, std::nullopt, false, &focusedPage))
             return hiddenScreen();
@@ -725,6 +732,29 @@ private:
     }
     JSON readTerminalScreen(HWND window, IUIAutomationElement* focus, const std::wstring& app,
                             const ScreenExclusions& exclusions, ULONGLONG started) {
+        size_t visited=0;
+        const JSON viewport=terminalViewport(window,focus,exclusions,started,visited);
+        if (viewport.is_null() || viewport==hiddenScreen()) return viewport;
+        wchar_t title[513]{};GetWindowTextW(window,title,513);
+        // The same window and focus as the viewport was read with, as before its title was asked.
+        const auto current=ownedFocus(window);
+        if (GetForegroundWindow()!=window || !((focus && current && same(focus,current.Get())) || (!focus && !current))) return nullptr;
+        return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
+            {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
+    }
+    // Whether the window is a terminal's (`HelperConfig::terminalApps`), read by its viewport.
+    bool isTerminal(HWND window) {
+        const std::wstring app = executableName(window);
+        return std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
+            [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
+    }
+    // A terminal window's viewport as the shared core's `collect` finishes it, the source of the
+    // screen read's projection and of the field read's box around the cursor; nullptr when it can't
+    // be read, `hiddenScreen()` when it shows an excluded page. `budget`: none for the screen read,
+    // which runs in voice-screen-reader; a field read runs in this helper, under its watchdog, and
+    // gives nothing once its budget is spent.
+    JSON terminalViewport(HWND window, IUIAutomationElement* focus, const ScreenExclusions& exclusions,
+                          ULONGLONG started, size_t& visited, std::optional<ULONGLONG> budget = std::nullopt) {
         ComPtr<IUIAutomationElement> root;
         require(automation->ElementFromHandle(window, &root));
         ComPtr<IUIAutomationTreeWalker> walker;
@@ -738,7 +768,13 @@ private:
             return GetForegroundWindow()==window &&
                 ((focus && current && same(focus,current.Get())) || (!focus && !current));
         };
-        PageTree privacyTree{this,walker,started,std::nullopt};
+        PageTree privacyTree{this,walker,started,budget};
+        // What is left of the budget, for the looks through each surface.
+        const auto left=[&]() -> std::optional<ULONGLONG> {
+            if (!budget) return std::nullopt;
+            const ULONGLONG spent=GetTickCount64()-started;
+            return spent<*budget ? *budget-spent : 0;
+        };
         // The surfaces are read whole: a window not looked through whole is not read (ADR-DESK-054).
         switch (walk::lookForExcludedPage(privacyTree,root,exclusions,true)) {
             case walk::PageLook::excluded: return hiddenScreen();
@@ -755,7 +791,7 @@ private:
         }
         // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
         JSON collected=core::request({{"collect",{{"start",true}}}},voice_core_viewport_json);
-        size_t visited=0;
+        visited=0;
         struct Entry { ComPtr<IUIAutomationElement> node; RECT clip; };
         struct Capture { ComPtr<IUIAutomationElement> node; };
         std::vector<Entry> stack{{root,windowFrame}};
@@ -763,6 +799,7 @@ private:
         std::vector<Capture> captures;
         bool complete=true;
         while (!stack.empty()) {
+            if (!privacyTree.withinBudget()) return nullptr;
             if (!valid() || visited>=walk::limits().nodeBudget) { complete=false;break; }
             auto entry=std::move(stack.back()); stack.pop_back();
             if (std::any_of(seen.begin(),seen.end(),[&](const auto& prior){return same(prior.Get(),entry.node.Get());})) continue;
@@ -778,7 +815,7 @@ private:
             if (SUCCEEDED(entry.node->GetCurrentPatternAs(UIA_TextPatternId,IID_PPV_ARGS(&pattern))) && pattern) {
                 // A clipped ancestor cannot be trusted solely from GetVisibleRanges.
                 // Refuse this aggregate until a provider-specific range clip is proven.
-                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get())) {complete=false;continue;}
+                if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get(),left())) {complete=false;continue;}
                 const JSON next=core::request({{"collect",{{"state",collected},{"next",true}}}},voice_core_viewport_json);
                 if (!next.at("read").get<bool>()) {complete=false;break;}
                 if (!valid()) return nullptr;
@@ -802,12 +839,9 @@ private:
             case walk::PageLook::notSeenWhole: return nullptr;
             case walk::PageLook::none: break;
         }
-        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get())) return nullptr;
-        wchar_t title[513]{};GetWindowTextW(window,title,513);
-        if(!valid()) return nullptr;
-        const JSON viewport=core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete}}}}}},voice_core_viewport_json);
-        return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
-            {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
+        for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get(),left())) return nullptr;
+        if(!valid() || !privacyTree.withinBudget()) return nullptr;
+        return core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete}}}}}},voice_core_viewport_json);
     }
     // The focused element as the walk treats it. `element` is null when the window has none.
     struct FocusRead {

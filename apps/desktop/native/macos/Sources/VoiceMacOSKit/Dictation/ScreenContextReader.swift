@@ -177,6 +177,8 @@ enum ScreenContextReader {
             CaretLocator.parameterized(element, name, value)
         }, focused: {
             (CaretLocator.attribute(element, kAXFocusedAttribute) as? NSNumber)?.boolValue == true
+        }, otherwise: {
+            valueCaretWindow(of: element)
         })
     }
 

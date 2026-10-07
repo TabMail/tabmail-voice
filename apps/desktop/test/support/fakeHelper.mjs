@@ -6,7 +6,10 @@
 // `echo` answers its params, `fail` answers an error, `silent` never answers, `exit` exits (with `params.code`
 // where given), `emit`
 // sends an event, `log` writes a debug and an error line to stderr, `ids` answers its process id,
-// `hang` blocks forever without reading its stdin again (a read stuck in a provider).
+// `hang` blocks forever without reading its stdin again (a read stuck in a provider), `breaks` answers text
+// holding U+2028 and U+2029 (a terminal's box joins its rows with U+2029), which JSON leaves unescaped,
+// `crlf` answers its params on a line ended by CRLF, as the Windows helpers write, and logs a CRLF line,
+// `big` answers `params.rows` rows joined by U+2029, a reply longer than one pipe read.
 import { createInterface } from "node:readline";
 
 const deferred = new Map();
@@ -42,6 +45,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     case "log":
       process.stderr.write("debug something happened\nerror something failed\n");
       return send({ id, result: {} });
+    case "breaks":
+      return send({ id, result: { value: "row one\u2029row two\u2028end" } });
+    case "crlf":
+      process.stderr.write("error windows line\r\n");
+      return process.stdout.write(`${JSON.stringify({ id, result: params })}\r\n`);
+    case "big":
+      return send({ id, result: { value: Array.from({ length: params.rows }, (_, row) => `row ${row}`).join("\u2029") } });
     case "pid":
       return send({ id, result: { pid: process.pid } });
     case "hang":

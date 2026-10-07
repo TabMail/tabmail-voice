@@ -6,7 +6,6 @@
 // UIA provider; redirected CTest output cannot establish an interactive caret.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 
 assert.equal(process.platform, "win32", "requires the native Windows runtime");
@@ -22,11 +21,19 @@ function fail(error) {
 }
 function start(executable) {
   const child = spawn(executable, [], { stdio: ["pipe", "pipe", "pipe"] });
-  const lines = createInterface({ input: child.stdout });
   child.on("error", fail);
   child.on("exit", () => fail(new Error("helper exited before the request completed")));
   child.stderr.on("data", () => {});
-  lines.on("line", (line) => {
+  // One reply per line feed: a terminal's field holds U+2029 (the box's rows), which `node:readline`
+  // would also end a line at.
+  let unread = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    const lines = (unread + chunk).split("\n");
+    unread = lines.pop();
+    for (const line of lines) receive(line);
+  });
+  const receive = (line) => {
     try {
       const reply = JSON.parse(line);
       const waiter = pending.get(reply.id);
@@ -35,8 +42,8 @@ function start(executable) {
       if (reply.error) waiter.reject(new Error("native caret request failed"));
       else waiter.resolve(reply.result);
     } catch (error) { fail(error); }
-  });
-  return { child, lines };
+  };
+  return { child };
 }
 const helper = start(process.argv[2]);
 // The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
@@ -74,8 +81,10 @@ try {
   assert.ok(third && third.x < second.x, "new-line caret returns toward the left margin");
   // At the viewport bottom Terminal scrolls instead of increasing screen Y.
   assert.ok(third.y >= second.y, "new line advances or scrolls at the viewport edge");
-  assert.equal(await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] }), null,
-    "geometry support does not opt terminal output into correction learning");
+  // A terminal's field for correction learning is the box around its cursor, never its whole output.
+  const field = await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] });
+  assert.ok(typeof field?.value === "string" && field.value.includes("Synthetic next line:"),
+    "a terminal's field is the box around its cursor");
   assert.deepEqual(await request("frontmostApp"), target, "helper never activates a different window");
   // Fill the display with synthetic rows before requesting screen text. The
   // historical sentinel must be in scrollback, never in the shared viewport.
@@ -120,9 +129,8 @@ try {
   process.stdout.write("\nTERMINAL_CARET_AND_VIEWPORT_PASS\n");
 } finally {
   clearTimeout(timeout);
-  for (const { child, lines } of [helper, reader]) {
+  for (const { child } of [helper, reader]) {
     child.stdin.end();
     child.kill();
-    lines.close();
   }
 }

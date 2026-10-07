@@ -539,6 +539,110 @@
       "refused": true
     },
     {
+      "name": "a terminal with its cursor in a tmux pane after a delimiter: the caret window is the cursor's row in its pane",
+      "request": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "windowTitle": "shell",
+        "host": null,
+        "terminalProgram": null,
+        "focusedRole": "terminal",
+        "exclusions": {
+          "excludedAppIDs": [],
+          "excludedHosts": []
+        },
+        "nodes": 9,
+        "milliseconds": 21,
+        "stopped": null,
+        "viewport": {
+          "surfaces": [
+            {
+              "id": 1,
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "runs": [
+                {
+                  "id": 1,
+                  "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                  "connected": false,
+                  "startKnown": false,
+                  "endKnown": false
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": []
+              }
+            }
+          ],
+          "focusedSurface": 1,
+          "complete": true,
+          "caret": {
+            "status": "exact",
+            "surface": 1,
+            "run": 1,
+            "offset": 59
+          }
+        }
+      },
+      "expected": {
+        "appName": "Terminal",
+        "bundleID": "org.example.Terminal",
+        "focusedRole": "terminal",
+        "host": null,
+        "logDescription": "app Terminal (org.example.Terminal), window title shell, host -, terminal program -, focused terminal\n--- text before the caret ---\n Note:\n--- selected text ---\n\n--- text after the caret ---\n\n--- visible text ---\n[Terminal surface 1]\nbuild ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+        "renderedText": "[Terminal surface 1]\nbuild ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+        "selectedText": "",
+        "selectionRedacted": false,
+        "summary": "terminal, 1 surfaces, 93 chars, title 5 chars, caret 6/0/0 chars, 9 nodes, 21 ms",
+        "terminalProgram": null,
+        "terminalViewport": {
+          "caret": {
+            "offset": 59,
+            "renderedOffset": 80,
+            "run": 1,
+            "status": "exact",
+            "surface": 1
+          },
+          "complete": true,
+          "renderedText": "[Terminal surface 1]\nbuild ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+          "selectedText": "",
+          "selectionComplete": true,
+          "surfaces": [
+            {
+              "frame": [
+                0,
+                0,
+                400,
+                200
+              ],
+              "id": 1,
+              "runs": [
+                {
+                  "complete": true,
+                  "connected": false,
+                  "id": 1,
+                  "renderedOffset": 21,
+                  "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │"
+                }
+              ],
+              "selection": {
+                "complete": true,
+                "ranges": []
+              }
+            }
+          ]
+        },
+        "textAfterCaret": "",
+        "textBeforeCaret": " Note:",
+        "windowTitle": "shell"
+      }
+    },
+    {
       "name": "both blocks and a viewport",
       "request": {
         "appName": "A",

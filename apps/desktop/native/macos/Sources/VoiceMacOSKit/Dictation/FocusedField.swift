@@ -9,6 +9,34 @@ import VoiceHelperSupport
 /// corrections to it (ADR-DESK-038). Never a password field's, and never one in a page of an excluded
 /// website; the shared core decides how long one may be (`SharedRequest.fieldValue`).
 enum FocusedField {
+    /// What a read found: a field's text, or a terminal's viewport as the screen read takes it, whose
+    /// box around the cursor the shared core cuts out as the field (`terminal_box`): a terminal's
+    /// text is its whole scrollback, and its other panes and programs' lines are not the field.
+    enum Read: Equatable, Sendable {
+        case text(String)
+        case terminal(JSON)
+    }
+
+    /// The focused field of the app `pid`, as `value(inApp:excluding:)` reads it, or a terminal's
+    /// viewport when the app is a terminal (`HelperConfig.terminalBundleIDs`, as the screen read
+    /// decides): nil when there is none to read.
+    static func read(inApp pid: pid_t, bundleID: String?, excluding exclusions: ScreenExclusions) -> Read? {
+        read(bundleID: bundleID, text: { value(inApp: pid, excluding: exclusions) }, viewport: {
+            ScreenContextReader.read(pid: pid, appName: "", bundleID: bundleID, excluding: exclusions)?.terminalSource
+        })
+    }
+
+    /// A terminal's field is read by its `viewport` only, never by its whole `text`; any other app's
+    /// by its `text`.
+    static func read(bundleID: String?, text: () -> String?, viewport: () -> JSON?) -> Read? {
+        guard let bundleID, HelperConfig.terminalBundleIDs.contains(bundleID) else { return text().map(Read.text) }
+        guard let viewport = viewport() else {
+            HelperLog.debug("FocusedField: the terminal's viewport could not be read")
+            return nil
+        }
+        return .terminal(viewport)
+    }
+
     /// The focused field's whole text in the app `pid`, or nil when there is no focused element, it
     /// has no text, it is a password field, or its window shows a page of an excluded website.
     /// Blocking cross-process Accessibility calls: call off the main thread. Those on the focused

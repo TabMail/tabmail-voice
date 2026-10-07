@@ -18,14 +18,38 @@ const INSERT_DEADLINE_MILLISECONDS: i64 = 5_000;
 /// `{"field": {"maxLength": n}}` → `{"maxLength": n}` when n is 1 to 20,000; with `"text"` (the
 /// field's text as read, or null for none) → `{"value": …}`: null for none or one longer than n
 /// UTF-16 units, or one a break the core added could split a secret in, else the text with
-/// secret-looking text taken out.
+/// secret-looking text taken out. With `"viewport"` instead (a terminal's, as the screen read sends
+/// it) the field is the box around the terminal's cursor (`terminal_box`), its rows joined by
+/// breaks the core adds, given as U+2029 so the app can tell a row the terminal wrapped from the
+/// user's own line break: a terminal's whole text is its scrollback, and its other panes and
+/// programs' lines are not the text the dictation went into. None without an exact caret.
 fn field(request: &Value) -> Result<Value, u32> {
     let bound = request
         .get("maxLength")
         .and_then(Value::as_u64)
         .filter(|bound| (1..=FIELD_MAX_LENGTH).contains(bound))
         .ok_or(1u32)?;
-    Ok(match request.get("text") {
+    let boxed;
+    let text = match (request.get("text"), request.get("viewport")) {
+        (text, None) => text,
+        (None, Some(viewport)) => {
+            let bytes = serde_json::to_vec(viewport).map_err(|_| 3u32)?;
+            let projected: Value =
+                serde_json::from_slice(&crate::viewport::process(&bytes)?).map_err(|_| 3u32)?;
+            // The rows were cut from text redacted as it was on screen, between other panes' text;
+            // joined by the core's own breaks, they are checked again with and without them.
+            boxed = crate::terminal_box::caret_box(&projected).map_or(Value::Null, |caret| {
+                let mut rows = caret.above;
+                rows.push(caret.before + &caret.after);
+                rows.extend(caret.below);
+                Value::String(rows.join(&crate::context::ADDED_BREAK.to_string()))
+            });
+            Some(&boxed)
+        }
+        _ => return Err(1),
+    };
+    let terminal = request.get("viewport").is_some();
+    Ok(match text {
         None => json!({"maxLength": bound}),
         Some(Value::Null) => json!({"value": null}),
         Some(Value::String(text)) if text.encode_utf16().count() as u64 > bound => {
@@ -37,6 +61,9 @@ fn field(request: &Value) -> Result<Value, u32> {
             let (redacted, withheld) = crate::context::redact_added(&vec![vec![text.clone()]])?;
             if withheld[0] {
                 json!({"value": null})
+            } else if terminal {
+                // A box's rows hold no line break of their own: every one is the core's.
+                json!({"value": redacted[0][0].replace('\n', &crate::context::ADDED_BREAK.to_string())})
             } else {
                 json!({"value": redacted[0][0]})
             }

@@ -59,6 +59,85 @@ describe("CorrectionWatch", () => {
     expect(learned).toEqual([]);
   });
 
+  /** A terminal's field is the box around its cursor, its rows joined by the core's breaks (U+2029):
+   * a dictation a full-screen program wrapped at a word, its next row indented, is found and its
+   * correction learned, as is one a shell wrapped inside a word. */
+  test("learns a correction in a terminal's box, across the rows the terminal wrapped", async () => {
+    const box = (text: string) => `> ${text.replace("Zivora ", "Zivora\u2029  ").replace("Xyvora ", "Xyvora\u2029  ")}`;
+    const { field, learned, watch } = setup(box(pasted));
+    watch.watch(pid, pasted, none);
+    await poll();
+    field.value = box(corrected);
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([["Xyvora"]]);
+
+    const shell = setup("$ Please forward the Zivora con\u2029tract today.");
+    shell.watch.watch(pid, pasted, none);
+    await poll();
+    shell.field.value = "$ Please forward the Xyvora con\u2029tract today.";
+    await poll();
+    await poll();
+    shell.watch.stop();
+    expect(shell.learned).toEqual([["Xyvora"]]);
+  });
+
+  /** The whole-row rule is a terminal's: a field without rows learns what it teaches though it is not
+   * in the field as written (the words of a respelling, read apart by two spaces). */
+  test("a field without rows learns a respelling not written as one", async () => {
+    const dictated = "Please forward the zivora corp contract today.";
+    const { field, learned, watch } = setup(dictated);
+    watch.watch(pid, dictated, none);
+    await poll();
+    field.value = "Please forward the Xyvora  Corp contract today.";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([["Xyvora Corp"]]);
+  });
+
+  /** A shell wraps its line at a column, and an edit that changes a word's length moves every wrap
+   * after it: a word the terminal split, or two words a wrap at a blank runs together, is never
+   * learned. While the field has rows, only a word read whole on one row is (the core's breaks
+   * joined differently each read would teach words that were never typed). */
+  test("learns only words read whole on a row of a terminal the user's edit rewrapped", async () => {
+    const dictated = "Ask Steven to send the legal team the contract today and tell them we are ready";
+    const fixed = dictated.replace("Steven", "Stephen");
+    // The rows of a shell `width` columns wide, as the core cuts them: trailing blanks dropped.
+    const wrapped = (text: string, width: number) => {
+      const line = `$ git commit -m "${text}`;
+      const rows: string[] = [];
+      for (let at = 0; at < line.length; at += width) rows.push(line.slice(at, at + width).trimEnd());
+      return rows.join("\u2029");
+    };
+    const outcomes = new Set<string>();
+    for (let width = 12; width <= 80; width += 1) {
+      const { field, learned, watch } = setup(wrapped(dictated, width));
+      watch.watch(pid, dictated, none);
+      await poll();
+      field.value = wrapped(fixed, width);
+      await poll();
+      await poll();
+      watch.stop();
+      outcomes.add(JSON.stringify(learned));
+    }
+    expect([...outcomes].sort()).toEqual([JSON.stringify([]), JSON.stringify([["Stephen"]])].sort());
+  });
+
+  /** Only the core's breaks are joined: a field whose own line break falls inside the pasted text
+   * does not hold it, and teaches nothing. */
+  test("never joins a field's own line breaks", async () => {
+    const { field, learned, watch } = setup("Please forward the Zivora\ncontract today.");
+    watch.watch(pid, pasted, none);
+    await poll();
+    field.value = "Please forward the Xyvora\ncontract today.";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([]);
+  });
+
   /** A correction that has stayed for an interval is learned once the watch ends (here, the next
    * dictation's key-down), and only once. */
   test("learns a correction that stayed, when the watch ends", async () => {

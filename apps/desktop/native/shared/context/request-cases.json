@@ -72,6 +72,228 @@
       }
     },
     {
+      "name": "a terminal's field: the box around its cursor, its pane's rows joined by the core's breaks (U+2029)",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 59
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": " $ echo one\u2029 one\u2029 Note:\u2029"
+      }
+    },
+    {
+      "name": "a terminal's field: a program's input between its rules",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "✻ Working… (3s)\n──────────\n> fix the Zivora\n  build\n──────────\n  ? for shortcuts",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 51
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": "> fix the Zivora\u2029  build"
+      }
+    },
+    {
+      "name": "a terminal's field with a key wrapped over two rows of its pane, withheld",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "log one    │key sk-a1B2c3D4\nlog two    │e5F6g7H8i9J0k1L2\nlog three  │$ ",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 71
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "name": "a terminal's field with no exact caret",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "outsideViewport"
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
+      "name": "a terminal's box longer than the bound",
+      "request": {
+        "field": {
+          "maxLength": 5,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 59
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": null
+      }
+    },
+    {
       "name": "a field exactly as long as the bound in UTF-16 units",
       "request": {
         "field": {
@@ -190,6 +412,50 @@
         "field": {
           "maxLength": 10,
           "text": 5
+        }
+      },
+      "refused": true
+    },
+    {
+      "name": "a field's text and a terminal's viewport at once",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "a",
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "build ok.  │ $ echo one\nDone.      │ one\nlog:       │ Note:\n           │",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 59
+            }
+          }
         }
       },
       "refused": true
