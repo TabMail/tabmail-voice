@@ -1379,24 +1379,25 @@
       "name": "a rich editor's text after a paragraph takes one break, with a caret in it",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffctail",
+              "caret": 3,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ]
+              ]
             },
             {
-              "text": "para"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "text": "ta"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": "il"
+              "text": "para",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1412,30 +1413,39 @@
       "name": "a rich editor's selection ending after a paragraph holds that paragraph's break",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc",
+              "caret": null,
+              "selection": [
+                0,
+                1
+              ],
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ]
+              ]
             },
             {
-              "text": "Hi All,"
+              "text": "Hi All,",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "selectionStart"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "selectionEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "Why"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "Why",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1454,54 +1464,69 @@
       "name": "a rich editor's caret on the empty line after a paragraph ends the text before it in that line's break",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ],
+                [
+                  3,
+                  4
+                ],
+                [
+                  4,
+                  5
+                ]
+              ]
             },
             {
-              "text": "Hi All,"
+              "text": "Hi All,",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
+              "text": "\n",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockStart"
+              "text": "Why does it move?",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "text": "\n"
+              "text": "\n",
+              "caret": 0,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "Why does it move?"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": "\n"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "--"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "--",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1517,54 +1542,69 @@
       "name": "a rich editor's caret on its first empty line follows the first paragraph's break",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ],
+                [
+                  3,
+                  4
+                ],
+                [
+                  4,
+                  5
+                ]
+              ]
             },
             {
-              "text": "Hi All,"
+              "text": "Hi All,",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
+              "text": "\n",
+              "caret": 0,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockStart"
+              "text": "Why does it move?",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "caret"
+              "text": "\n",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "text": "\n"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "Why does it move?"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "\n"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "--"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "--",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1580,54 +1620,69 @@
       "name": "a rich editor's caret at a paragraph's end stays on that line",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ],
+                [
+                  3,
+                  4
+                ],
+                [
+                  4,
+                  5
+                ]
+              ]
             },
             {
-              "text": "Hi All,"
+              "text": "Hi All,",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
+              "text": "\n",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockStart"
+              "text": "Why does it move?",
+              "caret": 17,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "text": "\n"
+              "text": "\n",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "Why does it move?"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "\n"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "--"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "--",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1643,48 +1698,58 @@
       "name": "a rich editor whose first line is its own text, then paragraphs, reads as one text",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "text": "Hi All,"
+              "text": "Hi All,\ufffc\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  7,
+                  1
+                ],
+                [
+                  8,
+                  2
+                ],
+                [
+                  9,
+                  3
+                ],
+                [
+                  10,
+                  4
+                ]
+              ]
             },
             {
-              "mark": "blockStart"
+              "text": "\n",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "text": "\n"
+              "text": "Why does it move?",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
+              "text": "\n",
+              "caret": 0,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockStart"
-            },
-            {
-              "text": "Why does it move?"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": "\n"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "--"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "--",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1697,81 +1762,81 @@
       }
     },
     {
-      "name": "a selection across paragraphs runs from the first part's start to the last part's end",
+      "name": "a selection across paragraphs runs from the first element's start to the last element's end",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ],
+                [
+                  3,
+                  4
+                ],
+                [
+                  4,
+                  5
+                ]
+              ]
             },
             {
-              "text": "Hi "
+              "text": "Hi All,",
+              "caret": null,
+              "selection": [
+                3,
+                7
+              ],
+              "block": true,
+              "links": []
             },
             {
-              "mark": "selectionStart"
+              "text": "\n",
+              "caret": null,
+              "selection": [
+                0,
+                1
+              ],
+              "block": true,
+              "links": []
             },
             {
-              "text": "All,"
+              "text": "Why does it move?",
+              "caret": 3,
+              "selection": [
+                0,
+                3
+              ],
+              "block": true,
+              "links": []
             },
             {
-              "mark": "selectionEnd"
+              "text": "\n",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "mark": "selectionStart"
-            },
-            {
-              "text": "\n"
-            },
-            {
-              "mark": "selectionEnd"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "mark": "selectionStart"
-            },
-            {
-              "text": "Why"
-            },
-            {
-              "mark": "selectionEnd"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": " does it move?"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "\n"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "--"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "--",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1790,18 +1855,25 @@
       "name": "an inline element's text joins its line",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "text": "See "
+              "text": "See \ufffc now",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  4,
+                  1
+                ]
+              ]
             },
             {
-              "text": "docs"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": " now"
+              "text": "docs",
+              "caret": 4,
+              "selection": null,
+              "block": false,
+              "links": []
             }
           ]
         }
@@ -1817,18 +1889,25 @@
       "name": "text after a block starts a new line",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffcB",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ]
+              ]
             },
             {
-              "text": "A"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "text": "B"
+              "text": "A",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1844,21 +1923,25 @@
       "name": "a caret after a block, before the text that follows it, starts that new line",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffcB",
+              "caret": 1,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ]
+              ]
             },
             {
-              "text": "A"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": "B"
+              "text": "A",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1874,30 +1957,47 @@
       "name": "an empty block adds no empty line",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ]
+              ]
             },
             {
-              "text": "A"
+              "text": "A",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
+              "text": "",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockStart"
-            },
-            {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "text": "B"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "B",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
@@ -1913,9 +2013,13 @@
       "name": "a field without a caret or selection reports neither",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "text": "Plain"
+              "text": "Plain",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": []
             }
           ]
         }
@@ -1931,33 +2035,42 @@
       "name": "offsets count Unicode scalars",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "mark": "blockStart"
+              "text": "\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ]
+              ]
             },
             {
-              "text": "Grüße 😀"
+              "text": "Gr\u00fc\u00dfe \ud83d\ude00",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
             },
             {
-              "mark": "blockEnd"
-            },
-            {
-              "mark": "blockStart"
-            },
-            {
-              "mark": "caret"
-            },
-            {
-              "text": "x"
-            },
-            {
-              "mark": "blockEnd"
+              "text": "x",
+              "caret": 0,
+              "selection": null,
+              "block": true,
+              "links": []
             }
           ]
         }
       },
       "expected": {
-        "text": "Grüße 😀\u2029x",
+        "text": "Gr\u00fc\u00dfe \ud83d\ude00\u2029x",
         "length": 9,
         "caret": 8,
         "selection": null
@@ -1967,18 +2080,36 @@
       "name": "a rich editor's caret is the first one its elements report",
       "request": {
         "hypertext": {
-          "parts": [
+          "elements": [
             {
-              "text": "ab"
+              "text": "\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ]
+              ]
             },
             {
-              "mark": "caret"
+              "text": "ab",
+              "caret": 2,
+              "selection": null,
+              "block": false,
+              "links": []
             },
             {
-              "text": "cd"
-            },
-            {
-              "mark": "caret"
+              "text": "cd",
+              "caret": 2,
+              "selection": null,
+              "block": false,
+              "links": []
             }
           ]
         }
@@ -2020,6 +2151,179 @@
           ""
         ],
         "selectionUnavailable": false
+      }
+    },
+    {
+      "name": "a rich editor's elements as the helper read them: paragraphs, the caret on the empty line after one",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "\ufffc\ufffc\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ],
+                [
+                  2,
+                  3
+                ]
+              ]
+            },
+            {
+              "text": "Hi All,",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
+            },
+            {
+              "text": "\n",
+              "caret": 0,
+              "selection": null,
+              "block": true,
+              "links": []
+            },
+            {
+              "text": "Why",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi All,\u2029\nWhy",
+        "length": 12,
+        "caret": 8,
+        "selection": null
+      }
+    },
+    {
+      "name": "a rich editor's elements: a link the helper did not go into is its text, a selection from a paragraph's end starts before its break",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "\ufffc\ufffc",
+              "caret": null,
+              "selection": [
+                0,
+                2
+              ],
+              "block": true,
+              "links": [
+                [
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2
+                ]
+              ]
+            },
+            {
+              "text": "Visit \ufffc now",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": [
+                [
+                  6,
+                  null
+                ]
+              ]
+            },
+            {
+              "text": "Why",
+              "caret": null,
+              "selection": [
+                0,
+                3
+              ],
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Visit \ufffc now\u2029Why",
+        "length": 15,
+        "caret": null,
+        "selection": [
+          11,
+          15
+        ]
+      }
+    },
+    {
+      "name": "a selection wholly inside blocks at a rich editor's end holds no break after them",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "\ufffc",
+              "caret": null,
+              "selection": [
+                0,
+                1
+              ],
+              "block": false,
+              "links": [
+                [
+                  0,
+                  1
+                ]
+              ]
+            },
+            {
+              "text": "\ufffc",
+              "caret": null,
+              "selection": [
+                0,
+                1
+              ],
+              "block": true,
+              "links": [
+                [
+                  0,
+                  2
+                ]
+              ]
+            },
+            {
+              "text": "ab",
+              "caret": null,
+              "selection": [
+                0,
+                2
+              ],
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "ab",
+        "length": 2,
+        "caret": null,
+        "selection": [
+          0,
+          2
+        ]
       }
     }
   ]

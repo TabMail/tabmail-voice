@@ -109,27 +109,38 @@ enum ScreenContextReader {
     enum PageLook { case none, excluded, notSeenWhole }
 
     /// The look behind `holdsExcludedPage`, which also says when it gave up at a budget before
-    /// the element was seen whole.
+    /// the element was seen whole. With `protect`, the look is for text that takes in everything
+    /// under `element` (a terminal's surface): a password field anywhere in it, `element` included,
+    /// has not shown it safe to read whole (`notSeenWhole`), and `valid` false (the window or focus
+    /// moved) cuts the look short.
     static func lookForExcludedPage<Tree: ScreenTree>(in element: Tree.Element, _ tree: Tree, excluding exclusions: ScreenExclusions,
-                                                      intoPages: Bool = true, within seconds: Double = .infinity, since started: Date = Date()) -> PageLook {
+                                                      intoPages: Bool = true, protect: Bool = false, within seconds: Double = .infinity,
+                                                      since started: Date = Date(), valid: () -> Bool = { true }) -> PageLook {
         // Each step is the shared core's (ADR-DESK-054); one it refuses has not seen the element whole.
-        func late() -> Bool { Date().timeIntervalSince(started) > seconds }
+        func late() -> Bool { Date().timeIntervalSince(started) > seconds || !valid() }
+        func step(_ node: Tree.Element, start: Bool, visited: Int) -> SharedWalk.CensusStep? {
+            // A password element is never asked what it is; only a protected look asks.
+            let password = protect && isPasswordField(node, in: tree)
+            // An ordinary look judges what is inside the element, not the element itself.
+            let judged = protect || !start
+            let page = judged && !password && tree.string(node, kAXRoleAttribute) == "AXWebArea" ? exclusions.excludes(tree.page(of: node)) : nil
+            return try? SharedWalk.census(start: start, visited: visited, late: late(), password: password, page: page,
+                                          intoPages: intoPages, protect: protect)
+        }
         // AX gives an element's children all at once, so each is taken whole: the core's budget
         // counts visits, and what waits past it leaves the look not seen whole.
-        guard case .descend? = try? SharedWalk.censusStart(late: late()) else { return .notSeenWhole }
-        var stack = tree.children(of: element)
+        var stack: [Tree.Element] = []
         var visited = 0
-        while let next = stack.popLast() {
-            let page = tree.string(next, kAXRoleAttribute) == "AXWebArea" ? exclusions.excludes(tree.page(of: next)) : nil
-            guard let step = try? SharedWalk.census(visited: visited, late: late(), page: page,
-                                                    intoPages: intoPages) else { return .notSeenWhole }
-            visited += 1
-            switch step {
-            case .notSeenWhole: return .notSeenWhole
-            case .excluded: return .excluded
-            case .skip: continue
-            case .descend: stack.append(contentsOf: tree.children(of: next))
+        var next: (node: Tree.Element, start: Bool)? = (element, true)
+        while let (node, start) = next {
+            switch step(node, start: start, visited: visited) {
+            case .excluded?: return .excluded
+            case .notSeenWhole?, .protected?, nil: return .notSeenWhole
+            case .skip?: break
+            case .descend?: stack.append(contentsOf: tree.children(of: node))
             }
+            if !start { visited += 1 }
+            next = stack.popLast().map { ($0, false) }
         }
         return .none
     }

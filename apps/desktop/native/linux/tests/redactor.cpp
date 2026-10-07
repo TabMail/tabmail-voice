@@ -11,6 +11,8 @@
 #include <sstream>
 using namespace voice::privacy;
 using JSON = nlohmann::json;
+// The core's redaction marker (`limits`), which the helpers never spell themselves.
+static const std::u16string placeholder = decodeUtf8(voice::core::request({{"limits", true}}, voice_core_context_json).at("redactedMarker").get<std::string>());
 static void expect(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 static std::u16string decode(const std::string& value) {
     UErrorCode status = U_ZERO_ERROR;

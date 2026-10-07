@@ -565,10 +565,9 @@ private:
 // Aggregated ranges may include descendants, so they need a password census too.
 template<class Tree>
 bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& exclusions, bool prohibitPasswords) {
-    const size_t budget = walk::limits().nodeBudget;
     if constexpr (requires { tree.privacyNodes(root); }) {
         if (auto nodes = tree.privacyNodes(root)) {
-            if (nodes->size() > budget) return false;
+            if (nodes->size() > walk::limits().nodeBudget) return false;
             for (const auto& node : *nodes) {
                 if (!tree.withinBudget()) return false;
                 if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
@@ -577,24 +576,17 @@ bool safeSubtree(Tree& tree, typename Tree::Node root, const ScreenExclusions& e
             return tree.withinBudget();
         }
     }
-    // The element itself is not counted: as many elements inside it as the budget are seen
-    // whole. Each element fetches one more child than the visits left, so a census that
-    // overflows says so; only visits count, as what waits may never be visited (the shared
-    // core's census, walk.rs).
-    std::vector<typename Tree::Node> stack{root};
-    size_t visited = 0;
-    bool first = true;
-    while (!stack.empty()) {
-        if (!first && ++visited > budget) return false;
-        if (!tree.withinBudget()) return false;
-        first = false;
-        auto node = std::move(stack.back()); stack.pop_back();
-        if (tree.isPassword(node)) { if (prohibitPasswords) return false; else continue; }
-        if (const auto page = tree.page(node); page && exclusions.excludes(*page)) throw PrivacyHidden{};
-        auto children = tree.children(node, budget + 1 - visited);
-        for (auto it = children.rbegin(); it != children.rend(); ++it) stack.push_back(*it);
-    }
-    return tree.withinBudget();
+    // Elsewhere the core's census (`walk::detail::censusLook`): with `prohibitPasswords` it is
+    // the protected census, which counts the element itself and refuses a password element
+    // anywhere in it; without, a password element's children are not asked for. An excluded
+    // website's page anywhere in it hides the window.
+    const auto found = walk::detail::censusLook(tree, root, true, prohibitPasswords, [&](const typename Tree::Node& node) -> std::optional<std::string> {
+        const auto page = tree.page(node);
+        if (!page) return std::nullopt;
+        return exclusions.excludes(*page) ? "excluded" : "allowed";
+    });
+    if (found == "excluded") throw PrivacyHidden{};
+    return found == "none";
 }
 // Simple test trees retain their legacy fixture method; live readers use the
 // shared source collector, never a native character cutoff, for screen text.
@@ -749,10 +741,9 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         if (!safeSubtree(tree,window,exclusions,false)) return nullptr;
         const auto windowFrame=tree.frame(window);
         if(!windowFrame || windowFrame->width<=0 || windowFrame->height<=0) return nullptr;
-        const auto limits=core::request({{"limits",true}},voice_core_viewport_json);
-        size_t remaining=limits.at("bytes").get<size_t>(),visited=0;
-        const size_t maxSurfaces=limits.at("surfaces").get<size_t>();
-        JSON surfaces=JSON::array(),focusedID=nullptr,caret={{"status","unavailable"}};
+        // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
+        JSON collected=core::request({{"collect",{{"start",true}}}},voice_core_viewport_json);
+        size_t visited=0;
         bool complete=true;
         using Node=typename Tree::Node;
         std::vector<std::pair<Node,ContextFrame>> stack{{window,*windowFrame}};
@@ -774,24 +765,18 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
             }
             if(tree.role(node)==ATSPI_ROLE_TERMINAL) {
                 if(!frame || !safeSubtree(tree,node,exclusions,true)) {complete=false;continue;}
-                if(surfaces.size()>=maxSurfaces || remaining==0) {complete=false;break;}
+                const JSON next=core::request({{"collect",{{"state",collected},{"next",true}}}},voice_core_viewport_json);
+                if(!next.at("read").get<bool>()) {complete=false;break;}
                 const bool ownsFocus=tree.same(node,focus) || std::any_of(path.begin(),path.end(),[&](const auto& parent){return tree.same(parent,node);});
-                const size_t id=surfaces.size();
                 JSON value;
-                try { value=tree.viewportSurface(node,id,clip,ownsFocus,remaining); }
+                try { value=tree.viewportSurface(node,next.at("id").get<size_t>(),clip,ownsFocus,next.at("bytes").get<size_t>()); }
                 catch(const std::exception& error) {
                     // A fixed reason, never text.
                     std::cerr << "debug screen: terminal surface refused: " << error.what() << "\n";
                     complete=false;continue;
                 }
-                const auto& surface=value.at("surface");
-                for(const auto& run:surface.at("runs")) {
-                    const auto bytes=run.at("text").template get_ref<const std::string&>().size();
-                    if(bytes>remaining) throw std::runtime_error("terminal aggregate budget");
-                    remaining-=bytes;
-                }
-                surfaces.push_back(surface);read.push_back(node);
-                if(ownsFocus) {focusedID=id;caret=value.at("caret");}
+                collected=core::request({{"collect",{{"state",collected},{"take",value},{"focused",ownsFocus}}}},voice_core_viewport_json);
+                read.push_back(node);
                 continue;
             }
             if(stack.size()>=walk::limits().nodeBudget-visited) {complete=false;break;}
@@ -801,8 +786,7 @@ nlohmann::json gatherTerminalScreen(Tree& tree, typename Tree::Node window, type
         // Privacy is checked again at the end; the text is not read again.
         for(const auto& node:read) if(!safeSubtree(tree,node,exclusions,true)) return nullptr;
         if(!safeSubtree(tree,window,exclusions,false)) return nullptr;
-        const JSON viewport{{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"offsetUnit","scalar"},
-            {"complete",complete && !surfaces.empty()}};
+        const JSON viewport=core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete},{"offsetUnit","scalar"}}}}}},voice_core_viewport_json);
         const auto title=tree.label(window);
         return screenReply({{"appName",app.name},{"bundleID",app.id},{"windowTitle",title},{"host",nullptr},{"terminalProgram",nullptr},
             {"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,elapsedMilliseconds(started),"");
@@ -864,7 +848,7 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
         facts.selection = isFocus && !around[1].empty();
         const auto step = walk::node(facts);
         if (step.action == "refuse") throw PrivacyHidden{};
-        if (step.caretFirst || step.action == "caret") context.append(ContextKind::caret, "‸", frame);
+        if (step.caretFirst || step.action == "caret") context.append(ContextKind::caret, "", frame);
         if (step.action == "skip" && !step.look.empty() && walk::look(step.look, lookInside(tree, node, exclusions)) == "refuse")
             throw PrivacyHidden{};
         if (step.action == "caret" || step.action == "skip") continue;

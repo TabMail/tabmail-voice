@@ -20,7 +20,8 @@ enum SharedWalk {
         var selection = false
         var frame: [Double]?
         var window: [Double]?
-        var thin = Double(HelperConfig.contextHiddenMaxThickness)
+        /// Accessibility frames are in points.
+        var scale = 1.0
         init(role: String, focus: String? = nil, part: Bool = false, inPage: Bool, frame: CGRect?, window: CGRect?) {
             self.role = role; self.focus = focus; self.part = part; self.inPage = inPage
             self.frame = frame.map(SharedWalk.frame); self.window = window.map(SharedWalk.frame)
@@ -45,7 +46,7 @@ enum SharedWalk {
     }
     /// One step of a look inside an element for an excluded page. The core's `children` cap is
     /// for providers that fetch children one by one; AX gives them all at once.
-    enum CensusStep: Equatable { case notSeenWhole, excluded, skip, descend }
+    enum CensusStep: Equatable { case notSeenWhole, excluded, protected, skip, descend }
 
     private static func frame(_ rect: CGRect) -> [Double] {
         [Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height)]
@@ -70,22 +71,26 @@ enum SharedWalk {
 
     private struct CensusReply: Decodable { var step: String }
 
-    /// The look's first step, at the element looked inside.
-    static func censusStart(late: Bool) throws -> CensusStep {
-        try censusStep(call(["census": ["start": true, "late": late]], CensusReply.self))
-    }
-
-    /// `page`: nil for an element that is no page, else whether its site is excluded.
-    static func census(visited: Int, late: Bool, page excluded: Bool?, intoPages: Bool) throws -> CensusStep {
-        struct Request: Encodable { var visited: Int; var late: Bool; var page: String?; var intoPages: Bool }
-        return try censusStep(call(["census": Request(visited: visited, late: late,
-                                               page: excluded.map { $0 ? "excluded" : "allowed" }, intoPages: intoPages)], CensusReply.self))
+    /// One step of a look inside an element: `start` for its first, at the element looked inside
+    /// (not counted), else after `visited` elements. `page`: nil for an element that is no page,
+    /// else whether its site is excluded. `protect`: the look is for text that takes in everything
+    /// under the element, which a password element anywhere refuses (`protected`).
+    static func census(start: Bool = false, visited: Int = 0, late: Bool, password: Bool = false, page excluded: Bool? = nil,
+                       intoPages: Bool = true, protect: Bool = false) throws -> CensusStep {
+        struct Request: Encodable {
+            var start: Bool?; var visited: Int?; var late: Bool; var password: Bool; var page: String?
+            var intoPages: Bool; var protect: Bool
+        }
+        return try censusStep(call(["census": Request(start: start ? true : nil, visited: start ? nil : visited, late: late,
+                                                      password: password, page: excluded.map { $0 ? "excluded" : "allowed" },
+                                                      intoPages: intoPages, protect: protect)], CensusReply.self))
     }
 
     private static func censusStep(_ reply: CensusReply) throws -> CensusStep {
         switch reply.step {
         case "notSeenWhole": return .notSeenWhole
         case "excluded": return .excluded
+        case "protected": return .protected
         case "skip": return .skip
         case "descend": return .descend
         default: throw Redactor.Failure.refused

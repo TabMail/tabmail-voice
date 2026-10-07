@@ -48,6 +48,9 @@ fn frame(value: &Value, key: &str) -> Result<Option<[f64; 4]>, u32> {
     }
 }
 
+/// The thickest a box can be, in points, and still show no text of its own (owner, 2026-10-05).
+const HIDDEN_MAX_POINTS: f64 = 1.0;
+
 /// Whether a box can show its own text: one at most `thin` across either way shows nothing
 /// (screen-reader-only labels, list items scrolled out of view, hover-only actions); one that
 /// reports no size (0×0) says nothing and counts as shown (owner, 2026-10-05).
@@ -69,13 +72,37 @@ fn outside(frame: Option<[f64; 4]>, window: Option<[f64; 4]>) -> bool {
     }
 }
 
+/// The thickest box that shows nothing, in the frames' units: `scale` of them make a point.
+fn thin(facts: &Value) -> Result<f64, u32> {
+    Ok(facts
+        .get("scale")
+        .and_then(Value::as_f64)
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+        .ok_or(1u32)?
+        * HIDDEN_MAX_POINTS)
+}
+
+/// `{"shown": {"frame", "window", "scale", "hidden"}}` → `{"shown": bool}`: whether an element read
+/// outside the walk (a terminal's surface) shows anything, by the walk's rule: not hidden, not
+/// wholly outside the window, and no thinner than a point.
+fn shown(facts: &Value) -> Result<Value, u32> {
+    if !facts.is_object() {
+        return Err(1);
+    }
+    let at = frame(facts, "frame")?;
+    let shown = !flag(facts, "hidden")?
+        && !outside(at, frame(facts, "window")?)
+        && shown_box(at, thin(facts)?);
+    Ok(json!({"shown": shown}))
+}
+
 /// `{"node": {...}}`: what to do with one element. `role` is from the module's list; `focus` is
 /// `"self"` (the focused element), `"path"` (one of its ancestors) or absent; `part` is true
 /// inside a heading, link or row being read in one piece. The flags `inPage`, `password`,
 /// `pageExcluded` (a page whose site is excluded), `focusedField` (the focus is a field, read by
 /// the caret), `selection` (the focus has a selection) and `hidden` (the OS says the element is
-/// not drawn) default to false; `frame` and `window` are `[x, y, width, height]` or null; `thin`
-/// is the thickest a box can be and still hide its text (1 point; DPI-scaled pixels).
+/// not drawn) default to false; `frame` and `window` are `[x, y, width, height]` or null; `scale`
+/// is how many of the frames' units make a point (the display's DPI scale on Windows, else 1).
 ///
 /// The reply's `action`: `refuse` (the window shows an excluded page: nothing of it is used),
 /// `skip` (with `look`, a hidden element: look inside it first, as for that read, and refuse the
@@ -114,11 +141,7 @@ fn node(facts: &Value) -> Result<Value, u32> {
     let hidden = flag(facts, "hidden")?;
     let at = frame(facts, "frame")?;
     let window = frame(facts, "window")?;
-    let thin = facts
-        .get("thin")
-        .and_then(Value::as_f64)
-        .filter(|thin| thin.is_finite() && *thin >= 0.0)
-        .ok_or(1u32)?;
+    let thin = thin(facts)?;
     if part && !focus.is_empty() {
         return Err(1);
     }
@@ -227,6 +250,10 @@ fn look(request: &Value) -> Result<Value, u32> {
 /// last fetched first), and one that holds an excluded page refuses before the budget runs out.
 /// With `"start": true` the step is the look's first, at the element looked inside itself: it is
 /// not counted (no `visited`), and is judged only by the facts sent about it.
+/// With `"protect": true` the look is for a part whose text gathers its descendants' (a terminal's
+/// surface, a name or caption read whole): a password element anywhere in it, the element itself
+/// included, refuses it (`protected`), as an excluded page does, and the element itself counts
+/// against the budget, since its text is read with everything under it.
 fn census(request: &Value) -> Result<Value, u32> {
     let start = flag(request, "start")?;
     let visited = if start {
@@ -240,6 +267,8 @@ fn census(request: &Value) -> Result<Value, u32> {
     let late = flag(request, "late")?;
     let into_pages = flag(request, "intoPages")?;
     let password = flag(request, "password")?;
+    let protect = flag(request, "protect")?;
+    let visited = visited + u64::from(protect);
     let page = match request.get("page") {
         None | Some(Value::Null) => None,
         Some(Value::String(page)) if page == "excluded" || page == "allowed" => Some(page.as_str()),
@@ -247,6 +276,7 @@ fn census(request: &Value) -> Result<Value, u32> {
     };
     Ok(match page {
         _ if late || visited >= NODE_BUDGET => json!({"step": "notSeenWhole"}),
+        _ if password && protect => json!({"step": "protected"}),
         _ if password => json!({"step": "skip"}),
         Some("excluded") => json!({"step": "excluded"}),
         Some(_) if !into_pages => json!({"step": "skip"}),
@@ -284,6 +314,7 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         (name, value) if name == "look" => look(value)?,
         (name, value) if name == "census" => census(value)?,
         (name, value) if name == "stop" => stop(value)?,
+        (name, value) if name == "shown" => shown(value)?,
         _ => return Err(1),
     };
     serde_json::to_vec(&reply).map_err(|_| 3)

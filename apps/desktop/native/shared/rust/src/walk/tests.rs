@@ -59,3 +59,47 @@ fn a_census_sees_the_node_budget_whole() {
     assert_eq!(look(5_001, Some(1)), "excluded");
     assert_eq!(look(5_001, Some(0)), "notSeenWhole");
 }
+
+/// An element read outside the walk shows something by the walk's rule: drawn, not wholly
+/// outside the window, and thicker than a point (at the display's scale); no size says nothing.
+#[test]
+fn an_element_read_outside_the_walk_is_shown_by_its_rule() {
+    let shown = |frame: Value, hidden: bool, scale: f64| {
+        let reply = process(
+            &serde_json::to_vec(
+                &json!({"shown": {"frame": frame, "window": [0, 0, 100, 100],
+                "scale": scale, "hidden": hidden}}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        serde_json::from_slice::<Value>(&reply).unwrap()["shown"].clone()
+    };
+    assert_eq!(shown(json!([10, 10, 50, 20]), false, 1.0), true);
+    assert_eq!(shown(json!([10, 10, 50, 20]), true, 1.0), false);
+    assert_eq!(
+        shown(json!([100, 10, 50, 20]), false, 1.0),
+        false,
+        "outside the window"
+    );
+    assert_eq!(
+        shown(json!([10, 10, 50, 1]), false, 1.0),
+        false,
+        "a point thick"
+    );
+    assert_eq!(shown(json!([10, 10, 50, 2]), false, 1.0), true);
+    assert_eq!(
+        shown(json!([10, 10, 50, 2]), false, 2.0),
+        false,
+        "two units at twice the scale"
+    );
+    assert_eq!(
+        shown(json!([10, 10, 0, 0]), false, 1.0),
+        true,
+        "no size says nothing"
+    );
+    assert_eq!(shown(json!([10, 10, 0, 5]), false, 1.0), false);
+    assert_eq!(shown(Value::Null, false, 1.0), true);
+    assert!(process(br#"{"shown":{"frame":[0,0,1,1],"scale":0}}"#).is_err());
+    assert!(process(br#"{"shown":[]}"#).is_err());
+}

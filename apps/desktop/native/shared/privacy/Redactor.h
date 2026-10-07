@@ -18,7 +18,6 @@
 
 namespace voice::privacy {
 using Lines = std::vector<std::vector<std::u16string>>;
-inline constexpr std::u16string_view placeholder = u"[redacted]";
 // ICU remains for OS string conversion only; matching is exclusively Rust.
 inline std::u16string decodeUtf8(const std::string& text) {
         if (text.empty()) return {};

@@ -5,7 +5,6 @@
 #pragma once
 #include <oleacc.h>
 #include "Privacy/ScreenPrivacy.h"
-#include "Privacy/PageScan.h"
 #include "Privacy/ScreenAccess.h"
 #include "accessible_text.h"
 #include "uia_caret_source.h"
@@ -244,13 +243,12 @@ public:
         const std::string selection = parts ? (*parts)[1] : pageSelection;
         const std::string right = parts ? (*parts)[2] : "";
         VisibleContext context({left, selection, right});
-        const std::string caretText = left + "‸" + selection + (selection.empty() ? "" : "‸") + right;
         // Only a page that is excluded, or whose address is unknown, is reported as hidden;
         // a read that stopped because the window lost the foreground is no context.
         bool hiddenPage = false;
         std::optional<std::wstring> walkedHost;
         const FocusRead focus{element.Get(), !terminal && (protectedFocus || parts.has_value()), !pageSelection.empty()};
-        if (!readVisible(window, focus, caretText, context, exclusions, hiddenPage, walkedHost)) {
+        if (!readVisible(window, focus, context, exclusions, hiddenPage, walkedHost)) {
             return hiddenPage ? hiddenScreen() : JSON(nullptr);
         }
         wchar_t title[513]{};
@@ -379,7 +377,7 @@ private:
         ComPtr<IUIAutomationElement> cachedRoot;
         require(root->BuildUpdatedCache(tree.passwordCache.Get(), &cachedRoot));
         if (!cachedRoot) throw std::runtime_error("missing aggregate metadata");
-        const auto safe = privacy::safeTextSubtree(tree, cachedRoot);
+        const auto safe = walk::holdsNoPassword(tree, cachedRoot);
         if (!safe) {
             // Categories only: never log provider text or accessibility identity.
             std::cerr << "debug aggregate text refused: "
@@ -500,7 +498,7 @@ private:
             PageTree tree{this, {}, GetTickCount64(), HelperConfig::contextSelectionScanMs};
             require(automation->get_RawViewWalker(&tree.walker));
             if (walk::lookForExcludedPage(tree, enclosing, exclusions, true) != walk::PageLook::none) return {};
-            if (!privacy::safeTextSubtree(tree, enclosing)) return {};
+            if (!walk::holdsNoPassword(tree, enclosing)) return {};
             const auto value = UiaCaretSource::selectedText(pattern.Get(), selected.Get(), whole.Get());
             if (value) return *value;
             selectionUnavailable = true;
@@ -551,28 +549,22 @@ private:
             default: return "other";
         }
     }
-    // Where an element is, and whether it can show text there: in the window, not off screen.
-    // A box at most a pixel thin shows nothing (screen-reader-only text, a list item
-    // scrolled out of view); one that reports no size says nothing and counts as shown.
+    // Where an element is: its box, whether UIA calls it off screen, and its place in the text
+    // geometry when it has a size. Whether it shows anything is the shared core's rule.
     struct Placement {
-        bool shown, offscreen;
+        bool offscreen;
         std::optional<ContextFrame> geometry;
         RECT frame;
     };
-    static std::optional<Placement> placement(IUIAutomationElement* node, const RECT& windowFrame, double hiddenThickness) {
+    static std::optional<Placement> placement(IUIAutomationElement* node) {
         BOOL offscreen = TRUE;
         RECT frame{};
         if (FAILED(node->get_CurrentIsOffscreen(&offscreen)) || FAILED(node->get_CurrentBoundingRectangle(&frame))) return std::nullopt;
         const double width = static_cast<double>(frame.right) - frame.left;
         const double height = static_cast<double>(frame.bottom) - frame.top;
-        const bool sized = width > 0 && height > 0;
-        RECT intersection{};
-        const bool inWindow = !sized || IntersectRect(&intersection, &frame, &windowFrame);
-        const bool shown = !offscreen && inWindow &&
-            ((width == 0 && height == 0) || std::min(width, height) > hiddenThickness);
-        const std::optional<ContextFrame> geometry = sized ?
+        const std::optional<ContextFrame> geometry = width > 0 && height > 0 ?
             std::optional<ContextFrame>{{static_cast<double>(frame.left), static_cast<double>(frame.top), width, height}} : std::nullopt;
-        return Placement{shown, offscreen != FALSE, geometry, frame};
+        return Placement{offscreen != FALSE, geometry, frame};
     }
     // An element's children in the provider's order: no more than the walk could still visit.
     static std::vector<ComPtr<IUIAutomationElement>> childrenOf(IUIAutomationTreeWalker* walker, IUIAutomationElement* node,
@@ -588,7 +580,7 @@ private:
         }
         return children;
     }
-    struct WalkFrame { RECT window; double hiddenThickness; };
+    struct WalkFrame { RECT window; double scale; };
     static walk::Frame frameOf(const RECT& rect) {
         return {static_cast<double>(rect.left), static_cast<double>(rect.top),
                 static_cast<double>(rect.right) - rect.left, static_cast<double>(rect.bottom) - rect.top};
@@ -603,7 +595,7 @@ private:
                                        std::optional<PageHost>& page, std::optional<Placement>& place) {
         walk::Facts facts;
         facts.inPage = inPage;
-        facts.thin = within.hiddenThickness;
+        facts.scale = within.scale;
         facts.window = frameOf(within.window);
         BOOL password = TRUE;
         if (FAILED(node->get_CurrentIsPassword(&password))) return std::nullopt;
@@ -615,7 +607,7 @@ private:
             page = pageHost(node);
             facts.pageExcluded = page && exclusions.excludes(*page);
         }
-        place = placement(node, within.window, within.hiddenThickness);
+        place = placement(node);
         if (!place) return facts.pageExcluded ? std::optional<walk::Facts>(facts) : std::nullopt;
         facts.hidden = place->offscreen;
         facts.frame = frameOf(place->frame);
@@ -761,15 +753,14 @@ private:
             ComPtr<IUIAutomationElement> parent;
             require(walker->GetParentElement(ancestor.Get(),&parent)); ancestor=parent;
         }
-        const auto limits=core::request({{"limits",true}},voice_core_viewport_json);
-        size_t remaining=limits.at("bytes").get<size_t>(),visited=0;
-        const size_t maxSurfaces=limits.at("surfaces").get<size_t>();
+        // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
+        JSON collected=core::request({{"collect",{{"start",true}}}},voice_core_viewport_json);
+        size_t visited=0;
         struct Entry { ComPtr<IUIAutomationElement> node; RECT clip; };
         struct Capture { ComPtr<IUIAutomationElement> node; };
         std::vector<Entry> stack{{root,windowFrame}};
         std::vector<ComPtr<IUIAutomationElement>> seen;
         std::vector<Capture> captures;
-        JSON surfaces=JSON::array(),focusedID=nullptr,caret={{"status","unavailable"}};
         bool complete=true;
         while (!stack.empty()) {
             if (!valid() || visited>=walk::limits().nodeBudget) { complete=false;break; }
@@ -778,8 +769,8 @@ private:
             seen.push_back(entry.node);++visited;
             BOOL password=TRUE; require(entry.node->get_CurrentIsPassword(&password));
             if (password) {complete=false;continue;}
-            const auto place=placement(entry.node.Get(),entry.clip,GetDpiForWindow(window)/96.0);
-            if (!place || !place->shown || !place->geometry) continue;
+            const auto place=placement(entry.node.Get());
+            if (!place || !place->geometry || !walk::shown(frameOf(place->frame),frameOf(entry.clip),GetDpiForWindow(window)/96.0,place->offscreen)) continue;
             RECT clip{};
             if (!IntersectRect(&clip,&entry.clip,&place->frame)) continue;
             if (const auto page=pageHost(entry.node.Get());page && exclusions.excludes(*page)) return hiddenScreen();
@@ -788,19 +779,16 @@ private:
                 // A clipped ancestor cannot be trusted solely from GetVisibleRanges.
                 // Refuse this aggregate until a provider-specific range clip is proven.
                 if (!EqualRect(&clip,&place->frame) || !safeTextSubtree(entry.node.Get())) {complete=false;continue;}
-                if (surfaces.size()>=maxSurfaces || remaining==0) {complete=false;break;}
+                const JSON next=core::request({{"collect",{{"state",collected},{"next",true}}}},voice_core_viewport_json);
+                if (!next.at("read").get<bool>()) {complete=false;break;}
                 if (!valid()) return nullptr;
                 const bool ownsFocus=std::any_of(focusPath.begin(),focusPath.end(),[&](const auto& node){return same(node.Get(),entry.node.Get());});
                 JSON value;
-                try { value=UiaCaretSource::viewportSurface(pattern.Get(),surfaces.size(),*place->geometry,ownsFocus,remaining); }
+                try { value=UiaCaretSource::viewportSurface(pattern.Get(),next.at("id").get<size_t>(),*place->geometry,ownsFocus,next.at("bytes").get<size_t>()); }
                 catch(const std::exception&) {complete=false;continue;}
-                for (const auto& run:value.at("surface").at("runs")) {
-                    const auto bytes=run.at("text").get_ref<const std::string&>().size();
-                    if(bytes>remaining) return nullptr;
-                    remaining-=bytes;
-                }
-                if(ownsFocus) {focusedID=surfaces.size();caret=value.at("caret");}
-                surfaces.push_back(value.at("surface"));
+                // A surface over the bytes left refuses the read.
+                try { collected=core::request({{"collect",{{"state",collected},{"take",value},{"focused",ownsFocus}}}},voice_core_viewport_json); }
+                catch(const std::exception&) {return nullptr;}
                 captures.push_back({entry.node});
                 continue;
             }
@@ -817,7 +805,7 @@ private:
         for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get())) return nullptr;
         wchar_t title[513]{};GetWindowTextW(window,title,513);
         if(!valid()) return nullptr;
-        const JSON viewport{{"surfaces",surfaces},{"focusedSurface",focusedID},{"caret",caret},{"complete",complete && !surfaces.empty()}};
+        const JSON viewport=core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete}}}}}},voice_core_viewport_json);
         return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
             {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
     }
@@ -837,8 +825,7 @@ private:
     // keeps its message list in one), though Chromium reports its children's frames unclipped
     // here, so a screen-reader-only label's text can be read (ADR-DESK-054). A focused element
     // that is no field is read like any other, where the Mac leaves it out.
-    bool readVisible(HWND window, const FocusRead& target, const std::string& caretText,
-                     VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
+    bool readVisible(HWND window, const FocusRead& target, VisibleContext& context, const ScreenExclusions& exclusions, bool& hiddenPage,
                      std::optional<std::wstring>& walkedHost) {
         auto* const focus = target.element;
         const auto& limits = walk::limits();
@@ -895,11 +882,11 @@ private:
             if (step.action == "refuse") return refuse();
             const std::optional<ContextFrame> geometry = place ? place->geometry : std::nullopt;
             // A page in focus with a selection: the selection, then the page like any page.
-            if (step.caretFirst) context.append(ContextKind::caret, caretText, geometry);
+            // The caret's block is where the core puts the text around the caret: it sends none.
+            if (step.caretFirst) context.append(ContextKind::caret, "", geometry);
             if (step.action == "caret") {
                 // A protected field gives only the caret, and nothing of where it is.
-                if (facts->password) context.append(ContextKind::caret, "‸");
-                else context.append(ContextKind::caret, caretText, geometry);
+                context.append(ContextKind::caret, "", facts->password ? std::optional<ContextFrame>{} : geometry);
                 continue;
             }
             if (step.action == "skip") {
@@ -968,7 +955,7 @@ private:
         }
         // A provider may omit the focus node from its tree. Retain the independently
         // bounded caret context rather than dropping it from a partial screen read.
-        if ((target.field || target.pageSelected) && !context.hasCaret) context.append(ContextKind::caret, caretText);
+        if ((target.field || target.pageSelected) && !context.hasCaret) context.append(ContextKind::caret, "");
         return true;
     }
     static JSON rectangle(double x, double y, double width, double height) {

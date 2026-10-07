@@ -3977,3 +3977,39 @@ reference for a behaviour difference, the more robust option for a conflict):
 - The more robust choice where the Mac has no answer: a page's control on Windows and Linux is
   looked through before its caption is read, shown or not, so a hidden control holding an
   excluded page refuses the window (the Mac skips a hidden titled control unread).
+
+**Amendment 2026-10-06 (the train's tier-2 review): the last shared decisions move in.** A review
+of the whole train found shared rules still decided in Swift and C++ after the walk-policy step.
+Each now lives in the core, with the helper keeping only what the OS gives:
+- **Markers and refusals:** the withheld-part marker, the redaction marker, an unavailable caret's
+  reply and a screen read's stop reason come from the core (`hiddenMarker`, `caretUnread`,
+  `admit`'s `stop`); no helper spells one. The helpers' unused caret pre-renders (each sent the
+  caret's block with the text around the caret already marked, which the core replaces) and the
+  Mac's inline-block flag are deleted: the caret's block goes out empty.
+- **Thin boxes:** a helper sends the display scale (Windows: the window's DPI) and the core applies
+  its one-point rule; no helper keeps the threshold. A terminal's surface on Windows, read outside
+  the walk, asks the walk's `shown` op whether it shows anything.
+- **Protected text and terminal surfaces:** the look for a password element inside a terminal's
+  subtree, and on Windows and Linux inside a focused field or a part read whole, is the core's
+  `census` with `protect` (`walk.h` `holdsNoPassword`, the Mac's `SharedWalk`, Linux's
+  `safeSubtree` where AT-SPI gives no collection; with one, the provider's role query finds the
+  password elements), so a password element anywhere under it or a look not seen whole refuses it.
+  The protected census counts the element itself: the element and up to 4,999 elements inside it
+  are seen whole, as Windows's census before the train did. So on Linux without a collection, a
+  part read whole holding exactly 5,000 elements is withheld where the Mac's look, which does not
+  count the element (above), reads it: one element at the budget's edge, withheld rather than
+  read, the more robust option for a conflict. Gathering a window's surfaces (how many, how many bytes, which spans may be read, and
+  whether the viewport is complete) is the viewport's `collect` op, which the helper drives step by
+  step without changing its state.
+- **Rich editors:** Linux sends a rich editor's elements as they are (`hypertext` with `elements`,
+  its only form: each one's text, caret, selection, block flag and links), and the core joins them, placing the
+  caret, the selection and the breaks it adds between blocks. The Mac and Windows block walk near
+  the selection (which element to place, which starts a line, when the walk ends, and which side of
+  a block boundary the caret is on) is the core's `blockStarts` op, run as a step protocol like the
+  census: the helper places each element it is asked about and says what the OS reports.
+Each op's state round-trips through the helper and is validated on every step; a reply out of turn
+is refused, and a refused step fails the read closed. Behaviour does not change, but for the
+protected census's count: the block walk is
+checked against the Mac's former walk on random fields (`blocks/tests.rs`), and the other ops by
+their shared cases (`context-cases.json`, `surface-cases.json`, `walk-cases.json`), which every
+helper runs.

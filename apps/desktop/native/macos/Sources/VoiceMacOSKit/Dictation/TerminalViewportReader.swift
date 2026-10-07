@@ -24,16 +24,14 @@ enum TerminalViewportReader {
             HelperLog.debug("TerminalViewport: capture refused \(reason) ranges=\(ranges.count) count=\(count) budget=\(unitBudget)")
             return nil
         }
-        guard count >= 0, unitBudget >= 0 else { return refused("negative") }
-        var previous = 0
-        var units = 0
-        for range in ranges {
-            guard range.location >= previous, range.length >= 0, range.location <= count,
-                  range.length <= count - range.location else { return refused("range \(range.location)+\(range.length)") }
-            guard range.length <= unitBudget - units else { return refused("over budget units=\(units) next=\(range.length)") }
-            units += range.length
-            previous = range.location + range.length
-        }
+        guard count >= 0, unitBudget >= 0, ranges.allSatisfy({ $0.location >= 0 && $0.length >= 0 && $0.location <= Int.max - $0.length })
+        else { return refused("negative") }
+        // Which spans may be read is the shared core's: in order, apart, inside the document and within
+        // the budget (ADR-DESK-054).
+        let spans = JSON.array(ranges.map { [.number(Double($0.location)), .number(Double(NSMaxRange($0)))] })
+        guard let plan = try? project(["collect": ["plan": ["count": .number(Double(count)), "spans": spans,
+                                                            "bytes": .number(Double(unitBudget))]]]),
+              plan["admit"] == .bool(true) else { return refused("plan") }
         var texts: [String] = []
         for (index, range) in ranges.enumerated() {
             guard valid() else { return refused("invalid before run \(index)") }
@@ -157,8 +155,7 @@ extension TerminalViewportReader {
             return source.bounds(CFRange(location: range.location, length: range.length))
         }
         guard valid(), let countSnapshot = count(),
-              let limits = try? project(["limits": true]), let byteLimit = limits["bytes"]?.integer,
-              let runLimit = limits["runs"]?.integer else { return nil }
+              let limits = try? project(["limits": true]), let byteLimit = limits["bytes"]?.integer else { return nil }
         let selectionSnapshot = selection()
         let byteBudget = min(byteLimit, byteBudget)
         var ranges = [NSRange(location: 0, length: 0)]
@@ -180,7 +177,7 @@ extension TerminalViewportReader {
                 }
                 return visibleRanges(lines: lines, clip: clip, bounds: bounds, isSingleLine: singleLine, valid: metadataValid)
             }
-            guard let planned = plan(), planned.count <= runLimit else { return nil }
+            guard let planned = plan() else { return nil }
             let read: (NSRange) -> NSString? = { requested in
                 var range = CFRange(location: requested.location, length: requested.length)
                 guard let parameter = AXValueCreate(.cfRange, &range), valid() else { return nil }
@@ -234,22 +231,6 @@ extension TerminalViewportReader {
         context.blocks = []
     }
 
-    /// Metadata-only approval of an aggregate source, including secure descendants.
-    /// Cycles and oversized/incomplete scans refuse under the same node/deadline budget.
-    static func readableSubtree<Node>(_ root: Node, limit: Int, valid: () -> Bool,
-                                      protected: (Node) -> Bool, children: (Node) -> [Node]) -> Bool {
-        var stack = [root]
-        var visited = 0
-        while let node = stack.popLast() {
-            guard valid(), visited < limit, !protected(node) else { return false }
-            visited += 1
-            let descendants = children(node)
-            guard descendants.count <= limit - visited - stack.count else { return false }
-            stack.append(contentsOf: descendants)
-        }
-        return valid()
-    }
-
     /// Terminal-specific window traversal. No generic field/caret reader runs on
     /// this path, so its whole-value and recognition-halo probes cannot fire.
     static func read<Tree: TerminalTree>(window: Tree.Element?, focused: Tree.Element?,
@@ -263,9 +244,9 @@ extension TerminalViewportReader {
                 HelperLog.debug("TerminalViewport: collector refused stage=\(diagnosticStage) elapsedMs=\(Int(Date().timeIntervalSince(started) * 1000))")
             }
         }
+        // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
         guard let window, let windowFrame = tree.frame(of: window), windowFrame.width > 0, windowFrame.height > 0,
-              let limits = try? project(["limits": true]), let byteLimit = limits["bytes"]?.integer,
-              let surfaceLimit = limits["surfaces"]?.integer else { return nil }
+              var collected = try? project(["collect": ["start": true]]) else { return nil }
         diagnosticStage = "privacy-census"
         // Complete metadata-only privacy census before any terminal source read.
         guard case .none = ScreenContextReader.lookForExcludedPage(in: window, tree, excluding: exclusions,
@@ -278,21 +259,15 @@ extension TerminalViewportReader {
             if let focused, let currentFocus { return tree.isSame(focused, currentFocus) }
             return focused == nil && currentFocus == nil
         }
+        // A surface's text takes in everything under it: the shared census with `protect`, which
+        // a password field or an excluded page anywhere in it, or a look cut short, refuses.
         func readable(_ element: Tree.Element) -> Bool {
-            readableSubtree(element, limit: HelperConfig.contextNodeBudget, valid: valid,
-                protected: { node in
-                    ScreenContextReader.isPasswordField(node, in: tree) ||
-                    (tree.string(node, kAXRoleAttribute) == "AXWebArea" && exclusions.excludes(tree.page(of: node)))
-                }, children: { tree.children(of: $0) })
+            ScreenContextReader.lookForExcludedPage(in: element, tree, excluding: exclusions, protect: true, valid: valid) == .none && valid()
         }
         var stack: [(Tree.Element, CGRect)] = [(window, windowFrame)]
         var seen: [Tree.Element] = []
-        var surfaces: [JSON] = []
         var surfaceElements: [Tree.Element] = []
-        var focusedID: JSON = .null
-        var caret: JSON = ["status": "unavailable"]
         var complete = true
-        var remaining = byteLimit
         diagnosticStage = "traversal"
         while let (element, inheritedClip) = stack.popLast() {
             guard valid(), seen.count < HelperConfig.contextNodeBudget else { complete = false; break }
@@ -307,18 +282,17 @@ extension TerminalViewportReader {
                 if clip.isNull || clip.isEmpty { continue }
             }
             if role == "AXTextArea" || role == "AXTextField" {
-                guard surfaces.count < surfaceLimit, remaining > 0 else { complete = false; break }
+                guard let next = try? project(["collect": ["state": collected, "next": true]]), let id = next["id"]?.integer,
+                      let bytes = next["bytes"]?.integer else { return nil }
+                guard next["read"] == .bool(true) else { complete = false; break }
                 guard readable(element) else { complete = false; continue }
-                let id = surfaces.count
                 let ownsFocus = focused.map { tree.isSame($0, element) } == true || focusPath.contains { tree.isSame($0, element) }
-                guard let captured = tree.terminalSurface(element, id: id, clip: clip, focused: ownsFocus, byteBudget: remaining,
+                guard let captured = tree.terminalSurface(element, id: id, clip: clip, focused: ownsFocus, byteBudget: bytes,
                                              geometryValid: { true }, valid: valid) else { complete = false; continue }
-                surfaces.append(captured.source)
+                guard let taken = try? project(["collect": ["state": collected, "take": ["surface": captured.source, "caret": captured.caret],
+                                                            "focused": .bool(ownsFocus)]]) else { return nil }
+                collected = taken
                 surfaceElements.append(element)
-                let bytes = captured.source["runs"]?.array?.reduce(0) { $0 + ($1["text"]?.string?.utf8.count ?? 0) } ?? 0
-                guard bytes <= remaining else { return nil }
-                remaining -= bytes
-                if ownsFocus { focusedID = .number(Double(id)); caret = captured.caret }
                 continue
             }
             // Tab containers must identify their visible/selected children;
@@ -338,11 +312,11 @@ extension TerminalViewportReader {
         context.nodesVisited = seen.count
         context.windowTitle = tree.sourceString(window, kAXTitleAttribute)
         guard valid(), surfaceElements.allSatisfy({ readable($0) }) else { return nil }
-        finish(["surfaces": .array(surfaces), "focusedSurface": focusedID, "caret": caret,
-                "complete": .bool(complete && !surfaces.isEmpty)], into: &context)
+        guard let viewport = try? project(["collect": ["state": collected, "finish": ["complete": .bool(complete)]]]) else { return nil }
+        finish(viewport, into: &context)
         context.seconds = Date().timeIntervalSince(started)
         diagnosticSucceeded = true
-        HelperLog.debug("TerminalViewport: result surfaces=\(surfaces.count) complete=\(complete) nodes=\(seen.count) elapsedMs=\(Int(context.seconds * 1000))")
+        HelperLog.debug("TerminalViewport: result surfaces=\(surfaceElements.count) complete=\(complete) nodes=\(seen.count) elapsedMs=\(Int(context.seconds * 1000))")
         return context
     }
 }

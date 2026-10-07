@@ -519,3 +519,34 @@ fn a_built_surface_projects() {
     assert_eq!(projected["selectionComplete"], true);
     assert_eq!(projected["caret"]["status"], "unavailable");
 }
+
+/// A window's collection reads no more surfaces than the limit, and plans no more runs than the
+/// limit (the corpus's `collect` cases, at sizes too large to list there).
+#[test]
+fn a_collection_keeps_to_the_surface_and_run_limits() {
+    let empty =
+        json!({"selection": {"complete": true, "ranges": []}, "frame": [0, 0, 1, 1], "runs": []});
+    let full: Vec<Value> = (0..MAX_SURFACES)
+        .map(|id| {
+            let mut surface = empty.clone();
+            surface["id"] = json!(id);
+            surface
+        })
+        .collect();
+    let state = json!({"surfaces": full, "focusedSurface": null, "caret": {"status": "unavailable"},
+        "remaining": MAX_BYTES});
+    assert_eq!(
+        result(&json!({"collect": {"state": state, "next": true}})),
+        json!({"read": false, "id": MAX_SURFACES, "bytes": MAX_BYTES})
+    );
+    let mut taken = empty.clone();
+    taken["id"] = json!(MAX_SURFACES);
+    let over = json!({"collect": {"state": state, "take": {"surface": taken, "caret": null}, "focused": false}});
+    assert_eq!(process(&serde_json::to_vec(&over).unwrap()), Err(1));
+    let plan = |runs: usize| {
+        let spans: Vec<Value> = (0..runs).map(|at| json!([at, at + 1])).collect();
+        result(&json!({"collect": {"plan": {"count": runs, "spans": spans, "bytes": runs}}}))["admit"].clone()
+    };
+    assert_eq!(plan(MAX_RUNS), true);
+    assert_eq!(plan(MAX_RUNS + 1), false);
+}

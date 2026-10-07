@@ -8,13 +8,28 @@ import Testing
 @testable import VoiceMacOSKit
 
 struct TerminalViewportReaderTests {
+    /// A surface's text takes in everything under it, so the shared census with `protect` reads it
+    /// only when nothing in it, itself included, is a password field or an excluded page, and the
+    /// look saw all of it while the window and focus stayed the same.
     @Test func aggregateSourceRejectsSecureDescendantsAndIncompleteMetadata() {
-        let children: (Int) -> [Int] = { $0 == 0 ? [1] : [] }
-        #expect(!TerminalViewportReader.readableSubtree(0, limit: 5, valid: { true }, protected: { $0 == 1 }, children: children))
-        #expect(TerminalViewportReader.readableSubtree(0, limit: 5, valid: { true }, protected: { _ in false }, children: children))
-        #expect(!TerminalViewportReader.readableSubtree(0, limit: 1, valid: { true }, protected: { _ in false }, children: children))
-        #expect(!TerminalViewportReader.readableSubtree(0, limit: 5, valid: { true }, protected: { _ in false }, children: { [$0] }))
-        #expect(!TerminalViewportReader.readableSubtree(0, limit: 5, valid: { false }, protected: { _ in false }, children: children))
+        let secure = [kAXSubroleAttribute: kAXSecureTextFieldSubrole as String]
+        func readable(_ element: FakeElement, valid: @escaping () -> Bool = { true }) -> Bool {
+            ScreenContextReader.lookForExcludedPage(in: element, FakeScreenTree(), excluding: ScreenExclusions(hosts: ["example.com"]),
+                                                    protect: true, valid: valid) == .none
+        }
+        #expect(readable(FakeElement("AXTextArea", children: [FakeElement("AXGroup")])))
+        #expect(!readable(FakeElement("AXTextArea", children: [FakeElement("AXGroup", children: [FakeElement("AXTextField", secure)])])))
+        #expect(!readable(FakeElement("AXTextField", secure)))
+        #expect(!readable(FakeElement("AXTextArea", children: [FakeElement("AXWebArea", ["host": "pay.example.com"])])))
+        #expect(!readable(FakeElement("AXWebArea", ["host": "pay.example.com"])))
+        #expect(readable(FakeElement("AXTextArea", children: [FakeElement("AXWebArea", ["host": "example.org"])])))
+        #expect(!readable(FakeElement("AXTextArea", children: [FakeElement("AXGroup")]), valid: { false }))
+        let fillers = (0 ..< HelperConfig.contextNodeBudget).map { _ in FakeElement("AXGroup") }
+        #expect(readable(FakeElement("AXTextArea", children: Array(fillers.dropLast()))))
+        #expect(!readable(FakeElement("AXTextArea", children: fillers + [FakeElement("AXGroup")])))
+        // An ordinary look (not protected) is not asked about password fields, and so goes on past them.
+        #expect(ScreenContextReader.lookForExcludedPage(in: FakeElement("AXTextField", secure), FakeScreenTree(),
+                                                        excluding: ScreenExclusions(hosts: ["example.com"])) == .none)
     }
 
     @Test func neverAcquiresHiddenGapsOrHistory() {

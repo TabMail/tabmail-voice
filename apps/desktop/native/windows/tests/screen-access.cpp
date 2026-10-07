@@ -3,10 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 #include "Privacy/ScreenAccess.h"
+#include "../../shared/context/walk.h"
 #include <algorithm>
 #include <sstream>
 #include <fstream>
-#include "Privacy/PageScan.h"
 
 using JSON = nlohmann::json;
 static void expect(bool value, const char* message) {
@@ -126,9 +126,15 @@ static int run(int argc, char** argv) {
     Tree protectedTree{{{false, {}, {1}}, {true, refused, {2}}, {false, {}, {}}}};
     expect(voice::walk::lookForExcludedPage(protectedTree, 0, policy, true) == PageLook::none, "password subtree never read");
     expect(protectedTree.childReads == 1, "password subtree not entered");
-    expect(!voice::privacy::safeTextSubtree(protectedTree, 0), "aggregate text containing a protected descendant is not read");
+    expect(!voice::walk::holdsNoPassword(protectedTree, 0), "aggregate text containing a protected descendant is not read");
+    Tree protectedSelf{{{true, {}, {1}}, {false, {}, {}}}};
+    expect(!voice::walk::holdsNoPassword(protectedSelf, 0) && protectedSelf.childReads == 0,
+        "aggregate text that is a password element itself is not read");
     Tree plainTree{{{false, {}, {1}}, {false, {}, {}}}};
-    expect(voice::privacy::safeTextSubtree(plainTree, 0), "ordinary aggregate text remains readable");
+    expect(voice::walk::holdsNoPassword(plainTree, 0), "ordinary aggregate text remains readable");
+    Tree lateTree{{{false, {}, {1}}, {false, {}, {}}}};
+    lateTree.budget = 2;
+    expect(!voice::walk::holdsNoPassword(lateTree, 0), "aggregate text whose census runs out of time is not read");
     Tree frame{{{false, safe, {1}}, {false, refused, {}}}};
     expect(voice::walk::lookForExcludedPage(frame, 0, policy, true) == PageLook::excluded, "nested frame refused");
     frame.childReads = 0;

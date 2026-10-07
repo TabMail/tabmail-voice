@@ -15,9 +15,10 @@
 namespace voice {
 // A rich editor's text (Chromium's contenteditable; Gmail's compose), whose paragraphs and links
 // AT-SPI gives as embedded objects (U+FFFC), each an element with text of its own and its own caret
-// and part of the selection. This walk sends each element's own text in order, with where its caret
-// and selection are and where a block element starts and ends; the shared core joins them
-// (`hypertext`, ADR-DESK-007). Offsets count Unicode scalars, as AT-SPI does.
+// and part of the selection. This walk sends each element's own text, caret, part of the selection,
+// whether it is a block and its links, in the order it goes into them; the shared core places the
+// caret, the selection and the blocks' breaks and joins them (`hypertext`, ADR-DESK-007, -054).
+// Offsets count Unicode scalars, as AT-SPI does.
 struct Hypertext {
     std::string text;
     size_t length = 0;
@@ -35,72 +36,45 @@ struct Hypertext {
 // text read; past either, the result is not complete.
 // A link stands for an element of its own only where its text is an embedded object (U+FFFC) and
 // that element is not one the read is already in. Elsewhere it is read as the text it is: GTK's
-// labels give a link's text inline, and the label itself as its element.
+// labels give a link's text inline, and the label itself as its element. Where the caret and the
+// selection's ends fall between the elements is the core's to decide (`hypertext`'s `elements`).
 template<class Source>
 Hypertext flattenHypertext(Source& source, const typename Source::Node& root, size_t limit, size_t bytes) {
-    auto parts = nlohmann::json::array();
-    size_t visited = 0, read = 0;
+    auto elements = nlohmann::json::array();
+    size_t read = 0;
     bool fits = true;
     std::vector<typename Source::Node> path;
-    const auto mark = [&](const char* name) { parts.push_back({{"mark", name}}); };
-    const auto emit = [&](auto& self, const typename Source::Node& node) -> void {
-        if (++visited > limit) { fits = false; return; }
+    const auto collect = [&](auto& self, const typename Source::Node& node) -> void {
+        if (elements.size() >= limit) { fits = false; return; }
         const auto owned = source.text(node, bytes - read);
         if (!owned || (read += owned->size()) > bytes) { fits = false; return; }
-        const std::string& text = *owned;
+        const size_t id = elements.size();
         const int caret = source.caret(node);
         const auto selected = source.selection(node);
-        const auto found = source.links(node, limit - visited);
+        elements.push_back({{"text", *owned}, {"caret", caret < 0 ? nlohmann::json() : nlohmann::json(caret)},
+                            {"selection", selected ? nlohmann::json::array({selected->first, selected->second}) : nlohmann::json()},
+                            {"block", source.block(node)}, {"links", nlohmann::json::array()}});
+        const auto found = source.links(node, limit - elements.size());
         if (!found) { fits = false; return; }
-        const auto& links = *found;
-        std::string run;
-        const auto flush = [&] { if (!run.empty()) { parts.push_back({{"text", run}}); run.clear(); } };
-        size_t next = 0;
-        int index = 0;
+        // Each link's offset counts Unicode scalars; what is there says whether it is an object.
+        std::vector<gunichar> scalars;
+        for (const char* at = owned->c_str(); *at; at = g_utf8_next_char(at)) scalars.push_back(g_utf8_get_char(at));
         path.push_back(node);
-        for (const char* at = text.c_str(); *at; at = g_utf8_next_char(at), ++index) {
-            const bool embedded = g_utf8_get_char(at) == 0xFFFC;
-            while (next < links.size() && links[next].first == index && (!embedded ||
-                   std::any_of(path.begin(), path.end(), [&](const auto& on) { return source.same(on, links[next].second); })))
-                ++next;
-            if (next < links.size() && links[next].first == index) {
-                flush();
-                const auto& child = links[next++].second;
-                // A selection ending at an element's start, the caret there (a forward selection's
-                // focus, as Shift+Down from a line's start leaves it), holds the break before it.
-                if (selected && index == selected->second && index > selected->first && source.caret(child) == 0) mark("selectionEnd");
-                const bool block = source.block(child);
-                if (block) mark("blockStart");
-                // A caret before the element: Chromium gives the caret at the end of the text before
-                // a link to the text holding it, at the link's object, and none to the link itself.
-                if (caret == index && source.caret(child) < 0) mark("caret");
-                // A selection's start or end at an element with no part of its own, or an empty one, is
-                // at the element's end: Chromium gives an end inside an element at the element's
-                // object, and a start or end anywhere else in it a part of its own. A start there is
-                // before the break after a paragraph, and an end after it (the break is selected).
-                const auto part = selected && index >= selected->first && index < selected->second ? source.selection(child) : std::nullopt;
-                const bool own = part && part->first < part->second;
-                self(self, child);
-                if (!fits) return;
-                if (selected && index == selected->first && !own) mark("selectionStart");
-                if (block) mark("blockEnd");
-                if (selected && index + 1 == selected->second && !own) mark("selectionEnd");
+        for (const auto& [offset, child] : *found) {
+            const bool embedded = offset >= 0 && static_cast<size_t>(offset) < scalars.size() && scalars[static_cast<size_t>(offset)] == 0xFFFC;
+            if (!embedded || std::any_of(path.begin(), path.end(), [&](const auto& on) { return source.same(on, child); })) {
+                elements[id]["links"].push_back({offset, nullptr});
                 continue;
             }
-            const bool chosen = selected && index >= selected->first && index < selected->second;
-            if (caret == index) { flush(); mark("caret"); }
-            if (chosen && index == selected->first) { flush(); mark("selectionStart"); }
-            run.append(at, g_utf8_next_char(at));
-            if (chosen && index + 1 == selected->second) { flush(); mark("selectionEnd"); }
+            elements[id]["links"].push_back({offset, elements.size()});
+            self(self, child);
+            if (!fits) return;
         }
-        flush();
         path.pop_back();
-        if (next != links.size()) throw std::runtime_error("hypertext link outside its text");
-        if (caret == index) mark("caret");
     };
-    emit(emit, root);
+    collect(collect, root);
     if (!fits) return Hypertext{{}, 0, std::nullopt, std::nullopt, false};
-    const auto reply = core::request({{"hypertext", {{"parts", parts}}}}, voice_core_context_json);
+    const auto reply = core::request({{"hypertext", {{"elements", elements}}}}, voice_core_context_json);
     Hypertext flat{reply.at("text").get<std::string>(), reply.at("length").get<size_t>(), std::nullopt, std::nullopt};
     if (!reply.at("caret").is_null()) flat.caret = reply.at("caret").get<size_t>();
     if (!reply.at("selection").is_null()) {
