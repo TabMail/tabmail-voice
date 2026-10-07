@@ -143,6 +143,21 @@ try {
     assert.deepEqual(await exit, [0, null]); fixture.lines.close(); fixture = undefined;
     ++checks;
   }
+  // A provider that stops answering fails the helper's request and never ends the helper, which
+  // holds the microphone: one UI Automation call gives up well before the watchdog would.
+  fixture = client(process.argv[3], ["stalled-focus"]);
+  const stalled = await fixture.next();
+  assert.deepEqual(await request("frontmostApp"), { window: stalled.window }, "stalled-focus: fixture owns foreground");
+  helper.child.stdin.write(`${JSON.stringify({ id: ++id, method: "caretAnchor", params: { window: stalled.window } })}\n`);
+  const refusal = await helper.next();
+  assert.ok(refusal.id === id && refusal.error, "a caret lookup in a provider that stops answering is refused");
+  assert.deepEqual(await request("frontmostApp"), { window: stalled.window }, "the helper outlives a provider that stops answering");
+  // The screen reader, restarted by its caller rather than by a watchdog, waits for the provider.
+  const slowRead = await request("readScreen", exclusions);
+  assert.ok(slowRead?.renderedText.includes("Synthetic safe label"), "the screen reader waits for a slow provider");
+  const stalledExit = once(fixture.child, "exit"); fixture.child.stdin.end();
+  assert.deepEqual(await stalledExit, [0, null]); fixture.lines.close(); fixture = undefined;
+  ++checks;
   const exits = [once(helper.child, "exit"), once(reader.child, "exit")]; helper.child.stdin.end(); reader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   process.stdout.write(`${checks} synthetic provider privacy cases passed through the actual helper\n`);
