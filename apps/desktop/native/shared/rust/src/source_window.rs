@@ -113,6 +113,15 @@ mod tests {
         text[recognition_range(text, start, end).unwrap()].to_owned()
     }
     #[test]
+    fn a_paragraph_separator_the_provider_gives_ends_a_sentence() {
+        // The text's own U+2029 is a line break like any other (ADR-DESK-007, 2026-10-07): a
+        // sentence ending before one is a delimiter at both open edges.
+        assert_eq!(
+            kept("head.\u{2029}middle.\u{2029}tail", false, false),
+            ".\u{2029}middle.\u{2029}"
+        );
+    }
+    #[test]
     fn source_edge_facts_are_required_not_assumed() {
         for value in [
             serde_json::json!({"window":{"text":"source"}}),

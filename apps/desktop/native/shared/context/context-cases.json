@@ -210,6 +210,101 @@
       }
     },
     {
+      "name": "a key split by a link on one line is redacted whole",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              20,
+              0,
+              92.5,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "Fixture1234567890",
+            "frame": [
+              112.5,
+              0,
+              124.5,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": " here",
+            "frame": [
+              237,
+              0,
+              32,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "pieces a pixel apart abut, and three apart are two words",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Ab",
+            "frame": [
+              0,
+              0,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "cd",
+            "frame": [
+              21,
+              0,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Ef",
+            "frame": [
+              0,
+              40,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "gh",
+            "frame": [
+              23,
+              40,
+              20,
+              20
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "rendered": "Abcd\nEf gh"
+      }
+    },
+    {
       "name": "sliver overlap",
       "request": {
         "blocks": [
@@ -437,6 +532,19 @@
       "expected": {
         "text": " Visit ",
         "used": 7,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "a piece that repeats the one before it, kept with its edge spaces, spends no budget",
+      "request": {
+        "admit": "Inbox",
+        "previous": " Inbox ",
+        "used": 5
+      },
+      "expected": {
+        "text": "",
+        "used": 5,
         "budgetFull": false
       }
     },
