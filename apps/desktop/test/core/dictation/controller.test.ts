@@ -677,7 +677,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       prefs.value = { ...defaultSettings(), enabledTools: ["compose"] };
       const written = "Synthetic composed result.";
       transcription.enqueue(200, mode === "agent" ? { text: request } : cleanedReply);
-      if (mode === "agent") completions.enqueue(200, reply(written));
+      if (mode === "agent") completions.enqueue(200, writes("compose", written));
       let reads = 0;
       const { controller, pastes, copies } = makeController({
         capture: new CountingCapture(true),
