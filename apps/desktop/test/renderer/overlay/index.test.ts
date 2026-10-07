@@ -781,8 +781,9 @@ describe("the chat window", () => {
 
   /** In the chat as out of it, the pill circles whenever the agent works (owner, 2026-09-28: "whenever
    * thinking is being done or whenever a tool is being run"): its rim spins while the words and the
-   * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it
-   * around the agent's sparkle, as it circles the running bubble. At rest nothing circles. */
+   * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it,
+   * as it circles the running bubble. A working pill is an empty circle, with no icon (owner,
+   * 2026-10-07); while the agent thinks no bubble circles. At rest nothing circles. */
   test("the pill circles whenever the agent works, and so does the running bubble", async () => {
     const page = await overlayPage();
     const pillCircles = () => document.querySelector(".chat-canvas .pill .spinning") !== null;
@@ -797,9 +798,14 @@ describe("the chat window", () => {
     expect(pillCircles()).toBe(true);
     expect(circling()).toEqual([]);
 
+    await page.show({ ...running, ...agent, phase: { kind: "running", tool: null }, runningBubble: null });
+    expect(pillCircles()).toBe(true);
+    expect(document.querySelector(".chat-canvas .pill svg")).toBeNull();
+    expect(circling()).toEqual([]);
+
     await page.show({ ...running, ...agent });
     expect(pillCircles()).toBe(true);
-    expect(document.querySelector(".chat-canvas .pill .center-content")).not.toBeNull();
+    expect(document.querySelector(".chat-canvas .pill svg")).toBeNull();
     expect(circling()).toEqual(["answer"]);
 
     await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningBubble: "web" });

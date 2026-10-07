@@ -49,7 +49,7 @@ const idle: Phase = { kind: "idle" };
 const arming: Phase = { kind: "arming" };
 const listening: Phase = { kind: "listening" };
 const transcribing: Phase = { kind: "transcribing" };
-const running = (tool: AgentToolID): Phase => ({ kind: "running", tool });
+const running = (tool: AgentToolID | null): Phase => ({ kind: "running", tool });
 const failed = (message: string): Phase => ({ kind: "failed", message });
 const copied: Phase = { kind: "copied", message: notPastedMessage };
 const microphoneFailed = failed("Couldn't start the microphone.");
@@ -2336,7 +2336,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
         };
       });
 
-      expect(seen).toEqual([{ phase: running("compose"), mode: "agent" }]);
+      // The loop thinks under no tool's bubble.
+      expect(seen).toEqual([{ phase: running(null), mode: "agent" }]);
       expect(pastes).toEqual(["We ship on Friday."]);
       expect(controller.phase).toEqual(idle);
     });
@@ -2356,7 +2357,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       // The reply still arrives after the cancel.
       await sleep(300);
 
-      expect(seen).toEqual([running("compose")]);
+      expect(seen).toEqual([running(null)]);
       expect(completions.requests).toHaveLength(1);
       // The request itself is canceled, not just its reply ignored: it stops at once, and one not
       // yet sent (behind a sign-in refresh) never goes.
@@ -3031,19 +3032,26 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         /** Agent mode asked `toolRequest` with only Answer on (so nothing to choose), the backend
          * answering each of `rounds` in turn, `tools` running on this computer. Returns once the
-         * controller exists; `done` settles with the request. */
+         * controller exists; `done` settles with the request. `inChat`: asked as a follow-up, in the
+         * chat window an earlier answer (`question`, `answer`, the backend's first request) opened,
+         * kept open; only a chat window already open shows a tool that runs without asking. */
         async function ask(
           tools: ConnectorTool[],
           rounds: string[],
           prepare: (controller: DictationController) => void = () => {},
-          options: Parameters<typeof carryOut>[3] = {},
+          options: Parameters<typeof carryOut>[3] & { inChat?: boolean } = {},
         ): Promise<{ controller: DictationController; done: ReturnType<typeof carryOut>; chatChanges: boolean[] }> {
+          const { inChat = false, ...carryOutOptions } = options;
           setTools(["answer"]);
+          if (inChat) {
+            transcription.enqueue(200, { text: question });
+            completions.enqueue(200, reply(answer));
+          }
           transcription.enqueue(200, { text: toolRequest });
           for (const round of rounds) completions.enqueue(200, round);
           let made: DictationController | undefined;
           const chatChanges: boolean[] = [];
-          const done = carryOut(
+          const asked = carryOut(
             selectionScreen(""),
             undefined,
             (controller) => {
@@ -3051,10 +3059,22 @@ describe("DictationController", { timeout: 20_000 }, () => {
               controller.onChatChange = (isOpen) => chatChanges.push(isOpen);
               // Answered as soon as asked, unless a test waits out the question's minimum display.
               controller.confirmationMinimumDisplay = 0;
-              prepare(controller);
+              if (!inChat) prepare(controller);
             },
-            { ...options, connectorTools: tools },
+            { ...carryOutOptions, connectorTools: tools },
           );
+          const done = !inChat
+            ? asked
+            : asked.then(async (opening) => {
+                const { controller } = opening;
+                controller.keepChatOpen();
+                prepare(controller);
+                controller.handle("start");
+                expect(await eventually(() => controller.phase.kind === "listening")).toBe(true);
+                controller.handle("finish");
+                expect(await eventually(() => controller.phase.kind !== "listening" && settled(controller))).toBe(true);
+                return opening;
+              });
           expect(await eventually(() => made !== undefined)).toBe(true);
           if (made === undefined) throw new Error("no controller");
           opened.push(made);
@@ -3065,9 +3085,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const ready = deferred<string | null>();
           let preparing = false;
           const tool = Object.assign(new FakeLoopTool(), { confirmation: () => { preparing = true; return ready.promise; } });
-          const { controller, done } = await ask([tool], [calling(["example_create", "{}"])]);
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"])], () => {}, { inChat: true });
           expect(await eventually(() => preparing)).toBe(true);
           controller.closeChat();
+          await done;
           transcription.enqueue(200, { text: "new conversation" });
           completions.enqueue(200, reply("new reply"));
           await holdAndRelease(controller, "agent");
@@ -3080,7 +3101,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             expect(controller.chat?.turns.map(turn => [turn.request, turn.reply])).toEqual([["new conversation", "new reply"]]);
             expect(controller.chat?.confirmation).toBeNull();
             expect(tool.runs).toEqual([]);
-          } finally { controller.closeChat(); await done; }
+          } finally { controller.closeChat(); }
         });
 
         test("asynchronous preparation asks before running a tool", async () => {
@@ -3104,7 +3125,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             preparationSignal = signal;
             return ready.promise;
           } });
-          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], () => {}, { inChat: true });
           expect(await eventually(() => preparing)).toBe(true);
           controller.closeChat();
           expect(preparationSignal?.aborted).toBe(true);
@@ -3123,7 +3144,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           configureLog({ isDebugBuild: false, sinks: { error: (text) => errors.push(text) } });
           try {
             const tool = Object.assign(new FakeLoopTool(), { confirmation: () => { preparing = true; return pending; } });
-            const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+            const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], () => {}, { inChat: true });
             expect(await eventually(() => preparing)).toBe(true);
             controller.closeChat();
             fail(new Error("PDF reading was canceled."));
@@ -3143,11 +3164,11 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(told(1)).toEqual(["Error: The file is unavailable."]);
         });
 
-        /** A tool the answer's model calls runs, with the chat window open on the request and saying
-         * what the tool is doing; its result goes back to the model, and the answer joins the chat,
-         * which then times out unless touched. The Answer prompt is offered the date tools and this
-         * computer's tools. */
-        test("an answer's tool runs with the chat window showing it", async () => {
+        /** A tool the answer's model calls runs with no chat window: only an answer or a question opens
+         * one (owner, 2026-10-07). Its result goes back to the model, and the answer opens the chat,
+         * which then times out unless touched. The loop is offered the date tools and this computer's
+         * tools. */
+        test("an answer's tool runs without opening the chat window", async () => {
           const tool = new FakeLoopTool();
           const whileRunning: (AgentChat | null)[] = [];
           let controllerRef: DictationController | undefined;
@@ -3162,7 +3183,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { pastes } = await done;
 
           expect(tool.runs).toEqual([{ title: "Launch review", day: "friday", hour: 10.5, note: null }]);
-          expect(whileRunning).toEqual([{ ...emptyChat, pendingRequest: toolRequest, activity: "Adding it to your calendar" }]);
+          expect(whileRunning).toEqual([null]);
           expect(completions.body(0).available_tools).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_create"]);
           expect(completions.body(0).disable_tools).toBe(false);
           expect(told(1)).toEqual(["Added."]);
@@ -3177,9 +3198,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
         /** The bubbles' history: the tool the agent chose, then the app whose tool runs, lead it, the
          * latest first; the app's bubble runs alone while its tool does, and while the backend's search
-         * runs in the answer's round (the web's), for as long as it does, and then the answer runs at the
-         * front again (owner, 2026-10-05: "the only one that circles is the one on the far left"). None
-         * runs once the request ends. */
+         * runs in the answer's round (the web's), for as long as it does (owner, 2026-10-05: "the only
+         * one that circles is the one on the far left"); between them none runs, and Answer's only once
+         * the agent answers (owner, 2026-10-07). None runs once the request ends. */
         test("the tools that ran lead the bubbles, each app running alone at the front while its tool does", async () => {
           const tool = new FakeLoopTool();
           let controllerRef: DictationController | undefined;
@@ -3195,25 +3216,27 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), round], (controller) => {
             controllerRef = controller;
             controller.observe(() => seen.push([controller.runningBubble, controller.chat?.activity ?? null, controller.recentBubbles]));
-          });
+          }, { inChat: true });
           await done;
 
+          // The earlier answer's bubble first, before this request's tools ran.
           expect(whileRunning).toEqual([["calendar", ["calendar", "answer"]]]);
           // The running bubble is always the first in the row.
           for (const [running, , recent] of seen) if (running !== null) expect(recent[0]).toBe(running);
           // The web's bubble ran with the search, the chat saying what it did, and stopped with it,
-          // the answer running at the front again.
+          // none running until the agent answered.
           const searching = seen.findIndex(([running]) => running === "web");
-          expect(seen[searching]).toEqual(["web", null, ["web", "answer", "calendar"]]);
-          expect(seen.slice(searching).find(([, activity]) => activity !== null)).toEqual(["web", "Searching the web: launch", ["web", "answer", "calendar"]]);
+          expect(seen[searching]).toEqual(["web", null, ["web", "calendar", "answer"]]);
+          expect(seen.slice(searching).find(([, activity]) => activity !== null)).toEqual(["web", "Searching the web: launch", ["web", "calendar", "answer"]]);
+          expect(seen.slice(searching)).toContainEqual([null, null, ["web", "calendar", "answer"]]);
           expect(seen.slice(searching)).toContainEqual(["answer", null, ["answer", "web", "calendar"]]);
           expect(controller.recentBubbles).toEqual(["answer", "web", "calendar"]);
           expect(controller.runningBubble).toBeNull();
         });
 
         /** A search the backend ends mid-request stops its bubble and takes its label down then, not
-         * when the request ends: the tool the model calls next runs alone, under its own label. (The
-         * tool runs first too, to open the chat the label shows in.) */
+         * when the request ends: the tool the model calls next runs alone, under its own label. (A
+         * follow-up, so a chat window shows the labels.) */
         test("a finished search stops running before the next tool runs", async () => {
           const tool = new FakeLoopTool();
           let controllerRef: DictationController | undefined;
@@ -3226,18 +3249,18 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), search("tool_started") + search("tool_completed") + calling(["example_create", "{}"]), reply(answer)], (controller) => {
             controllerRef = controller;
             controller.observe(() => seen.push([controller.runningBubble, controller.chat?.activity ?? null]));
-          });
+          }, { inChat: true });
           await done;
 
           expect(whileRunning).toEqual([
             ["calendar", "Adding it to your calendar"],
             ["calendar", "Adding it to your calendar"],
           ]);
-          // Between the search's end and the tool's second run: only the answer running, and no label.
+          // Between the search's end and the tool's second run: nothing running, and no label.
           const searched = seen.findIndex(([, activity]) => activity === "Searching the web: launch");
           const adding = seen.findIndex(([running], index) => index > searched && running === "calendar");
           expect(searched).toBeGreaterThanOrEqual(0);
-          expect(seen.slice(searched, adding)).toContainEqual(["answer", null]);
+          expect(seen.slice(searched, adding)).toContainEqual([null, null]);
           expect(controller.recentBubbles).toEqual(["answer", "calendar", "web"]);
         });
 
@@ -3255,7 +3278,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
           release.resolve();
           await done;
           expect(controller.runningBubble).toBeNull();
-          expect(controller.recentBubbles).toEqual(["calendar", "answer"]);
+          // Answer's bubble never ran: the agent never answered.
+          expect(controller.recentBubbles).toEqual(["calendar"]);
         });
 
         /** Only the tools of apps switched on at key-down are offered, and one of a switched-off app the
@@ -3295,7 +3319,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(completions.body(0).web_search_enabled).toBe(webOn);
         });
 
-        /** Touched while a tool runs, the chat window no longer times out once the answer arrives. */
+        /** Touched while a follow-up's tool runs, the chat window no longer times out once the answer
+         * arrives. */
         test("touching the chat window while a tool runs keeps it open", async () => {
           const tool = new FakeLoopTool();
           let controllerRef: DictationController | undefined;
@@ -3304,10 +3329,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], (controller) => {
             controllerRef = controller;
             controller.chatTimeout = 100;
-          });
+          }, { inChat: true });
           await done;
 
-          expect(controller.chat?.turns).toHaveLength(1);
+          expect(controller.chat?.turns).toHaveLength(2);
           expect(controller.chat?.closesAt).toBeNull();
           expect(await throughout(400, () => controller.chat !== null)).toBe(true);
         });
@@ -3322,7 +3347,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.activity).toBeNull();
           controller.handle("start");
           controller.handle("finish");
-          expect(controller.phase).toEqual(running("answer"));
+          expect(controller.phase).toEqual(running(null));
           await sleep(50);
           expect(tool.runs).toEqual([]);
           expect(transcription.requests).toHaveLength(1);
@@ -3491,16 +3516,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
           const tool = new FakeLoopTool();
           const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], (controller) => {
             completions.gate = async () => {
-              if (completions.requests.length === 2) controller.closeChat();
+              if (completions.requests.length === 3) controller.closeChat();
             };
-          });
+          }, { inChat: true });
           await done;
           // The reply still arrives after the close.
           await sleep(300);
 
           expect(tool.runs).toEqual([{}]);
-          expect(completions.requests).toHaveLength(2);
-          expect(completions.requests[1]?.signal?.aborted).toBe(true);
+          expect(completions.requests).toHaveLength(3);
+          expect(completions.requests[2]?.signal?.aborted).toBe(true);
           expect(controller.chat).toBeNull();
           expect(controller.phase).toEqual(idle);
         });
@@ -3898,7 +3923,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             }
             expect(await eventually(() => controller.phase.kind === "running")).toBe(true);
 
-            expect(controller.phase).toEqual(running("answer"));
+            expect(controller.phase).toEqual(running(null));
             expect(capture.stops).toBeGreaterThan(stops);
             expect(controller.chat?.confirmation).toBe(confirmationQuestion);
             const left = (controller.chat?.confirmationExpiresAt ?? 0) - Date.now();
@@ -4160,7 +4185,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             controller.handle("start");
             controller.handle("showHistory");
 
-            expect(controller.phase).toEqual(running("answer"));
+            expect(controller.phase).toEqual(running(null));
             expect(controller.chat?.confirmation).toBe(confirmationQuestion);
             expect(controller.chat?.confirmationExpiresAt).not.toBeNull();
             controller.answerConfirmation(true);
@@ -4206,7 +4231,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
               expect(await eventually(() => controller.phase.kind === "running")).toBe(true);
             }
 
-            expect(controller.phase).toEqual(running("answer"));
+            expect(controller.phase).toEqual(running(null));
             expect(controller.chat?.confirmation).toBe(confirmationQuestion);
             expect((controller.chat?.confirmationExpiresAt ?? 0) - Date.now()).toBeGreaterThan(4_000);
             expect(transcription.requests).toHaveLength(1);
@@ -4382,14 +4407,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(controller.chat?.turns.map((turn) => turn.reply)).toEqual(["Friday."]);
         });
 
-        /** Canceled, or ended with the account, while a tool runs or asks, a first request's chat
-         * window, still empty, closes with it: the next hold dictates. */
+        /** Canceled, or ended with the account, while a tool runs or asks, a first request leaves no
+         * chat window: one its question opened, still empty, closes with it, and one that only runs
+         * opens none. The next hold dictates. */
         test.each([
           ["canceled", "asks"],
           ["canceled", "runs"],
           ["signed out", "asks"],
           ["signed out", "runs"],
-        ])("%s while a tool %s, the empty chat window closes", async (how, when) => {
+        ])("%s while a tool %s, no chat window is left", async (how, when) => {
           const account = signedIn(auth);
           const tool = new FakeLoopTool();
           if (when === "asks") tool.question = confirmationQuestion;
@@ -4400,9 +4426,13 @@ describe("DictationController", { timeout: 20_000 }, () => {
             await finish.promise;
           };
           const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", "{}"]), reply("Never shown.")], () => {}, { account });
-          if (when === "asks") expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
-          else await started.promise;
-          expect(controller.chat?.turns).toEqual([]);
+          if (when === "asks") {
+            expect(await eventually(() => controller.chat?.confirmation === confirmationQuestion)).toBe(true);
+            expect(controller.chat?.turns).toEqual([]);
+          } else {
+            await started.promise;
+            expect(controller.chat).toBeNull();
+          }
 
           if (how === "canceled") controller.handle("cancel");
           else account.signOut();
@@ -4411,7 +4441,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
           await sleep(100);
 
           expect(controller.chat).toBeNull();
-          expect(chatChanges).toEqual([true, false]);
+          expect(chatChanges).toEqual(when === "asks" ? [true, false] : []);
           expect(controller.phase).toEqual(idle);
           expect(tool.runs).toHaveLength(when === "asks" ? 0 : 1);
           expect(completions.requests).toHaveLength(1);
@@ -4454,8 +4484,8 @@ describe("DictationController", { timeout: 20_000 }, () => {
         });
 
         /** A tool runs with its request's signal, which aborts when the request is canceled or its
-         * chat window closed, so a tool that started something (a script) ends it; a request that
-         * finishes leaves it running on. */
+         * chat window (a follow-up's) closed, so a tool that started something (a script) ends it; a
+         * request that finishes leaves it running on. */
         test.each(["canceled", "closed", "finished"])("a tool's signal when its request is %s", async (how) => {
           const tool = new FakeLoopTool();
           const started = deferred<void>();
@@ -4464,7 +4494,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
             started.resolve();
             await finish.promise;
           };
-          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)]);
+          const { controller, done } = await ask([tool], [calling(["example_create", "{}"]), reply(answer)], () => {}, { inChat: how === "closed" });
           await started.promise;
           expect(tool.signals).toHaveLength(1);
           expect(tool.signals[0]?.aborted).toBe(false);
@@ -4477,9 +4507,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           expect(tool.signals[0]?.aborted).toBe(how !== "finished");
         });
 
-        /** A tool still running for a canceled request leaves the next request's tool shown: its end
-         * clears nothing of a newer request's. */
-        test("a canceled request's tool leaves the next one's shown", async () => {
+        /** A tool still running for a canceled request leaves the next request's tool running, its
+         * app's bubble at the front: its end clears nothing of a newer request's. */
+        test("a canceled request's tool leaves the next one's running", async () => {
           const first = new FakeLoopTool("example_create", "Adding it to your calendar");
           const second = new FakeLoopTool("example_read", "Checking your calendar");
           const firstStarted = deferred<void>();
@@ -4499,14 +4529,15 @@ describe("DictationController", { timeout: 20_000 }, () => {
           completions.enqueue(200, reply("Nothing today."));
 
           await holdAndRelease(controller, "agent");
-          expect(await eventually(() => controller.chat?.activity === "Checking your calendar")).toBe(true);
+          expect(await eventually(() => second.runs.length === 1)).toBe(true);
+          expect(controller.runningBubble).toBe("calendar");
           firstDone.resolve();
           await sleep(100);
 
-          expect(controller.chat?.activity).toBe("Checking your calendar");
+          expect(controller.runningBubble).toBe("calendar");
           secondDone.resolve();
           expect(await eventually(() => controller.chat?.turns.length === 1)).toBe(true);
-          expect(controller.chat?.activity).toBeNull();
+          expect(controller.runningBubble).toBeNull();
         });
 
         /** A tool this app doesn't have, or arguments that aren't a JSON object, run nothing: the model
@@ -4563,9 +4594,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
           }
         });
 
-        /** The answer failing after a tool opened the chat window: the empty window goes, and the pill
-         * says what failed. */
-        test("a failed answer after a tool closes the empty chat window", async () => {
+        /** The answer failing after a tool ran: no chat window ever opened, and the pill says what
+         * failed. */
+        test("a failed answer after a tool opens no chat window", async () => {
           const tool = new FakeLoopTool();
           const { controller, done, chatChanges } = await ask([tool], [calling(["example_create", "{}"])]);
           completions.enqueue(500, { error: "internal_error" });
@@ -4573,14 +4604,14 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           expect(tool.runs).toHaveLength(1);
           expect(controller.chat).toBeNull();
-          expect(chatChanges).toEqual([true, false]);
+          expect(chatChanges).toEqual([]);
           expect(controller.phase).toEqual(failed(new BackendError("failed", 500).message));
         });
 
-        /** A lookup, then Compose ("check my calendar and write when I'm free"): Answer's bubble runs
-         * while the loop does, the tool shows in the chat window it opens, and the write closes that
-         * window before the text is pasted, Compose's bubble now first (ADR-DESK-055). */
-        test("a lookup then a write closes the chat the tool opened before pasting", async () => {
+        /** A lookup, then Compose ("check my calendar and write when I'm free"): no chat window opens and
+         * Answer's bubble never runs, the loop thinking under none; the tool's app's bubble runs, then
+         * Compose's, first when the text is pasted (ADR-DESK-055, owner 2026-10-07). */
+        test("a lookup then a write pastes with no chat window and no Answer bubble", async () => {
           const tool = new FakeLoopTool();
           let controllerRef: DictationController | undefined;
           const chatAtPaste: (AgentChat | null)[] = [];
@@ -4603,10 +4634,9 @@ describe("DictationController", { timeout: 20_000 }, () => {
 
           expect(tool.runs).toHaveLength(1);
           expect(chatAtPaste).toEqual([null]);
-          expect(chatChanges).toEqual([true, false]);
-          expect(phases.find((phase) => phase.kind === "running")).toEqual(running("answer"));
-          expect(phases.at(-2)).toEqual(running("compose"));
-          expect(recentAtPaste[0]?.[0]).toBe("compose");
+          expect(chatChanges).toEqual([]);
+          expect(phases.filter((phase) => phase.kind === "running")).toEqual([running(null), running("compose")]);
+          expect(recentAtPaste).toEqual([["compose", "calendar"]]);
           expect(controller.chat).toBeNull();
         });
 

@@ -45,8 +45,9 @@ export type Phase =
   | { kind: "transcribing" }
   /** The transcription failed on the server's side and has been tried again for a while (`transcribeRetrying`). */
   | { kind: "retrying"; message: string }
-  /** Agent mode: this tool's bubble runs, Answer's or the writing tool's while the loop runs, the writing tool's once it writes. */
-  | { kind: "running"; tool: AgentToolID }
+  /** Agent mode: this tool's bubble runs once the agent answers or writes; none (null) while the loop
+   * thinks, so Answer's bubble never runs for a request that ends by writing (owner, 2026-10-07). */
+  | { kind: "running"; tool: AgentToolID | null }
   | { kind: "failed"; message: string }
   /** The user went to another app before the paste: the text is on the clipboard and in the paste
    * history instead, and the message says so, at the mouse pointer (ADR-DESK-042). */
@@ -300,7 +301,8 @@ export class DictationController extends Observable {
 
   /** The one bubble that runs now, first in the row (owner, 2026-10-05: "the only one that circles is the
    * one on the far left"): the app whose tool started last, on this computer (`ConnectorTool`) or on the
-   * backend (the web's search), while it runs; otherwise the tool agent mode runs. */
+   * backend (the web's search), while it runs; otherwise the tool agent mode answers or writes with,
+   * none while it thinks. */
   get runningBubble(): BubbleKey | null {
     const app = [...this.runningApps].at(-1);
     if (app !== undefined) return app;
@@ -738,14 +740,13 @@ export class DictationController extends Observable {
         const client = this.deps.makeCompletionsClient(settings.backendURL);
         // The tools the bubbles show: the same read and settings.
         const offered = DesktopAgent.tools(context, settings.enabledTools);
-        const [thinking] = offered.includes("answer") ? ["answer" as const] : offered;
-        if (thinking === undefined) throw new AgentError("noToolEnabled");
+        if (offered.length === 0) throw new AgentError("noToolEnabled");
         const chat = this.currentChat;
         const conversation = chat ? chatTranscript(chat) : "";
         if (chat) this.setChat({ ...chat, pendingRequest: transcript });
-        // The loop runs under Answer's bubble, the writing tool's when Answer is off.
-        this.recent = ranNow(this.recent, thinking);
-        this.setPhase({ kind: "running", tool: thinking });
+        // The loop thinks under no tool's bubble: only an app whose tool runs, until the agent answers
+        // or writes.
+        this.setPhase({ kind: "running", tool: null });
         // Only the tools of apps switched on at key-down are offered, and only those run.
         const connectorTools = this.deps.connectorTools.filter((connectorTool) => settings.enabledConnectors.includes(connectorTool.connector));
         const { tool, text } = await DesktopAgent.run(
@@ -766,13 +767,11 @@ export class DictationController extends Observable {
         log.debug(`DictationController: agent ended with ${tool}`);
         // With Answer off, a reply has nowhere to go.
         if (!offered.includes(tool)) throw new AgentError("noText");
-        if (tool !== "answer") {
-          // Writing ends the request, and the conversation: the chat window closes, then the text is
-          // pasted (owner, 2026-10-05).
-          this.dropChat();
-          this.recent = ranNow(this.recent, tool);
-          this.setPhase({ kind: "running", tool });
-        }
+        // Writing ends the request, and the conversation: the chat window closes, then the text is
+        // pasted (owner, 2026-10-05).
+        if (tool !== "answer") this.dropChat();
+        this.recent = ranNow(this.recent, tool);
+        this.setPhase({ kind: "running", tool });
         await agentTools[tool].deliver(text, {
           emailApp: email.app,
           paste: (text) => this.paste(text, targetApp, signal),
@@ -1017,8 +1016,8 @@ export class DictationController extends Observable {
 
   /** Runs a tool agent mode's model called, and returns what the model reads next: the tool's
    * result, that the user declined, what the user answered aloud, or why it could not run. The chat
-   * window opens (if the request was not a follow-up) to show which tool runs and, for one that
-   * sends or creates, to ask first. An answer spoken to the question goes to the model, which reads
+   * window opens (if the request was not a follow-up) only for a tool that sends or creates, to ask
+   * first; an open one shows which tool runs. An answer spoken to the question goes to the model, which reads
    * whether it agrees and answers the question for the user (`config.confirmationTool`): confirmed,
    * the call that asked runs as the user was shown it. The confirmation names the question it answers
    * (its `question_id`), so it never runs another. Any other call drops the waiting one and is asked
@@ -1062,7 +1061,6 @@ export class DictationController extends Observable {
       log.error(`DictationController: ${tool.name} called with arguments that aren't a JSON object`);
       return "Error: the arguments were not a JSON object.";
     }
-    this.setChat({ ...(this.currentChat ?? this.newChat()), pendingRequest: request });
     let question: string | null;
     try {
       question = await tool.confirmation(args, signal);
@@ -1074,8 +1072,10 @@ export class DictationController extends Observable {
     // Preparing a confirmation may resolve a local file path asynchronously. A canceled or
     // superseded request must never reopen its question or run the tool after that lookup.
     if (!isCurrent() || signal.aborted) return config.connectorToolUnanswered;
-    // Closing the window or ending the request declines the question (`teardown`).
+    // Closing the window or ending the request declines the question (`teardown`). Only a question
+    // opens the chat window; a tool that just looks something up runs without it (owner, 2026-10-07).
     if (question !== null) {
+      this.setChat({ ...(this.currentChat ?? this.newChat()), pendingRequest: request });
       const answer = await this.confirm(question);
       if (typeof answer !== "string") {
         log.debug(`DictationController: ${tool.name} answered aloud`);
@@ -1131,8 +1131,8 @@ export class DictationController extends Observable {
     this.changed();
   }
 
-  /** One of `connector`'s tools ends: the bubble still running (the tool agent mode runs, the answer)
-   * moves back to the front. */
+  /** One of `connector`'s tools ends: the bubble still running (another app's, or the tool agent mode
+   * answers or writes with), if any, moves back to the front. */
   private appEnded(connector: ConnectorID): void {
     this.runningApps.delete(connector);
     const running = this.runningBubble;

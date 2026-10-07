@@ -1462,7 +1462,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
 - `DictationController.runLoopTool`: a call to a tool the app doesn't have, or with arguments that
   aren't a JSON object, runs nothing and tells the model why (`Error: …`), as does a tool that
   throws (its error's message). The chat window opens for the first tool (if the request was not a
-  follow-up), showing the request and the tool's `progressLabel` (`AgentChat.activity`) while it
+  follow-up; since ADR-DESK-055's 2026-10-07 amendment, only for a tool's question), showing the request and the tool's `progressLabel` (`AgentChat.activity`) while it
   runs. A tool with a `confirmation` asks it in the window (`AgentChat.confirmation`, Cancel /
   Confirm, the `answerConfirmation` command) and runs only once confirmed; declined, the model
   reads `config.loopToolDeclined`. An answer that comes before the question has shown for
@@ -4051,8 +4051,8 @@ later, so earlier builds keep the chooser and the backend can ship first.
   reply has nowhere to go and the request fails with "no text".
 - An Edit of a selection the helper redacted (ADR-DESK-046) is refused when the agent writes it
   (`secretInSelection`), not before the loop: the selection is still the request's context.
-- The thinking bubble while the loop runs is Answer's, or the writing tool's when Answer is off; it
-  becomes the writing tool's when the agent writes.
+- While the loop thinks no tool's bubble runs (`running` with no tool); the writing tool's runs once
+  the agent writes, Answer's once it replies (amendment 2026-10-07).
 - Removed: the chooser, the per-tool prompts (`agentEditPrompt`, `agentComposePrompt`,
   `agentThunderbirdPrompt`, `agentAnswerPrompt`), each `AgentTool`'s prompt and variables, and the
   `noTool` failure. The Thunderbird tool stays off (ADR-DESK-037); bringing it back is offering it as
@@ -4067,3 +4067,16 @@ later, so earlier builds keep the chooser and the backend can ship first.
   amendment).
 - Builds before 0.2.0 keep the chooser; the backend carries both until no 0.1.x build is in use. This
   build needs the backend that carries the loop, so the backend deploys first.
+
+**Amendment 2026-10-07 (owner, smoke test of 0.2.0):** a request that looked something up and then
+wrote flashed Answer's bubble and the chat window, with the request in it, before pasting. The owner:
+the chat window opens only when the agent has something to show the user, its reply or a tool's
+question. So:
+- The loop thinks under no bubble (`Phase` `running` with `tool: null`); an app's bubble runs while
+  its tool does, and Answer's only once the agent replies.
+- A tool opens the chat window only to ask its question (`runConnectorTool`); one that just runs
+  shows nothing but its app's bubble, and its progress label shows only in a window already open (a
+  follow-up's). This replaces ADR-DESK-023's "the chat window opens for the first tool".
+- The working pill is an empty circle in agent mode as in dictation, its rim or arc circling, no
+  icon; the sparkles stay only on the resting pill under the chat window (`agentRestingSymbolSize`,
+  was `agentRunningSymbolSize`).

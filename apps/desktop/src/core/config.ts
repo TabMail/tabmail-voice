@@ -690,9 +690,9 @@ export const overlayCanvasSize = {
   width: 440,
   height: pillHeight + 2 * (listeningPillHeight - pillHeight + agentBubbleGap + agentBubbleDiameter + tipFootprint + tipShadowRadius + tipShadowOffsetY),
 };
-/** The running tool's icon in the pill, which rests with it, fainter, under the chat window while
- * nothing runs. */
-export const agentRunningSymbolSize = 12;
+/** Agent mode's sparkles in the pill while it rests, fainter, under the chat window and nothing runs;
+ * a working pill shows none. */
+export const agentRestingSymbolSize = 12;
 export const agentRestingSymbolOpacity = 0.6;
 /** A bubble whose tool is not the one running fades to this opacity. */
 export const agentBubbleIdleOpacity = 0.45;

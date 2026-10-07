@@ -193,7 +193,8 @@ export const ThunderbirdTool: AgentTool = {
 
 /** Answers the user in the chat window the pill grows into, when the loop replies rather than writes
  * into the app (a question, an explanation of what is on screen, a follow-up). With it on, the loop
- * also reaches the user's apps and the web. Its bubble runs while the loop works. */
+ * also reaches the user's apps and the web. Its bubble runs, and its chat window opens, only when the
+ * agent answers (owner, 2026-10-07). */
 export const AnswerTool: AgentTool = {
   displayName: "Answer",
   symbolName: "text.bubble",
