@@ -2694,7 +2694,13 @@ spaces) the read gives none and the watch ends. Each read is a viewport read (ab
 every `correctionPollInterval` for `correctionWatchDuration`. The app reads a helper's replies one
 per line feed (`HelperClient`'s `onLines`): `node:readline`, which it used before, also ends a line
 at U+2028 and U+2029, which JSON leaves unescaped, and cut the box's reply apart (found in the
-Windows VM's terminal run); the same held for any screen text holding either character.
+Windows VM's terminal run); the same held for any screen text holding either character. Such a read
+runs in the helper, which also places the caret and pastes, not in voice-screen-reader (ADR-DESK-053),
+so it has a field read's time limit: 1 s on Windows (`terminalFieldReadMs`, under the 2.5 s
+watchdog), 1.5 s on Linux (`fieldReadMilliseconds`); out of time, there is no field. A shell rewraps
+its line after an edit that changes a word's length, so rows joined the way the pasted text was found
+can run two words together or split one in a later read: while the field has rows, only a word read
+whole on one of them is learned (a corrected word the terminal split across rows is not).
 
 ## ADR-DESK-039: A shorter wait between the release and the text
 
@@ -3913,6 +3919,12 @@ excluded page before a field read for corrections (`focusedFieldPageScanBudget`,
 that read's looks (200 ms) and the look through what holds a page's selection
 (`contextSelectionScanMs`), and on Linux the whole field read (`fieldReadMilliseconds`, 1.5 s, the
 time it had before).
+
+**Amendment 2026-10-07 — a terminal's field read runs in the helper, within a field read's time.**
+Correction learning in a terminal reads its viewport in voice-windows and voice-linux (and the Mac
+helper), as the box around the cursor (ADR-DESK-038, amended 2026-10-07); the screen read stays in
+voice-screen-reader. That read is bounded as every field read is (1 s on Windows, 1.5 s on Linux),
+and one out of time gives no field, so it holds up a caret placement or a paste at most that long.
 
 ## ADR-DESK-054: Shared logic lives in Rust only; native code is thin OS adapters
 

@@ -8,10 +8,10 @@ import * as config from "../../core/config.js";
 import { log } from "../../core/log.js";
 import { CancellationError } from "../../core/util/timeout.js";
 
-/** Calls `onLine` with each line `stream` writes, the last one too when it has no line feed. A
- * helper ends a line with a line feed only: `node:readline` also ends one at U+2028 and U+2029,
- * which a reply's text holds unescaped (a terminal's box joins its rows with U+2029), and would cut
- * the reply apart. */
+/** Calls `onLine` with each line `stream` writes, without its line feed or the carriage return
+ * before it (the Windows helpers write CRLF). A helper ends a line with a line feed only:
+ * `node:readline` also ends one at U+2028 and U+2029, which a reply's text holds unescaped (a
+ * terminal's box joins its rows with U+2029), and would cut the reply apart. */
 export function onLines(stream: Readable, onLine: (line: string) => void): void {
   let rest = "";
   stream.setEncoding("utf8");
@@ -19,9 +19,6 @@ export function onLines(stream: Readable, onLine: (line: string) => void): void 
     const lines = (rest + chunk).split("\n");
     rest = lines.pop() ?? "";
     for (const line of lines) onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
-  });
-  stream.on("end", () => {
-    if (rest) onLine(rest);
   });
 }
 

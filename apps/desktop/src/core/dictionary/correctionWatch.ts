@@ -15,8 +15,9 @@ const rowBreak = "\u2029";
 /** The ways a field may hold the pasted text, in order: as read; with the rows a terminal wrapped
  * inside a word joined (its breaks dropped); and with the rows a program wrapped at its words joined
  * by a space (each break and the blanks around it, as a full-screen program indents its next row).
- * Only the core's breaks are joined, never the user's own line breaks: the core checked its text for
- * secrets with and without them. */
+ * Only the core's breaks are joined, never the user's own line breaks. (The core checked its text for
+ * secrets with its breaks and with them dropped; the text joined by spaces stays on this computer,
+ * and only the words learned reach the debug log.) */
 const joins: ((field: string) => string)[] = [
   (field) => field,
   (field) => field.replaceAll(rowBreak, ""),
@@ -102,7 +103,10 @@ export class CorrectionWatch {
       // nothing while it is still changing, so a spelling paused on and then changed is never learned.
       // A read that respells nothing (the message sent and the field emptied, focus moved on, a word
       // half retyped) leaves it.
-      const words = learnedCorrections(pasted, before, field);
+      // A terminal rewraps its rows after an edit that changes a word's length, so the join found
+      // with the pasted text can run two words together, or split one, in a later read: while the
+      // field has rows, only a word read whole on one of them is learned.
+      const words = learnedCorrections(pasted, before, field).filter((word) => !read.includes(rowBreak) || read.includes(word));
       if ((words.length > 0 || field.includes(pasted)) && words.join("\n") !== this.pending.join("\n")) {
         this.pending = field === previous ? words : [];
       }

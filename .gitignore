@@ -21,6 +21,7 @@ xcuserdata/
 *.swp
 *~
 .idea/
+__pycache__/
 *.log
 *.env
 

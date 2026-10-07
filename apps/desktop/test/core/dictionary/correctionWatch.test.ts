@@ -73,14 +73,42 @@ describe("CorrectionWatch", () => {
     watch.stop();
     expect(learned).toEqual([["Xyvora"]]);
 
-    const shell = setup("$ Please forward the Ziv\u2029ora contract today.");
+    const shell = setup("$ Please forward the Zivora con\u2029tract today.");
     shell.watch.watch(pid, pasted, none);
     await poll();
-    shell.field.value = "$ Please forward the Xyv\u2029ora contract today.";
+    shell.field.value = "$ Please forward the Xyvora con\u2029tract today.";
     await poll();
     await poll();
     shell.watch.stop();
     expect(shell.learned).toEqual([["Xyvora"]]);
+  });
+
+  /** A shell wraps its line at a column, and an edit that changes a word's length moves every wrap
+   * after it: a word the terminal split, or two words a wrap at a blank runs together, is never
+   * learned. While the field has rows, only a word read whole on one row is (the core's breaks
+   * joined differently each read would teach words that were never typed). */
+  test("learns only words read whole on a row of a terminal the user's edit rewrapped", async () => {
+    const dictated = "Ask Steven to send the legal team the contract today and tell them we are ready";
+    const fixed = dictated.replace("Steven", "Stephen");
+    // The rows of a shell `width` columns wide, as the core cuts them: trailing blanks dropped.
+    const wrapped = (text: string, width: number) => {
+      const line = `$ git commit -m "${text}`;
+      const rows: string[] = [];
+      for (let at = 0; at < line.length; at += width) rows.push(line.slice(at, at + width).trimEnd());
+      return rows.join("\u2029");
+    };
+    const outcomes = new Set<string>();
+    for (let width = 12; width <= 80; width += 1) {
+      const { field, learned, watch } = setup(wrapped(dictated, width));
+      watch.watch(pid, dictated, none);
+      await poll();
+      field.value = wrapped(fixed, width);
+      await poll();
+      await poll();
+      watch.stop();
+      outcomes.add(JSON.stringify(learned));
+    }
+    expect([...outcomes].sort()).toEqual([JSON.stringify([]), JSON.stringify([["Stephen"]])].sort());
   });
 
   /** Only the core's breaks are joined: a field whose own line break falls inside the pasted text

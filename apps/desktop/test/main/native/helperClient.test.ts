@@ -50,6 +50,14 @@ describe("HelperClient", () => {
     expect(await client.request("echo", { after: true })).toEqual({ after: true });
   });
 
+  test("a line ended by CRLF, as the Windows helpers write, is read without its carriage return", async () => {
+    const errors: string[] = [];
+    configureLog({ isDebugBuild: true, sinks: { file: () => {}, error: (text) => errors.push(text) } });
+    expect(await helper().request("crlf", { text: "a\rb" })).toEqual({ text: "a\rb" });
+    expect(await eventually(() => errors.length === 1)).toBe(true);
+    expect(errors).toEqual(["fake-helper: windows line"]);
+  });
+
   test("a helper's error is a failure naming it, for the log", async () => {
     const error = await failure(helper().request("fail"));
     expect(error.kind).toBe("failed");
