@@ -15,7 +15,8 @@ struct Block {
     runs: Option<Vec<(String, bool)>>,
     /// Whether the text the screen shows starts or ends with a space (`admit` keeps one at each
     /// edge that had any, and `SemanticText` gives it as a hidden run): the block's text is read
-    /// without them.
+    /// without them. A block whose runs start or end hidden is spaced there too: text the screen
+    /// does not show is never glued to the piece beside it.
     spaced: [bool; 2],
 }
 impl Block {
@@ -50,7 +51,8 @@ impl Block {
             text = text.trim_matches(whitespace).to_owned();
         }
         let spaced = match &runs {
-            Some(runs) => [runs.first(), runs.last()].map(|run| run.is_some_and(edge_space)),
+            Some(runs) => [runs.first(), runs.last()]
+                .map(|run| run.is_some_and(|(text, shown)| !shown && !text.is_empty())),
             None => spaced,
         };
         let frame = if value["frame"].is_null() {
@@ -91,7 +93,7 @@ impl Block {
         self.kind == "text" || self.kind == "link"
     }
 }
-/// How far apart, as a share of the lower box's height, two pieces of one line may be and still be
+/// How far apart, as a share of the smaller box's height, two pieces of one line may be and still be
 /// one word: Chromium lays a bold or linked run against the text before it with no gap at all
 /// (measured 2026-10-07), and the gap between two words is a space's width, about a quarter of
 /// the line. A piece whose box ends well past the next one's start wrapped onto more lines; its
@@ -1776,6 +1778,28 @@ mod budget_tests {
             SCREEN
         );
         assert_eq!(reply["truncated"], true);
+    }
+    #[test]
+    fn hidden_text_at_a_link_edge_is_never_glued_to_a_key_beside_it() {
+        let key = format!("{}{}", "AKIA", "A".repeat(16));
+        let before = json!([
+            {"kind":"text","text":format!("Key {key}"),"frame":[20,0,200,20]},
+            {"kind":"link","text":"(docs)","runs":[["zz",false],["(docs)",true]],"frame":[220,0,40,20]}
+        ]);
+        let after = json!([
+            {"kind":"link","text":"(docs)","runs":[["(docs)",true],["zz",false]],"frame":[20,0,40,20]},
+            {"kind":"text","text":format!("{key} here"),"frame":[60,0,240,20]}
+        ]);
+        let glued: Vec<_> = [("before", before), ("after", after)]
+            .into_iter()
+            .filter(|(_, blocks)| {
+                let reply = call(json!({"blocks":blocks,"caret":["","",""]}));
+                let rendered = reply["rendered"].as_str().unwrap();
+                rendered.contains("AKIA") || !rendered.contains("[redacted]")
+            })
+            .map(|(side, _)| side)
+            .collect();
+        assert!(glued.is_empty(), "a key shown beside a link: {glued:?}");
     }
     #[test]
     fn final_semantic_prefix_follows_redaction_and_keeps_graphemes_whole() {

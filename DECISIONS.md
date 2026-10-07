@@ -552,14 +552,14 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   a link or code inside a paragraph as a piece of its own (Mac `AXStaticText`, UIA text elements),
   and each block was a line of its own to the redactor, so a key split by a bold run was read in
   its pieces. Text and link blocks the render puts on one line (`separator`: inline, at or right of
-  the one before, overlapping it by half the lower one's height) are joined for the redactor as the
+  the one before, overlapping it by half the smaller one's height) are joined for the redactor as the
   screen shows them, and each block takes back its own redacted parts. Between them goes a space
   where the screen has one, and nothing where they abut. Measured in Electron's Chromium on the Mac
   (2026-10-07): a bold run inside a word starts exactly where the text before it ends, and a space
   the screen shows is inside its piece's box (`Visit ` ends where the link starts), so geometry
   alone can't tell the two apart. `admit` now keeps one space at each edge of a piece that had any
   (the core trims every block but a field, the caret and one given with its runs when it reads the blocks back), and two
-  pieces abut only with no space at that edge and a gap under a tenth of the lower box's height
+  pieces abut only with no space at that edge and a gap under a tenth of the smaller box's height
   (`ABUTTING_GAP`) either way. A piece whose box ends well past the next one's start wrapped onto
   more lines (a Slack message) and gets a space. A helper gives a wrapped piece one box over all its
   lines, so where it meets the piece beside it is not known: a key split by styling where either
@@ -568,14 +568,16 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   "Visit [example] now" and a word split by italics stays one word. A soft wrap between two pieces
   is still a line break. AT-SPI gives Chromium's paragraph as one text with its runs, so Linux had
   no split. A piece that touches a key with no space on screen (a label laid against a `ghp_` key)
-  reads as a key glued to a word, which the redactors do not match, so the whole key is shown:
+  before or after it reads as a key glued to a word, which the redactors do not match (an AWS or
+  Google key must start and end at a word's edge), so the whole key is shown:
   accepted by the owner as rare (2026-10-07), tracked as #175 (P3). The base redacted it only
   because each piece was a line of its own; one plain piece holding the same text never was. A
   link's box holds the space the screen shows before or after it inside the link (`Read <a>more
   </a>now`), and every platform gives a link's text through `SemanticText`, which trims it: it now
   gives such a space as a hidden run at the block's edge, which counts for the join and the redactor
   and is never shown, so the read is "Read [more] now" and a key that is a link's text, or follows
-  one, is redacted. A private key's body with no header beside a label on its first line (`Key:`
+  one, is redacted. A block whose runs start or end hidden (a field's source inside a link) is
+  spaced there as well: text the screen does not show is never glued to the key beside it. A private key's body with no header beside a label on its first line (`Key:`
   beside a block of base64) is one line with the label now, so its first base64 line follows a space:
   `private-key-lines`, and `private-key-end` before a full line of base64, start a body after a
   space or a tab as well as at a line, which also redacts one plain piece holding the same text.

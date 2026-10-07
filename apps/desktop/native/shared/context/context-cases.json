@@ -400,6 +400,96 @@
       }
     },
     {
+      "name": "a link whose runs end hidden is not glued to a key after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "(docs)",
+            "runs": [
+              [
+                "(docs)",
+                true
+              ],
+              [
+                "zz",
+                false
+              ]
+            ],
+            "frame": [
+              20,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "sk-ReviewLink1234567890abcd here",
+            "frame": [
+              60,
+              0,
+              240,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[(docs)] [redacted] here"
+      }
+    },
+    {
+      "name": "a link whose runs start hidden is not glued to the key before it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-ReviewLink1234567890abcd",
+            "frame": [
+              20,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "(docs)",
+            "runs": [
+              [
+                "zz",
+                false
+              ],
+              [
+                "(docs)",
+                true
+              ]
+            ],
+            "frame": [
+              220,
+              0,
+              40,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] [(docs)]"
+      }
+    },
+    {
       "name": "a key's body beside a label on its first line is redacted, its first line too",
       "request": {
         "blocks": [
