@@ -143,6 +143,21 @@ try {
     assert.deepEqual(await exit, [0, null]); fixture.lines.close(); fixture = undefined;
     ++checks;
   }
+  // A provider asked for its tree for the first time (Chromium, in a window just brought to the
+  // front) names a container that says it has no keyboard focus as the focus until the tree is
+  // connected. The caret and the screen read find the field all the same, as where it is settled.
+  for (const mode of ["settled-field", "unsettled-focus"]) {
+    fixture = client(process.argv[3], [mode]);
+    const initial = await fixture.next();
+    assert.deepEqual(await request("frontmostApp"), { window: initial.window }, `${mode}: fixture owns foreground`);
+    fixture.child.stdin.write("reset\n"); await fixture.next();
+    assert.ok((await request("caretAnchor", { window: initial.window }))?.height > 0, `${mode}: the caret is the field's`);
+    fixture.child.stdin.write("reset\n"); await fixture.next();
+    assert.equal((await request("readScreen", exclusions))?.focusedRole, "editable text", `${mode}: the screen read finds the field`);
+    const exit = once(fixture.child, "exit"); fixture.child.stdin.end();
+    assert.deepEqual(await exit, [0, null]); fixture.lines.close(); fixture = undefined;
+    ++checks;
+  }
   const exits = [once(helper.child, "exit"), once(reader.child, "exit")]; helper.child.stdin.end(); reader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   process.stdout.write(`${checks} synthetic provider privacy cases passed through the actual helper\n`);

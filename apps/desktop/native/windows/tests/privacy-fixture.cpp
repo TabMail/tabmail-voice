@@ -29,6 +29,9 @@ std::atomic<unsigned> forbiddenReads{0}, textReads{0};
 // The UI framework every element reports: a browser engine's, unless the mode says otherwise.
 std::wstring framework = L"Chrome";
 bool frameworkFails = false;
+// How long after each reset GetFocus names the root, a container that says it has no keyboard
+// focus, before the focused field (ms): a provider whose tree is not connected yet.
+ULONGLONG unsettledMs = 0, unsettledUntil = 0;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
@@ -128,7 +131,9 @@ struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRaw
     HRESULT STDMETHODCALLTYPE SetFocus() override { focus = id; ::SetFocus(window); return S_OK; }
     HRESULT STDMETHODCALLTYPE get_FragmentRoot(IRawElementProviderFragmentRoot** result) override { *result = nodes.front().get(); (*result)->AddRef(); return S_OK; }
     HRESULT STDMETHODCALLTYPE ElementProviderFromPoint(double, double, IRawElementProviderFragment** result) override { *result = nodes.at(focus).get(); (*result)->AddRef(); return S_OK; }
-    HRESULT STDMETHODCALLTYPE GetFocus(IRawElementProviderFragment** result) override { *result = nodes.at(focus).get(); (*result)->AddRef(); return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetFocus(IRawElementProviderFragment** result) override {
+        *result = nodes.at(GetTickCount64() < unsettledUntil ? 0 : focus).get(); (*result)->AddRef(); return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE SetValue(LPCWSTR) override { return E_NOTIMPL; }
     HRESULT STDMETHODCALLTYPE get_Value(BSTR* result) override {
         *result = nullptr;
@@ -152,7 +157,10 @@ int add(int parent, CONTROLTYPEID type, bool password = false) {
 void configure(const std::string& mode) {
     add(-1, UIA_WindowControlTypeId); nodes.front()->text = L"Synthetic provider root";
     add(0, UIA_TextControlTypeId); // A non-editable focus keeps unrelated text paths out of the test.
-    if (mode == "paste-focus") {
+    if (mode == "settled-field" || mode == "unsettled-focus") {
+        nodes.at(1)->type = UIA_EditControlTypeId; nodes.at(1)->text = L"Synthetic field text";
+        if (mode == "unsettled-focus") unsettledMs = 400;
+    } else if (mode == "paste-focus") {
         pasteMode = true; add(0, UIA_TextControlTypeId);
     } else if (mode == "password-focus") {
         nodes.at(1)->password = true; nodes.at(1)->type = UIA_EditControlTypeId;
@@ -337,6 +345,7 @@ LRESULT CALLBACK procedure(HWND handle, UINT message, WPARAM value, LPARAM data)
             SetForegroundWindow(handle); ::SetFocus(handle);
             UiaRaiseAutomationEvent(nodes.at(focus).get(), UIA_AutomationFocusChangedEventId);
             forbiddenReads = 0; textReads = 0;
+            unsettledUntil = GetTickCount64() + unsettledMs;
         }
         std::cout << JSON({{"window", reinterpret_cast<uintptr_t>(handle)}, {"forbiddenReads", forbiddenReads.load()}, {"textReads", textReads.load()}}).dump() << '\n' << std::flush;
         return 0;

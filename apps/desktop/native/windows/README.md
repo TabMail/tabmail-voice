@@ -138,6 +138,15 @@ bundled: `vendor/ia2` contains pinned BSD interface declarations and notices.
 Electron tests compare complete text and every insertion offset against the DOM,
 including mixed bidirectional text and wrapped lines.
 
+A provider asked for its tree for the first time (Chromium, in a window just
+brought to the front) names its own container as the focus, one that says it has
+no keyboard focus, until its tree is connected. A caret placement, a field read
+and a screen read take the focus only once it says it has the keyboard, waiting
+at most `focusSettleMs` (1 s, polled every `focusSettlePollMs`), and take it as it
+is after that; a look that checks the focus has not moved since does not wait.
+The synthetic provider suite's `unsettled-focus` mode names the container for
+400 ms after each reset.
+
 Screen context (in `voice-screen-reader.exe`) uses a bounded UI Automation walk of the foreground window, with visible text ranges for fields, separate field-scoped caret context, password/hidden-text exclusions and Mac-compatible reading-order rendering. The walk has the Mac reference budgets of 5,000 nodes / 1.5 seconds plus an aggregate text cap. The Electron regression checks real provider visibility and field boundaries; a portable renderer test checks line/column formatting and Unicode-safe limits.
 
 ## Start and Search placement

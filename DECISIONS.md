@@ -2318,6 +2318,21 @@ digital silence. Silence only as a device starts (a Bluetooth headset switching 
 out, and once the key is released the recording goes on as any does. A spoken answer to a question
 is not checked.
 
+### Amendment 2026-10-07: the Windows helper waits for a new window's focus to settle
+
+Owner, 2026-10-07: "fix the flake completely … identify root cause and fix at core", of the Electron
+caret test that now and then failed on its first case in a freshly started Windows VM. Probed in the
+VM: Chromium builds its UI Automation tree only when a client first asks for it, and until that tree
+is connected `GetFocusedElement` names Chromium's own container pane (a `View` pane of the window,
+which says it has no keyboard focus) rather than the field. The first caret placement therefore
+measured the window, not the caret, and its first calls were slow. The caret placement, the field
+read and the screen read now take the focus only once it says it has the keyboard, polling
+`focusSettlePollMs` (50 ms) for at most `focusSettleMs` (1 s, well under the 2.5 s watchdog), and
+take it as it is after that, so an app whose focus never says so costs at most one second and gets
+the answer it got before. A look that checks the focus has not moved since (the paste's
+guards, the field read's rechecks) does not wait. The synthetic provider suite has a mode that names
+the container for 400 ms after each reset, red without the wait.
+
 ## ADR-DESK-033: The bubbles surround the pill, one for each app Answer reaches
 
 > ⚠️ **Placement SUPERSEDED by ADR-DESK-036 (owner 2026-09-28):** one row under the pill (over it

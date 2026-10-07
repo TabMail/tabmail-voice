@@ -30,15 +30,41 @@ using JSON = nlohmann::json;
 class Automation {
 public:
     Automation() { require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation))); }
-    ComPtr<IUIAutomationElement> ownedFocus(HWND expected, const char** refusal = nullptr) {
+    // `settle`: an operation's first look, which waits for the focus to settle (`settledFocus`).
+    // A look that checks the focus has not moved since takes it as it is.
+    ComPtr<IUIAutomationElement> ownedFocus(HWND expected, const char** refusal = nullptr, bool settle = false) {
         if (refusal) *refusal = "foreground-changed";
         if (!expected || GetForegroundWindow() != expected) return {};
-        ComPtr<IUIAutomationElement> element;
-        require(automation->GetFocusedElement(&element));
+        auto element = settle ? settledFocus(expected) : currentFocus();
         if (refusal) *refusal = "no-focused-element";
         if (!element) return {};
         if (refusal) *refusal = "focus-not-owned";
         return owns(expected, element.Get()) ? element : ComPtr<IUIAutomationElement>{};
+    }
+    ComPtr<IUIAutomationElement> currentFocus() {
+        ComPtr<IUIAutomationElement> element;
+        require(automation->GetFocusedElement(&element));
+        return element;
+    }
+    // A provider asked for its tree for the first time (Chromium, in a window just brought to the
+    // front) names its own container as the focus, one that says it has no keyboard focus, until its
+    // tree is connected: 0.2 s, seconds on a loaded machine. Read then, the caret and the field are
+    // that container's, and so not there. A focus that says it has no keyboard focus is looked for
+    // again until it does; one that still doesn't after `focusSettleMs` is taken as it is.
+    ComPtr<IUIAutomationElement> settledFocus(HWND expected) {
+        const auto started = GetTickCount64();
+        auto element = currentFocus();
+        for (;;) {
+            BOOL keyboard = TRUE;
+            if (element) require(element->get_CurrentHasKeyboardFocus(&keyboard));
+            const auto waited = GetTickCount64() - started;
+            if (!element || keyboard || GetForegroundWindow() != expected || waited >= HelperConfig::focusSettleMs) {
+                if (waited) std::cerr << "debug focus settle: " << (keyboard ? "settled" : "unsettled") << " after " << waited << " ms\n";
+                return element;
+            }
+            Sleep(HelperConfig::focusSettlePollMs);
+            element = currentFocus();
+        }
     }
     bool owns(HWND expected, IUIAutomationElement* element) {
         if (!expected || !element || GetForegroundWindow() != expected) return false;
@@ -56,8 +82,8 @@ public:
         }
         return owned && GetForegroundWindow() == expected;
     }
-    ComPtr<IUIAutomationElement> focused(HWND expected, const char** refusal = nullptr) {
-        auto element = ownedFocus(expected, refusal);
+    ComPtr<IUIAutomationElement> focused(HWND expected, const char** refusal = nullptr, bool settle = false) {
+        auto element = ownedFocus(expected, refusal, settle);
         if (!element) return {};
         BOOL password = TRUE;
         require(element->get_CurrentIsPassword(&password));
@@ -85,7 +111,7 @@ public:
     }
     JSON caret(HWND window) {
         const char* refusal = nullptr;
-        auto element = focused(window, &refusal);
+        auto element = focused(window, &refusal, true);
         if (!element) {
             std::cerr << "debug caret lookup: " << refusal << '\n';
             return nullptr;
@@ -143,7 +169,7 @@ public:
     }
     JSON fieldValue(HWND window, unsigned maxLength, const ScreenExclusions& exclusions) {
         const char* refusal = nullptr;
-        auto element = focused(window, &refusal);
+        auto element = focused(window, &refusal, true);
         if (!element && refusal && std::string_view(refusal) == "protected-field") return {{"value", nullptr}};
         if (!element) return nullptr;
         if (refusedPages(window, element.Get(), exclusions, 200, true)) return {{"value", nullptr}};
@@ -200,7 +226,7 @@ public:
         if (!window || GetForegroundWindow() != window) return nullptr;
         // Without a focused element in this window (none at all, or the focus is in another
         // of the app's windows) the window is still read, without a caret, as on the Mac.
-        auto element = ownedFocus(window);
+        auto element = ownedFocus(window, nullptr, true);
         if (GetForegroundWindow() != window) return nullptr;
         BOOL protectedFocus = FALSE;
         if (element) {
