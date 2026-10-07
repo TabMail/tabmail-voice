@@ -79,15 +79,15 @@ export class WebReadError extends Error {
 
 /**
  * A web page as `web_read` gives it to the model, read as the Thunderbird add-on's `web_read.js` reads
- * it (ADR-DESK-030): the site's robots.txt first, then the page, both as `webUserAgent`, its text
- * extracted when it is HTML, cut at `webReadMaxCharacters`, in the same result format. The backend has
+ * it (ADR-DESK-030): the page alone, as `webUserAgent`, its text extracted when it is HTML, cut at
+ * `webReadMaxCharacters`, in the same result format. robots.txt is not asked: it is for crawlers, and
+ * this reads one page the user asked for, as a browser does (ADR-DESK-030 amendment). The backend has
  * already refused a URL the model composed, a private address and every scheme but http and https.
  */
 export class WebPageReader {
   constructor(private readonly fetch: WebFetch) {}
 
   async read(url: URL, signal: AbortSignal): Promise<string> {
-    if (!(await this.robotsAllow(url, signal))) throw new WebReadError("Access to this URL is disallowed by the site's robots.txt");
     let response: WebResponse;
     try {
       response = await this.fetch(url.href, { "User-Agent": config.webUserAgent }, config.webReadTimeout, signal);
@@ -101,50 +101,6 @@ export class WebPageReader {
     const content = decoded(response.body, contentType).slice(0, config.webReadMaxCharacters);
     const text = contentType.includes("text/html") || contentType.includes("application/xhtml") ? WebPageReader.text(content) : content;
     return [`URL: ${url.href}`, `Content-Type: ${contentType}`, `Content-Length: ${text.length} characters`, "", "Content:", text].join("\n");
-  }
-
-  /** Whether the site's robots.txt lets us read `url`: allowed when it has none or it can't be read. */
-  private async robotsAllow(url: URL, signal: AbortSignal): Promise<boolean> {
-    let response: WebResponse;
-    try {
-      response = await this.fetch(`${url.protocol}//${url.host}/robots.txt`, { "User-Agent": config.webUserAgent }, config.webReadRobotsTimeout, signal);
-    } catch (error) {
-      if (error instanceof CancellationError) throw error;
-      return true;
-    }
-    if (response.status !== 200) return true;
-    return WebPageReader.isPathAllowed(decoded(response.body, "text/plain"), url.pathname, config.webUserAgent);
-  }
-
-  /** Whether robots.txt lets `userAgent` read `path`: the `*` or `userAgent` group's rules, an Allow
-   * prefix winning over a Disallow one (`isPathAllowedByRobots` in the add-on). */
-  static isPathAllowed(robotsTxt: string, path: string, userAgent: string): boolean {
-    let currentAgent: string | null = null;
-    let disallowRules: string[] = [];
-    let allowRules: string[] = [];
-    for (const line of robotsTxt.split("\n")) {
-      const trimmed = line.trim();
-      // A comment line starts with `#`, so it is never a directive.
-      const lower = trimmed.toLowerCase();
-      if (lower.startsWith("user-agent:")) {
-        const agent = trimmed.slice("user-agent:".length).trim();
-        currentAgent = agent;
-        if (agent !== "*" && agent !== userAgent) {
-          disallowRules = [];
-          allowRules = [];
-        }
-      } else if (currentAgent === "*" || currentAgent === userAgent) {
-        if (lower.startsWith("disallow:")) {
-          const rule = trimmed.slice("disallow:".length).trim();
-          if (rule !== "") disallowRules.push(rule);
-        } else if (lower.startsWith("allow:")) {
-          const rule = trimmed.slice("allow:".length).trim();
-          if (rule !== "") allowRules.push(rule);
-        }
-      }
-    }
-    if (allowRules.some((rule) => path.startsWith(rule))) return true;
-    return !disallowRules.some((rule) => path.startsWith(rule));
   }
 
   /** A page's readable text: scripts, styles and page chrome dropped, block ends as line breaks, tags

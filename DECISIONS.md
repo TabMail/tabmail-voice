@@ -1943,6 +1943,17 @@ in the Electron app (ADR-DESK-032).
   element such as `<nav-menu>` stays page text, and a closing tag may have spaces before its `>`.
 - Offered on macOS only, with the other connectors.
 
+**Amendment 2026-10-07 (owner): `web_read` no longer asks robots.txt.** robots.txt is written for
+crawlers, clients that walk a site on their own; `web_read` reads one page because the user asked,
+as a browser does, and browsers don't ask it. The group match above was also wrong (only `*` or the
+whole `webUserAgent`, not RFC 9309's product token, issue #45; and a later group for another crawler
+cleared the rules gathered from `*`), and rather than fix it the check is gone: `robotsAllow`,
+`isPathAllowed` and `webReadRobotsTimeout` are deleted, and a read is the page alone. TabMail stays
+named in `webUserAgent`, so a site can see who asks and block it, and the backend's URL guard is
+unchanged. The Thunderbird add-on (its ADR-026) and the iOS app drop the check in the same change,
+and the backend's `web_read` description no longer says the tool respects robots.txt. This replaces
+the robots.txt steps in the decision and the group-match consequence above.
+
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
 **Context:** Owner, 2026-09-27: with fn as the hotkey, a press or a double tap also switched the
