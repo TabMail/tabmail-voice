@@ -57,6 +57,9 @@ fn a_tmux_pane_is_cut_at_its_borders() {
         "           │ end",
     ];
     assert_eq!(boxed(&rows), caret(&["left one"], "Note:", "", &[""]));
+    // The cursor at its row's end, right after the border: an empty right pane.
+    let rows = ["left one   │right", "left two   │‸"];
+    assert_eq!(boxed(&rows), caret(&["right"], "", "", &[]));
 }
 
 /// A rule ends the box: tmux's border between panes one above the other, and the rules a full-screen
@@ -188,4 +191,146 @@ fn a_connected_run_after_the_carets_continues_its_row() {
             {"id": 2, "text": "te: hi\nnext", "connected": true},
             {"id": 3, "text": "other pane", "connected": false}]}]});
     assert_eq!(caret_box(&value), caret(&[], "> No", "te: hi", &["next"]));
+}
+
+/// A double-width character (CJK, an emoji) takes two columns on screen: rows holding them, in the
+/// cursor's pane or the pane beside it, still have their borders under the cursor's.
+#[test]
+fn double_width_characters_take_two_columns() {
+    // The left pane's rows hold CJK and an emoji; each border is at column 13.
+    let rows = [
+        "日本語 build │ $ echo 你好",
+        "👍 done.     │ 你好",
+        "tests:       │ $ Note:‸",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&[" $ echo 你好", " 你好"], " $ Note:", "", &[])
+    );
+    // The cursor in the left pane, after CJK, its border on the right.
+    let rows = [
+        "左 one     │ right",
+        "日本語 x‸   │ more",
+        "ok         │ end",
+    ];
+    assert_eq!(boxed(&rows), caret(&["左 one"], "日本語 x", "", &["ok"]));
+    // A program's input box around a CJK line, a line without CJK above it.
+    let rows = [
+        "╭──────────╮",
+        "│ ok there │",
+        "│ > 你好‸   │",
+        "╰──────────╯",
+    ];
+    assert_eq!(boxed(&rows), caret(&[" ok there"], " > 你好", "", &[]));
+}
+
+/// A ligature Unicode gives one width for two graphemes (Arabic lam-alef, Hebrew alef-ZWJ-lamed) takes
+/// a column for each, as a terminal draws it, on the cursor's row as on the others: the text before
+/// the cursor is what is before it on screen, and a pane beside the cursor's never reaches its box.
+#[test]
+fn a_ligature_takes_a_column_for_each_grapheme() {
+    // "ملاحظة:" holds a lam-alef; the delimiter is before the cursor.
+    assert_eq!(
+        boxed(&["\u{645}\u{644}\u{627}\u{62D}\u{638}\u{629}:‸"]),
+        caret(&[], "\u{645}\u{644}\u{627}\u{62D}\u{638}\u{629}:", "", &[])
+    );
+    // "سلام" in a program's input box, the cursor after it.
+    let rows = [
+        "╭──────────────╮",
+        "│ > \u{633}\u{644}\u{627}\u{645}‸         │",
+        "╰──────────────╯",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&[], " > \u{633}\u{644}\u{627}\u{645}", "", &[])
+    );
+    // tmux panes: the cursor in the right pane's first columns, the left pane's part of its row
+    // holding lam-alefs or alef-ZWJ-lamed. Each border is at column 12.
+    for left in [
+        "\u{644}\u{627}          ",
+        "\u{644}\u{627} \u{644}\u{627} \u{644}\u{627} \u{644}\u{627} ",
+        "\u{5D0}\u{200D}\u{5DC}          ",
+    ] {
+        let cursor_row = format!("{left}│$ ‸");
+        let rows = ["build ok.   │$ echo one", cursor_row.as_str()];
+        assert_eq!(
+            boxed(&rows),
+            caret(&["$ echo one"], "$ ", "", &[]),
+            "{left}"
+        );
+    }
+}
+
+/// A cursor inside a grapheme (between the parts of an emoji sequence) is after it: the border on its
+/// right stays on its right.
+#[test]
+fn a_cursor_inside_a_grapheme_is_after_it() {
+    let rows = [
+        "ab│other",
+        "\u{1F469}\u{200D}\u{2764}‸\u{FE0F}\u{200D}\u{1F468}│other",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(
+            &["ab"],
+            "\u{1F469}\u{200D}\u{2764}\u{FE0F}\u{200D}\u{1F468}",
+            "",
+            &[]
+        )
+    );
+}
+
+/// A character of no width just before the cursor is before it, and a border a combining mark follows
+/// is still a border.
+#[test]
+fn zero_width_characters_stay_where_they_are() {
+    assert_eq!(
+        boxed(&["$ echo one\u{200B}‸ two"]),
+        caret(&[], "$ echo one\u{200B}", " two", &[])
+    );
+    // At the border's column, right before it.
+    assert_eq!(
+        boxed(&["│ end.\u{2060}‸│ other"]),
+        caret(&[], " end.\u{2060}", "", &[])
+    );
+    let rows = ["left pane   │$ echo one", "left text   │\u{301}$ ‸"];
+    assert_eq!(boxed(&rows), caret(&["$ echo one"], "$ ", "", &[]));
+}
+
+/// Symbols Unicode leaves ambiguous (box drawing, a bullet, an arrow) take one column, as a terminal
+/// outside an East Asian setting draws them; an emoji made so by its presentation selector takes two.
+#[test]
+fn ambiguous_symbols_take_one_column_and_emoji_presentation_two() {
+    let rows = [
+        "├── src    │ $ ls",
+        "• one      │ src",
+        "a → b      │ docs",
+        "status     │ $ ‸",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&[" $ ls", " src", " docs"], " $ ", "", &[])
+    );
+    let rows = ["\u{26A0}\u{FE0F} 2 warnings│ out", "status       │ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[" out"], " $ ", "", &[]));
+}
+
+/// A mark that comes before what it marks (Arabic's number sign, end of ayah) right before a border
+/// leaves the border a border, on the cursor's row and on the others.
+#[test]
+fn a_mark_before_a_border_leaves_it_a_border() {
+    let rows = ["left \u{600}│ $ echo one", "abcde\u{600}│ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[" $ echo one"], " $ ", "", &[]));
+    assert_eq!(boxed(&["left two\u{6DD}│‸"]), caret(&[], "", "", &[]));
+    let rows = ["left \u{600}│ above", "status│ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[" above"], " $ ", "", &[]));
+}
+
+/// A row whose borders are not at the cursor's border columns ends the box: a terminal that draws a
+/// letter wider than Unicode says (iTerm2's ambiguous-width Ω drawn double) leaves that row's border a
+/// column early in the text.
+#[test]
+fn a_row_with_its_border_elsewhere_ends_the_box() {
+    let rows = ["\u{3A9} lane     │ above", "status      │ $ ‸"];
+    assert_eq!(boxed(&rows), caret(&[], " $ ", "", &[]));
 }

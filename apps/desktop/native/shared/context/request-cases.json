@@ -117,6 +117,51 @@
       }
     },
     {
+      "name": "a terminal's field with double-width characters, each right half a NUL as iTerm2 gives it, cut at the column on screen",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "viewport": {
+            "surfaces": [
+              {
+                "id": 1,
+                "frame": [
+                  0,
+                  0,
+                  400,
+                  200
+                ],
+                "runs": [
+                  {
+                    "id": 1,
+                    "text": "日\u0000本\u0000 ok   │ $ echo one\nDone.     │ 你\u0000好\u0000\nlog:      │ Note:",
+                    "connected": false,
+                    "startKnown": false,
+                    "endKnown": false
+                  }
+                ],
+                "selection": {
+                  "complete": true,
+                  "ranges": []
+                }
+              }
+            ],
+            "focusedSurface": 1,
+            "complete": true,
+            "caret": {
+              "status": "exact",
+              "surface": 1,
+              "run": 1,
+              "offset": 57
+            }
+          }
+        }
+      },
+      "expected": {
+        "value": " $ echo one\u2029 你好\u2029 Note:"
+      }
+    },
+    {
       "name": "a terminal's field: a program's input between its rules",
       "request": {
         "field": {
