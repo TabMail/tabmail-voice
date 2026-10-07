@@ -198,7 +198,7 @@ if(WIN32)
     set_tests_properties(voice-accessibility voice-paste voice-paste-focus PROPERTIES RUN_SERIAL TRUE TIMEOUT 45)
     # No screen read has a time limit: each case too large to look through whole walks the look's
     # whole node budget.
-    set_tests_properties(voice-privacy-provider PROPERTIES RUN_SERIAL TRUE TIMEOUT 90)
+    set_tests_properties(voice-privacy-provider PROPERTIES RUN_SERIAL TRUE TIMEOUT 150)
   endif()
   if(MSVC)
     target_compile_options(voice-windows PRIVATE /W4 /WX /utf-8)

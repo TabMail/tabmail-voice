@@ -119,6 +119,15 @@ try {
   assert.ok(await request("readScreen"), "non-text focus still permits visible window context");
   await mode("editable");
   assert.equal((await request("readScreen")).selectedText, "selected", "refusal does not poison subsequent reads");
+  // A classic multi-line edit (Notepad, Win32, WinForms and MFC dialogs) is anchored, read whole and
+  // refused like the single-line one.
+  await mode("multiline");
+  const multilineCaret = await request("caretAnchor", { window });
+  assert.ok(multilineCaret && multilineCaret.height > 0, "a multi-line edit exposes its caret");
+  assert.deepEqual(await request("focusedFieldValue", fieldParams), { value: "First line\r\nSecond selected line." }, "a multi-line edit is read whole, its line break included");
+  assert.equal(await request("focusedFieldValue", { ...fieldParams, maxLength: 10 }), null, "a long multi-line edit is refused rather than truncated");
+  await mode("multilineReadOnly");
+  assert.equal(await request("focusedFieldValue", fieldParams), null, "a read-only multi-line edit is refused");
   await mode("secret");
   const privateContext = await request("readScreen");
   assert.equal(privateContext.windowTitle, "password: [redacted]", "window title is filtered before the reply");

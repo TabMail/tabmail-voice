@@ -14,6 +14,9 @@
 
 namespace {
 HWND edit = nullptr, button = nullptr;
+// A classic multi-line edit, as Notepad and Win32, WinForms and MFC dialogs host it; shown only in its modes.
+HWND multiline = nullptr;
+bool multilineShown = false;
 voice::SavedClipboard* original = nullptr;
 // "delayed": the clipboard holds text and a private format its owner renders only when asked, after
 // a pause, as a busy app or a VM's clipboard agent does. `helperAsked` says the helper asked for it.
@@ -79,7 +82,7 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
             CloseClipboard();
             std::cout << nlohmann::json({{"command", value == 1 ? "seed" : "copy"}}).dump() << '\n' << std::flush;
         } else if (value == 3) {
-            wchar_t text[2048]{}; GetWindowTextW(edit, text, 2048);
+            wchar_t text[2048]{}; GetWindowTextW(multilineShown ? multiline : edit, text, 2048);
             std::cout << nlohmann::json({{"command", "value"}, {"text", voice::utf8(text)}}).dump() << '\n' << std::flush;
         } else if (value == 5 || value == 6) {
             if (value == 5 && !openClipboard(window)) ExitProcess(1);
@@ -106,6 +109,18 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM value, LPARAM data)
     }
     if (message == WM_APP + 1) {
         if (value == 5) { DestroyWindow(window); return 0; }
+        multilineShown = value == 11 || value == 12;
+        ShowWindow(multiline, multilineShown ? SW_SHOW : SW_HIDE);
+        if (multilineShown) {
+            SetWindowTextW(window, L"Native editor integration test");
+            SetWindowTextW(multiline, L"First line\r\nSecond selected line.");
+            SendMessageW(multiline, EM_SETREADONLY, value == 12, 0);
+            SetForegroundWindow(window);
+            SetFocus(multiline);
+            SendMessageW(multiline, EM_SETSEL, 19, 27);
+            ready(window, value == 11 ? "multiline" : "multilineReadOnly");
+            return 0;
+        }
         const std::wstring text = value == 6 ? std::wstring(20001, L'x') : value == 7 ? std::wstring(20000, L'x') :
             value == 8 ? L"Before Xyvora \U0001F642 after." : value == 9 ? L"" : value == 10 ? L"password: synthetic" L"value123" : L"Before selected after.";
         SetWindowTextW(window, value == 10 ? L"password: synthetic" L"title123" : L"Native editor integration test");
@@ -138,7 +153,9 @@ int run(bool preservesClipboard) {
         20, 20, 550, 40, window, nullptr, type.hInstance, nullptr);
     button = CreateWindowExW(0, L"BUTTON", L"Synthetic button", WS_CHILD | WS_VISIBLE,
         20, 80, 180, 40, window, nullptr, type.hInstance, nullptr);
-    if (!edit || !button) return 1;
+    multiline = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL,
+        220, 80, 350, 100, window, nullptr, type.hInstance, nullptr);
+    if (!edit || !button || !multiline) return 1;
     std::optional<voice::SavedClipboard> saved;
     if (preservesClipboard) { saved.emplace(); original = &*saved; }
     ShowWindow(window, SW_SHOW);
@@ -150,7 +167,7 @@ int run(bool preservesClipboard) {
                 PostMessageW(window, WM_APP + 2, command == "seed" ? 1 : command == "copy" ? 2 : command == "value" ? 3 : command == "clipboard" ? 4 : command == "lock" ? 5 : command == "delayed" ? 7 : command == "asked" ? 9 : 6, 0);
                 continue;
             }
-            const WPARAM mode = command == "password" ? 2 : command == "readOnly" ? 3 : command == "button" ? 4 : command == "close" ? 5 : command == "long" ? 6 : command == "limit" ? 7 : command == "unicode" ? 8 : command == "empty" ? 9 : command == "secret" ? 10 : 1;
+            const WPARAM mode = command == "password" ? 2 : command == "readOnly" ? 3 : command == "button" ? 4 : command == "close" ? 5 : command == "long" ? 6 : command == "limit" ? 7 : command == "unicode" ? 8 : command == "empty" ? 9 : command == "secret" ? 10 : command == "multiline" ? 11 : command == "multilineReadOnly" ? 12 : 1;
             if (!PostMessageW(window, WM_APP + 1, mode, 0)) ExitProcess(1);
         }
         PostMessageW(window, WM_APP + 1, 5, 0);

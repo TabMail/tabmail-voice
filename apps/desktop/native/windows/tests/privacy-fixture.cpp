@@ -31,7 +31,7 @@ std::wstring framework = L"Chrome";
 bool frameworkFails = false;
 // A provider that stops answering: asked for its focus, it holds the call past the helper's watchdog (ms).
 bool stalled = false;
-constexpr DWORD stallMs = 4000;
+constexpr DWORD stallMs = 3000;
 struct Node;
 std::vector<std::unique_ptr<Node>> nodes;
 struct Node final : IRawElementProviderSimple, IRawElementProviderFragment, IRawElementProviderFragmentRoot, IValueProvider {
