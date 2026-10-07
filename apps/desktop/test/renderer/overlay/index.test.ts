@@ -628,6 +628,7 @@ describe("the chat window", () => {
     const pill = document.querySelector<HTMLElement>(".chat-canvas .pill");
     expect(pill).not.toBeNull();
     expect(document.querySelector<HTMLElement>(".chat-canvas .pill .center-content")?.style.opacity).toBe(String(config.agentRestingSymbolOpacity));
+    expect(document.querySelector(".chat-canvas .pill .center-content svg")).not.toBeNull();
     expect(document.querySelector(".swirl")).toBeNull();
 
     await page.show({ ...listening, chatPlacement: above, chat: chat(null) });
@@ -781,12 +782,15 @@ describe("the chat window", () => {
 
   /** In the chat as out of it, the pill circles whenever the agent works (owner, 2026-09-28: "whenever
    * thinking is being done or whenever a tool is being run"): its rim spins while the words and the
-   * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it
-   * around the agent's sparkle, as it circles the running bubble. At rest nothing circles. */
+   * tool are worked out, and while a tool runs, or waits on its question, a gradient arc circles it,
+   * as it circles the running bubble. A working pill is an empty circle, with no icon (owner,
+   * 2026-10-07); while the agent thinks no bubble circles. At rest nothing circles. */
   test("the pill circles whenever the agent works, and so does the running bubble", async () => {
     const page = await overlayPage();
     const pillCircles = () => document.querySelector(".chat-canvas .pill .spinning") !== null;
     const circling = () => [...document.querySelectorAll(".chat-canvas .bubble")].filter((bubble) => bubble.querySelector(".spinning")).map((bubble) => bubble.getAttribute("aria-label"));
+    /** The working pill shows nothing in its circle: no icon, waveform or badge. */
+    const pillEmpty = () => document.querySelector(".chat-canvas .pill :is(svg, .waveform, .badge)") === null;
     const agent = { mode: "agent" as const, tools: ["answer" as const, "compose" as const], connectors: ["web" as const, "calendar" as const], chat: chat(null), chatPlacement: above };
 
     await page.show({ ...idle, ...agent });
@@ -795,11 +799,17 @@ describe("the chat window", () => {
 
     await page.show({ ...listening, ...agent, phase: { kind: "transcribing" } });
     expect(pillCircles()).toBe(true);
+    expect(pillEmpty()).toBe(true);
+    expect(circling()).toEqual([]);
+
+    await page.show({ ...running, ...agent, phase: { kind: "running", tool: null }, runningBubble: null });
+    expect(pillCircles()).toBe(true);
+    expect(pillEmpty()).toBe(true);
     expect(circling()).toEqual([]);
 
     await page.show({ ...running, ...agent });
     expect(pillCircles()).toBe(true);
-    expect(document.querySelector(".chat-canvas .pill .center-content")).not.toBeNull();
+    expect(pillEmpty()).toBe(true);
     expect(circling()).toEqual(["answer"]);
 
     await page.show({ ...running, ...agent, recentBubbles: ["web", "answer"], runningBubble: "web" });

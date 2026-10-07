@@ -37,7 +37,7 @@ type Mode =
   | { kind: "swirl" }
   | { kind: "listening" }
   | { kind: "transcribing" }
-  | { kind: "running"; tool: AgentToolID }
+  | { kind: "running"; tool: AgentToolID | null }
   | { kind: "message"; text: string }
   /** The text went on the clipboard instead of being pasted: the note beside a clipboard. */
   | { kind: "copied"; text: string }
@@ -234,7 +234,8 @@ function PillLayout({
   let shown: BubbleKey[] = showsTools ? [...state.tools, ...state.connectors] : [];
   if (keepsBubbles && shown.length === 0) shown = kept.current;
   else kept.current = shown;
-  // One bubble runs at a time, the first in the row: the app whose tool runs, else the tool agent mode runs.
+  // One bubble runs at a time, the first in the row: the app whose tool runs, else the tool agent mode
+  // answers or writes with; none while it thinks.
   const isRunning = (key: BubbleKey) => key === state.runningBubble;
   const anyRunning = state.runningBubble !== null;
   const bubbles: BubbleItem[] = bubbleOrder(shown, state.recentBubbles)
@@ -660,14 +661,15 @@ function Pill({ mode, level, hasVoice, isRetrying, language, isAgent, maxWidth }
   let content: ReactNode;
   switch (mode.kind) {
     case "transcribing":
-      // Shrinks back to a circle while the words are worked out.
+    case "running":
+      // An empty circle while the words are worked out or a tool works, in dictation and agent mode
+      // alike (owner, 2026-10-07: clean, no icon).
       content = <div style={{ width: circleContent, height: circleContent }} />;
       break;
-    case "running":
     case "resting":
       content = (
-        <div className="center-content" style={{ width: circleContent, height: circleContent, opacity: mode.kind === "resting" ? config.agentRestingSymbolOpacity : 1, transition: `opacity ${config.pillSpringResponseSeconds}s ease-out` }}>
-          <SparklesIcon size={config.agentRunningSymbolSize} />
+        <div className="center-content" style={{ width: circleContent, height: circleContent, opacity: config.agentRestingSymbolOpacity }}>
+          <SparklesIcon size={config.agentRestingSymbolSize} />
         </div>
       );
       break;

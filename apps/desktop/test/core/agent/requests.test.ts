@@ -43,63 +43,45 @@ async function thrown(promise: Promise<unknown>): Promise<unknown> {
   return undefined;
 }
 
-/** The agent's two backend calls: what each sends, and how its reply becomes a tool or text to
- * insert. Never the network. */
+/** The agent's backend prompt: what it is sent, and which tools it is offered. Never the network. */
 describe("DesktopAgent", () => {
   /** Every variable the backend prompt renders is sent, empty when unknown: the backend leaves a
    * missing one in the prompt as written. */
   test("without a screen every variable is sent empty", () => {
-    const choose = DesktopAgent.chooseMessage(request, null, "");
-    expect(choose.content).toBe("system_prompt_desktop_agent");
-    expect(choose.vars).toEqual({ app_name: "", web_host: "", window_title: "", selected_text: "", user_request: request, conversation: "" });
-
-    const edit = DesktopAgent.toolMessage("edit", request, null, false, "", "");
-    expect(edit.content).toBe("system_prompt_desktop_edit");
-    expect(Object.keys(edit.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_name", "user_request", "web_host", "window_title"]);
-
-    const compose = DesktopAgent.toolMessage("compose", request, null, false, "", "");
-    expect(compose.content).toBe("system_prompt_desktop_compose");
-    expect(Object.keys(compose.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "terminal_program", "user_name", "user_request", "web_host", "window_title"]);
-
-    const thunderbird = DesktopAgent.toolMessage("thunderbird", request, null, false, "", "");
-    expect(thunderbird.content).toBe("system_prompt_desktop_thunderbird");
-    expect(Object.keys(thunderbird.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_name", "user_request", "web_host", "window_title"]);
-
-    const answer = DesktopAgent.toolMessage("answer", request, null, false, "", "");
-    expect(answer.content).toBe("system_prompt_desktop_answer");
-    expect(Object.keys(answer.vars).sort()).toEqual(["app_name", "conversation", "screen_text", "selected_text", "user_name", "user_request", "web_host", "window_title"]);
+    const message = DesktopAgent.message(request, null, false, "", "");
+    expect(message.content).toBe("system_prompt_desktop_agent_loop");
+    expect(message.vars).toEqual({ app_name: "", web_host: "", window_title: "", screen_text: "", selected_text: "", terminal_program: "", user_request: request, conversation: "", user_name: "" });
   });
 
-  /** The user's name goes with every tool's prompt, empty when none is set, so the backend can tell
-   * the user's own messages on screen from other people's; the choice of tool needs none. */
-  test.each(agentToolIDs)("the user's name is sent with every tool's prompt (%s)", (tool) => {
-    expect(DesktopAgent.toolMessage(tool, request, null, false, "", "Alex Example").vars.user_name).toBe("Alex Example");
-    expect(DesktopAgent.toolMessage(tool, request, null, false, "", "").vars.user_name).toBe("");
-    expect(DesktopAgent.chooseMessage(request, null, "").vars).not.toHaveProperty("user_name");
+  /** The user's name goes with the prompt, empty when none is set, so the backend can tell the user's
+   * own messages on screen from other people's. */
+  test("the user's name is sent", () => {
+    expect(DesktopAgent.message(request, null, false, "", "Alex Example").vars.user_name).toBe("Alex Example");
+    expect(DesktopAgent.message(request, null, false, "", "").vars.user_name).toBe("");
   });
 
-  /** A screen hidden for privacy: every tool is told so where the screen's text goes, and nothing
-   * else of the screen is sent. A screen that was only not read says nothing. */
-  test.each(agentToolIDs)("a tool is told when the screen is hidden for privacy (%s)", (tool) => {
-    const hidden = DesktopAgent.toolMessage(tool, request, null, true, "", "").vars;
+  /** A screen hidden for privacy: the agent is told so where the screen's text goes, and nothing else
+   * of the screen is sent. A screen that was only not read says nothing. */
+  test("the agent is told when the screen is hidden for privacy", () => {
+    const hidden = DesktopAgent.message(request, null, true, "", "").vars;
     expect(hidden.screen_text).toBe(screenHiddenNote);
     expect(hidden.screen_text).toMatch(/^\[Hidden for privacy: /);
-    expect([hidden.app_name, hidden.web_host, hidden.window_title, hidden.selected_text]).toEqual(["", "", "", ""]);
-    expect(DesktopAgent.toolMessage(tool, request, null, false, "", "").vars.screen_text).toBe("");
+    expect([hidden.app_name, hidden.web_host, hidden.window_title, hidden.selected_text, hidden.terminal_program]).toEqual(["", "", "", "", ""]);
+    expect(DesktopAgent.message(request, null, false, "", "").vars.screen_text).toBe("");
   });
 
-  /** The chat window's conversation goes with the agent's choice and every tool's prompt. */
-  test.each(agentToolIDs)("the conversation is sent with every prompt (%s)", (tool) => {
+  /** The chat window's conversation goes with the request. */
+  test("the conversation is sent", () => {
     const conversation = "User: when is the sync?\nTabMail: Thursdays at 10:00.";
-    expect(DesktopAgent.chooseMessage(request, null, conversation).vars.conversation).toBe(conversation);
-    expect(DesktopAgent.toolMessage(tool, request, null, false, conversation, "").vars.conversation).toBe(conversation);
+    expect(DesktopAgent.message(request, null, false, conversation, "").vars.conversation).toBe(conversation);
   });
 
-  test("a tool is sent the screen with the selection marked", () => {
-    const message = DesktopAgent.toolMessage("compose", request, selectionScreen("Ship it Friday."), false, "", "");
+  test("the agent is sent the screen with the selection marked, and the program in a terminal", () => {
+    const message = DesktopAgent.message(request, selectionScreen("Ship it Friday."), false, "", "");
 
     expect(message.vars.app_name).toBe("Example Notes");
     expect(message.vars.web_host).toBe("notes.example.com");
+    expect(message.vars.window_title).toBe("Weekly sync");
     expect(message.vars.terminal_program).toBe("example-shell");
     expect(message.vars.selected_text).toBe("Ship it Friday.");
     expect(message.vars.screen_text).toContain("## Agenda");
@@ -108,25 +90,22 @@ describe("DesktopAgent", () => {
 
   /** A selection of only blank space is no text to edit. */
   test("a blank selection counts as none", () => {
-    expect(DesktopAgent.chooseMessage(request, selectionScreen(" \n"), "").vars.selected_text).toBe("");
-    expect(DesktopAgent.chooseMessage(request, selectionScreen("\n"), "").vars.selected_text).toBe("");
+    expect(DesktopAgent.message(request, selectionScreen(" \n"), false, "", "").vars.selected_text).toBe("");
+    expect(DesktopAgent.message(request, selectionScreen("\n"), false, "", "").vars.selected_text).toBe("");
   });
 
   /** A selection the helper could not give at all arrives as only its placeholder: the agent is
    * told so in words, never handed the placeholder as if the user had selected it. */
   test("an unread selection reaches the agent as a note, not as selected text", () => {
     const unread = { ...selectionScreen(redactionPlaceholder), selectionRedacted: true };
-    expect(DesktopAgent.chooseMessage(request, unread, "").vars.selected_text).toBe(selectionUnreadNote);
-    for (const tool of ["answer", "compose", "thunderbird"] as const) {
-      expect(DesktopAgent.toolMessage(tool, request, unread, false, "", "").vars.selected_text).toBe(selectionUnreadNote);
-    }
+    expect(DesktopAgent.message(request, unread, false, "", "").vars.selected_text).toBe(selectionUnreadNote);
   });
 
   test("a selection with a secret taken out still reaches the agent as selected", () => {
     const partly = { ...selectionScreen(`token ${redactionPlaceholder} for the demo`), selectionRedacted: true };
-    expect(DesktopAgent.chooseMessage(request, partly, "").vars.selected_text).toBe(`token ${redactionPlaceholder} for the demo`);
+    expect(DesktopAgent.message(request, partly, false, "", "").vars.selected_text).toBe(`token ${redactionPlaceholder} for the demo`);
     // Not redacted: the same text is the user's own, placeholder-looking or not.
-    expect(DesktopAgent.chooseMessage(request, selectionScreen(redactionPlaceholder), "").vars.selected_text).toBe(redactionPlaceholder);
+    expect(DesktopAgent.message(request, selectionScreen(redactionPlaceholder), false, "", "").vars.selected_text).toBe(redactionPlaceholder);
   });
 
   test("the placeholder is the helpers' own", () => {
@@ -145,146 +124,33 @@ describe("DesktopAgent", () => {
   });
 
   /** Edit and Compose are never offered together: text selected is Edit, nothing (or only blank
-   * space, or no screen read) is Compose; Thunderbird joins them when an email app is available, and
-   * Answer always. */
+   * space, or no screen read) is Compose; Answer beside it. Thunderbird's relay has no backend tool. */
   test("the selection decides the writing tool", () => {
     expect(DesktopAgent.writingTool(selectionScreen("Ship it."))).toBe("edit");
     expect(DesktopAgent.writingTool(selectionScreen(""))).toBe("compose");
     expect(DesktopAgent.writingTool(selectionScreen(" \n"))).toBe("compose");
     expect(DesktopAgent.writingTool(null)).toBe("compose");
-    expect(DesktopAgent.tools(selectionScreen("Ship it."), all, false)).toEqual(["edit", "answer"]);
-    expect(DesktopAgent.tools(selectionScreen("Ship it."), all, true)).toEqual(["edit", "thunderbird", "answer"]);
-    expect(DesktopAgent.tools(null, all, true)).toEqual(["compose", "thunderbird", "answer"]);
+    expect(DesktopAgent.tools(selectionScreen("Ship it."), all)).toEqual(["edit", "answer"]);
+    expect(DesktopAgent.tools(null, all)).toEqual(["compose", "answer"]);
   });
 
   /** A tool switched off in Settings is never offered; the other writing tool does not stand in for
    * it, since its text would land on the selection (or the caret) wrongly. */
   test.each<[string, AgentToolID[], AgentToolID[]]>([
-    ["Ship it.", ["compose", "thunderbird", "answer"], ["thunderbird", "answer"]],
-    ["", ["edit", "thunderbird", "answer"], ["thunderbird", "answer"]],
+    ["Ship it.", ["compose", "thunderbird", "answer"], ["answer"]],
+    ["", ["edit", "thunderbird", "answer"], ["answer"]],
     ["", ["compose", "answer"], ["compose", "answer"]],
-    ["", ["compose", "thunderbird"], ["compose", "thunderbird"]],
+    ["", ["compose", "thunderbird"], ["compose"]],
     ["Ship it.", ["compose"], []],
     ["", [], []],
   ])("with selection %j and %j on, the agent offers %j", (selected, enabled, offered) => {
-    expect(DesktopAgent.tools(selectionScreen(selected), enabled, true)).toEqual(offered);
-  });
-
-  /** With one tool offered there is nothing to choose between: no agent call. */
-  test("a single offered tool is used unasked", async () => {
-    const { completions, client, account } = setup();
-
-    expect(await DesktopAgent.tool(request, ["edit"], selectionScreen("Ship it."), "", client, account, Fixtures.userID)).toBe("edit");
-    expect(completions.requests).toHaveLength(0);
-  });
-
-  test("no offered tool fails without asking", async () => {
-    const { completions, client, account } = setup();
-
-    const error = await thrown(DesktopAgent.tool(request, [], null, "", client, account, Fixtures.userID));
-    expect((error as AgentError).kind).toBe("noToolEnabled");
-    expect((error as AgentError).message).toBe("Turn on an agent tool in Settings.");
-    expect(completions.requests).toHaveLength(0);
-  });
-
-  /** The agent chooses among the offered tools, and the backend is told which they are
-   * (`available_tools`), with the conversation. */
-  test.each<[string, AgentToolID]>([
-    ["thunderbird", "thunderbird"],
-    ["edit", "edit"],
-    ["answer", "answer"],
-  ])("the agent's %s is %s", async (reply, tool) => {
-    const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply(reply));
-
-    expect(await DesktopAgent.tool(request, ["edit", "thunderbird", "answer"], selectionScreen("Ship it."), "User: hi\nTabMail: Hello.", client, account, Fixtures.userID)).toBe(tool);
-    expect(completions.requests).toHaveLength(1);
-    expect(completions.body(0).available_tools).toEqual(["edit", "thunderbird", "answer"]);
-    expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent");
-    expect(completions.message(0)?.user_request).toBe(request);
-    expect(completions.message(0)?.selected_text).toBe("Ship it.");
-    expect(completions.message(0)?.conversation).toBe("User: hi\nTabMail: Hello.");
-  });
-
-  /** A reply naming no tool, or a tool that was not offered, fails: the backend holds the agent to the
-   * offered ones, and so does the app. */
-  test.each(["", "rewrite", "compose", "Edit"])("a reply naming no offered tool fails (%j)", async (reply) => {
-    const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply(reply));
-
-    const error = await thrown(DesktopAgent.tool(request, ["edit", "answer"], selectionScreen("Ship it."), "", client, account, Fixtures.userID));
-    expect((error as AgentError).kind).toBe("noTool");
-  });
-
-  /** Only the agent's choice tells the backend which tools there are: a tool's own prompt writes its
-   * text and chooses nothing. */
-  test("a tool's prompt is sent no available tools", async () => {
-    const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply("Thursdays at 10:00."));
-
-    expect(await DesktopAgent.write("answer", "when is the sync", null, false, "", "", client, account, Fixtures.userID)).toBe("Thursdays at 10:00.");
-    expect(completions.message(0)?.content).toBe("system_prompt_desktop_answer");
-    expect(completions.body(0)).not.toHaveProperty("available_tools");
-  });
-
-  /** The Thunderbird tool's message is sent to TabMail's chat as it comes: no fitting to a
-   * selection. */
-  test("the Thunderbird tool writes a chat message", async () => {
-    const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply("  Find the invoice Sam sent last week.\n"));
-
-    const message = await DesktopAgent.write("thunderbird", "find sam's invoice", selectionScreen(" Sam \n"), false, "", "", client, account, Fixtures.userID);
-
-    expect(message).toBe("Find the invoice Sam sent last week.");
-    expect(completions.message(0)?.content).toBe("system_prompt_desktop_thunderbird");
-  });
-
-  /** A selection the helper took a secret out of is not the user's text (ADR-DESK-046): Edit's
-   * rewrite of it, pasted over the selection, would put the placeholder where the secret was.
-   * Nothing is asked of the backend. */
-  test("Edit refuses a selection that reached the app redacted", async () => {
-    const { completions, client, account } = setup();
-    const redacted = { ...selectionScreen("connect with postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
-
-    const error = await thrown(DesktopAgent.write("edit", request, redacted, false, "", "", client, account, Fixtures.userID));
-
-    expect(error).toBeInstanceOf(AgentError);
-    expect((error as AgentError).kind).toBe("secretInSelection");
-    expect((error as AgentError).message).toBe("The selection holds what looks like a password or key, so it wasn't rewritten.");
-    expect(completions.requests).toHaveLength(0);
-  });
-
-  /** Only Edit replaces the selection: a tool that doesn't still answers, from the redacted text. */
-  test("a tool that doesn't replace the selection still writes with a redacted one", async () => {
-    const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply("It connects to the database."));
-    const redacted = { ...selectionScreen("postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
-
-    expect(await DesktopAgent.write("answer", "what is this", redacted, false, "", "", client, account, Fixtures.userID)).toBe("It connects to the database.");
-    expect(completions.requests).toHaveLength(1);
-  });
-
-  test("a tool that writes nothing fails", async () => {
-    const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply("  "));
-
-    const error = await thrown(DesktopAgent.write("compose", request, null, false, "", "", client, account, Fixtures.userID));
-    expect((error as AgentError).kind).toBe("noText");
-  });
-
-  test("a backend error is reported as itself", async () => {
-    const { completions, client, account } = setup();
-    completions.enqueue(402, { error: "no_active_subscription" });
-
-    const error = await thrown(DesktopAgent.write("edit", request, selectionScreen("Ship it."), false, "", "", client, account, Fixtures.userID));
-    expect(error).toBeInstanceOf(BackendError);
-    expect((error as BackendError).kind).toBe("subscriptionRequired");
+    expect(DesktopAgent.tools(selectionScreen(selected), enabled)).toEqual(offered);
   });
 });
 
-/** The Answer prompt's tool loop: each round's tool calls run here, and their results go back with the
- * loop's state until the model answers. Never the network. */
-describe("the answer's tool loop", () => {
+/** The agent's tool loop: each round's tool calls run here, and their results go back with the loop's
+ * state until the model replies or calls the writing tool. Never the network. */
+describe("the agent's tool loop", () => {
   const tools = ["date_to_day", "time_delta", "example_read"];
   const ignoreServerTools = () => {};
 
@@ -304,9 +170,9 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, events + Fixtures.reply("Found it."));
     const heard: ServerToolEvent[] = [];
 
-    const answer = await DesktopAgent.answer("search it", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", (event) => heard.push(event));
+    const answer = await DesktopAgent.run("search it", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", (event) => heard.push(event));
 
-    expect(answer).toBe("Found it.");
+    expect(answer).toEqual({ tool: "answer", text: "Found it." });
     expect(heard).toEqual([
       { tool: "search_web", running: true, label: "Searching the web: example" },
       { tool: "date_to_day", running: false, label: null },
@@ -314,11 +180,14 @@ describe("the answer's tool loop", () => {
     ]);
   });
 
-  /** The Answer prompt is offered the backend's date tools and every tool that runs on this computer. */
-  test("an answer is offered the date tools and this computer's tools", () => {
+  /** With Answer on, the loop is offered the backend's date tools, every tool that runs on this
+   * computer and the writing tool; with it off, the writing tool alone. */
+  test("the loop is offered the date tools, this computer's tools and the writing tool", () => {
     const tool = (name: string): ConnectorTool => ({ name, connector: "calendar", progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
-    expect(DesktopAgent.answerTools([tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_create"]);
+    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta"]);
+    expect(DesktopAgent.loopTools(["compose", "answer"], [tool("example_read"), tool("example_create")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_create", "compose"]);
+    expect(DesktopAgent.loopTools(["edit"], [tool("example_read")])).toEqual(["edit"]);
+    expect(DesktopAgent.loopTools([], [tool("example_read")])).toEqual([]);
   });
 
   /** An app whose tools are offered brings the backend's own tools it has (the web, its search), after
@@ -326,9 +195,108 @@ describe("the answer's tool loop", () => {
    * (switched off, or none on this computer), or an app with no backend tools, brings nothing. */
   test("an app switched on brings its backend tools", () => {
     const tool = (name: string, connector: ConnectorTool["connector"]): ConnectorTool => ({ name, connector, progressLabel: "", confirmation: () => null, run: async () => "" });
-    expect(DesktopAgent.answerTools([tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "web_open"]);
-    expect(DesktopAgent.answerTools([tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_note"]);
-    expect(DesktopAgent.answerTools([])).toEqual(["date_to_day", "time_delta"]);
+    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("web_read", "web"), tool("web_open", "web")])).toEqual(["date_to_day", "time_delta", "search_web", "confirmation_answer", "example_read", "web_read", "web_open"]);
+    expect(DesktopAgent.loopTools(["answer"], [tool("example_read", "calendar"), tool("example_note", "notes")])).toEqual(["date_to_day", "time_delta", "confirmation_answer", "example_read", "example_note"]);
+    expect(DesktopAgent.loopTools(["answer"], [])).toEqual(["date_to_day", "time_delta"]);
+  });
+
+  /** A call to the writing tool ends the request (owner, 2026-10-05): its text is what is pasted, the
+   * round's other calls never run, the text the model wrote beside it is not used, and nothing more is
+   * asked. */
+  test("a compose call ends the loop with its text, running nothing else", async () => {
+    const { completions, client, account } = setup();
+    const call = (id: string, name: string, args: string) => ({ id, type: "function", function: { name, arguments: args } });
+    completions.enqueue(200, Fixtures.completionsStream(JSON.stringify({
+      assistant: "Here is what I will paste.",
+      tool_calls: [call("call_a", "example_read", "{}"), call("call_b", "compose", '{"text":"  Lunch is at noon.\\n"}')],
+      conversation_state: Fixtures.loopState(),
+    })));
+    completions.enqueue(200, Fixtures.reply("Never asked."));
+    const ran: string[] = [];
+
+    const outcome = await DesktopAgent.run("paste lunch time", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
+      ran.push(call.id);
+      return "";
+    }, ignoreServerTools);
+
+    expect(outcome).toEqual({ tool: "compose", text: "Lunch is at noon." });
+    expect(ran).toEqual([]);
+    expect(completions.requests).toHaveLength(1);
+  });
+
+  /** "Paste my next meeting": the lookup runs in one round, the paste ends the next. */
+  test("a lookup runs, then the edit written from it ends the loop, fitted to the selection", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "example_read", arguments: "{}" }]));
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_b", name: "edit", arguments: '{"text":"Sync on Thursday at 10:00."}' }]));
+    const ran: string[] = [];
+
+    const outcome = await DesktopAgent.run("replace this with my next meeting", selectionScreen("next meeting\n"), false, "", "", [...tools, "edit"], client, account, Fixtures.userID, async (call) => {
+      ran.push(call.id);
+      return "Sync, Thursday 10:00";
+    }, ignoreServerTools);
+
+    expect(outcome).toEqual({ tool: "edit", text: "Sync on Thursday at 10:00.\n" });
+    expect(ran).toEqual(["call_a"]);
+    expect(completions.requests).toHaveLength(2);
+  });
+
+  /** Only the writing tool the loop was offered ends it: a call to the other one is an ordinary call,
+   * which the app has no tool for. */
+  test("a call to the writing tool not offered runs as any other call", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "edit", arguments: '{"text":"Over the selection."}' }]));
+    completions.enqueue(200, Fixtures.reply("Done."));
+    const ran: string[] = [];
+
+    const outcome = await DesktopAgent.run("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async (call) => {
+      ran.push(call.function.name);
+      return "Error: there is no tool named edit.";
+    }, ignoreServerTools);
+
+    expect(outcome).toEqual({ tool: "answer", text: "Done." });
+    expect(ran).toEqual(["edit"]);
+  });
+
+  /** A writing call with no text to paste fails, pasting nothing. */
+  test.each(['{"text":"  "}', "{}", '{"text":3}', "not json", "[]"])("a writing call with arguments %j fails", async (args) => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "compose", arguments: args }]));
+
+    const error = await thrown(DesktopAgent.run("write it", null, false, "", "", [...tools, "compose"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    expect((error as AgentError).kind).toBe("noText");
+  });
+
+  /** A selection the helper took a secret out of is not the user's text (ADR-DESK-046): an edit of it,
+   * pasted over the selection, would put the placeholder where the secret was. */
+  test("an edit of a selection that reached the app redacted is refused", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: "edit", arguments: '{"text":"connect with postgres"}' }]));
+    const redacted = { ...selectionScreen("connect with postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
+
+    const error = await thrown(DesktopAgent.run(request, redacted, false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
+
+    expect(error).toBeInstanceOf(AgentError);
+    expect((error as AgentError).kind).toBe("secretInSelection");
+    expect((error as AgentError).message).toBe("The selection holds what looks like a password or key, so it wasn't rewritten.");
+  });
+
+  /** Only Edit replaces the selection: a reply still answers, from the redacted text. */
+  test("a reply still answers with a redacted selection", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(200, Fixtures.reply("It connects to the database."));
+    const redacted = { ...selectionScreen("postgres://app:[redacted]@db.example.com"), selectionRedacted: true };
+
+    expect(await DesktopAgent.run("what is this", redacted, false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools)).toEqual({ tool: "answer", text: "It connects to the database." });
+  });
+
+  test("a backend error is reported as itself", async () => {
+    const { completions, client, account } = setup();
+    completions.enqueue(402, { error: "no_active_subscription" });
+
+    const error = await thrown(DesktopAgent.run(request, selectionScreen("Ship it."), false, "", "", ["edit"], client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    expect(error).toBeInstanceOf(BackendError);
+    expect((error as BackendError).kind).toBe("subscriptionRequired");
   });
 
   /** The first round offers the tools with tools on and sends no state; its reply, trimmed, is the
@@ -338,14 +306,14 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("  Friday is the 3rd.\n"));
     const calls: ToolCall[] = [];
 
-    const answer = await DesktopAgent.answer("what day is friday", null, false, "User: hi\nTabMail: Hello.", "", tools, client, account, Fixtures.userID, async (call) => {
+    const answer = await DesktopAgent.run("what day is friday", null, false, "User: hi\nTabMail: Hello.", "", tools, client, account, Fixtures.userID, async (call) => {
       calls.push(call);
       return "";
     }, ignoreServerTools);
 
-    expect(answer).toBe("Friday is the 3rd.");
+    expect(answer).toEqual({ tool: "answer", text: "Friday is the 3rd." });
     expect(calls).toEqual([]);
-    expect(completions.message(0)?.content).toBe("system_prompt_desktop_answer");
+    expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent_loop");
     expect(completions.message(0)?.conversation).toBe("User: hi\nTabMail: Hello.");
     expect(completions.body(0).available_tools).toEqual(tools);
     expect(completions.body(0).disable_tools).toBe(false);
@@ -364,12 +332,12 @@ describe("the answer's tool loop", () => {
     completions.enqueue(200, Fixtures.reply("Both done."));
     const ran: string[] = [];
 
-    const answer = await DesktopAgent.answer("do both", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
+    const answer = await DesktopAgent.run("do both", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
       ran.push(`${call.id} ${call.function.name} ${call.function.arguments}`);
       return `result of ${call.id}`;
     }, ignoreServerTools);
 
-    expect(answer).toBe("Both done.");
+    expect(answer).toEqual({ tool: "answer", text: "Both done." });
     expect(ran).toEqual(['call_a example_read {"n":1}', "call_b example_other {}", 'call_c example_read {"n":2}']);
     expect(completions.body(1).conversation_state).toEqual({
       ...first,
@@ -397,12 +365,12 @@ describe("the answer's tool loop", () => {
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
     const ran: string[] = [];
 
-    const answer = await DesktopAgent.answer("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async (toolCall) => {
+    const answer = await DesktopAgent.run("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async (toolCall) => {
       ran.push(toolCall.id);
       return "read";
     }, ignoreServerTools);
 
-    expect(answer).toBe("Done.");
+    expect(answer).toEqual({ tool: "answer", text: "Done." });
     expect(ran).toEqual(afterTool ? ["call_a"] : []);
     expect(auth.requests).toHaveLength(1);
     const refused = afterTool ? 1 : 0;
@@ -421,7 +389,7 @@ describe("the answer's tool loop", () => {
     completions.enqueue(401, { error: "invalid_token" });
     auth.enqueue(200, Fixtures.sessionJSON({ access: "access-2", refresh: "refresh-2" }));
 
-    const error = await thrown(DesktopAgent.answer("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(DesktopAgent.run("read it", null, false, "", "", tools, client, signedIn(auth), Fixtures.userID, async () => "", ignoreServerTools));
 
     expect((error as BackendError).kind).toBe("unauthorized");
     expect(completions.requests).toHaveLength(2);
@@ -435,7 +403,7 @@ describe("the answer's tool loop", () => {
     let ran = 0;
 
     const error = await thrown(
-      DesktopAgent.answer("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
+      DesktopAgent.run("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
         ran += 1;
         return "";
       }, ignoreServerTools),
@@ -446,12 +414,12 @@ describe("the answer's tool loop", () => {
     expect(completions.requests).toHaveLength(1);
   });
 
-  /** An empty answer is a failure, as for any tool. */
+  /** An empty reply is a failure. */
   test("an empty answer fails", async () => {
     const { completions, client, account } = setup();
     completions.enqueue(200, Fixtures.reply(" \n"));
 
-    const error = await thrown(DesktopAgent.answer("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools));
+    const error = await thrown(DesktopAgent.run("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools));
     expect((error as AgentError).kind).toBe("noText");
   });
 
@@ -461,7 +429,7 @@ describe("the answer's tool loop", () => {
     const abort = new AbortController();
     abort.abort();
 
-    await thrown(DesktopAgent.answer("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools, abort.signal));
+    await thrown(DesktopAgent.run("what now", null, false, "", "", tools, client, account, Fixtures.userID, async () => "", ignoreServerTools, abort.signal));
     expect(completions.requests).toHaveLength(0);
   });
 
@@ -475,7 +443,7 @@ describe("the answer's tool loop", () => {
     const ran: string[] = [];
 
     const error = await thrown(
-      DesktopAgent.answer("read it", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
+      DesktopAgent.run("read it", null, false, "", "", tools, client, account, Fixtures.userID, async (call) => {
         ran.push(call.id);
         abort.abort();
         return "";
@@ -495,7 +463,7 @@ describe("the answer's tool loop", () => {
     const abort = new AbortController();
 
     await thrown(
-      DesktopAgent.answer("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
+      DesktopAgent.run("read it", null, false, "", "", tools, client, account, Fixtures.userID, async () => {
         abort.abort();
         return "";
       }, ignoreServerTools, abort.signal),
@@ -518,25 +486,25 @@ describe("terminal selection writing boundary", () => {
   test.each(fixture.cases)("$name reaches the intended writing boundary", async ({ expected }) => {
     const context = screen({ selectedText: expected.selectedText, selectionRedacted: !expected.selectionComplete });
     const { completions, client, account } = setup();
-    completions.enqueue(200, Fixtures.reply("friendlier text"));
+    const offered = DesktopAgent.tools(context, ["edit", "compose"]);
+    const [writing] = offered;
+    completions.enqueue(200, Fixtures.toolCalls([{ id: "call_a", name: writing ?? "edit", arguments: '{"text":"friendlier text"}' }]));
     const pastes: string[] = [];
     const writeAndDeliver = async () => {
-      const offered = DesktopAgent.tools(context, ["edit", "compose"], false);
-      const tool = await DesktopAgent.tool(request, offered, context, "", client, account, Fixtures.userID);
-      const text = await DesktopAgent.write(tool, request, context, false, "", "", client, account, Fixtures.userID);
+      const { tool, text } = await DesktopAgent.run(request, context, false, "", "", DesktopAgent.loopTools(offered, []), client, account, Fixtures.userID, async () => "", () => {});
       await agentTools[tool].deliver(text, { paste: async (value) => { pastes.push(value); }, emailApp: null,
         thunderbird: null as never, showAnswer: () => {}, signal: new AbortController().signal });
     };
+    expect(offered).toEqual(["edit"]);
     if (expected.selectionComplete) {
       await writeAndDeliver();
       expect(completions.requests).toHaveLength(1);
-      expect(completions.message(0)?.content).toBe("system_prompt_desktop_edit");
+      expect(completions.message(0)?.content).toBe("system_prompt_desktop_agent_loop");
       expect(pastes).toEqual(["friendlier text"]);
     } else {
       const error = await thrown(writeAndDeliver());
       expect(error).toBeInstanceOf(AgentError);
       expect((error as AgentError).kind).toBe("secretInSelection");
-      expect(completions.requests).toHaveLength(0);
       expect(pastes).toEqual([]);
     }
   });

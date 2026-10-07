@@ -2,19 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-import * as config from "../config.js";
 import type { ScreenContext } from "../dictation/screenContext.js";
 import { trimWhitespace } from "../util/text.js";
 import type { ThunderbirdRelay } from "./connectors/thunderbird/relay.js";
 
 /**
- * What agent mode can do with a spoken request: the registry of its tools, as the Thunderbird
- * add-on's `chat/tools/core.js` and the iOS app's `AgentToolRouter` are for theirs. The name is the
- * one the agent answers with; a tool that hands the request to another app goes through that app's
- * connector (ADR-DESK-020). Each tool is one backend prompt; its bubble shows above the pill while
- * agent mode listens, and its border circles while it runs. Edit and Compose are never offered
- * together: the selection decides which (`DesktopAgent.writingTool`). Each offered one (`offeredAgentToolIDs`)
- * can be switched off in Settings and the welcome wizard; all are on by default (owner, 2026-09-26).
+ * Where agent mode's text goes: the writing tools, Edit and Compose, the backend loop's only way to
+ * paste (its `edit` and `compose` tools); Answer, the chat window its replies go to; and Thunderbird's
+ * chat relay. A tool that hands the request to another app goes through that app's connector
+ * (ADR-DESK-020). Each tool's bubble shows above the pill while agent mode listens, and its border
+ * circles while it runs. Edit and Compose are never offered together: the selection decides which
+ * (`DesktopAgent.writingTool`). Each offered one (`offeredAgentToolIDs`) can be switched off in Settings
+ * and the welcome wizard; all are on by default (owner, 2026-09-26).
  */
 export type AgentToolID = "edit" | "compose" | "thunderbird" | "answer";
 
@@ -31,10 +30,9 @@ export function isAgentToolID(name: unknown): name is AgentToolID {
 }
 
 /** Why a request could not be carried out, as the overlay says it. */
-export type AgentErrorKind = "noTool" | "noText" | "noToolEnabled" | "secretInSelection";
+export type AgentErrorKind = "noText" | "noToolEnabled" | "secretInSelection";
 
 const failureMessages: Record<AgentErrorKind, string> = {
-  noTool: "Couldn't work out what to do. Try again.",
   noText: "Couldn't write that. Try again.",
   /** Every tool this request could use is switched off in Settings. */
   noToolEnabled: "Turn on an agent tool in Settings.",
@@ -74,24 +72,18 @@ async function pasteIntoTargetApp(text: string, context: ToolContext): Promise<v
   await context.paste(text);
 }
 
-/** One of agent mode's tools: the backend prompt that writes its text from the spoken request and
- * the screen, and where that text goes. */
+/** One of agent mode's tools: where the text the backend loop wrote goes. */
 export interface AgentTool {
   displayName: string;
   /** The icon shown in the tool's bubble (an SF Symbol name on macOS), unless it shows the app's
    * icon (Thunderbird's). */
   symbolName: string;
-  /** The backend prompt that writes the tool's text. */
-  prompt: string;
   /** What the tool does, under its switch in Settings and the welcome wizard. */
   settingsDescription: string;
   /** What the tool did with its text, shown over it in the chat window; null for Answer, whose text
    * is the reply itself. */
   chatCaption: string | null;
-  /** The prompt's variables. Every variable is sent, empty when unknown: the backend leaves a
-   * missing one in the prompt as written. */
-  variables(request: string, context: ScreenContext | null, screenHidden: boolean): Record<string, string>;
-  /** The text the prompt wrote (trimmed, not empty), ready to deliver. */
+  /** The text the loop wrote (trimmed, not empty), ready to deliver. */
   fitted(text: string, context: ScreenContext | null): string;
   /** Puts the text where the tool puts it. Throws when it can't: then nothing is pasted, though Edit's
    * and Compose's text goes to the clipboard and the paste history instead (ADR-DESK-042). */
@@ -108,26 +100,26 @@ export function selection(context: ScreenContext | null): string {
  * `native/shared/privacy/redactors.json`). */
 export const redactionPlaceholder = "[redacted]";
 
-/** What a prompt gets as the selected text when the helper gave none of the selection, only the
+/** What the prompt gets as the selected text when the helper gave none of the selection, only the
  * placeholder (it could not read it, or all of it looked like a secret): that in words, so the model
  * doesn't take the placeholder for text the user selected. */
 export const selectionUnreadNote = "[Not read: the user may have selected text here, but it is hidden for privacy or could not be read.]";
 
-/** The selection as the prompts get it: `selection`, or `selectionUnreadNote` when only the
+/** The selection as the prompt gets it: `selection`, or `selectionUnreadNote` when only the
  * placeholder came. */
 export function selectedTextVariable(context: ScreenContext | null): string {
   const selected = selection(context);
   return context?.selectionRedacted === true && trimWhitespace(selected) === redactionPlaceholder ? selectionUnreadNote : selected;
 }
 
-/** What a tool's prompt gets as the screen's text when the screen was not read for the user's
+/** What the prompt gets as the screen's text when the screen was not read for the user's
  * privacy (`ScreenHidden`): that it is hidden, so the model does not take the screen for empty, or
  * for the one an earlier request in the conversation was about. */
 export const screenHiddenNote =
   "[Hidden for privacy: the user keeps the app or website now in front out of screen reading, so nothing on screen was read. " +
   "The user is no longer on any screen the conversation so far was about.]";
 
-/** The variables every tool's prompt gets: the request, the app, and the screen read at key-down
+/** The prompt's variables for the screen: the request, the app, and the screen read at key-down
  * (`screenHiddenNote` in its place when it was hidden: there is no `context` then). */
 export function screenVariables(request: string, context: ScreenContext | null, screenHidden: boolean): Record<string, string> {
   return {
@@ -144,14 +136,12 @@ export function screenVariables(request: string, context: ScreenContext | null, 
 const leadingSpace = /^[\s\u0085]*/;
 const trailingSpace = /[\s\u0085]*$/;
 
-/** Rewrites the selected text in place, as asked; offered only when text is selected. */
+/** Writes in place of the selected text, as asked; offered only when text is selected. */
 export const EditTool = {
   displayName: "Edit",
   symbolName: "pencil",
-  prompt: config.agentEditPrompt,
   settingsDescription: "Rewrites the text you selected, as you ask: friendlier, shorter, translated, fixed.",
   chatCaption: "Replaced the selection",
-  variables: screenVariables,
 
   /** With the selection's own leading and trailing blank space, so replacing a whole line keeps its
    * line break. */
@@ -175,31 +165,22 @@ export const EditTool = {
 export const ComposeTool: AgentTool = {
   displayName: "Compose",
   symbolName: "square.and.pencil",
-  prompt: config.agentComposePrompt,
   settingsDescription: "Writes new text where your cursor is: a reply, a message, a note, a command.",
   chatCaption: "Pasted at the cursor",
-
-  /** The screen, plus the program running in a terminal, so a command comes out as that program
-   * takes it. */
-  variables(request, context, screenHidden) {
-    return { ...screenVariables(request, context, screenHidden), terminal_program: context?.terminalProgram ?? "" };
-  },
-
   fitted: (text) => text,
 
   /** Pastes at the caret. */
   deliver: pasteIntoTargetApp,
 };
 
-/** Sends a mail or calendar request, restated as a chat message, to TabMail's chat in Thunderbird;
- * offered only when there is an email app for it (ADR-DESK-014). */
+/** Sends a mail or calendar request, restated as a chat message, to TabMail's chat in Thunderbird
+ * (ADR-DESK-014). Never offered: the backend loop has no tool for it until the native connector to
+ * TabMail's add-on replaces this relay (ADR-DESK-037). */
 export const ThunderbirdTool: AgentTool = {
   displayName: "Thunderbird",
   symbolName: "envelope",
-  prompt: config.agentThunderbirdPrompt,
   settingsDescription: "Sends mail and calendar requests to TabMail’s chat in Thunderbird.",
   chatCaption: "Sent to TabMail in Thunderbird",
-  variables: screenVariables,
   fitted: (text) => text,
 
   /** Hands the message to the Thunderbird connector, for the email app the dictation started with.
@@ -210,15 +191,15 @@ export const ThunderbirdTool: AgentTool = {
   },
 };
 
-/** Answers the user in the chat window the pill grows into: for requests addressed to TabMail rather
- * than text for the app (a question, an explanation of what is on screen, a follow-up). */
+/** Answers the user in the chat window the pill grows into, when the loop replies rather than writes
+ * into the app (a question, an explanation of what is on screen, a follow-up). With it on, the loop
+ * also reaches the user's apps and the web. Its bubble runs, and its chat window opens, only when the
+ * agent answers (owner, 2026-10-07). */
 export const AnswerTool: AgentTool = {
   displayName: "Answer",
   symbolName: "text.bubble",
-  prompt: config.agentAnswerPrompt,
   settingsDescription: "Answers you in a chat window beside the app. Hold the key again while it’s open to follow up; your earlier requests and its replies go with the follow-up and aren’t stored.",
   chatCaption: null,
-  variables: screenVariables,
   fitted: (text) => text,
 
   /** Shows the reply in the chat window, whatever app is in front: it is not pasted anywhere. */

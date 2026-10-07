@@ -752,6 +752,8 @@ grants. The privacy policy tells users they can switch screen reading off.
 
 ## ADR-DESK-011: Agent mode on a double tap: the agent chooses a tool, the tool writes the text
 
+> The two calls (choose, then write) are superseded by one tool loop (ADR-DESK-055, 2026-10-05).
+
 > **Amended 2026-09-26 (owner):** the double tap is replaced by **Space during the hold**, the
 > selection alone picks Edit or Compose, the bubbles sit still in a row above the pill, and agent mode has no
 > timeout. See "Amendment 2026-09-26" at the end of this ADR; the gesture, tool-choice, wait and
@@ -1426,6 +1428,8 @@ one that ships.
 
 ## ADR-DESK-023: The Answer tool's loop, with tools that run on this computer
 
+> The loop is now agent mode's only call, and Compose and Edit are tools in it (ADR-DESK-055, 2026-10-05).
+
 **Context:** Owner, 2026-09-26: agent mode gains tools that run on the user's computer (calendar,
 reminders, contacts, file search, email prefill, notes, messages, shortcuts, web), "the tool JSON
 definitions live in the backend", and "sending or creating anything, you should ask for confirmation
@@ -1458,7 +1462,7 @@ Electron app (ADR-DESK-032), which is the one that ships.
 - `DictationController.runLoopTool`: a call to a tool the app doesn't have, or with arguments that
   aren't a JSON object, runs nothing and tells the model why (`Error: …`), as does a tool that
   throws (its error's message). The chat window opens for the first tool (if the request was not a
-  follow-up), showing the request and the tool's `progressLabel` (`AgentChat.activity`) while it
+  follow-up; since ADR-DESK-055's 2026-10-07 amendment, only for a tool's question), showing the request and the tool's `progressLabel` (`AgentChat.activity`) while it
   runs. A tool with a `confirmation` asks it in the window (`AgentChat.confirmation`, Cancel /
   Confirm, the `answerConfirmation` command) and runs only once confirmed; declined, the model
   reads `config.loopToolDeclined`. An answer that comes before the question has shown for
@@ -2477,6 +2481,8 @@ Answer, which also circled, went on behind it.
 
 ## ADR-DESK-037: The Thunderbird tool is off until its native connector
 
+> Since ADR-DESK-055 (2026-10-05) agent mode is one tool loop: bringing this tool back means offering it as a loop tool, and the chooser this ADR describes is gone.
+
 **Context:** Owner, 2026-09-29: "we should actually disable the Thunderbird tool so that we can test
 all the others. And then for the Thunderbird tool, we should only use it … after introducing the
 native connector, because right now it's just clunky." The tool drives TabMail's chat in
@@ -3134,6 +3140,8 @@ Apps are known by bundle identifier, compared without regard to case.
 - Windows and Linux get the list with their helpers' screen read.
 
 ## ADR-DESK-046: Secret-looking text is taken out of the screen read, in the helper, from one shared definition
+
+> Since ADR-DESK-055 (2026-10-05) Edit of a redacted selection is refused when the agent writes it, after the loop has asked the backend; the redacted read is still all the backend sees.
 
 **2026-10-03 amendment — shared Rust implementation:** The canonical JSON and screen-read privacy boundary remain. Every native helper now links the same Rust static library for matching and UTF-16 redistribution. Native ICU matching, generated Swift/C++ definition files and the ECMAScript conformance implementation are superseded; Rust tests own definition validation, corpus/mutations and hostile-text timing. Platform suites exercise that library through its C ABI. Keep provider access and pre-read password/exclusion checks native.
 
@@ -4036,3 +4044,64 @@ protected census's count: the block walk is
 checked against the Mac's former walk on random fields (`blocks/tests.rs`), and the other ops by
 their shared cases (`context-cases.json`, `surface-cases.json`, `walk-cases.json`), which every
 helper runs.
+
+## ADR-DESK-055: Agent mode is one tool loop; Compose and Edit end it by pasting
+
+**Context:** Owner, 2026-10-05: agent mode chose Answer too often, and a request such as "check my
+calendar and write when I'm free" needs a lookup, then text in the app, which the choose-then-write
+split could not do in one request. The owner: all tools are equal, as in TabMail's Thunderbird and
+iOS loops; the agent runs the calendar tool, then the compose tool, which pastes. Compose and Edit
+are one tool, offered by whether text is selected, and the only way to paste; calling one ends the
+request, closing the chat window if one is open, and whatever the agent writes beside the call is
+ignored. A plain reply goes to the chat window. The owner first approved a breaking change, then asked
+for it versioned instead: the app becomes 0.2.0, and the backend serves the loop only to 0.2.0 and
+later, so earlier builds keep the chooser and the backend can ship first.
+
+**Decision:**
+- One backend prompt, `system_prompt_desktop_agent_loop` (backend ADR-023 amendment "one tool loop"),
+  run by `DesktopAgent.run`. The backend versions it, and the `compose`/`edit` tools, at `v0.2.0`, and
+  the app is 0.2.0 (`X-Client-Version`), which is what makes them resolve. Its `available_tools` (`DesktopAgent.loopTools`) are, with Answer on, the
+  backend's date tools, its web search while the Web switch is on, `confirmation_answer` when an app is on, every connector's name, and
+  the writing tool; with Answer off, the writing tool alone, and no app's tool runs even when the
+  model calls one anyway (the backend passes on every call it makes, so the app is the only gate;
+  found in review). The writing tool is Edit when text is
+  selected, Compose when not (`DesktopAgent.writingTool`); the other is never offered.
+- `compose` and `edit` take `{text}`: the agent writes the final text itself. A round that calls the
+  offered writing tool ends the loop with that text (`DesktopAgent.written`, fitted to the selection
+  for Edit); no other call of that round runs. A round's assistant text beside a call is never read
+  (`CompletionsClient.round` prefers `tool_calls`). A call to a writing tool not offered is answered
+  as a tool the app does not have.
+- The controller closes the chat window (`dropChat`) before it pastes, so the window is gone before
+  the text arrives. A reply opens or continues the chat window, as Answer did; with Answer off, a
+  reply has nowhere to go and the request fails with "no text".
+- An Edit of a selection the helper redacted (ADR-DESK-046) is refused when the agent writes it
+  (`secretInSelection`), not before the loop: the selection is still the request's context.
+- While the loop thinks no tool's bubble runs (`running` with no tool); the writing tool's runs once
+  the agent writes, Answer's once it replies (amendment 2026-10-07).
+- Removed: the chooser, the per-tool prompts (`agentEditPrompt`, `agentComposePrompt`,
+  `agentThunderbirdPrompt`, `agentAnswerPrompt`), each `AgentTool`'s prompt and variables, and the
+  `noTool` failure. The Thunderbird tool stays off (ADR-DESK-037); bringing it back is offering it as
+  a loop tool, and its controller tests went with the chooser.
+
+**Consequences:**
+- Lookups and writing happen in one request; the bubbles still show one running tool at a time.
+- Text planted on screen, or returned by a tool (a web page, a PDF, a note), could try to steer what the
+  agent pastes, into any app, a terminal included. The owner accepts the risk (2026-10-05: "it is the
+  risk we're gonna take"); the backend fences the context as content, not instructions, before and
+  after it, and tells the model to ignore instructions in what tools return (backend ADR-023
+  amendment).
+- Builds before 0.2.0 keep the chooser; the backend carries both until no 0.1.x build is in use. This
+  build needs the backend that carries the loop, so the backend deploys first.
+
+**Amendment 2026-10-07 (owner, smoke test of 0.2.0):** a request that looked something up and then
+wrote flashed Answer's bubble and the chat window, with the request in it, before pasting. The owner:
+the chat window opens only when the agent has something to show the user, its reply or a tool's
+question. So:
+- The loop thinks under no bubble (`Phase` `running` with `tool: null`); an app's bubble runs while
+  its tool does, and Answer's only once the agent replies.
+- A tool opens the chat window only to ask its question (`runConnectorTool`); one that just runs
+  shows nothing but its app's bubble, and its progress label shows only in a window already open (a
+  follow-up's). This replaces ADR-DESK-023's "the chat window opens for the first tool".
+- The working pill is an empty circle in agent mode as in dictation, its rim or arc circling, no
+  icon; the sparkles stay only on the resting pill under the chat window (`agentRestingSymbolSize`,
+  was `agentRunningSymbolSize`).

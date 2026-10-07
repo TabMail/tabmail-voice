@@ -50,7 +50,7 @@ apps/desktop/
 │   ├── core/                Platform-free logic (DOM lib only; no Node/Electron), ported from the Swift app (folders: ADR-DESK-044)
 │   │   ├── config.ts, palette.ts, log.ts, settings.ts   Every tunable number; every color (ADR-DESK-048); the debug-gated log; the settings every part reads
 │   │   ├── agent/                   Agent mode (ADR-DESK-011)
-│   │   │   ├── requests.ts              `DesktopAgent`: picks the tool, has it write, runs Answer's tool loop
+│   │   │   ├── requests.ts              `DesktopAgent`: agent mode's one tool loop, ended by a reply or a Compose/Edit write
 │   │   │   ├── tools.ts                 Agent mode's own tools, the bubbles: Edit, Compose, Thunderbird, Answer
 │   │   │   ├── chat.ts, bubbleOrder.ts  The chat window's conversation; the bubbles' order
 │   │   │   └── connectors/              The apps Answer's model reaches on this computer, one file each with its tools (a new connector or tool goes here)
@@ -153,17 +153,19 @@ listening, over the pill when the overlay opened above the caret's line; it is n
 recording and transcription, with the tool bubbles around the pill (ADR-DESK-033): Edit when text is selected,
 Compose when not, and Answer (Thunderbird's tool, for when an email app is set up, is off until its
 native connector: ADR-DESK-037); each only while switched on
-in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request: `DesktopAgent.tool` picks among the tools
-offered (asking the backend's `system_prompt_desktop_agent`, with them in `available_tools`, unless
-only one is on), the phase becomes `running(tool)` (that bubble moves to the front of the row under
-the pill and its border circles, as the pill's does; while one of Answer's apps runs a tool, that app's
-bubble is the one in front and circling, and the answer's goes back there once it ends: one bubble runs at a time), and `DesktopAgent.write` has the tool's prompt
-write the text. Edit pastes over the selection; Compose pastes at the caret; Thunderbird sends it to
-TabMail's chat; Answer opens a chat window over the pill, which rests there (ADR-DESK-036), and while
-it is open the hotkey asks a follow-up carrying the conversation, until Escape, its X or 30 untouched
-seconds close it. Answer's prompt runs the backend's tool loop (`DesktopAgent.answer`,
-ADR-DESK-023): the backend's date tools run there, and tools that run on this computer (`ConnectorTool`)
-run in the app, shown in the chat window, asking first before sending or creating. A failure shows a
+in Settings (ADR-DESK-022), and with Answer a bubble for each app switched on. The transcript is a request,
+carried out by one tool loop (`DesktopAgent.run`, the backend's `system_prompt_desktop_agent_loop`, from 0.2.0;
+ADR-DESK-055): the backend's date tools and web search run there, and tools that run on this computer
+(`ConnectorTool`) run in the app, shown in the chat window, asking first before sending or creating.
+The selection's writing tool, Edit or Compose, takes the final text and ends the request: the chat
+window closes and the text is pasted (Edit over the selection, Compose at the caret). A plain reply
+opens a chat window over the pill, which rests there (ADR-DESK-036), and while it is open the hotkey
+asks a follow-up carrying the conversation, until Escape, its X or 30 untouched seconds close it. The
+phase is `running(null)` while the loop thinks (no bubble circles; the pill's rim does), then
+`running(tool)` once the agent answers or writes (that bubble moves to the front of the row under the
+pill and its border circles, as the pill's does; while one of Answer's apps runs a tool, that app's
+bubble is the one in front and circling: one bubble runs at a time). The chat window opens only for a
+reply or a tool's question (ADR-DESK-055 amendment 2026-10-07). A failure shows a
 message and pastes nothing. No agent call has a deadline.
 
 ## Relationships
