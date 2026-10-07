@@ -336,12 +336,18 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
 /// saw. With nothing selected the window is empty: a placeholder there made the app take the caret
 /// for a hidden selection, so agent mode chose Edit and refused to write at a caret a dictation
 /// pastes at (Firefox on the Mac, 2026-10-06).
-fn unread_caret(selects_text: bool) -> Result<Vec<u8>, u32> {
+pub(crate) fn unread_caret(selects_text: bool) -> Result<Vec<u8>, u32> {
     serde_json::to_vec(&json!({
-        "parts": ["", if selects_text { privacy::PLACEHOLDER } else { "" }, ""],
+        "parts": unread_parts(selects_text),
         "selectionUnavailable": selects_text,
     }))
     .map_err(|_| 3)
+}
+
+/// The three parts of a caret window that is unread or withheld (`unread_caret`); the render's own
+/// withheld caret uses them too.
+pub(crate) fn unread_parts(selects_text: bool) -> [String; 3] {
+    [String::new(), if selects_text { privacy::PLACEHOLDER } else { "" }.to_owned(), String::new()]
 }
 
 /// Inputs have already passed the native provider's pre-read privacy checks.
@@ -904,12 +910,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             }
         }
         let mut around = if withheld {
-            let selected = if caret[1].is_empty() {
-                ""
-            } else {
-                privacy::PLACEHOLDER
-            };
-            vec![String::new(), selected.to_owned(), String::new()]
+            unread_parts(!caret[1].is_empty()).to_vec()
         } else {
             redacted[caret_index].clone()
         };

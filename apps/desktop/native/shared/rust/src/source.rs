@@ -341,11 +341,9 @@ impl Source {
             return serde_json::to_vec(&json!({"text": &text[range], "complete": self.complete}))
                 .map_err(|_| 3);
         }
+        // Only a selection too large to read is unavailable here: it is withheld.
         if self.unavailable {
-            return serde_json::to_vec(
-                &json!({"parts":["","[redacted]",""],"selectionUnavailable":true}),
-            )
-            .map_err(|_| 3);
+            return crate::context::unread_caret(true);
         }
         let mut window =
             json!({"parts":self.parts,"startKnown":self.edges[0],"endKnown":self.edges[1]});
