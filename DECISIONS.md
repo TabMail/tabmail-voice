@@ -564,7 +564,10 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   more lines (a Slack message) and gets a space. The render uses the same joiner, so the read shows
   "Visit [example] now" and a word split by italics stays one word. A soft wrap between two pieces
   is still a line break. AT-SPI gives Chromium's paragraph as one text with its runs, so Linux had
-  no split. Each platform's real-Chromium test (`macos/Tests/electron.mjs`,
+  no split. A piece that touches a key with no space on screen (a label laid against a `ghp_` key)
+  reads as a key glued to a word, which the redactors do not match, so the whole key is shown:
+  accepted by the owner as rare (2026-10-07), tracked as #175 (P3). The base redacted it only
+  because each piece was a line of its own; one plain piece holding the same text never was. Each platform's real-Chromium test (`macos/Tests/electron.mjs`,
   `windows/tests/electron.mjs`, `linux/tests/electron.mjs`) reads a key split by bold and a link
   between words; the Mac and Windows runs fail on the old per-piece lines.)*
 
