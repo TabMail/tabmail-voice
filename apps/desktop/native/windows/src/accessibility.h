@@ -34,6 +34,9 @@ public:
     // ends the helper. The screen reader, a process its caller restarts,
     // waits on its provider instead (a terminal's read has no time limit).
     explicit Automation(bool bounded = true) {
+        require(CoCreateInstance(CLSID_CUIAutomation8, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&focusLookup)));
+        require(focusLookup->put_ConnectionTimeout(HelperConfig::focusLookupTimeoutMs));
+        require(focusLookup->put_TransactionTimeout(HelperConfig::focusLookupTimeoutMs));
         if (!bounded) {
             require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation)));
             return;
@@ -61,23 +64,30 @@ public:
         return element;
     }
     // A provider asked for its tree for the first time (Chromium, in a window just brought to the
-    // front) names its own container as the focus, one that says it has no keyboard focus, until its
-    // tree is connected: 0.2 s, seconds on a loaded machine. Read then, the caret and the field are
-    // that container's, and so not there. A focus that says it has no keyboard focus is looked for
-    // again until it does; one that still doesn't after `focusSettleMs` is taken as it is.
+    // front) is not ready until its tree is connected: 0.2 s, seconds on a loaded machine. Until
+    // then it names its own container as the focus, one that says it has no keyboard focus, and one
+    // call may go unanswered for seconds while the next is answered at once. Read then, the caret and
+    // the field are the container's, or the request waits out the watchdog. So the focus is first
+    // looked up through `focusLookup`, whose calls give up after `focusLookupTimeoutMs`, again every
+    // `focusSettlePollMs` until it is answered with a focus that says it has the keyboard; one still
+    // unsettled after `focusSettleMs` is taken as it is. Then it is looked up for the request.
     ComPtr<IUIAutomationElement> settledFocus(HWND expected) {
         const auto started = GetTickCount64();
-        auto element = currentFocus();
+        unsigned unanswered = 0;
         for (;;) {
-            BOOL keyboard = TRUE;
-            if (element) require(element->get_CurrentHasKeyboardFocus(&keyboard));
+            ComPtr<IUIAutomationElement> element;
+            BOOL keyboard = FALSE;
+            const bool answered = SUCCEEDED(focusLookup->GetFocusedElement(&element)) &&
+                (!element || SUCCEEDED(element->get_CurrentHasKeyboardFocus(&keyboard)));
+            if (!answered) ++unanswered;
+            const bool settled = answered && (!element || keyboard);
             const auto waited = GetTickCount64() - started;
-            if (!element || keyboard || GetForegroundWindow() != expected || waited >= HelperConfig::focusSettleMs) {
-                if (waited) std::cerr << "debug focus settle: " << (keyboard ? "settled" : "unsettled") << " after " << waited << " ms\n";
-                return element;
+            if (settled || GetForegroundWindow() != expected || waited >= HelperConfig::focusSettleMs) {
+                if (waited) std::cerr << "debug focus settle: " << (settled ? "settled" : "unsettled") << " after " << waited
+                    << " ms, " << unanswered << " unanswered\n";
+                return currentFocus();
             }
             Sleep(HelperConfig::focusSettlePollMs);
-            element = currentFocus();
         }
     }
     bool owns(HWND expected, IUIAutomationElement* element) {
@@ -1268,5 +1278,7 @@ private:
         return result.parts;
     }
     ComPtr<IUIAutomation> automation;
+    // Only for `settledFocus`'s first looks, each of which gives up after `focusLookupTimeoutMs`.
+    ComPtr<IUIAutomation2> focusLookup;
 };
 }

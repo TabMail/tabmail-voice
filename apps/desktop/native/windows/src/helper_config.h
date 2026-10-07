@@ -14,12 +14,13 @@ inline constexpr unsigned long long contextSelectionScanMs = 200;
 // Longest one accessibility request may run before the helper ends itself, so a provider that
 // stops answering can't hold the queue (ms).
 inline constexpr unsigned long long accessibilityWatchdogMs = 2500;
-// Longest an operation's first look waits for a focus that says it has no keyboard focus to say it
-// has, and how often it looks again (ms): a provider asked for its tree for the first time names
-// its container as the focus until the tree is connected (Accessibility::settledFocus). Well under
-// the watchdog, with the lookup after it.
+// Longest an operation's first look waits for the focus to settle, and how often it looks again
+// (ms): a provider asked for its tree for the first time names its container as the focus, and can
+// leave a call unanswered, until the tree is connected (Automation::settledFocus). Well under the
+// watchdog, with the lookup after it. Each of those looks gives up after `focusLookupTimeoutMs`.
 inline constexpr unsigned long long focusSettleMs = 1000;
 inline constexpr unsigned long focusSettlePollMs = 50;
+inline constexpr uint32_t focusLookupTimeoutMs = 250;
 // Longest a terminal's field read for corrections may take (ms), well under the watchdog: the app
 // asks for one every half second while it watches the field, and a read cut short gives no field.
 inline constexpr unsigned long long terminalFieldReadMs = 1000;
