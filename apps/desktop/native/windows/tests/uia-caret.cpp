@@ -57,7 +57,7 @@ struct Selection final : IUIAutomationTextRangeArray {
     Provider& owner;
     explicit Selection(Provider& p) : owner(p) {}
     UNKNOWN_INTERFACE(IUIAutomationTextRangeArray)
-    HRESULT STDMETHODCALLTYPE get_Length(int* count) override { *count = 1; return S_OK; }
+    HRESULT STDMETHODCALLTYPE get_Length(int* count) override;
     HRESULT STDMETHODCALLTYPE GetElement(int index, IUIAutomationTextRange** range) override;
 };
 struct Visible final : IUIAutomationTextRangeArray {
@@ -73,6 +73,8 @@ struct Provider final : IUIAutomationTextPattern2 {
     unsigned reads = 0, outsideReads = 0, documentReads = 0;
     std::optional<int> reportedDocumentEnd;
     bool changeSelection = false, changeText = false;
+    // The provider gives no selection once the field has been read.
+    bool loseSelection = false, selectionLost = false;
     bool pattern2 = false, caretActive = true, changeCaret = false;
     int caretPosition = 0, caretWidth = 0, caretReads = 0;
     HRESULT caretStatus = S_OK;
@@ -150,6 +152,7 @@ HRESULT Range::CompareEndpoints(TextPatternRangeEndpoint a, IUIAutomationTextRan
     return S_OK;
 }
 HRESULT Range::Clone(IUIAutomationTextRange** result) { *result = owner.range(start, end); return S_OK; }
+HRESULT Selection::get_Length(int* count) { *count = owner.selectionLost ? 0 : 1; return S_OK; }
 HRESULT Selection::GetElement(int index, IUIAutomationTextRange** result) {
     if (index != 0) return E_INVALIDARG;
     *result = owner.range(owner.selectedStart, owner.selectedEnd); return S_OK;
@@ -182,6 +185,7 @@ HRESULT Range::GetText(int maximum, BSTR* result) {
     *result = SysAllocStringLen(owner.text.data() + start, count);
     if (owner.misread == std::array<int,2>{start, end} && count) (*result)[0] = L'Z';
     if (owner.changeSelection) { ++owner.selectedStart; ++owner.selectedEnd; owner.changeSelection = false; }
+    if (owner.loseSelection) owner.selectionLost = true;
     if (owner.changeText) { owner.text.at(static_cast<size_t>(owner.selectedStart)) = L'Z'; owner.changeText = false; }
     return *result || count == 0 ? S_OK : E_OUTOFMEMORY;
 }
@@ -535,6 +539,17 @@ int main() {
         Provider caretMoved(L"before chosen after", 7, 7); caretMoved.changeSelection = true;
         result = caretMoved.read();
         expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"", "", ""}, "changed caret is an empty window");
+        // A selection moved out of the field, or one the provider no longer gives, is withheld; a caret
+        // the provider no longer gives is an empty window.
+        Provider movedOut(L"before chosen after", 13, 19); movedOut.changeSelection = true;
+        result = movedOut.read();
+        expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "selection moved out of the field withheld");
+        Provider selectionLost(L"before chosen after", 7, 13); selectionLost.loseSelection = true;
+        result = selectionLost.read();
+        expect(result.selectionUnavailable && result.parts[1] == "[redacted]", "selection the provider no longer gives withheld");
+        Provider caretLost(L"before chosen after", 7, 7); caretLost.loseSelection = true;
+        result = caretLost.read();
+        expect(!result.selectionUnavailable && result.parts == std::array<std::string, 3>{"", "", ""}, "caret the provider no longer gives is an empty window");
         Provider page(L"outside " + selection + L" outside", 8, 8 + static_cast<int>(selection.size()));
         expect(page.readPage() == std::optional<std::string>(std::string(20001, 's')), "page selection remains complete beyond old limit");
         expect(page.reads == 2 && std::all_of(page.ranges.begin(), page.ranges.end(), [&](const auto& range) {

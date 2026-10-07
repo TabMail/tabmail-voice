@@ -132,6 +132,25 @@ int main() {
             expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a selection that moved while read is withheld");
         }
         {
+            // A caret no element places (the line it is in reports one past its own text) is not
+            // read, and selects nothing: an empty window.
+            auto [root, lines] = editor(1, 5);
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && !caret->selectionUnavailable && caret->parts == std::array<std::string, 3>{"", "", ""}, "a caret no element places is an empty window");
+        }
+        {
+            // A selection no element places (each line reports its part outside its own text) is withheld.
+            auto [root, lines] = editor(2, 3);
+            at(root.get()).selection = std::array{0, 3};
+            at(lines[0]).selection = std::array{10, 12};
+            at(lines[1]).selection = std::array{5, 6};
+            at(lines[2]).selection = std::array{30, 31};
+            voice::LiveScreenTree tree(root);
+            const auto caret = tree.caret(root);
+            expect(caret && caret->selectionUnavailable && caret->parts[1] == "[redacted]", "a selection no element places is withheld");
+        }
+        {
             // A link in a paragraph joins its line; one whose text is inline is read as it is.
             auto docs = element({"docs", -1, std::nullopt, {}, "inline"});
             auto paragraph = voice::own(element({"See " + object + " now", -1, std::nullopt, {{4, docs}}, "block"}));
