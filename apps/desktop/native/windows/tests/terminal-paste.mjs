@@ -67,8 +67,11 @@ try {
     while (received.length < text.length && Date.now() < until) await pause(10);
     assert.ok(received === text, "terminal receives exactly the synthetic payload");
     assert.deepEqual(await request("frontmostApp"), target, "insertion preserves focus");
-    assert.ok(await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] }) === null,
-      "terminal insertion does not authorize whole-output correction learning");
+    // A terminal's field for correction learning is the box around its cursor (its visible rows,
+    // with no borders here), never its whole output.
+    const field = await request("focusedFieldValue", { ...target, maxLength: 20_000, excludedAppIDs: [], excludedHosts: [] });
+    assert.ok(typeof field?.value === "string" && field.value.includes("Synthetic terminal insertion test (no shell commands)"),
+      "a terminal's field is the box around its cursor");
     result.stages.push(name);
   }
   result.passed = true;

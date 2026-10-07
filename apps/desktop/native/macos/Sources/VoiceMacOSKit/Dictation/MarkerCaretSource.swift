@@ -8,8 +8,13 @@ import VoiceHelperSupport
 /// Converts opaque provider markers to bounded native ranges. Marker indices can be
 /// document-relative, so the focused element's start is retained as an explicit origin.
 enum MarkerCaretSource {
+    /// The text around the caret, read by its markers. Where the markers place the caret but give no
+    /// text around it (Firefox's address bar: its value and selected range read fine), the field is
+    /// read as `otherwise` reads it, and is unread only when that gives nothing either; a field that
+    /// changed while it was read is unread.
     static func read(snapshot: () -> (selection: CFTypeRef, whole: CFTypeRef)?,
-                     parameterized: (String, CFTypeRef) -> CFTypeRef?, focused: () -> Bool) -> SharedContext.CaretWindow? {
+                     parameterized: (String, CFTypeRef) -> CFTypeRef?, focused: () -> Bool,
+                     otherwise: () -> SharedContext.CaretWindow? = { nil }) -> SharedContext.CaretWindow? {
         func index(_ marker: CFTypeRef) -> Int? {
             guard let result = parameterized("AXIndexForTextMarker", marker) as? NSNumber else { return nil }
             let value = result.intValue
@@ -52,7 +57,9 @@ enum MarkerCaretSource {
             }
             return result
         } catch {
-            HelperLog.debug("ScreenContext: the field's text could not be read around the caret by its markers; selection \(unavailable.selectionUnavailable ? "unavailable" : "empty, its text unread")")
+            HelperLog.debug("ScreenContext: the field's text could not be read around the caret by its markers; read by its value")
+            if let window = otherwise() { return window }
+            HelperLog.debug("ScreenContext: nor by its value; selection \(unavailable.selectionUnavailable ? "unavailable" : "empty, its text unread")")
             return unavailable
         }
     }

@@ -1,0 +1,136 @@
+use super::*;
+use serde_json::json;
+
+/// A viewport projection's output holding `rows` as one run of surface 1, the caret `offset` UTF-16
+/// units into it.
+fn projected(rows: &[&str], offset: usize) -> Value {
+    json!({"caret": {"status": "exact", "surface": 1, "run": 0, "offset": offset},
+        "surfaces": [{"id": 1, "runs": [{"id": 0, "text": rows.join("\n"), "connected": false}]}]})
+}
+
+/// The box around the caret at the first `‸` in `rows`.
+fn boxed(rows: &[&str]) -> Option<CaretBox> {
+    let text = rows.join("\n");
+    let at = text.find('‸').unwrap();
+    let offset = text[..at].encode_utf16().count();
+    let without: Vec<String> = rows.iter().map(|row| row.replacen('‸', "", 1)).collect();
+    let without: Vec<&str> = without.iter().map(String::as_str).collect();
+    caret_box(&projected(&without, offset))
+}
+
+fn caret(above: &[&str], before: &str, after: &str, below: &[&str]) -> Option<CaretBox> {
+    Some(CaretBox {
+        above: above.iter().map(|row| (*row).to_owned()).collect(),
+        before: before.to_owned(),
+        after: after.to_owned(),
+        below: below.iter().map(|row| (*row).to_owned()).collect(),
+    })
+}
+
+/// A plain shell has no borders: every row in view is in the box.
+#[test]
+fn a_shell_without_borders_is_one_box() {
+    assert_eq!(
+        boxed(&["$ ls", "notes.txt", "$ git commit -m \"Note:‸"]),
+        caret(&["$ ls", "notes.txt"], "$ git commit -m \"Note:", "", &[])
+    );
+}
+
+/// tmux draws the panes of a row side by side: the cursor's pane is cut at their border, on its row
+/// and the rows above, and a pane to its left never reaches the text before the cursor.
+#[test]
+fn a_tmux_pane_is_cut_at_its_borders() {
+    let rows = [
+        "build ok.          │ $ echo one",
+        "Done.              │ one",
+        "tests passed:      │ Note:‸",
+        "                   │",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&[" $ echo one", " one"], " Note:", "", &[""])
+    );
+    // The cursor in the left pane: the border is on its right.
+    let rows = [
+        "left one   │ right",
+        "Note:‸      │ more",
+        "           │ end",
+    ];
+    assert_eq!(boxed(&rows), caret(&["left one"], "Note:", "", &[""]));
+}
+
+/// A rule ends the box: tmux's border between panes one above the other, and the rules a full-screen
+/// program such as Claude Code draws above and below its input.
+#[test]
+fn a_rule_ends_the_box() {
+    let rows = [
+        "✻ Working… (3s)",
+        "────────────────────",
+        "> fix the Xyvora",
+        "  build‸",
+        "────────────────────",
+        "  ? for shortcuts",
+    ];
+    assert_eq!(
+        boxed(&rows),
+        caret(&["> fix the Xyvora"], "  build", "", &[])
+    );
+    // A pane under a horizontal tmux border, beside another.
+    let rows = [
+        "top        │ top right",
+        "───────────┼──────────",
+        "bottom     │ $ ok‸",
+        "more       │",
+    ];
+    assert_eq!(boxed(&rows), caret(&[], " $ ok", "", &[""]));
+}
+
+/// The sides a program draws around its input are the box's borders, inside a tmux pane's.
+#[test]
+fn an_input_box_inside_a_pane_is_the_innermost_box() {
+    let rows = [
+        "log line     │ ╭──────────╮",
+        "log Note:    │ │ > Hi.‸    │",
+        "log end      │ ╰──────────╯",
+    ];
+    assert_eq!(boxed(&rows), caret(&[], " > Hi.", "", &[]));
+}
+
+/// The text after the cursor runs to the border, its trailing blanks dropped; a space typed before
+/// the cursor stays.
+#[test]
+fn the_cursor_row_keeps_what_was_typed_before_the_cursor() {
+    assert_eq!(
+        boxed(&["Done. ‸Next   "]),
+        caret(&[], "Done. ", "Next", &[])
+    );
+    assert_eq!(
+        boxed(&["a\r", "b‸c\r", "d\r"]),
+        caret(&["a"], "b", "c", &["d"])
+    );
+}
+
+/// Only an exact caret gets a box; one the runs do not hold, or inside a character, gets none.
+#[test]
+fn a_caret_not_placed_exactly_gets_no_box() {
+    let mut value = projected(&["Note:"], 5);
+    value["caret"] = json!({"status": "outsideViewport"});
+    assert_eq!(caret_box(&value), None);
+    let mut value = projected(&["Note:"], 5);
+    value["caret"]["run"] = json!(7);
+    assert_eq!(caret_box(&value), None);
+    assert_eq!(caret_box(&projected(&["Note:"], 6)), None);
+    assert_eq!(caret_box(&projected(&["😀"], 1)), None);
+}
+
+/// Runs read in one piece with the caret's are one text: the row the caret is on can start in the
+/// run before.
+#[test]
+fn connected_runs_are_read_as_one_text() {
+    let value = json!({"caret": {"status": "exact", "surface": 1, "run": 1, "offset": 3},
+        "surfaces": [{"id": 1, "runs": [
+            {"id": 0, "text": "gap", "connected": false},
+            {"id": 5, "text": "> Note", "connected": false},
+            {"id": 1, "text": ": hi", "connected": true}]}]});
+    assert_eq!(caret_box(&value), caret(&[], "> Note: h", "i", &[]));
+}

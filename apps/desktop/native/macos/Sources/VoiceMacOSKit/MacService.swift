@@ -237,14 +237,15 @@ struct ScreenAccess: Sendable {
     var bundleIdentifier: @Sendable (pid_t) -> String?
     /// The screen context of the app, as read; none when an excluded website is showing.
     var read: @Sendable (pid_t, String, String?, ScreenExclusions) -> ScreenContext?
-    /// The text of the app's focused field (`FocusedField`); none in an excluded website.
-    var focusedField: @Sendable (pid_t, ScreenExclusions) -> String?
+    /// The app's focused field (`FocusedField`): its text, or a terminal's viewport; none in an
+    /// excluded website.
+    var focusedField: @Sendable (pid_t, ScreenExclusions) -> FocusedField.Read?
 
     static let accessibility = ScreenAccess(
         frontmost: { NSWorkspace.shared.frontmostApplication.map { ($0.processIdentifier, $0.localizedName ?? "", $0.bundleIdentifier) } },
         bundleIdentifier: { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
         read: { ScreenContextReader.read(pid: $0, appName: $1, bundleID: $2, excluding: $3) },
-        focusedField: { FocusedField.value(inApp: $0, excluding: $1) }
+        focusedField: { FocusedField.read(inApp: $0, bundleID: NSRunningApplication(processIdentifier: $0)?.bundleIdentifier, excluding: $1) }
     )
 }
 

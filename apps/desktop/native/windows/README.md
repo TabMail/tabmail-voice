@@ -33,11 +33,12 @@ It checks real textarea and contenteditable providers: field-scoped context besi
 Windows Terminal exposes its cursor through a collapsed `TextPattern` selection,
 without the editable-field patterns. Caret lookup uses the focused control’s accessibility capabilities, independently
 of its editable-value capabilities: active `TextPattern2` carets or collapsed
-`TextPattern` selections can provide geometry without enabling field learning.
+`TextPattern` selections can provide geometry without making the control a field.
 No application name or control-class allowlist is used for the caret (the screen
 read knows a terminal by `HelperConfig::terminalApps`). Disabled, hidden, password
 and explicitly read-only value controls are refused. Selected output alone does
-not establish a caret, and terminal output remains excluded from correction learning. Validate the real
+not establish a caret, and correction learning reads a terminal only as the box around its
+cursor, never its whole output. Validate the real
 Terminal provider from a focused Windows Terminal tab, with the app quit and no
 output redirection (from `apps/desktop`):
 
@@ -60,9 +61,10 @@ it does not require an editable-value pattern or an application allowlist. The
 target decides whether to consume paste. A successful request confirms command
 delivery, not that the target changed its text. The clipboard is written, never
 read or put back: the text stays on it, marked out of history and the cloud. This
-matches the Mac and Ubuntu insertion contract. Correction learning remains
-restricted to editable whole-field values, so terminal output is never learned
-as a field. Focus, password, integrity and deadline checks remain in force.
+matches the Mac and Ubuntu insertion contract. In a terminal the field read for
+correction learning is the box around the cursor, cut by the shared core from the
+viewport the screen read reads (ADR-DESK-038, amended 2026-10-07), never the
+terminal's whole output. Focus, password, integrity and deadline checks remain in force.
 Elevated targets are refused.
 
 To check insertion without dictation, open a disposable Windows Terminal tab with
@@ -75,7 +77,7 @@ node native/windows/tests/terminal-paste.mjs native/windows/build/Release/voice-
 
 Keep it focused until `TERMINAL_INSERTION_PASS`. The fixture consumes ASCII and
 Unicode paste in raw input mode and never sends Enter to a shell. It checks exact
-received text, retained focus and refusal of correction learning. The text stays
+received text, retained focus and that the field read is the box around the cursor. The text stays
 on the clipboard afterwards. Run this only in a disposable tab with no other
 activity.
 

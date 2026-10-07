@@ -17,6 +17,7 @@ mod source_window;
 
 pub mod source;
 
+mod terminal_box;
 mod viewport;
 mod walk;
 

@@ -133,9 +133,15 @@ pub(crate) fn process(bytes: &[u8]) -> Result<Vec<u8>, u32> {
         }
         let projected = call(crate::viewport::process, viewport)?;
         let surfaces = projected["surfaces"].as_array().map_or(0, Vec::len);
-        reply["textBeforeCaret"] = json!("");
+        // The caret window is the cursor's row in its pane (`terminal_box`), so the app spaces a
+        // dictation from a delimiter before the cursor; empty without an exact caret, and while
+        // text is selected: a terminal's selection is not at its cursor, as a field's is.
+        let line = (projected["selectedText"] == "")
+            .then(|| crate::terminal_box::caret_box(&projected))
+            .flatten();
+        reply["textBeforeCaret"] = json!(line.as_ref().map_or("", |line| line.before.as_str()));
         reply["selectedText"] = projected["selectedText"].clone();
-        reply["textAfterCaret"] = json!("");
+        reply["textAfterCaret"] = json!(line.as_ref().map_or("", |line| line.after.as_str()));
         reply["selectionRedacted"] = json!(projected["selectionComplete"] != true);
         reply["renderedText"] = projected["renderedText"].clone();
         if projected["complete"] != true && read.stopped.is_none() {

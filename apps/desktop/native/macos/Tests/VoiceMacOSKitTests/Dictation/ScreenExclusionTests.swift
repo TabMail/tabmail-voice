@@ -27,7 +27,7 @@ struct ScreenExclusionTests {
     private func replies(
         to requests: [String], frontmost: (pid_t, String, String?)? = (7, "Example Vault", "org.example.vault"),
         apps: [pid_t: String] = [7: "org.example.vault", 8: "org.example.notes"], shown: String = "field text",
-        host: String? = nil, refuses: Bool = false
+        host: String? = nil, refuses: Bool = false, field: FocusedField.Read? = nil
     ) async throws -> (replies: [[String: Any]], reads: Reads) {
         let reads = Reads()
         let screen = ScreenAccess(
@@ -45,7 +45,7 @@ struct ScreenExclusionTests {
             focusedField: { pid, exclusions in
                 reads.fields.withLock { $0.append(pid) }
                 reads.exclusions.withLock { $0.append(exclusions) }
-                return shown
+                return field ?? .text(shown)
             }
         )
         let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
@@ -1070,6 +1070,25 @@ struct ScreenExclusionTests {
         #expect((try await reply("3", shown: "ab😀")?["result"] as? [String: Any])?["value"] is NSNull)
         #expect(try await reply("0", shown: "a")?["error"] != nil)
         #expect(try await reply("20001", shown: "a")?["error"] != nil)
+    }
+
+    /// A terminal's field is the box around its cursor, which the shared core cuts from the viewport
+    /// read (`request-cases.json`): the cursor's pane in tmux, its rows joined by the core's breaks
+    /// (U+2029); none without an exact caret.
+    @Test func aTerminalsFieldIsTheBoxAroundItsCursor() async throws {
+        func reply(caret: JSON) async throws -> Any? {
+            let text = "log one    │$ echo one\nlog two    │Note: hi"
+            let viewport: JSON = ["surfaces": [["id": 1, "frame": [0, 0, 400, 200],
+                                                "runs": [["id": 1, "text": .string(text), "connected": false, "startKnown": false, "endKnown": false]],
+                                                "selection": ["complete": true, "ranges": []]]],
+                                  "focusedSurface": 1, "complete": true, "caret": caret]
+            let replies = try await replies(to: [#"{"id":1,"method":"focusedFieldValue","params":{"pid":8,"maxLength":100,"excludedAppIDs":[],"excludedHosts":[]}}"#],
+                                            field: .terminal(viewport)).replies
+            return (replies.first?["result"] as? [String: Any])?["value"]
+        }
+        let end = Double("log one    │$ echo one\nlog two    │Note: hi".utf16.count)
+        #expect(try await reply(caret: ["status": "exact", "surface": 1, "run": 1, "offset": .number(end)]) as? String == "$ echo one\u{2029}Note: hi")
+        #expect(try await reply(caret: ["status": "outsideViewport"]) is NSNull)
     }
 
     /// The app the user picks in Settings: its identifier and name, or none for what isn't an app.

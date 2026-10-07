@@ -20,14 +20,27 @@ enum SharedRequest {
         return bound
     }
 
-    /// `focusedFieldValue`'s reply for the field's text as read: null for none or one longer than
-    /// `maxLength`, else the text with secret-looking text taken out.
-    static func fieldValue(_ text: String?, maxLength: Int) throws -> JSON {
-        let reply = try call(["field": ["maxLength": .number(Double(maxLength)), "text": text.map(JSON.string) ?? .null]])
-        if let text, reply["value"] == .null {
-            HelperLog.debug("FocusedField: \(text.utf16.count) code units, over \(maxLength)")
+    /// `focusedFieldValue`'s reply for the field as read: null for none or one longer than
+    /// `maxLength`, else the text with secret-looking text taken out; for a terminal, the box around
+    /// its cursor the core cuts from its viewport, null without one.
+    static func fieldValue(_ read: FocusedField.Read?, maxLength: Int) throws -> JSON {
+        let bound = JSON.number(Double(maxLength))
+        switch read {
+        case .terminal(let viewport):
+            let reply = try call(["field": ["maxLength": bound, "viewport": viewport]])
+            if reply["value"] == .null {
+                HelperLog.debug("FocusedField: the terminal gave no box around its cursor within \(maxLength) code units")
+            }
+            return reply
+        case .text(let text):
+            let reply = try call(["field": ["maxLength": bound, "text": .string(text)]])
+            if reply["value"] == .null {
+                HelperLog.debug("FocusedField: \(text.utf16.count) code units, over \(maxLength)")
+            }
+            return reply
+        case nil:
+            return try call(["field": ["maxLength": bound, "text": .null]])
         }
-        return reply
     }
 
     /// Refuses a paste's text that is empty, longer than the core allows or holds a NUL.

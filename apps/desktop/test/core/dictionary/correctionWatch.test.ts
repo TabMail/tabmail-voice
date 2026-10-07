@@ -59,6 +59,43 @@ describe("CorrectionWatch", () => {
     expect(learned).toEqual([]);
   });
 
+  /** A terminal's field is the box around its cursor, its rows joined by the core's breaks (U+2029):
+   * a dictation a full-screen program wrapped at a word, its next row indented, is found and its
+   * correction learned, as is one a shell wrapped inside a word. */
+  test("learns a correction in a terminal's box, across the rows the terminal wrapped", async () => {
+    const box = (text: string) => `> ${text.replace("Zivora ", "Zivora\u2029  ").replace("Xyvora ", "Xyvora\u2029  ")}`;
+    const { field, learned, watch } = setup(box(pasted));
+    watch.watch(pid, pasted, none);
+    await poll();
+    field.value = box(corrected);
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([["Xyvora"]]);
+
+    const shell = setup("$ Please forward the Ziv\u2029ora contract today.");
+    shell.watch.watch(pid, pasted, none);
+    await poll();
+    shell.field.value = "$ Please forward the Xyv\u2029ora contract today.";
+    await poll();
+    await poll();
+    shell.watch.stop();
+    expect(shell.learned).toEqual([["Xyvora"]]);
+  });
+
+  /** Only the core's breaks are joined: a field whose own line break falls inside the pasted text
+   * does not hold it, and teaches nothing. */
+  test("never joins a field's own line breaks", async () => {
+    const { field, learned, watch } = setup("Please forward the Zivora\ncontract today.");
+    watch.watch(pid, pasted, none);
+    await poll();
+    field.value = "Please forward the Xyvora\ncontract today.";
+    await poll();
+    await poll();
+    watch.stop();
+    expect(learned).toEqual([]);
+  });
+
   /** A correction that has stayed for an interval is learned once the watch ends (here, the next
    * dictation's key-down), and only once. */
   test("learns a correction that stayed, when the watch ends", async () => {

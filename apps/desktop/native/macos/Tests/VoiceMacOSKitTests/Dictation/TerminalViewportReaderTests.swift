@@ -141,7 +141,9 @@ struct TerminalViewportWireTests {
         #expect(wire["hidden"] == nil)
         #expect(wire["terminalViewport"]?["caret"]?["status"]?.string == "exact")
         #expect(wire["renderedText"]?.string == "[Terminal surface 1]\ntoken=[redacted]\n> hello world")
-        #expect(wire["textBeforeCaret"]?.string == "")
+        // The caret window is the cursor's row (the shared core's `terminal_box`), for the paste's spacing.
+        #expect(wire["textBeforeCaret"]?.string == "> hel")
+        #expect(wire["textAfterCaret"]?.string == "lo world")
         #expect(wire["logDescription"]?.string?.contains("abc123456789") == false)
     }
     @Test func incompleteSelectionAndUnavailableCaretSurviveTheWire() throws {

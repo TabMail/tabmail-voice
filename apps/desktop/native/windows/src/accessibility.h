@@ -145,6 +145,14 @@ public:
         if (!element && refusal && std::string_view(refusal) == "protected-field") return {{"value", nullptr}};
         if (!element) return nullptr;
         if (refusedPages(window, element.Get(), exclusions, 200, true)) return {{"value", nullptr}};
+        // A terminal's text is its scrollback and no editable field: its field is the box around its
+        // cursor, which the shared core cuts from the viewport the screen read takes (`terminal_box`).
+        if (isTerminal(window)) {
+            size_t visited=0;
+            const JSON viewport=terminalViewport(window,element.Get(),exclusions,GetTickCount64(),visited);
+            if (viewport.is_null() || viewport==hiddenScreen() || GetForegroundWindow()!=window) return {{"value", nullptr}};
+            return core::request({{"field", {{"maxLength", maxLength}, {"viewport", viewport}}}}, voice_core_request_json);
+        }
         if (!editable(element.Get())) return nullptr;
         if (!safeTextSubtree(element.Get(), 200)) return {{"value", nullptr}};
         std::optional<std::wstring> value;
@@ -199,8 +207,7 @@ public:
         }
         const auto started = GetTickCount64();
         const std::wstring app = executableName(window);
-        const bool terminal = std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
-            [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
+        const bool terminal = isTerminal(window);
         std::optional<PageHost> focusedPage;
         if (element && refusedPages(window, element.Get(), exclusions, std::nullopt, false, &focusedPage))
             return hiddenScreen();
@@ -725,6 +732,27 @@ private:
     }
     JSON readTerminalScreen(HWND window, IUIAutomationElement* focus, const std::wstring& app,
                             const ScreenExclusions& exclusions, ULONGLONG started) {
+        size_t visited=0;
+        const JSON viewport=terminalViewport(window,focus,exclusions,started,visited);
+        if (viewport.is_null() || viewport==hiddenScreen()) return viewport;
+        wchar_t title[513]{};GetWindowTextW(window,title,513);
+        // The same window and focus as the viewport was read with, as before its title was asked.
+        const auto current=ownedFocus(window);
+        if (GetForegroundWindow()!=window || !((focus && current && same(focus,current.Get())) || (!focus && !current))) return nullptr;
+        return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
+            {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
+    }
+    // Whether the window is a terminal's (`HelperConfig::terminalApps`), read by its viewport.
+    bool isTerminal(HWND window) {
+        const std::wstring app = executableName(window);
+        return std::any_of(std::begin(HelperConfig::terminalApps), std::end(HelperConfig::terminalApps),
+            [&](const wchar_t* name) { return _wcsicmp(app.c_str(), name) == 0; });
+    }
+    // A terminal window's viewport as the shared core's `collect` finishes it, the source of the
+    // screen read's projection and of the field read's box around the cursor; nullptr when it can't
+    // be read, `hiddenScreen()` when it shows an excluded page.
+    JSON terminalViewport(HWND window, IUIAutomationElement* focus, const ScreenExclusions& exclusions,
+                          ULONGLONG started, size_t& visited) {
         ComPtr<IUIAutomationElement> root;
         require(automation->ElementFromHandle(window, &root));
         ComPtr<IUIAutomationTreeWalker> walker;
@@ -755,7 +783,7 @@ private:
         }
         // What is gathered, how much, and what the viewport says are the shared core's (`collect`).
         JSON collected=core::request({{"collect",{{"start",true}}}},voice_core_viewport_json);
-        size_t visited=0;
+        visited=0;
         struct Entry { ComPtr<IUIAutomationElement> node; RECT clip; };
         struct Capture { ComPtr<IUIAutomationElement> node; };
         std::vector<Entry> stack{{root,windowFrame}};
@@ -803,11 +831,8 @@ private:
             case walk::PageLook::none: break;
         }
         for(const auto& capture:captures) if(!safeTextSubtree(capture.node.Get())) return nullptr;
-        wchar_t title[513]{};GetWindowTextW(window,title,513);
         if(!valid()) return nullptr;
-        const JSON viewport=core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete}}}}}},voice_core_viewport_json);
-        return screenReply({{"appName",utf8(app)},{"bundleID",nullptr},{"windowTitle",utf8(title)},{"host",nullptr},
-            {"terminalProgram",nullptr},{"focusedRole","terminal"},{"viewport",viewport}},exclusions.lists(),visited,GetTickCount64()-started,"");
+        return core::request({{"collect",{{"state",collected},{"finish",{{"complete",complete}}}}}},voice_core_viewport_json);
     }
     // The focused element as the walk treats it. `element` is null when the window has none.
     struct FocusRead {

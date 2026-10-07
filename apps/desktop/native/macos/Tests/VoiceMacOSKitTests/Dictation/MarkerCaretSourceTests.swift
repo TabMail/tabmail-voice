@@ -63,6 +63,27 @@ struct MarkerCaretSourceTests {
         #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
     }
 
+    /// Firefox's address bar: its markers place the caret but give no text around it, while its value
+    /// and selected range read fine. The field is read the other way; only when that gives nothing
+    /// too is it unread, a selection still withheld.
+    @Test(arguments: [0, 6])
+    func aFieldWhoseMarkersGiveNoTextIsReadByItsValue(length: Int) throws {
+        let provider = Provider(text: "before chosen after", selection: NSRange(location: 7, length: length))
+        provider.wrongMarker = true
+        let byValue = SharedContext.CaretWindow(parts: ["Note.", "", ""], selectionUnavailable: false)
+        provider.otherwise = { byValue }
+        #expect(try #require(provider.read()).parts == byValue.parts)
+        provider.otherwise = { nil }
+        let result = try #require(provider.read())
+        #expect(result.selectionUnavailable == (length > 0))
+        #expect(result.parts == ["", length > 0 ? Redactor.placeholder : "", ""])
+        // A field that changed while it was read is unread, not read again.
+        provider.wrongMarker = false
+        provider.changeOnRead = true
+        provider.otherwise = { byValue }
+        #expect(try #require(provider.read()).parts != byValue.parts)
+    }
+
     /// Chromium: text markers but no marker-index conversion, and a character range that is wrong on
     /// an empty line; the selection comes from the lengths between the markers.
     @Test(arguments: [(96, 0), (9, 0), (0, 0), (120, 0), (90, 6), (0, 120)])
@@ -424,6 +445,7 @@ struct MarkerCaretSourceTests {
         var requests: [NSRange] = []
         var wrongMarker = false
         var changeOnRead = false
+        var otherwise: () -> SharedContext.CaretWindow? = { nil }
         init(text: String, selection: NSRange) { self.text = text as NSString; self.selection = selection }
         func read() -> SharedContext.CaretWindow? {
             MarkerCaretSource.read(snapshot: {
@@ -446,7 +468,7 @@ struct MarkerCaretSourceTests {
                     return self.text.substring(with: NSRange(location: start - self.origin, length: end - start)) as NSString
                 default: return nil
                 }
-            }, focused: { true })
+            }, focused: { true }, otherwise: otherwise)
         }
     }
 }

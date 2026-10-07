@@ -539,6 +539,16 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   cases in real Chromium (`windows/tests/electron.mjs`; `linux/tests/electron.mjs`, which runs on
   Wayland, as GNOME reads only the active window and does not activate a new X11 one).)*
 
+**Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
+(issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the
+caret (`caret 30+0 of 30 chars, from the marker indices`) but gave no text around it, so the caret
+window was unread and a dictation after a sentence's `.` was not spaced, while the field's value and
+selected range read fine a second later (`CorrectionWatch`). Where the markers place the caret but
+give no text around it, `MarkerCaretSource.read` now reads the field as an ordinary field is read
+(`valueCaretWindow`: its value and selected range, within the same budgets), and is unread only when
+that gives nothing either, a selection still withheld. A field that changed while its markers were
+read is unread, as before, and not read again. Only the Mac reads by markers.
+
 ## ADR-DESK-008: Clean up every transcript with the screen context, on the backend
 
 **Context:** Owner, 2026-09-25: after transcription, a language-model pass should fix dictation
@@ -689,6 +699,20 @@ reads as its placeholder, which starts with `[`, and is spaced from. Only the pa
 Chromium rich-text fields read the caret's line ends right since the restored paragraph breaks
 (ADR-DESK-007 amendment, 2026-10-06), so a caret at the end of a line is followed by its break,
 not the next paragraph's first word, and gets no trailing space.
+
+**Amendment 2026-10-07 — a terminal is spaced from its cursor's row (issue #162).** A terminal is read
+as its viewport, and its caret window was left empty, so no dictation there was spaced ("a terminal
+read as a viewport adds no space" above). Its cursor is placed exactly in the viewport, though, so the
+shared core (`terminal_box`, ADR-DESK-054) now gives the caret window the cursor's row: the text before
+and after the cursor, between the nearest borders on each side of it (box-drawing characters: tmux's
+pane borders, the sides a full-screen program draws around its input), so a pane beside the cursor's
+never reaches it. Owner, 2026-10-07: the rule is the fields' rule, unchanged (a space after a delimiter
+or a closing mark, before a word after a closing one), not a space after any character. The row is cut
+from the viewport's text after it was redacted, so nothing is put into text the redactor sees. Without
+an exact caret (a caret iTerm2 draws on another line than its offset's, VTE's at a text's ends), or
+while text is selected (a terminal's selection is not at its cursor), the window stays empty and no
+space is added, as before. The cut is by character column: a row holding a double-width character has
+its borders a column early.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
@@ -2648,6 +2672,26 @@ takes 100). The order sent is now: the typed words, then the learned, each most 
 (`prioritizedWords`; the stored order for a tie), then the screen's terms, most frequent first, as
 before. This supersedes "the words are sent in the order stored" above; the cleanup's `dictionary`
 gets the same order. Settings' list and the stored order are unchanged.
+
+**Amendment 2026-10-07 — a terminal's field is the box around its cursor (issue #130).** Learning did
+nothing in a terminal on any platform: the field read asks for the focused field's whole text, which in
+a terminal is its scrollback (`FocusedField: 52694 code units, over 20000` in iTerm2 on the Mac, then
+`no field to read; stopped`), Windows refuses it as no editable field, and Linux reads VTE's whole
+buffer. Owner, 2026-10-07: read the box around the cursor. In a terminal (the apps the screen read
+reads as a viewport) each helper now reads the viewport as the screen read does and the shared core
+cuts out the box around the cursor (`terminal_box`, ADR-DESK-054): the cursor's row and the rows above
+and below it between the same borders, up to a horizontal rule (tmux's border between panes one above
+the other; the rules above and below Claude Code's input), so other panes and a program's spinner or
+status line are not the field. Its rows are joined by the core's own breaks (U+2029), which the core
+checks for secrets with and without them, as a rich editor's (ADR-DESK-007, 2026-10-06), withholding
+the field where one splits a secret. `CorrectionWatch` finds the pasted text as read, else with those
+breaks dropped (a shell wraps a long line inside a word), else with each break and the blanks around
+it read as one space (a full-screen program wraps at a word and indents its next row), and reads the
+field the same way until the watch ends; a user's own line break is never joined. A box whose other
+text changes while the user edits (output in the same pane) teaches nothing that time, as any edit
+outside the pasted text; without an exact caret (one iTerm2 draws on another line, after typed
+spaces) the read gives none and the watch ends. Each read is a viewport read (about 0.2 s in iTerm2),
+every `correctionPollInterval` for `correctionWatchDuration`.
 
 ## ADR-DESK-039: A shorter wait between the release and the text
 
