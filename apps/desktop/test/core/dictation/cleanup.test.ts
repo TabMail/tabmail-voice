@@ -389,9 +389,10 @@ describe("spacedFromCaret", () => {
     ["before a line break", "Done.", "\nNext"],
     ["at the field's end", "Done.", ""],
     ["before punctuation", "Done.", ", next"],
-    ["before a closing bracket", "(see above", ") next"],
+    ["before a closing bracket", "Done.", ") next"],
     ["before a script written without spaces", "Done.", "牛乳を買う"],
-    ["ending in a script written without spaces", "好的。", "明天见"],
+    ["ending in a script written without spaces before a number", "（注）", "2024年に"],
+    ["ending in a closing quote in a script written without spaces", "他说“好的”", "OK"],
     ["ending inside an opening quote", "He said \"", "hi"],
   ])("adds no space after a dictation %s", (_name, text, after) => {
     expect(spacedFromCaret("", text, after)).toBe(text);
