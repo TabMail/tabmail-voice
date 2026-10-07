@@ -14,6 +14,10 @@ Sends the same request shape the TabMail backend sends.
     python3 Scripts/stt-compare/compare.py --sudo --env-file path/to/root-owned-secrets.env
     python3 Scripts/stt-compare/compare.py --language en
     python3 Scripts/stt-compare/compare.py --models openai/whisper-large-v3-turbo deepgram/nova-3
+    python3 Scripts/stt-compare/compare.py --models deepgram/nova-3 --voice Yuna --speak "내일 오후 세 시에 회의 일정을 잡아 주세요."
+
+--speak records one sentence with macOS `say` (--voice picks the voice, e.g. Yuna for Korean) and
+scores it instead of recordings/; leave out --language to see whether a model detects the language.
 
 Writes results/<timestamp>.md (summary table + every transcript) and .json.
 WER = word error rate against passages.txt after lower-casing and stripping punctuation, so it
@@ -170,16 +174,28 @@ def main() -> None:
     parser.add_argument("--sudo", action="store_true",
                         help="read --env-file through sudo (for a root-owned secrets file)")
     parser.add_argument("--language", help="ISO-639-1 code, e.g. en (default: auto-detect)")
+    parser.add_argument("--speak", help="record this sentence with macOS `say` and use it instead of recordings/")
+    parser.add_argument("--voice", help="the `say` voice for --speak, e.g. Yuna for Korean (default: the system voice)")
     args = parser.parse_args()
 
     key = os.environ.get("OPENROUTER_API_KEY") or key_from_env_file(args.env_file.expanduser(), args.sudo)
     if not key:
         sys.exit(f"No OPENROUTER_API_KEY in the environment or in {args.env_file}.")
-    refs = references()
-    wavs = sorted((HERE / "recordings").glob("*.wav"))
-    wavs = [w for w in wavs if w.stem in refs]
-    if not wavs:
-        sys.exit("No recordings matching passages.txt in recordings/ (run record.py first).")
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = HERE / "results"
+    out.mkdir(exist_ok=True)
+    if args.speak:
+        wav = out / f"{stamp}-spoken.wav"
+        subprocess.run(["say", "-o", str(wav), "--data-format=LEI16@16000"]
+                       + (["-v", args.voice] if args.voice else []) + [args.speak], check=True)
+        refs = {wav.stem: args.speak}
+        wavs = [wav]
+    else:
+        refs = references()
+        wavs = sorted((HERE / "recordings").glob("*.wav"))
+        wavs = [w for w in wavs if w.stem in refs]
+        if not wavs:
+            sys.exit("No recordings matching passages.txt in recordings/ (run record.py first).")
 
     zdr = zdr_status(args.models)
     for model, state in zdr.items():
@@ -211,9 +227,6 @@ def main() -> None:
         })
     summary.sort(key=lambda s: (s["wer"] is None, s["wer"] or 0))
 
-    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    out = HERE / "results"
-    out.mkdir(exist_ok=True)
     lines = [f"# STT comparison {stamp}", "", f"Language: {args.language or 'auto-detect'}", "",
              "| Model | ZDR endpoints | WER | Avg latency (s) | Cost ($) | Errors |", "|---|---|---|---|---|---|"]
     for s in summary:

@@ -3,7 +3,8 @@
 
 Sends one recording several times, each with a phrase list of a different length, in the request
 shape the TabMail backend sends (`provider.options.azure.phraseList.phrases` for MAI-Transcribe,
-`provider.options.assemblyai.keyterms_prompt` for AssemblyAI), and reports for each length whether
+`provider.options.assemblyai.keyterms_prompt` for AssemblyAI, `provider.options.deepgram.keyterm`
+for Deepgram Nova-3), and reports for each length whether
 the provider took it (HTTP status, its error text when refused), the time it took and the
 transcript. The terms are made-up names, distinct case-insensitively, each a valid dictionary word.
 
@@ -13,6 +14,7 @@ root-owned file). The key is never printed or written.
     python3 Scripts/stt-compare/vocabulary_limit.py --sudo --env-file path/to/secrets.env
     python3 Scripts/stt-compare/vocabulary_limit.py --counts 50 51 100 200 --recording 05-jargon
     python3 Scripts/stt-compare/vocabulary_limit.py --model assemblyai/universal-3-5-pro
+    python3 Scripts/stt-compare/vocabulary_limit.py --model deepgram/nova-3 --counts 0 10 100 200
 
 With --canary, the list's LAST term is a spelling of a word in the recording the model would not
 write unprompted, so a transcript holding it shows the end of a long list still reaches the model
@@ -52,6 +54,9 @@ FORMATS = {
     "microsoft/mai-transcribe-2": lambda terms: {"azure": {"phraseList": {"phrases": terms}}},
     "microsoft/mai-transcribe-1.5": lambda terms: {"azure": {"phraseList": {"phrases": terms}}},
     "assemblyai/universal-3-5-pro": lambda terms: {"assemblyai": {"keyterms_prompt": terms}},
+    # Deepgram Keyterm Prompting (`keyterm`, 500 tokens per request). Not in the backend, and
+    # OpenRouter doesn't document passing it: a canary heard here shows it reaches the model.
+    "deepgram/nova-3": lambda terms: {"deepgram": {"keyterm": terms}},
 }
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_WAIT_SECONDS = 3
