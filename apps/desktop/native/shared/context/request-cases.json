@@ -219,6 +219,18 @@
       }
     },
     {
+      "name": "a field's two keys on paragraphs of their own (U+2029) are each redacted, nothing withheld",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "sk-ReviewField1234567890abcd\u2029sk-ReviewLink1234567890abcd"
+        }
+      },
+      "expected": {
+        "value": "[redacted]\n[redacted]"
+      }
+    },
+    {
       "name": "a terminal's field with a key over two rows of its pane, redacted as the lines the screen shows",
       "request": {
         "field": {

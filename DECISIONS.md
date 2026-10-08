@@ -559,7 +559,7 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   the screen shows is inside its piece's box (`Visit ` ends where the link starts), so geometry
   alone can't tell the two apart. `admit` now keeps one space at each edge of a piece that had any
   (the core trims every block but a field, the caret and one given with its runs when it reads the blocks back), and two
-  pieces abut only with no space at that edge and a gap under a tenth of the smaller box's height
+  pieces abut only with no space at that edge and a gap of at most a tenth of the smaller box's height
   (`ABUTTING_GAP`) either way. A piece whose box ends well past the next one's start wrapped onto
   more lines (a Slack message) and gets a space. A helper gives a wrapped piece one box over all its
   lines, so where it meets the piece beside it is not known: a key split by styling where either

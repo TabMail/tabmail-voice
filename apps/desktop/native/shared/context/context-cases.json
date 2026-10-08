@@ -1893,6 +1893,40 @@
       }
     },
     {
+      "name": "a provider's own paragraph separator ending a rich editor's text is its line break",
+      "request": {
+        "hypertext": {
+          "elements": [
+            {
+              "text": "x\u2029\ufffc",
+              "caret": null,
+              "selection": null,
+              "block": false,
+              "links": [
+                [
+                  2,
+                  1
+                ]
+              ]
+            },
+            {
+              "text": "A",
+              "caret": null,
+              "selection": null,
+              "block": true,
+              "links": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "x\u2029A",
+        "length": 3,
+        "caret": null,
+        "selection": null
+      }
+    },
+    {
       "name": "a rich editor's text after a paragraph takes one break, with a caret in it",
       "request": {
         "hypertext": {

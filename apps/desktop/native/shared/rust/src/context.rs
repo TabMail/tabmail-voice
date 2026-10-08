@@ -629,7 +629,7 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         let mut caret = None;
         let mut selection: Option<(usize, usize)> = None;
         let break_line = |text: &mut String, length: &mut usize| {
-            if !text.is_empty() && !text.ends_with(['\n', '\u{2029}']) {
+            if !text.is_empty() && !text.ends_with(line_break) {
                 text.push(LINE_BREAK);
                 *length += 1;
             }
@@ -1963,6 +1963,15 @@ mod budget_tests {
             assert_eq!(result["text"], "");
         }
         let result: Value = serde_json::from_slice(&process(&serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":{"kind":"text","text":" same "}})).unwrap()).unwrap()).unwrap();
+        assert_eq!(result["text"], "");
+        let result: Value = serde_json::from_slice(
+            &process(
+                &serde_json::to_vec(&json!({"admitSemantic":plain,"used":10,"previous":spaced}))
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
         assert_eq!(result["text"], "");
         // A hidden run that is more than spaces is private source, not a repeat.
         let private = json!({"kind":"link","text":"same","runs":[[" x",false],["same",true]]});
