@@ -42,8 +42,8 @@ helper=args.helper
 with tempfile.TemporaryFile(mode='w+t') as diagnostic:
  # The screen is read by voice-screen-reader, a program of its own beside the helper.
  native=subprocess.Popen([os.path.join(os.path.dirname(helper),'voice-screen-reader')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
- # The field read for correction learning is the helper's own.
- voice=subprocess.Popen([helper],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
+ # The field read for correction learning is voice-field-reader's, a program of its own too.
+ voice=subprocess.Popen([os.path.join(os.path.dirname(helper),'voice-field-reader')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  fixture=subprocess.Popen([sys.executable,__file__,'--fixture'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=diagnostic,text=True)
  seq=0
  try:

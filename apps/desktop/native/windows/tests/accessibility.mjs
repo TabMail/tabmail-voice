@@ -35,15 +35,17 @@ function client(executable, args = []) {
 }
 const fixture = client(process.argv[3], ["--read-only"]);
 const helper = client(process.argv[2]);
-// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+// The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
+// programs of their own beside the helper.
 const reader = client(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
+const fieldReader = client(join(dirname(process.argv[2]), "voice-field-reader.exe"));
 let id = 0;
 let stage = "fixture startup";
 async function request(method, params = {}, expectError = false) {
   if (method === "readScreen" || method === "focusedFieldValue") params = { excludedAppIDs: [], excludedHosts: [], ...params };
   stage = method;
   id += 1;
-  const target = method === "readScreen" ? reader : helper;
+  const target = method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper;
   target.child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
   const reply = await target.next();
   assert.equal(reply.id, id);
@@ -71,8 +73,8 @@ async function mode(value) {
   return reply.window;
 }
 const timeout = setTimeout(() => {
-  fixture.child.kill(); helper.child.kill(); reader.child.kill();
-  process.stderr.write(`Windows UI Automation integration timed out at ${stage}; ${fixture.errors()}${helper.errors()}${reader.errors()}\n`);
+  fixture.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill();
+  process.stderr.write(`Windows UI Automation integration timed out at ${stage}; ${fixture.errors()}${helper.errors()}${reader.errors()}${fieldReader.errors()}\n`);
   process.exitCode = 1;
 }, 20_000);
 try {
@@ -129,20 +131,27 @@ try {
   assert.deepEqual(await request("readScreen", { excludedAppIDs: ["VOICE-UI-FIXTURE.EXE"] }), { hidden: true }, "exclusion is exact and case insensitive, and says only that the screen is hidden");
   assert.deepEqual(await request("focusedFieldValue", { ...fieldParams, excludedAppIDs: ["voice-ui-fixture.exe"] }), { value: null });
   assert.ok(await request("readScreen", { excludedAppIDs: ["voice-ui-fixture"] }), "prefix does not exclude a different ID");
-  // The main helper serves no screen reads, and the reader nothing else.
+  // The field reader names the window in front as the main helper does.
+  const front = await request("frontmostApp");
+  assert.deepEqual((await rawRequest(fieldReader, "frontmostApp", {})).result, front, "the field reader's frontmost window");
+  // The main helper reads neither the screen nor the field, and each reader nothing else.
   assert.equal((await rawRequest(helper, "readScreen", { excludedAppIDs: [], excludedHosts: [] })).error?.message, "Windows native request failed", "the main helper reads no screen");
+  assert.equal((await rawRequest(helper, "focusedFieldValue", { ...fieldParams, excludedAppIDs: [], excludedHosts: [] })).error?.message, "Windows native request failed", "the main helper reads no field");
   for (const method of ["caretAnchor", "insert", "focusedFieldValue", "frontmostApp", "microphoneStart"])
     assert.equal((await rawRequest(reader, method, {})).error?.message, "Windows native request failed", `the screen reader does no ${method}`);
-  const exits = [once(fixture.child, "exit"), once(helper.child, "exit"), once(reader.child, "exit")];
-  fixture.child.stdin.end(); helper.child.stdin.end(); reader.child.stdin.end();
+  for (const method of ["caretAnchor", "insert", "readScreen", "microphoneStart"])
+    assert.equal((await rawRequest(fieldReader, method, {})).error?.message, "Windows native request failed", `the field reader does no ${method}`);
+  const exits = [once(fixture.child, "exit"), once(helper.child, "exit"), once(reader.child, "exit"), once(fieldReader.child, "exit")];
+  fixture.child.stdin.end(); helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   assert.equal(fixture.errors(), "");
   const logged = (client) => client.errors().replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "");
-  assert.equal(logged(helper), "debug caret lookup: protected-field\ndebug screen access: excluded app not read\n", "privacy refusals log only fixed categories");
+  assert.equal(logged(helper), "debug caret lookup: protected-field\n", "privacy refusals log only fixed categories");
   assert.equal(logged(reader), "debug screen access: excluded app not read\n", "the reader's privacy refusals log only fixed categories");
+  assert.equal(logged(fieldReader), "debug screen access: excluded app not read\n", "the field reader's privacy refusals log only fixed categories");
   process.stdout.write("Windows editable context, password, read-only, non-text and recovery checks passed\n");
 } finally {
   clearTimeout(timeout);
-  fixture.child.kill(); helper.child.kill(); reader.child.kill();
-  fixture.lines.close(); helper.lines.close(); reader.lines.close();
+  fixture.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill();
+  fixture.lines.close(); helper.lines.close(); reader.lines.close(); fieldReader.lines.close();
 }

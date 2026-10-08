@@ -89,6 +89,7 @@
           "voice-windows.exe",
           "voice-microphone.exe",
           "voice-screen-reader.exe",
+          "voice-field-reader.exe",
           "voice-productivity.exe"
         ]
       },
@@ -144,6 +145,7 @@
           "voice-linux",
           "voice-microphone",
           "voice-screen-reader",
+          "voice-field-reader",
           "voice-files",
           "voice-productivity"
         ]

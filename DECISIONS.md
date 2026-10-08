@@ -2845,7 +2845,9 @@ at U+2028 and U+2029, which JSON leaves unescaped, and cut the box's reply apart
 Windows VM's terminal run); the same held for any screen text holding either character. Such a read
 runs in the helper, which also places the caret and pastes, not in voice-screen-reader (ADR-DESK-053),
 so it has a field read's time limit: 1 s on Windows (`terminalFieldReadMs`, under the 2.5 s
-watchdog), 1.5 s on Linux (`fieldReadMilliseconds`); out of time, there is no field. A shell rewraps
+watchdog), 1.5 s on Linux (`fieldReadMilliseconds`); out of time, there is no field. (Later the same
+day the field read moved to `voice-field-reader`, a program of its own, on every platform; the
+limits stand, and the Windows watchdog no longer applies to it: ADR-DESK-053, amended 2026-10-07.) A shell rewraps
 its line after an edit that changes a word's length, so rows joined the way the pasted text was found
 can run two words together or split one in a later read: while the field has rows, only a word read
 whole on one of them is learned (a corrected word the terminal split across rows is not).
@@ -4094,6 +4096,40 @@ Correction learning in a terminal reads its viewport in voice-windows and voice-
 helper), as the box around the cursor (ADR-DESK-038, amended 2026-10-07); the screen read stays in
 voice-screen-reader. That read is bounded as every field read is (1 s on Windows, 1.5 s on Linux),
 and one out of time gives no field, so it holds up a caret placement or a paste at most that long.
+
+**Amendment 2026-10-07 (later) — the focused field is read by a program of its own,
+`voice-field-reader`, on every platform.** On Windows and Linux the overlay could appear 1–1.5 s
+after the dictation key: `voice-windows.exe` ran `caretAnchor`, `insert` and `focusedFieldValue` one
+at a time on one worker thread, and `voice-linux` served every request from one loop, so the caret
+lookup at the key's press waited behind a correction watch's field read (a watch reads the field
+every `correctionPollInterval` for `correctionWatchDuration` after each paste, and a terminal's read
+takes up to the limits above). `voice-macos` answered each request in a task of its own, so the Mac
+never waited: the platforms differed. Owner, 2026-10-07: the same architecture on every platform, not
+a per-platform one — a separate program, a screen reader and a focused-field reader, sharing code.
+- **`voice-field-reader`, one small program on each platform**, beside `voice-screen-reader`: macOS
+  `VoiceFieldReader` (`FieldReaderService` in `VoiceMacOSKit`), `voice-field-reader.exe`
+  (`native/windows/src/field_reader.cpp`) and `voice-field-reader` (`native/linux/src/field_reader.cpp`).
+  It serves `frontmostApp` and `focusedFieldValue` and nothing else, with the same code the helpers
+  ran (`SharedRequest.fieldValue`, `Automation::fieldValue`, `focusedRead`, the shared core's bound
+  and redaction). `voice-macos`, `voice-windows.exe` and `voice-linux` no longer serve
+  `focusedFieldValue`, so a caret placement or a paste never waits behind a field read.
+- **The watch's target is the field reader's own.** A watch asks the field reader what is in front
+  as it starts (`FieldReader.target`, just after the paste) and reads that window or process: on
+  Linux window tokens are each process's own, and the same rule holds on every platform. The
+  dictation no longer hands the watch its target. A window that took the front between the paste and
+  that question is watched instead; its field does not hold the pasted text, so nothing is learned.
+- **The app owns its lifetime as it does the screen reader's** (`FieldReader`,
+  `src/main/native/fieldReader.ts`, over a `HelperClient` named `voice-field-reader` with
+  `stopEndsAtOnce`): started with the app, killed at quit; a watch that starts while a read is still
+  going, or a request past `fieldReaderTimeout` (`correctionWatchDuration`), restarts it. On Linux it
+  takes requests only after its start-up focus lookup, as the screen reader does. The AppArmor
+  profile lets it leave the app's profile (`Ux`) as the other helpers do.
+- **The field read's own limits stay** (Windows' 200 ms looks and `terminalFieldReadMs`, Linux
+  `fieldReadMilliseconds`, macOS `focusedFieldPageScanBudget`): they bound how hard a read every half
+  second works a slow app. On Windows the read no longer runs under `voice-windows.exe`'s 2.5 s
+  watchdog; the app's timeout ends a stuck one.
+- **Consequences:** one more helper process on each platform. Where the amendment above says a
+  terminal's field read runs in the helper, it now runs in `voice-field-reader`; its time limits stand.
 
 ## ADR-DESK-054: Shared logic lives in Rust only; native code is thin OS adapters
 

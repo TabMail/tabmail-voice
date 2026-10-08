@@ -24,9 +24,20 @@ const joins: ((field: string) => string)[] = [
   (field) => field.replace(/[^\S\u2029]*\u2029[^\S\u2029]*/gu, " "),
 ];
 
+/** The focused field's reader (voice-field-reader, ADR-DESK-053): the app or window in front by the
+ * reader's own identity of it, and the text of its focused field. */
+export interface FieldSource {
+  /** The app or window in front, as the reader knows it; null for none. */
+  target(): Promise<number | null>;
+  /** The text of the focused field of `target`; null when there is none to read (a password field, one
+   * too long, no field, or an app or website among `exclusions`, which is never read). */
+  value(target: number, exclusions: ScreenExclusions): Promise<string | null>;
+}
+
 /**
  * Watches the field a dictation was pasted into and learns the user's corrections of it
- * (ADR-DESK-038). Every `interval` for `duration`, it reads the field of the app pasted into: the first
+ * (ADR-DESK-038). As it starts, right after the paste, it asks the reader which app or window is in
+ * front: the one pasted into. Every `interval` for `duration`, it reads that one's field: the first
  * read holding the pasted text is the field before any edit; after that, each change that stays for
  * one interval is compared with it (`learnedCorrections`), and the words the last one teaches are
  * learned when the watch ends, not before, unless a later change teaches otherwise: a pause in the
@@ -41,20 +52,19 @@ export class CorrectionWatch {
   private pending: string[] = [];
 
   constructor(
-    /** The text of the focused field of the app `pid`; null when there is none to read (a password
-     * field, one too long, no field, or an app or website among `exclusions`, which is never read). */
-    private readonly readField: (pid: number, exclusions: ScreenExclusions) => Promise<string | null>,
+    private readonly field: FieldSource,
     /** Adds the words to the dictionary. */
     private readonly learn: (words: string[]) => void,
     private readonly interval = config.correctionPollInterval,
     private readonly duration = config.correctionWatchDuration,
   ) {}
 
-  /** Watches the app `pid`, into which `pasted` was just pasted, unless it or the website the field is on
-   * is among `exclusions`, what was excluded from screen reading as the dictation started. */
-  watch(pid: number, pasted: string, exclusions: ScreenExclusions): void {
+  /** Watches the app or window in front, into which `pasted` was just pasted, unless it or the website
+   * the field is on is among `exclusions`, what was excluded from screen reading as the dictation
+   * started. */
+  watch(pasted: string, exclusions: ScreenExclusions): void {
     this.stop();
-    void this.run(this.generation, pid, pasted, exclusions);
+    void this.run(this.generation, pasted, exclusions);
   }
 
   /** Ends the watch, learning what its last settled edit teaches. */
@@ -68,8 +78,17 @@ export class CorrectionWatch {
     this.learn(words);
   }
 
-  private async run(generation: number, pid: number, pasted: string, exclusions: ScreenExclusions): Promise<void> {
+  private async run(generation: number, pasted: string, exclusions: ScreenExclusions): Promise<void> {
     const isCurrent = () => this.generation === generation;
+    const target = await this.field.target().catch((error: unknown) => {
+      log.debug(`CorrectionWatch: no target: ${errorName(error)}`);
+      return null;
+    });
+    if (!isCurrent()) return;
+    if (target === null) {
+      log.debug("CorrectionWatch: nothing in front to watch");
+      return;
+    }
     let before: string | null = null;
     let previous: string | null = null;
     // How the field holds the pasted text, found with it, and every later read joined the same way.
@@ -77,7 +96,7 @@ export class CorrectionWatch {
     for (let elapsed = this.interval; elapsed <= this.duration; elapsed += this.interval) {
       await sleep(this.interval);
       if (!isCurrent()) return;
-      const read = await this.readField(pid, exclusions).catch((error: unknown) => {
+      const read = await this.field.value(target, exclusions).catch((error: unknown) => {
         log.debug(`CorrectionWatch: read failed: ${errorName(error)}`);
         return null;
       });

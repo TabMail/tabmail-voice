@@ -9,7 +9,6 @@ import type { FocusedElement, ThunderbirdSystem } from "../../../core/agent/conn
 import * as config from "../../../core/config.js";
 import type { GlobeKeySystem } from "../../../core/hotkey/macos/globeKeyAction.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
-import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { keyboardLanguageCode } from "../keyboardLanguage.js";
 
@@ -69,19 +68,6 @@ export class MacSystem {
    * exposes none. */
   caretAnchor(pid: number): Promise<Rect | null> {
     return this.helper.request<Rect | null>("caretAnchor", { pid });
-  }
-
-  /** The text of the focused field of `pid`, for learning the user's corrections (ADR-DESK-038); null
-   * for none, a password field, one longer than `config.correctionMaxFieldLength`, or an app or a
-   * website among `exclusions`, which the helper doesn't read. */
-  async focusedFieldValue(pid: number, exclusions: ScreenExclusions): Promise<string | null> {
-    const reply = await this.helper.request<{ value?: unknown } | null>("focusedFieldValue", {
-      pid,
-      maxLength: config.correctionMaxFieldLength,
-      excludedAppIDs: exclusions.apps,
-      excludedHosts: exclusions.sites,
-    });
-    return typeof reply?.value === "string" ? reply.value : null;
   }
 
   /** Asks Gecko and Electron apps to build their accessibility tree as they come to the front. */

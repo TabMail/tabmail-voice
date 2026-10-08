@@ -62,36 +62,6 @@ test("paste refuses ambiguous targets before any helper mutation", async () => {
   expect(mocks.request).not.toHaveBeenCalled();
 });
 
-test("correction learning reads the complete bounded field from its original window", async () => {
-  mocks.request.mockResolvedValue({ value: "Before Synthetic after." });
-  expect(await system.focusedFieldValue(101, { apps: ["Synthetic.exe"], sites: ["example.com"] })).toBe("Before Synthetic after.");
-  expect(mocks.request).toHaveBeenCalledWith("focusedFieldValue", { window: 101, maxLength: 20_000, excludedAppIDs: ["Synthetic.exe"], excludedHosts: ["example.com"] });
-});
-
-test("correction learning refuses invalid targets and malformed or over-limit replies", async () => {
-  for (const target of [0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) expect(await system.focusedFieldValue(target, { apps: ["Synthetic.exe"], sites: ["example.com"] })).toBeNull();
-  expect(mocks.request).not.toHaveBeenCalled();
-  for (const reply of [null, {}, { value: 10 }, { value: "a".repeat(20_001) }]) {
-    mocks.request.mockResolvedValue(reply);
-    expect(await system.focusedFieldValue(101, { apps: ["Synthetic.exe"], sites: ["example.com"] })).toBeNull();
-  }
-  mocks.request.mockResolvedValue({ value: "" });
-  expect(await system.focusedFieldValue(101, { apps: ["Synthetic.exe"], sites: ["example.com"] })).toBe("");
-});
-
-/** The native reader receives the entire enlarged policy, including exclusions past the old cap
- * (the screen read's: `screenReader.test.ts`). */
-test("correction learning forwards every saved exclusion", async () => {
-  const apps = Array.from({ length: 1000 }, (_, index) => `Synthetic${index}.exe`);
-  const sites = Array.from({ length: 1000 }, (_, index) => `site${index}.example.test`);
-  const policy = { apps, sites };
-  mocks.request.mockResolvedValue(null);
-  await system.focusedFieldValue(101, policy);
-  expect(mocks.request.mock.calls).toEqual([
-    ["focusedFieldValue", { window: 101, maxLength: 20_000, excludedAppIDs: apps, excludedHosts: sites }],
-  ]);
-});
-
 test("foreground caret is one native request and retains physical-to-DIP conversion", async () => {
   const physical = { x: 150, y: 300, width: 1, height: 30 };
   const points = { x: 100, y: 200, width: 1, height: 20 };

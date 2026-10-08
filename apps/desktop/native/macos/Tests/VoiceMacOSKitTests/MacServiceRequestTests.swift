@@ -82,9 +82,6 @@ struct MacServiceRequestTests {
             #"{"id":3,"method":"caretAnchor","params":{"pid":1e100}}"#,
             #"{"id":4,"method":"globeUpdate","params":{"value":1e100}}"#,
             #"{"id":5,"method":"insert","params":{"text":1e300}}"#,
-            #"{"id":6,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10}}"#,
-            #"{"id":7,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1}}"#,
-            #"{"id":8,"method":"focusedFieldValue","params":{"pid":1}}"#,
             #"{"id":9,"method":"insert","params":{"text":""}}"#,
             #"{"id":10,"method":"insert","params":{"text":"a\u0000b"}}"#,
         ]
@@ -115,9 +112,10 @@ struct MacServiceRequestTests {
         withExtendedLifetime(service) {}
     }
 
-    /// The screen is read only by `voice-screen-reader`, and that program does nothing else:
-    /// a read stuck in an app's Accessibility replies never shares a process with a paste.
-    @Test func theScreenIsReadOnlyByTheReaderAndTheReaderDoesNothingElse() async throws {
+    /// The screen is read only by `voice-screen-reader` and the focused field only by
+    /// `voice-field-reader`, and neither program does anything else: a read stuck in an app's
+    /// Accessibility replies never shares a process with a paste.
+    @Test func theScreenAndTheFieldAreReadOnlyByTheirReadersWhichDoNothingElse() async throws {
         func replies(_ register: (HelperChannel) -> Void, _ requests: [String]) async throws -> [[String: Any]] {
             let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
             let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
@@ -126,20 +124,60 @@ struct MacServiceRequestTests {
             return try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         }
         let read = #"{"id":1,"method":"readScreen","params":{"excludedAppIDs":[],"excludedHosts":[]}}"#
+        let field = #"{"id":2,"method":"focusedFieldValue","params":{"pid":8,"maxLength":100,"excludedAppIDs":[],"excludedHosts":[]}}"#
         var service: AnyObject?
-        let main = try await replies({ service = MacService.register(on: $0) }, [read])
-        #expect((main.first?["error"] as? [String: Any])?["message"] as? String == "unknown method readScreen")
+        let main = try await replies({ service = MacService.register(on: $0) }, [read, field])
+        #expect(main.count == 2)
+        guard main.count == 2 else { return }
+        #expect((main[0]["error"] as? [String: Any])?["message"] as? String == "unknown method readScreen")
+        #expect((main[1]["error"] as? [String: Any])?["message"] as? String == "unknown method focusedFieldValue")
         withExtendedLifetime(service) {}
 
-        let nothing = ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil }, read: { _, _, _, _ in nil }, focusedField: { _, _ in nil })
-        let others = ["frontmostApp", "caretAnchor", "focusedFieldValue", "insert", "keyboardLanguage", "startActivator"]
-        let reader = try await replies({ ScreenReaderService.register(on: $0, screen: nothing) },
-                                       [read] + others.enumerated().map { #"{"id":\#($0.offset + 2),"method":"\#($0.element)","params":{}}"# })
-        #expect(reader.count == others.count + 1)
-        guard reader.count == others.count + 1 else { return }
-        #expect(reader[0]["error"] == nil && reader[0]["result"] is NSNull)
-        for (index, method) in others.enumerated() {
-            #expect((reader[index + 1]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
+        let shown = "Dear Xyvora"
+        let screen = ScreenAccess(frontmost: { (8, "Notes", "org.example.notes") }, bundleIdentifier: { _ in "org.example.notes" },
+                                  read: { _, _, _, _ in nil }, focusedField: { _, _ in .text(shown) })
+        let others = ["caretAnchor", "insert", "keyboardLanguage", "startActivator"]
+        let request = { (offset: Int, method: String) in #"{"id":\#(offset),"method":"\#(method)","params":{}}"# }
+        let screenReader = try await replies({ ScreenReaderService.register(on: $0, screen: screen) },
+                                             [read, field] + (others + ["frontmostApp"]).enumerated().map { request($0.offset + 3, $0.element) })
+        #expect(screenReader.count == others.count + 3)
+        guard screenReader.count == others.count + 3 else { return }
+        #expect(screenReader[0]["error"] == nil && screenReader[0]["result"] != nil)
+        for (index, method) in (["focusedFieldValue"] + others + ["frontmostApp"]).enumerated() {
+            #expect((screenReader[index + 1]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
         }
+
+        let fieldReader = try await replies({ FieldReaderService.register(on: $0, screen: screen) },
+                                            [field, request(3, "frontmostApp"), read] + others.enumerated().map { request($0.offset + 4, $0.element) })
+        #expect(fieldReader.count == others.count + 3)
+        guard fieldReader.count == others.count + 3 else { return }
+        #expect(fieldReader[0]["result"] as? NSDictionary == ["value": shown])
+        #expect(fieldReader[1]["result"] as? NSDictionary == ["pid": 8])
+        for (index, method) in (["readScreen"] + others).enumerated() {
+            #expect((fieldReader[index + 2]["error"] as? [String: Any])?["message"] as? String == "unknown method \(method)")
+        }
+    }
+
+    /// A field read the reader can't carry out is refused, never trapped on.
+    @Test func theFieldReaderRefusesAMalformedRequest() async throws {
+        let lines = OSAllocatedUnfairLock<[Data]>(initialState: [])
+        let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
+        FieldReaderService.register(on: channel, screen: ScreenAccess(frontmost: { nil }, bundleIdentifier: { _ in nil },
+                                                                      read: { _, _, _, _ in nil }, focusedField: { _, _ in .text("x") }))
+        let requests = [
+            #"{"id":1,"method":"focusedFieldValue","params":{"pid":1e100,"maxLength":10,"excludedAppIDs":[],"excludedHosts":[]}}"#,
+            #"{"id":2,"method":"focusedFieldValue","params":{"pid":1,"maxLength":-1,"excludedAppIDs":[],"excludedHosts":[]}}"#,
+            #"{"id":3,"method":"focusedFieldValue","params":{"pid":1}}"#,
+        ]
+        for request in requests { await channel.handle(line: Data(request.utf8)) }
+        let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(replies.count == requests.count)
+        #expect(replies.allSatisfy { $0["error"] != nil && $0["result"] == nil })
+        // With no app in front there is no field to watch.
+        lines.withLock { $0.removeAll() }
+        await channel.handle(line: Data(#"{"id":4,"method":"frontmostApp","params":{}}"#.utf8))
+        let none = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
+        #expect(none.count == 1)
+        #expect(none.first?["result"] is NSNull)
     }
 }

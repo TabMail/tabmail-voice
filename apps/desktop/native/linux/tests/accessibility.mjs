@@ -29,15 +29,19 @@ function start(executable) {
   return { child, replies };
 }
 const helper = start(process.argv[2]);
-// The screen is read by voice-screen-reader, a program of its own beside the helper.
+// The screen is read by voice-screen-reader and the focused field by voice-field-reader, programs of
+// their own beside the helper.
 const reader = start(join(dirname(process.argv[2]), "voice-screen-reader"));
+const fieldReader = start(join(dirname(process.argv[2]), "voice-field-reader"));
 function send(target, method, params) {
   const next = ++id;
   const reply = new Promise((resolve) => pending.set(next, resolve));
   target.child.stdin.write(`${JSON.stringify({ id: next, method, params })}\n`);
   return reply;
 }
-const request = (method, params = {}) => send(method === "readScreen" ? reader : helper, method, params);
+const request = (method, params = {}) => send(method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper, method, params);
+// A field is read by the field reader's own token for the window in front: tokens are per process.
+const fieldTarget = async () => (await send(fieldReader, "frontmostApp", {})).result.window;
 const fixture = spawn("/usr/bin/python3", [process.argv[3]], {
   env: { ...process.env, GDK_BACKEND: "wayland", GIO_LAUNCHED_DESKTOP_FILE: desktopFile },
   stdio: ["pipe", "pipe", "pipe"],
@@ -45,7 +49,7 @@ const fixture = spawn("/usr/bin/python3", [process.argv[3]], {
 const fixtureOutput = createInterface({ input: fixture.stdout });
 let fixtureError = "";
 fixture.stderr.on("data", (chunk) => { fixtureError += chunk; });
-const timeout = setTimeout(() => { helper.child.kill(); reader.child.kill(); fixture.kill(); process.exitCode = 1; }, 25_000);
+const timeout = setTimeout(() => { helper.child.kill(); reader.child.kill(); fieldReader.child.kill(); fixture.kill(); process.exitCode = 1; }, 25_000);
 const policy = { excludedAppIDs: [], excludedHosts: [] };
 async function command(value) {
   const done = once(fixtureOutput, "line");
@@ -72,7 +76,9 @@ try {
   assert.equal(read.textBeforeCaret, "Synthetic field content");
   assert.ok(read.renderedText.includes("Synthetic visible heading"));
   assert.ok(!JSON.stringify(read).includes("synthetic-password-must-not-be-read"));
-  const target = (await request("frontmostApp")).result.window;
+  const helperTarget = (await request("frontmostApp")).result.window;
+  assert.ok(Number.isSafeInteger(helperTarget) && helperTarget > 0);
+  const target = await fieldTarget();
   assert.ok(Number.isSafeInteger(target) && target > 0);
   assert.equal((await request("focusedFieldValue", { ...policy, window: target, maxLength: 20000 })).result.value, "Synthetic field content");
   // The shared core's bound: 1 to 20,000 UTF-16 units, a longer field sent as null.
@@ -93,34 +99,37 @@ try {
   assert.equal(read.textBeforeCaret, "");
   assert.equal(read.selectedText, "");
   assert.ok(!JSON.stringify(read).includes("synthetic-password-must-not-be-read"));
-  const passwordTarget = (await request("frontmostApp")).result.window;
+  const passwordTarget = await fieldTarget();
   assert.equal(passwordTarget, target, "changing fields keeps the original window target");
   assert.deepEqual((await request("focusedFieldValue", { ...policy, window: passwordTarget, maxLength: 20000 })).result, { value: null });
   await command({ kind: "entry", text: "password: syntheticvalue123" });
   read = await context();
   assert.equal(read.textBeforeCaret, "password: [redacted]");
   assert.ok(!JSON.stringify(read).includes("syntheticvalue123"));
-  const redactedTarget = (await request("frontmostApp")).result.window;
+  const redactedTarget = await fieldTarget();
   assert.equal((await request("focusedFieldValue", { ...policy, window: redactedTarget, maxLength: 20000 })).result.value, "password: [redacted]");
   // An emoji is two UTF-16 units: "a😀" fits in 3, not in 2.
   await command({ kind: "entry", text: "a😀" });
   await context();
-  const emojiTarget = (await request("frontmostApp")).result.window;
+  const emojiTarget = await fieldTarget();
   assert.equal((await request("focusedFieldValue", { ...policy, window: emojiTarget, maxLength: 3 })).result.value, "a😀");
   assert.deepEqual((await request("focusedFieldValue", { ...policy, window: emojiTarget, maxLength: 2 })).result, { value: null });
-  // The main helper serves no screen reads, and the reader nothing else.
+  // The main helper reads neither the screen nor the field, and each reader nothing else.
   assert.equal((await send(helper, "readScreen", policy)).error?.message, "native request failed", "the main helper reads no screen");
+  assert.equal((await send(helper, "focusedFieldValue", { ...policy, window: helperTarget, maxLength: 20000 })).error?.message, "native request failed", "the main helper reads no field");
   for (const method of ["caretAnchor", "insert", "focusedFieldValue", "frontmostApp", "microphoneStart", "appInfo"])
     assert.equal((await send(reader, method, {})).error?.message, "native request failed", `the screen reader does no ${method}`);
-  const exits = [once(helper.child, "exit"), once(reader.child, "exit")];
-  helper.child.stdin.end(); reader.child.stdin.end();
-  for (const exit of exits) assert.deepEqual(await exit, [0, null], "EOF ends both processes");
+  for (const method of ["caretAnchor", "insert", "readScreen", "microphoneStart", "appInfo"])
+    assert.equal((await send(fieldReader, method, {})).error?.message, "native request failed", `the field reader does no ${method}`);
+  const exits = [once(helper.child, "exit"), once(reader.child, "exit"), once(fieldReader.child, "exit")];
+  helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
+  for (const exit of exits) assert.deepEqual(await exit, [0, null], "EOF ends every process");
   process.stdout.write("native Wayland focus, selection, password exclusion and redacted screen context passed" + "\n");
 } finally {
   clearTimeout(timeout);
-  helper.child.stdin.end(); reader.child.stdin.end(); fixture.stdin.end();
-  helper.child.kill(); reader.child.kill(); fixture.kill();
-  helper.replies.close(); reader.replies.close(); fixtureOutput.close();
+  helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end(); fixture.stdin.end();
+  helper.child.kill(); reader.child.kill(); fieldReader.child.kill(); fixture.kill();
+  helper.replies.close(); reader.replies.close(); fieldReader.replies.close(); fixtureOutput.close();
   await rm(directory, { recursive: true, force: true });
   if (fixture.exitCode && fixtureError) process.stderr.write("synthetic fixture failed\n");
 }

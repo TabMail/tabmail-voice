@@ -40,7 +40,8 @@ inline nlohmann::json focusedRead(const std::string& method, const nlohmann::jso
             }
             // A terminal's text is its scrollback: its field is the box around its cursor, which the
             // shared core cuts from the viewport the screen read takes (`terminal_box`), read as it is,
-            // within a field read's time: this helper also places the caret and pastes.
+            // within a field read's time: the app asks voice-field-reader for one every half second
+            // while it watches the field.
             if (voice::LiveScreenTree screen(*window, voice::LiveScreenTree::fieldReadMilliseconds);
                 voice::terminalInFocus(screen, target->focus, path)) {
                 try {

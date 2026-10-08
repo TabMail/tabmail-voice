@@ -55,6 +55,7 @@ import {
 import { SessionAudioCapture } from "./audioCapture.js";
 import { JSONFileStore } from "./storage/jsonFileStore.js";
 import { HelperClient } from "./native/helperClient.js";
+import { FieldReader } from "./native/fieldReader.js";
 import { ScreenReader } from "./native/screenReader.js";
 import { NativeMicrophone } from "./native/microphone.js";
 import { KeychainSessionStore } from "./storage/keychainSessionStore.js";
@@ -152,6 +153,9 @@ function launch(): void {
   // (`ScreenReader`, ADR-DESK-053).
   const screenReaderHelper = new HelperClient({ name: "voice-screen-reader", executable: join(helpers, process.platform === "win32" ? "voice-screen-reader.exe" : "voice-screen-reader"), stopEndsAtOnce: true });
   const screenReader = new ScreenReader(screenReaderHelper);
+  // So is the focused field for correction learning (`FieldReader`).
+  const fieldReaderHelper = new HelperClient({ name: "voice-field-reader", executable: join(helpers, process.platform === "win32" ? "voice-field-reader.exe" : "voice-field-reader"), stopEndsAtOnce: true });
+  const fieldReader = new FieldReader(fieldReaderHelper, process.platform);
   const accessibilityActivator = process.platform === "win32"
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
@@ -248,8 +252,8 @@ function launch(): void {
         webOpener: { open: (url) => shell.openExternal(url) },
       }),
     ),
-    // Learn corrections locally through each supported native field reader (ADR-DESK-038).
-    corrections: nativeAudio ? new CorrectionWatch((target, exclusions) => system.focusedFieldValue(target, exclusions), (words) => settings.learnWords(words)) : undefined,
+    // Learn corrections locally, the field read by voice-field-reader (ADR-DESK-038).
+    corrections: nativeAudio ? new CorrectionWatch(fieldReader, (words) => settings.learnWords(words)) : undefined,
     useWords: (texts) => settings.useWords(texts),
     keepRecording: isDebugBuild
       ? (wav) => {
@@ -936,6 +940,7 @@ function launch(): void {
         hotkeyHelper.stop();
         nativeHelper.stop();
         screenReaderHelper.stop();
+        fieldReaderHelper.stop();
         microphoneHelper.stop();
         accessibilityActivator?.stop();
         return logFile.flush();
@@ -946,6 +951,7 @@ function launch(): void {
   hotkeyHelper.start();
   nativeHelper.start();
   screenReaderHelper.start();
+  fieldReaderHelper.start();
   void gnomeIntegration?.refresh();
   microphoneHelper.start();
   accessibilityActivator?.start();

@@ -11,7 +11,6 @@
 #include "accessibility.h"
 #include "text.h"
 #include "shell_bounds.h"
-#include "Privacy/ScreenAccess.h"
 #include "Privacy/Apps.h"
 #include "shell_watch.h"
 #include "paste.h"
@@ -108,13 +107,6 @@ public:
                         }
                         voice::paste(window, voice::utf16(params["text"].get<std::string>()), deadline, [this] { return canceled.load(); });
                         result = JSON::object();
-                    } else if (method == "focusedFieldValue") {
-                        const auto limit = voice::core::request({{"field", {{"maxLength", params.value("maxLength", JSON())}}}}, voice_core_request_json)
-                                               .at("maxLength").get<uint64_t>();
-                        result = voice::screenAccess(params, window, voice::executableName, [&](HWND target, const voice::ScreenExclusions& exclusions) {
-                            voice::Automation automation;
-                            return automation.fieldValue(target, static_cast<unsigned>(limit), exclusions);
-                        }, true);
                     } else {
                         voice::Automation automation;
                         result = automation.caret(window);
@@ -214,8 +206,9 @@ int main(int argc, char** argv) {
         if (!input.is_object() || !input.contains("id") || !input["id"].is_number_integer() ||
             !input.contains("method") || !input["method"].is_string()) continue;
         const auto id = input["id"];
-        // The screen is read by voice-screen-reader.exe, a program of its own.
-        if (input["method"] == "caretAnchor" || input["method"] == "insert" || input["method"] == "focusedFieldValue") { accessibility.request(std::move(input)); continue; }
+        // The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
+        // programs of their own.
+        if (input["method"] == "caretAnchor" || input["method"] == "insert") { accessibility.request(std::move(input)); continue; }
         try {
             output.send({{"id", id}, {"result", handle(input["method"].get<std::string>(), input.value("params", JSON::object()))}});
         } catch (...) {

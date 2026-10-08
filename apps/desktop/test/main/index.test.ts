@@ -32,7 +32,7 @@ const app = vi.hoisted(() => ({
   capture: null as AudioCapture | null,
   paste: null as ((text: string, signal: AbortSignal, target: number) => Promise<void>) | null,
   copy: null as ((text: string) => void) | null,
-  corrections: undefined as { watch(pid: number, pasted: string): void; stop(): void } | undefined,
+  corrections: undefined as { watch(pasted: string): void; stop(): void } | undefined,
   useWords: undefined as ((texts: readonly string[]) => void) | undefined,
   prewarms: 0,
   /** The paste history the controller was given, what went on the clipboard, the history window's
@@ -1087,19 +1087,36 @@ describe("main process wiring", () => {
     expect(app.stored.get("learnsWords")).toBe(false);
   });
 
-  /** On macOS the correction watch reads the field through `voice-macos` and learns into the stored
-   * dictionary; all platforms use their native field reader. */
-  test.each(["darwin", "win32", "linux"] as const)("the correction watch's wiring, on %s", async (platform) => {
+  /** On every platform the correction watch reads the field through `voice-field-reader`, never the
+   * main helper that pastes, and learns into the stored dictionary. */
+  test.each([
+    ["darwin", "voice-macos", "voice-field-reader"],
+    ["win32", "voice-windows", "voice-field-reader.exe"],
+    ["linux", "voice-linux", "voice-field-reader"],
+  ] as const)("the correction watch's wiring, on %s", async (platform, mainName, executable) => {
     await launch(platform);
+    const reader = app.helpers.get("voice-field-reader")!;
+    const main = app.helpers.get(mainName)!;
+    expect(reader.options).toMatchObject({ stopEndsAtOnce: true });
+    expect(reader.options.args ?? []).toEqual([]);
+    expect(basename(reader.options.executable)).toBe(executable);
+    expect(dirname(reader.options.executable)).toBe(dirname(main.options.executable));
+    expect(reader.lifecycle).toEqual(["start"]);
     // Its two dependencies, as the watch calls them.
-    const watch = app.corrections as unknown as { readField: (pid: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null>; learn: (words: string[]) => void };
-    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : platform === "linux" ? "voice-linux" : "voice-macos");
-    await watch.readField(42, { apps: ["org.example.vault"], sites: ["example.com"] });
-    expect(helper?.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
-      { ...(platform !== "darwin" ? { window: 42 } : { pid: 42 }), maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
+    const watch = app.corrections as unknown as { field: { target: () => Promise<number | null>; value: (target: number, exclusions: { apps: string[]; sites: string[] }) => Promise<string | null> }; learn: (words: string[]) => void };
+    const key = platform === "darwin" ? "pid" : "window";
+    reader.replies.set("frontmostApp", { [key]: 42 });
+    expect(await watch.field.target()).toBe(42);
+    await watch.field.value(42, { apps: ["org.example.vault"], sites: ["example.com"] });
+    expect(reader.requests.filter((request) => request.method === "focusedFieldValue").map((request) => request.params)).toStrictEqual([
+      { [key]: 42, maxLength: config.correctionMaxFieldLength, excludedAppIDs: ["org.example.vault"], excludedHosts: ["example.com"] },
     ]);
+    expect(main.requests.some((request) => request.method === "focusedFieldValue")).toBe(false);
     watch.learn(["Xyvora"]);
     expect(app.stored.get("dictionary")).toEqual([{ word: "Xyvora", learned: true, lastUsed: 1 }]);
+
+    app.appEvents.get("before-quit")?.({ preventDefault() {} });
+    await vi.waitFor(() => expect(reader.lifecycle).toEqual(["start", "stop"]));
   });
 
   /** A dictation's text reaches the settings, marking the dictionary's words in it used (ADR-DESK-038,

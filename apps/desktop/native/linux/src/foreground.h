@@ -8,6 +8,8 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <string>
+#include <nlohmann/json.hpp>
 #include <string_view>
 
 namespace voice {
@@ -159,4 +161,16 @@ private:
         }
     }
 };
+
+/** `frontmostApp`'s reply in this process: `{window}`, the window in front by this process's own token
+ * (tokens are per process, so a token from another helper names nothing here), or null. */
+inline nlohmann::json frontmostApp(const Foreground& foreground) {
+    const auto target = foreground.target();
+    const bool focused = target && foreground.targets(target->token);
+    // Opaque per-process window tokens, never window titles or field text.
+    // Distinguish a missing provider result from a genuine target change.
+    std::cerr << "debug accessibility: frontmost target "
+        << (focused ? std::to_string(target->token) : target ? "unfocused" : "unavailable") << "\n";
+    return focused ? nlohmann::json{{"window", target->token}} : nlohmann::json(nullptr);
+}
 }
