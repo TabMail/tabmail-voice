@@ -131,12 +131,28 @@ fn lay_out(blocks: &mut [Block]) {
         blocks[index].before = separator(&blocks[index - 1], &blocks[index]);
     }
 }
+/// How much a separator parts two blocks: nothing, a space, a line break, two.
+fn rank(separator: &str) -> usize {
+    ["", " ", "\n", "\n\n"]
+        .iter()
+        .position(|s| *s == separator)
+        .unwrap_or(0)
+}
+/// The separator that stands for a run of whitespace at a part's edge: a line break if it holds
+/// one, a space if it holds any, nothing if it is empty.
+fn edge(run: &str) -> &'static str {
+    if run.contains(line_break) {
+        "\n"
+    } else if run.is_empty() {
+        ""
+    } else {
+        " "
+    }
+}
 /// Drops the blocks that show nothing. What goes between the two blocks either side of one dropped
 /// is the more of what went before and after it (a line break over a space), so the lines stay as
 /// laid out.
 fn drop_empty(blocks: &mut Vec<Block>) {
-    const ORDER: [&str; 4] = ["", " ", "\n", "\n\n"];
-    let rank = |separator: &str| ORDER.iter().position(|s| *s == separator).unwrap_or(0);
     let mut kept: Vec<Block> = Vec::with_capacity(blocks.len());
     let mut pending: Option<&'static str> = None;
     for mut block in blocks.drain(..) {
@@ -1180,10 +1196,24 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         truncated |= present_caret(&mut around)?;
         let formatted_caret = caret_text(&around);
         reserved = formatted_caret.len();
+        // A part's text is shown without the whitespace at its edges, which the separators stand
+        // for. Where the redaction left whitespace at an edge (a match that ended inside a piece
+        // that goes on), that whitespace is what the screen shows there, and the separator on that
+        // side becomes at least as much.
+        let mut owed = "";
         for (block, part) in blocks.iter_mut().zip(parts) {
+            if rank(owed) > rank(block.before) {
+                block.before = owed;
+            }
+            owed = "";
             block.text = if block.kind == "caret" {
                 formatted_caret.clone()
             } else {
+                let lead = edge(&part[..part.len() - part.trim_start_matches(whitespace).len()]);
+                if rank(lead) > rank(block.before) {
+                    block.before = lead;
+                }
+                owed = edge(&part[part.trim_end_matches(whitespace).len()..]);
                 part.trim_matches(whitespace).to_owned()
             };
             block.source = None;

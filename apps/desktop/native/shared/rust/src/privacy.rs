@@ -172,8 +172,9 @@ pub fn redact_anchored(
 
 /// Redact one text, and say where each byte of the result came from: the byte of `text` it is, or
 /// `None` for a byte a replacement put in. The rules run as `redact` runs them; a replacement keeps
-/// the characters it starts and ends with in common with what it replaced (a captured prefix such
-/// as `token=`), and every other character it covered is gone. The bytes kept stay in order.
+/// what its template copies around the placeholder (a captured label such as `token=`, the `@`
+/// after an address password) where the match has it at its ends, and every other character it
+/// covered is gone, even one that looks like the marker. The bytes kept stay in order.
 pub fn redact_traced(text: &str) -> Result<(String, Vec<Option<usize>>), Error> {
     static RULES: OnceLock<Result<Vec<Rule>, Error>> = OnceLock::new();
     let rules = RULES
@@ -204,25 +205,24 @@ fn trace_with(text: &str, rules: &[Rule]) -> (String, Vec<Option<usize>>) {
             result_origin.extend_from_slice(&origin[copied..matched.start()]);
             let old = matched.as_str();
             let replacement = expand(&rule.replacement, &captures);
-            // The characters at either end the replacement shares with the match are kept.
-            let kept_start: usize = old
-                .chars()
-                .zip(replacement.chars())
-                .take_while(|(a, b)| a == b)
-                .map(|(a, _)| a.len_utf8())
-                .sum();
-            let shorter = old.len().min(replacement.len()) - kept_start;
-            let kept_end: usize = old[kept_start..]
-                .chars()
-                .rev()
-                .zip(replacement[kept_start..].chars().rev())
-                .take_while(|(a, b)| a == b)
-                .map(|(a, _)| a.len_utf8())
-                .scan(0, |sum, width| {
-                    *sum += width;
-                    (*sum <= shorter).then_some(width)
-                })
-                .sum();
+            // What the template copies around the placeholder (a captured label such as `token=`,
+            // the `@` after an address password) is kept where the match has it at its ends; the
+            // rest of the match is gone, whatever it looks like.
+            let (head, tail) = rule
+                .replacement
+                .split_once(PLACEHOLDER)
+                .map(|(head, tail)| (expand(head, &captures), expand(tail, &captures)))
+                .unwrap_or_default();
+            let kept_start = if old.starts_with(&head) {
+                head.len()
+            } else {
+                0
+            };
+            let kept_end = if old[kept_start..].ends_with(&tail) {
+                tail.len()
+            } else {
+                0
+            };
             let start = matched.start();
             result.push_str(&replacement);
             result_origin.extend_from_slice(&origin[start..start + kept_start]);

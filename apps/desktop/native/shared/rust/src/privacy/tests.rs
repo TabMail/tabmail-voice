@@ -171,6 +171,20 @@ fn actual_engine_failure_withholds_tail_after_successful_match() {
     assert_eq!(scalar(&text), format!("token={PLACEHOLDER}{PLACEHOLDER}"));
 }
 
+/// The traced redaction fails closed the same way: everything from the failing rule's last match on
+/// is withheld, and nothing it withheld is said to be text the input had.
+#[test]
+fn traced_engine_failure_withholds_tail_after_successful_match() {
+    let text = format!(
+        "token={}\npassword:{}x\nprivate-tail-sentinel",
+        "abc123def",
+        " ".repeat(1_000_100)
+    );
+    let (redacted, origin) = redact_traced(&text).unwrap();
+    assert_eq!(redacted, format!("token={PLACEHOLDER}{PLACEHOLDER}"));
+    assert!(origin["token=".len()..].iter().all(Option::is_none));
+}
+
 #[test]
 fn unicode_boundaries_and_empty_structure() {
     assert_eq!(redact(&vec![]).unwrap(), Lines::new());

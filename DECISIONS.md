@@ -619,14 +619,18 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   each block's text where it is, its hidden runs and a field's text around what it shows in place,
   the separators between, and the caret's parts; each byte knows its part and whether the read shows
   it. It is redacted once by `privacy::redact_traced`, the same rules as `redact`, which also says
-  which input byte each output byte is (a replacement keeps what it starts and ends with in common
-  with the match, such as `token=`). The read then shows, for each part, only the bytes it shows
+  which input byte each output byte is (a replacement keeps what its template copies around the
+  placeholder, such as `token=` or the `@` after an address password, where the match has it at its
+  ends; nothing else of the match survives, even characters that look like the marker's own, so a
+  value written `[…]` is redacted whole). The read then shows, for each part, only the bytes it shows
   that survived, and one `[redacted]` where the redaction took text out (one match, or several side
   by side), in the part that showed the first character taken; where it took only text the read does
   not show, nothing marks it, so the read never says where hidden text was. The caret's window is
   reported on its own as well, so a match that runs into it marks it too. The render only adds the
   markup (`## `, `[ ]`, `| `, `> `, `» `, `‸`) around what survived and puts the block's own
-  separator before it; a block left with nothing is dropped, and the blocks either side of it keep
+  separator before it, made at least as much as the whitespace the redaction left at a part's edge
+  (a key that ends inside a piece that goes on keeps the space or line break the screen shows after
+  it); a block left with nothing is dropped, and the blocks either side of it keep
   the stronger of the separators around it (a line break over a space). Budgets cut the result
   after the redaction, as before. A key the screen shows whole that this misses is read wrongly by
   that OS's reader (a piece left out, a boundary misplaced), and is fixed in that reader, never
