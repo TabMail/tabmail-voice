@@ -37,7 +37,7 @@ public:
         require(CoCreateInstance(CLSID_CUIAutomation8, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&focusLookup)));
         require(focusLookup->put_ConnectionTimeout(HelperConfig::focusLookupTimeoutMs));
         require(focusLookup->put_TransactionTimeout(HelperConfig::focusLookupTimeoutMs));
-        if (!bounded) {
+        if (!(this->bounded = bounded)) {
             require(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation)));
             return;
         }
@@ -70,21 +70,29 @@ public:
     // the field are the container's, or the request waits out the watchdog. So the focus is first
     // looked up through `focusLookup`, whose calls give up after `focusLookupTimeoutMs`, again every
     // `focusSettlePollMs` until it is answered with a focus that says it has the keyboard; one still
-    // unsettled after `focusSettleMs` is taken as it is. Then it is looked up for the request.
+    // unsettled after `focusSettleMs` is taken as it is. Then it is looked up for the request. A
+    // bounded automation whose last look went unanswered gets no focus: its own lookup would wait out
+    // its second too, and the request the watchdog. The screen reader waits for its provider.
     ComPtr<IUIAutomationElement> settledFocus(HWND expected) {
         const auto started = GetTickCount64();
-        unsigned unanswered = 0;
+        unsigned looks = 0, unanswered = 0;
+        unsigned long long longest = 0;
         for (;;) {
+            const auto look = GetTickCount64();
             ComPtr<IUIAutomationElement> element;
             BOOL keyboard = FALSE;
             const bool answered = SUCCEEDED(focusLookup->GetFocusedElement(&element)) &&
                 (!element || SUCCEEDED(element->get_CurrentHasKeyboardFocus(&keyboard)));
+            ++looks;
             if (!answered) ++unanswered;
+            longest = std::max(longest, GetTickCount64() - look);
             const bool settled = answered && (!element || keyboard);
             const auto waited = GetTickCount64() - started;
             if (settled || GetForegroundWindow() != expected || waited >= HelperConfig::focusSettleMs) {
-                if (waited) std::cerr << "debug focus settle: " << (settled ? "settled" : "unsettled") << " after " << waited
-                    << " ms, " << unanswered << " unanswered\n";
+                if (looks > 1 || unanswered)
+                    std::cerr << "debug focus settle: " << (settled ? "settled" : "unsettled") << " after " << waited << " ms, "
+                        << looks << " looks, " << unanswered << " unanswered, longest " << longest << " ms\n";
+                if (bounded && !answered) return {};
                 return currentFocus();
             }
             Sleep(HelperConfig::focusSettlePollMs);
@@ -1280,5 +1288,6 @@ private:
     ComPtr<IUIAutomation> automation;
     // Only for `settledFocus`'s first looks, each of which gives up after `focusLookupTimeoutMs`.
     ComPtr<IUIAutomation2> focusLookup;
+    bool bounded = true;
 };
 }
