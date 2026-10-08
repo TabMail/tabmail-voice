@@ -2896,7 +2896,8 @@ is cut to 0.5, 1.5 and 3 s (what fits). `transcriptionRequestTimeout` stays 45 s
 the release the deadline ends the wait anyway, and before it a long dictation's chunk may take longer
 than 10 s while the user goes on (a 10 s request timeout there gave the chunk up for good, losing the
 dictation; found in review). The
-backend answers inside it: 8 s for the speech model, 429 retries for its first 6 s, then the 1.5 s
+backend answers within about 9.5 s of receiving the upload (the release tail, the screen read's wait
+and the upload come first): 8 s for the speech model, 429 retries for its first 6 s, then the 1.5 s
 cleanup (backend ADR-022, amendment 2026-10-08). Supersedes the 2026-10-03 "about a minute" of
 retries. Agent mode's run after the transcript stays without a deadline (ADR-DESK-055). Tests:
 `controller.test.ts` › gives up at its deadline, however many retries are left; a request unanswered
@@ -2904,7 +2905,8 @@ at the deadline is called off; a retry still running past the deadline leaves th
 the next hold starts; its deadline counts from the release; the chunks' deadline counts from
 the release; a chunk answering after the deadline's length while the user still
 dictates is kept; a chunk not in by the deadline …; a chunk failing on every try gives up at the
-deadline; chunks in, the last out of time: no polish is sent; chunks all in after the deadline
+deadline; no chunk in by the deadline: the dictation fails as timed out; chunks in, the last out of
+time: no polish is sent; chunks all in after the deadline
 passed: no polish is sent; the polish stops at the dictation's
 deadline; an answer that comes to nothing (not transcribed in time; out of time from the release).
 

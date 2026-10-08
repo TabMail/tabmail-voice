@@ -6333,6 +6333,24 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
     });
 
+    /** Not even the first chunk in by the deadline: nothing is pasted, nothing is polished, every
+     * chunk request is called off, and the dictation fails as a request that timed out. */
+    test("no chunk in by the deadline: the dictation fails as timed out", async () => {
+      const backend = new ChunkBackend(() => never());
+      const { controller, capture, pastes } = makeLong(backend);
+      controller.transcriptionDeadline = 400;
+
+      await startHearing(controller, capture, pausedSpeech(24, 12, 4));
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual([]);
+      expect(controller.phase).toEqual(failed(new TransportError("timeout").message));
+      expect(await eventually(() => backend.inFlight === 0)).toBe(true);
+      expect(completions.requests).toHaveLength(0);
+    });
+
     /** A chunk failing on every try after the release gives up at the deadline too, however many of
      * its tries are left. */
     test("a chunk failing on every try gives up at the deadline", async () => {
