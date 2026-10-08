@@ -790,6 +790,202 @@
       }
     },
     {
+      "name": "a block redacted away keeps the line break that went after it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----END PRIVATE KEY-----",
+            "frame": [
+              0,
+              60,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "Copy",
+            "frame": [
+              210,
+              60,
+              40,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]\n[Copy]"
+      }
+    },
+    {
+      "name": "the read is not laid out again once a block is redacted away",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              300,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----END PRIVATE KEY-----",
+            "frame": [
+              0,
+              60,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "Copy",
+            "frame": [
+              210,
+              0,
+              40,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]\n\n[Copy]"
+      }
+    },
+    {
+      "name": "a match that runs from the screen into the caret's text marks the caret's text too",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "a1B2c3D4e5F6g7H8i9J0",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]",
+        "caret": [
+          "[redacted]",
+          "",
+          ""
+        ],
+        "selectionRedacted": false
+      }
+    },
+    {
+      "name": "text taken out by two matches side by side is marked once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "pwd=hunter3y",
+            "frame": [
+              0,
+              20,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]"
+      }
+    },
+    {
       "name": "a key body right after a link whose box holds the space after it shows where it was redacted",
       "request": {
         "blocks": [

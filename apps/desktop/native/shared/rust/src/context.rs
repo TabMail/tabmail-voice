@@ -18,6 +18,9 @@ struct Block {
     /// without them. A block whose runs start or end hidden is spaced there too: text the screen
     /// does not show is never glued to the piece beside it.
     spaced: [bool; 2],
+    /// What the screen shows between the block before and this one (`separator`), set once when
+    /// the read is laid out.
+    before: &'static str,
 }
 impl Block {
     fn read(value: &Value) -> Result<Self, u32> {
@@ -75,6 +78,7 @@ impl Block {
             source,
             runs,
             spaced,
+            before: "",
         })
     }
     fn source_bytes(&self) -> usize {
@@ -121,15 +125,54 @@ fn separator(a: &Block, b: &Block) -> &'static str {
     }
     if by + bh <= ay { "\n\n" } else { "\n" }
 }
-/// Whether `b` goes on `a`'s line.
-fn same_line(a: &Block, b: &Block) -> bool {
-    !separator(a, b).starts_with('\n')
+/// Lays the blocks out once: what goes between each block and the one before it.
+fn lay_out(blocks: &mut [Block]) {
+    for index in 1..blocks.len() {
+        blocks[index].before = separator(&blocks[index - 1], &blocks[index]);
+    }
+}
+/// Drops the blocks that show nothing. What goes between the two blocks either side of one dropped
+/// is the more of what went before and after it (a line break over a space), so the lines stay as
+/// laid out.
+fn drop_empty(blocks: &mut Vec<Block>) {
+    const ORDER: [&str; 4] = ["", " ", "\n", "\n\n"];
+    let rank = |separator: &str| ORDER.iter().position(|s| *s == separator).unwrap_or(0);
+    let mut kept: Vec<Block> = Vec::with_capacity(blocks.len());
+    let mut pending: Option<&'static str> = None;
+    for mut block in blocks.drain(..) {
+        if let Some(dropped) = pending.take()
+            && rank(dropped) > rank(block.before)
+        {
+            block.before = dropped;
+        }
+        if block.kind != "caret" && block.text.is_empty() {
+            pending = Some(block.before);
+            continue;
+        }
+        kept.push(block);
+    }
+    *blocks = kept;
+}
+/// The read laid out as the screen shows it: its text, each byte's part and whether the read shows
+/// it.
+#[derive(Default)]
+struct Layout {
+    text: String,
+    owner: Vec<usize>,
+    shown: Vec<bool>,
+}
+impl Layout {
+    fn push(&mut self, text: &str, part: usize, shown: bool) {
+        self.text.push_str(text);
+        self.owner.extend(std::iter::repeat_n(part, text.len()));
+        self.shown.extend(std::iter::repeat_n(shown, text.len()));
+    }
 }
 fn render(blocks: &[Block]) -> String {
     let mut result = String::new();
     for (index, block) in blocks.iter().enumerate() {
         if index > 0 {
-            result.push_str(separator(&blocks[index - 1], block));
+            result.push_str(block.before);
         }
         match block.kind.as_str() {
             "heading" => {
@@ -364,7 +407,7 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
         block.text.truncate(end);
         remaining -= end;
     }
-    blocks.retain(|b| b.kind == "caret" || !b.text.is_empty());
+    drop_empty(blocks);
     Ok(changed)
 }
 
@@ -1038,77 +1081,98 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         {
             return Err(1);
         }
-        // A block that shows nothing but blanks is dropped before the redaction, so it and the
-        // render see the same neighbours: two pieces it stood between are matched as joined.
+        // A block that shows nothing but blanks is not read: the screen shows nothing there.
         blocks.retain(|b| b.kind == "caret" || !b.text.trim_matches(whitespace).is_empty());
+        lay_out(&mut blocks);
         let caret_index = blocks
             .iter()
             .position(|b| b.kind == "caret")
             .unwrap_or(blocks.len());
-        // The read is redacted as the one text the screen shows: the pieces of one line (text, a
-        // run of bold, a link) joined as the render joins them, and a line break between lines. A
-        // secret is matched whole however it is styled. Each block's parts start at
-        // `spans[index]`; `shown` says whether the read shows each part (a hidden run, a field's
-        // text around what it shows, and every joiner and line break are not shown).
-        let mut line: Vec<String> = Vec::new();
-        let mut shown: Vec<bool> = Vec::new();
-        let mut spans = Vec::with_capacity(blocks.len() + 1);
+        // The read is laid out once, as the one text the screen shows (ADR-DESK-007, 2026-10-07):
+        // each block's text where it is, with what the screen shows between two blocks (the
+        // separator the render puts there), a hidden run, and a field's text around what it shows,
+        // where they are. That text is redacted once, last, and the read shows only what survived
+        // of the parts it shows: nothing is laid out again after the redaction. `owner` gives each
+        // byte's part (a block, or one of the caret's three), `shown` whether the read shows it.
+        let caret_parts = blocks.len();
+        let mut read = Layout::default();
         for (index, block) in blocks.iter().enumerate() {
-            let (parts, parts_shown) = if block.kind == "caret" {
-                (caret.clone(), vec![true; caret.len()])
-            } else if let Some(runs) = &block.runs {
-                runs.iter()
-                    .map(|(text, visible)| (text.clone(), *visible))
-                    .unzip()
-            } else if let Some(source) = &block.source {
-                (source.clone(), vec![false, true, false])
-            } else {
-                (vec![block.text.clone()], vec![true])
-            };
-            if let Some(previous) = index.checked_sub(1).map(|previous| &blocks[previous]) {
-                line.push(if same_line(previous, block) {
-                    separator(previous, block).to_owned()
-                } else {
-                    LINE_BREAK.to_string()
-                });
-                shown.push(false);
+            if index > 0 {
+                read.push(block.before, index, false);
             }
-            spans.push(line.len());
-            line.extend(parts);
-            shown.extend(parts_shown);
+            if block.kind == "caret" {
+                for (part, text) in caret.iter().enumerate() {
+                    read.push(text, caret_parts + part, true);
+                }
+                continue;
+            }
+            match (&block.runs, &block.source) {
+                (Some(runs), _) => {
+                    for (text, visible) in runs {
+                        read.push(text, index, *visible);
+                    }
+                }
+                (None, Some(parts)) => {
+                    for (part, text) in parts.iter().enumerate() {
+                        read.push(text, index, part == 1);
+                    }
+                }
+                (None, None) => read.push(&block.text, index, true),
+            }
         }
         if caret_index == blocks.len() {
-            if !line.is_empty() {
-                line.push(LINE_BREAK.to_string());
-                shown.push(false);
+            if !read.text.is_empty() {
+                read.push(&LINE_BREAK.to_string(), caret_parts, false);
             }
-            spans.push(line.len());
-            line.extend(caret.iter().cloned());
-            shown.extend(vec![true; caret.len()]);
+            for (part, text) in caret.iter().enumerate() {
+                read.push(text, caret_parts + part, true);
+            }
         }
-        let mut redacted = privacy::redact(&vec![line.clone()]).map_err(|_| 3u32)?;
-        // A match puts its marker where its replaced text starts. When that is a part the read
-        // does not show, the next shown part the match changed takes the marker instead, once:
-        // the read says where shown text was taken out and never shows hidden text.
-        let markers = |text: &str| text.matches(privacy::PLACEHOLDER).count();
-        let mut carried = false;
-        for ((part, original), &part_shown) in redacted[0].iter_mut().zip(&line).zip(&shown) {
-            if part_shown && !original.is_empty() {
-                if std::mem::take(&mut carried)
-                    && part != original
-                    && !part.starts_with(privacy::PLACEHOLDER)
-                {
-                    part.insert_str(0, privacy::PLACEHOLDER);
+        let mut parts = vec![String::new(); caret_parts + 3];
+        let Layout {
+            text: source,
+            owner,
+            shown,
+        } = read;
+        let (redacted, origin) = privacy::redact_traced(&source).map_err(|_| 3u32)?;
+        // Where the redaction took text out (one match, or several side by side), one marker goes
+        // in the part that shows the first character taken; where it took out only what the read
+        // does not show, none goes, so the read never says where hidden text was.
+        let mut index = 0;
+        let mut kept_end = 0;
+        while index < redacted.len() {
+            if let Some(at) = origin[index] {
+                let width = redacted[index..].chars().next().map_or(1, char::len_utf8);
+                if shown[at] {
+                    parts[owner[at]].push_str(&redacted[index..index + width]);
                 }
-            } else if !part_shown && markers(part) > markers(original) {
-                carried = true;
+                kept_end = at + width;
+                index += width;
+                continue;
             }
+            let run_end = origin[index..]
+                .iter()
+                .position(Option::is_some)
+                .map_or(redacted.len(), |length| index + length);
+            let next = origin
+                .get(run_end)
+                .copied()
+                .flatten()
+                .unwrap_or(source.len());
+            let first = (kept_end..next).find(|&at| shown[at]);
+            if let Some(at) = first {
+                parts[owner[at]].push_str(privacy::PLACEHOLDER);
+            }
+            // The caret's window is reported on its own as well: a match that took text it shows
+            // marks it too, once.
+            if first.is_some_and(|at| owner[at] < caret_parts)
+                && let Some(at) = (kept_end..next).find(|&at| shown[at] && owner[at] >= caret_parts)
+            {
+                parts[owner[at]].push_str(privacy::PLACEHOLDER);
+            }
+            index = run_end;
         }
-        let parts_of = |index: usize, count: usize| {
-            let start = spans[index];
-            &redacted[0][start..start + count]
-        };
-        let mut around = parts_of(caret_index, 3).to_vec();
+        let mut around = parts.split_off(caret_parts);
         let changed = around[1] != caret[1];
         if changed && around[1].trim_matches(whitespace).is_empty() {
             around[1] = privacy::PLACEHOLDER.into();
@@ -1116,49 +1180,23 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         truncated |= present_caret(&mut around)?;
         let formatted_caret = caret_text(&around);
         reserved = formatted_caret.len();
-        for (index, block) in blocks.iter_mut().enumerate() {
+        for (block, part) in blocks.iter_mut().zip(parts) {
             block.text = if block.kind == "caret" {
                 formatted_caret.clone()
-            } else if let Some(runs) = &block.runs {
-                runs.iter()
-                    .zip(parts_of(index, runs.len()))
-                    .filter(|((_, visible), _)| *visible)
-                    .map(|((original, _), value)| {
-                        if value != original
-                            && value.trim_matches(whitespace).is_empty()
-                            && !original.trim_matches(whitespace).is_empty()
-                        {
-                            privacy::PLACEHOLDER.to_owned()
-                        } else {
-                            value.clone()
-                        }
-                    })
-                    .collect::<String>()
-                    .trim_matches(whitespace)
-                    .to_owned()
-            } else if block.source.is_some() {
-                let visible = &parts_of(index, 3)[1];
-                if visible != &block.text
-                    && visible.trim_matches(whitespace).is_empty()
-                    && !block.text.trim_matches(whitespace).is_empty()
-                {
-                    privacy::PLACEHOLDER.to_owned()
-                } else {
-                    visible.trim_matches(whitespace).to_owned()
-                }
             } else {
-                parts_of(index, 1)[0].clone()
+                part.trim_matches(whitespace).to_owned()
             };
             block.source = None;
             block.runs = None;
         }
-        blocks.retain(|b| b.kind == "caret" || !b.text.is_empty());
+        drop_empty(&mut blocks);
         response["caret"] = json!(around);
         response["selectionRedacted"] = json!(changed);
     } else {
         if blocks.iter().map(|b| b.text.len()).sum::<usize>() > SCREEN_BYTES + BLOCK_SOURCE_BYTES {
             return Err(1);
         }
+        lay_out(&mut blocks);
         reserved = blocks
             .iter()
             .filter(|b| b.kind == "caret")
@@ -1266,6 +1304,50 @@ mod conformance {
             .unwrap();
             for (key, expected) in case["expected"].as_object().unwrap() {
                 assert_eq!(&actual[key], expected, "{}: {key}", case["name"]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    /// However the screen splits a key into pieces of one line (a run of bold, a link), the read
+    /// redacts it whole and says where once: the redaction sees the line as the screen shows it.
+    #[test]
+    fn a_key_split_into_pieces_of_one_line_is_redacted_whole_once() {
+        let key = format!("AKIA{}", "A".repeat(16));
+        for first in 1..key.len() {
+            for second in first + 1..key.len() {
+                let pieces = [&key[..first], &key[first..second], &key[second..]];
+                let mut x = 0.;
+                let blocks: Vec<Value> = pieces
+                    .iter()
+                    .enumerate()
+                    .map(|(index, piece)| {
+                        let width = 10. * piece.len() as f64;
+                        let block = json!({"kind":if index == 1 {"link"} else {"text"},"text":piece,"frame":[x,0.,width,20.]});
+                        x += width;
+                        block
+                    })
+                    .collect();
+                let reply: Value = serde_json::from_slice(
+                    &process(
+                        &serde_json::to_vec(&json!({"blocks":blocks,"caret":["","",""]})).unwrap(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                let rendered = reply["rendered"].as_str().unwrap();
+                assert_eq!(
+                    rendered.matches(privacy::PLACEHOLDER).count(),
+                    1,
+                    "{first} {second}"
+                );
+                assert!(
+                    !rendered.contains("AKIA") && !rendered.contains("AAAA"),
+                    "{first} {second}"
+                );
             }
         }
     }

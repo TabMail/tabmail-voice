@@ -585,7 +585,7 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   match puts its `[redacted]` where its replaced text starts; when that is a part the read does not
   show (a joiner, a line break, a link's hidden run, a field's text around what it shows), the next
   shown part the match changed takes it instead, once, so the read says where shown text was taken
-  out and never shows hidden text (a key body after `Key` held in a link reads "[Key] [redacted]"). A private key's body with no header beside a label on its first line (`Key:`
+  out and never shows hidden text (a key body after `Key` held in a link reads "[Key] [redacted]"). *(Superseded the same night by the amendment below: the read is laid out once and redacted last, and a marker goes where the first shown character was taken out.)* A private key's body with no header beside a label on its first line (`Key:`
   beside a block of base64) is one line with the label now, so its first base64 line follows a space:
   `private-key-lines`, and `private-key-end` before a full line of base64, start a body after a
   space or a tab as well as at a line, which also redacts one plain piece holding the same text.
@@ -600,6 +600,39 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   `windows/tests/electron.mjs`, `linux/tests/electron.mjs`) reads a key split by bold and a link
   between words, a link holding the space after it and a key that is a link's text; the Mac and
   Windows runs fail on the old per-piece lines.)*
+- *(Amended 2026-10-07 night, owner: the read is laid out once and redacted last, at its most
+  stable point; a key the redaction misses is a reader's bug.)* Each round of review on the change
+  above found the redaction and the render disagreeing: the read was redacted as one arrangement
+  (parts, joiners, each part's result mapped back) and rendered as another (the render dropped
+  empty blocks, worked out the separators again and moved markers), and every place the two
+  differed showed a key whole or put a marker in the wrong place. Owner: *"the OS level specific
+  binaries that cannot be shared standardized read; the shared Rust looks at the standardized read
+  sequence and does the redaction"*, and *"the other bugs that could cause issues with redaction are
+  actually bugs at a lower level that does not properly read the streaming text."* The text enters
+  memory either way, so redacting earlier protects nothing; it is done last, on the text as laid
+  out, and nothing is laid out after it.
+
+  The helpers give the read as before (blocks with their text, runs, a field's source and boxes,
+  and the caret's three parts). The core lays it out once: blank blocks are dropped, and what goes
+  between each block and the one before it (`separator`: nothing, a space, a line break or two) is
+  set on the block (`lay_out`, `Block::before`). The text the screen shows is that one sequence:
+  each block's text where it is, its hidden runs and a field's text around what it shows in place,
+  the separators between, and the caret's parts; each byte knows its part and whether the read shows
+  it. It is redacted once by `privacy::redact_traced`, the same rules as `redact`, which also says
+  which input byte each output byte is (a replacement keeps what it starts and ends with in common
+  with the match, such as `token=`). The read then shows, for each part, only the bytes it shows
+  that survived, and one `[redacted]` where the redaction took text out (one match, or several side
+  by side), in the part that showed the first character taken; where it took only text the read does
+  not show, nothing marks it, so the read never says where hidden text was. The caret's window is
+  reported on its own as well, so a match that runs into it marks it too. The render only adds the
+  markup (`## `, `[ ]`, `| `, `> `, `» `, `‸`) around what survived and puts the block's own
+  separator before it; a block left with nothing is dropped, and the blocks either side of it keep
+  the stronger of the separators around it (a line break over a space). Budgets cut the result
+  after the redaction, as before. A key the screen shows whole that this misses is read wrongly by
+  that OS's reader (a piece left out, a boundary misplaced), and is fixed in that reader, never
+  made up for in the core. The corpus is the specification: every case passed unchanged; four new
+  ones pin a block dropped mid-read, the marker in the caret's window, and one marker for matches
+  side by side.
 
 **Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
 (issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the

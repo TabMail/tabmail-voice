@@ -341,3 +341,34 @@ fn terminal_anchor_accounts_for_outer_line_separators() {
     );
     assert_eq!(anchors, vec![Some(2), Some(3), Some(3 + 19)]);
 }
+
+/// The traced redaction is the redaction: the same text for every case, and each byte it says it
+/// kept is that byte of the input, in order.
+#[test]
+fn traced_redaction_matches_the_corpus_and_keeps_bytes_in_order() {
+    let corpus: Value = serde_json::from_str(CORPUS).unwrap();
+    for case in corpus["cases"].as_array().unwrap() {
+        let text = joined(&case["text"]);
+        let (redacted, origin) = redact_traced(&text).unwrap();
+        assert_eq!(redacted, scalar(&text), "{}", case["name"]);
+        assert_eq!(origin.len(), redacted.len(), "{}", case["name"]);
+        let kept: Vec<(usize, usize)> = origin
+            .iter()
+            .enumerate()
+            .filter_map(|(at, from)| from.map(|from| (at, from)))
+            .collect();
+        for (at, from) in &kept {
+            assert_eq!(
+                redacted.as_bytes()[*at],
+                text.as_bytes()[*from],
+                "{}",
+                case["name"]
+            );
+        }
+        assert!(
+            kept.windows(2).all(|pair| pair[0].1 < pair[1].1),
+            "{}",
+            case["name"]
+        );
+    }
+}

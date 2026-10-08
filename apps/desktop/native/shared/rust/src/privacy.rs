@@ -170,6 +170,84 @@ pub fn redact_anchored(
     redact_with_anchors(lines, rules, anchors)
 }
 
+/// Redact one text, and say where each byte of the result came from: the byte of `text` it is, or
+/// `None` for a byte a replacement put in. The rules run as `redact` runs them; a replacement keeps
+/// the characters it starts and ends with in common with what it replaced (a captured prefix such
+/// as `token=`), and every other character it covered is gone. The bytes kept stay in order.
+pub fn redact_traced(text: &str) -> Result<(String, Vec<Option<usize>>), Error> {
+    static RULES: OnceLock<Result<Vec<Rule>, Error>> = OnceLock::new();
+    let rules = RULES
+        .get_or_init(|| compile(DEFINITIONS))
+        .as_ref()
+        .map_err(|e| *e)?;
+    Ok(trace_with(text, rules))
+}
+
+fn trace_with(text: &str, rules: &[Rule]) -> (String, Vec<Option<usize>>) {
+    let mut text = text.to_owned();
+    let mut origin: Vec<Option<usize>> = (0..text.len()).map(Some).collect();
+    for rule in rules {
+        let mut result = String::new();
+        let mut result_origin = Vec::new();
+        let mut copied = 0;
+        let mut finished = true;
+        for item in rule.regex.captures_iter(text.as_str()) {
+            let Ok(captures) = item else {
+                finished = false;
+                break;
+            };
+            let Some(matched) = captures.get(0) else {
+                finished = false;
+                break;
+            };
+            result.push_str(&text[copied..matched.start()]);
+            result_origin.extend_from_slice(&origin[copied..matched.start()]);
+            let old = matched.as_str();
+            let replacement = expand(&rule.replacement, &captures);
+            // The characters at either end the replacement shares with the match are kept.
+            let kept_start: usize = old
+                .chars()
+                .zip(replacement.chars())
+                .take_while(|(a, b)| a == b)
+                .map(|(a, _)| a.len_utf8())
+                .sum();
+            let shorter = old.len().min(replacement.len()) - kept_start;
+            let kept_end: usize = old[kept_start..]
+                .chars()
+                .rev()
+                .zip(replacement[kept_start..].chars().rev())
+                .take_while(|(a, b)| a == b)
+                .map(|(a, _)| a.len_utf8())
+                .scan(0, |sum, width| {
+                    *sum += width;
+                    (*sum <= shorter).then_some(width)
+                })
+                .sum();
+            let start = matched.start();
+            result.push_str(&replacement);
+            result_origin.extend_from_slice(&origin[start..start + kept_start]);
+            result_origin.extend(std::iter::repeat_n(
+                None,
+                replacement.len() - kept_start - kept_end,
+            ));
+            result_origin.extend_from_slice(&origin[matched.end() - kept_end..matched.end()]);
+            copied = matched.end();
+        }
+        if finished {
+            result.push_str(&text[copied..]);
+            result_origin.extend_from_slice(&origin[copied..]);
+        } else {
+            // Never log the engine error: only the trusted canonical rule name.
+            eprintln!("debug redactor unfinished: {}", rule.name);
+            result.push_str(PLACEHOLDER);
+            result_origin.extend(std::iter::repeat_n(None, PLACEHOLDER.len()));
+        }
+        text = result;
+        origin = result_origin;
+    }
+    (text, origin)
+}
+
 #[cfg(test)]
 fn redact_with(lines: &Lines, rules: &[Rule]) -> Result<Lines, Error> {
     redact_with_anchors(lines, rules, &[]).map(|(lines, _)| lines)
