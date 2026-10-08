@@ -118,7 +118,7 @@ export const chunkOverlapSpeech = 15_000;
 export const chunkMaxOverlap = 30_000;
 /** A chunk that fails on the server's side while the user is still dictating is tried again after
  * each of these waits (ms), the last repeating, for as long as the dictation goes on (owner,
- * 2026-10-03); after the release it gets `transcriptionRetryDelays` more. */
+ * 2026-10-03); after the release it gets `transcriptionRetryDelays` more, within `transcriptionDeadline`. */
 export const chunkRetryDelays: readonly number[] = [1_000, 2_000, 5_000, 10_000];
 /** Overlapping chunks are joined where their texts share a run of at least `chunkOverlapMinimumRun`
  * words, looked for among the last and first `chunkOverlapSearchWords` words of each. */
@@ -126,7 +126,8 @@ export const chunkOverlapSearchWords = 80;
 export const chunkOverlapMinimumRun = 3;
 /** A long dictation's joined text is polished once more as a whole if that takes no longer than this
  * (ms) after the chunks are in; else the chunks' own cleanups are pasted as they are (owner,
- * 2026-10-03: "a final polished pass if time permits… not longer than 5 seconds"). */
+ * 2026-10-03: "a final polished pass if time permits… not longer than 5 seconds"), and never past
+ * `transcriptionDeadline` after the release. */
 export const chunkPolishTimeout = 5_000;
 /** Longest the audio window may take to open the microphone before the dictation fails. */
 export const microphoneStartTimeout = 5_000;
@@ -193,15 +194,19 @@ export const warmUpRequestTimeout = 10_000;
 /** Sent as `X-Client-Type` to identify this client to the backend. Usage is recorded under it, and
  * the admin panel shows it as the macOS device. */
 export const clientType = "macos";
-/** Longest the transcription request may take, the backend's cleanup included (the backend gives the
- * cleanup 1.5 s, owner 2026-09-28; backend ADR-027). */
-export const transcriptionRequestTimeout = 45_000;
+/** Longest a dictation waits for its text after the release, every request and retry included, and
+ * a long dictation's polish (owner, 2026-10-08: "nobody waits for dictation more than 10" seconds;
+ * ADR-DESK-039). The backend gives the speech model 8 s and the cleanup 1.5 s inside it. */
+export const transcriptionDeadline = 10_000;
+/** Longest one transcription request may stay silent, the backend's cleanup included: no longer than
+ * the dictation's whole wait (a chunk sent while the user still dictates is not under that yet). */
+export const transcriptionRequestTimeout = transcriptionDeadline;
 /** A transcription that failed on the server's side (a 5xx: the speech model behind the backend was
  * rate limited or failed) or lost its connection is tried again after each of these waits, in
- * milliseconds, before the dictation fails: owner, 2026-09-29, rather than make the user say it
- * again. About a minute in all (owner, 2026-10-03: "we definitely need more retries … we should not
- * lose the end"): the provider's rate limits come in bursts of seconds. */
-export const transcriptionRetryDelays: readonly number[] = [500, 1_500, 3_000, 5_000, 10_000, 10_000, 15_000, 15_000];
+ * milliseconds, while `transcriptionDeadline` allows: owner, 2026-09-29, rather than make the user
+ * say it again. (Was eight waits over about a minute, owner 2026-10-03; cut to what fits in the
+ * 10 s, owner 2026-10-08.) */
+export const transcriptionRetryDelays: readonly number[] = [500, 1_500, 3_000];
 /** How long after the first server error the pill says it is retrying: a retry that answers sooner
  * shows nothing but a dictation taking a moment longer (owner, 2026-10-02: the note on every brief
  * rate limit was the annoying part, not the wait). */

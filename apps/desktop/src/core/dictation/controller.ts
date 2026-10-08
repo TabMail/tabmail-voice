@@ -168,6 +168,8 @@ export class DictationController extends Observable {
   confirmationMinimumDisplay = config.chatConfirmationMinimumDisplay;
   /** How long the chat window's question waits for an answer. Settable for tests. */
   confirmationTimeout = config.chatConfirmationTimeout;
+  /** Longest a dictation waits for its text after the release, retries included. Settable for tests. */
+  transcriptionDeadline = config.transcriptionDeadline;
   /** The waits before each retry of a transcription that failed on the server's side. Settable for tests. */
   transcriptionRetryDelays = config.transcriptionRetryDelays;
   /** How long after the first server error the pill says it is retrying. Settable for tests. */
@@ -622,13 +624,36 @@ export class DictationController extends Observable {
   async transcribe(flac: Uint8Array, generation: number): Promise<void> {
     const signal = this.abort.signal;
     const isCurrent = () => this.generation === generation && !signal.aborted;
-    await this.deliver(generation, async () => {
-      const upload = await this.preparedUpload(false);
-      if (!isCurrent()) return null;
-      log.debug(`DictationController: uploading ${flac.length} bytes`);
-      const transcription = await this.transcribeRetrying(() => upload.send(flac, signal), isCurrent, signal);
-      return { parts: [{ transcription, overlapped: false }], lost: null };
-    });
+    const deadline = this.deadlineFromRelease();
+    await this.deliver(generation, () =>
+      this.withinDeadline(deadline, async (timeout) => {
+        const upload = await this.preparedUpload(false);
+        if (!isCurrent()) return null;
+        log.debug(`DictationController: uploading ${flac.length} bytes`);
+        const requestSignal = AbortSignal.any([signal, timeout]);
+        const transcription = await this.transcribeRetrying(() => upload.send(flac, requestSignal), isCurrent, requestSignal);
+        return { parts: [{ transcription, overlapped: false }], lost: null, deadline };
+      }),
+    );
+  }
+
+  /** When this dictation's wait for its text ends: `transcriptionDeadline` after the release (now, if
+   * not released: a test calling `transcribe`). */
+  private deadlineFromRelease(): number {
+    return (this.releasedAt ?? performance.now()) + this.transcriptionDeadline;
+  }
+
+  /** Runs `operation`, a dictation's wait for its text, until `deadline` (owner, 2026-10-08: "nobody
+   * waits for dictation more than 10" seconds; every retry falls inside it). Past it, `operation`'s
+   * signal aborts, calling off its requests and waits, and it fails at once as a request that timed
+   * out ("TabMail took too long to answer"). */
+  private async withinDeadline<T>(deadline: number, operation: (timeout: AbortSignal) => Promise<T>): Promise<T> {
+    try {
+      return await withTimeout(Math.max(0, deadline - performance.now()), operation);
+    } catch (error) {
+      if (error instanceof TimeoutError) throw new TransportError("timeout");
+      throw error;
+    }
   }
 
   /** What every upload of this dictation sends with its audio, prepared by its first upload: the
@@ -683,7 +708,7 @@ export class DictationController extends Observable {
    * inserts it (dictation) or carries it out (agent mode). `obtain` answers null when the dictation
    * ended meanwhile. With `lost` (a long dictation whose later chunks failed), a dictation pastes what
    * came before them and says the end is missing; agent mode carries out nothing of it. */
-  private async deliver(generation: number, obtain: () => Promise<{ parts: TranscribedPart[]; lost: unknown; polish?: Polish | null } | null>): Promise<void> {
+  private async deliver(generation: number, obtain: () => Promise<{ parts: TranscribedPart[]; lost: unknown; polish?: Polish | null; deadline: number } | null>): Promise<void> {
     // Agent mode's requests go under the account signed in now, even if the user switches accounts
     // while they run.
     const account = this.deps.account;
@@ -717,7 +742,7 @@ export class DictationController extends Observable {
       this.deps.useWords(heard.flatMap((part) => (part.transcription.cleanedText === null ? [part.text] : [part.text, part.transcription.cleanedText])));
       if (mode === "dictation") {
         const joined = joinChunkTexts(texts.map((part) => ({ text: part.text === "" || !settings.smartDictation ? part.text : DictationCleanup.pasted(part.text, part.transcription.cleanedText), overlapped: part.overlapped })));
-        const text = result.polish ? await this.polished(joined, result.polish, signal) : joined;
+        const text = result.polish ? await this.polished(joined, result.polish, result.deadline, signal) : joined;
         if (!isCurrent()) return;
         await this.paste(text, targetApp, signal, this.screenRead);
         const corrections = this.deps.corrections;
@@ -804,13 +829,19 @@ export class DictationController extends Observable {
   }
 
   /** A long dictation's joined text (its chunks' cleanups), polished as a whole by the cleanup prompt
-   * if that answers within `chunkPolishTimeout` (owner, 2026-10-03: "a final polished pass if time
-   * permits"): the chunks' seams read as one text. Else, or when it fails or comes back empty, `text`
-   * as it is: a failed polish never costs the user their dictation, as a failed cleanup doesn't. */
-  private async polished(text: string, polish: Polish, signal: AbortSignal): Promise<string> {
+   * if that answers within `chunkPolishTimeout` and before the dictation's `deadline` (owner,
+   * 2026-10-03: "a final polished pass if time permits"): the chunks' seams read as one text. Else,
+   * or when it fails or comes back empty, `text` as it is: a failed polish never costs the user their
+   * dictation, as a failed cleanup doesn't. */
+  private async polished(text: string, polish: Polish, deadline: number, signal: AbortSignal): Promise<string> {
     const started = performance.now();
+    const allowed = Math.min(this.chunkPolishTimeout, deadline - started);
+    if (allowed <= 0) {
+      log.debug("DictationController: no time left to polish; pasting the chunks' cleanups");
+      return text;
+    }
     try {
-      const polishedText = trimWhitespace(await withTimeout(this.chunkPolishTimeout, (timeout) => polish(text, AbortSignal.any([signal, timeout]))));
+      const polishedText = trimWhitespace(await withTimeout(allowed, (timeout) => polish(text, AbortSignal.any([signal, timeout]))));
       if (polishedText === "") {
         log.debug("DictationController: polish came back empty; pasting the chunks' cleanups");
         return text;
@@ -837,7 +868,8 @@ export class DictationController extends Observable {
 
   /** Makes the transcription request, and makes it again after a server error (a 5xx other than the
    * backend's own timeout: the speech model behind it failed; or its rate limit) or a dropped connection, up to
-   * `transcriptionRetryDelays.length` more times, so the user need not say it again. The pill keeps
+   * `transcriptionRetryDelays.length` more times while the dictation's deadline allows (the caller's
+   * `withinDeadline`), so the user need not say it again. The pill keeps
    * transcribing until `transcriptionRetryNoticeDelay` has passed since the first failure, then says
    * it is retrying while it waits and tries, and goes back to transcribing once a retry answers. Any
    * other failure (signed out, over quota, a refused request, a timeout) fails at once. */
@@ -934,8 +966,8 @@ export class DictationController extends Observable {
    * again after each of `chunkRetryDelays`, the last repeating, for as long as the dictation goes
    * on: nobody waits for it yet. From the release, it gets `transcriptionRetryDelays` more tries on
    * the same failures, with the pill's retry note, so the end of a dictation is not lost to a burst
-   * of rate limits (owner, 2026-10-03). Any other failure (signed out, over quota, a refused request)
-   * gives up at once. */
+   * of rate limits (owner, 2026-10-03), until the dictation's deadline (`transcribeChunks`, owner
+   * 2026-10-08) ends it. Any other failure (signed out, over quota, a refused request) gives up at once. */
   private async transcribeChunk(request: () => Promise<Transcription>, isCurrent: () => boolean, signal: AbortSignal, release: Release): Promise<Transcription> {
     let waits = 0;
     let lastTries = 0;
@@ -966,8 +998,10 @@ export class DictationController extends Observable {
   /** The release of a dictation cut into chunks: the last one is sent, the chunks still failing get
    * their last tries, and the text is the chunks' in order up to the first that gave up (owner,
    * 2026-10-03: "paste only the up to successful part"). The first giving up loses the dictation, as
-   * one recording's failure does. */
+   * one recording's failure does. A chunk not in by `transcriptionDeadline` after the release gives
+   * up then, as a request that timed out (owner, 2026-10-08), and the chunks after it are called off. */
   private async transcribeChunks(last: RecordedChunk, generation: number): Promise<void> {
+    const deadline = this.deadlineFromRelease();
     const signal = this.chunkAbort.signal;
     const isCurrent = () => this.generation === generation && !signal.aborted;
     this.chunkCut(last, generation);
@@ -994,7 +1028,8 @@ export class DictationController extends Observable {
         const parts: TranscribedPart[] = [];
         let lost: unknown = null;
         for (const chunk of chunks) {
-          const outcome = await chunk.outcome;
+          // A chunk's outcome never fails: only the deadline does.
+          const outcome = await this.withinDeadline(deadline, () => chunk.outcome).catch((error: unknown): ChunkOutcome => ({ error }));
           if ("error" in outcome) {
             lost = outcome.error;
             break;
@@ -1002,7 +1037,7 @@ export class DictationController extends Observable {
           parts.push({ transcription: outcome.transcription, overlapped: chunk.overlapped });
         }
         const { polish } = parts.length > 1 && upload ? await upload : { polish: null };
-        return settled({ parts, lost, polish });
+        return settled({ parts, lost, polish, deadline });
       });
     } finally {
       notice.end();
@@ -1236,13 +1271,14 @@ export class DictationController extends Observable {
     this.currentLevel = 0;
     this.setPhase({ kind: "transcribing" });
     const isCurrent = () => this.spokenAnswer?.id === spoken.id;
+    const deadline = performance.now() + this.transcriptionDeadline;
     // The microphone stays open briefly, as after a dictation, so the last word isn't clipped.
     this.releaseTailTimer = after(config.releaseTailDuration, () => {
-      if (isCurrent()) void this.transcribeSpokenAnswer(spoken.recorder, spoken.abort.signal, isCurrent);
+      if (isCurrent()) void this.transcribeSpokenAnswer(spoken.recorder, spoken.abort.signal, isCurrent, deadline);
     });
   }
 
-  private async transcribeSpokenAnswer(recorder: AudioRecorder, answerSignal: AbortSignal, isCurrent: () => boolean): Promise<void> {
+  private async transcribeSpokenAnswer(recorder: AudioRecorder, answerSignal: AbortSignal, isCurrent: () => boolean, deadline: number): Promise<void> {
     this.deps.capture.stop();
     const recording = recorder.finish();
     if (recording.pcm.length === 0) return this.abandonSpokenAnswer("no audio");
@@ -1255,7 +1291,10 @@ export class DictationController extends Observable {
       const language = await this.languageRead;
       if (!isCurrent()) return;
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
-      const transcription = await this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, settings.dictionary, token, signal)), isCurrent, signal);
+      const transcription = await this.withinDeadline(deadline, (timeout) => {
+        const requestSignal = AbortSignal.any([signal, timeout]);
+        return this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, settings.dictionary, token, requestSignal)), isCurrent, requestSignal);
+      });
       if (!isCurrent()) return;
       const transcript = trimWhitespace(transcription.text);
       log.content("Transcript (answer to the question)", transcript);
