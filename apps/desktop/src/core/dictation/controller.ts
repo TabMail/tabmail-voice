@@ -900,7 +900,9 @@ export class DictationController extends Observable {
   /** The retry hint and note of a transcription (`transcribeRetrying`), or of a long dictation's
    * chunks after the release: `failed` at each server error marks it retrying (`isRetrying`) and,
    * `transcriptionRetryNoticeDelay` after the first, shows the note; `answered` goes back to
-   * transcribing if the note showed; `end` clears both. */
+   * transcribing if the note showed; `end` clears both. Once `signal` aborts, neither changes the
+   * phase: a transcription its deadline gave up on may still be in a retry (`withinDeadline` does not
+   * wait for it), and its note must not come up over the failure, or the next dictation. */
   private retryNotice(isCurrent: () => boolean, signal: AbortSignal): RetryNotice {
     let timer: Timer | null = null;
     let shown = false;
@@ -913,13 +915,13 @@ export class DictationController extends Observable {
           this.changed();
         }
         timer ??= setTimeout(() => {
-          if (!isCurrent()) return;
+          if (!isCurrent() || signal.aborted) return;
           shown = true;
           this.setPhase({ kind: "retrying", message: retryingMessage });
         }, this.transcriptionRetryNoticeDelay);
       },
       answered: () => {
-        if (shown && isCurrent()) this.setPhase({ kind: "transcribing" });
+        if (shown && isCurrent() && !signal.aborted) this.setPhase({ kind: "transcribing" });
       },
       end: () => {
         if (timer !== null) clearTimeout(timer);

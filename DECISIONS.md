@@ -2888,7 +2888,10 @@ dictation fails at once as a request that timed out ("TabMail took too long to a
 a long dictation pastes the chunks that came in and says the end is missing (`partlyTranscribedMessage`,
 ADR-DESK-049), and is not polished; one whose chunks all came in has its polish get only what is left
 of the 10 s, never more than `chunkPolishTimeout`. A spoken answer to the chat window's question gets the same 10 s from its release.
-Every one of these counts from the release, not from the upload after the release tail. `transcriptionRetryDelays`
+Every one of these counts from the release, not from the upload after the release tail. A transcription
+past its deadline may still be in a retry nothing calls off (the sign-in refresh it waits on takes no
+signal); its retry note and late answer no longer change the phase once its signal aborts
+(`retryNotice`), so the failure stands and the next hold starts. `transcriptionRetryDelays`
 is cut to 0.5, 1.5 and 3 s (what fits). `transcriptionRequestTimeout` stays 45 s on purpose: after
 the release the deadline ends the wait anyway, and before it a long dictation's chunk may take longer
 than 10 s while the user goes on (a 10 s request timeout there gave the chunk up for good, losing the
@@ -2897,10 +2900,12 @@ backend answers inside it: 8 s for the speech model, 429 retries for its first 6
 cleanup (backend ADR-022, amendment 2026-10-08). Supersedes the 2026-10-03 "about a minute" of
 retries. Agent mode's run after the transcript stays without a deadline (ADR-DESK-055). Tests:
 `controller.test.ts` › gives up at its deadline, however many retries are left; a request unanswered
-at the deadline is called off; its deadline counts from the release; the chunks' deadline counts from
+at the deadline is called off; a retry still running past the deadline leaves the failure alone, and
+the next hold starts; its deadline counts from the release; the chunks' deadline counts from
 the release; a chunk answering after the deadline's length while the user still
 dictates is kept; a chunk not in by the deadline …; a chunk failing on every try gives up at the
-deadline; chunks in, the last out of time: no polish is sent; the polish stops at the dictation's
+deadline; chunks in, the last out of time: no polish is sent; chunks all in after the deadline
+passed: no polish is sent; the polish stops at the dictation's
 deadline; an answer that comes to nothing (not transcribed in time; out of time from the release).
 
 ## ADR-DESK-040: The recording is peak-normalized before it is uploaded
