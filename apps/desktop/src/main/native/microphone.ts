@@ -7,16 +7,13 @@ import { errorName, log } from "../../core/log.js";
 import type { AudioCommand, AudioReport } from "../../shared/ipc.js";
 import { type HelperClient, HelperError } from "./helperClient.js";
 
-/** The shared audio protocol; each platform helper owns its native microphone sessions. */
+/** The shared audio protocol, which `voice-microphone` speaks on every platform. */
 export class NativeMicrophone {
   constructor(private readonly helper: HelperClient, private readonly name: string) {}
   microphone(report: (report: AudioReport) => void): (command: AudioCommand) => void {
     this.helper.on("microphoneChunk", (message) => {
       const samples = decodeSamples(message.samples);
       if (Number.isInteger(message.session) && samples) report({ type: "chunk", session: message.session as number, samples });
-    });
-    this.helper.on("microphoneLost", (message) => {
-      if (Number.isInteger(message.session)) report({ type: "lost", session: message.session as number });
     });
     return (command) => {
       switch (command.type) {
@@ -37,9 +34,9 @@ export class NativeMicrophone {
     };
   }
 
-  /** A prepare or stop that got no answer. One whose helper exited is no error: the macOS helper
-   * ends itself after each dictation's stop and whenever the input changes, and the helper started
-   * in its place is prepared again (its `onStart`), with the microphone off. */
+  /** A prepare or stop that got no answer. One whose helper exited is no error: the helper ends
+   * itself after each dictation's stop and whenever its capture ends, and the helper started in its
+   * place is prepared again (its `onStart`), with the microphone off. */
   private failed(what: "prepared" | "stopped", error: unknown): void {
     const message = `${this.name}: microphone not ${what}: ${errorName(error)}`;
     if (error instanceof HelperError && error.kind === "exited") log.debug(message);

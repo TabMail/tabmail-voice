@@ -31,14 +31,15 @@ const binCount = -silenceDecibels * binsPerDecibel + 1;
  * room's noise) count as quiet. On quiet microphones speech stands only a few dB above the room (ADR-DESK-005),
  * which only levels taken from the recording itself can tell apart.
  *
- * - **A pause:** once a chunk holds `chunkMinimumSpeech` of speech, it is cut in the middle of the
- *   next `chunkPauseDuration` of quiet. No word crosses a pause, so nothing overlaps. Speech much
- *   softer than what came before, with few frames at the room's level, can read as quiet: a cut
- *   there may split a word or two (found in review, 2026-10-03; the chunk is still sent).
- * - **No pause:** a chunk that reaches `chunkMaxDuration` is cut anyway, at the quietest
- *   `chunkForcedCutWindow` of its last `chunkForcedCutSearch`, and the next chunk starts
- *   `chunkOverlapSpeech` of speech earlier (at most `chunkMaxOverlap` earlier), so the words the
- *   cut garbles are heard whole in one of the two.
+ * - **A pause** (only while `chunkCutsAtPauses` is on; off since 2026-10-07): once a chunk holds
+ *   `chunkMinimumSpeech` of speech, it is cut in the middle of the next `chunkPauseDuration` of
+ *   quiet. No word crosses a pause, so nothing overlaps. Speech much softer than what came before,
+ *   with few frames at the room's level, can read as quiet: a cut there may split a word or two
+ *   (found in review, 2026-10-03; the chunk is still sent).
+ * - **No pause** (every cut while pause cuts are off): a chunk that reaches `chunkMaxDuration` is
+ *   cut anyway, at the quietest `chunkForcedCutWindow` of its last `chunkForcedCutSearch`, and the
+ *   next chunk starts `chunkOverlapSpeech` of speech earlier (at most `chunkMaxOverlap` earlier), so
+ *   the words the cut garbles are heard whole in one of the two.
  *
  * A recording never cut is one upload, as before chunking.
  */
@@ -53,6 +54,7 @@ export class Chunker {
   private readonly forcedWindowFrames: number;
   private readonly gapFrames: number;
   private readonly blipFrames: number;
+  private readonly cutsAtPauses = config.chunkCutsAtPauses;
   /** Each whole frame's loudness (dB), from the start of the recording. */
   private decibels = new Float32Array(1_024);
   private frames = 0;
@@ -126,7 +128,7 @@ export class Chunker {
     const quiet = decibels < this.pauseLevel();
     this.count(quiet);
     const frameEnd = this.frames * this.frameLength;
-    if (quiet && this.quietRun >= this.pauseFrames && this.speechFrames >= this.minimumSpeechFrames) {
+    if (this.cutsAtPauses && quiet && this.quietRun >= this.pauseFrames && this.speechFrames >= this.minimumSpeechFrames) {
       // The middle of the pause so far: half its quiet ends this chunk, half starts the next.
       return this.cut(frameEnd - Math.floor(this.pauseFrames / 2) * this.frameLength, null);
     }

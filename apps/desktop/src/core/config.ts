@@ -96,12 +96,16 @@ export const chunkSpeechGap = 300;
  * plosive's burst, shorter than any vowel, as a cut must be in a pause for sure (owner, 2026-10-03:
  * "really high precision, even if some recall could be lower"). */
 export const chunkPauseBlip = 40;
+/** Whether a chunk is cut at a pause at all. Off (owner, 2026-10-07): cutting at pauses barely
+ * sped up a long dictation's text and cost words, as people pause between words and sentences, so
+ * a chunk is cut only at `chunkMaxDuration`. The pause rules below are kept for a later look. */
+export const chunkCutsAtPauses = false;
 /** A chunk is cut at a pause this long (ms; owner, 2026-10-03: "a second pause")… */
 export const chunkPauseDuration = 1_000;
 /** …once it holds this much speech (ms; owner, 2026-10-03: "only after 10s+"). */
 export const chunkMinimumSpeech = 10_000;
-/** With no such pause, a chunk is cut at this length (ms), so it and the overlap the next one starts
- * with stay within the backend model's 120 s. */
+/** With no such pause (every chunk while `chunkCutsAtPauses` is off), a chunk is cut at this length
+ * (ms), so it and the overlap the next one starts with stay within the backend model's 120 s. */
 export const chunkMaxDuration = 105_000;
 /** That cut lands on the quietest window this long (ms) in the chunk's last `chunkForcedCutSearch`
  * (ms)… */
@@ -299,10 +303,9 @@ export const phoneNumberMinDigits = 5;
 /** The backend's web search, which the Web switch lists (`Connector.serverTools`); while it is listed
  * the request says `web_search_enabled`, without which the backend refuses `web_read` and `web_open`. */
 export const webSearchTool = "search_web";
-/** `web_read`, as the Thunderbird add-on reads a page: the page's and robots.txt's timeouts, the most
- * characters of a page the model gets, and the User-Agent both are asked with. */
+/** `web_read`, as the Thunderbird add-on reads a page: its timeout, the most characters of a page the
+ * model gets, and the User-Agent it is asked with. */
 export const webReadTimeout = 30_000;
-export const webReadRobotsTimeout = 5_000;
 export const webReadMaxCharacters = 500_000;
 export const webUserAgent = "TabMail/1.0 (macOS; +https://tabmail.app)";
 /** The most of a page's body `web_read` reads, in bytes: enough for `webReadMaxCharacters` in any
@@ -424,8 +427,9 @@ export const contactStoreRequestTimeout = eventStoreRequestTimeout;
 export const fileStoreRequestTimeout = 30_000;
 /** A crashed helper is restarted after this long. */
 export const helperRestartDelay = 1_000;
-/** `voice-microphone` exits with this after each dictation and when the input changes
- * (`MicrophoneService.restartExitCode` in the helper): it asks to be started afresh, at once. */
+/** `voice-microphone` exits with this after each dictation and when its capture ends, on every
+ * platform (`VoiceMicrophoneRestartExitCode` in the shared core's header): it asks to be started
+ * afresh, at once. */
 export const microphoneHelperRestartExitCode = 75;
 
 // MARK: Updates

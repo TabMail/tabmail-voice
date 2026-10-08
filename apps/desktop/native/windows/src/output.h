@@ -36,6 +36,8 @@ public:
                     } else if (message.message == jsonMessage) {
                         std::unique_ptr<JSON> response(reinterpret_cast<JSON*>(message.lParam));
                         value = std::move(*response);
+                    } else if (message.message == endMessage) {
+                        ExitProcess(static_cast<UINT>(message.wParam));
                     } else continue;
                     std::cout << value.dump() << '\n' << std::flush;
                     if (!std::cout) ExitProcess(1);
@@ -50,9 +52,12 @@ public:
         auto message = std::make_unique<JSON>(std::move(value));
         post(jsonMessage, 0, reinterpret_cast<LPARAM>(message.release()));
     }
+    // Ends the process with `code` once everything sent before has been written.
+    void end(UINT code) const { post(endMessage, code, 0); }
 private:
     static constexpr UINT actionMessage = WM_APP + 20;
     static constexpr UINT jsonMessage = WM_APP + 21;
+    static constexpr UINT endMessage = WM_APP + 22;
     DWORD thread = 0;
     mutable std::atomic<unsigned> queued{0};
     void post(UINT message, WPARAM value, LPARAM data) const {

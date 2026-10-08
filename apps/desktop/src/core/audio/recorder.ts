@@ -6,9 +6,9 @@ import { type ChunkCut, Chunker } from "./chunker.js";
 import { FLACEncoder } from "./flac.js";
 import * as config from "../config.js";
 
-/** What dictation needs from a microphone. On macOS the helper captures it (`AVAudioEngine`, as the
- * Swift app does); elsewhere the audio window (`getUserMedia` into an AudioWorklet), both resampled to
- * `config.recordingSampleRate` mono; tests substitute one that records nothing. The microphone is on only between `start` and `stop` (released after every dictation). */
+/** What dictation needs from a microphone. On macOS, Windows and Linux the `voice-microphone` helper
+ * captures it (`AVAudioEngine`, WASAPI, PulseAudio); on any other platform the audio window
+ * (`getUserMedia` into an AudioWorklet), each at `config.recordingSampleRate` mono; tests substitute one that records nothing. The microphone is on only between `start` and `stop` (released after every dictation). */
 export interface AudioCapture {
   /** Does the slow, microphone-off part of starting ahead of the first dictation. */
   prepare(): void;

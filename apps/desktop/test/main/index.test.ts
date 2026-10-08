@@ -548,20 +548,29 @@ describe("main process wiring", () => {
     expect(helper?.options).not.toHaveProperty("restartExitCode");
   });
 
-  /** Off macOS there is no `voice-microphone`: the microphone belongs to its platform helper. */
-  test.each(["win32", "linux"] as const)("on %s there is no voice-microphone", async (platform) => {
+  /** Every platform runs `voice-microphone`, a helper of its own (`voice-microphone.exe` on
+   * Windows), started afresh at once when it exits with its restart code; a restart prepares the
+   * microphone again, and a restart of the platform helper does not. */
+  test.each(["win32", "linux"] as const)("on %s the microphone is voice-microphone's, prepared again when it restarts", async (platform) => {
     await launch(platform);
-    expect(app.helpers.has("voice-microphone")).toBe(false);
+    const microphone = app.helpers.get("voice-microphone");
+    expect(microphone?.options).toMatchObject({ restartExitCode: config.microphoneHelperRestartExitCode, executable: expect.stringMatching(platform === "win32" ? /voice-microphone\.exe$/ : /voice-microphone$/) });
+    const before = app.prewarms;
+    microphone?.onStart?.();
+    expect(app.prewarms).toBe(before + 1);
+    app.helpers.get(platform === "win32" ? "voice-windows" : "voice-linux")?.onStart?.();
+    expect(app.prewarms).toBe(before + 1);
   });
 
-  /** On macOS a dictation's microphone runs in `voice-microphone`, on Windows in `voice-windows`:
-   * the capture's start is its `microphoneStart`, for the dictation's session at the recording
-   * rate, and its stop the matching `microphoneStop`; the helper's answer and its chunk events
-   * reach the dictation, and the helper exiting under it is the dictation's microphone lost. On
-   * macOS `voice-macos` is never asked for the microphone, nor its exit taken for a lost one. */
-  test.each(["darwin", "win32", "linux"] as const)("on %s capture uses its native helper", async (platform) => {
+  /** A dictation's microphone runs in `voice-microphone` on every platform: the capture's start is
+   * its `microphoneStart`, for the dictation's session at the recording rate, and its stop the
+   * matching `microphoneStop`; the helper's answer and its chunk events reach the dictation, and the
+   * helper exiting under it is the dictation's microphone lost. The platform helper is never asked
+   * for the microphone, nor its exit taken for a lost one. */
+  test.each(["darwin", "win32", "linux"] as const)("on %s capture uses voice-microphone", async (platform) => {
     await launch(platform);
-    const helper = app.helpers.get(platform === "win32" ? "voice-windows" : platform === "linux" ? "voice-linux" : "voice-microphone");
+    const helper = app.helpers.get("voice-microphone");
+    const platformHelper = app.helpers.get(platform === "win32" ? "voice-windows" : platform === "linux" ? "voice-linux" : "voice-macos");
     const capture = app.capture;
     expect(capture).not.toBeNull();
     const completions: (Error | null)[] = [];
@@ -581,7 +590,7 @@ describe("main process wiring", () => {
     expect(app.audioCommands).toEqual([]);
     expect(completions).toEqual([null]);
     expect(chunks).toEqual([samples]);
-    if (platform === "darwin") app.helpers.get("voice-macos")?.onExit?.();
+    platformHelper?.onExit?.();
     expect(losses).toBe(0);
     helper?.onExit?.();
     expect(losses).toBe(1);
@@ -593,7 +602,7 @@ describe("main process wiring", () => {
       { method: "microphoneStart", params: { session: 1, sampleRate: config.recordingSampleRate } },
       { method: "microphoneStop", params: { session: 1 } },
     ]);
-    if (platform === "darwin") expect(app.helpers.get("voice-macos")?.requests.filter((request) => request.method.startsWith("microphone"))).toEqual([]);
+    expect(platformHelper?.requests.filter((request) => request.method.startsWith("microphone"))).toEqual([]);
   });
 
   /** A dictation's paste reaches `voice-macos` with the dictation's session and signal, so a paste waiting out a
@@ -651,8 +660,6 @@ describe("main process wiring", () => {
   test("Windows paste keeps its original window and uses the cancellable Windows helper", async () => {
     await launch("win32");
     const helper = app.helpers.get("voice-windows");
-    helper?.onStart?.();
-    expect(app.prewarms).toBe(2);
     await app.paste?.("Synthetic text", signal, 101);
     expect(helper?.requests.find((request) => request.method === "insert")).toMatchObject({
       params: { text: "Synthetic text", window: 101, deadline: expect.any(Number) }, signal,

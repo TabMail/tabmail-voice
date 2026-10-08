@@ -78,13 +78,10 @@ try {
   const language = (await request("keyboardLanguage")).result;
   assert.ok(language.code === null || typeof language.code === "string");
   assert.equal(typeof (await request("fullUserName")).result.name, "string");
-  for (const params of [{}, { session: 0 }, { session: -1 }, { session: "1" }]) {
-    assert.ok((await request("microphoneStop", params)).error);
+  // The microphone is voice-microphone.exe's, a process of its own.
+  for (const [method, params] of [["microphonePrepare", {}], ["microphoneStart", { session: 1, sampleRate: 16000 }], ["microphoneStop", { session: 1 }]]) {
+    assert.ok((await request(method, params)).error, `voice-windows does no ${method}`);
   }
-  for (const sampleRate of [0, -1, 192001, "16000"]) {
-    assert.ok((await request("microphoneStart", { session: 1, sampleRate })).error);
-  }
-  assert.deepEqual((await request("microphoneStop", { session: 1 })).result, {});
   assert.ok((await request("unknown")).error);
   assert.ok((await request("insert", { text: "synthetic test" })).error, "unsupported paste fails closed");
   assert.equal(typeof (await request("fullUserName")).result.name, "string", "refusal leaves helper usable");

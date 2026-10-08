@@ -765,8 +765,14 @@ or a closing mark, before a word after a closing one), not a space after any cha
 from the viewport's text after it was redacted, so nothing is put into text the redactor sees. Without
 an exact caret (a caret iTerm2 draws on another line than its offset's, VTE's at a text's ends), or
 while text is selected (a terminal's selection is not at its cursor), the window stays empty and no
-space is added, as before. The cut is by character column: a row holding a double-width character has
-its borders a column early.
+space is added, as before. The cut was by character column at first, so a row holding a double-width
+character had its borders a column early and ended the box. Owner, 2026-10-07: fix that. The cut is now
+by the column on screen, each character (a grapheme) as wide as Unicode says (`unicode-width`: two for
+CJK and emoji), and the cursor's column is taken from the same graphemes, so a ligature Unicode
+gives one width for two graphemes (Arabic lam-alef), which a terminal draws in two columns, moves
+neither. A terminal set to draw a character otherwise (iTerm2's ambiguous-width letters, some emoji
+sequences) still has that row's borders a column off: a row whose borders are not at the cursor's
+border columns ends the box.
 
 ## ADR-DESK-009: The app identifies itself to the backend as `macos`
 
@@ -1997,6 +2003,17 @@ in the Electron app (ADR-DESK-032).
   element such as `<nav-menu>` stays page text, and a closing tag may have spaces before its `>`.
 - Offered on macOS only, with the other connectors.
 
+**Amendment 2026-10-07 (owner): `web_read` no longer asks robots.txt.** robots.txt is written for
+crawlers, clients that walk a site on their own; `web_read` reads one page because the user asked,
+as a browser does, and browsers don't ask it. The group match above was also wrong (only `*` or the
+whole `webUserAgent`, not RFC 9309's product token, issue #45; and a later group for another crawler
+cleared the rules gathered from `*`), and rather than fix it the check is gone: `robotsAllow`,
+`isPathAllowed` and `webReadRobotsTimeout` are deleted, and a read is the page alone. TabMail stays
+named in `webUserAgent`, so a site can see who asks and block it, and the backend's URL guard is
+unchanged. The Thunderbird add-on (its ADR-026) and the iOS app drop the check in the same change,
+and the backend's `web_read` description no longer says the tool respects robots.txt. This replaces
+the robots.txt steps in the decision and the group-match consequence above.
+
 ## ADR-DESK-031: While fn is the hotkey, the Globe key's own action is off
 
 **Context:** Owner, 2026-09-27: with fn as the hotkey, a press or a double tap also switched the
@@ -2290,6 +2307,51 @@ the first engine of a fresh process always worked. So a process runs one engine.
   working.
 - Not closed: what the audio system itself takes to start a Bluetooth headset's microphone; and a
   prepare that now and then takes seconds with no device change seen (issue #101).
+
+### Amendment 2026-10-07: `voice-microphone` on Windows and Linux too
+
+Owner, 2026-10-07: *"all audio helpers should be separate in the same way"*, as the screen reader is,
+so that nothing the platform helper waits on can block a recording. Until now the Windows microphone
+was in `voice-windows`, which ends itself (`ExitProcess`) when one UI Automation request outlives
+`accessibilityWatchdogMs` (2.5 s): a provider that stopped answering took the recording with it
+(seen as a lost caret lookup on a freshly activated Chromium window in the Windows VM's cold test),
+and on Linux the microphone shared `voice-linux`'s process with AT-SPI calls that can wait on a
+provider. Per-call UI Automation timeouts were tried first (TabMail/tabmail-voice#168) and only
+narrowed the window: a provider slow on each of a request's later calls still reached the watchdog.
+
+- Every platform runs `voice-microphone` (`voice-microphone.exe` on Windows), speaking the same
+  wire (`microphonePrepare`, `microphoneStart {session, sampleRate}`, `microphoneStop {session}`,
+  the `microphoneChunk` event). `voice-windows` and `voice-linux` no longer answer the microphone.
+  The app wires it the same way everywhere (`HelperOptions.restartExitCode`, its `onStart`
+  preparing, its `onExit` ending a running dictation as lost).
+- It captures once per process, as on macOS: it ends itself with `VoiceMicrophoneRestartExitCode`
+  (75, defined once in the shared core's header, the app's `microphoneHelperRestartExitCode`) once
+  its session stops, its start fails, a newer start comes before the stop, or the running capture
+  fails (a Windows endpoint that goes away, a PulseAudio stream that fails); its replies and chunks
+  already sent are written first. That last replaces the `microphoneLost` event, which no helper
+  sends now. Windows and Linux open the default input afresh at each start and prepare nothing
+  ahead (prepare only checks there is an input), so they need no listener for a changed input: the
+  next dictation's fresh process opens the new default.
+- Which session runs, and when the process ends, is decided once, in the shared Rust core
+  (`native/shared/rust/src/microphone.rs`, a C value state like the gesture's; ADR-DESK-054), with
+  its cases in `native/shared/microphone/session-cases.json`, run by Rust, Swift
+  (`MicrophoneSessions`, now a thin wrapper) and C++ (`sessions.h`, Windows and Linux). The rules
+  are macOS's, unchanged. What a start or stop may ask for is decided there too (`request.rs`,
+  `microphoneStart`/`microphoneStop`, cases in `native/shared/context/request-cases.json`): a session
+  that is a whole number from 1 and a rate in whole hertz from 8,000 to 96,000, so the three helpers
+  refuse the same requests (they had three hand-written checks with three answers; macOS accepted
+  any session and any positive rate).
+- On Linux PulseAudio now runs on the helper's own GLib main loop with its requests (no AT-SPI in the
+  process), so the worker thread and context that kept AT-SPI from starving capture are gone.
+- `native/shared/microphone/protocol.mjs` checks the Windows and Linux helpers' wire against the built
+  helper (refusals, one capture per process, the restart exit, EOF); on Linux with a synthetic tone
+  through a private null sink, on Windows without needing an input. A failed start and a lost capture
+  are checked too: on Linux with no sound server, and with the helper's connection to it cut through
+  a relay; on Windows by stopping Windows Audio, in an elevated run in the test VM
+  (`tests/microphone-loss.mjs`), since stopping a service is no CTest step.
+- Not done here (issue #98): preparing a Windows capture client ahead of the key press and measuring
+  first-audio time on built-in and Bluetooth inputs. This amendment supersedes the line above that
+  Windows keeps its microphone in `voice-windows`.
 
 ### Amendment 2026-10-03: one native gesture algorithm
 
@@ -3702,6 +3764,23 @@ cleanup (backend ADR-027), while the user goes on; the texts are joined in order
   next chunk at least its overlap.
 - The model's real limit is unmeasured past the 120 s cap: `chunkMaxDuration` stays under it.
 - iOS does the same (`tabmail-ios` ADR-IOS-087), from the same rules and numbers.
+
+### Amendment 2026-10-07: no cuts at pauses; a chunk is cut only at `chunkMaxDuration`
+
+Owner, 2026-10-07: cutting at pauses barely sped up a long dictation's text, and it made the
+dictation worse, since people pause between words and sentences and a chunk's cleanup sees only its
+own half of the sentence around the cut. `chunkCutsAtPauses` (`config.ts`) is now false: every cut is
+the forced one, at the quietest `chunkForcedCutWindow` near `chunkMaxDuration` (105 s), with the next
+chunk overlapping it by `chunkOverlapSpeech`, joined on their shared words as above. A dictation
+under 105 s is one upload. The pause rule's code, numbers and tests are kept, switched off, for a
+later look (owner: "don't remove code because we might revisit this later"); its tests turn it on
+through a config mock. Retries, the join, the polish and what is pasted are unchanged. iOS: the same
+switch (ADR-IOS-087 amendment 2026-10-07).
+
+- Tests: `chunker.test.ts` › "Chunker as shipped" (a dictation with pauses after 10 s of speech is
+  not cut; a long one is cut only near the maximum length, each chunk overlapping the one before;
+  random dictations covered), red with the switch on; the pause rule's own tests, and the
+  controller's and recorder's long-dictation tests, run with it on.
 
 ## ADR-DESK-050: Windows and Linux update themselves too, from signed packages proven by the app
 

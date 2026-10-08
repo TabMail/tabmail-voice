@@ -71,9 +71,8 @@ export class SessionAudioCapture implements AudioCapture {
     this.send({ type: "stop", session: this.session });
   }
 
-  /** What ran the microphone is gone (the helper exited), or it stopped by itself (a `lost`
-   * report). A session that had started is told once; one still starting fails through its start
-   * instead. */
+  /** What ran the microphone is gone (the helper exited). A session that had started is told
+   * once; one still starting fails through its start instead. */
   lost(): void {
     const onLost = this.onLost;
     if (this.completion !== null || onLost === null) return;
@@ -94,8 +93,6 @@ export class SessionAudioCapture implements AudioCapture {
       case "chunk":
         this.onChunk?.(report.samples);
         return;
-      case "lost":
-        return this.completion !== null ? this.startFailed(new MicrophoneError("lost")) : this.lost();
     }
   }
 

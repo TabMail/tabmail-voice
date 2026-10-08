@@ -7,22 +7,17 @@
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 #include <wincrypt.h>
-#include <wrl/client.h>
 #include <cstring>
 #include <stdexcept>
+#include <cstdint>
+#include <functional>
 #include <future>
 #include <thread>
 #include <vector>
+#include "com.h"
 #include "output.h"
 
 namespace voice {
-using Microsoft::WRL::ComPtr;
-inline void require(HRESULT result) { if (FAILED(result)) throw std::runtime_error("native operation failed"); }
-class COM {
-public:
-    COM() { require(CoInitializeEx(nullptr, COINIT_MULTITHREADED)); }
-    ~COM() { CoUninitialize(); }
-};
 class Handle {
 public:
     HANDLE value;
@@ -64,12 +59,14 @@ HRESULT initializeCapture(AudioClient& client, unsigned rate) {
         0, 0, &format, nullptr);
 }
 
-// WASAPI's shared engine converts to the app's float mono recording rate. Each start owns
-// a fresh audio client; prepare only checks endpoint availability, never starts capture.
-// Control stays on the stdin thread, separate from potentially blocking UI Automation calls.
+// WASAPI's shared engine converts to the app's float mono recording rate. It runs in
+// voice-microphone.exe, a process of its own that captures once (ADR-DESK-032), so no UI Automation
+// call can hold it up or end it. Each start opens the default endpoint afresh; prepare only checks
+// that there is one and opens nothing.
 class Microphone {
 public:
-    explicit Microphone(const Output& output) : output(output) {}
+    // `lost` is told when the running capture fails; the process then ends.
+    Microphone(const Output& output, std::function<void()> lost) : output(output), lost(std::move(lost)) {}
     void prepare() {
         COM com;
         ComPtr<IMMDeviceEnumerator> enumerator;
@@ -77,15 +74,11 @@ public:
         ComPtr<IMMDevice> device;
         require(enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &device));
     }
-    void start(int nextSession, unsigned rate) {
-        if (nextSession <= newestSession) throw std::runtime_error("stale microphone session");
-        stopCurrent();
-        newestSession = nextSession;
-        session = nextSession;
-        ResetEvent(stopEvent.value);
+    // Returns once the microphone runs for `session`; throws when it can't start.
+    void start(int64_t session, unsigned rate) {
         auto started = std::make_shared<std::promise<void>>();
         auto ready = started->get_future();
-        worker = std::thread([this, nextSession, rate, started] {
+        worker = std::thread([this, session, rate, started] {
             bool running = false;
             try {
                 COM com;
@@ -122,33 +115,30 @@ public:
                         // Release the driver buffer before encoding or sending anything.
                         require(capture->ReleaseBuffer(frames));
                         if (WaitForSingleObject(stopEvent.value, 0) == WAIT_OBJECT_0) break;
-                        output.send({{"event", "microphoneChunk"}, {"session", nextSession}, {"samples", base64(samples)}});
+                        output.send({{"event", "microphoneChunk"}, {"session", session}, {"samples", base64(samples)}});
                         require(capture->GetNextPacketSize(&available));
                     }
                 }
                 require(client->Stop());
             } catch (...) {
-                if (running) output.send({{"event", "microphoneLost"}, {"session", nextSession}});
+                // An endpoint that goes away mid-capture fails the capture call.
+                if (running) lost();
                 else started->set_exception(std::current_exception());
             }
             // All COM references leave scope here, closing the microphone on success or failure.
         });
         try { ready.get(); }
-        catch (...) { stopCurrent(); throw; }
+        catch (...) { stop(); throw; }
     }
-    void stop(int stoppedSession) {
-        if (stoppedSession == session) stopCurrent();
-    }
-    void stopCurrent() {
+    // Stops the capture, if it runs, and closes the microphone.
+    void stop() {
         SetEvent(stopEvent.value);
         if (worker.joinable()) worker.join();
-        session = 0;
     }
 private:
     const Output& output;
+    std::function<void()> lost;
     Handle stopEvent{true};
     std::thread worker;
-    int session = 0;
-    int newestSession = 0;
 };
 }

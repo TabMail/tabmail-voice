@@ -165,11 +165,9 @@ function launch(): void {
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
   const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
   const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), process.env.APPIMAGE ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
-  // On macOS the microphone has a helper to itself, started afresh after each dictation and when
-  // the input changes (ADR-DESK-032); on Windows it is in `voice-windows`.
-  const microphoneHelper = process.platform === "darwin"
-    ? new HelperClient({ name: "voice-microphone", executable: join(helpers, "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode })
-    : null;
+  // The microphone has a helper to itself on every platform, so nothing another helper waits on
+  // can hold up or end a recording; it is started afresh after each dictation (ADR-DESK-032).
+  const microphoneHelper = new HelperClient({ name: "voice-microphone", executable: join(helpers, process.platform === "win32" ? "voice-microphone.exe" : "voice-microphone"), restartExitCode: config.microphoneHelperRestartExitCode });
 
   let wizard: WelcomeWizard | null = null;
   let stopObservingWizard: (() => void) | null = null;
@@ -193,10 +191,12 @@ function launch(): void {
   // Native capture preserve session ownership without opening a renderer device.
   const receiveAudio = (report: AudioReport): void => capture.receive(report);
   const capture: SessionAudioCapture = new SessionAudioCapture(
-    microphoneHelper ? new NativeMicrophone(microphoneHelper, "voice-microphone").microphone(receiveAudio) : (system instanceof WindowsSystem || system instanceof LinuxSystem) ? system.microphone(receiveAudio) : sendAudio,
+    nativeAudio ? new NativeMicrophone(microphoneHelper, "voice-microphone").microphone(receiveAudio) : sendAudio,
   );
   // A helper that exits takes a running microphone with it.
-  if (nativeAudio) (microphoneHelper ?? nativeHelper).onExit = () => { capture.lost(); linuxPermissions?.reset(); };
+  if (nativeAudio) microphoneHelper.onExit = () => capture.lost();
+  // `voice-linux` holds the insertion permission's portal session.
+  nativeHelper.onExit = () => linuxPermissions?.reset();
 
   // `email_compose`'s draft (ADR-DESK-027), opened with the app macOS opens `mailto:` links with,
   // which the result names.
@@ -672,13 +672,12 @@ function launch(): void {
   hotkeyHelper.on("action", (message) => {
     if (isHotkeyAction(message.action)) controller.handle(message.action);
   });
-  // Prepare capture on launch and after each restart of the helper it runs in.
   nativeHelper.onStart = () => {
     linuxPermissions?.restore();
     if (process.platform === "darwin") startActivator();
-    if (!microphoneHelper) controller.prewarm();
   };
-  if (microphoneHelper) microphoneHelper.onStart = () => controller.prewarm();
+  // Prepare capture on launch and after each restart of the helper it runs in.
+  microphoneHelper.onStart = () => controller.prewarm();
 
   // The hotkey follows Settings, and so does the Globe key's own action: off while fn is the
   // hotkey, the user's choice back at another key and when the app quits (ADR-DESK-031).
@@ -937,7 +936,7 @@ function launch(): void {
         hotkeyHelper.stop();
         nativeHelper.stop();
         screenReaderHelper.stop();
-        microphoneHelper?.stop();
+        microphoneHelper.stop();
         accessibilityActivator?.stop();
         return logFile.flush();
       })
@@ -948,7 +947,7 @@ function launch(): void {
   nativeHelper.start();
   screenReaderHelper.start();
   void gnomeIntegration?.refresh();
-  microphoneHelper?.start();
+  microphoneHelper.start();
   accessibilityActivator?.start();
   readSuggestedName();
   void globeKey?.hotkeyIs(settings.hotkey);

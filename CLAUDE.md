@@ -44,8 +44,9 @@ The root `CLAUDE.md` rules apply in full. TabMail Voice additions:
   **every color in `src/core/palette.ts`** (ADR-DESK-048).
 - **Release the microphone after every dictation.** `MicrophoneCapture` in `voice-microphone` is
   per-session; never keep the engine running between holds (iOS memory 086 is the cautionary
-  tale). That helper runs one engine: it ends itself after each dictation, a failed start or an
-  input change, and the app starts it afresh (ADR-DESK-032). Never run a second engine in the
+  tale). That helper, its own process on every platform, runs one capture: it ends itself after
+  each dictation, a failed start or an input change, and the app starts it afresh (ADR-DESK-032;
+  which session runs is the shared core's decision). Never run a second engine in the
   process or release one there.
 - **Names follow `PROJECT_STRUCTURE.md` › Naming** (files, helpers, targets, wire methods,
   config): match it, and add to it when a new kind of thing gets a name.

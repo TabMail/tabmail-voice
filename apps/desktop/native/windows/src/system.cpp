@@ -8,7 +8,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include "microphone.h"
 #include "accessibility.h"
 #include "text.h"
 #include "shell_bounds.h"
@@ -26,15 +25,7 @@
 using JSON = nlohmann::json;
 namespace {
 
-int session(const JSON& params) {
-    if (!params.is_object() || !params.contains("session") || !params["session"].is_number_integer()) {
-        throw std::runtime_error("invalid microphone session");
-    }
-    const int value = params["session"].get<int>();
-    if (value <= 0) throw std::runtime_error("invalid microphone session");
-    return value;
-}
-JSON handle(const std::string& method, const JSON& params, voice::Microphone& microphone) {
+JSON handle(const std::string& method, const JSON& params) {
     if (method == "redactText") return voice::core::request(params, voice_core_redact_text_json);
     if (method == "appInfo") return voice::privacy::appInfo(params);
     if (method == "shellExclusionBounds") return voice::shellExclusionBounds();
@@ -63,29 +54,11 @@ JSON handle(const std::string& method, const JSON& params, voice::Microphone& mi
         // A local development account often has no separate full/display name.
         return {{"name", ""}};
     }
-    if (method == "microphonePrepare") {
-        microphone.prepare();
-        return JSON::object();
-    }
-    if (method == "microphoneStart") {
-        const int nextSession = session(params);
-        if (!params.contains("sampleRate") || !params["sampleRate"].is_number_integer()) {
-            throw std::runtime_error("invalid recording rate");
-        }
-        const int rate = params["sampleRate"].get<int>();
-        if (rate < 8000 || rate > 192000) throw std::runtime_error("invalid recording rate");
-        microphone.start(nextSession, static_cast<unsigned>(rate));
-        return JSON::object();
-    }
-    if (method == "microphoneStop") {
-        microphone.stop(session(params));
-        return JSON::object();
-    }
     throw std::runtime_error("unsupported native operation");
 }
-// UIA providers belong to other applications and can block. Keep them off the microphone
-// control thread; a bounded queue and process deadline prevent an unresponsive provider from
-// leaving the recording running forever or performing stale requests after an app timeout.
+// UIA providers belong to other applications and can block. Keep them off the request thread; a
+// bounded queue and process deadline prevent an unresponsive provider from holding the queue or
+// performing stale requests after an app timeout. The microphone is voice-microphone.exe's.
 class AccessibilityWorker {
 public:
     explicit AccessibilityWorker(const voice::Output& output) : output(output) {
@@ -220,7 +193,6 @@ int main(int argc, char** argv) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     voice::Output output;
     voice::ShellWatch shellWatch(output);
-    voice::Microphone microphone(output);
     AccessibilityWorker accessibility(output);
     std::string line;
     char byte;
@@ -245,13 +217,12 @@ int main(int argc, char** argv) {
         // The screen is read by voice-screen-reader.exe, a program of its own.
         if (input["method"] == "caretAnchor" || input["method"] == "insert" || input["method"] == "focusedFieldValue") { accessibility.request(std::move(input)); continue; }
         try {
-            output.send({{"id", id}, {"result", handle(input["method"].get<std::string>(), input.value("params", JSON::object()), microphone)}});
+            output.send({{"id", id}, {"result", handle(input["method"].get<std::string>(), input.value("params", JSON::object()))}});
         } catch (...) {
             // Never echo parameters, captured text, or native exception details into logs.
             output.send({{"id", id}, {"error", {{"message", "Windows native request failed"}}}});
         }
     }
-    microphone.stopCurrent();
     accessibility.finish();
     // Output owns a process-lifetime writer thread. EOF closes all native resources together.
     ExitProcess(0);
