@@ -400,6 +400,131 @@
       }
     },
     {
+      "name": "a key body right after a link whose box holds the space after it shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key",
+            "runs": [
+              [
+                "Key",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+            "frame": [
+              31,
+              0,
+              400,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key] [redacted]"
+      }
+    },
+    {
+      "name": "a key body after a link whose hidden text ends in a line break and a space shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key:",
+            "runs": [
+              [
+                "Key:",
+                true
+              ],
+              [
+                "\n ",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+            "frame": [
+              31,
+              0,
+              400,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key:] [redacted]"
+      }
+    },
+    {
+      "name": "pieces a tenth of the line's height apart still abut",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Ij",
+            "frame": [
+              0,
+              80,
+              20,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "kl",
+            "frame": [
+              22,
+              80,
+              20,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Ijkl"
+      }
+    },
+    {
       "name": "a link whose runs end hidden is not glued to a key after it",
       "request": {
         "blocks": [

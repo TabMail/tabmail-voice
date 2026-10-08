@@ -60,7 +60,7 @@
       }
     },
     {
-      "name": "a terminal's field: the box around its cursor, its pane's rows joined by the core's breaks (U+2029)",
+      "name": "a terminal's field: the box around its cursor, its pane's rows redacted as lines, then given with the core's breaks (U+2029) between them",
       "request": {
         "field": {
           "maxLength": 20000,
