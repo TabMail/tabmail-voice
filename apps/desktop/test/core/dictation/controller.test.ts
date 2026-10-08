@@ -1136,12 +1136,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(controller.phase).toEqual(failed(new TransportError("timeout").message));
     });
 
-    /** Every retry wait fits in the deadline with room for the tries, and no one request may outlast
-     * it. */
-    test("the retries and the request's own timeout fit in the dictation's deadline", () => {
+    /** Every retry wait fits in the deadline with room for the tries. */
+    test("the retries fit in the dictation's deadline", () => {
       const waits = config.transcriptionRetryDelays.reduce((sum, delay) => sum + delay, 0);
       expect(waits).toBeLessThan(config.transcriptionDeadline);
-      expect(config.transcriptionRequestTimeout).toBeLessThanOrEqual(config.transcriptionDeadline);
       expect(config.transcriptionDeadline).toBeLessThanOrEqual(10_000);
     });
 
@@ -3995,7 +3993,10 @@ describe("DictationController", { timeout: 20_000 }, () => {
               await sleep(config.minimumHoldDuration + 50);
               controller.handle("finish");
             }
+            const released = performance.now();
             expect(await eventually(() => controller.phase.kind === "running")).toBe(true);
+            // Given up at its deadline (300 ms from the release), not long after.
+            if (how === "not transcribed in time") expect(performance.now() - released).toBeLessThan(300 + 400);
 
             expect(controller.phase).toEqual(running(null));
             expect(capture.stops).toBeGreaterThan(stops);
@@ -5759,7 +5760,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
      * as `liveTransport`'s does. */
     class ChunkBackend {
       private readonly audio: string[] = [];
-      readonly sent: { chunk: number; attempt: number; signal: AbortSignal | undefined; authorization: string | undefined; body: Record<string, unknown> }[] = [];
+      readonly sent: { chunk: number; attempt: number; signal: AbortSignal | undefined; timeout: number; authorization: string | undefined; body: Record<string, unknown> }[] = [];
       /** Requests neither answered nor canceled yet. */
       inFlight = 0;
 
@@ -5772,7 +5773,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
         let chunk = this.audio.indexOf(audio);
         if (chunk === -1) chunk = this.audio.push(audio) - 1;
         const attempt = this.attempts(chunk);
-        this.sent.push({ chunk, attempt, signal: request.signal, authorization: request.headers.Authorization, body });
+        this.sent.push({ chunk, attempt, signal: request.signal, timeout: request.timeout, authorization: request.headers.Authorization, body });
         this.inFlight += 1;
         const reply = await new Promise<ChunkReply>((resolve, reject) => {
           request.signal?.addEventListener("abort", () => reject(new TransportError("canceled")), { once: true });
@@ -6212,6 +6213,30 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(backend.attempts(1)).toBe(3);
     });
 
+    /** The deadline counts from the release: a chunk sent while the user goes on may take longer than
+     * it, its request's own timeout included, and is kept (nobody waits for it yet, ADR-DESK-049). */
+    test("a chunk answering after the deadline's length while the user still dictates is kept", async () => {
+      const firstAnswers = deferred<void>();
+      const backend = new ChunkBackend(async (chunk) => {
+        if (chunk === 0) await firstAnswers.promise;
+        return part(chunk);
+      });
+      const { controller, capture, pastes } = makeLong(backend);
+      controller.transcriptionDeadline = 200;
+
+      await startHearing(controller, capture, pausedSpeech(19, 12, 0.5));
+      expect(await eventually(() => backend.chunks === 1)).toBe(true);
+      await sleep(400);
+      firstAnswers.resolve();
+      capture.feed(pausedSpeech(20, 4));
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+      expect(controller.phase).toEqual(idle);
+      expect(backend.sent[0]?.timeout).toBeGreaterThan(config.transcriptionDeadline);
+    });
+
     /** Owner, 2026-10-08: "nobody waits for dictation more than 10" seconds. A chunk not in by the
      * deadline gives up then: the chunks before it are pasted, the pill says the end is missing, and
      * its request is called off. */
@@ -6249,6 +6274,23 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(performance.now() - released).toBeLessThan(400 + 300);
       expect(pastes).toEqual(["Part 0."]);
       expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+    });
+
+    /** A long dictation whose last chunk ran out the deadline is pasted as far as it came, and not
+     * polished: there is no time left for it, so its text is not sent again. */
+    test("chunks in, the last out of time: no polish is sent", async () => {
+      const backend = new ChunkBackend((chunk) => (chunk === 2 ? never() : part(chunk)));
+      const { controller, capture, pastes } = makeLong(backend);
+      controller.transcriptionDeadline = 400;
+
+      await startHearing(controller, capture, pausedSpeech(21, 12, 12, 4));
+      expect(await eventually(() => backend.chunks === 2)).toBe(true);
+      controller.handle("finish");
+
+      expect(await eventually(() => settled(controller))).toBe(true);
+      expect(pastes).toEqual(["Part 0. Part 1."]);
+      expect(controller.phase).toEqual(failed(partlyTranscribedMessage));
+      expect(completions.requests).toHaveLength(0);
     });
 
     /** The polish gets only what is left of the deadline, never its own whole `chunkPolishTimeout`

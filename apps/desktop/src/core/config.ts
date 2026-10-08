@@ -198,9 +198,11 @@ export const clientType = "macos";
  * a long dictation's polish (owner, 2026-10-08: "nobody waits for dictation more than 10" seconds;
  * ADR-DESK-039). The backend gives the speech model 8 s and the cleanup 1.5 s inside it. */
 export const transcriptionDeadline = 10_000;
-/** Longest one transcription request may stay silent, the backend's cleanup included: no longer than
- * the dictation's whole wait (a chunk sent while the user still dictates is not under that yet). */
-export const transcriptionRequestTimeout = transcriptionDeadline;
+/** Longest one transcription request may stay silent, the backend's cleanup included (the backend gives
+ * the cleanup 1.5 s, owner 2026-09-28; backend ADR-027). Longer than `transcriptionDeadline` on
+ * purpose: after the release that deadline ends the wait; before it, a long dictation's chunk is
+ * uploaded and transcribed while the user goes on, and is not given up on just for taking longer. */
+export const transcriptionRequestTimeout = 45_000;
 /** A transcription that failed on the server's side (a 5xx: the speech model behind the backend was
  * rate limited or failed) or lost its connection is tried again after each of these waits, in
  * milliseconds, while `transcriptionDeadline` allows: owner, 2026-09-29, rather than make the user
