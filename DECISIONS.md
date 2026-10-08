@@ -577,11 +577,15 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   gives such a space as a hidden run at the block's edge, which counts for the join and the redactor
   and is never shown, so the read is "Read [more] now" and a key that is a link's text, or follows
   one, is redacted. A block whose runs start or end hidden (a field's source inside a link) is
-  spaced there as well: text the screen does not show is never glued to the key beside it. A match
-  whose replaced text starts at blanks the read does not show (the space between two pieces, a
-  link's hidden edge space) leaves its `[redacted]` there, and it moves to the next part the read
-  shows, so the read still says where text was taken out (a key body after `Key` held in a link
-  reads "[Key] [redacted]"). A private key's body with no header beside a label on its first line (`Key:`
+  spaced there as well: text the screen does not show is never glued to the key beside it. The read is
+  redacted as the one text the screen shows: the pieces of a line joined as the render joins them,
+  and a line break between lines, each joiner and break a part the read does not show. A block that
+  shows nothing but blanks is dropped first, so the redaction and the render see the same neighbours
+  (two abutting pieces with an empty field between them in reading order are matched as joined). A
+  match puts its `[redacted]` where its replaced text starts; when that is a part the read does not
+  show (a joiner, a line break, a link's hidden run, a field's text around what it shows), the next
+  shown part the match changed takes it instead, once, so the read says where shown text was taken
+  out and never shows hidden text (a key body after `Key` held in a link reads "[Key] [redacted]"). A private key's body with no header beside a label on its first line (`Key:`
   beside a block of base64) is one line with the label now, so its first base64 line follows a space:
   `private-key-lines`, and `private-key-end` before a full line of base64, start a body after a
   space or a tab as well as at a line, which also redacts one plain piece holding the same text.

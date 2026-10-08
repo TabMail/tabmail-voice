@@ -400,6 +400,396 @@
       }
     },
     {
+      "name": "a key body after a line ending in a link's hidden line break shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key:",
+            "runs": [
+              [
+                "Key:",
+                true
+              ],
+              [
+                "\n",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==\n-----END OPENSSH PRIVATE KEY-----",
+            "frame": [
+              0,
+              30,
+              400,
+              80
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key:]\n[redacted]"
+      }
+    },
+    {
+      "name": "a key body after a field whose hidden text after it ends its line shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "field",
+            "text": "Key:",
+            "source": [
+              "",
+              "Key:",
+              "\n"
+            ],
+            "frame": [
+              0,
+              0,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==\n-----END OPENSSH PRIVATE KEY-----",
+            "frame": [
+              0,
+              30,
+              400,
+              80
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "> Key:\n[redacted]"
+      }
+    },
+    {
+      "name": "a key body after the caret's line, its text after the caret ending in a line break, shows where it was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              0,
+              0,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6==\n-----END OPENSSH PRIVATE KEY-----",
+            "frame": [
+              0,
+              30,
+              400,
+              80
+            ]
+          }
+        ],
+        "caret": [
+          "notes ",
+          "",
+          "more\n"
+        ]
+      },
+      "expected": {
+        "rendered": "\u00bb notes \u2038more\n\u00bb \n[redacted]"
+      }
+    },
+    {
+      "name": "a key that starts in a field's hidden text shows where its shown rest was redacted, and never the hidden text",
+      "request": {
+        "blocks": [
+          {
+            "kind": "field",
+            "text": "xture1234567890abcd more words",
+            "source": [
+              "prefix sk-ReviewFi",
+              "xture1234567890abcd more words",
+              ""
+            ],
+            "frame": [
+              0,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "> [redacted] more words"
+      }
+    },
+    {
+      "name": "a key that starts in a link's hidden run shows where its shown rest was redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "xture1234567890abcd now",
+            "runs": [
+              [
+                "sk-ReviewFi",
+                false
+              ],
+              [
+                "xture1234567890abcd now",
+                true
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[[redacted] now]"
+      }
+    },
+    {
+      "name": "two pieces of one line with a blank field between them in reading order are redacted as joined",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "sk-ReviewFix",
+            "frame": [
+              0,
+              0,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "field",
+            "text": "\n",
+            "source": [
+              "",
+              "\n",
+              ""
+            ],
+            "frame": [
+              0,
+              100,
+              100,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "ture1234567890abcd",
+            "frame": [
+              100,
+              0,
+              150,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[redacted]"
+      }
+    },
+    {
+      "name": "a moved marker goes before what the match left of the part",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "Key",
+            "runs": [
+              [
+                "Key",
+                true
+              ],
+              [
+                " ",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              30,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD thanks",
+            "frame": [
+              31,
+              0,
+              400,
+              40
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[Key] [redacted] thanks"
+      }
+    },
+    {
+      "name": "a match of hidden text alone marks nothing the read shows",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "notes:",
+            "runs": [
+              [
+                "notes:",
+                true
+              ],
+              [
+                "\n ",
+                false
+              ],
+              [
+                "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "after",
+            "frame": [
+              51,
+              0,
+              60,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[notes:] after"
+      }
+    },
+    {
+      "name": "a blank piece is not admitted",
+      "request": {
+        "admit": "   ",
+        "used": 0
+      },
+      "expected": {
+        "text": "",
+        "used": 0,
+        "budgetFull": false
+      }
+    },
+    {
+      "name": "a match of hidden text, then a key at the start of the next piece, marks the key once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "notes:",
+            "runs": [
+              [
+                "notes:",
+                true
+              ],
+              [
+                "\n ",
+                false
+              ],
+              [
+                "QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\nQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD",
+                false
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              50,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "sk-ReviewLink1234567890abcd after",
+            "frame": [
+              51,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[notes:] [redacted] after"
+      }
+    },
+    {
       "name": "a key body right after a link whose box holds the space after it shows where it was redacted",
       "request": {
         "blocks": [

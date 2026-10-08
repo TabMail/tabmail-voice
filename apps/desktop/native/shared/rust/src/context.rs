@@ -1038,17 +1038,20 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
         {
             return Err(1);
         }
+        // A block that shows nothing but blanks is dropped before the redaction, so it and the
+        // render see the same neighbours: two pieces it stood between are matched as joined.
+        blocks.retain(|b| b.kind == "caret" || !b.text.trim_matches(whitespace).is_empty());
         let caret_index = blocks
             .iter()
             .position(|b| b.kind == "caret")
             .unwrap_or(blocks.len());
-        // The pieces of one line on screen (text, a run of bold, a link) are redacted as that one
-        // line, joined as the screen shows them: a secret is matched whole however it is styled.
-        // Each block's parts are found again at `spans[index]`: its line, and where in it they start.
-        let mut lines: privacy::Lines = Vec::new();
-        // Whether the read shows each part: a hidden run, a field's text around what it shows and
-        // the joiner between two pieces are not shown.
-        let mut shown: Vec<Vec<bool>> = Vec::new();
+        // The read is redacted as the one text the screen shows: the pieces of one line (text, a
+        // run of bold, a link) joined as the render joins them, and a line break between lines. A
+        // secret is matched whole however it is styled. Each block's parts start at
+        // `spans[index]`; `shown` says whether the read shows each part (a hidden run, a field's
+        // text around what it shows, and every joiner and line break are not shown).
+        let mut line: Vec<String> = Vec::new();
+        let mut shown: Vec<bool> = Vec::new();
         let mut spans = Vec::with_capacity(blocks.len() + 1);
         for (index, block) in blocks.iter().enumerate() {
             let (parts, parts_shown) = if block.kind == "caret" {
@@ -1062,49 +1065,48 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
             } else {
                 (vec![block.text.clone()], vec![true])
             };
-            let count = lines.len();
-            match (lines.last_mut(), shown.last_mut()) {
-                (Some(line), Some(line_shown))
-                    if index > 0 && same_line(&blocks[index - 1], block) =>
-                {
-                    line.push(separator(&blocks[index - 1], block).to_owned());
-                    line_shown.push(false);
-                    spans.push((count - 1, line.len()));
-                    line.extend(parts);
-                    line_shown.extend(parts_shown);
-                }
-                _ => {
-                    spans.push((lines.len(), 0));
-                    lines.push(parts);
-                    shown.push(parts_shown);
-                }
+            if let Some(previous) = index.checked_sub(1).map(|previous| &blocks[previous]) {
+                line.push(if same_line(previous, block) {
+                    separator(previous, block).to_owned()
+                } else {
+                    LINE_BREAK.to_string()
+                });
+                shown.push(false);
             }
+            spans.push(line.len());
+            line.extend(parts);
+            shown.extend(parts_shown);
         }
         if caret_index == blocks.len() {
-            spans.push((lines.len(), 0));
-            lines.push(caret.clone());
-            shown.push(vec![true; caret.len()]);
+            if !line.is_empty() {
+                line.push(LINE_BREAK.to_string());
+                shown.push(false);
+            }
+            spans.push(line.len());
+            line.extend(caret.iter().cloned());
+            shown.extend(vec![true; caret.len()]);
         }
-        let mut redacted = privacy::redact(&lines).map_err(|_| 3u32)?;
-        // A match whose replaced text starts at blanks the read does not show (the joiner, a
-        // link's hidden edge space) puts its marker there: it moves to the next part shown, so the
-        // read still says where text was taken out. With no part shown after it, the match took
-        // only text the read does not show.
-        for ((line, original), line_shown) in redacted.iter_mut().zip(&lines).zip(&shown) {
-            let mut carried = String::new();
-            for ((part, original), &part_shown) in line.iter_mut().zip(original).zip(line_shown) {
-                if part_shown {
-                    if !carried.is_empty() {
-                        *part = std::mem::take(&mut carried) + part;
-                    }
-                } else if part != original && original.chars().all(whitespace) {
-                    carried.push_str(part.trim_matches(whitespace));
+        let mut redacted = privacy::redact(&vec![line.clone()]).map_err(|_| 3u32)?;
+        // A match puts its marker where its replaced text starts. When that is a part the read
+        // does not show, the next shown part the match changed takes the marker instead, once:
+        // the read says where shown text was taken out and never shows hidden text.
+        let markers = |text: &str| text.matches(privacy::PLACEHOLDER).count();
+        let mut carried = false;
+        for ((part, original), &part_shown) in redacted[0].iter_mut().zip(&line).zip(&shown) {
+            if part_shown && !original.is_empty() {
+                if std::mem::take(&mut carried)
+                    && part != original
+                    && !part.starts_with(privacy::PLACEHOLDER)
+                {
+                    part.insert_str(0, privacy::PLACEHOLDER);
                 }
+            } else if !part_shown && markers(part) > markers(original) {
+                carried = true;
             }
         }
         let parts_of = |index: usize, count: usize| {
-            let (line, start) = spans[index];
-            &redacted[line][start..start + count]
+            let start = spans[index];
+            &redacted[0][start..start + count]
         };
         let mut around = parts_of(caret_index, 3).to_vec();
         let changed = around[1] != caret[1];
