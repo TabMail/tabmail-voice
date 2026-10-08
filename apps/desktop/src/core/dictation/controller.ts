@@ -1027,16 +1027,23 @@ export class DictationController extends Observable {
       await this.deliver(generation, async () => {
         const parts: TranscribedPart[] = [];
         let lost: unknown = null;
+        let outOfTime = false;
         for (const chunk of chunks) {
           // A chunk's outcome never fails: only the deadline does.
-          const outcome = await this.withinDeadline(deadline, () => chunk.outcome).catch((error: unknown): ChunkOutcome => ({ error }));
+          const outcome = await this.withinDeadline(deadline, () => chunk.outcome).catch((error: unknown): ChunkOutcome => {
+            outOfTime = true;
+            return { error };
+          });
           if ("error" in outcome) {
             lost = outcome.error;
             break;
           }
           parts.push({ transcription: outcome.transcription, overlapped: chunk.overlapped });
         }
-        const { polish } = parts.length > 1 && upload ? await upload : { polish: null };
+        // Out of time, there is none for a polish either. Said here, not left to `polished`'s clock: a
+        // timer may fire up to a millisecond early (Node truncates its delay), leaving that clock a
+        // fraction of one, and the whole text would go out for a request called off at once.
+        const { polish } = parts.length > 1 && upload && !outOfTime ? await upload : { polish: null };
         return settled({ parts, lost, polish, deadline });
       });
     } finally {
@@ -1291,10 +1298,10 @@ export class DictationController extends Observable {
       const language = await this.languageRead;
       if (!isCurrent()) return;
       const client = this.deps.makeTranscriptionClient(settings.backendURL);
-      const transcription = await this.withinDeadline(deadline, (timeout) => {
-        const requestSignal = AbortSignal.any([signal, timeout]);
-        return this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, settings.dictionary, token, requestSignal)), isCurrent, requestSignal);
-      });
+      // Past the deadline the answer is abandoned below, which calls off its request and waits.
+      const transcription = await this.withinDeadline(deadline, () =>
+        this.transcribeRetrying(() => withFreshToken(account, userID, (token) => client.transcribe(recording.flac, language, settings.dictionary, token, signal)), isCurrent, signal),
+      );
       if (!isCurrent()) return;
       const transcript = trimWhitespace(transcription.text);
       log.content("Transcript (answer to the question)", transcript);
