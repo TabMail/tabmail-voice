@@ -21,6 +21,9 @@ struct ScreenContext: Sendable, Equatable {
         /// Private contiguous recognition source; removed by shared finalization.
         var source: [String]? = nil
         var runs: [SharedSemanticText.Run]? = nil
+        /// Where its text starts and ends on screen, when the app reports it: the boxes of its
+        /// first and last characters (`ScreenTree.ends`).
+        var ends: [CGRect]? = nil
     }
 
     /// A terminal's viewport source, as acquired: private until the shared core projects and redacts
@@ -70,25 +73,26 @@ struct ScreenContext: Sendable, Equatable {
 
     /// Adds visible text, skipping blanks and the repeats accessibility trees are full of (a link
     /// titled "Inbox" whose child text is also "Inbox").
-    mutating func append(_ kind: Block.Kind, _ text: String, frame: CGRect? = nil) {
+    mutating func append(_ kind: Block.Kind, _ text: String, frame: CGRect? = nil, ends: [CGRect]? = nil) {
         prepareTextBudget()
         guard !coreFailed, let used = sourceBytes else { return }
         do {
             let result = try SharedContext.admit(text, previous: blocks.last?.kind == .caret ? nil : blocks.last?.text, used: used)
             sourceBytes = result.used; textBudgetFull = result.budgetFull
             if let stop = result.stop { stoppedEarly = stop }
-            if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame)) }
+            if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame, ends: ends)) }
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
 
-    mutating func appendSemantic(_ kind: Block.Kind, _ source: SharedSemanticText.Projection, frame: CGRect? = nil) {
+    mutating func appendSemantic(_ kind: Block.Kind, _ source: SharedSemanticText.Projection, frame: CGRect? = nil,
+                                 ends: [CGRect]? = nil) {
         prepareTextBudget()
         guard !coreFailed, let used = sourceBytes else { return }
         do {
             let result = try SharedContext.admitSemantic(source, kind: kind, used: used, previous: blocks.last)
             sourceBytes = result.used; textBudgetFull = result.budgetFull
             if let stop = result.stop { stoppedEarly = stop }
-            if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame, runs: result.runs)) }
+            if !result.text.isEmpty { blocks.append(Block(kind: kind, text: result.text, frame: frame, runs: result.runs, ends: ends)) }
         } catch { coreFailed = true; stoppedEarly = "shared core refused" }
     }
 

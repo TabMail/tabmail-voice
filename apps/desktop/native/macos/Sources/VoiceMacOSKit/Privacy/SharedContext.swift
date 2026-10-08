@@ -10,9 +10,12 @@ enum SharedContext {
         var frame: [Double]?
         var source: [String]?
         var runs: [SharedSemanticText.Run]?
+        var ends: [[Double]]?
         init(_ block: ScreenContext.Block) {
             kind = block.kind.rawValue; text = block.text; source = block.source; runs = block.runs
-            frame = block.frame.map { [Double($0.minX), Double($0.minY), Double($0.width), Double($0.height)] }
+            let box = { (rect: CGRect) in [Double(rect.minX), Double(rect.minY), Double(rect.width), Double(rect.height)] }
+            frame = block.frame.map(box)
+            ends = block.ends.map { $0.map(box) }
         }
     }
     struct Admission: Decodable { var text: String; var used: Int; var budgetFull: Bool; var stop: String? }

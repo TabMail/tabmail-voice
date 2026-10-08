@@ -232,6 +232,30 @@ enum CaretLocator {
         return caret
     }
 
+    /// Where an element's text starts and ends on screen: the boxes of its first and last
+    /// characters (Accessibility coordinates). A piece that wraps has one frame over all its lines,
+    /// which says nothing of where it meets the piece before or after it. By text markers
+    /// (Chromium, WebKit), else by character ranges; nil when the app gives neither.
+    static func textEnds(of element: AXUIElement) -> [CGRect]? {
+        if let whole = parameterized(element, "AXTextMarkerRangeForUIElement", element),
+           CFGetTypeID(whole) == AXTextMarkerRangeGetTypeID() {
+            let range = whole as! AXTextMarkerRange
+            let start = AXTextMarkerRangeCopyStartMarker(range), end = AXTextMarkerRangeCopyEndMarker(range)
+            guard let next = parameterized(element, "AXNextTextMarkerForTextMarker", start),
+                  CFGetTypeID(next) == AXTextMarkerGetTypeID(),
+                  let previous = parameterized(element, "AXPreviousTextMarkerForTextMarker", end),
+                  CFGetTypeID(previous) == AXTextMarkerGetTypeID(),
+                  let first = markerBounds(AXTextMarkerRangeCreate(nil, start, next as! AXTextMarker), in: element),
+                  let last = markerBounds(AXTextMarkerRangeCreate(nil, previous as! AXTextMarker, end), in: element)
+            else { return nil }
+            return [first, last]
+        }
+        guard let count = (attribute(element, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue, count > 0,
+              let first = bounds(of: CFRange(location: 0, length: 1), in: element),
+              let last = bounds(of: CFRange(location: count - 1, length: 1), in: element) else { return nil }
+        return [first, last]
+    }
+
     private static func markerBounds(_ markerRange: CFTypeRef, in element: AXUIElement) -> CGRect? {
         guard let value = parameterized(element, "AXBoundsForTextMarkerRange", markerRange),
               CFGetTypeID(value) == AXValueGetTypeID() else { return nil }

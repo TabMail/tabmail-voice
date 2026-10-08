@@ -3837,6 +3837,321 @@
           2
         ]
       }
+    },
+    {
+      "name": "a key split where the piece before it wraps is one word: the pieces meet where its last line ends",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Wrap words that wrap onto a second line sk-ReviewWrap",
+            "frame": [
+              0,
+              0,
+              200,
+              40
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                142,
+                20,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Glued1234567890ab end",
+            "frame": [
+              150,
+              20,
+              120,
+              20
+            ],
+            "ends": [
+              [
+                150,
+                20,
+                8,
+                20
+              ],
+              [
+                262,
+                20,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Wrap words that wrap onto a second line [redacted] end"
+      }
+    },
+    {
+      "name": "a key split where the piece after it wraps is one word: the pieces meet where its first line starts",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Start sk-ReviewStart",
+            "frame": [
+              0,
+              0,
+              150,
+              20
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                142,
+                0,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Tail1234567890abcd words that wrap onto more lines",
+            "frame": [
+              0,
+              0,
+              200,
+              40
+            ],
+            "ends": [
+              [
+                150,
+                0,
+                8,
+                20
+              ],
+              [
+                0,
+                20,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Start [redacted] words that wrap onto more lines"
+      }
+    },
+    {
+      "name": "a piece wrapped onto two lines and the piece after it, apart from its last line's end, are two words",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "The draft is ready for review",
+            "frame": [
+              868,
+              900,
+              590,
+              45
+            ],
+            "ends": [
+              [
+                868,
+                900,
+                8,
+                20
+              ],
+              [
+                920,
+                925,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Let me know what you think",
+            "frame": [
+              940,
+              925,
+              278,
+              20
+            ],
+            "ends": [
+              [
+                940,
+                925,
+                8,
+                20
+              ],
+              [
+                1210,
+                925,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "The draft is ready for review Let me know what you think"
+      }
+    },
+    {
+      "name": "a piece starting on the line below a wrapped piece's last line is a line of its own",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "A paragraph that wraps",
+            "frame": [
+              0,
+              0,
+              200,
+              40
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                60,
+                20,
+                8,
+                20
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "the next one",
+            "frame": [
+              0,
+              40,
+              120,
+              20
+            ],
+            "ends": [
+              [
+                0,
+                40,
+                8,
+                20
+              ],
+              [
+                112,
+                40,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "A paragraph that wraps\nthe next one"
+      }
+    },
+    {
+      "name": "an empty box where a piece ends is no place: its frame is used",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key sk-Review",
+            "frame": [
+              0,
+              0,
+              130,
+              20
+            ],
+            "ends": [
+              [
+                0,
+                0,
+                8,
+                20
+              ],
+              [
+                0,
+                0,
+                0,
+                0
+              ]
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Fixture1234567890 here",
+            "frame": [
+              130,
+              0,
+              200,
+              20
+            ],
+            "ends": [
+              [
+                130,
+                0,
+                8,
+                20
+              ],
+              [
+                322,
+                0,
+                8,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key [redacted] here"
+      }
     }
   ]
 }

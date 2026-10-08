@@ -564,7 +564,8 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   more lines (a Slack message) and gets a space. A helper gives a wrapped piece one box over all its
   lines, so where it meets the piece beside it is not known: a key split by styling where either
   piece wraps is read in its pieces, as the base read it, accepted by the owner as rare
-  (2026-10-07), tracked as #178 (P3). The render uses the same joiner, so the read shows
+  (2026-10-07), tracked as #178 (P3) *(fixed the same night, owner: the readers give where a
+  piece's text starts and ends, the amendment below)*. The render uses the same joiner, so the read shows
   "Visit [example] now" and a word split by italics stays one word. A soft wrap between two pieces
   is still a line break. AT-SPI gives Chromium's paragraph as one text with its runs, so Linux had
   no split. A piece that touches a key with no space on screen (a label laid against a `ghp_` key)
@@ -638,6 +639,20 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   made up for in the core. The corpus is the specification: every case passed unchanged; four new
   ones pin a block dropped mid-read, the marker in the caret's window, and one marker for matches
   side by side.
+- *(Amended 2026-10-07 night, owner, #178: a key split by styling where one piece wraps is read
+  whole.)* A piece that wraps onto more lines (a Slack message, a long bold run) has one frame over
+  all its lines, so where it meets the piece before or after it was not known: its frame starts at
+  the line's left edge and ends at the column's right one, and `separator` read a gap where the
+  screen shows the two abutting, so the key was read in two pieces. Each reader now gives, with a
+  text or link block's frame, `ends`: the box of its text's first line or character and of its last
+  (Mac: the first and last characters' boxes by text markers in Chromium and WebKit, by character
+  ranges elsewhere; Windows: the first and last of the line rectangles of the block's range in the
+  page's text; Linux: the first and last characters' extents). `separator` meets the pieces where
+  the first one's text ends and the next one's starts, and uses the frame where a helper gives no
+  ends or an empty box; the line below (a blank line between columns) is still read from the
+  frames. The OS code only measures; the decision stays in Rust. Each platform's real-Chromium test
+  reads a key split by bold where the bold run wraps, and one where the run after the key wraps;
+  the Mac run fails without the ends.
 
 **Amendment 2026-10-07 — a field its markers cannot read around the caret is read by its value
 (issue #162).** Owner, raising it to P2: in Firefox's address bar on the Mac the marker read placed the

@@ -11,6 +11,10 @@ struct Block {
     kind: String,
     text: String,
     frame: Option<[f64; 4]>,
+    /// Where the block's text starts and ends on screen, when the helper gives it: the box of its
+    /// first line (or character) and of its last. A piece that wraps has one frame over all its
+    /// lines, which says nothing of where it meets the piece before or after it.
+    ends: Option<[[f64; 4]; 2]>,
     source: Option<Vec<String>>,
     runs: Option<Vec<(String, bool)>>,
     /// Whether the text the screen shows starts or ends with a space (`admit` keeps one at each
@@ -61,20 +65,20 @@ impl Block {
         let frame = if value["frame"].is_null() {
             None
         } else {
-            let array = value["frame"].as_array().ok_or(1u32)?;
-            if array.len() != 4 {
-                return Err(1);
-            }
-            let mut frame = [0.; 4];
-            for (index, coordinate) in array.iter().enumerate() {
-                frame[index] = coordinate.as_f64().filter(|x| x.is_finite()).ok_or(1u32)?;
-            }
-            Some(frame)
+            Some(read_box(&value["frame"])?)
+        };
+        let ends = match value.get("ends") {
+            None | Some(Value::Null) => None,
+            Some(ends) => match ends.as_array().map(Vec::as_slice) {
+                Some([first, last]) => Some([read_box(first)?, read_box(last)?]),
+                _ => return Err(1),
+            },
         };
         Ok(Self {
             kind: kind.into(),
             text,
             frame,
+            ends,
             source,
             runs,
             spaced,
@@ -106,15 +110,38 @@ const ABUTTING_GAP: f64 = 0.1;
 /// What goes between two blocks as the screen shows them: a line break (two at a jump up to the
 /// next column), or, between two pieces of one line, a space where the screen shows one and
 /// nothing where they abut (a run of bold or a link inside a word).
+/// A box the helper gives: four finite numbers, x, y, width and height.
+fn read_box(value: &Value) -> Result<[f64; 4], u32> {
+    let array = value.as_array().ok_or(1u32)?;
+    if array.len() != 4 {
+        return Err(1);
+    }
+    let mut frame = [0.; 4];
+    for (index, coordinate) in array.iter().enumerate() {
+        frame[index] = coordinate.as_f64().filter(|x| x.is_finite()).ok_or(1u32)?;
+    }
+    Ok(frame)
+}
 fn separator(a: &Block, b: &Block) -> &'static str {
     let (Some(a_frame), Some(b_frame)) = (a.frame, b.frame) else {
         return "\n";
     };
-    let [ax, ay, aw, ah] = a_frame;
-    let [bx, by, bw, bh] = b_frame;
-    if aw <= 0. || ah <= 0. || bw <= 0. || bh <= 0. {
+    if [a_frame, b_frame]
+        .iter()
+        .any(|[_, _, w, h]| *w <= 0. || *h <= 0.)
+    {
         return "\n";
     }
+    let below = b_frame[1] + b_frame[3] <= a_frame[1];
+    // Where a's text ends and b's starts: a's last line and b's first, when the helper gives them
+    // (a piece that wraps meets the next one on its last line, not across its frame).
+    let shown = |ends: Option<[[f64; 4]; 2]>, end: usize, frame: [f64; 4]| {
+        ends.map(|ends| ends[end])
+            .filter(|[_, _, w, h]| *w > 0. && *h > 0.)
+            .unwrap_or(frame)
+    };
+    let [ax, ay, aw, ah] = shown(a.ends, 1, a_frame);
+    let [bx, by, _, bh] = shown(b.ends, 0, b_frame);
     let overlap = (ay + ah).min(by + bh) - ay.max(by);
     if a.inline() && b.inline() && bx >= ax && overlap >= ah.min(bh) * 0.5 {
         return if a.spaced[1] || b.spaced[0] || (bx - (ax + aw)).abs() > ah.min(bh) * ABUTTING_GAP {
@@ -123,7 +150,7 @@ fn separator(a: &Block, b: &Block) -> &'static str {
             ""
         };
     }
-    if by + bh <= ay { "\n\n" } else { "\n" }
+    if below { "\n\n" } else { "\n" }
 }
 /// Lays the blocks out once: what goes between each block and the one before it.
 fn lay_out(blocks: &mut [Block]) {
@@ -1283,6 +1310,10 @@ mod tests {
             json!({"hypertext":{"elements":[{}]}}),
             json!({"blocks":[{"kind":"unknown","text":"x"}]}),
             json!({"blocks":[],"caret":["x"]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":[[0,0,1,1]]}]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":[[0,0,1,1],[0,0,1]]}]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":[[0,0,1,1],[0,"0",1,1]]}]}),
+            json!({"blocks":[{"kind":"text","text":"x","frame":[0,0,1,1],"ends":{}}]}),
         ] {
             assert_eq!(process(&serde_json::to_vec(&value).unwrap()), Err(1));
         }

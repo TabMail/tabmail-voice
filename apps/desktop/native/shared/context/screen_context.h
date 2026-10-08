@@ -38,6 +38,9 @@ struct ContextBlock {
     std::optional<ContextFrame> frame;
     std::optional<std::array<std::string, 3>> source = {};
     std::optional<nlohmann::json> runs = {};
+    // Where its text starts and ends on screen: the box of its first line (or character) and of
+    // its last. A piece that wraps has one frame over all its lines.
+    std::optional<std::array<ContextFrame, 2>> ends = {};
 };
 class VisibleContext {
 public:
@@ -54,7 +57,8 @@ public:
     std::string stopped;
     bool hasCaret = false;
 
-    void append(ContextKind kind, std::string text, std::optional<ContextFrame> frame = {}) {
+    void append(ContextKind kind, std::string text, std::optional<ContextFrame> frame = {},
+                std::optional<std::array<ContextFrame, 2>> ends = {}) {
         if (kind != ContextKind::caret) {
             const auto result = core::request({{"admit", text}, {"previous", blocks.empty() || blocks.back().kind == ContextKind::caret ? nlohmann::json(nullptr) : nlohmann::json(blocks.back().text)}, {"used", bytes}}, voice_core_context_json);
             text = result.at("text").get<std::string>();
@@ -64,7 +68,7 @@ public:
             if (text.empty()) return;
         }
         if (kind == ContextKind::caret) hasCaret = true;
-        blocks.push_back({kind, std::move(text), frame});
+        blocks.push_back({kind, std::move(text), frame, {}, {}, ends});
     }
     void appendField(const std::array<std::string, 3>& parts, std::optional<ContextFrame> frame = {}) {
         const auto result = core::request({{"admitField", parts}, {"used", bytes}}, voice_core_context_json);
@@ -74,14 +78,15 @@ public:
         if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
         if (!source[1].empty()) blocks.push_back({ContextKind::field, source[1], frame, source});
     }
-    void appendSemantic(ContextKind kind, const nlohmann::json& source, std::optional<ContextFrame> frame = {}) {
+    void appendSemantic(ContextKind kind, const nlohmann::json& source, std::optional<ContextFrame> frame = {},
+                        std::optional<std::array<ContextFrame, 2>> ends = {}) {
         auto block = source; block["kind"] = kinds[static_cast<size_t>(kind)];
         const auto previous = blocks.empty() ? nlohmann::json(nullptr) : blockJSON(blocks.back());
         const auto result = core::request({{"admitSemantic", block}, {"used", bytes}, {"previous", previous}}, voice_core_context_json);
         bytes = result.at("used").get<size_t>(); textBudgetFull = result.at("budgetFull").get<bool>();
         if (!result.at("stop").is_null()) stopped = result.at("stop").get<std::string>();
         const auto text = result.at("text").get<std::string>();
-        if (!text.empty()) blocks.push_back({kind, text, frame, {}, std::optional<nlohmann::json>(std::in_place, result.at("runs"))});
+        if (!text.empty()) blocks.push_back({kind, text, frame, {}, std::optional<nlohmann::json>(std::in_place, result.at("runs")), ends});
     }
     // Private staging transport for a field nested inside a semantic container.
     // These parts must still pass semantic admission and final shared redaction.
@@ -116,6 +121,10 @@ private:
         if (block.source) value["source"] = *block.source;
         if (block.runs) value["runs"] = *block.runs;
         if (block.frame) { const auto& f = *block.frame; value["frame"] = {f.x, f.y, f.width, f.height}; }
+        if (block.ends) {
+            value["ends"] = nlohmann::json::array();
+            for (const auto& f : *block.ends) value["ends"].push_back({f.x, f.y, f.width, f.height});
+        }
         return value;
     }
     nlohmann::json blocksJSON() const {

@@ -98,6 +98,29 @@ public:
         return ContextFrame{static_cast<double>(rectangle->x), static_cast<double>(rectangle->y),
             static_cast<double>(rectangle->width), static_cast<double>(rectangle->height)};
     }
+    // Where an element's text starts and ends on screen: the boxes of its first and last
+    // characters. A piece that wraps has one frame over all its lines, which says nothing of where
+    // it meets the piece before or after it. None when the element gives no character boxes.
+    std::optional<std::array<ContextFrame, 2>> ends(const Node& node) {
+        check();
+        auto text = own(atspi_accessible_get_text_iface(node.get()));
+        if (!text) return {};
+        Error error;
+        const auto count = atspi_text_get_character_count(text.get(), &error.value);
+        if (error.value || count <= 0) return {};
+        const auto box = [&](int offset) -> std::optional<ContextFrame> {
+            Error error;
+            auto rectangle = atspi_text_get_character_extents(text.get(), offset, ATSPI_COORD_TYPE_WINDOW, &error.value);
+            std::unique_ptr<AtspiRect, decltype(&g_free)> owned(rectangle, &g_free);
+            if (error.value || !rectangle || rectangle->width <= 0 || rectangle->height <= 0) return {};
+            return ContextFrame{static_cast<double>(rectangle->x), static_cast<double>(rectangle->y),
+                static_cast<double>(rectangle->width), static_cast<double>(rectangle->height)};
+        };
+        const auto first = box(0), last = box(count - 1);
+        check();
+        if (!first || !last) return {};
+        return std::array<ContextFrame, 2>{*first, *last};
+    }
     std::string label(const Node& node) {
         check(); Error error;
         auto name = atspi_accessible_get_name(node.get(), &error.value);
@@ -887,7 +910,9 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
             }
             if (step.action == "text") {
                 const auto field = screenText(tree, node);
-                context.append(ContextKind::text, field ? *field : tree.label(node), frame);
+                std::optional<std::array<ContextFrame, 2>> ends;
+                if constexpr (requires { tree.ends(node); }) if (frame) ends = tree.ends(node);
+                context.append(ContextKind::text, field ? *field : tree.label(node), frame, ends);
                 continue;
             }
             // A page's control: its name, or, having none, what it holds.
@@ -900,7 +925,9 @@ nlohmann::json gatherScreenUnchecked(Tree& tree, typename Tree::Node window, typ
         if (step.action == "semantic") {
             const auto kind = step.kind == "heading" ? SemanticText::Kind::heading : step.kind == "link" ? SemanticText::Kind::link : SemanticText::Kind::row;
             const auto label = semanticSource(tree, node, kind, context.nodes, exclusions, inPage, windowFrame);
-            context.appendSemantic(step.kind == "heading" ? ContextKind::heading : step.kind == "link" ? ContextKind::link : ContextKind::row, label, frame);
+            std::optional<std::array<ContextFrame, 2>> ends;
+            if constexpr (requires { tree.ends(node); }) if (frame && step.kind == "link") ends = tree.ends(node);
+            context.appendSemantic(step.kind == "heading" ? ContextKind::heading : step.kind == "link" ? ContextKind::link : ContextKind::row, label, frame, ends);
             continue;
         }
         auto children = tree.children(node, limits.nodeBudget - std::min(limits.nodeBudget, context.nodes + stack.size()));
