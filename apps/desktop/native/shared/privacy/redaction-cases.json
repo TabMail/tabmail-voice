@@ -6522,6 +6522,217 @@
     "{redacted}",
     " end"
    ]
+  },
+  {
+   "name": "a JSON web token straight after a full stop goes whole",
+   "text": [
+    "x.",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "x",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a sentence with no space goes whole",
+   "text": [
+    "See the docs.",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5",
+    " ok"
+   ],
+   "expected": [
+    "See the docs",
+    "{redacted}",
+    " ok"
+   ]
+  },
+  {
+   "name": "a JSON web token after two dots goes whole",
+   "text": [
+    "..",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    ".",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a near miss shaped like its first part goes whole",
+   "text": [
+    "ey",
+    "Jab.",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8i9J0",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id after its own prefix glued before it goes whole",
+   "text": [
+    "AK",
+    "IA",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id after a shorter one glued before it goes whole",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJK",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id after a word ending in its temporary prefix goes whole",
+   "text": [
+    "EUR",
+    "AS",
+    "IA",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    " y"
+   ],
+   "expected": [
+    "EUR",
+    "{redacted}",
+    " y"
+   ]
+  },
+  {
+   "name": "a Google API key after its own prefix glued before it goes whole",
+   "text": [
+    "AI",
+    "za",
+    "ab",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google API key after one a character short glued before it goes whole",
+   "text": [
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body straight after a label with no space goes, the label stays",
+   "text": [
+    "Key:",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "Key:",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's body straight after a quote goes, the quotes stay",
+   "text": [
+    "\"",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\""
+   ],
+   "expected": [
+    "\"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a key's body straight after a no-break space goes",
+   "text": [
+    "Key:\u00a0",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "Key:\u00a0",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's last body line and end line straight after a label with no space go, the label stays",
+   "text": [
+    "Key:",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "Key:",
+    "{redacted}"
+   ]
   }
  ],
  "lineCases": [

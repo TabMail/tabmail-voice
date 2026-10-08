@@ -4264,7 +4264,7 @@
         "blocks": [
           {
             "kind": "text",
-            "text": "see AKIAB2C3D4E5F6G7H8I9AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6 ok",
+            "text": "see AK\u0049AB2C3D4E5F6G7H8I9AI\u007aaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6 ok",
             "frame": [
               0,
               0,
@@ -4525,6 +4525,137 @@
           "[redacted]",
           ""
         ]
+      }
+    },
+    {
+      "name": "the marker at a link's start stays whole beside a named value touching it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "token=abc123",
+            "frame": [
+              0,
+              0,
+              96,
+              20
+            ]
+          },
+          {
+            "kind": "link",
+            "text": "[hidden for privacy] more",
+            "runs": [
+              [
+                "[hidden for privacy] more",
+                true
+              ]
+            ],
+            "frame": [
+              96,
+              0,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "token=[redacted] [[hidden for privacy] more]"
+      }
+    },
+    {
+      "name": "the marker at a link's end stays whole beside a named value touching it",
+      "request": {
+        "blocks": [
+          {
+            "kind": "link",
+            "text": "more [hidden for privacy]",
+            "runs": [
+              [
+                "more [hidden for privacy]",
+                true
+              ]
+            ],
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "token=abc123",
+            "frame": [
+              200,
+              0,
+              96,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "[more [hidden for privacy]] token=[redacted]"
+      }
+    },
+    {
+      "name": "a key's body in a piece touching a label piece goes, the label stays",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Key:",
+            "frame": [
+              0,
+              0,
+              40,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              40,
+              0,
+              400,
+              60
+            ],
+            "ends": [
+              [
+                40,
+                0,
+                400,
+                20
+              ],
+              [
+                0,
+                40,
+                400,
+                20
+              ]
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Key:[redacted]"
       }
     }
   ]

@@ -27,8 +27,8 @@
     },
     {
       "name": "private-key-end",
-      "description": "A private key's body whose header is not in the text, wherever it is (a page read from the middle of a printed key, after a page number or a running header; a header in a font the reader could not draw, a label beside its first full line): the lines of base64 just before its end line, and the end line.",
-      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)+-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|([ \\t])[A-Za-z0-9+/]{40,}[A-Za-z0-9+/=]*[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
+      "description": "A private key's body whose header is not in the text, wherever it is (a page read from the middle of a printed key, after a page number or a running header; a header in a font the reader could not draw, a label beside its first full line, with or without a space): the lines of base64 just before its end line, and the end line.",
+      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)+-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|([^A-Za-z0-9+/=\\n\\r\\x{2028}\\x{2029}][ \\t]*)[A-Za-z0-9+/]{40,}[A-Za-z0-9+/=]*[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
       "ignoreCase": false,
       "replacement": "$1$2{placeholder}"
     },
@@ -41,15 +41,15 @@
     },
     {
       "name": "private-key-lines",
-      "description": "A private key's body wherever it is, whatever is around it (a page of a printed key between a running header and a footer, several pages of one read together, a label beside its first line; lines ended by \\n, \\r, U+2028 or U+2029): two or more full lines of base64 one after another, a shorter line between them, and the line after them when it is one word of base64 that ends its line or runs into punctuation (owner, 2026-10-08: a key's last line goes even with no digit or symbol, so a lone word such as Done right after them goes too, while a line that goes on with more words stays). A shorter line between full lines goes only when it looks like base64 (a digit, + or /, padding, or a small letter before a capital). Its end line goes with private-key-end. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05: \"redact key bodies anywhere\"); one such line alone stays.",
-      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029} \\t])[ \\t]*[A-Za-z0-9+/]{40,}={0,2}(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]*(?:[0-9+/]|[a-z][A-Z])[A-Za-z0-9+/]*={0,2}|[A-Za-z0-9+/]*={1,2})(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+)*(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]+={0,2}|={1,2})(?:[ \\t]*(?:(?m:$)|(\\r|[\\x{2028}\\x{2029}]))|([^\\sA-Za-z0-9+/=])))?",
+      "description": "A private key's body wherever it is, whatever is around it (a page of a printed key between a running header and a footer, several pages of one read together, a label beside its first line, with or without a space, the label and the blanks after it kept; lines ended by \\n, \\r, U+2028 or U+2029): two or more full lines of base64 one after another, a shorter line between them, and the line after them when it is one word of base64 that ends its line or runs into punctuation (owner, 2026-10-08: a key's last line goes even with no digit or symbol, so a lone word such as Done right after them goes too, while a line that goes on with more words stays). A shorter line between full lines goes only when it looks like base64 (a digit, + or /, padding, or a small letter before a capital). Its end line goes with private-key-end. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05: \"redact key bodies anywhere\"); one such line alone stays.",
+      "pattern": "(^|[^A-Za-z0-9+/][ \\t]*)[A-Za-z0-9+/]{40,}={0,2}(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]*(?:[0-9+/]|[a-z][A-Z])[A-Za-z0-9+/]*={0,2}|[A-Za-z0-9+/]*={1,2})(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+)*(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]+={0,2}|={1,2})(?:[ \\t]*(?:(?m:$)|(\\r|[\\x{2028}\\x{2029}]))|([^\\sA-Za-z0-9+/=])))?",
       "ignoreCase": false,
       "replacement": "$1{placeholder}$2$3"
     },
     {
       "name": "json-web-token",
-      "description": "A JSON web token: three base64url parts, the first two JSON objects. Its last two parts with the dot before them go alone too, as that is what is left of a token glued to the one before it.",
-      "pattern": "(?:eyJ[A-Za-z0-9_-]+)?\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
+      "description": "A JSON web token: three base64url parts, the first two JSON objects. Its last two parts with the dot before them go alone too, as that is what is left of a token glued to the one before it; a token right after a dot still goes whole, as its last part may follow a third part starting eyJ.",
+      "pattern": "(?:eyJ[A-Za-z0-9_-]+)?\\.eyJ[A-Za-z0-9_-]+\\.(?:eyJ[A-Za-z0-9_-]+\\.)?[A-Za-z0-9_-]+",
       "ignoreCase": false,
       "replacement": "{placeholder}"
     },
@@ -125,15 +125,15 @@
     },
     {
       "name": "aws-access-key-id",
-      "description": "AWS access key ids.",
-      "pattern": "(?:AKIA|ASIA)[0-9A-Z]{16}",
+      "description": "AWS access key ids, and near misses with the same prefix glued before one, so that the match never ends inside the key; a word glued after it stays.",
+      "pattern": "(?:(?:AKIA|ASIA)[0-9A-Z]{0,15})*(?:AKIA|ASIA)[0-9A-Z]{16}",
       "ignoreCase": false,
       "replacement": "{placeholder}"
     },
     {
       "name": "google-api-key",
-      "description": "Google API keys.",
-      "pattern": "AIza[0-9A-Za-z_-]{35}",
+      "description": "Google API keys, and near misses with the same prefix glued before one, so that the match never ends inside the key; a word glued after it stays.",
+      "pattern": "(?:AIza[0-9A-Za-z_-]{0,34})*AIza[0-9A-Za-z_-]{35}",
       "ignoreCase": false,
       "replacement": "{placeholder}"
     },

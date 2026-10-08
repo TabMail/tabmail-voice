@@ -63,12 +63,12 @@ impl Block {
             None => spaced,
         };
         // The marker for what a helper left out is the core's own word, never glued to a piece
-        // beside it, so that no redactor reads it as part of a value.
-        let spaced = if text == HIDDEN_MARKER {
-            [true, true]
-        } else {
-            spaced
-        };
+        // beside it, so that no redactor reads it as part of a value: a block that starts or ends
+        // with it (a link whose first or last part was left out) stands apart on that side.
+        let spaced = [
+            spaced[0] || text.starts_with(HIDDEN_MARKER),
+            spaced[1] || text.ends_with(HIDDEN_MARKER),
+        ];
         let frame = if value["frame"].is_null() {
             None
         } else {

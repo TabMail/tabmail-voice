@@ -3562,7 +3562,18 @@ well-structured place for the redactors.
   piece the screen shows glued (a link, a bold run), stays shown, because those three kinds keep a
   word edge each near miss forces (`risk-assessment-template-v2`, `pallbearer`,
   `benchmark_test_…`). The kept edges and the near misses the dropped ones now take are tracked for
-  a later decision in the issue tracker.)*
+  a later decision in the issue tracker.)* *(Amended 2026-10-08, round 13: a rule whose first part
+  is optional, or whose length is fixed, may still not end inside a secret of its kind. A JSON web
+  token right after a `.` goes whole (its last part may follow a third `eyJ` part), and an AWS or
+  Google key goes whole after a near miss with its own prefix glued before it (the match runs over
+  such near misses and keeps its fixed end, so a word glued after the key still stays). A key's
+  first body line goes after any character that is not base64, kept with the blanks after it, as a
+  label piece the screen shows touching the body (`Key:`) is read glued to it; only a base64 word of
+  40 or more characters after punctuation, followed by full base64 lines, newly goes with it. A
+  `[hidden for privacy]` marker that starts or ends a block (a link whose first or last part was
+  left out) stands apart on that side. The owner set the gate for this work on 2026-10-08: no worse
+  than `main`, and no bug in what it changed; a key body quoted or commented line by line, or in a
+  tmux pane beside another, is shown on `main` too and is tracked in the issue tracker.)*
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what
