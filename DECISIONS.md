@@ -570,7 +570,8 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   no split. A piece that touches a key with no space on screen (a label laid against a `ghp_` key)
   before or after it reads as a key glued to a word, which the redactors do not match (an AWS or
   Google key must start and end at a word's edge), so the whole key is shown:
-  accepted by the owner as rare (2026-10-07), tracked as #175 (P3). The base redacted it only
+  accepted by the owner as rare (2026-10-07), tracked as #175 (P3) *(fixed the same night,
+  owner: such keys are redacted glued, ADR-DESK-046's amendment)*. The base redacted it only
   because each piece was a line of its own; one plain piece holding the same text never was. A
   link's box holds the space the screen shows before or after it inside the link (`Read <a>more
   </a>now`), and every platform gives a link's text through `SemanticText`, which trims it: it now
@@ -3480,7 +3481,27 @@ well-structured place for the redactors.
   body, whatever name is beside it; a key header with nothing
   after it takes the letters that follow, up to the first punctuation. The key block's redactor is
   the last in the list for that reason: first, it took a later secret's name or prefix with those
-  letters, and that secret's own redactor no longer knew it.
+  letters, and that secret's own redactor no longer knew it. *(Amended 2026-10-07 night, owner,
+  #175: a key with a distinctive prefix is redacted glued to the letters before or after it. The
+  edge before AKIA, AIza, `ghp_`, `github_pat_`, `glpat-`, `xox?-`, `npm_`, `hf_`, `whsec_`, `eyJ`
+  and `sk_live_` is gone, and the edge after an AWS or Google key with it: the screen shows a key
+  run into a label or a piece of styling, and the whole key was then shown. Measured, not decided
+  by prefix: the edge stays only where a realistic near miss matches without it, each pinned by a
+  case that stays (`risk-…` for `sk-`, `pallbearer` for `Bearer`, `benchmark_test_…` and
+  `task_test_…` for the `_test_` payment keys); every glued form has a case that goes. That made
+  the order matter the other way: a run inside a key's body can now look like an AWS or Google key,
+  and a redactor run before the key's own left a placeholder in the body that ended the key's
+  match, so the rest of the body was shown. The key rules now come first, and the key block is two
+  rules: `private-key-block` takes a block from its header to its end line, and `private-key-cut`
+  one cut off where the window ends, taking only whole words of base64, each ending at a space, a
+  line break or the end of the text, so it cannot take a later secret's name or prefix (the
+  `token` of `token: …`, the `sk` of `sk-…`) and keeps the line break after the key. A header-less
+  body's last, shorter line, which stayed when no end line followed it, goes with
+  `private-key-lines` when it is a whole line that looks like base64 (a digit, `+`, `/`, padding,
+  or a small letter before a capital), and so does a shorter line between two runs of full lines;
+  a word on its own line after the key (`end`, `Done`) stays. Its end is found without a lookahead,
+  which runs in the backtracking engine (it took minutes on the hostile text): the line break after
+  the line is kept by the replacement.)*
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept.

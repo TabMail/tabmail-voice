@@ -6,16 +6,52 @@
     "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
     "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
-    "private-key-block comes after the others, then private-key-end, private-key-body (it starts only at the start of the text) and private-key-lines last: private-key-block's cut-off form runs on through the letters that follow, and placed first it took a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key), so that secret's own redactor no longer knew it. After the others, their placeholder stops it. private-key-body goes before private-key-lines so that a text starting part-way through a key's line loses that part too."
+    "The private-key rules come first, private-key-block, private-key-cut, private-key-end, private-key-body (it starts only at the start of the text), then private-key-lines: a run inside a key's body can look like a key with a distinctive prefix (AKIA or AIza and enough letters), and a redactor run before them would leave a placeholder in the body that ends the key's own match there, so the rest of the body stayed. private-key-cut takes only whole words of base64, so it cannot take a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key). private-key-body goes before private-key-lines so that a text starting part-way through a key's line loses that part too.",
+    "A key with a distinctive prefix (AKIA, AIza, ghp_, github_pat_, glpat-, xoxb-, npm_, hf_, whsec_, eyJ, sk_live_) goes wherever it is, even glued to the letters before or after it, as the screen shows a key run into a word or a piece of styling. A pattern whose prefix ordinary words also hold keeps the edge before it, each forced by a near miss in redaction-cases.json: sk- (risk-...), Bearer (pallbearer), the _test_ payment keys (benchmark_test_..., task_test_...)."
   ],
   "placeholder": "[redacted]",
   "redactors": [
     {
+      "name": "private-key-block",
+      "description": "A whole private-key block, from its header to its end line.",
+      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----[A-Za-z0-9+/=\\s\\\\]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "private-key-cut",
+      "description": "A private-key block cut off where the window ends: its header and the words of base64 after it, each ending at a space, a line break or the end of the text (a word that runs into other characters, such as the `token` of `token: ...` or the `sk` of a key, stays for its own redactor).",
+      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----[A-Za-z0-9+/=\\\\]*(?:\\s+[A-Za-z0-9+/=\\\\]+)*(\\s|$)",
+      "ignoreCase": false,
+      "replacement": "{placeholder}$1"
+    },
+    {
+      "name": "private-key-end",
+      "description": "A private key's body whose header is not in the text, wherever it is (a page read from the middle of a printed key, after a page number or a running header; a header in a font the reader could not draw, a label beside its first full line): the lines of base64 just before its end line, and the end line.",
+      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)+-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|([ \\t])[A-Za-z0-9+/]{40,}[A-Za-z0-9+/=]*[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
+      "ignoreCase": false,
+      "replacement": "$1$2{placeholder}"
+    },
+    {
+      "name": "private-key-body",
+      "description": "A text that starts inside a private key's body, its header cut off before the text (a page read from the middle of a printed key, a window scrolled past the header): two or more full lines of base64 at the very start, up to the end line if there is one.",
+      "pattern": "^[A-Za-z0-9+/=]*(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/=]+)?(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?",
+      "ignoreCase": false,
+      "replacement": "{placeholder}"
+    },
+    {
+      "name": "private-key-lines",
+      "description": "A private key's body wherever it is, whatever is around it (a page of a printed key between a running header and a footer, several pages of one read together, a label beside its first line; lines ended by \\n, \\r, U+2028 or U+2029): two or more full lines of base64 one after another, a shorter line between them, and its last, shorter line. A shorter line goes only when it is a whole line that looks like base64 (a digit, + or /, padding, or a small letter before a capital), so a word on its own line after the key (end, Done) stays. Its end line goes with private-key-end. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05: \"redact key bodies anywhere\"); one such line alone stays.",
+      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029} \\t])[ \\t]*[A-Za-z0-9+/]{40,}={0,2}(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]*(?:[0-9+/]|[a-z][A-Z])[A-Za-z0-9+/]*={0,2}|[A-Za-z0-9+/]*={1,2})(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+)*(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*(?:[A-Za-z0-9+/]*(?:[0-9+/]|[a-z][A-Z])[A-Za-z0-9+/]*={0,2}|[A-Za-z0-9+/]*={1,2})[ \\t]*(?:(?m:$)|(\\r|[\\x{2028}\\x{2029}])))?",
+      "ignoreCase": false,
+      "replacement": "$1{placeholder}$2"
+    },
+    {
       "name": "json-web-token",
       "description": "A JSON web token: three base64url parts, the first two JSON objects.",
-      "pattern": "(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
+      "pattern": "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "bearer-token",
@@ -48,100 +84,72 @@
     {
       "name": "payment-key",
       "description": "Payment provider keys (secret, restricted, publishable; live or test).",
-      "pattern": "(^|[^A-Za-z0-9_])(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16}[A-Za-z0-9]*",
+      "pattern": "(?:(^|[^A-Za-z0-9_])(?:sk|rk|pk)_test_|(?:sk|rk|pk)_live_)[A-Za-z0-9]{16}[A-Za-z0-9]*",
       "ignoreCase": false,
       "replacement": "$1{placeholder}"
     },
     {
       "name": "webhook-secret",
       "description": "Webhook signing secrets.",
-      "pattern": "(^|[^A-Za-z0-9_])whsec_[A-Za-z0-9]{16}[A-Za-z0-9]*",
+      "pattern": "whsec_[A-Za-z0-9]{16}[A-Za-z0-9]*",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "github-token",
       "description": "GitHub tokens.",
-      "pattern": "(^|[^A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{16}[A-Za-z0-9]*",
+      "pattern": "gh[pousr]_[A-Za-z0-9]{16}[A-Za-z0-9]*",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "github-fine-grained-token",
       "description": "GitHub fine-grained tokens.",
-      "pattern": "(^|[^A-Za-z0-9_])github_pat_[A-Za-z0-9_]{16}[A-Za-z0-9_]*",
+      "pattern": "github_pat_[A-Za-z0-9_]{16}[A-Za-z0-9_]*",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "gitlab-token",
       "description": "GitLab tokens.",
-      "pattern": "(^|[^A-Za-z0-9_])glpat-[A-Za-z0-9_-]{16}[A-Za-z0-9_-]*",
+      "pattern": "glpat-[A-Za-z0-9_-]{16}[A-Za-z0-9_-]*",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "aws-access-key-id",
       "description": "AWS access key ids.",
-      "pattern": "(^|[^A-Za-z0-9_])(?:AKIA|ASIA)[0-9A-Z]{16}(?![A-Za-z0-9_])",
+      "pattern": "(?:AKIA|ASIA)[0-9A-Z]{16}",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "google-api-key",
       "description": "Google API keys.",
-      "pattern": "(^|[^A-Za-z0-9_])AIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])",
+      "pattern": "AIza[0-9A-Za-z_-]{35}",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "slack-token",
       "description": "Slack tokens.",
-      "pattern": "(^|[^A-Za-z0-9_])xox[abeprs]-[A-Za-z0-9-]{16}[A-Za-z0-9-]*",
+      "pattern": "xox[abeprs]-[A-Za-z0-9-]{16}[A-Za-z0-9-]*",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "npm-token",
       "description": "npm tokens.",
-      "pattern": "(^|[^A-Za-z0-9_])npm_[A-Za-z0-9]{16}[A-Za-z0-9]*",
+      "pattern": "npm_[A-Za-z0-9]{16}[A-Za-z0-9]*",
       "ignoreCase": false,
-      "replacement": "$1{placeholder}"
+      "replacement": "{placeholder}"
     },
     {
       "name": "hugging-face-token",
       "description": "Hugging Face tokens.",
-      "pattern": "(^|[^A-Za-z0-9_])hf_[A-Za-z0-9]{16}[A-Za-z0-9]*",
-      "ignoreCase": false,
-      "replacement": "$1{placeholder}"
-    },
-    {
-      "name": "private-key-block",
-      "description": "A private-key block, whole or cut off where the window ends.",
-      "pattern": "-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----(?:[A-Za-z0-9+/=\\s\\\\]*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|[A-Za-z0-9+/=\\s\\\\]*)",
+      "pattern": "hf_[A-Za-z0-9]{16}[A-Za-z0-9]*",
       "ignoreCase": false,
       "replacement": "{placeholder}"
-    },
-    {
-      "name": "private-key-end",
-      "description": "A private key's body whose header is not in the text, wherever it is (a page read from the middle of a printed key, after a page number or a running header; a header in a font the reader could not draw, a label beside its first full line): the lines of base64 just before its end line, and the end line.",
-      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)+-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----|([ \\t])[A-Za-z0-9+/]{40,}[A-Za-z0-9+/=]*[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*(?:[A-Za-z0-9+/=]+[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])\\s*)*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----",
-      "ignoreCase": false,
-      "replacement": "$1$2{placeholder}"
-    },
-    {
-      "name": "private-key-body",
-      "description": "A text that starts inside a private key's body, its header cut off before the text (a page read from the middle of a printed key, a window scrolled past the header): two or more full lines of base64 at the very start, up to the end line if there is one.",
-      "pattern": "^[A-Za-z0-9+/=]*(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/=]+)?(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?",
-      "ignoreCase": false,
-      "replacement": "{placeholder}"
-    },
-    {
-      "name": "private-key-lines",
-      "description": "A private key's body wherever it is, whatever is around it (a page of a printed key between a running header and a footer, several pages of one read together, a label beside its first line; lines ended by \\n, \\r, U+2028 or U+2029): two or more full lines of base64 one after another. Its last, shorter line and its end line go with private-key-end. Other runs of such lines (a list of hashes, a base64 blob) go too (owner, 2026-10-05: \"redact key bodies anywhere\"); one such line alone stays.",
-      "pattern": "(^|[\\n\\r\\x{2028}\\x{2029} \\t])[ \\t]*[A-Za-z0-9+/]{40,}={0,2}(?:[ \\t]*(?:\\r\\n?|[\\n\\x{2028}\\x{2029}])[ \\t]*[A-Za-z0-9+/]{40,}={0,2})+",
-      "ignoreCase": false,
-      "replacement": "$1{placeholder}"
     }
   ]
 }

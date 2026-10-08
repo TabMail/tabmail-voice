@@ -228,7 +228,7 @@ struct RedactorTests {
         ]
         for run in runs {
             let redacted = try Redactor.redact("\(run)\npassword: hunter" + "2x\n")
-            // (A key block cut off takes the letters after it, the name with them.)
+            // (A key block cut off takes the words of base64 after it, but not a name a colon ends.)
             #expect(redacted.hasSuffix(": \(Redactor.placeholder)\n") && !redacted.contains("hunter"), "\(run.prefix(16))")
             var context = ScreenContext(appName: "Example Browser")
             context.textBeforeCaret = "pwd=hunter" + "3y "
@@ -240,7 +240,8 @@ struct RedactorTests {
             // The shared source budget omits the second ordinary block. An
             // unterminated private key therefore reaches the independent caret
             // prefix too; preserving that prefix is not a privacy requirement.
-            let before = run.hasPrefix("-----BEGIN ") ? "\(Redactor.placeholder) " : "pwd=\(Redactor.placeholder) "
+            // The key takes the caret's text and the selection after it, the space between them too.
+            let before = run.hasPrefix("-----BEGIN ") ? Redactor.placeholder : "pwd=\(Redactor.placeholder) "
             #expect(reply["textBeforeCaret"]?.string == before)
             #expect(context.textBudgetFull)
             #expect(reply["selectionRedacted"] == .bool(true))

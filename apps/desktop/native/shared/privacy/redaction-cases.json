@@ -800,7 +800,7 @@
    ]
   },
   {
-   "name": "a payment key begun inside a word stays",
+   "name": "a payment key begun inside a word goes",
    "text": [
     "x",
     "sk",
@@ -809,9 +809,7 @@
    ],
    "expected": [
     "x",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -852,7 +850,7 @@
    ]
   },
   {
-   "name": "a webhook secret begun inside a word stays",
+   "name": "a webhook secret begun inside a word goes",
    "text": [
     "x",
     "wh",
@@ -861,9 +859,7 @@
    ],
    "expected": [
     "x",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -904,7 +900,7 @@
    ]
   },
   {
-   "name": "a GitHub token begun inside a word stays",
+   "name": "a GitHub token begun inside a word goes",
    "text": [
     "x",
     "gh",
@@ -913,9 +909,7 @@
    ],
    "expected": [
     "x",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -956,7 +950,7 @@
    ]
   },
   {
-   "name": "a GitHub fine-grained token begun inside a word stays",
+   "name": "a GitHub fine-grained token begun inside a word goes",
    "text": [
     "x",
     "github",
@@ -965,9 +959,7 @@
    ],
    "expected": [
     "x",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1008,7 +1000,7 @@
    ]
   },
   {
-   "name": "a GitLab token begun inside a word stays",
+   "name": "a GitLab token begun inside a word goes",
    "text": [
     "x",
     "gl",
@@ -1017,9 +1009,7 @@
    ],
    "expected": [
     "x",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1060,7 +1050,7 @@
    ]
   },
   {
-   "name": "a Slack token begun inside a word stays",
+   "name": "a Slack token begun inside a word goes",
    "text": [
     "x",
     "xo",
@@ -1069,9 +1059,7 @@
    ],
    "expected": [
     "x",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1112,7 +1100,7 @@
    ]
   },
   {
-   "name": "an npm token begun inside a word stays",
+   "name": "an npm token begun inside a word goes",
    "text": [
     "x",
     "np",
@@ -1121,9 +1109,7 @@
    ],
    "expected": [
     "x",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1164,7 +1150,7 @@
    ]
   },
   {
-   "name": "a Hugging Face token begun inside a word stays",
+   "name": "a Hugging Face token begun inside a word goes",
    "text": [
     "x",
     "h",
@@ -1173,9 +1159,7 @@
    ],
    "expected": [
     "x",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
@@ -1281,16 +1265,15 @@
    ]
   },
   {
-   "name": "an AWS access key id one character long stays",
+   "name": "an AWS access key id one character long goes, the character after it stays",
    "text": [
     "AK",
     "IA",
     "ABCDEFGHIJKLMNOPQ"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOPQ"
+    "{redacted}",
+    "Q"
    ]
   },
   {
@@ -1318,7 +1301,7 @@
    ]
   },
   {
-   "name": "an AWS access key id begun inside a word stays",
+   "name": "an AWS access key id begun inside a word goes",
    "text": [
     "X",
     "AK",
@@ -1327,9 +1310,7 @@
    ],
    "expected": [
     "X",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
@@ -1346,16 +1327,15 @@
    ]
   },
   {
-   "name": "a Google API key one character long stays",
+   "name": "a Google API key one character long goes, the character after it stays",
    "text": [
     "AI",
     "za",
     "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7Rs"
+    "{redacted}",
+    "s"
    ]
   },
   {
@@ -1372,7 +1352,7 @@
    ]
   },
   {
-   "name": "a Google API key begun inside a word stays",
+   "name": "a Google API key begun inside a word goes",
    "text": [
     "x",
     "AI",
@@ -1381,9 +1361,7 @@
    ],
    "expected": [
     "x",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
@@ -1412,7 +1390,7 @@
    ]
   },
   {
-   "name": "a JSON web token begun inside a word stays",
+   "name": "a JSON web token begun inside a word goes",
    "text": [
     "x",
     "ey",
@@ -1427,15 +1405,7 @@
    ],
    "expected": [
     "x",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
@@ -2005,7 +1975,7 @@
    ],
    "expected": [
     "{redacted}",
-    "(copied)"
+    "\n(copied)"
    ]
   },
   {
@@ -2523,7 +2493,7 @@
    ]
   },
   {
-   "name": "a Google API key followed by a hyphen and more stays",
+   "name": "a Google API key followed by a hyphen and more goes, what follows stays",
    "text": [
     "AI",
     "za",
@@ -2531,14 +2501,12 @@
     "-x"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "-x"
    ]
   },
   {
-   "name": "an AWS access key id followed by an underscore stays",
+   "name": "an AWS access key id followed by an underscore goes, what follows stays",
    "text": [
     "AK",
     "IA",
@@ -2546,9 +2514,7 @@
     "_x"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP",
+    "{redacted}",
     "_x"
    ]
   },
@@ -2670,7 +2636,7 @@
    ]
   },
   {
-   "name": "a payment key straight after a capital stays",
+   "name": "a payment key straight after a capital goes",
    "text": [
     "X",
     "sk",
@@ -2679,13 +2645,11 @@
    ],
    "expected": [
     "X",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a payment key straight after a small letter stays",
+   "name": "a payment key straight after a small letter goes",
    "text": [
     "x",
     "sk",
@@ -2694,13 +2658,11 @@
    ],
    "expected": [
     "x",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a payment key straight after a digit stays",
+   "name": "a payment key straight after a digit goes",
    "text": [
     "7",
     "sk",
@@ -2709,13 +2671,11 @@
    ],
    "expected": [
     "7",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a payment key straight after an underscore stays",
+   "name": "a payment key straight after an underscore goes",
    "text": [
     "_",
     "sk",
@@ -2724,13 +2684,11 @@
    ],
    "expected": [
     "_",
-    "sk",
-    "_live_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after a capital stays",
+   "name": "a webhook secret straight after a capital goes",
    "text": [
     "X",
     "wh",
@@ -2739,13 +2697,11 @@
    ],
    "expected": [
     "X",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after a small letter stays",
+   "name": "a webhook secret straight after a small letter goes",
    "text": [
     "x",
     "wh",
@@ -2754,13 +2710,11 @@
    ],
    "expected": [
     "x",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after a digit stays",
+   "name": "a webhook secret straight after a digit goes",
    "text": [
     "7",
     "wh",
@@ -2769,13 +2723,11 @@
    ],
    "expected": [
     "7",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a webhook secret straight after an underscore stays",
+   "name": "a webhook secret straight after an underscore goes",
    "text": [
     "_",
     "wh",
@@ -2784,13 +2736,11 @@
    ],
    "expected": [
     "_",
-    "wh",
-    "sec_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after a capital stays",
+   "name": "a GitHub token straight after a capital goes",
    "text": [
     "X",
     "gh",
@@ -2799,13 +2749,11 @@
    ],
    "expected": [
     "X",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after a small letter stays",
+   "name": "a GitHub token straight after a small letter goes",
    "text": [
     "x",
     "gh",
@@ -2814,13 +2762,11 @@
    ],
    "expected": [
     "x",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after a digit stays",
+   "name": "a GitHub token straight after a digit goes",
    "text": [
     "7",
     "gh",
@@ -2829,13 +2775,11 @@
    ],
    "expected": [
     "7",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub token straight after an underscore stays",
+   "name": "a GitHub token straight after an underscore goes",
    "text": [
     "_",
     "gh",
@@ -2844,13 +2788,11 @@
    ],
    "expected": [
     "_",
-    "gh",
-    "p_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after a capital stays",
+   "name": "a GitHub fine-grained token straight after a capital goes",
    "text": [
     "X",
     "github",
@@ -2859,13 +2801,11 @@
    ],
    "expected": [
     "X",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after a small letter stays",
+   "name": "a GitHub fine-grained token straight after a small letter goes",
    "text": [
     "x",
     "github",
@@ -2874,13 +2814,11 @@
    ],
    "expected": [
     "x",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after a digit stays",
+   "name": "a GitHub fine-grained token straight after a digit goes",
    "text": [
     "7",
     "github",
@@ -2889,13 +2827,11 @@
    ],
    "expected": [
     "7",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitHub fine-grained token straight after an underscore stays",
+   "name": "a GitHub fine-grained token straight after an underscore goes",
    "text": [
     "_",
     "github",
@@ -2904,13 +2840,11 @@
    ],
    "expected": [
     "_",
-    "github",
-    "_pat_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after a capital stays",
+   "name": "a GitLab token straight after a capital goes",
    "text": [
     "X",
     "gl",
@@ -2919,13 +2853,11 @@
    ],
    "expected": [
     "X",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after a small letter stays",
+   "name": "a GitLab token straight after a small letter goes",
    "text": [
     "x",
     "gl",
@@ -2934,13 +2866,11 @@
    ],
    "expected": [
     "x",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after a digit stays",
+   "name": "a GitLab token straight after a digit goes",
    "text": [
     "7",
     "gl",
@@ -2949,13 +2879,11 @@
    ],
    "expected": [
     "7",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a GitLab token straight after an underscore stays",
+   "name": "a GitLab token straight after an underscore goes",
    "text": [
     "_",
     "gl",
@@ -2964,13 +2892,11 @@
    ],
    "expected": [
     "_",
-    "gl",
-    "pat-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after a capital stays",
+   "name": "a Slack token straight after a capital goes",
    "text": [
     "X",
     "xo",
@@ -2979,13 +2905,11 @@
    ],
    "expected": [
     "X",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after a small letter stays",
+   "name": "a Slack token straight after a small letter goes",
    "text": [
     "x",
     "xo",
@@ -2994,13 +2918,11 @@
    ],
    "expected": [
     "x",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after a digit stays",
+   "name": "a Slack token straight after a digit goes",
    "text": [
     "7",
     "xo",
@@ -3009,13 +2931,11 @@
    ],
    "expected": [
     "7",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Slack token straight after an underscore stays",
+   "name": "a Slack token straight after an underscore goes",
    "text": [
     "_",
     "xo",
@@ -3024,13 +2944,11 @@
    ],
    "expected": [
     "_",
-    "xo",
-    "xb-",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after a capital stays",
+   "name": "an npm token straight after a capital goes",
    "text": [
     "X",
     "np",
@@ -3039,13 +2957,11 @@
    ],
    "expected": [
     "X",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after a small letter stays",
+   "name": "an npm token straight after a small letter goes",
    "text": [
     "x",
     "np",
@@ -3054,13 +2970,11 @@
    ],
    "expected": [
     "x",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after a digit stays",
+   "name": "an npm token straight after a digit goes",
    "text": [
     "7",
     "np",
@@ -3069,13 +2983,11 @@
    ],
    "expected": [
     "7",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an npm token straight after an underscore stays",
+   "name": "an npm token straight after an underscore goes",
    "text": [
     "_",
     "np",
@@ -3084,13 +2996,11 @@
    ],
    "expected": [
     "_",
-    "np",
-    "m_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after a capital stays",
+   "name": "a Hugging Face token straight after a capital goes",
    "text": [
     "X",
     "h",
@@ -3099,13 +3009,11 @@
    ],
    "expected": [
     "X",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after a small letter stays",
+   "name": "a Hugging Face token straight after a small letter goes",
    "text": [
     "x",
     "h",
@@ -3114,13 +3022,11 @@
    ],
    "expected": [
     "x",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after a digit stays",
+   "name": "a Hugging Face token straight after a digit goes",
    "text": [
     "7",
     "h",
@@ -3129,13 +3035,11 @@
    ],
    "expected": [
     "7",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Hugging Face token straight after an underscore stays",
+   "name": "a Hugging Face token straight after an underscore goes",
    "text": [
     "_",
     "h",
@@ -3144,13 +3048,11 @@
    ],
    "expected": [
     "_",
-    "h",
-    "f_",
-    "a1B2c3D4e5F6g7H8i9J0k1L2"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after a capital stays",
+   "name": "an AWS access key id straight after a capital goes",
    "text": [
     "X",
     "AK",
@@ -3159,13 +3061,11 @@
    ],
    "expected": [
     "X",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after a small letter stays",
+   "name": "an AWS access key id straight after a small letter goes",
    "text": [
     "x",
     "AK",
@@ -3174,13 +3074,11 @@
    ],
    "expected": [
     "x",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after a digit stays",
+   "name": "an AWS access key id straight after a digit goes",
    "text": [
     "7",
     "AK",
@@ -3189,13 +3087,11 @@
    ],
    "expected": [
     "7",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "an AWS access key id straight after an underscore stays",
+   "name": "an AWS access key id straight after an underscore goes",
    "text": [
     "_",
     "AK",
@@ -3204,13 +3100,11 @@
    ],
    "expected": [
     "_",
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after a capital stays",
+   "name": "a Google API key straight after a capital goes",
    "text": [
     "X",
     "AI",
@@ -3219,13 +3113,11 @@
    ],
    "expected": [
     "X",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after a small letter stays",
+   "name": "a Google API key straight after a small letter goes",
    "text": [
     "x",
     "AI",
@@ -3234,13 +3126,11 @@
    ],
    "expected": [
     "x",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after a digit stays",
+   "name": "a Google API key straight after a digit goes",
    "text": [
     "7",
     "AI",
@@ -3249,13 +3139,11 @@
    ],
    "expected": [
     "7",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a Google API key straight after an underscore stays",
+   "name": "a Google API key straight after an underscore goes",
    "text": [
     "_",
     "AI",
@@ -3264,13 +3152,11 @@
    ],
    "expected": [
     "_",
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after a capital stays",
+   "name": "a JSON web token straight after a capital goes",
    "text": [
     "X",
     "ey",
@@ -3285,19 +3171,11 @@
    ],
    "expected": [
     "X",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after a small letter stays",
+   "name": "a JSON web token straight after a small letter goes",
    "text": [
     "x",
     "ey",
@@ -3312,19 +3190,11 @@
    ],
    "expected": [
     "x",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after a digit stays",
+   "name": "a JSON web token straight after a digit goes",
    "text": [
     "7",
     "ey",
@@ -3339,19 +3209,11 @@
    ],
    "expected": [
     "7",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
-   "name": "a JSON web token straight after an underscore stays",
+   "name": "a JSON web token straight after an underscore goes",
    "text": [
     "_",
     "ey",
@@ -3366,15 +3228,7 @@
    ],
    "expected": [
     "_",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
@@ -3430,7 +3284,7 @@
    ]
   },
   {
-   "name": "a JSON web token straight after a hyphen stays",
+   "name": "a JSON web token straight after a hyphen goes",
    "text": [
     "-",
     "ey",
@@ -3445,15 +3299,7 @@
    ],
    "expected": [
     "-",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6",
-    ".",
-    "ey",
-    "J",
-    "a1B2c3D4e5F6g7H8i9J0",
-    ".",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5"
+    "{redacted}"
    ]
   },
   {
@@ -3599,7 +3445,7 @@
    ]
   },
   {
-   "name": "an AWS access key id followed by a small letter stays",
+   "name": "an AWS access key id followed by a small letter goes, what follows stays",
    "text": [
     "AK",
     "IA",
@@ -3607,14 +3453,12 @@
     "x"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNOP",
+    "{redacted}",
     "x"
    ]
   },
   {
-   "name": "an AWS access key id followed by a digit stays",
+   "name": "an AWS access key id followed by a digit goes, what follows stays",
    "text": [
     "AK",
     "IA",
@@ -3622,14 +3466,12 @@
     "P7x"
    ],
    "expected": [
-    "AK",
-    "IA",
-    "ABCDEFGHIJKLMNO",
-    "P7x"
+    "{redacted}",
+    "7x"
    ]
   },
   {
-   "name": "a Google API key followed by a capital stays",
+   "name": "a Google API key followed by a capital goes, what follows stays",
    "text": [
     "AI",
     "za",
@@ -3637,14 +3479,12 @@
     "X"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "X"
    ]
   },
   {
-   "name": "a Google API key followed by a digit stays",
+   "name": "a Google API key followed by a digit goes, what follows stays",
    "text": [
     "AI",
     "za",
@@ -3652,14 +3492,12 @@
     "7"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "7"
    ]
   },
   {
-   "name": "a Google API key followed by an underscore stays",
+   "name": "a Google API key followed by an underscore goes, what follows stays",
    "text": [
     "AI",
     "za",
@@ -3667,9 +3505,7 @@
     "_"
    ],
    "expected": [
-    "AI",
-    "za",
-    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R",
+    "{redacted}",
     "_"
    ]
   },
@@ -3829,10 +3665,7 @@
    ],
    "expected": [
     "{redacted}",
-    "-----END ",
-    "ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 ",
-    "PRIVATE KEY",
-    "-----"
+    "\n-----END ENCRYPTED EXAMPLE ALGORITHM NUMBER 12345 PRIVATE KEY-----"
    ]
   },
   {
@@ -3849,10 +3682,7 @@
    ],
    "expected": [
     "{redacted}",
-    "-----END ",
-    "PRIVATE KEY",
-    " BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH",
-    "-----"
+    "\n-----END PRIVATE KEY BLOCK ABCDEFGHIJKLMNOPQRSTUVWXYZ ABCDEFH-----"
    ]
   },
   {
@@ -4708,7 +4538,7 @@
    ],
    "expected": [
     "{redacted}",
-    ": ",
+    " token: ",
     "{redacted}"
    ]
   },
@@ -4726,6 +4556,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4743,6 +4574,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4766,6 +4598,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4783,6 +4616,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4800,6 +4634,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4817,6 +4652,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4834,6 +4670,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4851,6 +4688,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4868,6 +4706,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -4885,6 +4724,7 @@
    ],
    "expected": [
     "{redacted}",
+    "\n",
     "{redacted}"
    ]
   },
@@ -5429,6 +5269,346 @@
     "Checksum:\n",
     "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
     "\nend"
+   ]
+  },
+  {
+   "name": "an AWS access key id glued to the label before it goes",
+   "text": [
+    "Key",
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP"
+   ],
+   "expected": [
+    "Key",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "an AWS access key id glued to the word after it goes, the word stays",
+   "text": [
+    "AK",
+    "IA",
+    "ABCDEFGHIJKLMNOP",
+    "Copy"
+   ],
+   "expected": [
+    "{redacted}",
+    "Copy"
+   ]
+  },
+  {
+   "name": "a Google API key glued to the label before it goes",
+   "text": [
+    "Key",
+    "AI",
+    "za",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R"
+   ],
+   "expected": [
+    "Key",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token glued to the label before it goes",
+   "text": [
+    "Token",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Token",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token glued to the word after it goes with it",
+   "text": [
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0",
+    "Copy"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a live payment key glued to the label before it goes",
+   "text": [
+    "Key",
+    "sk",
+    "_live_",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Key",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Slack token glued to the label before it goes",
+   "text": [
+    "Token",
+    "xo",
+    "xb-",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "Token",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word ending in sk before a hyphenated name stays",
+   "text": [
+    "risk",
+    "-assessment-template-v2"
+   ],
+   "expected": [
+    "risk",
+    "-assessment-template-v2"
+   ]
+  },
+  {
+   "name": "a word ending in bearer before a long word stays",
+   "text": [
+    "The pallbe",
+    "arer responsibilities were shared."
+   ],
+   "expected": [
+    "The pallbe",
+    "arer responsibilities were shared."
+   ]
+  },
+  {
+   "name": "a name ending in a test key's letters before a hash stays",
+   "text": [
+    "benchmark",
+    "_test_",
+    "3f2a9c8b7d6e5f40"
+   ],
+   "expected": [
+    "benchmark",
+    "_test_",
+    "3f2a9c8b7d6e5f40"
+   ]
+  },
+  {
+   "name": "an ordinary all-caps word holding ASIA stays",
+   "text": [
+    "EURASIAN AND MALAYSIAN AIRLINES"
+   ],
+   "expected": [
+    "EURASIAN AND MALAYSIAN AIRLINES"
+   ]
+  },
+  {
+   "name": "an ordinary all-caps run holding ASIA stays",
+   "text": [
+    "PANASIA",
+    "NETWORKS"
+   ],
+   "expected": [
+    "PANASIA",
+    "NETWORKS"
+   ]
+  },
+  {
+   "name": "ordinary words holding a key's letters stay",
+   "text": [
+    "algebraization, the highs_and_lows, xoxo-hugs, npm_install, shelf_life, Freyja"
+   ],
+   "expected": [
+    "algebraization, the highs_and_lows, xoxo-hugs, npm_install, shelf_life, Freyja"
+   ]
+  },
+  {
+   "name": "a code name holding a key's letters stays",
+   "text": [
+    "laughs_",
+    "count = weighs_total + npm_",
+    "config.length"
+   ],
+   "expected": [
+    "laughs_",
+    "count = weighs_total + npm_",
+    "config.length"
+   ]
+  },
+  {
+   "name": "a test key glued to a word stays",
+   "text": [
+    "task",
+    "_test_",
+    "createsRecordWell"
+   ],
+   "expected": [
+    "task",
+    "_test_",
+    "createsRecordWell"
+   ]
+  },
+  {
+   "name": "a private-key block in lower case, header to end line, stays",
+   "text": [
+    "-----begin ",
+    "private key-----\n",
+    "m3N4o5P6",
+    "\n-----end ",
+    "private key-----"
+   ],
+   "expected": [
+    "-----begin ",
+    "private key-----\n",
+    "m3N4o5P6",
+    "\n-----end ",
+    "private key-----"
+   ]
+  },
+  {
+   "name": "a key's last, shorter line goes with its lines",
+   "text": [
+    "Key:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "Key:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's last line, padded and shorter, goes with its lines, and the line break after it stays",
+   "text": [
+    "Notes:\u2028",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2028",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\u2028",
+    "a1B2==",
+    "\u2028end"
+   ],
+   "expected": [
+    "Notes:\u2028",
+    "{redacted}",
+    "\u2028end"
+   ]
+  },
+  {
+   "name": "a word on its own line after a key's lines stays",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nDone"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}",
+    "\nDone"
+   ]
+  },
+  {
+   "name": "a short line after a key's lines that goes on with other text stays",
+   "text": [
+    "Checksums:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\nv2 and more"
+   ],
+   "expected": [
+    "Checksums:\n",
+    "{redacted}",
+    "\nv2 and more"
+   ]
+  },
+  {
+   "name": "a key's lines on both sides of a short line go together, its line breaks a carriage return alone",
+   "text": [
+    "Notes:\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\r",
+    "a1B2c3",
+    "\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\rend"
+   ],
+   "expected": [
+    "Notes:\r",
+    "{redacted}",
+    "\rend"
+   ]
+  },
+  {
+   "name": "a key's body holding a run shaped like a Google key goes whole",
+   "text": [
+    "Key:\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "q7R8s9T0u1",
+    "AI",
+    "za",
+    "b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S",
+    "9t0U1v2W3x4",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8"
+   ],
+   "expected": [
+    "Key:\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key block cut off, holding a run shaped like an AWS key, goes whole",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "q7R8s9T0u1",
+    "AK",
+    "IA",
+    "B2C3D4E5F6G7H8I9",
+    "J0K1L2M3N4O5P6Q7R8S9t0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a whole key block holding a run shaped like a Google key goes whole",
+   "text": [
+    "-----BEGIN ",
+    "PRIVATE KEY-----\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "q7R8s9T0u1",
+    "AI",
+    "za",
+    "b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S",
+    "9t0U1v2W3x4",
+    "\n",
+    "-----END ",
+    "PRIVATE KEY-----"
+   ],
+   "expected": [
+    "{redacted}"
    ]
   }
  ],
@@ -6005,7 +6185,7 @@
     ],
     [
      [
-      ": ",
+      " token: ",
       "{redacted}"
      ]
     ]

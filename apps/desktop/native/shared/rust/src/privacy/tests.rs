@@ -69,8 +69,8 @@ fn every_rule_and_case_flag_has_an_observable_fixture() {
             "removal {}",
             rule["name"]
         );
-        // Neither has a case-dependent literal in its grammar.
-        if rule["name"] == "address-password" || rule["name"] == "private-key-lines" {
+        // It has no case-dependent literal in its grammar.
+        if rule["name"] == "address-password" {
             continue;
         }
         let mut flipped = definitions.clone();
@@ -83,7 +83,7 @@ fn every_rule_and_case_flag_has_an_observable_fixture() {
         );
         flips += 1;
     }
-    assert_eq!(flips, 17);
+    assert_eq!(flips, 19);
 }
 
 #[test]
@@ -115,6 +115,11 @@ fn hostile_text_stays_under_two_seconds() {
             "  QUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJDQUJD\r\n",
             "",
         ),
+        // Full lines with short ones between them, and a short line that goes on with other text,
+        // as a key's last line is looked for; words after a key's header that end in punctuation.
+        ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\na1\n", "\n"),
+        ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\na1 b\n", "\n"),
+        ("a1 ", "-----BEGIN PRIVATE KEY-----\n"),
     ];
     // Compile before timing; cold startup has a separate helper latency gate.
     scalar("");
