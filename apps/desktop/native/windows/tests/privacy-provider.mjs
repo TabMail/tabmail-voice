@@ -41,11 +41,13 @@ function client(executable, args = []) {
     new Promise((resolve, reject) => pending.push({ resolve, reject })), errors: () => errorText };
 }
 const helper = client(process.argv[2]);
-// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+// The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
+// programs of their own beside the helper.
 const reader = client(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
+const fieldReader = client(join(dirname(process.argv[2]), "voice-field-reader.exe"));
 let id = 0;
 async function request(method, params = {}) {
-  const target = method === "readScreen" ? reader : helper;
+  const target = method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper;
   target.child.stdin.write(`${JSON.stringify({ id: ++id, method, params })}\n`);
   const reply = await target.next();
   assert.equal(reply.id, id);
@@ -54,7 +56,7 @@ async function request(method, params = {}) {
 }
 const exclusions = { excludedAppIDs: [], excludedHosts: ["blocked.example"] };
 let fixture;
-const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); process.exitCode = 1; }, 80_000);
+const timeout = setTimeout(() => { fixture?.child.kill(); helper.child.kill(); reader.child.kill(); fieldReader.child.kill(); process.exitCode = 1; }, 80_000);
 let checks = 0;
 try {
   for (const mode of ["row-hidden", "hidden-box", "large-text", "large-row", "large-link", "large-field", "large-web-control", "large-focus", "large-window-field", "outside-window", "bare-page-control", "outside-page", "page-place-fails", "page-under-thin-row", "page-under-thin-part", "page-in-text", "page-in-control", "text-full", "password-window", "password-row", "password-link", "password-link-raw", "password-web-control", "password-focus",
@@ -70,7 +72,7 @@ try {
     const refused = mode.startsWith("page-") && mode !== "page-no-address";
     if (refused && (context === null || context.hidden !== true)) {
       fixture.child.stdin.write("stats\n");
-      process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}${reader.errors()}`);
+      process.stderr.write(`${mode}: ${JSON.stringify(await fixture.next())}\n${helper.errors()}${reader.errors()}${fieldReader.errors()}`);
     }
     if (mode === "terminal-wide") assert.equal(context, null, "a terminal window not looked through whole is not read");
     else if (refused) assert.deepEqual(context, { hidden: true }, `${mode}: entire reply refused, and reported as hidden`);
@@ -143,9 +145,10 @@ try {
     assert.deepEqual(await exit, [0, null]); fixture.lines.close(); fixture = undefined;
     ++checks;
   }
-  const exits = [once(helper.child, "exit"), once(reader.child, "exit")]; helper.child.stdin.end(); reader.child.stdin.end();
+  const exits = [once(helper.child, "exit"), once(reader.child, "exit"), once(fieldReader.child, "exit")];
+  helper.child.stdin.end(); reader.child.stdin.end(); fieldReader.child.stdin.end();
   for (const exit of exits) assert.deepEqual(await exit, [0, null]);
   process.stdout.write(`${checks} synthetic provider privacy cases passed through the actual helper\n`);
 } finally {
-  clearTimeout(timeout); fixture?.child.kill(); fixture?.lines.close(); helper.child.kill(); helper.lines.close(); reader.child.kill(); reader.lines.close();
+  clearTimeout(timeout); fixture?.child.kill(); fixture?.lines.close(); helper.child.kill(); helper.lines.close(); reader.child.kill(); reader.lines.close(); fieldReader.child.kill(); fieldReader.lines.close();
 }

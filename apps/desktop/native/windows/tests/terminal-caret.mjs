@@ -46,19 +46,21 @@ function start(executable) {
   return { child };
 }
 const helper = start(process.argv[2]);
-// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+// The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
+// programs of their own beside the helper.
 const reader = start(join(dirname(process.argv[2]), "voice-screen-reader.exe"));
+const fieldReader = start(join(dirname(process.argv[2]), "voice-field-reader.exe"));
 function request(method, params = {}) {
   assert.equal(helperFailed, false, "helper remains alive");
   const id = ++nextID;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    (method === "readScreen" ? reader : helper).child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
+    (method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper).child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
   });
 }
 const timeout = setTimeout(() => {
   fail(new Error("terminal caret validation timed out"));
-  helper.child.kill(); reader.child.kill();
+  helper.child.kill(); reader.child.kill(); fieldReader.child.kill();
 }, 15_000);
 const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
 try {
@@ -129,7 +131,7 @@ try {
   process.stdout.write("\nTERMINAL_CARET_AND_VIEWPORT_PASS\n");
 } finally {
   clearTimeout(timeout);
-  for (const { child } of [helper, reader]) {
+  for (const { child } of [helper, reader, fieldReader]) {
     child.stdin.end();
     child.kill();
   }

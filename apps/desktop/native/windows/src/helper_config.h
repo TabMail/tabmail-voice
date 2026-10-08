@@ -14,7 +14,7 @@ inline constexpr unsigned long long contextSelectionScanMs = 200;
 // Longest one accessibility request may run before the helper ends itself, so a provider that
 // stops answering can't hold the queue (ms).
 inline constexpr unsigned long long accessibilityWatchdogMs = 2500;
-// Longest a terminal's field read for corrections may take (ms), well under the watchdog: the app
+// Longest a terminal's field read for corrections may take (ms), in voice-field-reader: the app
 // asks for one every half second while it watches the field, and a read cut short gives no field.
 inline constexpr unsigned long long terminalFieldReadMs = 1000;
 // Longest a paste waits for another program to close the clipboard (ms), never past the paste's

@@ -561,7 +561,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(transcription.body(0).vocabulary).toBeUndefined();
   });
 
-  /** After a dictation's paste, the field of the app in front at key-down is watched for the user's
+  /** After a dictation's paste, the field in front (the paste's, as it landed) is watched for the user's
    * corrections (`CorrectionWatch`), with the text pasted; the next key-down stops the watch first. */
   /** Where the text goes (ADR-DESK-042): into the app in front at key-down only. When the user has
    * gone to another app, nothing is pasted anywhere; the text goes on the clipboard and into the paste
@@ -816,7 +816,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   describe("learning the user's corrections", () => {
     function watcher(): { calls: string[]; corrections: NonNullable<DictationDependencies["corrections"]> } {
       const calls: string[] = [];
-      return { calls, corrections: { watch: (pid, pasted) => calls.push(`watch ${pid} ${pasted}`), stop: () => calls.push("stop") } };
+      return { calls, corrections: { watch: (pasted) => calls.push(`watch ${pasted}`), stop: () => calls.push("stop") } };
     }
 
     async function dictateHeld(corrections: NonNullable<DictationDependencies["corrections"]>, count = 1): Promise<string[]> {
@@ -829,16 +829,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return pastes;
     }
 
-    test("watches the app pasted into, with the text pasted", async () => {
+    test("watches the field pasted into, with the text pasted", async () => {
       const { calls, corrections } = watcher();
       expect(await dictateHeld(corrections)).toEqual([cleaned]);
-      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
+      expect(calls).toEqual(["stop", `watch ${cleaned}`]);
     });
 
     test("each key-down stops the last watch before the next paste", async () => {
       const { calls, corrections } = watcher();
       await dictateHeld(corrections, 2);
-      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`, "stop", `watch 101 ${cleaned}`]);
+      expect(calls).toEqual(["stop", `watch ${cleaned}`, "stop", `watch ${cleaned}`]);
     });
 
     /** The apps and websites excluded from screen reading at key-down go with the watch, which never
@@ -846,7 +846,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("the watch is told the apps and websites excluded as the dictation started", async () => {
       prefs.value = { ...defaultSettings(), excludedApps: ["org.example.vault"], excludedSites: ["example.com"] };
       const excluded: ScreenExclusions[] = [];
-      const corrections: NonNullable<DictationDependencies["corrections"]> = { watch: (_pid, _pasted, exclusions) => excluded.push(exclusions), stop: () => {} };
+      const corrections: NonNullable<DictationDependencies["corrections"]> = { watch: (_pasted, exclusions) => excluded.push(exclusions), stop: () => {} };
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
       controller.onPhaseChange = (phase) => {
         if (phase.kind === "listening") prefs.value = { ...defaultSettings(), excludedApps: ["org.example.other"], excludedSites: ["example.org"] };
@@ -875,7 +875,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       transcription.enqueue(200, cleanedReply);
       await holdAndRelease(controller);
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
+      expect(calls).toEqual(["stop", `watch ${cleaned}`]);
     });
 
     /** A paste the helper finishes after the user canceled and pressed the key again belongs to the

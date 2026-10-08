@@ -20,9 +20,12 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pending = new Map();
 let id = 0;
 let helper;
-// The screen is read by voice-screen-reader.exe, a program of its own beside the helper.
+// The screen is read by voice-screen-reader.exe and the focused field by voice-field-reader.exe,
+// programs of their own beside the helper.
 let reader;
 let readerErrors = "";
+let fieldReader;
+let fieldReaderErrors = "";
 let activator;
 let activatorErrors = "";
 let lines;
@@ -40,7 +43,7 @@ function request(method, params = {}) {
       if (message.error) reject(new Error(`${method}: ${message.error.message}`));
       else resolve(message.result);
     });
-    (method === "readScreen" ? reader : helper).stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
+    (method === "readScreen" ? reader : method === "focusedFieldValue" ? fieldReader : helper).stdin.write(`${JSON.stringify({ id: requestID, method, params })}\n`);
   });
 }
 function answer(line) {
@@ -78,7 +81,7 @@ async function anchor(target, field = "editor", fieldFallback = false) {
 // seconds while allowing the complete matrix two minutes.
 const timeout = setTimeout(() => {
   process.stderr.write(`Windows Electron integration timed out at ${stage}; ${id} requests in ${Date.now() - startedAt} ms\n`);
-  activator?.kill(); helper?.kill(); reader?.kill(); app.exit(1);
+  activator?.kill(); helper?.kill(); reader?.kill(); fieldReader?.kill(); app.exit(1);
 }, privacyOnly ? 60_000 : 120_000);
 async function main() {
   try {
@@ -92,6 +95,10 @@ async function main() {
     reader.on("error", (error) => { process.stderr.write(`${error.message}\n`); app.exit(1); });
     reader.stderr.on("data", (chunk) => { readerErrors += chunk; });
     createInterface({ input: reader.stdout }).on("line", answer);
+    fieldReader = spawn(join(dirname(process.argv[2]), "voice-field-reader.exe"), [], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    fieldReader.on("error", (error) => { process.stderr.write(`${error.message}\n`); app.exit(1); });
+    fieldReader.stderr.on("data", (chunk) => { fieldReaderErrors += chunk; });
+    createInterface({ input: fieldReader.stdout }).on("line", answer);
     if (coldActivation) {
       activator = spawn(process.argv[2], ["--accessibility-activator"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
       activator.on("error", (error) => { process.stderr.write(`${error.message}\n`); app.exit(1); });
@@ -369,12 +376,13 @@ async function main() {
     for (const by = Date.now() + 4000; await editorValue() !== "Before inserted after. 🙂" && Date.now() < by;) await delay(20);
     assert.equal(await editorValue(), "Before inserted after. 🙂", "native paste replaces the actual Chromium selection");
     assert.equal(await clipboard.readText(), "inserted", "the text stays on the clipboard");
-    const exited = [once(helper, "exit"), once(reader, "exit")]; helper.stdin.end(); reader.stdin.end();
+    const exited = [once(helper, "exit"), once(reader, "exit"), once(fieldReader, "exit")]; helper.stdin.end(); reader.stdin.end(); fieldReader.stdin.end();
     for (const exit of exited) assert.deepEqual(await exit, [0, null]);
     assert.equal(pending.size, 0);
     const logged = (text) => text.replaceAll("\r\n", "\n").replace(/^debug caret source: (text-pattern-caret|win32-edit-caret|accessible-caret|text-selection|focused-field-frame)\n/gmu, "").replace(/^debug accessible text: (protected or incomplete subtree|embedded objects, read by UI Automation)\n/gmu, "").replace(/^debug caret start: (paragraph [01], line [01]|paragraphs or lines unavailable|(\d+|no) block starts near the caret; the caret (ends a line|starts its text))\n/gmu, "").replace(/^debug aggregate text refused: (protected descendant|time budget|incomplete census)\n/gmu, "").replace(/^debug paste stage: (focus-check|clipboard-open|final-focus-check|clipboard-write|send-input|complete)\n/gmu, "");
-    assert.equal(logged(stderr), "debug screen access: excluded or unknown page not read\ndebug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
+    assert.equal(logged(stderr), "debug caret lookup: protected-field\ndebug caret lookup: ineligible-focused-element\ndebug caret lookup: no-caret-geometry\n", "refusals log categories without exposing focused content");
     assert.equal(logged(readerErrors), "debug screen access: excluded or unknown page not read\n", "the reader's refusals log categories without exposing focused content");
+    assert.equal(logged(fieldReaderErrors), "debug screen access: excluded or unknown page not read\n", "the field reader's refusals log categories without exposing focused content");
     process.stdout.write("Windows Electron field/context/caret/insertion/refusal/recovery checks passed\n");
     if (activator) {
       const stopped = once(activator, "exit"); activator.stdin.end();
@@ -386,10 +394,11 @@ async function main() {
   } catch (error) {
     process.stderr.write(stderr);
     process.stderr.write(readerErrors);
+    process.stderr.write(fieldReaderErrors);
     process.stderr.write(`${error.stack}\n`);
     app.exit(1);
   } finally {
-    clearTimeout(timeout); activator?.kill(); helper?.kill(); reader?.kill(); lines?.close();
+    clearTimeout(timeout); activator?.kill(); helper?.kill(); reader?.kill(); fieldReader?.kill(); lines?.close();
   }
 
 }

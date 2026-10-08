@@ -6,7 +6,6 @@
 #include <pwd.h>
 #include "channel.h"
 #include "foreground.h"
-#include "focused_read.h"
 #include "input_session.h"
 #include "portal_owner.h"
 #include "insertion.h"
@@ -88,15 +87,7 @@ int main() {
                 reply(placed, true);
             }
         } else if (method == "frontmostApp") {
-            const auto target = foreground.target();
-            const bool focused = target && foreground.targets(target->token);
-            // Opaque per-process window tokens, never window titles or field text.
-            // Distinguish a missing provider result from a genuine target change.
-            std::cerr << "debug accessibility: frontmost target "
-                << (focused ? std::to_string(target->token) : target ? "unfocused" : "unavailable") << "\n";
-            reply(focused ? JSON{{"window", target->token}} : JSON(nullptr), true);
-        } else if (method == "focusedFieldValue") {
-            reply(voice::focusedRead(method, params, foreground), true);
+            reply(voice::frontmostApp(foreground), true);
         } else {
             throw std::runtime_error("unknown method");
         }

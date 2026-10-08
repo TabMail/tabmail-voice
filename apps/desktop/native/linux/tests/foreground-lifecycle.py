@@ -3,9 +3,10 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Drive the real native service through foreground callbacks and GLib timers.
 
-Run once over the main helper, which serves the foreground and the field, and once (second argument
-`reader`) over voice-screen-reader, the program that reads the screen; the same fixture commands
-drive both."""
+Run once over the main helper, which serves the foreground, the caret and the paste; once (second
+argument `reader`) over voice-screen-reader, the program that reads the screen; and once (`field`)
+over voice-field-reader, the program that reads the focused field. The same fixture commands drive
+all three."""
 import json
 import os
 import select
@@ -22,7 +23,8 @@ control_read, control_write = os.pipe()
 ack_read, ack_write = os.pipe()
 with tempfile.TemporaryFile(mode='w+t') as diagnostics:
     reader = sys.argv[2:] == ['reader']
-    assert sys.argv[2:] in ([], ['reader'])
+    fields = sys.argv[2:] == ['field']
+    assert sys.argv[2:] in ([], ['reader'], ['field'])
     child = subprocess.Popen([sys.argv[1]], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=diagnostics, text=True, pass_fds=(control_read, ack_write), env={**os.environ,
         'VOICE_FIXTURE_CONTROL': str(control_read), 'VOICE_FIXTURE_ACK': str(ack_write)})
@@ -69,7 +71,8 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             time.sleep(0.03)
         raise AssertionError('activation did not recover within retry budget')
 
-    # Each check runs in the process that serves it: the screen in the reader, the rest in the helper.
+    # Each check runs in the process that serves it: the screen in the reader, the field in the field
+    # reader, the rest in the helper.
     def screen(params=None):
         return request('readScreen', params) if reader else True
 
@@ -84,7 +87,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         request('insert', {'window': window, 'text': 'Synthetic held paste', 'deadline': deadline}, refused=refused)
 
     def field():
-        if reader:
+        if not fields:
             return None
         target = request('frontmostApp')
         assert target and target['window'] > 0
@@ -100,6 +103,12 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert 'First synthetic app' in screen()['renderedText'], 'a read sent as the reader starts finds the app in front'
             for method in ('frontmostApp', 'focusedFieldValue', 'caretAnchor', 'insert', 'redactText'):
                 request(method, refused=True)
+        elif fields:
+            # Asked the moment the field reader starts, as the app does after restarting it when a watch
+            # supersedes a read still going: the answer waits for the reader to find what has focus.
+            assert request('frontmostApp'), 'a watch started as the field reader starts finds the app in front'
+            for method in ('readScreen', 'caretAnchor', 'insert', 'redactText', 'requestInsertion'):
+                request(method, refused=True)
         else:
             assert request('redactText', {'text': 'token=syntheticPrivate123'}) == {'text': 'token=[redacted]'}
             assert request('redactText', {'text': ''}) == {'text': ''}
@@ -113,13 +122,14 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             request('redactText', {'text': None}, refused=True)
             request('redactText', {'text': '😀' * 32769}, refused=True)
             request('readScreen', refused=True)
+            request('focusedFieldValue', {**policy, 'window': 1, 'maxLength': 20000}, refused=True)
         wait_calls((1, 0))
         if reader:
             assert 'First synthetic app' in screen()['renderedText'], 'startup activates the already-foreground app'
         assert command('a') == (2, 0)
         if reader:
             assert 'First synthetic app' in screen()['renderedText']
-        else:
+        elif fields:
             assert field() == {'value': 'Synthetic field content'}
         # The Shell holds the keyboard while the dictation key is down: the focus moves to the Shell
         # and back, and the window in front stays the target, with the same token, throughout. The
@@ -130,7 +140,9 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             assert 'First synthetic app' in screen()['renderedText'], 'the screen is read while the Shell holds the keyboard'
         else:
             assert request('frontmostApp') == {'window': window}, 'the target stays while the Shell holds the keyboard'
+        if fields:
             assert field() == {'value': 'Synthetic field content'}, 'the field is read while the Shell holds the keyboard'
+        elif not reader:
             # The overlay is placed at the target's caret during the hold too (its reply is geometry
             # or null; the categorical diagnostic says whether the target was still the one in front).
             diagnostics.seek(0, os.SEEK_END)
@@ -147,6 +159,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         command('H')
         if not reader:
             assert request('frontmostApp') == {'window': window}, 'the target keeps its token after the hold'
+        if not reader and not fields:
             # The same paste once the hold ends goes through: the control for the refusal above.
             paste(window, refused=False)
             assert portal_events(0.5) == ['publish', 'key 65507 1', 'key 118 1', 'key 118 0', 'key 65507 0'], \
@@ -202,7 +215,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         command('f')
         if reader:
             assert screen() is None, 'foreground change during text read refuses stale screen'
-        else:
+        elif fields:
             assert field() is None, 'foreground change during field read refuses stale correction text'
         command('g')
         # A different app gets its own activation request, without an identity allowlist.
@@ -215,7 +228,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
             read = screen()
             assert read['textBeforeCaret'] == '' and 'synthetic-private-password' not in json.dumps(read)
         command('u')
-        if not reader:
+        if fields:
             assert field() == {'value': 'Synthetic field content'}
             command('p')
             assert field() == {'value': None}
@@ -224,7 +237,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         excluded = {**policy, 'excludedHosts': ['synthetic.example']}
         if reader:
             assert screen(excluded) == {'hidden': True}
-        else:
+        elif fields:
             window = request('frontmostApp')['window']
             assert request('focusedFieldValue', {**excluded, 'window': window, 'maxLength': 20000}) == {'value': None}
         # A failed request recovers via the actual one-second timer.
@@ -243,7 +256,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         time.sleep(1.1)
         assert command('s') == (9, 1) and (screen() if reader else target()) is None
         assert command('a') == (10, 1)
-        if not reader:
+        if fields:
             assert field() == {'value': 'Synthetic field content'}
         # An app that announces its field before its window, then a container around the field.
         assert command('o') == (10, 1), 'a field announced before its window needs no lookup'
@@ -254,7 +267,7 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostics:
         assert command('s') == (11, 1)
         if not reader:
             assert request('frontmostApp') is None, 'departure cancels retries'
-        print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen' if reader else 'field'} reads passed")
+        print(f"native foreground activation, two apps, retry recovery/exhaustion/cancellation and the {'screen reads' if reader else 'field reads' if fields else 'caret and paste'} passed")
     finally:
         child.stdin.close()
         try:

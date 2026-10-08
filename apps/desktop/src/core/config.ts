@@ -416,6 +416,9 @@ export const linuxCaretRequestTimeout = 200;
  * has no time limit of its own; a dictation takes a read only if it is done in time (`contextWait`,
  * agent mode `agentScreenWait`). */
 export const screenReaderTimeout = maxRecordingDuration;
+/** Longest a request to voice-field-reader (`FieldReader`) may run before that process is ended
+ * (ms): past a correction watch, nothing it reads is used. */
+export const fieldReaderTimeout = correctionWatchDuration;
 /** Longest a Calendar or Reminders request to the helper may take: the first one waits while
  * macOS asks the user for access. */
 export const eventStoreRequestTimeout = 120_000;

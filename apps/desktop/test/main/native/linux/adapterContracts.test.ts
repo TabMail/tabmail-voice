@@ -12,15 +12,9 @@ import { linuxTrayIcon } from '../../../../src/main/native/linux/trayIcon.js';
 import type { NativeImage } from 'electron';
 const electron = vi.hoisted(() => ({ openPath: vi.fn(async () => ''), showItemInFolder: vi.fn() }));
 vi.mock('electron', () => ({ shell: electron, nativeImage: { createFromBitmap: (bitmap: Buffer, size: unknown) => ({ bitmap, size }) } }));
-const exclusions = { apps: ['synthetic.desktop'], sites: ['private.example'] };
 test('a native foreground token reaches the dictation caller', async () => {
   const request = vi.fn(async () => ({ window: 42 })); const system = new LinuxSystem({ request } as unknown as HelperClient);
   expect(await system.frontmostApp()).toBe(42); expect(request).toHaveBeenCalledExactlyOnceWith('frontmostApp');
-});
-test('a native focused field reaches local correction learning', async () => {
-  const request = vi.fn(async () => ({ value: 'Synthetic revised phrase' })); const system = new LinuxSystem({ request } as unknown as HelperClient);
-  expect(await system.focusedFieldValue(42, exclusions)).toBe('Synthetic revised phrase');
-  expect(request).toHaveBeenCalledExactlyOnceWith('focusedFieldValue', expect.objectContaining({ window: 42, excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites }));
 });
 test('search results cross the actual child-process protocol', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tabmail-file-wire-'));

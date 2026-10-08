@@ -4,7 +4,6 @@
 
 import { screen } from "electron";
 import * as config from "../../../core/config.js";
-import type { ScreenExclusions } from "../../../core/dictation/excludedSites.js";
 import type { Rect } from "../../../core/ui/overlayGeometry.js";
 import { HelperError, type HelperClient } from "../helperClient.js";
 import { keyboardLanguageCode } from "../keyboardLanguage.js";
@@ -34,13 +33,6 @@ export class WindowsSystem {
     const reply = await this.helper.request<{ name?: unknown } | null>("fullUserName");
     if (typeof reply?.name !== "string") throw new HelperError("failed", "fullUserName", "no name in reply");
     return reply.name;
-  }
-
-  /** Complete focused editable field for local correction learning; long/password fields refused. */
-  async focusedFieldValue(window: number, exclusions: ScreenExclusions): Promise<string | null> {
-    if (!Number.isSafeInteger(window) || window <= 0) return null;
-    const reply = await this.helper.request<{ value?: unknown } | null>("focusedFieldValue", { window, maxLength: config.correctionMaxFieldLength, excludedAppIDs: exclusions.apps, excludedHosts: exclusions.sites });
-    return typeof reply?.value === "string" && reply.value.length <= config.correctionMaxFieldLength ? reply.value : null;
   }
 
   /** The executable picked for screen-reading exclusion; never launches the app. */

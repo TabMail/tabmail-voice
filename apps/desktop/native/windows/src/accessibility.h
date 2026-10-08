@@ -753,8 +753,8 @@ private:
     // A terminal window's viewport as the shared core's `collect` finishes it, the source of the
     // screen read's projection and of the field read's box around the cursor; nullptr when it can't
     // be read, `hiddenScreen()` when it shows an excluded page. `budget`: none for the screen read,
-    // which runs in voice-screen-reader; a field read runs in this helper, under its watchdog, and
-    // gives nothing once its budget is spent.
+    // which runs in voice-screen-reader; a field read runs in voice-field-reader, which the app
+    // ends past `fieldReaderTimeout`, and gives nothing once its budget is spent.
     JSON terminalViewport(HWND window, IUIAutomationElement* focus, const ScreenExclusions& exclusions,
                           ULONGLONG started, size_t& visited, std::optional<ULONGLONG> budget = std::nullopt) {
         ComPtr<IUIAutomationElement> root;

@@ -52,10 +52,12 @@ struct ScreenExclusionTests {
         let channel = HelperChannel(output: { line in lines.withLock { $0.append(line) } })
         let service = MacService.register(
             on: channel, eventStore: EventKitStore(store: FakeEventStore(), status: { _ in .fullAccess }),
-            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized }), screen: screen
+            contactStore: ContactsFrameworkStore(store: FakeContactStore(), status: { _ in .authorized })
         )
-        // The screen read is the reader's (`voice-screen-reader`); one channel serves both here.
+        // The screen read is `voice-screen-reader`'s and the field read `voice-field-reader`'s; one
+        // channel serves all three here.
         ScreenReaderService.register(on: channel, screen: screen)
+        FieldReaderService.register(on: channel, screen: screen)
         for request in requests { await channel.handle(line: Data(request.utf8)) }
         let replies = try lines.withLock { $0 }.map { try #require(JSONSerialization.jsonObject(with: $0) as? [String: Any]) }
         withExtendedLifetime(service) {}
