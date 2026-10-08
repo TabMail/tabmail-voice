@@ -3533,7 +3533,24 @@ well-structured place for the redactors.
   its value in the text as read. `private-key-body`'s optional last line, which took the next line's
   leading letters, is deleted: `private-key-lines` takes a body's last, shorter line itself. Two
   secrets that meet now leave one marker where the redaction wrote two. An engine failure takes
-  everything after the failing rule's last match, as before.)*
+  everything after the failing rule's last match, as before.)* *(Amended 2026-10-08, later, owner:
+  with no order, the limits the key rules kept for the old order only showed key text, and they are
+  gone. `private-key-cut` takes every word of base64 after a cut header, up to the first character
+  that is neither base64 nor space: whole words ending at a space let a key whose last or only word
+  touches punctuation (an escaped JSON value, a preview ending in `…`, a closing quote) show its
+  body. A body's last line goes when it is one word of base64 that ends its line or runs into
+  punctuation, with or without a digit or symbol: the owner chose this over taking the first word
+  of the next line whatever follows it, and over showing such a last line. A lone word on the line
+  after two or more full lines of base64 (`Done`) goes with it; a line that goes on with more words
+  stays. `private-key-body` takes that line again in the same shape, so a body whose lines are a
+  blank line apart loses it too. One redactor's matches never overlap each other, so one match may
+  not run over the start of the next secret of its kind: a token stops where another of its kind
+  glued to it begins (`ghp_`, `npm_`, `hf_`, `whsec_`, the payment keys), a JSON web token's last two
+  parts go alone, as a token glued to the one before leaves them, and `named-value-up-to-a-name`
+  ends a value where another secret name given a value begins inside it
+  (`token=<value>,password: <value>`), while `named-value` still takes the whole run, as a value
+  may hold such a name. A document's text whose first secret began in the text before it now marks
+  where it was taken out, as a screen read does.)*
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what

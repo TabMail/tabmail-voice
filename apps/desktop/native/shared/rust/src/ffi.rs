@@ -141,15 +141,26 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
             let text = field("text", true)?;
             // Part of a document comes with the text around it, so that a secret
             // continuing past an edge is recognized whole. The three are redacted as one
-            // text and only the middle is returned; a match crossing an edge is replaced
-            // whole, so none of its characters is left on either side.
+            // text and only the middle is returned; a match crossing an edge takes all of its
+            // characters on either side, and its marker goes where the middle starts.
             let (before, after) = (field("before", false)?, field("after", false)?);
             if before.len() + text.len() + after.len() > DOCUMENT_TEXT_BYTES {
                 return Err(1);
             }
-            let parts = vec![vec![before.to_owned(), text.to_owned(), after.to_owned()]];
-            let result = privacy::redact(&parts).map_err(|_| 3u32)?;
-            serde_json::to_vec(&serde_json::json!({"text": result[0][1]})).map_err(|_| 3)
+            let source = [before, text, after].concat();
+            let middle = before.len()..before.len() + text.len();
+            let mut result = String::new();
+            let mut at = middle.start;
+            for run in privacy::taken(&source).map_err(|_| 3u32)? {
+                if run.end <= middle.start || run.start >= middle.end {
+                    continue;
+                }
+                result.push_str(&source[at..run.start.max(at)]);
+                result.push_str(privacy::PLACEHOLDER);
+                at = run.end.min(middle.end);
+            }
+            result.push_str(&source[at..middle.end]);
+            serde_json::to_vec(&serde_json::json!({"text": result})).map_err(|_| 3)
         })
     }
 }
@@ -974,6 +985,7 @@ mod tests {
     #[test]
     fn explicit_text_redaction_is_bounded_and_refuses_bad_shapes() {
         let limit = "a".repeat(DOCUMENT_TEXT_BYTES / 2);
+        let line = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0";
         for (input, expected) in [
             (
                 serde_json::json!({"text": "token=syntheticPrivate123"}),
@@ -986,8 +998,24 @@ mod tests {
                 Some("[redacted] Public."),
             ),
             (
+                // A secret that started in the text before leaves its marker where the text
+                // starts, as the text it took is gone.
                 serde_json::json!({"before": "Earlier. token=synthetic", "text": "Private123. Public."}),
-                Some(" Public."),
+                Some("[redacted] Public."),
+            ),
+            (
+                serde_json::json!({"before": "Earlier. token=synthetic", "text": "Private123", "after": " later."}),
+                Some("[redacted]"),
+            ),
+            (
+                // A page starting inside a key's body loses the key's last line too.
+                serde_json::json!({"before": "Page 2\n", "text": format!("{line}\n{line}\n{line}\na1B2c3D4e5F6\"\"\""), "after": "\nPage 3"}),
+                Some("[redacted]\"\"\""),
+            ),
+            (
+                // A secret only in the text before marks nothing.
+                serde_json::json!({"before": "token=syntheticPrivate123 ", "text": "Public."}),
+                Some("Public."),
             ),
             (
                 // A secret continuing into the text after leaves only its replacement.
@@ -1095,7 +1123,7 @@ mod tests {
         assert!(child.status.success());
         assert_eq!(
             String::from_utf8(child.stderr).unwrap(),
-            "debug redactor unfinished: named-value\n"
+            "debug redactor unfinished: named-value\ndebug redactor unfinished: named-value-up-to-a-name\n"
         );
     }
 }

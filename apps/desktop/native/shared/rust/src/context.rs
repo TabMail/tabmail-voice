@@ -107,9 +107,6 @@ impl Block {
 /// the line. A piece whose box ends well past the next one's start wrapped onto more lines; its
 /// last line's end is not known, so a space goes between.
 const ABUTTING_GAP: f64 = 0.1;
-/// What goes between two blocks as the screen shows them: a line break (two at a jump up to the
-/// next column), or, between two pieces of one line, a space where the screen shows one and
-/// nothing where they abut (a run of bold or a link inside a word).
 /// A box the helper gives: four finite numbers, x, y, width and height.
 fn read_box(value: &Value) -> Result<[f64; 4], u32> {
     let array = value.as_array().ok_or(1u32)?;
@@ -122,6 +119,9 @@ fn read_box(value: &Value) -> Result<[f64; 4], u32> {
     }
     Ok(frame)
 }
+/// What goes between two blocks as the screen shows them: a line break (two at a jump up to the
+/// next column), or, between two pieces of one line, a space where the screen shows one and
+/// nothing where they abut (a run of bold or a link inside a word).
 fn separator(a: &Block, b: &Block) -> &'static str {
     let (Some(a_frame), Some(b_frame)) = (a.frame, b.frame) else {
         return "\n";
@@ -1477,6 +1477,8 @@ mod budget_tests {
             for part in [&reply["caret"][0], &reply["caret"][2]] {
                 let part = part.as_str().unwrap();
                 assert!(whole_markers_only(part), "{k}: {part}");
+                // A marker the cut crosses is left out, never kept past the side's budget.
+                assert!(part.chars().count() <= CARET_SIDE_GRAPHEMES, "{k}: {part}");
                 if part.contains(privacy::PLACEHOLDER) {
                     kept += 1;
                 } else {

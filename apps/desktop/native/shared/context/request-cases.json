@@ -215,7 +215,7 @@
         }
       },
       "expected": {
-        "value": "Notes:\n[redacted]\nend"
+        "value": "Notes:\n[redacted]"
       }
     },
     {
@@ -868,7 +868,7 @@
         }
       },
       "expected": {
-        "value": "[redacted] [redacted]"
+        "value": "[redacted]"
       }
     },
     {
@@ -880,7 +880,7 @@
         }
       },
       "expected": {
-        "value": "[redacted] [redacted]"
+        "value": "[redacted]"
       }
     },
     {
@@ -893,6 +893,18 @@
       },
       "expected": {
         "value": "[redacted]\ntoken = [redacted]"
+      }
+    },
+    {
+      "name": "a field starting inside a key body loses its last line touching a closing quote",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6\"\"\""
+        }
+      },
+      "expected": {
+        "value": "[redacted]\"\"\""
       }
     }
   ]

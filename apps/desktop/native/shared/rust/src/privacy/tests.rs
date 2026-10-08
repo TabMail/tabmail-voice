@@ -83,7 +83,7 @@ fn every_rule_and_case_flag_has_an_observable_fixture() {
         );
         flips += 1;
     }
-    assert_eq!(flips, 19);
+    assert_eq!(flips, 20);
 }
 
 #[test]
@@ -373,23 +373,54 @@ fn terminal_anchor_where_two_matches_meet_is_withheld() {
     assert_eq!(anchors, vec![None, Some(actual[0][0].len())]);
 }
 
+/// An anchor inside a match is withheld, even in the part of it that stays (the `token=` of
+/// `token=<value>`); one at the match's start stays where it is.
+#[test]
+fn terminal_anchor_inside_a_kept_name_is_withheld() {
+    let text = "token=abc123456789 x";
+    let (_, anchors) = redact_anchored(&vec![vec![text.into()]], &[0, 3, 6, 7]).unwrap();
+    assert_eq!(anchors, vec![Some(0), None, None, None]);
+}
+
+/// An anchor at the first character a run takes goes before its marker, one at its end after it.
+#[test]
+fn terminal_anchor_at_a_run_start_goes_before_the_marker() {
+    let token = format!("{}{}", "gh", "p_a1B2c3D4e5F6g7H8i9J0k1L2m3");
+    let text = format!("see {token} ok");
+    let end = "see ".len() + token.len();
+    let (actual, anchors) = redact_anchored(&vec![vec![text]], &[4, 5, end, end + 1]).unwrap();
+    assert_eq!(actual[0][0], format!("see {PLACEHOLDER} ok"));
+    let marker_end = "see ".len() + PLACEHOLDER.len();
+    assert_eq!(
+        anchors,
+        vec![Some(4), None, Some(marker_end), Some(marker_end + 1)]
+    );
+}
+
 /// A run that takes the line break between two lines leaves it in place, and an anchor after it
 /// counts it.
 #[test]
 fn terminal_anchor_after_a_run_over_a_line_break_counts_the_break() {
     let line = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0".to_string();
-    let lines = vec![vec![line.clone()], vec![line.clone()], vec!["after".into()]];
-    let end = 2 * line.len() + 2 + "after".len();
+    let lines = vec![
+        vec![line.clone()],
+        vec![line.clone()],
+        vec!["after it".into()],
+    ];
+    let end = 2 * line.len() + 2 + "after it".len();
     let (actual, anchors) = redact_anchored(&lines, &[end]).unwrap();
     assert_eq!(
         actual,
         vec![
             vec![PLACEHOLDER.to_string()],
             vec![String::new()],
-            vec!["after".to_string()]
+            vec!["after it".to_string()]
         ]
     );
-    assert_eq!(anchors, vec![Some(PLACEHOLDER.len() + 2 + "after".len())]);
+    assert_eq!(
+        anchors,
+        vec![Some(PLACEHOLDER.len() + 2 + "after it".len())]
+    );
 }
 
 /// What `taken` takes out is what `redact` replaces: putting one marker in place of each run gives

@@ -1508,9 +1508,9 @@
       },
       "expected": {
         "caret": [
-          "Notes:\u2029[redacted]\u2029",
+          "Notes:\u2029[redacted]",
           "",
-          "end"
+          ""
         ]
       }
     },
@@ -4215,7 +4215,7 @@
         ]
       },
       "expected": {
-        "rendered": "## id_rsa\n[redacted]\n[redacted]\n\u00bb \u2038"
+        "rendered": "## id_rsa\n[redacted]\n» ‸"
       }
     },
     {
@@ -4250,7 +4250,7 @@
         ]
       },
       "expected": {
-        "rendered": "\u00bb \u2038[redacted]\n[redacted]",
+        "rendered": "» ‸[redacted]",
         "caret": [
           "",
           "",
@@ -4307,7 +4307,7 @@
       "expected": {
         "rendered": "Notes [redacted]",
         "caret": [
-          "[redacted]\nmore",
+          "[redacted]",
           "",
           ""
         ]
