@@ -143,10 +143,18 @@ fn find(text: &str, rules: &[Rule]) -> Vec<Found> {
     for rule in rules {
         let mut searched = 0;
         let mut finished = true;
-        for item in rule.regex.captures_iter(text) {
-            let Some(captures) = item.ok() else {
-                finished = false;
-                break;
+        // Each search resumes where the last match's taken part ends, not where the match ends:
+        // a kept end (the line break after a key's last line) may be where the next secret of
+        // the same kind starts. Every step moves at least one character on.
+        let mut from = 0;
+        while from <= text.len() {
+            let captures = match rule.regex.captures_from_pos(text, from) {
+                Ok(Some(captures)) => captures,
+                Ok(None) => break,
+                Err(_) => {
+                    finished = false;
+                    break;
+                }
             };
             let Some(matched) = captures.get(0) else {
                 finished = false;
@@ -173,6 +181,15 @@ fn find(text: &str, rules: &[Rule]) -> Vec<Found> {
                 taken: matched.start() + kept_start..matched.end() - kept_end,
             });
             searched = matched.end();
+            let resume = matched.end() - kept_end;
+            from = if resume > matched.start() {
+                resume
+            } else {
+                text[matched.start()..]
+                    .chars()
+                    .next()
+                    .map_or(text.len() + 1, |c| matched.start() + c.len_utf8())
+            };
         }
         if !finished {
             // Never log the engine error: only the trusted canonical rule name.

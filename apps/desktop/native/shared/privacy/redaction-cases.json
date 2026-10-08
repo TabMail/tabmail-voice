@@ -6280,6 +6280,248 @@
     "{redacted}",
     " end"
    ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into quotes",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "ABCD\"\"\""
+   ],
+   "expected": [
+    "{redacted}",
+    "\"\"\""
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into a comma",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5==,"
+   ],
+   "expected": [
+    "{redacted}",
+    ","
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are a blank line apart loses its last line running into a parenthesis",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n\n",
+    "abc)"
+   ],
+   "expected": [
+    "{redacted}",
+    ")"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body whose lines are separated by U+2029 keeps the separator before the next line",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "a1B2c3D4e5==",
+    " Thanks"
+   ],
+   "expected": [
+    "{redacted}",
+    " Thanks"
+   ]
+  },
+  {
+   "name": "two runs of a key's lines separated by U+2029, the first ending in a line of capitals, both go",
+   "text": [
+    "Notes:",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "ABCDEFGH",
+    " ",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    " ",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    " ",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    " ",
+    "end"
+   ],
+   "expected": [
+    "Notes:",
+    " ",
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two runs of a key's lines separated by U+2028, the first ending in a line of capitals, both go",
+   "text": [
+    "Notes:",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    " ",
+    "ABCDEFGH",
+    " ",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    " ",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    " ",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    " ",
+    "end"
+   ],
+   "expected": [
+    "Notes:",
+    " ",
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two runs of a key's lines separated by a carriage return alone, the first ending in a line of capitals, both go",
+   "text": [
+    "Notes:",
+    "\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\r",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\r",
+    "ABCDEFGH",
+    "\r",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "\r",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "\r",
+    "x1Y2z3W4v5U6t7S8r9Q0p1O2m3N4l5K6j7I8h9G0",
+    "\r",
+    "end"
+   ],
+   "expected": [
+    "Notes:",
+    "\r",
+    "{redacted}",
+    "\r",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two bearer tokens glued together both go",
+   "text": [
+    "Bea",
+    "rer ",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "Bea",
+    "rer ",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    " end"
+   ],
+   "expected": [
+    "Bea",
+    "rer ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "three bearer tokens glued together all go",
+   "text": [
+    "Bea",
+    "rer ",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "Bea",
+    "rer ",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    "Bea",
+    "rer ",
+    "CCCCCCCCCCCCCCCCCCCCCCCC",
+    " end"
+   ],
+   "expected": [
+    "Bea",
+    "rer ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "two test payment keys glued together both go",
+   "text": [
+    "Keys ",
+    "sk",
+    "_test_",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "sk",
+    "_test_",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    " end"
+   ],
+   "expected": [
+    "Keys ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "a test payment key glued after a live one goes with it",
+   "text": [
+    "Keys ",
+    "sk",
+    "_live_",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "sk",
+    "_test_",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    " end"
+   ],
+   "expected": [
+    "Keys ",
+    "{redacted}",
+    " end"
+   ]
+  },
+  {
+   "name": "three test payment keys glued together all go",
+   "text": [
+    "Keys ",
+    "rk",
+    "_test_",
+    "AAAAAAAAAAAAAAAAAAAAAAAA",
+    "pk",
+    "_test_",
+    "BBBBBBBBBBBBBBBBBBBBBBBB",
+    "sk",
+    "_test_",
+    "CCCCCCCCCCCCCCCCCCCCCCCC",
+    " end"
+   ],
+   "expected": [
+    "Keys ",
+    "{redacted}",
+    " end"
+   ]
   }
  ],
  "lineCases": [

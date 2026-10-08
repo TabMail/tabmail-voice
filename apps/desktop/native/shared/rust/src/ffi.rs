@@ -152,7 +152,9 @@ pub unsafe extern "C" fn voice_core_redact_text_json(
             let mut result = String::new();
             let mut at = middle.start;
             for run in privacy::taken(&source).map_err(|_| 3u32)? {
-                if run.end <= middle.start || run.start >= middle.end {
+                // A run that took nothing of the middle marks nothing, even one spanning an
+                // empty middle.
+                if run.start.max(middle.start) >= run.end.min(middle.end) {
                     continue;
                 }
                 result.push_str(&source[at..run.start.max(at)]);
@@ -986,6 +988,7 @@ mod tests {
     fn explicit_text_redaction_is_bounded_and_refuses_bad_shapes() {
         let limit = "a".repeat(DOCUMENT_TEXT_BYTES / 2);
         let line = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0";
+        let header = format!("-----BEGIN {}", "PRIVATE KEY-----");
         for (input, expected) in [
             (
                 serde_json::json!({"text": "token=syntheticPrivate123"}),
@@ -1011,6 +1014,17 @@ mod tests {
                 // A page starting inside a key's body loses the key's last line too.
                 serde_json::json!({"before": "Page 2\n", "text": format!("{line}\n{line}\n{line}\na1B2c3D4e5F6\"\"\""), "after": "\nPage 3"}),
                 Some("[redacted]\"\"\""),
+            ),
+            (
+                // A key spanning an empty page marks nothing there.
+                serde_json::json!({"before": format!("{header}\n{line}\n\n"), "text": "", "after": format!("\n\n{line}\nend of page")}),
+                Some(""),
+            ),
+            (
+                // A key's body over a page break, a blank line apart, loses its last line where it
+                // runs into the closing quotes.
+                serde_json::json!({"before": format!("s9T0x1Y2z3\n{line}\n{line}\n\n"), "text": format!("{line}\na1B2c3D4e5==\"\"\"\nprint(key)")}),
+                Some("[redacted]\"\"\"\nprint(key)"),
             ),
             (
                 // A secret only in the text before marks nothing.

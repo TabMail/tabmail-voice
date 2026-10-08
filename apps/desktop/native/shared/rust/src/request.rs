@@ -24,8 +24,8 @@ const MICROPHONE_SAMPLE_RATES: std::ops::RangeInclusive<u64> = 8_000..=96_000;
 /// field's text as read, or null for none) → `{"value": …}`: null for none or one longer than n
 /// UTF-16 units, else the text with secret-looking text taken out. With `"viewport"` instead (a
 /// terminal's, as the screen read sends it) the field is the box around the terminal's cursor
-/// (`terminal_box`): its rows are lines as the screen shows them, redacted once (ADR-DESK-007,
-/// 2026-10-07), then each row break given as U+2029 so the app can tell a row the terminal wrapped
+/// (`terminal_box`): its rows are lines as the screen shows them, redacted as one text of lines (ADR-DESK-007,
+/// 2026-10-07; the viewport's runs were redacted before, as the box is cut from them), then each row break given as U+2029 so the app can tell a row the terminal wrapped
 /// from the user's own line break: a terminal's whole text is its scrollback, and its other panes
 /// and programs' lines are not the text the dictation went into. None without an exact caret.
 /// Another field's U+2029 (a Qt editor gives one between its paragraphs) is given as the line break

@@ -62,6 +62,13 @@ impl Block {
                 .map(|run| run.is_some_and(|(text, shown)| !shown && !text.is_empty())),
             None => spaced,
         };
+        // The marker for what a helper left out is the core's own word, never glued to a piece
+        // beside it, so that no redactor reads it as part of a value.
+        let spaced = if text == HIDDEN_MARKER {
+            [true, true]
+        } else {
+            spaced
+        };
         let frame = if value["frame"].is_null() {
             None
         } else {
@@ -1463,7 +1470,7 @@ mod budget_tests {
     #[test]
     fn the_caret_window_budget_never_cuts_a_marker() {
         let (mut kept, mut left_out) = (0, 0);
-        for k in 0..=privacy::PLACEHOLDER.len() + 2 {
+        for k in 0..=privacy::PLACEHOLDER.len() + 6 {
             let after = format!(
                 "{} token=abc123def",
                 "x".repeat(CARET_SIDE_GRAPHEMES - 7 - k)

@@ -3550,7 +3550,19 @@ well-structured place for the redactors.
   ends a value where another secret name given a value begins inside it
   (`token=<value>,password: <value>`), while `named-value` still takes the whole run, as a value
   may hold such a name. A document's text whose first secret began in the text before it now marks
-  where it was taken out, as a screen read does.)*
+  where it was taken out, as a screen read does.)* *(Amended 2026-10-08, later still, owner: a
+  match that keeps the line break it ends at (a carriage return, U+2028, U+2029) leaves that break
+  to the next search, which resumes where the match's taken part ends, so a key's lines right after
+  another's are still found. `private-key-body` tries a last line running into punctuation before
+  one that ends its line, as the first branch that matches wins. A bearer token glued to another
+  goes whole, as does a run of glued test payment keys. A document whose middle is empty marks
+  nothing, and a `[hidden for privacy]` block stands apart from the text beside it, so a name given
+  a value next to it never takes part of the marker. The owner accepted one limit: an `sk-` key, a
+  `Bearer` token or a `_test_` payment key glued to the word before it, in one piece or in a styled
+  piece the screen shows glued (a link, a bold run), stays shown, because those three kinds keep a
+  word edge each near miss forces (`risk-assessment-template-v2`, `pallbearer`,
+  `benchmark_test_…`). The kept edges and the near misses the dropped ones now take are tracked for
+  a later decision in the issue tracker.)*
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
   last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what

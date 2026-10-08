@@ -4312,6 +4312,220 @@
           ""
         ]
       }
+    },
+    {
+      "name": "the marker for what was left out stays whole beside a named value",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "token=abc123",
+            "frame": [
+              0,
+              0,
+              96,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "[hidden for privacy]",
+            "frame": [
+              96,
+              0,
+              160,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "token=[redacted] [hidden for privacy]"
+      }
+    },
+    {
+      "name": "a key's body read one block per line, its header cut off, goes",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Page 2",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              60,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5==",
+            "frame": [
+              0,
+              80,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----END PRIVATE KEY-----",
+            "frame": [
+              0,
+              100,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Page 2\n[redacted]"
+      }
+    },
+    {
+      "name": "a key's body read one block per line, its header cut off, goes and the text after it stays",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Page 2",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              40,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              60,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "a1B2c3D4e5==",
+            "frame": [
+              0,
+              80,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Thanks.",
+            "frame": [
+              0,
+              100,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Page 2\n[redacted]\nThanks."
+      }
+    },
+    {
+      "name": "a selection inside a key whose header is above the caret's window, with no caret block, is marked in the window only once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "-----BEGIN PRIVATE KEY-----",
+            "frame": [
+              0,
+              0,
+              300,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+          "\nmore"
+        ]
+      },
+      "expected": {
+        "caret": [
+          "",
+          "[redacted]",
+          ""
+        ]
+      }
     }
   ]
 }
