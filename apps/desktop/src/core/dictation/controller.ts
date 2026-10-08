@@ -206,8 +206,8 @@ export class DictationController extends Observable {
   private dictationSettings: DictationSettings;
   /** Cancels this dictation's requests when it is discarded. */
   private abort = new AbortController();
-  /** The app in front at key-down: the paste goes there only, and the corrections are learned from
-   * its field. */
+  /** The app in front at key-down: the paste goes there only. The corrections are learned from the
+   * field voice-field-reader finds in front after the paste, which a paste that lands is in. */
   private targetApp: Promise<number | null> = Promise.resolve(null);
   /** The keyboard's language at key-down, which the badge shows and the transcription is asked in. */
   private languageRead: Promise<string | null> = Promise.resolve(null);

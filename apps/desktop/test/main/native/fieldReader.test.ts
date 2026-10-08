@@ -91,6 +91,21 @@ test("a new watch while a read is still going ends the reader before asking what
 });
 
 test.each([
+  ["a newer watch", async (field: FieldReader) => void field.target()],
+  ["its time", async (_field: FieldReader, settle: Settle[]) => settle[1]!.reject(new HelperError("timeout", "frontmostApp"))],
+])("a read that superseded another is still ended by %s after the other settles", async (_name, end) => {
+  const { field, calls, settle } = reader();
+  void field.value(42, exclusions).catch(() => undefined);
+  void field.target().catch(() => undefined);
+  // The superseded read settles after the new one started: the new one, still going, stays tracked.
+  settle[0]!.reject(new HelperError("exited", "focusedFieldValue"));
+  await flush();
+  await end(field, settle);
+  await flush();
+  expect(kinds(calls).slice(0, 4)).toEqual(["request", "restart", "request", "restart"]);
+});
+
+test.each([
   ["answered", (settle: Settle) => settle.resolve(null)],
   ["refused", (settle: Settle) => settle.reject(new HelperError("failed", "focusedFieldValue"))],
   ["ended with its process", (settle: Settle) => settle.reject(new HelperError("exited", "focusedFieldValue"))],

@@ -561,7 +561,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     expect(transcription.body(0).vocabulary).toBeUndefined();
   });
 
-  /** After a dictation's paste, the field of the app in front at key-down is watched for the user's
+  /** After a dictation's paste, the field in front (the paste's, as it landed) is watched for the user's
    * corrections (`CorrectionWatch`), with the text pasted; the next key-down stops the watch first. */
   /** Where the text goes (ADR-DESK-042): into the app in front at key-down only. When the user has
    * gone to another app, nothing is pasted anywhere; the text goes on the clipboard and into the paste
