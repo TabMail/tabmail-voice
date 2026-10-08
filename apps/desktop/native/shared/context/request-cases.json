@@ -858,6 +858,42 @@
         "microphoneStop": {}
       },
       "refused": true
+    },
+    {
+      "name": "a field's named value after a key block cut off keeps its value redacted",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "-----BEGIN RSA PRIVATE KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\npassword = a1B2c3.D4e5F6g7H8"
+        }
+      },
+      "expected": {
+        "value": "[redacted] [redacted]"
+      }
+    },
+    {
+      "name": "a field's bearer token after a key block cut off, its lines separated by U+2029, keeps its value redacted",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "-----BEGIN RSA PRIVATE KEY----- a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0 Bearer a1B2c3.D4e5F6g7H8"
+        }
+      },
+      "expected": {
+        "value": "[redacted] [redacted]"
+      }
+    },
+    {
+      "name": "a field starting inside a key body keeps the named value after it",
+      "request": {
+        "field": {
+          "maxLength": 20000,
+          "text": "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\ntoken = a1B2c3.D4e5F6g7H8"
+        }
+      },
+      "expected": {
+        "value": "[redacted]\ntoken = [redacted]"
+      }
     }
   ]
 }

@@ -624,7 +624,10 @@ terminal's own text is every pane side by side and iTerm2's caret index drifts.
   which input byte each output byte is (a replacement keeps what its template copies around the
   placeholder, such as `token=` or the `@` after an address password, where the match has it at its
   ends; nothing else of the match survives, even characters that look like the marker's own, so a
-  value written `[…]` is redacted whole). The read then shows, for each part, only the bytes it shows
+  value written `[…]` is redacted whole). *(Amended 2026-10-08: `redact_traced` and its per-byte
+  origin map are replaced by `privacy::taken`, the byte ranges every rule's matches take out of the
+  text as read, with no rule order (ADR-DESK-046, 2026-10-08); each part keeps the bytes it shows
+  outside them.)* The read then shows, for each part, only the bytes it shows
   that survived, and one `[redacted]` where the redaction took text out (one match, or several side
   by side), in the part that showed the first character taken; where it took only text the read does
   not show, nothing marks it, so the read never says where hidden text was. The caret's window is
@@ -3516,10 +3519,26 @@ well-structured place for the redactors.
   or a small letter before a capital), and so does a shorter line between two runs of full lines;
   a word on its own line after the key (`end`, `Done`) stays. Its end is found without a lookahead,
   which runs in the backtracking engine (it took minutes on the hostile text): the line break after
-  the line is kept by the replacement.)*
+  the line is kept by the replacement.)* *(Amended 2026-10-08, owner: the rules have no order. A
+  review found that the order above let `private-key-cut` take the name of a later secret written
+  with spaces (`password = …`, `token = …`, a quoted value, a bare `Bearer`), and `private-key-body`
+  the leading letters of the line after a body (a token's prefix, a name), so that secret's own
+  redactor no longer found it and its value was shown. Fixing that by moving rules again only moves
+  the hazard to another pair, so every redactor now looks at the text as read, never at another's
+  result (`privacy::find`): everything any match takes goes, and one marker stands for each run of
+  matches that overlap or meet (`runs`, `taken`). A match takes itself without what its
+  replacement's template copies around the placeholder at its ends (a captured `token=`, the `@`
+  after an address password). No redactor can hide a secret from another any more: a key rule may
+  still take a later plain word (a name), which only hides more, and the secret's own redactor finds
+  its value in the text as read. `private-key-body`'s optional last line, which took the next line's
+  leading letters, is deleted: `private-key-lines` takes a body's last, shorter line itself. Two
+  secrets that meet now leave one marker where the redaction wrote two. An engine failure takes
+  everything after the failing rule's last match, as before.)*
 - What a replacement keeps of its match is told by comparing the two texts. A secret that itself
   ends in `]`, with a boundary between two texts just before that `]`, leaves the placeholder's
-  last character in the second text. Nothing of the secret is kept.
+  last character in the second text. Nothing of the secret is kept. *(Superseded 2026-10-08: what
+  a match keeps is what its template copies around the placeholder at the match's ends, never a
+  comparison of the texts, so a secret ending in `]` keeps nothing.)*
 - Edit's refusal asks the backend for no rewrite. When several tools are offered, the pick of the
   tool has already been asked, with the redacted screen.
 - A correction of a word into something secret-looking is not learned: the field is redacted before

@@ -4,6 +4,7 @@
 
 use fancy_regex::{Captures, Regex, RegexBuilder};
 use serde_json::Value;
+use std::ops::Range;
 use std::sync::OnceLock;
 
 pub type Lines = Vec<Vec<String>>;
@@ -117,34 +118,97 @@ fn expand(template: &str, captures: &Captures<'_, str>) -> String {
     result
 }
 
-#[derive(Clone, Copy)]
-struct Range {
-    start: usize,
-    end: usize,
-}
-struct Edit {
-    old: Range,
-    new: Range,
-    kept_start: usize,
-    kept_end: usize,
+fn rules() -> Result<&'static [Rule], Error> {
+    static RULES: OnceLock<Result<Vec<Rule>, Error>> = OnceLock::new();
+    RULES
+        .get_or_init(|| compile(DEFINITIONS))
+        .as_deref()
+        .map_err(|e| *e)
 }
 
-fn moved(place: usize, edits: &[Edit]) -> usize {
-    let (mut old_end, mut new_end) = (0, 0);
-    for edit in edits {
-        if place <= edit.old.start {
-            break;
+/// One match: all of it, and what it takes out, the match without what its rule's template copies
+/// around the placeholder at the match's ends (a captured label such as `token=`, the `@` after an
+/// address password).
+struct Found {
+    matched: Range<usize>,
+    taken: Range<usize>,
+}
+
+/// Every rule's matches in `text`. Each rule looks at the text as it is, never at what another rule
+/// left of it, so no rule's redaction can hide a secret from another rule and their order does not
+/// matter (owner, 2026-10-08). A rule the engine could not finish takes everything after its last
+/// match.
+fn find(text: &str, rules: &[Rule]) -> Vec<Found> {
+    let mut found = Vec::new();
+    for rule in rules {
+        let mut searched = 0;
+        let mut finished = true;
+        for item in rule.regex.captures_iter(text) {
+            let Some(captures) = item.ok() else {
+                finished = false;
+                break;
+            };
+            let Some(matched) = captures.get(0) else {
+                finished = false;
+                break;
+            };
+            let (head, tail) = rule
+                .replacement
+                .split_once(PLACEHOLDER)
+                .map(|(head, tail)| (expand(head, &captures), expand(tail, &captures)))
+                .unwrap_or_default();
+            let old = matched.as_str();
+            let kept_start = if old.starts_with(&head) {
+                head.len()
+            } else {
+                0
+            };
+            let kept_end = if old[kept_start..].ends_with(&tail) {
+                tail.len()
+            } else {
+                0
+            };
+            found.push(Found {
+                matched: matched.range(),
+                taken: matched.start() + kept_start..matched.end() - kept_end,
+            });
+            searched = matched.end();
         }
-        if place < edit.old.end {
-            if place - edit.old.start <= edit.kept_start {
-                return edit.new.start + place - edit.old.start;
-            }
-            return edit.new.end - edit.kept_end;
+        if !finished {
+            // Never log the engine error: only the trusted canonical rule name.
+            eprintln!("debug redactor unfinished: {}", rule.name);
+            found.push(Found {
+                matched: searched..text.len(),
+                taken: searched..text.len(),
+            });
         }
-        old_end = edit.old.end;
-        new_end = edit.new.end;
     }
-    new_end + (place - old_end)
+    found
+}
+
+/// What the matches take out of the text, in order: each run is matches that overlap or meet, and
+/// one marker stands for it.
+fn runs(found: &[Found]) -> Vec<Range<usize>> {
+    let mut taken: Vec<Range<usize>> = found
+        .iter()
+        .map(|f| f.taken.clone())
+        .filter(|range| !range.is_empty())
+        .collect();
+    taken.sort_by_key(|range| range.start);
+    let mut runs: Vec<Range<usize>> = Vec::new();
+    for range in taken {
+        match runs.last_mut() {
+            Some(last) if range.start <= last.end => last.end = last.end.max(range.end),
+            _ => runs.push(range),
+        }
+    }
+    runs
+}
+
+/// What the redaction takes out of one text: byte ranges in order, each one marker's worth (a
+/// match, or several that overlap or meet). Each range starts and ends on a character boundary.
+pub fn taken(text: &str) -> Result<Vec<Range<usize>>, Error> {
+    Ok(runs(&find(text, rules()?)))
 }
 
 /// Redact the combined text before redistributing it across line/caret boundaries.
@@ -162,90 +226,7 @@ pub fn redact_anchored(
     lines: &Lines,
     anchors: &[usize],
 ) -> Result<(Lines, Vec<Option<usize>>), Error> {
-    static RULES: OnceLock<Result<Vec<Rule>, Error>> = OnceLock::new();
-    let rules = RULES
-        .get_or_init(|| compile(DEFINITIONS))
-        .as_ref()
-        .map_err(|e| *e)?;
-    redact_with_anchors(lines, rules, anchors)
-}
-
-/// Redact one text, and say where each byte of the result came from: the byte of `text` it is, or
-/// `None` for a byte a replacement put in. The rules run as `redact` runs them; a replacement keeps
-/// what its template copies around the placeholder (a captured label such as `token=`, the `@`
-/// after an address password) where the match has it at its ends, and every other character it
-/// covered is gone, even one that looks like the marker. The bytes kept stay in order.
-pub fn redact_traced(text: &str) -> Result<(String, Vec<Option<usize>>), Error> {
-    static RULES: OnceLock<Result<Vec<Rule>, Error>> = OnceLock::new();
-    let rules = RULES
-        .get_or_init(|| compile(DEFINITIONS))
-        .as_ref()
-        .map_err(|e| *e)?;
-    Ok(trace_with(text, rules))
-}
-
-fn trace_with(text: &str, rules: &[Rule]) -> (String, Vec<Option<usize>>) {
-    let mut text = text.to_owned();
-    let mut origin: Vec<Option<usize>> = (0..text.len()).map(Some).collect();
-    for rule in rules {
-        let mut result = String::new();
-        let mut result_origin = Vec::new();
-        let mut copied = 0;
-        let mut finished = true;
-        for item in rule.regex.captures_iter(text.as_str()) {
-            let Ok(captures) = item else {
-                finished = false;
-                break;
-            };
-            let Some(matched) = captures.get(0) else {
-                finished = false;
-                break;
-            };
-            result.push_str(&text[copied..matched.start()]);
-            result_origin.extend_from_slice(&origin[copied..matched.start()]);
-            let old = matched.as_str();
-            let replacement = expand(&rule.replacement, &captures);
-            // What the template copies around the placeholder (a captured label such as `token=`,
-            // the `@` after an address password) is kept where the match has it at its ends; the
-            // rest of the match is gone, whatever it looks like.
-            let (head, tail) = rule
-                .replacement
-                .split_once(PLACEHOLDER)
-                .map(|(head, tail)| (expand(head, &captures), expand(tail, &captures)))
-                .unwrap_or_default();
-            let kept_start = if old.starts_with(&head) {
-                head.len()
-            } else {
-                0
-            };
-            let kept_end = if old[kept_start..].ends_with(&tail) {
-                tail.len()
-            } else {
-                0
-            };
-            let start = matched.start();
-            result.push_str(&replacement);
-            result_origin.extend_from_slice(&origin[start..start + kept_start]);
-            result_origin.extend(std::iter::repeat_n(
-                None,
-                replacement.len() - kept_start - kept_end,
-            ));
-            result_origin.extend_from_slice(&origin[matched.end() - kept_end..matched.end()]);
-            copied = matched.end();
-        }
-        if finished {
-            result.push_str(&text[copied..]);
-            result_origin.extend_from_slice(&origin[copied..]);
-        } else {
-            // Never log the engine error: only the trusted canonical rule name.
-            eprintln!("debug redactor unfinished: {}", rule.name);
-            result.push_str(PLACEHOLDER);
-            result_origin.extend(std::iter::repeat_n(None, PLACEHOLDER.len()));
-        }
-        text = result;
-        origin = result_origin;
-    }
-    (text, origin)
+    redact_with_anchors(lines, rules()?, anchors)
 }
 
 #[cfg(test)]
@@ -253,157 +234,122 @@ fn redact_with(lines: &Lines, rules: &[Rule]) -> Result<Lines, Error> {
     redact_with_anchors(lines, rules, &[]).map(|(lines, _)| lines)
 }
 
+/// The lines are joined with `\n` and redacted as one text. Each piece keeps what was not taken
+/// out, and a run taken out leaves one marker, in the piece holding the first character it took
+/// (none where it took only the line breaks between lines, which stay).
 fn redact_with_anchors(
     lines: &Lines,
     rules: &[Rule],
     anchors: &[usize],
 ) -> Result<(Lines, Vec<Option<usize>>), Error> {
     let mut text = String::new();
-    let mut ranges = Vec::new();
-    let mut position = 0;
+    let mut pieces = Vec::new();
+    let mut separators = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         if index > 0 {
+            separators.push(text.len());
             text.push('\n');
-            position += 1;
         }
-        let mut places = Vec::new();
         for item in line {
-            let start = position;
+            let start = text.len();
             text.push_str(item);
-            position += item.encode_utf16().count();
-            places.push(Range {
-                start,
-                end: position,
-            });
+            pieces.push(start..text.len());
         }
-        ranges.push(places);
     }
     // Validate native insertion offsets against actual scalar boundaries. Never
     // round an offset inside a surrogate pair to a nearby character.
-    let mut requested = anchors.to_vec();
+    let mut places = vec![0; anchors.len()];
+    let mut requested: Vec<(usize, usize)> = anchors
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, anchor)| (anchor, index))
+        .collect();
     requested.sort_unstable();
-    requested.dedup();
     let mut requested = requested.into_iter().peekable();
     let mut offset = 0;
-    for width in std::iter::once(0).chain(text.chars().map(char::len_utf16)) {
-        offset += width;
-        match requested.peek() {
-            Some(&next) if next == offset => {
-                requested.next();
+    let boundaries = text
+        .char_indices()
+        .map(|(at, ch)| (at, ch.len_utf16()))
+        .chain(std::iter::once((text.len(), 0)));
+    for (at, width) in boundaries {
+        while let Some(&(anchor, index)) = requested.peek() {
+            if anchor > offset {
+                break;
             }
-            Some(&next) if next < offset => return Err(Error::InvalidBoundary),
-            None => break,
-            _ => {}
+            if anchor < offset {
+                return Err(Error::InvalidBoundary);
+            }
+            places[index] = at;
+            requested.next();
         }
+        offset += width;
     }
     if requested.peek().is_some() {
         return Err(Error::InvalidBoundary);
     }
-    let mut anchors: Vec<Option<usize>> = anchors.iter().copied().map(Some).collect();
-    for rule in rules {
+    let found = find(&text, rules);
+    let runs = runs(&found);
+    let mut output = Vec::with_capacity(pieces.len());
+    let mut next = 0;
+    let mut marked = vec![false; runs.len()];
+    // Where each run's marker goes: the first character it took that a piece holds.
+    let mut marks = Vec::new();
+    for piece in &pieces {
         let mut result = String::new();
-        let mut edits = Vec::new();
-        let (mut copied, mut copied16, mut result16) = (0, 0, 0);
-        let mut finished = true;
-        for item in rule.regex.captures_iter(text.as_str()) {
-            let captures = match item {
-                Ok(captures) => captures,
-                Err(_) => {
-                    finished = false;
-                    break;
+        let mut at = piece.start;
+        while at < piece.end {
+            while next < runs.len() && runs[next].end <= at {
+                next += 1;
+            }
+            match runs.get(next) {
+                Some(run) if run.start <= at => {
+                    if !marked[next] {
+                        marked[next] = true;
+                        marks.push(at);
+                        result.push_str(PLACEHOLDER);
+                    }
+                    at = run.end.min(piece.end);
                 }
-            };
-            let matched = captures.get(0).ok_or(Error::InvalidBoundary)?;
-            let between = &text[copied..matched.start()];
-            let between16 = between.encode_utf16().count();
-            result.push_str(between);
-            result16 += between16;
-            let start = copied16 + between16;
-            let old: Vec<u16> = matched.as_str().encode_utf16().collect();
-            let replacement = expand(&rule.replacement, &captures);
-            let new: Vec<u16> = replacement.encode_utf16().collect();
-            let shorter = old.len().min(new.len());
-            let mut kept_start = 0;
-            while kept_start < shorter && old[kept_start] == new[kept_start] {
-                kept_start += 1;
-            }
-            let mut kept_end = 0;
-            while kept_end < shorter - kept_start
-                && old[old.len() - 1 - kept_end] == new[new.len() - 1 - kept_end]
-            {
-                kept_end += 1;
-            }
-            let end = start + old.len();
-            let new_start = result16;
-            result.push_str(&replacement);
-            result16 += new.len();
-            edits.push(Edit {
-                old: Range { start, end },
-                new: Range {
-                    start: new_start,
-                    end: result16,
-                },
-                kept_start,
-                kept_end,
-            });
-            copied = matched.end();
-            copied16 = end;
-        }
-        if finished {
-            result.push_str(&text[copied..]);
-        } else {
-            // Never log the engine error: only the trusted canonical rule name.
-            eprintln!("debug redactor unfinished: {}", rule.name);
-            let new_start = result16;
-            result.push_str(PLACEHOLDER);
-            result16 += PLACEHOLDER.len();
-            edits.push(Edit {
-                old: Range {
-                    start: copied16,
-                    end: text.encode_utf16().count(),
-                },
-                new: Range {
-                    start: new_start,
-                    end: result16,
-                },
-                kept_start: 0,
-                kept_end: 0,
-            });
-        }
-        for anchor in &mut anchors {
-            if let Some(place) = *anchor {
-                *anchor = if edits
-                    .iter()
-                    .any(|edit| edit.old.start < place && place < edit.old.end)
-                {
-                    None
-                } else {
-                    Some(moved(place, &edits))
-                };
+                run => {
+                    let until = run.map_or(piece.end, |run| run.start.min(piece.end));
+                    result.push_str(&text[at..until]);
+                    at = until;
+                }
             }
         }
-        for line in &mut ranges {
-            for range in line {
-                *range = Range {
-                    start: moved(range.start, &edits),
-                    end: moved(range.end, &edits),
-                };
-            }
-        }
-        text = result;
+        output.push(result);
     }
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let lines = ranges
+    let mut output = output.into_iter();
+    let lines = lines
         .iter()
         .map(|line| {
             line.iter()
-                .map(|r| {
-                    let part = units.get(r.start..r.end).ok_or(Error::InvalidBoundary)?;
-                    String::from_utf16(part).map_err(|_| Error::InvalidBoundary)
-                })
+                .map(|_| output.next().unwrap_or_default())
                 .collect()
         })
-        .collect::<Result<Lines, Error>>()?;
+        .collect();
+    // An anchor inside a match, or inside a run, is withheld; any other moves to where its
+    // character is in the joined result.
+    let anchors = places
+        .iter()
+        .map(|&place| {
+            let inside = |range: &Range<usize>| range.start < place && place < range.end;
+            if found.iter().any(|f| inside(&f.matched)) || runs.iter().any(inside) {
+                return None;
+            }
+            let mut moved = 0;
+            let mut at = 0;
+            for run in runs.iter().filter(|run| run.end <= place) {
+                moved += text[at..run.start].encode_utf16().count();
+                moved += separators.iter().filter(|&&s| run.contains(&s)).count();
+                at = run.end;
+            }
+            moved += text[at..place].encode_utf16().count();
+            moved += PLACEHOLDER.len() * marks.iter().filter(|&&mark| mark < place).count();
+            Some(moved)
+        })
+        .collect();
     Ok((lines, anchors))
 }
 

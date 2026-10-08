@@ -951,7 +951,7 @@
       }
     },
     {
-      "name": "text taken out by two matches side by side is marked once",
+      "name": "a key header cut off takes the words of base64 after it, in the next block too",
       "request": {
         "blocks": [
           {
@@ -4151,6 +4151,166 @@
       },
       "expected": {
         "rendered": "Key [redacted] here"
+      }
+    },
+    {
+      "name": "a named value after a key block cut off, in a block of its own, keeps its value redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "heading",
+            "text": "id_rsa",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "-----BEGIN RSA PRIVATE KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              20,
+              400,
+              60
+            ]
+          },
+          {
+            "kind": "heading",
+            "text": "Database",
+            "frame": [
+              0,
+              90,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "password = a1B2c3.D4e5F6g7H8",
+            "frame": [
+              0,
+              110,
+              400,
+              20
+            ]
+          },
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              0,
+              140,
+              200,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "## id_rsa\n[redacted]\n[redacted]\n\u00bb \u2038"
+      }
+    },
+    {
+      "name": "a bearer token after a key block cut off in the caret's window keeps its value redacted",
+      "request": {
+        "blocks": [
+          {
+            "kind": "caret",
+            "text": "",
+            "frame": [
+              0,
+              0,
+              200,
+              20
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "Bearer a1B2c3.D4e5F6g7H8",
+            "frame": [
+              0,
+              30,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          "-----BEGIN RSA PRIVATE KEY-----\na1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\n"
+        ]
+      },
+      "expected": {
+        "rendered": "\u00bb \u2038[redacted]\n[redacted]",
+        "caret": [
+          "",
+          "",
+          "[redacted]"
+        ]
+      }
+    },
+    {
+      "name": "text taken out by two matches side by side is marked once",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "see AKIAB2C3D4E5F6G7H8I9AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6 ok",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "see [redacted] ok"
+      }
+    },
+    {
+      "name": "a key's line ending the read and its next line starting the caret's window are two lines of one key",
+      "request": {
+        "blocks": [
+          {
+            "kind": "text",
+            "text": "Notes a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+            "frame": [
+              0,
+              0,
+              400,
+              20
+            ]
+          }
+        ],
+        "caret": [
+          "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0\nmore",
+          "",
+          ""
+        ]
+      },
+      "expected": {
+        "rendered": "Notes [redacted]",
+        "caret": [
+          "[redacted]\nmore",
+          "",
+          ""
+        ]
       }
     }
   ]

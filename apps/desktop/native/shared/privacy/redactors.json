@@ -1,12 +1,12 @@
 {
   "comment": [
     "The one definition of what looks like a secret in text read off the screen, for every platform's helper (ADR-DESK-046).",
-    "Each redactor is applied to the whole text, in this order, replacing every match with `replacement`, in which {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
+    "Each redactor looks at the whole text as read, never at what another left of it, so their order does not matter (owner, 2026-10-08): everything any match takes goes, and one {placeholder} stands for each run of matches that overlap or meet. A match takes itself without what `replacement` copies around {placeholder} at the match's ends; {placeholder} is `placeholder` and $1, $2 are the pattern's groups.",
     "Patterns use the pinned Rust fancy-regex engine on every platform. Native adapters never interpret them. Keep patterns linear on hostile text; the Rust conformance and timing tests are authoritative.",
     "ignoreCase is the only definition flag. Rust compiles this canonical file directly; every platform must pass redaction-cases.json through the linked Rust library.",
     "Every pattern must take time in proportion to the text, whatever the text: no repeat that is scanned again from every position (bound it, or begin the pattern where a run begins). The tests time each on hostile text.",
     "The generator and native regex engines have been retired. Changes must pass the Rust long-continuation, actual-engine-failure and hostile-text timing gates; do not rely on engine-specific pattern rewrites without evidence.",
-    "The private-key rules come first, private-key-block, private-key-cut, private-key-end, private-key-body (it starts only at the start of the text), then private-key-lines: a run inside a key's body can look like a key with a distinctive prefix (AKIA or AIza and enough letters), and a redactor run before them would leave a placeholder in the body that ends the key's own match there, so the rest of the body stayed. private-key-cut takes only whole words of base64, so it cannot take a later secret's name or prefix (the `token` of `token: ...`, the `sk` of a key). private-key-body goes before private-key-lines so that a text starting part-way through a key's line loses that part too.",
+    "No redactor can hide a secret from another: each finds its secret in the text as read. private-key-cut takes the words of base64 after a header that is cut off, which may hold a later secret's name (the `password` of `password = ...`); that secret's own redactor still finds its value. private-key-body starts only at the start of the text, so that a text starting part-way through a key's line loses that part too.",
     "A key with a distinctive prefix (AKIA, AIza, ghp_, github_pat_, glpat-, xoxb-, npm_, hf_, whsec_, eyJ, sk_live_) goes wherever it is, even glued to the letters before or after it, as the screen shows a key run into a word or a piece of styling. A pattern whose prefix ordinary words also hold keeps the edge before it, each forced by a near miss in redaction-cases.json: sk- (risk-...), Bearer (pallbearer), the _test_ payment keys (benchmark_test_..., task_test_...)."
   ],
   "placeholder": "[redacted]",
@@ -35,7 +35,7 @@
     {
       "name": "private-key-body",
       "description": "A text that starts inside a private key's body, its header cut off before the text (a page read from the middle of a printed key, a window scrolled past the header): two or more full lines of base64 at the very start, up to the end line if there is one.",
-      "pattern": "^[A-Za-z0-9+/=]*(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/=]+)?(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?",
+      "pattern": "^[A-Za-z0-9+/=]*(?:\\s*[\\n\\r\\x{2028}\\x{2029}]\\s*[A-Za-z0-9+/]{40,}={0,2}){2,}(?:\\s*-----END [A-Z0-9 ]{0,40}PRIVATE KEY[A-Z ]{0,40}-----)?",
       "ignoreCase": false,
       "replacement": "{placeholder}"
     },

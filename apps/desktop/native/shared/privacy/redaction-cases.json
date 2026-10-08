@@ -5610,6 +5610,263 @@
    "expected": [
     "{redacted}"
    ]
+  },
+  {
+   "name": "a spaced named value after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a spaced token after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "tok",
+    "en = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a bearer token after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "Bea",
+    "rer ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a quoted named value after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "PASS",
+    "WORD = \"",
+    "a1B2c3D4",
+    "e5F6g7H8",
+    "\""
+   ],
+   "expected": [
+    "{redacted}",
+    " \"",
+    "{redacted}",
+    "\""
+   ]
+  },
+  {
+   "name": "a named value with a spaced colon after a key block cut off keeps its value redacted",
+   "text": [
+    "-----BEGIN RSA ",
+    "PRIVATE KEY-----",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "pass",
+    "word : ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    " : ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body keeps the named value after it",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    "\npass",
+    "word = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text starting inside a key body, after a word, keeps the named value after it",
+   "text": [
+    "notes\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    "\npass",
+    "word = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a GitHub token after a key body the text starts inside is still redacted",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "gh",
+    "p_",
+    "a1B2c3D4e5F6g7H8i9J0k1L2"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a JSON web token after a key body the text starts inside is still redacted",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6",
+    ".",
+    "ey",
+    "J",
+    "a1B2c3D4e5F6g7H8",
+    ".",
+    "a1B2c3D4e5F6g7H8i9J0"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a Google key holding a dash after a key body the text starts inside is still redacted",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "AI",
+    "za",
+    "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6"
+   ],
+   "expected": [
+    "{redacted}",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key body the text starts inside, with a short padded last line, goes whole",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "AbC1dE2fG3=="
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a named value after a key body's short last line keeps its name",
+   "text": [
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0",
+    "\n",
+    "AbC1dE2fG3==",
+    "\n",
+    "pass",
+    "word = ",
+    "a1B2c3",
+    ".D4e5F6g7H8"
+   ],
+   "expected": [
+    "{redacted}",
+    "\npass",
+    "word = ",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "two keys glued together, with no edge between them, leave one marker",
+   "text": [
+    "see ",
+    "AK",
+    "IA",
+    "B2C3D4E5F6G7H8I9",
+    "AI",
+    "za",
+    "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6",
+    " ok"
+   ],
+   "expected": [
+    "see ",
+    "{redacted}",
+    " ok"
+   ]
   }
  ],
  "lineCases": [

@@ -173,21 +173,19 @@ fn actual_engine_failure_withholds_tail_after_successful_match() {
         "abc123def",
         " ".repeat(1_000_100)
     );
-    assert_eq!(scalar(&text), format!("token={PLACEHOLDER}{PLACEHOLDER}"));
+    assert_eq!(scalar(&text), format!("token={PLACEHOLDER}"));
 }
 
-/// The traced redaction fails closed the same way: everything from the failing rule's last match on
-/// is withheld, and nothing it withheld is said to be text the input had.
+/// What the redaction takes out fails closed the same way: everything from the failing rule's last
+/// match on is taken, and the label before the first match stays.
 #[test]
-fn traced_engine_failure_withholds_tail_after_successful_match() {
+fn engine_failure_takes_the_tail_after_successful_match() {
     let text = format!(
         "token={}\npassword:{}x\nprivate-tail-sentinel",
         "abc123def",
         " ".repeat(1_000_100)
     );
-    let (redacted, origin) = redact_traced(&text).unwrap();
-    assert_eq!(redacted, format!("token={PLACEHOLDER}{PLACEHOLDER}"));
-    assert!(origin["token=".len()..].iter().all(Option::is_none));
+    assert_eq!(taken(&text).unwrap(), vec!["token=".len()..text.len()]);
 }
 
 #[test]
@@ -361,33 +359,55 @@ fn terminal_anchor_accounts_for_outer_line_separators() {
     assert_eq!(anchors, vec![Some(2), Some(3), Some(3 + 19)]);
 }
 
-/// The traced redaction is the redaction: the same text for every case, and each byte it says it
-/// kept is that byte of the input, in order.
+/// Two matches that meet are one run with one marker; an anchor where they meet is inside it and is
+/// withheld, and one after it moves past the one marker.
 #[test]
-fn traced_redaction_matches_the_corpus_and_keeps_bytes_in_order() {
+fn terminal_anchor_where_two_matches_meet_is_withheld() {
+    let first = format!("{}{}", "AK", "IAB2C3D4E5F6G7H8I9");
+    let second = format!("{}{}", "AI", "zaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4-O5p6");
+    let text = format!("see {first}{second} ok");
+    let meet = "see ".len() + first.len();
+    let (actual, anchors) =
+        redact_anchored(&vec![vec![text.clone()]], &[meet, text.len()]).unwrap();
+    assert_eq!(actual[0][0], format!("see {PLACEHOLDER} ok"));
+    assert_eq!(anchors, vec![None, Some(actual[0][0].len())]);
+}
+
+/// A run that takes the line break between two lines leaves it in place, and an anchor after it
+/// counts it.
+#[test]
+fn terminal_anchor_after_a_run_over_a_line_break_counts_the_break() {
+    let line = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0".to_string();
+    let lines = vec![vec![line.clone()], vec![line.clone()], vec!["after".into()]];
+    let end = 2 * line.len() + 2 + "after".len();
+    let (actual, anchors) = redact_anchored(&lines, &[end]).unwrap();
+    assert_eq!(
+        actual,
+        vec![
+            vec![PLACEHOLDER.to_string()],
+            vec![String::new()],
+            vec!["after".to_string()]
+        ]
+    );
+    assert_eq!(anchors, vec![Some(PLACEHOLDER.len() + 2 + "after".len())]);
+}
+
+/// What `taken` takes out is what `redact` replaces: putting one marker in place of each run gives
+/// the redaction for every case.
+#[test]
+fn taken_runs_are_the_redaction() {
     let corpus: Value = serde_json::from_str(CORPUS).unwrap();
     for case in corpus["cases"].as_array().unwrap() {
         let text = joined(&case["text"]);
-        let (redacted, origin) = redact_traced(&text).unwrap();
-        assert_eq!(redacted, scalar(&text), "{}", case["name"]);
-        assert_eq!(origin.len(), redacted.len(), "{}", case["name"]);
-        let kept: Vec<(usize, usize)> = origin
-            .iter()
-            .enumerate()
-            .filter_map(|(at, from)| from.map(|from| (at, from)))
-            .collect();
-        for (at, from) in &kept {
-            assert_eq!(
-                redacted.as_bytes()[*at],
-                text.as_bytes()[*from],
-                "{}",
-                case["name"]
-            );
+        let mut rebuilt = String::new();
+        let mut copied = 0;
+        for run in taken(&text).unwrap() {
+            assert!(copied < run.start || copied == 0, "{}", case["name"]);
+            rebuilt.push_str(&text[copied..run.start]);
+            rebuilt.push_str(PLACEHOLDER);
+            copied = run.end;
         }
-        assert!(
-            kept.windows(2).all(|pair| pair[0].1 < pair[1].1),
-            "{}",
-            case["name"]
-        );
+        rebuilt.push_str(&text[copied..]);
+        assert_eq!(rebuilt, scalar(&text), "{}", case["name"]);
     }
 }

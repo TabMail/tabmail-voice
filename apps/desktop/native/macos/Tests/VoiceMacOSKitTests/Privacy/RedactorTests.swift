@@ -253,7 +253,7 @@ struct RedactorTests {
     @Test func aRedactorThatCouldNotFinishWithholdsTheRest() throws {
         let gone = Redactor.placeholder
         let run = "password:" + String(repeating: " ", count: 1_000_100) + "x"
-        #expect(try Redactor.redact([["token=" + "abc123def "], [run, "selected"], ["after"]]) == [["token=\(gone)\(gone)"], ["", ""], [""]])
+        #expect(try Redactor.redact([["token=" + "abc123def "], [run, "selected"], ["after"]]) == [["token=\(gone)"], ["", ""], [""]])
         #expect(try Redactor.redact([["before ", run], ["after"]]) == [[gone, ""], [""]])
     }
 

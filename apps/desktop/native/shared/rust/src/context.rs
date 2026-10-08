@@ -402,6 +402,19 @@ fn suffix_start(text: &str, graphemes: usize, bytes: usize) -> usize {
     }
     start
 }
+/// A cut that would split a marker (`[redacted]`, `[hidden for privacy]`) leaves it out whole
+/// instead: a prefix ending inside one ends before it, a suffix starting inside one starts after it.
+/// A part of a marker would no longer say what was taken out, and a reply could repeat it.
+fn outside_markers(text: &str, cut: usize, prefix: bool) -> usize {
+    for marker in [privacy::PLACEHOLDER, HIDDEN_MARKER] {
+        for start in cut.saturating_sub(marker.len() - 1)..cut {
+            if text.as_bytes()[start..].starts_with(marker.as_bytes()) {
+                return if prefix { start } else { start + marker.len() };
+            }
+        }
+    }
+    cut
+}
 fn present_caret(parts: &mut [String]) -> Result<bool, u32> {
     let selection_bytes = parts[1].len() + if parts[1].is_empty() { 3 } else { 6 };
     if selection_bytes > SCREEN_BYTES {
@@ -416,6 +429,8 @@ fn present_caret(parts: &mut [String]) -> Result<bool, u32> {
     );
     // Reuse any allowance the after-side did not need, keeping nearest context.
     let before_start = suffix_start(&parts[0], CARET_SIDE_GRAPHEMES, remaining - after_end);
+    let before_start = outside_markers(&parts[0], before_start, false);
+    let after_end = outside_markers(&parts[2], after_end, true);
     let changed = before_start != 0 || after_end != parts[2].len();
     parts[0] = parts[0][before_start..].to_owned();
     parts[2].truncate(after_end);
@@ -433,7 +448,11 @@ fn present_blocks(blocks: &mut Vec<Block>, reserved: usize) -> Result<bool, u32>
         } else {
             usize::MAX
         };
-        let mut end = prefix_end(&block.text, graphemes, remaining);
+        let mut end = outside_markers(
+            &block.text,
+            prefix_end(&block.text, graphemes, remaining),
+            true,
+        );
         if end < block.text.len() && block.kind == "row" {
             // Row text treats ` | ` as a column separator. A prefix must not
             // finish inside that separator, or just after it with no next cell.
@@ -1171,50 +1190,48 @@ pub fn process(input: &[u8]) -> Result<Vec<u8>, u32> {
                 read.push(text, caret_parts + part, true);
             }
         }
-        let mut parts = vec![String::new(); caret_parts + 3];
         let Layout {
             text: source,
             owner,
             shown,
         } = read;
-        let (redacted, origin) = privacy::redact_traced(&source).map_err(|_| 3u32)?;
-        // Where the redaction took text out (one match, or several side by side), one marker goes
-        // in the part that shows the first character taken; where it took out only what the read
-        // does not show, none goes, so the read never says where hidden text was.
-        let mut index = 0;
-        let mut kept_end = 0;
-        while index < redacted.len() {
-            if let Some(at) = origin[index] {
-                let width = redacted[index..].chars().next().map_or(1, char::len_utf8);
+        let taken = privacy::taken(&source).map_err(|_| 3u32)?;
+        // Each part gets the characters it shows that the redaction did not take. Where it took
+        // text out (one match, or several that overlap or meet), one marker goes in the part that
+        // shows the first character taken; where it took out only what the read does not show,
+        // none goes, so the read never says where hidden text was.
+        let mut parts = vec![Vec::new(); caret_parts + 3];
+        let mut copied = 0;
+        for run in taken
+            .iter()
+            .chain(std::iter::once(&(source.len()..source.len())))
+        {
+            for at in copied..run.start {
                 if shown[at] {
-                    parts[owner[at]].push_str(&redacted[index..index + width]);
+                    parts[owner[at]].push(source.as_bytes()[at]);
                 }
-                kept_end = at + width;
-                index += width;
-                continue;
             }
-            let run_end = origin[index..]
-                .iter()
-                .position(Option::is_some)
-                .map_or(redacted.len(), |length| index + length);
-            let next = origin
-                .get(run_end)
-                .copied()
-                .flatten()
-                .unwrap_or(source.len());
-            let first = (kept_end..next).find(|&at| shown[at]);
+            let first = run.clone().find(|&at| shown[at]);
             if let Some(at) = first {
-                parts[owner[at]].push_str(privacy::PLACEHOLDER);
+                parts[owner[at]].extend_from_slice(privacy::PLACEHOLDER.as_bytes());
             }
             // The caret's window is reported on its own as well: a match that took text it shows
             // marks it too, once.
             if first.is_some_and(|at| owner[at] < caret_parts)
-                && let Some(at) = (kept_end..next).find(|&at| shown[at] && owner[at] >= caret_parts)
+                && let Some(at) = run
+                    .clone()
+                    .find(|&at| shown[at] && owner[at] >= caret_parts)
             {
-                parts[owner[at]].push_str(privacy::PLACEHOLDER);
+                parts[owner[at]].extend_from_slice(privacy::PLACEHOLDER.as_bytes());
             }
-            index = run_end;
+            copied = run.end;
         }
+        // Runs, parts and markers all start and end on character boundaries.
+        let mut parts = parts
+            .into_iter()
+            .map(String::from_utf8)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| 3u32)?;
         let mut around = parts.split_off(caret_parts);
         let changed = around[1] != caret[1];
         if changed && around[1].trim_matches(whitespace).is_empty() {
@@ -1434,6 +1451,59 @@ mod budget_tests {
                 "{request}"
             );
         }
+    }
+    /// A budget never cuts a marker in half: every bracket the read shows belongs to a whole marker,
+    /// wherever the cut falls.
+    fn whole_markers_only(text: &str) -> bool {
+        let rest = text
+            .replace(privacy::PLACEHOLDER, "")
+            .replace(HIDDEN_MARKER, "");
+        !rest.contains('[') && !rest.contains(']')
+    }
+    #[test]
+    fn the_caret_window_budget_never_cuts_a_marker() {
+        let (mut kept, mut left_out) = (0, 0);
+        for k in 0..=privacy::PLACEHOLDER.len() + 2 {
+            let after = format!(
+                "{} token=abc123def",
+                "x".repeat(CARET_SIDE_GRAPHEMES - 7 - k)
+            );
+            let before = format!(
+                "token=abc123def {}",
+                "x".repeat(CARET_SIDE_GRAPHEMES - 17 + k)
+            );
+            let reply = call(json!({"blocks":[],"caret":[before,"",after]}));
+            assert_eq!(reply["truncated"], true);
+            for part in [&reply["caret"][0], &reply["caret"][2]] {
+                let part = part.as_str().unwrap();
+                assert!(whole_markers_only(part), "{k}: {part}");
+                if part.contains(privacy::PLACEHOLDER) {
+                    kept += 1;
+                } else {
+                    left_out += 1;
+                }
+            }
+        }
+        assert!(kept > 0 && left_out > 0);
+    }
+    #[test]
+    fn the_screen_budget_never_cuts_a_marker() {
+        let (mut kept, mut left_out) = (0, 0);
+        for marker_block in ["token=abc123def", HIDDEN_MARKER] {
+            for k in 0..40 {
+                let reply = call(json!({"blocks":[
+                    {"kind":"text","text":"x".repeat(SCREEN - k)},
+                    {"kind":"text","text":marker_block}],"caret":["","",""]}));
+                let rendered = reply["rendered"].as_str().unwrap();
+                assert!(whole_markers_only(rendered), "{marker_block} {k}");
+                if rendered.contains('[') {
+                    kept += 1;
+                } else {
+                    left_out += 1;
+                }
+            }
+        }
+        assert!(kept > 0 && left_out > 0);
     }
     #[test]
     fn caret_window_keeps_complete_selection_and_maps_unicode_source_edges() {
