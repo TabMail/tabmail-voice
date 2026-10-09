@@ -80,7 +80,7 @@ apps/desktop/
 │   │   │   ├── helperClient.ts          Spawns a helper, requests with timeouts, events, restarts (at once for a helper that exits to be started afresh)
 │   │   │   ├── microphone.ts         Shared native audio wire adapter and chunk decoder
 │   │   │   ├── screenReader.ts       The screen read, by `voice-screen-reader`, a program of its own on every platform: restarted when a read is superseded or stuck (ADR-DESK-053)
-│   │   │   ├── fieldReader.ts        The focused field read after a paste (`CorrectionWatch`'s `FieldSource`), by `voice-field-reader`, a program of its own on every platform: what is in front by its own identity, restarted when a read is superseded or stuck (ADR-DESK-053, amended 2026-10-07)
+│   │   │   ├── fieldReader.ts        The focused field read after a paste (`CorrectionWatch`'s `FieldSource`), by `voice-field-reader`, a program of its own on every platform: the paste's own target by an identity both helpers share (the process on macOS and Linux, the window's handle on Windows), restarted when a read is superseded or stuck (ADR-DESK-053, amended 2026-10-07 and 2026-10-08)
 │   │   │   ├── macos/                 system.ts, permissions.ts, osascript.ts: Apple framework and AppleScript adapters; update.ts (Squirrel.Mac's proof)
 │   │   │   ├── windows/               system.ts, permissions.ts, files.ts: Windows native helper, permissions, Windows Search and File Explorer adapters; update.ts (the installer's Authenticode signature, through `voice-windows.exe --verify-update`)
 │   │   │   └── linux/                 gnomeIntegration.ts and the Linux adapters; update.ts (`install-update`, through `pkexec` to install)

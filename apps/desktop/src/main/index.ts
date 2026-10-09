@@ -155,7 +155,6 @@ function launch(): void {
   const screenReader = new ScreenReader(screenReaderHelper);
   // So is the focused field for correction learning (`FieldReader`).
   const fieldReaderHelper = new HelperClient({ name: "voice-field-reader", executable: join(helpers, process.platform === "win32" ? "voice-field-reader.exe" : "voice-field-reader"), stopEndsAtOnce: true });
-  const fieldReader = new FieldReader(fieldReaderHelper, process.platform);
   const accessibilityActivator = process.platform === "win32"
     ? new HelperClient({ name: "voice-accessibility-activator", executable: join(helpers, "voice-windows.exe"), args: ["--accessibility-activator"] })
     : null;
@@ -167,6 +166,9 @@ function launch(): void {
   const permissions = new PermissionsModel(process.platform === "win32" ? windowsPermissions : linuxPermissions ?? macPermissions);
   if (linuxPermissions) linuxPermissions.onChange = () => { permissions.refresh(); pushSettingsWindows(); };
   const system = process.platform === "win32" ? new WindowsSystem(nativeHelper) : process.platform === "linux" ? new LinuxSystem(nativeHelper, hotkeyHelper) : mac;
+  // It reads the paste's own target, named as the main helper named it: a Linux window token is each
+  // process's own, so there the reader is given its window's process.
+  const fieldReader = new FieldReader(fieldReaderHelper, process.platform, system instanceof LinuxSystem ? (window) => system.appOf(window) : (target) => target);
   const nativeAudio = ["darwin", "win32", "linux"].includes(process.platform);
   const linuxAutostart = process.platform === "linux" ? new LinuxAutostart(process.env.XDG_CONFIG_HOME?.startsWith("/") ? process.env.XDG_CONFIG_HOME : join(homedir(), ".config"), process.env.APPIMAGE ?? process.execPath, isDebugBuild ? [app.getAppPath()] : []) : null;
   // The microphone has a helper to itself on every platform, so nothing another helper waits on

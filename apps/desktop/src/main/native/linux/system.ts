@@ -17,11 +17,28 @@ export class LinuxSystem {
     await this.helper.request("insert", { text, window, deadline: Date.now() + config.helperRequestTimeout }, config.helperRequestTimeout + config.insertionReplyGrace, signal);
   }
 
-  /** Opaque foreground window identity, rather than a process id shared by multiple windows. */
+  /** Opaque foreground window identity, rather than a process id shared by multiple windows. Each reply
+   * naming a window replaces what `appOf` maps: a caller that asks during a correction watch ends that
+   * watch (its token no longer maps), so today only a key-down and the paste's check ask. */
   async frontmostApp(): Promise<number | null> {
-    const reply = await this.helper.request<{ window?: unknown } | null>("frontmostApp");
-    return typeof reply?.window === "number" && Number.isSafeInteger(reply.window) && reply.window > 0 ? reply.window : null;
+    const reply = await this.helper.request<{ window?: unknown; pid?: unknown } | null>("frontmostApp");
+    const window = positive(reply?.window);
+    if (window !== null) this.front = { window, pid: positive(reply?.pid) };
+    return window;
   }
+
+  /** The process of `window`, a token from `frontmostApp`, or null for none: voice-field-reader's
+   * identity of the paste's target, since a window token is this helper's own and names nothing in
+   * another process (ADR-DESK-053). Only the last reply is kept, which is enough and never grows: a
+   * correction watch starts only after a paste, whose check just asked `frontmostApp` and found its
+   * target in front (else nothing is pasted), and the next ask comes with the next key-down, which
+   * ends the watch. */
+  appOf(window: number): number | null {
+    return this.front?.window === window ? this.front.pid : null;
+  }
+
+  /** The last `frontmostApp` reply naming a window, for `appOf`. */
+  private front: { window: number; pid: number | null } | null = null;
 
   async keyboardLanguage(): Promise<string | null> {
     const reply = await this.helper.request<{ code?: unknown } | null>("keyboardLanguage");
@@ -55,6 +72,11 @@ export class LinuxSystem {
     if ("error" in answer) throw answer.error;
     return usable(answer.rect);
   }
+}
+
+/** A positive safe integer, or null. */
+function positive(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 function usable(rect: Rect | null): Rect | null {

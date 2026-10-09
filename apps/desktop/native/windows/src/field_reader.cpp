@@ -8,8 +8,9 @@
 // process when it no longer wants the read (`FieldReader` in the app, ADR-DESK-053). One request at
 // a time; EOF ends it.
 //
-// - `frontmostApp` → `{window}` of the window in front, or null: the field the watch reads is in it.
-// - `focusedFieldValue {window, maxLength, excludedAppIDs, excludedHosts}` → `{value}`.
+// - `focusedFieldValue {window, maxLength, excludedAppIDs, excludedHosts}` → `{value}`: the focused
+//   field of `window`, the HWND voice-windows.exe named at key-down, which the dictation was pasted
+//   into, never whatever is in front after the paste.
 #include <windows.h>
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -22,13 +23,8 @@ using JSON = nlohmann::json;
 
 namespace {
 
-JSON handle(const std::string& method, const JSON& params) {
-    if (method == "frontmostApp") {
-        const HWND window = GetForegroundWindow();
-        if (!window) return nullptr;
-        return {{"window", reinterpret_cast<uintptr_t>(window)}};
-    }
-    // The field is read in the window the watch started on, and in no other.
+JSON handle(const JSON& params) {
+    // The field is read in the window pasted into, and in no other.
     if (!params.is_object() || !params.contains("window") || !params["window"].is_number_unsigned()) {
         throw std::runtime_error("invalid target");
     }
@@ -62,12 +58,12 @@ int main(int argc, char**) {
         if (!input.is_object() || !input.contains("id") || !input["id"].is_number_integer() ||
             !input.contains("method") || !input["method"].is_string()) continue;
         const auto id = input["id"];
-        if (input["method"] != "frontmostApp" && input["method"] != "focusedFieldValue") {
+        if (input["method"] != "focusedFieldValue") {
             output.send({{"id", id}, {"error", {{"message", "Windows native request failed"}}}});
             continue;
         }
         try {
-            output.send({{"id", id}, {"result", handle(input["method"].get<std::string>(), input.value("params", JSON::object()))}});
+            output.send({{"id", id}, {"result", handle(input.value("params", JSON::object()))}});
         } catch (...) {
             // Never echo parameters, captured text, or native exception details into logs.
             output.send({{"id", id}, {"error", {{"message", "Windows accessibility request failed"}}}});

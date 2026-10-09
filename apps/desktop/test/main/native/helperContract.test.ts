@@ -124,8 +124,7 @@ describe("helper wire contract", () => {
   /** The focused field for correction learning is read by voice-field-reader, a program of its own. */
   test("every request FieldReader sends is one voice-field-reader handles, with the params it reads", async () => {
     const { helper, requests } = recordingHelper();
-    const reader = new FieldReader(helper, "darwin");
-    await reader.target();
+    const reader = new FieldReader(helper, "darwin", (pid) => pid);
     await reader.value(42, { apps: ["org.example.app"], sites: ["example.com"] });
 
     const handlers = registered("native/macos/Sources/VoiceMacOSKit/FieldReaderService.swift");

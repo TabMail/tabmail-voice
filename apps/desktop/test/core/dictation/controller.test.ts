@@ -17,6 +17,7 @@ import { TranscriptionClient } from "../../../src/core/backend/transcription.js"
 import * as config from "../../../src/core/config.js";
 import { DictationController, type DictationDependencies, isResting, nothingHeardMessage, notPastedMessage, partlyCopiedMessage, partlyTranscribedMessage, type Phase, retryingMessage, silentMicrophoneMessage } from "../../../src/core/dictation/controller.js";
 import type { ScreenExclusions } from "../../../src/core/dictation/excludedSites.js";
+import { CorrectionWatch } from "../../../src/core/dictionary/correctionWatch.js";
 import { PasteHistory } from "../../../src/core/dictation/pasteHistory.js";
 import type { DictationMode } from "../../../src/core/hotkey/bindings.js";
 import { MemoryStore } from "../../../src/core/util/keyValueStore.js";
@@ -816,7 +817,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
   describe("learning the user's corrections", () => {
     function watcher(): { calls: string[]; corrections: NonNullable<DictationDependencies["corrections"]> } {
       const calls: string[] = [];
-      return { calls, corrections: { watch: (pasted) => calls.push(`watch ${pasted}`), stop: () => calls.push("stop") } };
+      return { calls, corrections: { watch: (target, pasted) => calls.push(`watch ${target} ${pasted}`), stop: () => calls.push("stop") } };
     }
 
     async function dictateHeld(corrections: NonNullable<DictationDependencies["corrections"]>, count = 1): Promise<string[]> {
@@ -829,16 +830,16 @@ describe("DictationController", { timeout: 20_000 }, () => {
       return pastes;
     }
 
-    test("watches the field pasted into, with the text pasted", async () => {
+    test("watches the app pasted into, with the text pasted", async () => {
       const { calls, corrections } = watcher();
       expect(await dictateHeld(corrections)).toEqual([cleaned]);
-      expect(calls).toEqual(["stop", `watch ${cleaned}`]);
+      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
     });
 
     test("each key-down stops the last watch before the next paste", async () => {
       const { calls, corrections } = watcher();
       await dictateHeld(corrections, 2);
-      expect(calls).toEqual(["stop", `watch ${cleaned}`, "stop", `watch ${cleaned}`]);
+      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`, "stop", `watch 101 ${cleaned}`]);
     });
 
     /** The apps and websites excluded from screen reading at key-down go with the watch, which never
@@ -846,7 +847,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
     test("the watch is told the apps and websites excluded as the dictation started", async () => {
       prefs.value = { ...defaultSettings(), excludedApps: ["org.example.vault"], excludedSites: ["example.com"] };
       const excluded: ScreenExclusions[] = [];
-      const corrections: NonNullable<DictationDependencies["corrections"]> = { watch: (_pasted, exclusions) => excluded.push(exclusions), stop: () => {} };
+      const corrections: NonNullable<DictationDependencies["corrections"]> = { watch: (_target, _pasted, exclusions) => excluded.push(exclusions), stop: () => {} };
       const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
       controller.onPhaseChange = (phase) => {
         if (phase.kind === "listening") prefs.value = { ...defaultSettings(), excludedApps: ["org.example.other"], excludedSites: ["example.org"] };
@@ -875,7 +876,7 @@ describe("DictationController", { timeout: 20_000 }, () => {
       transcription.enqueue(200, cleanedReply);
       await holdAndRelease(controller);
       expect(await eventually(() => pastes.length === 1 && settled(controller))).toBe(true);
-      expect(calls).toEqual(["stop", `watch ${cleaned}`]);
+      expect(calls).toEqual(["stop", `watch 101 ${cleaned}`]);
     });
 
     /** A paste the helper finishes after the user canceled and pressed the key again belongs to the
@@ -915,6 +916,80 @@ describe("DictationController", { timeout: 20_000 }, () => {
       expect(pastes).toEqual([]);
       expect(copies).toEqual([cleaned]);
       expect(calls).toEqual(["stop"]);
+    });
+
+    /** With the real watch: the field learned from is the one pasted into. A switch to another window
+     * right after the paste (before the watch's first read), where the same words show and are then
+     * respelled, teaches nothing: that edit is not a correction of the dictation. The same edit in the
+     * window pasted into is learned, so learning is not simply off. The reader can also say what it
+     * finds in front, as a watch that asked it would. */
+    describe("with the real watch", () => {
+      const interval = 10;
+      const duration = 120;
+      const pasteTarget = 101;
+      const otherWindow = 202;
+
+      async function learnedAfter(switchAway: boolean): Promise<string[][]> {
+        const fields = new Map<number, string>();
+        let readerFront = pasteTarget;
+        let reads = 0;
+        const reader = {
+          target: async () => readerFront,
+          value: async (target: number) => {
+            reads += 1;
+            // The user respells the name in the window in front, once the watch has seen the paste.
+            if (reads === 2) fields.set(readerFront, fields.get(readerFront)!.replace("Jordan", "Jordyn"));
+            return fields.get(target) ?? null;
+          },
+        };
+        const learned: string[][] = [];
+        const corrections = new CorrectionWatch(reader, (words) => learned.push(words), interval, duration);
+        const { controller } = makeController({
+          capture: new CountingCapture(true),
+          corrections,
+          paste: async (text, _signal, target) => {
+            fields.set(target, text);
+            if (!switchAway) return;
+            // Another window, showing the same words, comes to the front as the paste lands: both
+            // helpers now find it in front.
+            fields.set(otherWindow, text);
+            readerFront = otherWindow;
+            front.pid = otherWindow;
+          },
+        });
+        transcription.enqueue(200, cleanedReply);
+        await holdAndRelease(controller);
+        expect(await eventually(() => reads >= duration / interval && settled(controller))).toBe(true);
+        await sleep(interval * 3);
+        return learned;
+      }
+
+      test("an edit in the window pasted into is learned", async () => {
+        expect(await learnedAfter(false)).toEqual([["Jordyn"]]);
+      });
+
+      test("an edit in another window switched to as the paste lands is not", async () => {
+        expect(await learnedAfter(true)).toEqual([]);
+      });
+
+      /** The watch runs beside the dictation, never in it: with its first read still unanswered, the
+       * dictation has pasted and is over. */
+      test("a watch whose read is still going holds nothing up", async () => {
+        const reading = deferred<string | null>();
+        let reads = 0;
+        const reader = {
+          value: () => {
+            reads += 1;
+            return reading.promise;
+          },
+        };
+        const corrections = new CorrectionWatch(reader, () => {}, interval, duration);
+        const { controller, pastes } = makeController({ capture: new CountingCapture(true), corrections });
+        transcription.enqueue(200, cleanedReply);
+        await holdAndRelease(controller);
+        expect(await eventually(() => reads === 1 && pastes.length === 1 && settled(controller))).toBe(true);
+        reading.resolve(null);
+      });
     });
 
     /** Agent mode's text is the agent's, not a dictation to correct. */

@@ -59,9 +59,10 @@ with tempfile.TemporaryFile(mode='w+t') as diagnostic:
     if reply.get('id')==seq:return reply
    raise RuntimeError('helper request timeout')
   def request():return ask(native,'readScreen',{'excludedAppIDs':[],'excludedHosts':[]})
+  # The field of the app pasted into, named by its process (the terminal fixture's own), as the main
+  # helper names it: window tokens are each process's own.
   def field():
-   window=ask(voice,'frontmostApp',{})['result']['window']
-   return ask(voice,'focusedFieldValue',{'excludedAppIDs':[],'excludedHosts':[],'window':window,'maxLength':20000})['result']['value']
+   return ask(voice,'focusedFieldValue',{'excludedAppIDs':[],'excludedHosts':[],'pid':fixture.pid,'maxLength':20000})['result']['value']
   deadline=time.monotonic()+15;screen=None
   while time.monotonic()<deadline:
    time.sleep(.3);reply=request();screen=reply.get('result')

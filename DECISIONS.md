@@ -4076,7 +4076,8 @@ a per-platform one — a separate program, a screen reader and a focused-field r
 - **`voice-field-reader`, one small program on each platform**, beside `voice-screen-reader`: macOS
   `VoiceFieldReader` (`FieldReaderService` in `VoiceMacOSKit`), `voice-field-reader.exe`
   (`native/windows/src/field_reader.cpp`) and `voice-field-reader` (`native/linux/src/field_reader.cpp`).
-  It serves `frontmostApp` and `focusedFieldValue` and nothing else, with the same code the helpers
+  It serves `focusedFieldValue` and nothing else (it served `frontmostApp` too until the 2026-10-08
+  change below), with the same code the helpers
   ran (`SharedRequest.fieldValue`, `Automation::fieldValue`, `focusedRead`, the shared core's bound
   and redaction). `voice-macos`, `voice-windows.exe` and `voice-linux` no longer serve
   `focusedFieldValue`, so a caret placement or a paste never waits behind a field read.
@@ -4085,6 +4086,27 @@ a per-platform one — a separate program, a screen reader and a focused-field r
   Linux window tokens are each process's own, and the same rule holds on every platform. The
   dictation no longer hands the watch its target. A window that took the front between the paste and
   that question is watched instead; its field does not hold the pasted text, so nothing is learned.
+  *Superseded 2026-10-08 (below): that window can hold the same words.*
+- **Changed 2026-10-08 — the watch is bound to the paste's own target, by an identity both helpers
+  share.** A review of the change above found its last sentence wrong: a window switched to in the
+  moment after the paste can show the same words (the same message open in another window, a
+  draft beside a preview), and its edits were then learned as corrections of the dictation. As before
+  the field reader, the dictation hands the watch its target: the main helper's `frontmostApp` at
+  key-down (`targetApp`), which the paste was just checked against (`DictationController.deliver`;
+  `CorrectionWatch.watch(target, …)`), and the field reader reads that one only. The two programs name
+  it by an identity both have: the app's process on macOS (`pid`, as before), the window's handle on
+  Windows (`window`, the HWND `voice-windows.exe` names, passed through), and on Linux, where a window
+  token is each process's own, the window's process: `voice-linux`'s `frontmostApp` replies
+  `{window, pid}` (the pid its focus record already took from AT-SPI), the app keeps the pid of the
+  last reply's window (`LinuxSystem.appOf`) and maps the paste's window token to it (`FieldReader`'s
+  `identity`), and the reader reads only while the window in front is that process's
+  (`focusedRead` checks `pid` against its own focus record before reading, and the window in front
+  again when the read ends). A token
+  with no known process reads nothing. The field reader no longer serves `frontmostApp` on any
+  platform. A read asked while another is still going (a superseded watch's) restarts the reader, as
+  the watch's start did. Accepted by the owner (2026-10-08): on macOS and Linux the identity is the
+  app, not the window, so two windows of one app switched between within a moment of the paste can
+  still mix, as on the Mac before; Windows names the window.
 - **The app owns its lifetime as it does the screen reader's** (`FieldReader`,
   `src/main/native/fieldReader.ts`, over a `HelperClient` named `voice-field-reader` with
   `stopEndsAtOnce`): started with the app, killed at quit; a watch that starts while a read is still

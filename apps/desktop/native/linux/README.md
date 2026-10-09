@@ -24,7 +24,9 @@ running capture fails, and the app starts it afresh; which session runs is the s
 decision (`../shared/microphone`). `voice-screen-reader`, a program of
 its own, reads the screen and nothing else, and `voice-field-reader`, another, reads the focused
 field that correction learning watches after a paste and nothing else; each keeps its own record of
-what has focus, so its window tokens are its own (ADR-DESK-053).
+what has focus, so its window tokens are its own (ADR-DESK-053). The field reader is therefore asked
+for the field by the process of the window pasted into (`pid`, which `voice-linux`'s `frontmostApp`
+gives beside the window's token) and reads it only while the window in front is that process's.
 
 Install Node.js 24, CMake, Ninja, a C++20 compiler and the development packages for
 AT-SPI (2.56 or later), GLib/GIO, PulseAudio, IBus (`libibus-1.0-dev`), ICU and nlohmann-json. From the app:

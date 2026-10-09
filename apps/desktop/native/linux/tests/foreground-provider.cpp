@@ -163,7 +163,13 @@ extern "C" AtspiStateSet* __wrap_atspi_accessible_get_state_set(AtspiAccessible*
 extern "C" gint __wrap_atspi_accessible_get_child_count(AtspiAccessible* root, GError**) { return children(root).size(); }
 extern "C" AtspiAccessible* __wrap_atspi_accessible_get_child_at_index(AtspiAccessible* root, gint index, GError**) { return ref(children(root).at(index)); }
 extern "C" AtspiAccessible* __wrap_atspi_accessible_get_parent(AtspiAccessible* value, GError**) { return ref(items.at(value).parent); }
-extern "C" guint __wrap_atspi_accessible_get_process_id(AtspiAccessible*, GError**) { return 0; }
+// Each synthetic app is a process of its own, past the kernel's largest pid (2^22), so no real
+// process's launcher identity is looked up: the first app 4194305, the second 4194306.
+extern "C" guint __wrap_atspi_accessible_get_process_id(AtspiAccessible* value, GError**) {
+    for (auto node = value; node; node = items.at(node).parent)
+        for (int i = 0; i < 2; ++i) if (node == apps[i]) return 4194305 + i;
+    return 0;
+}
 extern "C" AtspiCollection* __wrap_atspi_accessible_get_collection_iface(AtspiAccessible*) { return nullptr; }
 extern "C" AtspiComponent* __wrap_atspi_accessible_get_component_iface(AtspiAccessible* value) {
     if (active < 0 || items.at(fields[active]).role != ATSPI_ROLE_TERMINAL) return nullptr;

@@ -45,7 +45,9 @@ public:
             atspi_event_listener_deregister(listener.get(), type, &error.value);
         }
     }
-    struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; };
+    /** `pid`: the window's process, the identity voice-field-reader shares with this process (window
+     * tokens are each process's own); 0 where the bus gives none. */
+    struct Target { uint64_t token; Node focus; std::optional<AppIdentity> app; bool terminal = false; unsigned pid = 0; };
     std::optional<Target> target() const { return current; }
     bool matches(uint64_t token) const {
         return current && current->token == token && state(current->focus, ATSPI_STATE_FOCUSED);
@@ -83,7 +85,7 @@ private:
         error.check(); // This queries the accessibility bus daemon, not the target application.
         const bool terminal = role(focus) == ATSPI_ROLE_TERMINAL ||
             std::any_of(path.begin(), path.end(), [](const Node& node) { return role(node) == ATSPI_ROLE_TERMINAL; });
-        current = Target{windowToken, focus, desktopIdentity(pid), terminal};
+        current = Target{windowToken, focus, desktopIdentity(pid), terminal, pid};
     }
     Node findFocus(const Node& root) {
         std::vector<Node> stack{root};
@@ -162,8 +164,9 @@ private:
     }
 };
 
-/** `frontmostApp`'s reply in this process: `{window}`, the window in front by this process's own token
- * (tokens are per process, so a token from another helper names nothing here), or null. */
+/** `frontmostApp`'s reply: `{window, pid}`, the window in front by this process's own token (tokens are
+ * per process, so a token from another helper names nothing here) and its process, by which
+ * voice-field-reader is asked for the field pasted into; or null. */
 inline nlohmann::json frontmostApp(const Foreground& foreground) {
     const auto target = foreground.target();
     const bool focused = target && foreground.targets(target->token);
@@ -171,6 +174,6 @@ inline nlohmann::json frontmostApp(const Foreground& foreground) {
     // Distinguish a missing provider result from a genuine target change.
     std::cerr << "debug accessibility: frontmost target "
         << (focused ? std::to_string(target->token) : target ? "unfocused" : "unavailable") << "\n";
-    return focused ? nlohmann::json{{"window", target->token}} : nlohmann::json(nullptr);
+    return focused ? nlohmann::json{{"window", target->token}, {"pid", target->pid}} : nlohmann::json(nullptr);
 }
 }
