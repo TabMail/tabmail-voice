@@ -808,6 +808,55 @@ describe("DictationController", { timeout: 20_000 }, () => {
       }
     });
 
+    /** Agent mode saves on through its run, the longest wait before a paste, until its Compose
+     * writes: a copy made while the agent works goes back too. */
+    test("agent mode saves the clipboard while it runs, until its paste writes", async () => {
+      vi.useFakeTimers();
+      transcription.enqueue(200, { text: request });
+      completions.enqueue(200, writes("compose", "We ship on Friday."));
+      const answered = deferred<void>();
+      completions.gate = () => answered.promise;
+      let saves = (): number => 0;
+      let savesAtThePaste: number | null = null;
+      const pasted: string[] = [];
+      const written = deferred<void>();
+      const { controller, clipboardSaves } = makeController({
+        capture: new CountingCapture(true),
+        paste: async (text) => {
+          pasted.push(text);
+          savesAtThePaste = saves();
+          await written.promise;
+        },
+      });
+      saves = clipboardSaves;
+      controller.captureContext = async () => selectionScreen("");
+      try {
+        controller.handle("start");
+        controller.handle("toggleMode");
+        await vi.advanceTimersByTimeAsync(config.minimumHoldDuration);
+        controller.handle("finish");
+        await vi.advanceTimersByTimeAsync(config.releaseTailDuration);
+        for (let turn = 0; turn < 10 && controller.phase.kind !== "running"; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(controller.phase.kind).toBe("running");
+        const running = saves();
+        await vi.advanceTimersByTimeAsync(2 * config.clipboardSaveInterval);
+        expect(saves()).toBe(running + 2);
+
+        answered.resolve();
+        for (let turn = 0; turn < 10 && savesAtThePaste === null; turn += 1) await vi.advanceTimersByTimeAsync(0);
+        expect(savesAtThePaste).toBe(saves());
+        await vi.advanceTimersByTimeAsync(4 * config.clipboardSaveInterval);
+        expect(saves()).toBe(savesAtThePaste);
+        written.resolve();
+        await vi.advanceTimersByTimeAsync(4 * config.clipboardSaveInterval);
+        expect(saves()).toBe(savesAtThePaste);
+        expect(pasted).toEqual(["We ship on Friday."]);
+      } finally {
+        controller.handle("cancel");
+        vi.useRealTimers();
+      }
+    });
+
     /** A dictation canceled, or ended with its note, asks for no more saves. */
     test.each(["canceled", "not pasted"])("a dictation %s stops saving the clipboard", async (ending) => {
       vi.useFakeTimers();

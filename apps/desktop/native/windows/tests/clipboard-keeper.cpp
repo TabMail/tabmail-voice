@@ -91,9 +91,9 @@ std::wstring pasteAndPutBack(bool between) {
 }
 } // namespace
 
-// A save at key-down and one at the release, then a paste of `dictated`; another program copies as
-// the save at key-down (`atRelease`: the one at the release, of a copy made during the hold) lets
-// the clipboard go. The clipboard once the put-back has had its time.
+// Two saves, as the app asks for them again and again until the paste, then a paste of `dictated`;
+// another program copies as the first save (`atRelease`: the last one, of a copy made in between)
+// lets the clipboard go. The clipboard once the put-back has had its time.
 std::wstring copiedAsSaved(bool atRelease) {
     const std::wstring dictated = L"Dictated text";
     copy(L"Original copy");

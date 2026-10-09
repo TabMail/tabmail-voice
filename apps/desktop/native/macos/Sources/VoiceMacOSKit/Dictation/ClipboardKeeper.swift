@@ -10,8 +10,8 @@ import VoiceHelperSupport
 ///
 /// The paste never waits for the clipboard to be read. Reading it asks the app that owns it for
 /// every item's data, which a busy app hands over late, so the clipboard is saved ahead, off the
-/// main actor, while the user speaks (`save`, which the app asks for as a dictation starts and as it
-/// ends). A paste that comes before the save is done goes ahead and leaves its text on the
+/// main actor, while the user speaks (`save`, which the app asks for again and again from key-down
+/// until the paste; the newest save is the one put back). A paste that comes before the save is done goes ahead and leaves its text on the
 /// clipboard. The clipboard goes back `restoreDelay` after the paste keys, and only while it still
 /// holds the paste's text and was saved as it was just before the paste (its `changeCount`): a copy
 /// made in between is never overwritten. One read runs at a time: a save asked for while one is
