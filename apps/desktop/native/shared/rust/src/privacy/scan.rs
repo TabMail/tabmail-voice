@@ -354,15 +354,11 @@ fn lines(text: &str) -> Vec<Range<usize>> {
 fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
     let bytes = text.as_bytes();
     let blank = |line: &Range<usize>| text[line.clone()].trim().is_empty();
+    // A line without the whitespace around it, any whitespace (a no-break space, an em space).
     let trim = |line: &Range<usize>| {
-        let mut range = line.clone();
-        while range.start < range.end && matches!(bytes[range.start], b' ' | b'\t') {
-            range.start += 1;
-        }
-        while range.end > range.start && matches!(bytes[range.end - 1], b' ' | b'\t') {
-            range.end -= 1;
-        }
-        range
+        let raw = &text[line.clone()];
+        let start = line.start + raw.len() - raw.trim_start().len();
+        start..start + raw.trim().len()
     };
     // A full line ends with `fullLine` or more base64 characters (and padding), anything but
     // base64 before them: where they start.
@@ -426,10 +422,7 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
         if restarts(line.start..line.start + skip) {
             return None;
         }
-        let mut at = line.start + skip;
-        while at < line.end && matches!(bytes[at], b' ' | b'\t') {
-            at += 1;
-        }
+        let at = line.end - text[line.start + skip..line.end].trim_start().len();
         let mut end = at;
         while end < line.end && key.base64.has(bytes[end]) {
             end += 1;
@@ -497,9 +490,10 @@ fn key_lines(text: &str, key: &KeyLines, found: &mut Vec<Found>) {
             continue;
         }
         let mut from = start;
-        // A text starting part-way through a key: its first line, one base64 word, goes too.
+        // A text starting part-way through a key: its first line, one base64 word, goes too, or,
+        // when the run starts on that line, the base64 and padding before the run on it.
         if let Some(first) = first_text_line
-            && second_text_line == Some(index)
+            && (first == index || second_text_line == Some(index))
             && !restarts(lines[index].start..start)
         {
             let line = trim(&lines[first]);

@@ -3643,7 +3643,8 @@ well-structured place for the redactors.
   the threes above are, so they are in the code, not the redactor's data. The texts of one line that `privacy::redact` is given (a terminal's connected runs) are
   pieces of one text and give no edge. The owner set three rules with it:
   - **A key's last line.** After two or more full lines of base64 (40 or more characters, after any
-    label, quote mark or gutter), the first word of base64 on the next line goes, whatever follows
+    label, quote mark or gutter; whitespace around a line or after its prefix is any whitespace, a
+    no-break or an em space too, as the expressions this replaces read it), the first word of base64 on the next line goes, whatever follows
     it (`Done and more` loses `Done`; accepted). The next line is the next one that is not blank:
     after a key's lines and a blank line, a paragraph's first word goes too (owner, 2026-10-08,
     kept as the side that hides more). A word as long as a full line starting the next
@@ -3688,6 +3689,11 @@ well-structured place for the redactors.
     integrity value, a `data:` address's payload (owner, 2026-10-08: keep hiding them; sparing words
     inside addresses would spare keys pasted into one). A key of small letters and digits only is
     taken about one time in five. Each of the three owner decisions has its shared cases.
+    *(Owner, 2026-10-09: how this rule is judged.)* Telling a random word from a name is a guess,
+    and every name a review builds can be met by another, so the rule is judged by what it measures,
+    not by whether a counterexample can be built: the share of random words caught and the benign
+    words taken in the tables here. A realistic, common name it hides (one people meet in a path,
+    an address or a file name) is a defect and gets a case; a name built to defeat it is not.
 
   Checked against `main` and the regular-expression redactors this replaces, over the shared cases,
   66,000 generated glued and paired secrets, 2,762 screen reads, and a second generated set of

@@ -533,6 +533,19 @@ fn terminal_anchor_where_two_matches_meet_is_withheld() {
         redact_anchored(&vec![vec![text.clone()]], &[meet, text.len()]).unwrap();
     assert_eq!(actual[0][0], format!("see {PLACEHOLDER} ok"));
     assert_eq!(anchors, vec![None, Some(actual[0][0].len())]);
+    // Two keys of one repeated letter, which no random-word find covers: only their union holds
+    // the place where they meet.
+    let first = ["AK", "IA", &"A".repeat(16)].concat();
+    let second = ["AI", "za", &"A".repeat(35)].concat();
+    let text = format!("see {first}{second} ok");
+    let meet = "see ".len() + first.len();
+    let (actual, anchors) =
+        redact_anchored(&vec![vec![text.clone()]], &[3, 4, meet, text.len()]).unwrap();
+    assert_eq!(actual[0][0], format!("see {PLACEHOLDER} ok"));
+    assert_eq!(
+        anchors,
+        vec![Some(3), Some(4), None, Some(actual[0][0].len())]
+    );
 }
 
 /// An anchor inside a match is withheld, even in the part of it that stays (the `token=` of

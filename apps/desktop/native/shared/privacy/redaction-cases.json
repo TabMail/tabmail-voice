@@ -9298,6 +9298,288 @@
    "expected": [
     "{redacted}"
    ]
+  },
+  {
+   "name": "key lines ending in a no-break space go, the space staying",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\u00a0",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u00a0",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u00a0"
+   ],
+   "expected": [
+    "{redacted}",
+    "\u00a0"
+   ]
+  },
+  {
+   "name": "key lines ending in a space go, the space staying",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD \nQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD \n",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD "
+   ],
+   "expected": [
+    "{redacted}",
+    " "
+   ]
+  },
+  {
+   "name": "key lines ending in an ideographic space go, the space staying",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD",
+    "\u3000",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u3000",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD",
+    "\u3000"
+   ],
+   "expected": [
+    "{redacted}",
+    "\u3000"
+   ]
+  },
+  {
+   "name": "key lines indented by a no-break space go with the short words around them",
+   "text": [
+    "QUJDQUJD\n",
+    "\u00a0",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "\u00a0",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "D"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "key lines indented by an em space go with the short words around them",
+   "text": [
+    "QUJDQUJD\n",
+    "\u2003",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\n",
+    "\u2003",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD\nQUJDQUJ",
+    "D"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text's first key line holding padding before more base64 goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD==QUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD\nQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJD\nQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a text's first key line holding one padding character before more base64 goes whole",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD=QUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJD\nQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JD\nQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJDQUJDQ",
+    "UJDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a short padded word glued before a text's first key line goes with it",
+   "text": [
+    "ab==QUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJD\nQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "D\nQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "one line of base64 holding padding before more base64 stays",
+   "text": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD==QUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD"
+   ],
+   "expected": [
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJDQUJDQUJD",
+    "QUJD==QUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD"
+   ]
+  },
+  {
+   "name": "prose before key lines stays while the key goes",
+   "text": [
+    "Hello there.",
+    "\nQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJDQUJDQUJ",
+    "DQUJD\nQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJD"
+   ],
+   "expected": [
+    "Hello there.",
+    "\n",
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a word of digits, symbols and separators with no letter stays",
+   "text": [
+    "01+23/45+67_",
+    "890123456789"
+   ],
+   "expected": [
+    "01+23/45+67_",
+    "890123456789"
+   ]
+  },
+  {
+   "name": "the same word of digits, symbols and separators with one letter goes",
+   "text": [
+    "A1+23/45+67_",
+    "890123456789"
+   ],
+   "expected": [
+    "{redacted}"
+   ]
+  },
+  {
+   "name": "a key's next-line word after the key lines' prefix and a no-break space goes",
+   "text": [
+    "> QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD\n",
+    "> QUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJDQUJDQU",
+    "JDQUJD\n",
+    "> ",
+    "\u00a0",
+    "QUJDQUJD rest"
+   ],
+   "expected": [
+    "> ",
+    "{redacted}",
+    " rest"
+   ]
   }
  ],
  "lineCases": [
